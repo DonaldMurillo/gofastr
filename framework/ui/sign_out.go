@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -60,7 +61,7 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	if variant == "" {
 		variant = ButtonGhost
 	}
-	cls := "ui-sign-out"
+	cls := "fui-sign-out"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -73,9 +74,14 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")))
 	b.WriteString(`>`)
 	if cfg.Next != "" {
-		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `">`)
+		// Built entirely from cfg.Next, a string, never caller markup.
+		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `" data-fui-internal>`)
 	}
-	b.WriteString(string(Button(ButtonConfig{Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall})))
+	// The button is built entirely from typed SignOutConfig fields,
+	// never caller markup; it never marks its own root (an owner must
+	// place it, the same as ui.Form's controls), so the mark is
+	// spliced on here.
+	b.WriteString(string(headless.Own(Button(ButtonConfig{Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall}))))
 	b.WriteString(`</form>`)
 	return signOutStyle.WrapHTML(render.HTML(b.String()))
 }

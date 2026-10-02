@@ -1,0 +1,19 @@
+version: v0.30.0
+title: Access registry + decider, stored routines, background compute
+notes:
+  - change: RolePolicy.Grant returns error
+    breaking: false
+    guidance: "Grant now reports strict-mode capability rejections. Statement-form calls keep compiling; error-checking linters will flag the ignored return. With StrictCapabilities() configured, handle the error — errors.As with *access.UnknownCapabilityError distinguishes a typo'd capability (answer 400) from a store failure (500)."
+    find:
+      uses:
+        - gofastr/framework/access.RolePolicy.Grant
+  - change: Same-container sortable commits include container=
+    breaking: false
+    guidance: "Sortable lists that configure Container now send container=<id> on same-container reorders too (previously cross-container only). Handlers that distinguished the two cases by container's presence should key on moved= instead — it remains cross-container-only."
+    find:
+      fields:
+        - field: gofastr/core-ui/patterns/sortablelist.Config.Container
+  - change: gofastr_routines ledger table auto-created
+    breaking: false
+    guidance: "Apps registering stored routines (App.Routine / the new App.RoutinesFS) gain a gofastr_routines bookkeeping table on next boot, created inside the migration transaction. Reporting-only — every routine Up still runs each boot; no action needed."
+    nodetect: reporting-only schema bookkeeping created by the framework; no app code is affected

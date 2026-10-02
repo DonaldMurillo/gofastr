@@ -83,14 +83,28 @@
       if (origin && origin.path === target.intercept.from) return;
     }
     inFlight.add(path);
-    fetch(path, {
-      headers: {
-        'X-Gofastr-Navigate': '1',
-        'X-Gofastr-From': location.pathname,
-        'X-Gofastr-Prefetch': '1',
-      },
-      credentials: 'same-origin',
-    })
+    // X-Gofastr-Defer (spike/layout-parts): the prefetch fetches the
+    // PAGE ONLY — never the parts — but defers it like the eventual
+    // click would, so the entry's deferred regions carry their loading
+    // content and the click applies it instantly and requests the
+    // missing parts beside nothing else.
+    const hdrs = {
+      'X-Gofastr-Navigate': '1',
+      'X-Gofastr-From': location.pathname,
+      'X-Gofastr-Prefetch': '1',
+    };
+    // The fills negotiation mirrors the click path (the opt-in gate):
+    // only a document whose envelope module is loaded — one holding an
+    // outlet or area marker — asks for the envelope, so a prefetched
+    // entry has exactly the shape its click would have fetched.
+    if (window.__gofastr._navHooks && window.__gofastr._navHooks.envelope) {
+      hdrs['X-Gofastr-Fills'] = '2';
+    }
+    if (target.deferred && target.deferred.length) hdrs['X-Gofastr-Defer'] = '1';
+    // cache:'no-store': the prefetched page shares its URL with the
+    // parts the later click fires; Chrome's HTTP-cache write lock
+    // would serialize them (spike/layout-parts).
+    fetch(path, { headers: hdrs, credentials: 'same-origin', cache: 'no-store' })
       .then((r) => {
         if (!r.ok || r.headers.get('X-Gofastr-Location')) return null;
         if (r.headers.get('X-Gofastr-Partial') !== 'true') return null;
@@ -98,6 +112,9 @@
           html,
           title: decodeURIComponent(r.headers.get('X-Gofastr-Title') || document.title),
           layer: r.headers.get('X-Gofastr-Swap') || '',
+          // An envelope body parses at apply time (nav owns the
+          // parser); the flag tells it which shape it holds.
+          envelope: r.headers.get('X-Gofastr-Envelope') === '2',
           at: Date.now(),
         }));
       })

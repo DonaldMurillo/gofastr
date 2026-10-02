@@ -3,7 +3,9 @@ package codegen
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -111,6 +113,14 @@ const (
 	// re-run contract — re-running generate adds new files without
 	// overwriting code the user has hand-edited.
 	ConflictSkip
+	// ConflictRefuse fails the write when a target file already exists —
+	// whatever its content, whoever created it. This is the one-shot copy
+	// contract: the copy verified the target empty, so a file that exists
+	// by write time is one this run did not create (a concurrent process
+	// racing the same target), and the whole write must fail rather than
+	// touch it. The check IS the open (O_EXCL), so nothing can appear
+	// between the check and the write.
+	ConflictRefuse
 )
 
 // WriteOptions controls writing a FileSet to disk.
@@ -129,23 +139,39 @@ type WriteOptions struct {
 
 // writeGeneratedFile writes one file at its declared mode.
 //
-// For a default-mode file this is os.WriteFile. For an explicit mode it
-// is open, chmod the HANDLE, then write -- the order matters for a
-// secret-bearing file like .env: os.WriteFile would truncate a
-// pre-existing 0644 file, write the secrets into it while it is still
-// world-readable, and leave it that way. Chmod on the handle rather than
-// the path also cannot be redirected by a symlink swapped in between.
+// For a default-mode file this is one create+write with os.WriteFile's
+// semantics. For an explicit mode it is open, chmod the HANDLE, then
+// write -- the order matters for a secret-bearing file like .env:
+// os.WriteFile would truncate a pre-existing 0644 file, write the secrets
+// into it while it is still world-readable, and leave it that way. Chmod
+// on the handle rather than the path also cannot be redirected by a
+// symlink swapped in between.
 func writeGeneratedFile(path string, file GeneratedFile) error {
-	if file.Mode == 0 {
-		return os.WriteFile(path, []byte(file.Content), 0o644)
+	return writeGeneratedFileFlags(path, file, os.O_TRUNC)
+}
+
+// writeGeneratedFileExcl writes one file only when nothing exists at its
+// path, failing with fs.ErrExist otherwise: the create is the existence
+// check, so the window a check-then-write leaves between "not there" and
+// "written" does not exist.
+func writeGeneratedFileExcl(path string, file GeneratedFile) error {
+	return writeGeneratedFileFlags(path, file, os.O_EXCL)
+}
+
+func writeGeneratedFileFlags(path string, file GeneratedFile, createFlag int) error {
+	mode := fs.FileMode(0o644)
+	if file.Mode != 0 {
+		mode = file.Mode
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|createFlag, mode)
 	if err != nil {
 		return err
 	}
-	if err := f.Chmod(file.Mode); err != nil {
-		f.Close()
-		return err
+	if file.Mode != 0 {
+		if err := f.Chmod(file.Mode); err != nil {
+			f.Close()
+			return err
+		}
 	}
 	if _, err := f.WriteString(file.Content); err != nil {
 		f.Close()
@@ -206,6 +232,15 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 				}
 				continue
 			}
+		}
+		if opts.Conflict == ConflictRefuse {
+			if err := writeGeneratedFileExcl(path, file); err != nil {
+				if errors.Is(err, fs.ErrExist) {
+					return fmt.Errorf("refusing to overwrite existing file %s: %w", file.Path, err)
+				}
+				return err
+			}
+			continue
 		}
 		if err := writeGeneratedFile(path, file); err != nil {
 			return err

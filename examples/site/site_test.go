@@ -172,7 +172,7 @@ func TestDocPageRendersEmbeddedMarkdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/docs/entity-declarations: got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "ui-markdown") {
+	if !strings.Contains(rec.Body.String(), `data-fui-comp="ui-markdown"`) {
 		t.Fatal("doc page should render markdown via ui.Markdown")
 	}
 }
@@ -282,12 +282,12 @@ func TestComponentDemoLabels(t *testing.T) {
 }
 
 func TestDocShellCollapsesOnMobile(t *testing.T) {
-	// /docs/<slug> pages render the framework's ui.DocLayout, which owns the
-	// nav-rail + content grid AND its mobile collapse (asserted directly in
-	// framework/ui's TestDocLayoutCSSCollapsesOnMobile). Here we just confirm
-	// the doc page actually mounts that component.
-	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-comp="ui-doc-layout"`) {
-		t.Fatal("a /docs/<slug> page should render the ui.DocLayout component")
+	// /docs/<slug> pages render the site's docpage package, whose owned
+	// sheet owns the nav-rail + content grid AND its mobile collapse in
+	// lockstep with SectionMenu's 900px swap. Here we just confirm the
+	// doc page actually mounts that owner.
+	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-scope="docsite-docpage"`) {
+		t.Fatal("a /docs/<slug> page should render the docpage owned style")
 	}
 }
 
@@ -311,14 +311,14 @@ func TestComponentPackageLinks(t *testing.T) {
 	if got := componentPkg("button"); got != "framework/ui" {
 		t.Errorf("componentPkg(button)=%q", got)
 	}
-	if got := componentPkg("accordion"); got != "core-ui/patterns/accordion" {
-		t.Errorf("componentPkg(accordion)=%q", got)
+	if got := componentPkg("modal"); got != "core-ui/widget/preset" {
+		t.Errorf("componentPkg(modal)=%q", got)
 	}
 	if got := componentPkg("pipelineimage"); got != "framework/image" {
 		t.Errorf("componentPkg(pipelineimage)=%q", got)
 	}
-	if !strings.Contains(body(t, "/components/accordion"), "pkg.go.dev/github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion") {
-		t.Error("accordion page should link to its real package docs")
+	if !strings.Contains(body(t, "/components/modal"), "pkg.go.dev/github.com/DonaldMurillo/gofastr/core-ui/widget/preset") {
+		t.Error("modal page should link to its real package docs")
 	}
 }
 
@@ -338,17 +338,18 @@ func TestWizardsCategoryHoldsOnlyWizards(t *testing.T) {
 func TestCodeBlockHasFunctionalCopyButton(t *testing.T) {
 	// The chrome + copy button now come from the framework's ui.CodeBlock; the
 	// behaviour is unchanged, a real <button> that targets this block's own
-	// <pre> via data-fui-copy-text-from.
+	// <pre> by id through data-hui-copy-target (the feedback module's
+	// [data-hui-copy] reader resolves it with getElementById).
 	out := string(codeBlock("x.go", []render.HTML{ln(kw("package"), render.Text(" main"))}))
-	m := regexp.MustCompile(`data-fui-copy-text-from="#(ui-code-block-\d+)"`).FindStringSubmatch(out)
+	m := regexp.MustCompile(`data-hui-copy-target="(ui-code-block-\d+)"`).FindStringSubmatch(out)
 	if m == nil {
-		t.Fatalf("code block copy button should target its pre via data-fui-copy-text-from; got %q", firstN(out, 300))
+		t.Fatalf("code block copy button should target its pre via data-hui-copy-target; got %q", firstN(out, 300))
 	}
 	if !strings.Contains(out, `id="`+m[1]+`"`) {
 		t.Error("code block pre should carry the id the copy button targets")
 	}
-	if !strings.Contains(out, `class="ui-code-block__body"`) {
-		t.Error("code block body should be the framework's ui-code-block__body pre")
+	if !strings.Contains(out, `class="fui-code-block__body"`) {
+		t.Error("code block body should be the framework's fui-code-block__body pre")
 	}
 	if !strings.Contains(out, `<button`) {
 		t.Error("copy affordance should be a real <button>, not a span")

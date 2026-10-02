@@ -1,0 +1,7 @@
+version: v0.21.0
+title: Multi-replica auth durability
+notes:
+  - change: Production mode refuses the in-memory 2FA store
+    breaking: true
+    guidance: "Two-factor state must be durable in production — configure the DB-backed store (the default when auth has a DB) or an explicit store; startup fails closed otherwise."
+    nodetect: an unset durable 2FA store is an absent setting; startup fails closed and names it

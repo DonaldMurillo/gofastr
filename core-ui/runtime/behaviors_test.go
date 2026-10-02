@@ -50,7 +50,7 @@ func TestRegisteredBehaviorIsAModule(t *testing.T) {
 		t.Fatal("an unknown name has a hash")
 	}
 	// Embedded modules keep theirs.
-	if ModuleHash("copy") == "" {
+	if ModuleHash("rpc") == "" {
 		t.Fatal("embedded module lost its hash")
 	}
 }
@@ -173,15 +173,15 @@ func mustPanicNames(t *testing.T, want string, fn func()) {
 func TestBehaviorsJSONRequirements(t *testing.T) {
 	registry.IsolateForTest(t)
 	registry.RegisterBehavior("dep", probeJS, registry.Markers("[data-dep]"))
-	registry.RegisterBehavior("user", probeJS, registry.Markers("[data-user]"), registry.Requires("dep", "copy"))
+	registry.RegisterBehavior("user", probeJS, registry.Markers("[data-user]"), registry.Requires("dep", "rpc"))
 	var got map[string]struct {
 		R []string `json:"r"`
 	}
 	if err := json.Unmarshal(BehaviorsJSON(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(got["user"].R, ",") != "dep,copy" {
-		t.Fatalf("requirements = %v, want dep,copy", got["user"].R)
+	if strings.Join(got["user"].R, ",") != "dep,rpc" {
+		t.Fatalf("requirements = %v, want dep,rpc", got["user"].R)
 	}
 	if len(got["dep"].R) != 0 {
 		t.Fatalf("a behaviour with no requirements carried r: %v", got["dep"].R)
@@ -196,6 +196,56 @@ func TestBehaviorsJSONRequirements(t *testing.T) {
 	registry.RegisterBehavior("bb", probeJS, registry.Markers("[data-bb]"), registry.Requires("cc"))
 	registry.RegisterBehavior("cc", probeJS, registry.Markers("[data-cc]"), registry.Requires("aa"))
 	mustPanicNames(t, "aa -> bb -> cc -> aa", func() { BehaviorsJSON() })
+}
+
+// The interactions ride the behaviours block as x, in the kernel
+// bridge's own spec shape, beside s/i/r; a behaviour with none adds
+// no x key to the payload at all. BehaviorsJSON is the one function
+// behind every delivery shape (manifest.js's
+// window.__gofastr_behaviors, the export/embed inline block, the
+// theme editor's head block), so the field reaching it here reaches
+// each of them — the browser tests prove the kernel's read end-to-end.
+func TestBehaviorsJSONInteractions(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("plain", probeJS, registry.Markers("[data-plain]"))
+	registry.RegisterBehavior("interactive", probeJS, registry.Markers("[data-ia]"),
+		registry.Interactions(
+			registry.Interaction{Event: "click", Selector: "[data-ia-prev],[data-ia-next]"},
+			registry.Interaction{Event: "keydown", Keys: []string{"ArrowLeft", "ArrowRight"}, Scope: `[data-ia-widget]:not([hidden]) [data-ia]`},
+		))
+	var got map[string]struct {
+		X []struct {
+			Event    string   `json:"event"`
+			Selector string   `json:"selector"`
+			Keys     []string `json:"keys"`
+			Scope    string   `json:"scope"`
+		} `json:"x"`
+	}
+	if err := json.Unmarshal(BehaviorsJSON(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got["plain"].X) != 0 {
+		t.Fatalf("a behaviour with no interactions carried x: %v", got["plain"].X)
+	}
+	x := got["interactive"].X
+	if len(x) != 2 {
+		t.Fatalf("x = %v, want the two declared specs", x)
+	}
+	if x[0].Event != "click" || x[0].Selector != "[data-ia-prev],[data-ia-next]" || x[0].Keys != nil || x[0].Scope != "" {
+		t.Fatalf("click spec wrong: %+v", x[0])
+	}
+	if x[1].Event != "keydown" || x[1].Selector != "" || strings.Join(x[1].Keys, ",") != "ArrowLeft,ArrowRight" || x[1].Scope != `[data-ia-widget]:not([hidden]) [data-ia]` {
+		t.Fatalf("keydown spec wrong: %+v", x[1])
+	}
+	// The omitempty is the "costs nothing" half: a registry where
+	// nothing declares interactions carries no x at all, so the
+	// payload every page bears is unchanged for the behaviours that
+	// need no retention.
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("plain", probeJS, registry.Markers("[data-plain]"))
+	if buf := BehaviorsJSON(); strings.Contains(string(buf), `"x"`) {
+		t.Fatalf("x rode the block with no behaviour declaring interactions: %s", buf)
+	}
 }
 
 // A behaviour registered under an embedded module's name is refused
@@ -216,12 +266,12 @@ func TestBehaviorShadowingAnEmbeddedModuleIsRefused(t *testing.T) {
 	}
 	t.Run("at registration", func(t *testing.T) {
 		registry.IsolateForTest(t)
-		registry.ReserveBehaviorNames("copy")
-		expectPanic(t, func() { registry.RegisterBehavior("copy", probeJS, registry.Markers("[data-copy-probe]")) })
+		registry.ReserveBehaviorNames("rpc")
+		expectPanic(t, func() { registry.RegisterBehavior("rpc", probeJS, registry.Markers("[data-copy-probe]")) })
 	})
 	t.Run("where the sets meet", func(t *testing.T) {
 		registry.IsolateForTest(t)
-		registry.RegisterBehavior("copy", probeJS, registry.Markers("[data-copy-probe]"))
+		registry.RegisterBehavior("rpc", probeJS, registry.Markers("[data-copy-probe]"))
 		expectPanic(t, func() { ModuleNames() })
 		expectPanic(t, func() { BehaviorsJSON() })
 	})

@@ -73,6 +73,8 @@ func applyAppOverrides(t *style.Theme, app *world.AppConfig) {
 			t.Colors.Warning = style.Color{Name: t.Colors.Warning.Name, Value: v}
 		case "danger":
 			t.Colors.Danger = style.Color{Name: t.Colors.Danger.Name, Value: v}
+		case "danger-fg":
+			t.Colors.DangerFg = style.Color{Name: t.Colors.DangerFg.Name, Value: v}
 		case "info":
 			t.Colors.Info = style.Color{Name: t.Colors.Info.Name, Value: v}
 		}

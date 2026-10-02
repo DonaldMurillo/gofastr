@@ -1,0 +1,12 @@
+version: v0.27.0
+title: Dev-loop cwd + cmd/ layouts
+notes:
+  - change: gofastr dev runs the server with --dir as its working directory
+    breaking: false
+    guidance: "Relative paths (sqlite db_url, static dirs) now resolve against the project directory instead of wherever gofastr dev was launched. If your sqlite file seems to have vanished after upgrading, it was being created at the launch cwd — point db_url at the old file or move it into the project."
+    find:
+      config:
+        - key: app.db.url
+          value: '^file:[^:/]'
+        - key: app.db.url
+          value: '^[^:/]+$'

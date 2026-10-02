@@ -14,11 +14,11 @@ import (
 
 // Page for the activelink ownership contract (#218): a primary nav
 // with an ordinary exact-match link, an opt-out link carrying a
-// hand-set aria-current, and a scrollspy rail (wrap div + inner nav +
-// in-page anchors, the shape core-ui/patterns/scrollspy emits) whose
-// active state another module owns. The scrollspy module itself is
-// inert here (no matching targets in <main>), so the aria-current
-// values below stand in for what it would set while scrolling.
+// hand-set aria-current, and a scroll-spy rail in the HEADLESS
+// spelling (data-hui-rail, whose links carry .is-active +
+// aria-current="true" — what headless-rail writes). No
+// scroll-tracking module is loaded here, so the aria-current values
+// below stand in for what headless-rail would set while scrolling.
 func activelinkSkipPage() string {
 	return `<!doctype html><html><head><title>activelink</title>
   <script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/other"}]</script>
@@ -29,10 +29,10 @@ func activelinkSkipPage() string {
     <a id="pinned" href="/somewhere" data-fui-activelink-skip aria-current="location" class="active">Pinned</a>
     <a id="bare" href="/elsewhere" data-fui-activelink-skip>Bare</a>
   </nav>
-  <div data-fui-scrollspy="main" data-fui-scrollspy-target="section[id]">
+  <div data-hui-rail data-hui-rail-observe="main">
     <nav aria-label="On this page">
-      <a id="spy1" href="#s1" aria-current="true" class="active">Section one</a>
-      <a id="spy2" href="#s2">Section two</a>
+      <a id="rail1" href="#s1" aria-current="true" class="is-active">Section one</a>
+      <a id="rail2" href="#s2">Section two</a>
     </nav>
   </div>
   <nav aria-label="pagination">
@@ -55,8 +55,7 @@ func activelinkSkipServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
-	// Highlighting lives in the idle-loaded activelink module; the
-	// scrollspy marker demand-loads that module too.
+	// Highlighting lives in the idle-loaded activelink module.
 	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -98,8 +97,8 @@ func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 }
 
 // Across a SPA navigation, data-fui-activelink-skip keeps a hand-set
-// aria-current untouched, links inside a [data-fui-scrollspy] wrap keep
-// their aria-current="true", and the ordinary exact-match contract
+// aria-current untouched, links inside a [data-hui-rail] nav keep the
+// state the rail module owns, and the ordinary exact-match contract
 // still holds (aria-current="page" + .active move to the new path's
 // link).
 func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
@@ -122,8 +121,9 @@ func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 			pinnedActive: document.getElementById('pinned').classList.contains('active'),
 			bare: document.getElementById('bare').getAttribute('aria-current'),
 			bareActive: document.getElementById('bare').classList.contains('active'),
-			spy1: document.getElementById('spy1').getAttribute('aria-current'),
-			spy1Active: document.getElementById('spy1').classList.contains('active'),
+			rail1: document.getElementById('rail1').getAttribute('aria-current'),
+			rail1Active: document.getElementById('rail1').classList.contains('is-active'),
+			rail1Swept: document.getElementById('rail1').classList.contains('active'),
 			other: document.getElementById('other').getAttribute('aria-current'),
 			otherActive: document.getElementById('other').classList.contains('active'),
 			home: document.getElementById('home').getAttribute('aria-current'),
@@ -154,8 +154,11 @@ func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 	if got["bare"] != nil || got["bareActive"] != false {
 		t.Errorf("activelink stamped state onto a bare data-fui-activelink-skip link, got %v / active=%v", got["bare"], got["bareActive"])
 	}
-	if got["spy1"] != "true" || got["spy1Active"] != true {
-		t.Errorf(`scrollspy link lost the state its own module owns, got aria-current=%v / active=%v`, got["spy1"], got["spy1Active"])
+	if got["rail1"] != "true" || got["rail1Active"] != true {
+		t.Errorf(`rail link lost the state headless-rail owns, got aria-current=%v / is-active=%v`, got["rail1"], got["rail1Active"])
+	}
+	if got["rail1Swept"] != false {
+		t.Error("activelink stamped .active onto a rail link: the rail's current-state is not activelink's to write")
 	}
 	if got["other"] != "page" || got["otherActive"] != true {
 		t.Errorf(`exact-match link must gain aria-current="page" + .active, got %v / active=%v`, got["other"], got["otherActive"])

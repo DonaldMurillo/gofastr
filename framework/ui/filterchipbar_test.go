@@ -35,7 +35,7 @@ func TestFilterChipBarEmpty(t *testing.T) {
 	if !strings.Contains(out, `role="toolbar"`) {
 		t.Errorf("expected empty toolbar still rendered, got: %s", out)
 	}
-	if strings.Contains(out, "ui-tag") {
+	if strings.Contains(out, "fui-tag") {
 		t.Errorf("did not expect any chips when empty, got: %s", out)
 	}
 }
@@ -50,8 +50,8 @@ func TestFilterChipBarClearAll(t *testing.T) {
 	}))
 	wants := []string{
 		`data-fui-rpc="/filters/clear-all"`,
-		`>Reset filters</button>`,
-		`ui-filter-bar__clear`,
+		`>Reset filters</a>`,
+		`fui-filter-bar__clear`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {
@@ -126,5 +126,32 @@ func TestFilterChipBarExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("filter bar root missing data-test:\n%s", root)
+	}
+}
+
+// TestFilterChipBarIslandSwapContract: the bar's chips clear through
+// the island/RPC rail — each chip's form carries the endpoint and the
+// bar the signal — and nothing on the surface invents a bespoke
+// handler: the whole bar re-renders from the RPC response through the
+// signal swap, the Batch 2 contract.
+func TestFilterChipBarIslandSwapContract(t *testing.T) {
+	h := string(FilterChipBar(FilterChipBarConfig{
+		Label:        "Filters",
+		SignalName:   "chips",
+		ClearAllPath: "/filters/clear",
+		Filters:      []FilterChip{{Label: "Open", DismissPath: "/filters/open"}},
+	}))
+	if !strings.Contains(h, `data-fui-signal="chips"`) || !strings.Contains(h, `data-fui-signal-mode="html"`) {
+		t.Errorf("the bar must swap wholesale through its signal:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-rpc="/filters/clear"`) || !strings.Contains(h, `data-fui-rpc-method="POST"`) {
+		t.Errorf("clear-all must ride the RPC rail:\n%s", h)
+	}
+	// No bespoke handler: the surface carries no onclick, no inline
+	// script, and no bespoke EventSource — the island contract only.
+	for _, forbidden := range []string{"onclick=", "<script", "EventSource"} {
+		if strings.Contains(h, forbidden) {
+			t.Errorf("the bar must not carry %q — the island rail owns the swap:\n%s", forbidden, h)
+		}
 	}
 }

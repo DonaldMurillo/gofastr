@@ -1,0 +1,7 @@
+version: v0.84.1
+title: Static exports work below a base path and load each stylesheet once
+notes:
+  - change: "a static export below a base path carries the base in its embedded route graph, so client-side navigation works on a GitHub project page; exported per-component stylesheet links carry the data-fui-style marker so the runtime does not load them a second time after app.css"
+    nodetect: "re-export; a site that patched its own export step can drop the patch, and nothing else changes"
+    breaking: false
+    guidance: "Re-export. A site that patched either in its own export step can drop the patch; nothing else changes."

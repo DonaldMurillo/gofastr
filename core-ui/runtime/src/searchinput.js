@@ -8,8 +8,8 @@
   const wire = (root) => {
     const scope = root && root.querySelectorAll ? root : document;
     for (const wrapper of scope.querySelectorAll('[data-fui-comp="ui-search-input"]')) {
-      const input = wrapper.querySelector('.ui-search-input__input');
-      const clearBtn = wrapper.querySelector('.ui-search-input__clear');
+      const input = wrapper.querySelector('.fui-search__input');
+      const clearBtn = wrapper.querySelector('.fui-search__clear');
       if (!input || !clearBtn) continue;
 
       // Avoid double-binding.

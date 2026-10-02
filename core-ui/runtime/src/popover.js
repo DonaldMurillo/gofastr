@@ -27,13 +27,35 @@
    *                           or "auto" (= bottom-first, then top,
    *                           right, left).
    */
-  NS._anchorPopover = function (name, trigger, preferred) {
+  NS._anchorPopover = async function (name, trigger, preferred) {
     const widget = NS._widgets
       && Object.prototype.hasOwnProperty.call(NS._widgets, name)
       && NS._widgets[name];
     if (!widget || !widget.root) return;
     const root = widget.root;
     const pref = (preferred || 'auto').toLowerCase();
+
+    // Measure only after the widget's own stylesheet has applied.
+    // mountWidget appends <link data-fui-style> and does NOT await
+    // its load; a place() against unstyled chrome measures a
+    // full-width root (no max-inline-size yet) and the viewport
+    // clamp then pins the popover to the left margin with its arrow
+    // stretched back to the trigger. The link load/error events (or
+    // a sheet poll for the rare browser that fires neither) settle
+    // it; a missing link needs no wait.
+    const link = document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]');
+    if (link && !link.sheet) {
+      await new Promise((resolve) => {
+        let done = false;
+        const settle = () => { if (!done) { done = true; resolve(); } };
+        link.addEventListener('load', settle, { once: true });
+        link.addEventListener('error', settle, { once: true });
+        const t0 = performance.now();
+        const poll = () => { if (done) return; if (link.sheet || performance.now() - t0 > 2000) settle(); else setTimeout(poll, 50); };
+        poll();
+      });
+    }
+
 
     // If we were already anchored to a different trigger (popover
     // re-opened from a sibling), clear the previous trigger's
@@ -146,6 +168,25 @@
     widget.anchorScroll = onScroll;
     widget.anchorTrigger = trigger;
   };
+
+  // Dismissal (Escape or an outside click) returns focus to the
+  // anchored trigger when focus sat inside the closing widget, fell
+  // to the body, or rests on a tabindex=-1 swap marker the navigation
+  // machinery stamped — never a user tab stop. A control the user
+  // actually focused keeps it. fui:widget-close is every close path's
+  // single announce point and fires before teardown, so this covers
+  // each dismissal without growing the widgets module.
+  document.addEventListener('fui:widget-close', (e) => {
+    const st = NS._widgets && NS._widgets[(e.detail || {}).name];
+    const at = st && st.anchorTrigger;
+    if (!at) return;
+    const w = st.root;
+    const ae = document.activeElement;
+    if (ae === document.body || (w && w.contains && w.contains(ae)) ||
+        (ae && ae !== at && ae.getAttribute('tabindex') === '-1')) {
+      try { at.focus({ preventScroll: true }); } catch (_) {}
+    }
+  });
 
   (NS.loadedModules ||= {}).popover = true;
 })();

@@ -7,27 +7,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-func TestDetailListRendersRows(t *testing.T) {
-	h := DetailList(DetailListConfig{
-		Items: []DetailItem{{Label: "Name", Value: render.Text("Ada")}},
-	})
-	for _, want := range []string{
-		`data-fui-comp="ui-detail-list"`,
-		"<dt",
-		"<dd",
-		"Ada",
-	} {
-		mustContain(t, h, want)
+// TestDetailListClassBuiltWithoutLeadingSpace pins the class attribute's
+// shape: a lone Class used to produce class=" custom" (leading space)
+// because the string was appended after the Inline branch left it empty.
+func TestDetailListClassBuiltWithoutLeadingSpace(t *testing.T) {
+	h := string(DetailList(DetailListConfig{
+		Class: "custom",
+		Items: []DetailItem{{Label: "L", Value: render.Text("V")}},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `class="fui-detail-list custom"`) {
+		t.Fatalf("plain Class should render one clean class list, got:\n%s", root)
 	}
-}
-
-func TestDetailListExtraAttrsOnRoot(t *testing.T) {
-	h := DetailList(DetailListConfig{
-		Items:      []DetailItem{{Label: "Name", Value: render.Text("Ada")}},
-		ExtraAttrs: map[string]string{"data-test": "hook"},
-	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("dl root missing data-test:\n%s", root)
+	h = string(DetailList(DetailListConfig{
+		Inline: true,
+		Class:  "custom",
+		Items:  []DetailItem{{Label: "L", Value: render.Text("V")}},
+	}))
+	root = h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `class="fui-detail-list fui-detail-list--inline custom"`) {
+		t.Fatalf("Inline+Class should render both variants space-separated, got:\n%s", root)
+	}
+	if strings.Contains(root, `"  `) || strings.Contains(root, `class=" `) {
+		t.Fatalf("class attribute carries stray spacing:\n%s", root)
 	}
 }

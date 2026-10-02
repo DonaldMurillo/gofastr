@@ -1,0 +1,15 @@
+version: v0.72.0
+title: Agent-readiness surfaces and negotiated errors
+notes:
+  - change: 404s content-negotiate (problem+json under JSON Accepts, markdown when negotiation is on) and API-namespace misses always answer problem+json
+    breaking: false
+    guidance: "Additive. Machine clients now get RFC 9457 documents where they previously got the HTML 404; HTML behavior for browsers is unchanged. If a client scraped the HTML 404 while sending Accept: application/json, read the problem document instead."
+    nodetect: "the affected scraper is an external client; HTML behavior for browsers is unchanged"
+  - change: Accept-negotiated responses carry Vary Accept
+    breaking: false
+    guidance: "Fix only. CDNs keyed without Vary could cache the wrong representation; purge cached HTML/markdown variants after upgrading."
+    nodetect: "a CDN purge after upgrading; no code spelling"
+  - change: new opt-in surfaces — WithOrganization JSON-LD, llms.txt WhenToUse/CLI sections, /.well-known/mcp.json when MCP is mounted
+    breaking: false
+    guidance: "Opt-in via config; nothing renders unless configured (the MCP manifest follows the existing WithMCP mount)."
+    nodetect: "opt-in via config; nothing renders unless configured"

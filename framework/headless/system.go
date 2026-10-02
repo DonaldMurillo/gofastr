@@ -8,7 +8,7 @@ import (
 )
 
 // systemTones are the tones a banner may be drawn in; the tone drives
-// both the skin's root--<tone> class and the word said before the
+// both the class map's root--<tone> class and the word said before the
 // title.
 var systemTones = map[string]bool{
 	"info": true, "success": true, "warning": true, "danger": true,
@@ -46,7 +46,7 @@ type SystemBannerProps struct {
 	// Required.
 	ID string
 	// Tone is "info" (the default), "warning", "danger" or
-	// "success". The skin looks it up as root--<tone>, and the word
+	// "success". The class map looks it up as root--<tone>, and the word
 	// a screen reader hears is derived from it, so a tone nobody
 	// spelled is refused rather than silently rendered untinted.
 	Tone string
@@ -72,6 +72,9 @@ type SystemBannerProps struct {
 	// Shown renders the banner visible. The default is hidden: the
 	// banner ships hidden and something shows it.
 	Shown bool
+	// Icon is decoration beside the title, hidden from assistive
+	// technology (the tone word in words carries the severity).
+	Icon render.HTML
 	// Offline marks this banner as the built-in connection message.
 	// The root carries data-hui-system-offline for the module that
 	// binds it to show when the framework reports the connection lost
@@ -103,7 +106,7 @@ type SystemBannerProps struct {
 // until it is back. It carries role="alert" and aria-live="assertive"
 // both, as the framework banner it replaces did, so either attribute
 // alone still says how urgent it is.
-func SystemBanner(p SystemBannerProps, s Skin) render.HTML {
+func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
 		panic("headless: SystemBanner requires ID — it is the message's identity, so the same message is not shown twice")
@@ -155,18 +158,23 @@ func SystemBanner(p SystemBannerProps, s Skin) render.HTML {
 		b.El("span", PartVisuallyHidden, nil, render.Text(word+": ")),
 		render.Text(p.Title),
 	}
-	kids := []render.HTML{b.El("p", PartTitle, nil, title...)}
+	kids := []render.HTML{}
+	if p.Icon != "" {
+		kids = append(kids, b.El("span", PartIcon,
+			internalIf(ownedSlot(p.Icon), Attrs(map[string]string{"aria-hidden": "true"})), p.Icon))
+	}
+	kids = append(kids, b.El("p", PartTitle, Internal(nil), title...))
 	if p.Text != "" {
-		kids = append(kids, b.El("p", PartText, nil, render.Text(p.Text)))
+		kids = append(kids, b.El("p", PartText, Internal(nil), render.Text(p.Text)))
 	}
 	if p.Action != "" {
-		kids = append(kids, b.El("div", PartActions, nil, p.Action))
+		kids = append(kids, b.El("div", PartActions, internalIf(ownedSlot(p.Action), nil), p.Action))
 	}
 	if p.Dismiss == nil || *p.Dismiss {
-		dismiss := Mark(Attrs(map[string]string{
+		dismiss := Internal(Mark(Attrs(map[string]string{
 			"type":       "button",
 			"aria-label": orDefault(p.DismissLabel, fmt.Sprintf(p.Strings.Resolve().DismissTitled, p.Title)),
-		}), "data-hui-system-dismiss")
+		}), "data-hui-system-dismiss"))
 		kids = append(kids, b.El("button", PartDismiss, dismiss, render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)
@@ -175,17 +183,17 @@ func SystemBanner(p SystemBannerProps, s Skin) render.HTML {
 func init() {
 	Register(Spec{
 		Name: "SystemBanner",
-		Anatomy: []Part{PartRoot, PartTitle, PartText, PartActions,
+		Anatomy: []Part{PartRoot, PartIcon, PartTitle, PartText, PartActions,
 			PartDismiss, PartVisuallyHidden},
 		Hooks: []string{"data-hui-system", "data-hui-system-id",
 			"data-hui-system-dismiss", "data-hui-system-offline"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return SystemBanner(SystemBannerProps{
 				ID: "sys-parts", Title: "Deploy in progress", Shown: true, Parts: parts,
 			}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			noDismiss := false
 			return []Case{{
 				Name: "deploy in progress",
@@ -193,6 +201,7 @@ func init() {
 					"one action, and the tone said in words as well as drawn in colour",
 				HTML: SystemBanner(SystemBannerProps{
 					ID: "sys-deploy", Shown: true,
+					Icon:   SpecimenGlyph,
 					Title:  "Deploy in progress",
 					Text:   "blog is moving to image 41; the app stays reachable the whole time.",
 					Action: Button(ButtonProps{Label: "View the deploy", Variant: "secondary"}, k.For("Button")),

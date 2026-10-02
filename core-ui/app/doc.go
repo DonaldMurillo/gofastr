@@ -9,8 +9,8 @@
 // The DI container is its own concern and lives in the sibling
 // [core-ui/di] package. App wires one in via App.Container so screens
 // can be injected during the Load phase. Visual primitives live in
-// [core-ui/html] (1:1 HTML tags) and [core-ui/patterns] (higher-
-// level UI patterns).
+// [core-ui/html] (1:1 HTML tags); components live in [framework/ui],
+// built on the [framework/headless] primitives.
 //
 // # Quick Start
 //

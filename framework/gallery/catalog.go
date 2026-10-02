@@ -16,24 +16,18 @@ package gallery
 // every page has SOMETHING that works. Comments call out the simplification.
 //
 // This file is a faithful move of the original examples/site/components.go
-// catalog (141 entries, 16 categories). The closure bodies are unchanged,
+// catalog (141 entries). The closure bodies are unchanged,
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (
+	"fmt"
+
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
-	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
-	patternsCombobox "github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
-	patternsDisclosure "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
-	patternsMultiselect "github.com/DonaldMurillo/gofastr/core-ui/patterns/multiselect"
-	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
-	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
-	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
-	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -41,15 +35,15 @@ import (
 // button, the endpoint it POSTs, the effect fired on success, and the
 // surrounding prose + code sample shown above the stage.
 type rpcEffectDemoSpec struct {
-	btnLabel  string
-	btnClass  string
-	endpoint  string
-	effect    func(string) interactive.Effect // interactive.OpenWidget / Navigate
-	effectArg string
-	why       string
-	how       string
-	code      string
-	caption   string
+	btnLabel   string
+	btnVariant ui.ButtonVariant
+	endpoint   string
+	effect     func(string) interactive.Effect // interactive.OpenWidget / Navigate
+	effectArg  string
+	why        string
+	how        string
+	code       string
+	caption    string
 }
 
 // rpcEffectDemo renders the shared shape of the click-then-effect demo
@@ -59,7 +53,7 @@ type rpcEffectDemoSpec struct {
 // rpc-navigate entries used to carry inline.
 func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 	btn := interactive.OnClick(
-		render.Tag("button", map[string]string{"class": spec.btnClass}, render.Text(spec.btnLabel)),
+		ui.Button(ui.ButtonConfig{Label: spec.btnLabel, Variant: spec.btnVariant}),
 		interactive.Post(spec.endpoint).
 			OnSuccess(spec.effect(spec.effectArg)),
 	)
@@ -137,8 +131,12 @@ var Catalog = []Entry{
 			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
 			ui.Tag(ui.TagConfig{Label: "danger", Variant: ui.StatusDanger}),
 			ui.Tag(ui.TagConfig{Label: "info", Variant: ui.StatusInfo}),
-			// Dismissable variant: the × fires an RPC to Dismiss on click.
-			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "#", DismissLabel: "Remove beta"}),
+			// Dismissable variant: a dismissal is an in-page state
+			// change, so the Island renders this strip again and the
+			// same anchor is the no-script destination.
+			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "/components/tag?dismissed=beta",
+				DismissLabel: "Remove beta",
+				Island:       headless.Island{Endpoint: "/components/tag", Signal: "tag-demo"}}),
 		)
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
@@ -188,6 +186,12 @@ var Catalog = []Entry{
 			ui.SkeletonCard(ui.SkeletonCardConfig{}),
 		)
 	}},
+	{"skeletontimeline", "SkeletonTimeline", "Feedback", "Timeline-shaped placeholder: a dot, a name line, and two text lines per event — the shape ui.Timeline arrivals have.", func() render.HTML {
+		return ui.SkeletonTimeline(ui.SkeletonTimelineConfig{Rows: 3, Label: "Loading activity"})
+	}},
+	{"skeletonline", "SkeletonLine", "Feedback", "One short shimmer bar — the loading twin of a breadcrumb trail or a one-line label.", func() render.HTML {
+		return ui.SkeletonLine(ui.SkeletonLineConfig{Label: "Loading location"})
+	}},
 	{"pollingindicator", "PollingIndicator", "Feedback", "Animated live-data heartbeat.", func() render.HTML {
 		return ui.PollingIndicator(ui.PollingIndicatorConfig{Label: "Live"})
 	}},
@@ -204,7 +208,7 @@ var Catalog = []Entry{
 				Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
 			}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme."))),
 			// Interactive variant: with Href the whole shell becomes a
-			// focusable <a class="ui-card ui-card--interactive">.
+			// focusable <a class="fui-card fui-card--interactive">.
 			ui.Card(ui.CardConfig{
 				Heading:     "Interactive card →",
 				Description: "Set Href and the entire surface becomes one focusable link.",
@@ -223,6 +227,17 @@ var Catalog = []Entry{
 			html.Div(html.DivConfig{Class: "fact"}, render.Text("Middle")),
 			html.Div(html.DivConfig{Class: "fact"}, render.Text("Bottom")),
 		)
+	}},
+	{"listdetail", "ListDetail", "Layout", "Scrollable list beside a routed detail slot; stacked on phones.", func() render.HTML {
+		return ui.ListDetail(ui.ListDetailConfig{
+			ListLabel: "Layout guides",
+			List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+				ui.Card(ui.CardConfig{Heading: "Layouts", Href: "/docs/layouts"}),
+				ui.Card(ui.CardConfig{Heading: "Reactivity", Href: "/docs/reactivity"}),
+			),
+			Detail: ui.Card(ui.CardConfig{Heading: "Layout layers"},
+				render.Text("Place the list in a kept layout layer. Render the selected page in its primary slot.")),
+		})
 	}},
 	{"grid", "Grid", "Layout", "CSS Grid with min column width + gap tokens.", func() render.HTML {
 		return ui.Grid(ui.GridConfig{Min: "12rem", Gap: ui.GapMD},
@@ -263,9 +278,8 @@ var Catalog = []Entry{
 	}},
 	{"workbench", "Workbench", "Layout", "Inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest. An <iframe> in the pane fills it edge to edge. Stacks below 720px.", func() render.HTML {
 		rail := ui.Stack(ui.StackConfig{Gap: ui.GapSM},
-			html.Strong(html.TextConfig{}, render.Text("Controls")),
-			ui.ColorField(ui.ColorFieldConfig{Value: "#4F46E5", SwatchValue: "#4F46E5", SwatchLabel: "Primary"}),
-			ui.ColorField(ui.ColorFieldConfig{Value: "#0891B2", SwatchValue: "#0891B2", SwatchLabel: "Accent"}),
+			ui.ColorField(ui.ColorFieldConfig{Name: "primary", Value: "#4F46E5", SwatchLabel: "Primary"}),
+			ui.ColorField(ui.ColorFieldConfig{Name: "accent", Value: "#0891B2", SwatchLabel: "Accent"}),
 		)
 		pane := html.Div(html.DivConfig{Class: "demo-row"},
 			html.Paragraph(html.TextConfig{}, render.Text("The pane fills the remaining space.")))
@@ -358,17 +372,17 @@ var Catalog = []Entry{
 		})
 	}},
 	{"breadcrumbs", "Breadcrumbs", "Navigation", "Hierarchy trail.", func() render.HTML {
-		return patternsBreadcrumbs.New(patternsBreadcrumbs.Config{Label: "Component breadcrumb example"},
-			patternsBreadcrumbs.Crumb{Text: "Docs", Href: "/docs/"},
-			patternsBreadcrumbs.Crumb{Text: "Modeling", Href: "/docs/#modeling"},
-			patternsBreadcrumbs.Crumb{Text: "Entities"},
+		return ui.Breadcrumbs(ui.BreadcrumbsConfig{Label: "Component breadcrumb example"},
+			ui.Crumb{Text: "Docs", Href: "/docs/"},
+			ui.Crumb{Text: "Modeling", Href: "/docs/#modeling"},
+			ui.Crumb{Text: "Entities"},
 		)
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsPagination.New(patternsPagination.Config{Current: 2, Total: 8, HrefPattern: "?page=%d", Label: "Middle-page example"}),
+			ui.Pagination(ui.PaginationConfig{Page: 2, Pages: 8, PageParam: "page", AriaLabel: "Middle-page example"}),
 			// First-page variant: the Previous boundary renders disabled.
-			patternsPagination.New(patternsPagination.Config{Current: 1, Total: 8, HrefPattern: "?page=%d", Label: "First-page example"}),
+			ui.Pagination(ui.PaginationConfig{Page: 1, Pages: 8, PageParam: "page", AriaLabel: "First-page example"}),
 		)
 	}},
 	{"toolbar", "Toolbar", "Navigation", "Horizontal action group with separators.", func() render.HTML {
@@ -389,11 +403,48 @@ var Catalog = []Entry{
 	{"sidebar", "Sidebar", "Navigation", "Hierarchical navigation sidebar.", func() render.HTML {
 		return ui.Sidebar(SidebarShowcaseConfig).Render()
 	}},
-	{"toc", "TableOfContents", "Navigation", "In-page anchor list (runtime fills from headings).", func() render.HTML {
-		return ui.TableOfContents(ui.TOCConfig{Target: "main", Sticky: true})
+	{"sidebardrawertrigger", "SidebarDrawerTrigger", "Navigation", "The sidebar's drawer toggle on its own — the relocated hamburger a header row carries at narrow widths (the component hides itself at >= md, exactly as in a real shell).", func() render.HTML {
+		return ui.SidebarDrawerTrigger(SidebarShowcaseConfig)
+	}},
+	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
+		// The items are explicit and the headings they name render in
+		// the same demo, so every link resolves and the no-script
+		// reader gets the whole list.
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			ui.TableOfContents(ui.TOCConfig{
+				Target: "main", Sticky: true,
+				Items: []ui.TOCItem{
+					{ID: "toc-what", Label: "What it is"},
+					{ID: "toc-how", Label: "How it works"},
+					{ID: "toc-active", Label: "The active entry", Level: 3},
+				},
+			}),
+			html.Heading(html.HeadingConfig{Level: 3, ID: "toc-what"}, render.Text("What it is")),
+			html.Paragraph(html.TextConfig{}, render.Text("A labelled nav of fragment links. The server renders every entry, so a reader without script still gets the list.")),
+			html.Heading(html.HeadingConfig{Level: 3, ID: "toc-how"}, render.Text("How it works")),
+			html.Paragraph(html.TextConfig{}, render.Text("The headless-toc module watches the target region and marks the entry whose heading is in view — aria-current and a class, never a style.")),
+			html.Heading(html.HeadingConfig{Level: 4, ID: "toc-active"}, render.Text("The active entry")),
+			html.Paragraph(html.TextConfig{}, render.Text("The observer is headless-rail's, shared with AnchoredRail: one implementation, not two scroll-spies.")),
+		)
+	}},
+	{"anchoredrail", "AnchoredRail", "Navigation", "Sticky in-page rail with active-entry tracking.", func() render.HTML {
+		return ui.AnchoredRail(ui.AnchoredRailConfig{
+			Label: "By intent",
+			Items: []ui.RailItem{
+				{Eyebrow: "01", Text: "Modeling", Anchor: "rail-modeling", Count: 9},
+				{Eyebrow: "02", Text: "Serving", Anchor: "rail-serving", Count: 9},
+				{Eyebrow: "03", Text: "Operating", Anchor: "rail-operating", Count: 9},
+			},
+		})
 	}},
 	{"backtotop", "BackToTop", "Navigation", "Floating back-to-top button.", func() render.HTML {
-		return ui.BackToTop(ui.BackToTopConfig{})
+		// The demo needs scroll to demo: a viewport-tall centered hint
+		// gives the page past-threshold scroll (the page frame no
+		// longer pads pages to a minimum height).
+		return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+			ui.BackToTop(ui.BackToTopConfig{}),
+			ui.Center(ui.CenterConfig{MinHeight: "viewport"},
+				ui.Muted(render.Text("Scroll down — the button appears past 400px and returns you to the top."))))
 	}},
 	{"skiplink", "SkipLink", "Navigation", "Skip-nav for assistive tech.", func() render.HTML {
 		return ui.SkipLink(ui.SkipLinkConfig{})
@@ -432,13 +483,7 @@ var Catalog = []Entry{
 	}},
 
 	// ---------- Disclosure ----------
-	{"accordion", "Accordion", "Disclosure", "Native <details> accordion stack.", func() render.HTML {
-		return patternsAccordion.Stack(patternsAccordion.StackConfig{},
-			patternsAccordion.Item{Summary: "What is an entity?", Content: html.Paragraph(html.TextConfig{}, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
-			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under migrations/."))},
-			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan: see /kiln."))},
-		)
-	}},
+
 	{"tooltip", "Tooltip", "Disclosure", "Hover/focus-triggered tip.", func() render.HTML {
 		return ui.Tooltip(ui.TooltipConfig{Text: "This is a tooltip"},
 			ui.Button(ui.ButtonConfig{Label: "Hover me"}),
@@ -466,7 +511,7 @@ var Catalog = []Entry{
 	{"collapsible", "Collapsible", "Disclosure", "Expand/collapse section using native <details>.", func() render.HTML {
 		return render.Join(
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
-				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close; the runtime adds keyboard support via data-fui-disclosure.")),
+				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close; the headless-disclosure module adds keyboard support via data-hui-disclosure.")),
 			),
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
 				html.Paragraph(html.TextConfig{}, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),
@@ -476,23 +521,24 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		emailInput := render.Tag("input", map[string]string{
-			"type": "email", "name": "email", "id": "demo-email", "required": "",
-		})
-		pwInput := render.Tag("input", map[string]string{
-			"type": "password", "name": "password", "id": "demo-password", "required": "",
-		})
 		return ui.Form(ui.FormConfig{Action: "#", Method: "POST", SubmitLabel: "Sign in"},
-			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true, Input: emailInput}),
-			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password", Required: true, Input: pwInput}),
+			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+				}}),
+			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password", Required: true,
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password"})
+				}}),
 		)
 	}},
 	{"formfield", "FormField", "Forms", "Label + input + help text + error.", func() render.HTML {
-		input := render.Tag("input", map[string]string{"type": "text", "name": "name", "id": "demo-name"})
 		return ui.FormField(ui.FormFieldConfig{
 			Label: "Display name", For: "demo-name",
-			Help:  "Visible to everyone in your workspace.",
-			Input: input,
+			Help: "Visible to everyone in your workspace.",
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "name"})
+			},
 		})
 	}},
 	{"textfield", "TextField", "Forms", "Typed labelled text input with built-in help and error wiring.", func() render.HTML {
@@ -515,11 +561,9 @@ var Catalog = []Entry{
 		})
 	}},
 	{"formsection", "FormSection", "Forms", "Bordered group of related fields.", func() render.HTML {
-		firstIn := render.Tag("input", map[string]string{"type": "text", "name": "first", "id": "demo-first"})
-		lastIn := render.Tag("input", map[string]string{"type": "text", "name": "last", "id": "demo-last"})
 		return ui.FormSection(ui.FormSectionConfig{Heading: "Profile", Description: "Tell us a little about you."},
-			ui.FormField(ui.FormFieldConfig{Label: "First name", For: "demo-first", Input: firstIn}),
-			ui.FormField(ui.FormFieldConfig{Label: "Last name", For: "demo-last", Input: lastIn}),
+			ui.TextField(ui.TextFieldConfig{Name: "first", Label: "First name", ID: "demo-first"}),
+			ui.TextField(ui.TextFieldConfig{Name: "last", Label: "Last name", ID: "demo-last"}),
 		)
 	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
@@ -530,7 +574,11 @@ var Catalog = []Entry{
 		})
 	}},
 	{"checkbox", "Checkbox", "Forms", "Single boolean toggle.", func() render.HTML {
-		return ui.Checkbox(ui.ToggleConfig{Name: "ok", Label: "Subscribe to release notes"})
+		// Checked on purpose: the checkmark is two gradient strokes at
+		// hand-tuned offsets and renders only under :checked, so an
+		// unchecked-only gallery shows none of the drawing this
+		// component's sheet is mostly made of.
+		return ui.Checkbox(ui.ToggleConfig{Name: "ok", Label: "Subscribe to release notes", Checked: true})
 	}},
 	{"checkboxgroup", "CheckboxGroup", "Forms", "Grouped boolean options.", func() render.HTML {
 		return ui.CheckboxGroup(ui.CheckboxGroupConfig{
@@ -548,14 +596,17 @@ var Catalog = []Entry{
 			Legend: "Notification frequency",
 			Name:   "freq",
 			Options: []ui.RadioGroupOption{
-				{Label: "Always", Value: "all"},
+				// One pre-selected, for the dot the radio draws only
+				// when checked.
+				{Label: "Always", Value: "all", Checked: true},
 				{Label: "Mentions only", Value: "mention"},
 				{Label: "Never", Value: "none"},
 			},
 		})
 	}},
 	{"switch", "Switch", "Forms", "On/off toggle that looks like a physical switch.", func() render.HTML {
-		return ui.Switch(ui.ToggleConfig{Name: "live", Label: "Live updates"})
+		// On, for the thumb's slid position and the track's filled state.
+		return ui.Switch(ui.ToggleConfig{Name: "live", Label: "Live updates", Checked: true})
 	}},
 	{"textarea", "Textarea", "Forms", "Multi-line text input with autosize.", func() render.HTML {
 		return ui.TextArea(ui.TextAreaConfig{Name: "body", Label: "Body", Placeholder: "Write your post…", Rows: 6, Autogrow: true})
@@ -565,7 +616,9 @@ var Catalog = []Entry{
 	}},
 	{"passwordinput", "PasswordInput", "Forms", "Password with show/hide toggle.", func() render.HTML {
 		return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-pw",
-			Input: ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw"})})
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw", Field: c})
+			}})
 	}},
 	{"searchinput", "SearchInput", "Forms", "Search field with leading icon + clear button.", func() render.HTML {
 		return ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "demo-search", Placeholder: "Search docs…"})
@@ -585,13 +638,13 @@ var Catalog = []Entry{
 		)
 	}},
 	{"combobox", "Combobox", "Forms", "Type-ahead suggestion picker.", func() render.HTML {
-		// Static-options variant: the runtime filters the inline rows
-		// client-side, so the demo needs no search RPC. The RPC-backed
-		// variant is wired the same way with RPCPath+SignalName.
-		return patternsCombobox.Render(patternsCombobox.Config{
+		// Static-options variant: headless-combobox filters the inline
+		// rows client-side, so the demo needs no search RPC. The
+		// island-backed variant is wired with Island+NoScriptAction.
+		return ui.Combobox(ui.ComboboxConfig{
 			ID: "demo-combobox", Name: "q", Label: "Filter components",
 			Placeholder: "Type to filter…",
-			Options: []patternsCombobox.Option{
+			Options: []headless.ComboboxOption{
 				{Label: "Accordion", Value: "accordion"},
 				{Label: "Badge", Value: "badge"},
 				{Label: "Card", Value: "card"},
@@ -603,10 +656,10 @@ var Catalog = []Entry{
 	{"multiselect", "Multiselect", "Forms", "Multi-pick from a list with chips.", func() render.HTML {
 		// Value deliberately differs from Label ("cpp" vs "C++") so the
 		// e2e suite catches chip-shows-Value regressions.
-		return patternsMultiselect.Render(patternsMultiselect.Config{
+		return ui.MultiSelect(ui.MultiSelectConfig{
 			ID: "demo-multiselect", Name: "langs", Label: "Pick languages",
 			Placeholder: "No languages selected",
-			Options: []patternsMultiselect.Option{
+			Options: []ui.MultiSelectOption{
 				{Value: "go", Label: "Go", Selected: true},
 				{Value: "cpp", Label: "C++"},
 				{Value: "csharp", Label: "C Sharp"},
@@ -615,12 +668,17 @@ var Catalog = []Entry{
 		})
 	}},
 	{"filterchipbar", "FilterChipBar", "Forms", "Active filter chip strip with per-chip dismiss RPC.", func() render.HTML {
+		// A chip dismissal is an in-page state change: the demo points
+		// the island at its own page, which is honest about there being
+		// no per-demo backend — the contract (link + island on the same
+		// control) is the thing on show.
 		return ui.FilterChipBar(ui.FilterChipBarConfig{
+			RPCSignal: "filter-chips",
 			Filters: []ui.FilterChip{
-				{Label: "Open", DismissPath: "#", Variant: ui.StatusInfo},
-				{Label: "Mine", DismissPath: "#", Variant: ui.StatusNeutral},
+				{Label: "Open", DismissPath: "/components/filterchipbar?dismissed=open", Variant: ui.StatusInfo},
+				{Label: "Mine", DismissPath: "/components/filterchipbar?dismissed=mine", Variant: ui.StatusNeutral},
 			},
-			ClearAllPath: "#",
+			ClearAllPath: "/components/filterchipbar?dismissed=all",
 		})
 	}},
 	{"inputgroup", "InputGroup", "Forms", "Input plus leading/trailing addon.", func() render.HTML {
@@ -635,6 +693,7 @@ var Catalog = []Entry{
 	}},
 	{"validationsummary", "ValidationSummary", "Forms", "Form-top error roll-up.", func() render.HTML {
 		return ui.ValidationSummary(ui.ValidationSummaryConfig{
+			ID: "demo-validation-summary",
 			Errors: ui.FieldErrors{
 				"email":    "must be a valid email address",
 				"password": "must be at least 8 characters",
@@ -643,19 +702,55 @@ var Catalog = []Entry{
 			FieldOrder:  []string{"email", "password"},
 		})
 	}},
-	{"conditionalfield", "ConditionalField", "Forms", "Show/hide a form field based on a sibling value.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("ConditionalField is a runtime helper. Wire it inside a Form via field watchers."),
+	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "#"},
+			ui.RadioGroup(ui.RadioGroupConfig{
+				Legend: "Plan",
+				Name:   "plan",
+				Options: []ui.RadioGroupOption{
+					{Label: "Free", Value: "free", Checked: true},
+					{Label: "Pro", Value: "pro"},
+				},
+			}),
+			ui.ConditionalField(ui.ConditionalFieldConfig{
+				WhenName: "plan", WhenValue: "pro",
+				Children: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "coupon", Label: "Coupon code", Help: "Pro only."}),
+				},
+			}),
 		)
 	}},
 	{"formrepeater", "FormRepeater", "Forms", "Add/remove rows of fields.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("FormRepeater renders a +/- chrome over a Repeater base. Per-page integration shown in the form demo."),
+		row := func(i int) render.HTML {
+			return ui.TextField(ui.TextFieldConfig{
+				Name:  fmt.Sprintf("links[%d].label", i),
+				Label: fmt.Sprintf("Link %d", i+1),
+			})
+		}
+		// The rows and their controls live in the caller's form: the
+		// add/remove controls are named submit buttons, so a plain
+		// POST walks the same path the island does.
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater", "class": "demo-stack"},
+			ui.FormRepeater(ui.FormRepeaterConfig{
+				Name:  "links",
+				Items: [][]render.HTML{{row(0)}, {row(1)}},
+			}),
 		)
 	}},
 	{"repeater", "Repeater", "Forms", "Generic repeatable group.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Repeater is the headless variant of FormRepeater: bring your own chrome."),
+		row := func(i int) render.HTML {
+			return ui.TextField(ui.TextFieldConfig{
+				Name:  fmt.Sprintf("guests[%d].name", i),
+				Label: fmt.Sprintf("Guest %d", i+1),
+			})
+		}
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater", "class": "demo-stack"},
+			ui.Repeater(ui.RepeaterConfig{
+				Name:     "guests",
+				Label:    "Guests",
+				MinItems: 1,
+				Template: row,
+			}),
 		)
 	}},
 
@@ -812,11 +907,11 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 
 	// ---------- Inputs (file / time / color) ----------
-	{"fileupload", "FileUpload", "Inputs", "Single-file picker with preview.", func() render.HTML {
+	{"fileupload", "FileUpload", "Inputs", "File picker with a drop zone; chosen names are listed and announced.", func() render.HTML {
 		return ui.FileUpload(ui.FileUploadConfig{Name: "avatar", Label: "Upload avatar", Accept: "image/*"})
 	}},
-	{"dropzone", "FileDropzone", "Inputs", "Drag-and-drop file upload.", func() render.HTML {
-		return ui.FileDropzone(ui.FileDropzoneConfig{Name: "files", Label: "Drop files here", Multiple: true, MaxSizeMB: 10})
+	{"dropzone", "FileDropzone", "Inputs", "Drag-and-drop file upload with an image thumbnail strip.", func() render.HTML {
+		return ui.FileDropzone(ui.FileDropzoneConfig{Name: "files", Label: "Drop files here", Multiple: true, ShowPreview: true, MaxSizeMB: 10})
 	}},
 	{"timepicker", "TimePicker", "Inputs", "Hour + minute picker.", func() render.HTML {
 		return ui.TimePicker(ui.TimePickerConfig{Name: "wakeup", Label: "Wake-up"})
@@ -824,16 +919,16 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"colorpicker", "ColorPicker", "Inputs", "Native swatch picker.", func() render.HTML {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
-	{"colorfield", "ColorField", "Inputs", "Swatch beside a text input holding the same value. The text input is the source of truth, so values a native picker cannot represent survive.", func() render.HTML {
+	{"colorfield", "ColorField", "Inputs", "Swatch beside a text input holding the same value. The text input is the source of truth, so values a native picker cannot represent survive; the headless colour sync keeps the two one value.", func() render.HTML {
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 			ui.ColorField(ui.ColorFieldConfig{
+				Name:        "brand",
 				Value:       "#4F46E5",
-				SwatchValue: "#4F46E5",
 				SwatchLabel: "Brand colour",
 			}),
 			ui.ColorField(ui.ColorFieldConfig{
+				Name:        "accent",
 				Value:       "var(--color-accent)",
-				SwatchValue: "#0891B2",
 				SwatchLabel: "Accent colour",
 			}),
 		)
@@ -851,7 +946,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	// via the Category field. They're grouped here only physically.
 	{"stepwizard", "StepWizard", "Wizards", "Numbered multi-step form (server-driven).", func() render.HTML {
 		return ui.StepWizard(ui.StepWizardConfig{
-			Action:      "#",
+			Action:      "/forms/wizard",
 			CurrentStep: 1,
 			Steps: []ui.StepWizardStep{
 				{Heading: "Account", Description: "Email + password"},
@@ -871,7 +966,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 	{"optimisticaction", "OptimisticAction", "Feedback", "Action that commits + can rollback on error.", func() render.HTML {
 		return ui.OptimisticAction(ui.OptimisticActionConfig{
-			Endpoint:     "#",
+			Endpoint:     "/__site/optimistic/edit/ok",
 			IdleLabel:    "Mark as read",
 			SuccessLabel: "Marked ✓",
 		})
@@ -1008,6 +1103,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{
 			Name:        "demo-bell",
 			Label:       "Notifications",
+			Href:        "/notifications",
 			UnreadCount: 3,
 			Items: []ui.NotificationItem{
 				{Title: "Welcome to GoFastr", Time: "Just now"},
@@ -1041,7 +1137,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		func() render.HTML {
 			// Live demo button: uses the interactive package.
 			btn := interactive.OnClick(
-				render.Tag("button", map[string]string{"class": "ui-button ui-button--primary"}, render.Text("Count")),
+				ui.Button(ui.ButtonConfig{Label: "Count", Variant: ui.ButtonPrimary}),
 				interactive.Post("/__site/interactive/counter").
 					OnSuccess(interactive.SetSignal("demo-counter")),
 			)
@@ -1081,13 +1177,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Click a button → server confirms → a modal pops up. No JavaScript needed.",
 		func() render.HTML {
 			return rpcEffectDemo(rpcEffectDemoSpec{
-				btnLabel:  "Trigger Modal",
-				btnClass:  "ui-button ui-button--secondary",
-				endpoint:  "/__site/interactive/open-drawer",
-				effect:    interactive.OpenWidget,
-				effectArg: "demo-result-modal",
-				why:       "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
-				how:       "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
+				btnLabel:   "Trigger Modal",
+				btnVariant: ui.ButtonSecondary,
+				endpoint:   "/__site/interactive/open-drawer",
+				effect:     interactive.OpenWidget,
+				effectArg:  "demo-result-modal",
+				why:        "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
+				how:        "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Confirm")),
     interactive.Post("/api/action").
@@ -1106,10 +1202,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 						"type": "text", "name": "message", "placeholder": "Type something…",
 						"required": "", "aria-label": "Message",
 					}),
-					render.Tag("button", map[string]string{
-						"type":  "submit",
-						"class": "ui-button ui-button--primary",
-					}, render.Text("Send")),
+					ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
 				),
 				interactive.Post("/__site/interactive/submit").
 					OnSuccess(
@@ -1156,13 +1249,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Click a button → server confirms → you land on a new page, no full reload.",
 		func() render.HTML {
 			return rpcEffectDemo(rpcEffectDemoSpec{
-				btnLabel:  "Navigate to Button →",
-				btnClass:  "ui-button ui-button--ghost",
-				endpoint:  "/__site/interactive/navigate",
-				effect:    interactive.Navigate,
-				effectArg: "/components/button",
-				why:       "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
-				how:       "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
+				btnLabel:   "Navigate to Button →",
+				btnVariant: ui.ButtonGhost,
+				endpoint:   "/__site/interactive/navigate",
+				effect:     interactive.Navigate,
+				effectArg:  "/components/button",
+				why:        "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
+				how:        "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Create Project")),
     interactive.Post("/api/projects").
@@ -1254,51 +1347,38 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	// Disclosure / overlays / navigation patterns and the overlay widgets
 	// (modal/drawer/bottomsheet/toast) the gallery used to show.
 	{"disclosure", "Disclosure", "Disclosure", "Single styled <details>/<summary> reveal: keyboard + find-in-page work with no JS.", func() render.HTML {
+		// The pattern package retired with the move: the anatomy is
+		// headless.Disclosure's now, dressed here with the same shape
+		// the pattern rendered.
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsDisclosure.Render(patternsDisclosure.Config{Title: "What's included in the free plan?"},
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "What's included in the free plan?"},
 				html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, community support, and all core features."))),
-			patternsDisclosure.Render(patternsDisclosure.Config{Title: "Can I export my data?", Open: true},
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "Can I export my data?", Open: true},
 				html.Paragraph(html.TextConfig{}, render.Text("Yes: Settings → Export emits a JSON archive with everything, no questions asked."))),
 		)
 	}},
 	{"tree", "Tree", "Navigation", "WAI-ARIA treeview with roving tabindex, type-ahead, and arrow-key nav.", func() render.HTML {
-		return patternsTree.Render(patternsTree.Config{
-			ID:           "files-tree",
-			Label:        "Project files",
-			SignalPrefix: "files-tree",
-			Nodes: []patternsTree.Node{
-				{ID: "src", Label: "src", Expanded: true, Children: []patternsTree.Node{
+		return ui.Tree(ui.TreeConfig{
+			ID:               "files-tree",
+			Label:            "Project files",
+			LazySignalPrefix: "files-tree",
+			Items: []ui.TreeItem{
+				{ID: "src", Label: "src", Expanded: true, Children: []ui.TreeItem{
 					{ID: "src-main", Label: "main.go", Href: "#main"},
 					{ID: "src-util", Label: "util.go", Href: "#util"},
 				}},
-				{ID: "docs", Label: "docs", Children: []patternsTree.Node{
+				{ID: "docs", Label: "docs", Children: []ui.TreeItem{
 					{ID: "docs-readme", Label: "README.md", Href: "#readme"},
 				}},
 				{ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"},
 			},
 		})
 	}},
-	{"nestedlist", "NestedList", "Navigation", "Recursive ul/ol with native <details> collapse on branches, no runtime module.", func() render.HTML {
-		return patternsNestedlist.Render(patternsNestedlist.Config{
-			AriaLabel: "Settings",
-			Items: []patternsNestedlist.Item{
-				{Label: "Account", Expanded: true, Children: []patternsNestedlist.Item{
-					{Label: "Profile", Href: "/settings/profile"},
-					{Label: "Security", Href: "/settings/security"},
-				}},
-				{Label: "Notifications", Children: []patternsNestedlist.Item{
-					{Label: "Email", Href: "/settings/email"},
-					{Label: "Push", Href: "/settings/push"},
-				}},
-				{Label: "Billing", Href: "/settings/billing"},
-			},
-		})
-	}},
 	{"progress", "Progress", "Feedback", "Native <progress> wrapper: determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsProgress.New(patternsProgress.Config{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
-			patternsProgress.New(patternsProgress.Config{Value: 18, Max: 100, Label: "Storage used", Description: "18% of 1 TB"}),
-			patternsProgress.New(patternsProgress.Config{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
+			ui.Progress(ui.ProgressConfig{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
+			ui.Progress(ui.ProgressConfig{Value: 18, Max: 100, Label: "Storage used", ShowLabel: true, Description: "18% of 1 TB"}),
+			ui.Progress(ui.ProgressConfig{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
 		)
 	}},
 	{"kbd", "Kbd", "Buttons & links", "Semantic <kbd> primitive for keyboard input: pair with ShortcutHint for styled chips.", func() render.HTML {
@@ -1327,26 +1407,8 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary, ExtraAttrs: interactive.Post("/__site/toast/push").WithBody("{}").Attrs()}),
 		)
 	}},
-	{"scrollspy", "ScrollSpy", "Navigation", "IntersectionObserver active-section tracking for in-page anchor navs.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsNestedlist.Render(patternsNestedlist.Config{
-				AriaLabel: "On this page",
-				Items: []patternsNestedlist.Item{
-					{Label: "Intro", Href: "#intro"},
-					{Label: "How it works", Href: "#how"},
-					{Label: "Accessibility", Href: "#a11y"},
-				},
-			}),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text(
-				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region: see it working live in the left rail of any /docs/* page.")),
-		)
-	}},
 	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list: single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
 		return RenderKanbanBoard(InitialKanbanColumns(), 1)
-	}},
-	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination: server appends HTML + a next-cursor header.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
-			"infinitescroll.Render(cfg) observes a sentinel and GETs cfg.RPCPath?cursor=X; the handler returns the next page's HTML and sets X-Gofastr-Infinite-Cursor (empty = end). Needs a per-page RPC, so it's shown as a note here."))
 	}},
 
 	// ---------- Marketing ----------
@@ -1388,9 +1450,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Title: "Sign in",
 			Body: html.Div(html.DivConfig{Class: "demo-stack"},
 				ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email",
-					Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "demo-email"})}),
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+					}}),
 				ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password",
-					Input: html.Input(html.InputConfig{Type: "password", Name: "password", ID: "demo-password"})}),
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password"})
+					}}),
 				ui.Button(ui.ButtonConfig{Label: "Sign in", Variant: ui.ButtonPrimary}),
 			),
 			Footer: ui.Link(ui.LinkConfig{Href: "#", Text: "Forgot password?"}),
@@ -1431,9 +1497,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.StepRail(ui.StepRailConfig{
 			Title: "Setup",
 			Items: []ui.StepRailItem{
-				{Number: "1", Label: "Create blueprint", Anchor: "#a"},
-				{Number: "2", Label: "Generate app", Anchor: "#b"},
-				{Number: "3", Label: "Own the Go", Anchor: "#c"},
+				{Number: "1", Label: "Create blueprint", Anchor: "a"},
+				{Number: "2", Label: "Generate app", Anchor: "b"},
+				{Number: "3", Label: "Own the Go", Anchor: "c"},
 			},
 			ActiveIndex: 1,
 		})
@@ -1464,6 +1530,15 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 // to the map after init would race the reader (fatal concurrent map
 // access, not recoverable).
 var codeSnippets = map[string]string{
+	"listdetail": `ui.ListDetail(ui.ListDetailConfig{
+    ListLabel: "Layout guides",
+    List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+        ui.Card(ui.CardConfig{Heading: "Layouts", Href: "/docs/layouts"}),
+        ui.Card(ui.CardConfig{Heading: "Reactivity", Href: "/docs/reactivity"}),
+    ),
+    Detail: ui.Card(ui.CardConfig{Heading: "Layout layers"},
+        render.Text("Place the list in a kept layout layer. Render the selected page in its primary slot.")),
+})`,
 	"recordsummary": `ui.RecordSummary(ui.RecordSummaryConfig{
     Eyebrow: "INC-2841 · Payments",
     Title: "Checkout latency is elevated",
@@ -1554,32 +1629,22 @@ interactive.SetLocal(ui.Button(ui.ButtonConfig{Label: "Rename"}), Company.Name()
 Company.Bind(ctx, "h3", nil)
 Company.Bind(ctx, "strong", nil)`,
 
-	"disclosure": `disclosure.Render(disclosure.Config{Title: "What's included?"},
+	"disclosure": `ui.Collapsible(ui.CollapsibleConfig{Summary: "What's included?"},
     html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, …")),
 )`,
 
-	"tree": `tree.Render(tree.Config{
-    ID: "files", Label: "Project files", SignalPrefix: "files-tree",
-    Nodes: []tree.Node{
-        {ID: "src", Label: "src", Expanded: true, Children: []tree.Node{
+	"tree": `ui.Tree(ui.TreeConfig{
+    ID: "files", Label: "Project files", LazySignalPrefix: "files-tree",
+    Items: []ui.TreeItem{
+        {ID: "src", Label: "src", Expanded: true, Children: []ui.TreeItem{
             {ID: "src-main", Label: "main.go", Href: "#main"},
         }},
         // {ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"} // RPC lazy-load
     },
 })`,
 
-	"nestedlist": `nestedlist.Render(nestedlist.Config{
-    AriaLabel: "Settings",
-    Items: []nestedlist.Item{
-        {Label: "Account", Expanded: true, Children: []nestedlist.Item{
-            {Label: "Profile", Href: "/settings/profile"},
-        }},
-        {Label: "Billing", Href: "/settings/billing"},
-    },
-})`,
-
-	"progress": `progress.New(progress.Config{Value: 73, Max: 100, Label: "Upload", Description: "73 of 100"})
-progress.New(progress.Config{Value: -1, Label: "Working…"}) // indeterminate`,
+	"progress": `ui.Progress(ui.ProgressConfig{Value: 73, Max: 100, Label: "Upload", Description: "73 of 100"})
+ui.Progress(ui.ProgressConfig{Value: -1, Label: "Working…"}) // indeterminate`,
 
 	"kbd": `html.Paragraph(html.TextConfig{},
     render.Text("Press "), html.Kbd(html.TextConfig{}, render.Text("Esc")), render.Text(" to dismiss."),
@@ -1603,13 +1668,12 @@ widget.MountBuilder(r, preset.Modal("user-edit").
 // Server: any data-fui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
 
-	"sortablelist": `// Single list (back-compat: sends only order=<keys>)
-sortablelist.Render(sortablelist.Config{
+	"sortablelist": `ui.SortableList(ui.SortableListConfig{
     Label: "Priorities", RPCPath: "/api/reorder",
-    Items: []sortablelist.Item{{Key: "a", Label: "A"}},
+    Items: []ui.SortableItem{{Key: "a", Label: "A"}},
 })
-// Kanban: one Render per column, same Group, unique Container
-sortablelist.Render(sortablelist.Config{
+// Kanban: one SortableList per column, same Group, unique Container
+ui.SortableList(ui.SortableListConfig{
     Label: "To do", Group: "board-1", Container: "todo",
     RPCPath: "/api/move", Version: "v1",
     ConflictRPC: "/api/conflict?col=todo",
@@ -1624,12 +1688,11 @@ sortablelist.Render(sortablelist.Config{
 // box doesn't claim to be something it isn't. Private for the same reason
 // as codeSnippets. Read through the IsNoteOnly accessor.
 var noteOnlySlugs = map[string]bool{
-	"datatable":        true,
-	"conditionalfield": true, "formrepeater": true, "repeater": true,
+	"datatable":    true,
+	"formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
-	"confirmaction": true, "scrollspy": true,
-	"infinitescroll": true,
+	"confirmaction": true,
 }
 
 // PkgForSlug returns the Go source package for a component, used to link
@@ -1637,10 +1700,6 @@ var noteOnlySlugs = map[string]bool{
 // framework/ui; a few are core-ui patterns or the image pipeline.
 func PkgForSlug(slug string) string {
 	switch slug {
-	case "accordion", "breadcrumbs", "pagination",
-		"tree", "nestedlist", "progress", "scrollspy", "disclosure",
-		"sortablelist", "infinitescroll":
-		return "core-ui/patterns/" + slug
 	case "image", "pipelineimage":
 		return "framework/image"
 	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":

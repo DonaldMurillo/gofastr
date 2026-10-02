@@ -2,8 +2,6 @@ package ui
 
 import (
 	"context"
-	"maps"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -13,6 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -48,6 +48,11 @@ type NotificationBellConfig struct {
 	// Name is the unique widget name (required) used for the paired
 	// preset.Popover. Keep page-unique.
 	Name string
+	// Href is where the trigger goes without script: the
+	// notifications page, same-origin. Required — a bell that rings
+	// to nowhere is a dead link on the no-script page, and "#" is
+	// not a destination.
+	Href string
 	// Label is the accessible label on the bell button (required,
 	// e.g. "Notifications").
 	Label string
@@ -100,6 +105,12 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.Label == "" {
 		panic("ui: NotificationBell requires Label")
 	}
+	if cfg.Href == "" {
+		panic("ui: NotificationBell requires Href — the no-script page needs the notifications page; a popover-only bell is a dead link without script")
+	}
+	if cfg.Href == "#" {
+		panic("ui: NotificationBell Href '#' is not a destination — point it at the notifications page")
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -109,56 +120,33 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		emptyText = i18nui.T(ctx, i18nui.KeyNotificationEmpty)
 	}
 
-	cls := "ui-notification-bell"
+	parts := headless.Parts{}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
-	btnAttrs := html.Attrs{
-		"type":                    "button",
-		"class":                   cls,
-		"aria-label":              cfg.Label,
-		"data-fui-open":           cfg.Name,
-		"data-fui-popover-anchor": "bottom",
-	}
-	if cfg.ID != "" {
-		btnAttrs["id"] = cfg.ID
-	}
-	maps.Copy(btnAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "aria-label", "aria-describedby"))
-
-	// Badge: server-rendered count + optional signal-bound override.
-	badgeAttrs := html.Attrs{"class": "ui-notification-bell__badge", "aria-hidden": "true"}
-	var badgeChild render.HTML
+	// The trigger IS the headless NotificationBell: the primitive
+	// renders the anchor (href, the spoken count, the count hooks)
+	// and, through Opens, the widget's data-fui-open wiring — the
+	// Island precedent of typed kernel attrs from a prop, refused
+	// when the name is not a key.
+	var unreadBind *headless.Bind
 	if cfg.SignalUnread != "" {
-		// Always render the span when signal-bound; CSS hides on :empty.
-		badgeAttrs["data-fui-signal"] = cfg.SignalUnread
-		badgeChild = render.Text(formatBellCount(cfg.UnreadCount))
-	} else if cfg.UnreadCount > 0 {
-		badgeChild = render.Text(formatBellCount(cfg.UnreadCount))
+		unreadBind = &headless.Bind{Signal: cfg.SignalUnread}
 	}
-
-	bellChildren := []render.HTML{
-		render.HTML(bellIcon()),
-	}
-	if badgeChild != "" || cfg.SignalUnread != "" {
-		bellChildren = append(bellChildren,
-			html.Span(html.TextConfig{
-				Class:      "ui-notification-bell__badge",
-				ExtraAttrs: badgeAttrs,
-			}, badgeChild))
-	}
-	// SR-only count announcement: read by assistive tech when focus
-	// lands on the bell.
-	if cfg.UnreadCount > 0 || cfg.SignalUnread != "" {
-		btnAttrs["aria-describedby"] = cfg.Name + "-count"
-		bellChildren = append(bellChildren,
-			html.Span(html.TextConfig{
-				ID:         cfg.Name + "-count",
-				Class:      "ui-visually-hidden",
-				ExtraAttrs: html.Attrs{"data-fui-signal": cfg.SignalUnread},
-			}, render.Text(strconv.Itoa(cfg.UnreadCount)+" unread")))
-	}
-
-	trigger := notificationBellStyle.WrapHTML(render.Tag("button", btnAttrs, bellChildren...))
+	trigger := notificationBellStyle.WrapHTML(headless.NotificationBell(headless.NotificationBellProps{
+		Href:        cfg.Href,
+		Label:       cfg.Label,
+		Icon:        render.HTML(bellIcon()),
+		UnreadCount: cfg.UnreadCount,
+		UnreadBind:  unreadBind,
+		Opens:       cfg.Name,
+		ID:          cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "href", "aria-label", "type",
+			"class", "aria-describedby",
+			"data-hui-notification-bell", "data-hui-notification-count", "data-hui-notification-count-fmt"),
+		Parts:   parts,
+		Strings: StringsFor(ctx),
+	}, notificationBellClasses))
 
 	// Popover slot.
 	slot := &notificationBellSlot{
@@ -179,16 +167,6 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	return trigger, pb
 }
 
-func formatBellCount(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	if n > 99 {
-		return "99+"
-	}
-	return strconv.Itoa(n)
-}
-
 func bellIcon() string {
 	return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 }
@@ -205,7 +183,7 @@ func (s *notificationBellSlot) Render() render.HTML {
 	var listChildren []render.HTML
 	if len(s.items) == 0 {
 		listChildren = []render.HTML{
-			html.Paragraph(html.TextConfig{Class: "ui-notification-bell__empty"},
+			html.Paragraph(html.TextConfig{Class: "fui-notification-bell__empty"},
 				render.Text(s.emptyText)),
 		}
 	} else {
@@ -214,21 +192,21 @@ func (s *notificationBellSlot) Render() render.HTML {
 			rows = append(rows, renderBellRow(it))
 		}
 		listChildren = []render.HTML{
-			render.Tag("ul", map[string]string{"class": "ui-notification-bell__list"}, rows...),
+			render.Tag("ul", map[string]string{"class": "fui-notification-bell__list"}, rows...),
 		}
 	}
 	// If SignalList is set, wrap the list in a signal-bound div so
 	// runtime swaps replace it wholesale (mode=html).
-	listAttrs := map[string]string{"class": "ui-notification-bell__body"}
+	listAttrs := map[string]string{"class": "fui-notification-bell__body"}
 	if s.signalList != "" {
 		listAttrs["data-fui-signal"] = s.signalList
 		listAttrs["data-fui-signal-mode"] = "html"
 	}
-	return render.Tag("div", map[string]string{"class": "ui-notification-bell__panel"},
+	return render.Tag("div", map[string]string{"class": "fui-notification-bell__panel"},
 		html.Heading(html.HeadingConfig{
 			Level: 3,
 			ID:    s.name + "-title",
-			Class: "ui-notification-bell__title",
+			Class: "fui-notification-bell__title",
 		}, render.Text(s.label)),
 		render.Tag("div", listAttrs, listChildren...),
 	)
@@ -238,20 +216,20 @@ func renderBellRow(it NotificationItem) render.HTML {
 	if it.Title == "" {
 		panic("ui: NotificationItem requires Title")
 	}
-	rowCls := "ui-notification-bell__row"
+	rowCls := "fui-notification-bell__row"
 	if it.Unread {
 		rowCls += " is-unread"
 	}
 	innerChildren := []render.HTML{
-		render.Tag("div", map[string]string{"class": "ui-notification-bell__row-header"},
-			html.Span(html.TextConfig{Class: "ui-notification-bell__row-title"},
+		render.Tag("div", map[string]string{"class": "fui-notification-bell__row-header"},
+			html.Span(html.TextConfig{Class: "fui-notification-bell__row-title"},
 				render.Text(it.Title)),
-			whenStringSpan(it.Time, "ui-notification-bell__row-time"),
+			whenStringSpan(it.Time, "fui-notification-bell__row-time"),
 		),
 	}
 	if it.Body != "" {
 		innerChildren = append(innerChildren,
-			html.Paragraph(html.TextConfig{Class: "ui-notification-bell__row-body"},
+			html.Paragraph(html.TextConfig{Class: "fui-notification-bell__row-body"},
 				render.Text(it.Body)))
 	}
 	var inner render.HTML
@@ -265,10 +243,10 @@ func renderBellRow(it NotificationItem) render.HTML {
 		}
 		inner = render.Tag("a", map[string]string{
 			"href":  href,
-			"class": "ui-notification-bell__row-link",
+			"class": "fui-notification-bell__row-link",
 		}, innerChildren...)
 	} else {
-		inner = render.Tag("div", map[string]string{"class": "ui-notification-bell__row-link"},
+		inner = render.Tag("div", map[string]string{"class": "fui-notification-bell__row-link"},
 			innerChildren...)
 	}
 	return render.Tag("li", map[string]string{"class": rowCls}, inner)
@@ -301,17 +279,39 @@ func notificationBellCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-notification-bell"]:hover {
+[data-fui-comp="ui-notification-bell"]:hover:not(.is-popover-trigger-active) {
   background: var(--color-surface-soft, #F4F4F5);
+}
+/* Open: the runtime's generic trigger highlight (.is-popover-trigger-active,
+   primary fill + primary-fg) restated at this component's specificity.
+   Without it the hover rule above won the background while the generic
+   rule won the colour: a white glyph on light grey (dark: near-black on
+   dark grey) the moment the popover opened under the pointer. */
+[data-fui-comp="ui-notification-bell"].is-popover-trigger-active {
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-fg, #FFFFFF);
 }
 [data-fui-comp="ui-notification-bell"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-notification-bell"] .ui-notification-bell__badge {
+[data-fui-comp="ui-notification-bell"] .fui-notification-bell__icon {
+  /* The badge's containing block: anchoring it to the GLYPH's
+     top-end corner (not the 44px button's) keeps the count from
+     covering the bell — a badge pinned to the button covered about
+     half the glyph, leaving a red "3" and a curl. */
+  position: relative;
+  display: inline-flex;
+  line-height: 0;
+}
+[data-fui-comp="ui-notification-bell"] .fui-notification-bell__badge {
   position: absolute;
-  inset-block-start: 6px;
-  inset-inline-end: 6px;
+  /* Outward from the glyph's top-end corner: a single digit covers
+     ~15% of the 20px glyph, a two-digit count ~24% (≤ a quarter),
+     and the overshoot stays inside the 44px button's 12px margins. */
+  inset-block-start: -12px;
+  inset-inline-end: -10px;
+  box-sizing: border-box;
   min-inline-size: 18px;
   block-size: 18px;
   padding: 0 5px;
@@ -323,81 +323,91 @@ func notificationBellCSS(_ style.Theme) string {
   background: var(--color-danger, #B91C1C);
   color: var(--color-primary-fg, #FFFFFF);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 2px solid var(--color-surface, #FFFFFF);
 }
 /* Hide the badge when its bound signal value is empty. */
-[data-fui-comp="ui-notification-bell"] .ui-notification-bell__badge:empty {
+[data-fui-comp="ui-notification-bell"] .fui-notification-bell__badge:empty {
   display: none;
 }
 
 /* Popover panel — wraps the dropped notification list. */
-.ui-notification-bell__panel {
+.fui-notification-bell__panel {
   display: grid;
   gap: var(--spacing-sm, 4px);
   min-inline-size: 18rem;
   max-inline-size: 24rem;
   padding: var(--spacing-md, 8px);
 }
-.ui-notification-bell__title {
+.fui-notification-bell__title {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
 }
-.ui-notification-bell__empty {
+.fui-notification-bell__empty {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;
   padding: var(--spacing-md, 8px) 0;
 }
-.ui-notification-bell__list {
+.fui-notification-bell__list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-.ui-notification-bell__row {
+.fui-notification-bell__row {
   margin: 0;
 }
-.ui-notification-bell__row.is-unread .ui-notification-bell__row-link {
+.fui-notification-bell__row.is-unread .fui-notification-bell__row-link {
   border-inline-start: 3px solid var(--color-primary, #4F46E5);
 }
-.ui-notification-bell__row-link {
+.fui-notification-bell__row-link {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 4px);
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-a.ui-notification-bell__row-link:hover {
+a.fui-notification-bell__row-link:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-.ui-notification-bell__row-header {
+.fui-notification-bell__row-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--spacing-sm, 4px);
 }
-.ui-notification-bell__row-title {
-  font-weight: 600;
+.fui-notification-bell__row-title {
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
 }
-.ui-notification-bell__row-time {
+.fui-notification-bell__row-time {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
 }
-.ui-notification-bell__row-body {
+.fui-notification-bell__row-body {
   margin: var(--spacing-xs, 2px) 0 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   line-height: 1.4;
 }`
+}
+
+// notificationBellClasses dresses headless.NotificationBell's parts in
+// this package's own vocabulary — the names the registered
+// ui-notification-bell sheet matches.
+var notificationBellClasses = headless.Classes{
+	headless.PartRoot:   "fui-notification-bell",
+	headless.PartIcon:   "fui-notification-bell__icon",
+	headless.PartMarker: "fui-notification-bell__badge",
+	headless.PartText:   "fui-notification-bell__count",
 }

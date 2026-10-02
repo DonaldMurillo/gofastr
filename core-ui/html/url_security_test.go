@@ -12,7 +12,7 @@ import (
 //
 // The property, "a URL attribute never carries a script-executing or
 // origin-ambiguous scheme", was enforced in framework/ui (safeURL) and in
-// core-ui/patterns/combobox (safePushHref) but NOT in core-ui/html, the
+// the retired core-ui/patterns/combobox (safePushHref) but NOT in core-ui/html, the
 // layer both of those sit on top of and the layer core-ui/noderender
 // renders its explicitly-untrusted IR through. The guard belongs at the
 // bottom so every caller inherits it.

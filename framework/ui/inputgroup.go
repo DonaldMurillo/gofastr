@@ -5,19 +5,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── InputGroup ─────────────────────────────────────────────────────
 //
 // Composite input wrapper that prepends and/or appends decorative
 // content (text, icons, currency symbols, units) to a core input
-// element. Pure CSS, no runtime JS needed.
+// element, rendered through headless.InputGroup. Pure CSS, no runtime
+// JS needed.
 
 // InputGroupConfig configures an InputGroup.
 type InputGroupConfig struct {
 	// Prepend is optional content rendered before the input (text, icon, etc.).
 	Prepend render.HTML
-	// Input is the actual input element (required).
+	// Input is the actual input element (required). Inside a
+	// FormField builder, build it from the wiring the field handed
+	// the closure — ui.Control, a typed control, or headless directly
+	// — so the id and the description chain arrive with it.
 	Input render.HTML
 	// Append is optional content rendered after the input.
 	Append render.HTML
@@ -39,17 +44,12 @@ func InputGroup(cfg InputGroupConfig) render.HTML {
 		panic("ui: InputGroup requires Input")
 	}
 
-	cls := "ui-input-group"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
 	children := []render.HTML{}
 
 	if cfg.Prepend != "" {
 		children = append(children,
 			render.Tag("span", map[string]string{
-				"class":       "ui-input-group__prepend",
+				"class":       "fui-input-group__prepend",
 				"aria-hidden": "true",
 			}, cfg.Prepend))
 	}
@@ -59,32 +59,30 @@ func InputGroup(cfg InputGroupConfig) render.HTML {
 	if cfg.Append != "" {
 		children = append(children,
 			render.Tag("span", map[string]string{
-				"class":       "ui-input-group__append",
+				"class":       "fui-input-group__append",
 				"aria-hidden": "true",
 			}, cfg.Append))
 	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	return inputGroupStyle.WrapHTML(render.Tag("div", attrs, children...))
+	return inputGroupStyle.WrapHTML(headless.InputGroup(headless.InputGroupProps{
+		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, withRootClass(inputGroupClasses, cfg.Class), children...))
 }
 
 var inputGroupStyle = registry.RegisterStyle("ui-input-group", inputGroupCSS)
 
 func inputGroupCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-input-group"] {
+	return `.fui-input-group {
   display: inline-flex;
   align-items: stretch;
+  max-inline-size: 100%;
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
+  border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   overflow: hidden;
 }
-[data-fui-comp="ui-input-group"] > input,
-[data-fui-comp="ui-input-group"] > select {
+.fui-input-group > input,
+.fui-input-group > select {
   flex: 1;
   border: 0;
   background: transparent;
@@ -92,16 +90,16 @@ func inputGroupCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
-  min-block-size: var(--spacing-touch-target, 44px);
+  min-block-size: var(--fui-density-control-h);
   min-width: 0;
 }
-[data-fui-comp="ui-input-group"] > input:focus-visible,
-[data-fui-comp="ui-input-group"] > select:focus-visible {
+.fui-input-group > input:focus-visible,
+.fui-input-group > select:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-input-group"] .ui-input-group__prepend,
-[data-fui-comp="ui-input-group"] .ui-input-group__append {
+.fui-input-group .fui-input-group__prepend,
+.fui-input-group .fui-input-group__append {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -113,7 +111,7 @@ func inputGroupCSS(_ style.Theme) string {
   user-select: none;
   border-right: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-input-group"] .ui-input-group__append {
+.fui-input-group .fui-input-group__append {
   border-right: 0;
   border-left: 1px solid var(--color-border, #E4E4E7);
 }`

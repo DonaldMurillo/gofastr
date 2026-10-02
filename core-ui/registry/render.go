@@ -46,16 +46,19 @@ func (s *Style) WrapHTML(html render.HTML) render.HTML {
 	return out
 }
 
-// markerRe matches data-fui-comp="<name>" in rendered HTML. The name
-// is captured. The leading boundary class restricts matches to
-// attribute positions inside an open tag (preceded by whitespace),
-// so stray mentions inside <pre>/<code>/text content don't trigger
-// false-positive SSR links.
-var markerRe = regexp.MustCompile(`[\s/]data-fui-comp="([a-zA-Z0-9_:.-]+)"`)
+// markerRe matches the two loader markers in rendered HTML:
+// data-fui-comp="<name>" on a kit component root and
+// data-fui-scope="<name>" on an owned style's root. The name is
+// captured. The leading boundary class restricts matches to attribute
+// positions inside an open tag (preceded by whitespace), so stray
+// mentions inside <pre>/<code>/text content don't trigger
+// false-positive SSR links. A name outside the charset never matches,
+// so it never reaches a /__gofastr/comp/<name>.css URL.
+var markerRe = regexp.MustCompile(`[\s/]data-fui-(?:comp|scope)="([a-zA-Z0-9_:.-]+)"`)
 
-// Scan returns the sorted, deduped list of component names referenced
-// by data-fui-comp attributes in html. Used by the SSR host to decide
-// which <link> tags to emit in <head>.
+// Scan returns the sorted, deduped list of sheet names referenced by
+// data-fui-comp and data-fui-scope attributes in html. Used by the SSR
+// host to decide which <link> tags to emit in <head>.
 func Scan(html string) []string {
 	matches := markerRe.FindAllStringSubmatch(html, -1)
 	if len(matches) == 0 {

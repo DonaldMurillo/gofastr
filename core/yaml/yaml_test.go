@@ -118,6 +118,48 @@ func TestFlowMapValueErrMatches(t *testing.T) {
 	}
 }
 
+// A list item's first key with an empty value owns the lines indented
+// past that key: they are its value, not siblings flattened into the
+// item. "- props:" over a deeper "register_href:" put register_href on
+// the item, where nothing reading props.register_href looked.
+func TestListItemFirstKeyOwnsDeeperLines(t *testing.T) {
+	node, err := Parse(`
+body:
+  - props:
+      href: /a
+      label: A
+    kind: link
+`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	item := node.Map["body"].List[0].Map
+	props := item["props"]
+	if props == nil || props.Kind != Map || props.Map["href"] == nil || props.Map["href"].Value != "/a" || props.Map["label"].Value != "A" {
+		t.Fatalf("props = %#v, want the map {href: /a, label: A}", props)
+	}
+	if item["kind"] == nil || item["kind"].Value != "link" {
+		t.Fatalf("kind = %#v, want the item's sibling key", item["kind"])
+	}
+	if _, flat := item["href"]; flat {
+		t.Fatalf("href flattened into the item: %#v", item)
+	}
+}
+
+// A continuation line between the dash and the item's key column, or
+// past it after a scalar first value, belongs to nothing: refuse it.
+func TestListItemMisindentedContinuation(t *testing.T) {
+	for _, src := range []string{
+		"body:\n  - kind: link\n      href: /a\n",
+		"body:\n  - kind: link\n   href: /a\n",
+		"body:\n  - props:\n      href: /a\n     label: A\n",
+	} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse accepted %q", src)
+		}
+	}
+}
+
 func TestParseSubsetRejectsUnsupportedSyntax(t *testing.T) {
 	cases := []string{
 		"app: {name: demo}\n",

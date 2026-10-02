@@ -13,14 +13,14 @@ func TestMutedMarksAndWraps(t *testing.T) {
 	if !strings.Contains(out, `data-fui-comp="ui-muted"`) {
 		t.Fatalf("Muted must carry the style marker: %s", out)
 	}
-	if !strings.Contains(out, `class="ui-muted"`) || !strings.Contains(out, "3 drafts") {
+	if !strings.Contains(out, `class="fui-muted"`) || !strings.Contains(out, "3 drafts") {
 		t.Fatalf("Muted output wrong: %s", out)
 	}
 }
 
 func TestEmptyValueIsMutedDash(t *testing.T) {
 	out := string(EmptyValue())
-	if !strings.Contains(out, "—") || !strings.Contains(out, "ui-muted") {
+	if !strings.Contains(out, "—") || !strings.Contains(out, "fui-muted") {
 		t.Fatalf("EmptyValue should be a muted em dash: %s", out)
 	}
 }

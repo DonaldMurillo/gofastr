@@ -31,9 +31,9 @@ package main
 //   - A keyed changing collection. The jobs DataTable renders one row
 //     per job; Row.ID is the job key, so successive pushes produce
 //     near-identical HTML that differs only on changed rows.
-//   - Connection health/retry. ui.NetworkRetryBanner watches the SSE
-//     lane: SSESilenceMs trips the banner if the ticker goes quiet, and
-//     the Retry button probes /__site/livedash/health.
+//   - Connection health/retry. ui.NetworkRetryBanner follows the
+//     connection the framework reports, and the Retry button probes
+//     /__site/livedash/health (a 2xx hides it again).
 //   - Topic-scoped delivery. Pushes are addressed to
 //     host.Islands.PresenceSessions(liveDashTopic), only sessions that
 //     joined the "live-dashboard-demo" presence topic receive them. The
@@ -407,7 +407,7 @@ func renderDashFeed(s liveDashData) render.HTML {
 		events = events[len(events)-liveDashFeedCap:]
 	}
 	if len(events) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
 			render.Text("No activity yet. Events will appear here as they arrive."))
 	}
 	return ui.Timeline(ui.TimelineConfig{Events: events})
@@ -499,7 +499,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 	// The computed module subscribes to the deps, runs the reducer on
 	// change, and fans the result through the signal to this same span.
 	statusPill := dashStatus.Bind(ctx, "span", map[string]string{
-		"class":         "ui-status-pill ui-status-pill--accent",
+		"class":         "fui-status-pill fui-status-pill--accent",
 		"data-fui-comp": "ui-status-pill",
 		"aria-live":     "polite",
 		"aria-atomic":   "true",
@@ -513,7 +513,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 		controls,
 		html.Div(html.DivConfig{Role: "status", AriaLabel: "Operational status"},
 			statusPill,
-			html.Paragraph(html.TextConfig{Class: "ui-muted"},
+			html.Paragraph(html.TextConfig{Class: "fui-muted"},
 				render.Text("Open "+strconv.Itoa(open)+" · Acknowledged "),
 				// Live-bound count: dashIncidentsAckd.Bind emits a
 				// <span data-fui-signal="dash.incidentsAckd"> that the
@@ -522,7 +522,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 				// bind the click increments the signal but the visible
 				// count stays at the SSR-painted 0 forever.
 				dashIncidentsAckd.Bind(ctx, "span", map[string]string{
-					"class": "ui-muted",
+					"class": "fui-muted",
 				}),
 			),
 		),
@@ -545,14 +545,13 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 
 	// The site layout already owns the document's sole <main> landmark.
 	return html.Div(html.DivConfig{Class: "livedash-page"},
-		// Connection-health banner. Sits above the content. SSESilenceMs
-		// trips it if the ticker goes quiet (the runtime polls
-		// window.__gofastr.sseStatus.lastEventAt). The Retry button
-		// probes /__site/livedash/health, which returns 204 when the
-		// server is up.
+		// Connection-health banner. Sits above the content. It follows
+		// the connection the framework reports (the offline
+		// SystemBanner contract); the Retry button probes
+		// /__site/livedash/health, which returns 204 when the server
+		// is up — a 2xx hides the banner again.
 		ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{
 			HealthEndpoint: "/__site/livedash/health",
-			SSESilenceMs:   6000,
 			Title:          "Live updates paused",
 			Description:    "The dashboard's SSE stream went quiet. Your last-known values are still on screen; reconnect to refresh.",
 			RetryLabel:     "Reconnect",

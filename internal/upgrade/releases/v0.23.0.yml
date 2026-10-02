@@ -1,0 +1,26 @@
+version: v0.23.0
+title: AI-native UI composition
+notes:
+  - change: theme.Default() is now adaptive
+    breaking: true
+    hits: review
+    guidance: "The canonical theme now adapts light/dark from one palette. Apps that overrode dozens of tokens to fake dark mode can delete those overrides; apps that relied on the old static values re-pin them via theme.Overrides."
+    find:
+      uses:
+        - gofastr/framework/ui/theme.Default
+  - change: SiteHeader wraps its Brand slot
+    breaking: true
+    hits: review
+    guidance: "Brand renders inside a framework-owned wrapper; CSS targeting the raw brand element needs the new wrapper class (or better, drop the CSS — the wrapper is styled)."
+    find:
+      fields:
+        - field: gofastr/framework/ui.SiteHeaderConfig.Brand
+  - change: ui.Cluster zero value now wraps
+    breaking: true
+    hits: review
+    guidance: "Clusters wrap whole items by default. Layouts that depended on single-line overflow set NoWrap: true."
+    find:
+      uses:
+        - gofastr/framework/ui.Cluster
+      fields:
+        - field: gofastr/framework/ui.ClusterConfig.Wrap

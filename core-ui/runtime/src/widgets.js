@@ -258,8 +258,8 @@
     const pf = isModal ? document.activeElement : null;
     if (isModal) {
       // Owner-refcounted viewport lock (NS.doc), the lock releases only
-      // when the LAST owner unlocks, so a second locker (lightbox,
-      // drawer) can't release a modal's lock early. NS.doc locks <html>,
+      // when the LAST owner unlocks, so a second locker (a media
+      // viewer or a drawer) can't release a modal's lock early. NS.doc locks <html>,
       // not <body>: overflow:hidden on <body> turns the body into a
       // clipped scroll container, which breaks any position:sticky
       // descendant (a docs nav rail scrolls off-screen on a scrolled

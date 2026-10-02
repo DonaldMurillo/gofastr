@@ -1,0 +1,14 @@
+version: v0.29.0
+title: Secure-by-default CRUD + unified response envelope
+notes:
+  - change: Auto-CRUD and entity MCP tools require an authenticated session by default
+    breaking: true
+    hits: review
+    guidance: "An entity declaring none of owner_field, access, or the new public: true now refuses anonymous requests with 401 across List/Get/Create/Update/Delete (and its MCP tools). Add public: true (EntityConfig.Public) for genuinely public entities, or owner_field/access for scoped ones. Existing apps relying on anonymous CRUD will start returning 401 until an entity opts out."
+    find:
+      uses:
+        - gofastr/framework.App.Entity
+  - change: Single-record CRUD responses use the {"data":{...}} envelope
+    breaking: true
+    guidance: "Create/Get/PUT/PATCH now wrap the record as {\"data\":{...}}, matching list's {\"data\":[...]}; errors and DELETE are unchanged. Update any hand-written client that decoded the bare object — the generated typed clients already unwrap it. New PATCH /<entity>/{id} verb added for sparse updates (generated clients gain a pointer-based <Entity>Patch)."
+    nodetect: the break is a hand-written client's parse of the response body, which lives outside the app's Go source; no framework spelling differs

@@ -33,8 +33,8 @@ func TestDocShellMarksOutermostLayerOnly(t *testing.T) {
 	a := NewApp("t").
 		WithLang("es").
 		WithSkipLabel("Saltar al contenido principal")
-	a.SetDefaultLayout(NewLayout("site").WithHeader(NewStaticComponent("SITE")))
-	g := NewScreenGroup("/docs", NewLayout("docs").WithSidebar(NewStaticComponent("NAV")))
+	a.SetDefaultLayout(headerShell("site", NewStaticComponent("SITE")))
+	g := NewScreenGroup("/docs", sidebarShell("docs", NewStaticComponent("NAV")))
 	g.Screen(NewScreen("a", &stubComponent{html: render.Raw("A")}), nil)
 	a.Router.ScreenGroup(g)
 
@@ -64,8 +64,8 @@ func TestPartialDocShellOnFirstRenderedLayer(t *testing.T) {
 	a := NewApp("t").
 		WithLang("es").
 		WithSkipLabel("Saltar al contenido principal")
-	a.SetDefaultLayout(NewLayout("site").WithHeader(NewStaticComponent("SITE")))
-	g := NewScreenGroup("/docs", NewLayout("docs").WithSidebar(NewStaticComponent("NAV")))
+	a.SetDefaultLayout(headerShell("site", NewStaticComponent("SITE")))
+	g := NewScreenGroup("/docs", sidebarShell("docs", NewStaticComponent("NAV")))
 	g.Screen(NewScreen("intro", &stubComponent{html: render.Raw("INTRO")}), nil)
 	a.Router.ScreenGroup(g)
 	a.Register("/about", &stubComponent{html: render.Raw("ABOUT")}, nil)
@@ -91,7 +91,7 @@ func TestPartialDocShellOnFirstRenderedLayer(t *testing.T) {
 }
 
 func TestMarkerOnlyPartialCarriesDocShell(t *testing.T) {
-	parent := NewScreenGroup("/settings", NewLayout("settings").WithSidebar(NewStaticComponent("NAV")))
+	parent := NewScreenGroup("/settings", sidebarShell("settings", NewStaticComponent("NAV")))
 	child := parent.SubGroup("advanced", nil) // inherits parent's *Layout
 	child.Screen(NewScreen("security", &stubComponent{html: render.Raw("SEC")}), nil)
 	parent.Screen(NewScreen("base", &stubComponent{html: render.Raw("BASE")}), nil)
@@ -138,7 +138,7 @@ func TestBarePartialHasNoDocShellMarkers(t *testing.T) {
 	// (and must not) change the document language. A site whose language
 	// varies between routes keys its outer layer per language for exactly
 	// this reason (WithKey); the keyed nav always delivers a carrier.
-	g := NewScreenGroup("/docs", NewLayout("docs").WithSidebar(NewStaticComponent("NAV")))
+	g := NewScreenGroup("/docs", sidebarShell("docs", NewStaticComponent("NAV")))
 	g.Screen(NewScreen("a", &stubComponent{html: render.Raw("A")}), nil)
 	g.Screen(NewScreen("b", &stubComponent{html: render.Raw("B")}), nil)
 	a := NewApp("t").WithLang("es")

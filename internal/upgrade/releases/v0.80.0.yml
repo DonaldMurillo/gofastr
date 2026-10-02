@@ -1,0 +1,11 @@
+version: v0.80.0
+title: Route matches and recovery screens, WebMCP mounts, StateChannel, document-scoped scripts
+notes:
+  - change: "new opt-in surfaces - uihost.RouteMatchMiddleware / app.MatchFromContext / uihost.RenderScreen, uihost.RegisterDocumentScript, pluginhost.WithWorkerCSP / WithCache on AssetServer.AddBytes, webmcp Host.Handle / Mount options / WithObserver / WithInstructions / Group, stream.StateChannel plus the ws runtime module, ui.MenuConfig.TriggerElement"
+    breaking: false
+    guidance: "All additive; nothing changes for an app that does not call them. webmcp.New and Mount take variadic options, AssetServer.AddBytes takes variadic options, so existing calls compile unchanged."
+    nodetect: "all additive; existing calls compile unchanged"
+  - change: "core-ui/check treats a capitalised Style map key like the lowercase one in the inline-style lint, and no longer flags a regex literal that happens to contain the word var as a declaration"
+    breaking: false
+    nodetect: "a lint fix inside vendored design-system trees; apps outside them are unaffected"
+    guidance: "A vendored design-system tree that set inline styles through a capitalised map key is now reported; move the styling into a component (rule GOFASTR1401 explains). Apps outside those trees are unaffected."

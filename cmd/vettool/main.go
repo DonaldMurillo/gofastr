@@ -49,6 +49,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxenvelope"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/layoutfunc"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/negdur"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
@@ -110,6 +111,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(laxenvelope.Analyzer),
 	allow.Guard(nonfinite.Analyzer),
 
+	// The layout contract a layout build that
+	// reads the route match or request outside a RouteArea closure bakes
+	// request-derived chrome no partial ever refreshes.
+	allow.Guard(layoutfunc.Analyzer),
+
 	// Round-5 red-probe rules (2026-09-07): one per repeated bug shape.
 	allow.Guard(recoverlog.Analyzer),
 	allow.Guard(nowaitdelay.Analyzer),
@@ -133,9 +139,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	//
 	//   fmtformat — 4 findings, all false positives. The repo fixed
 	//   the encoded-pattern class at the CONSUMER (ui.DataTable and
-	//   core-ui/patterns/pagination substitute their %s/%d markers
-	//   with strings.Replace, never fmt, each with a comment saying
-	//   so), and the analyzer only recognizes producer-side postures
+	//   the core-ui pagination pattern, since retired, substituted
+	//   their %s/%d markers with strings.Replace, never fmt, each
+	//   with a comment saying so), and the analyzer only recognizes
+	//   producer-side postures
 	//   (%%-doubling at the join). Until it can see a literal-
 	//   substitution consumer, enabling it would mean four
 	//   suppressions on day one.

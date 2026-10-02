@@ -90,14 +90,13 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 // meta[name="csrf-token"] tag), the documented channel the auth.CSRF
 // middleware accepts for JSON-bodied requests.
 //
-// Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), infinite-scroll
-// (src/infinitescroll.js), and sortable-list reorder
-// (src/sortablelist.js).
+// Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), and
+// sortable-list reorder (framework/headless/sortablelist.js, a
+// registered behaviour whose own commit POST forwards the token).
 func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	surfaces := []string{
 		filepath.Join("src", "rpc.js"),
-		filepath.Join("src", "infinitescroll.js"),
-		filepath.Join("src", "sortablelist.js"),
+		filepath.Join("..", "..", "framework", "headless", "sortablelist.js"),
 	}
 	for _, rel := range surfaces {
 		src := readSrc(t, rel)
@@ -315,131 +314,6 @@ func TestComputedReducerOwnPropOnly(t *testing.T) {
 	}
 }
 
-// comboboxFallbackChecksScheme pins the defense-in-depth contract for
-// pickOption's hard-load fallback: when window.__gofastr.navigate has
-// not booted, the raw `location.href = dest` assignment must still be
-// dominated by the same scheme/origin gate the SPA navigator uses
-// (_originOK subsumes _isUnsafeSignalUrl's javascript:/vbscript:/
-// non-image data: checks — see TestRuntimeNavigateRejectsUnsafeSchemes
-// in runtime_test.go). dest is a server-rendered data-fui-push-state
-// attribute on RPC-injected option markup; a server that reflects
-// request input into it must not gain a scheme bypass just because the
-// runtime booted late.
-//
-// The sibling TestComboboxPickOptionHonorsPushState only requires
-// "navigate" to appear anywhere in the module, so weakening the
-// fallback would not fail it — this test is the pin that would.
-//
-// Dominance is approximated lexically, per enclosing block: a gate
-// counts when it appears in an enclosing block's own if/else-if
-// condition or in the statements preceding the assignment inside its
-// own block. An if-statement a bare `else` attaches to does not
-// dominate the else branch, so its condition is excluded.
-//
-// Surface: the fallback branch of pickOption in src/combobox.js.
-func TestComboboxFallbackChecksScheme(t *testing.T) {
-	src := readSrc(t, filepath.Join("src", "combobox.js"))
-
-	idx := strings.Index(src, "pickOption")
-	if idx < 0 {
-		t.Fatal("could not locate pickOption in src/combobox.js")
-	}
-	open := idx + strings.Index(src[idx:], "{")
-	if open < idx {
-		t.Fatal("could not locate pickOption body opener")
-	}
-	end := -1
-	for depth, i := 0, open; i < len(src); i++ {
-		switch src[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				end = i
-			}
-		}
-		if end >= 0 {
-			break
-		}
-	}
-	if end < 0 {
-		t.Fatal("could not locate pickOption body end")
-	}
-	body := src[open+1 : end]
-
-	foundAssignment := false
-	for start := 0; ; {
-		rel := strings.Index(body[start:], "location.href")
-		if rel < 0 {
-			break
-		}
-		pos := start + rel
-		start = pos + len("location.href")
-
-		// Only assignments (`location.href = …`), not reads or
-		// strict-equality comparisons.
-		tail := strings.TrimLeft(body[start:], " \t\r\n")
-		if !strings.HasPrefix(tail, "=") || strings.HasPrefix(tail, "==") {
-			continue
-		}
-		foundAssignment = true
-
-		// Walk the chain of blocks enclosing the assignment,
-		// innermost first. A gate satisfies the property when it
-		// appears in a block's own condition or in the statements of
-		// that block preceding the nested statement the chain
-		// descends into.
-		gated := false
-		reportStart := pos
-		childStmt := pos
-		for p := pos; ; {
-			opener := innermostOpenerBefore(body, p)
-			if opener < 0 {
-				break
-			}
-			cond, nodeStart := "", opener
-			if j := skipSpaceBack(body, opener-1); j >= 0 && body[j] == ')' {
-				if k := matchParenBack(body, j); k >= 0 {
-					cond = body[k : j+1]
-					nodeStart = k
-				}
-			}
-			// Cut the node's statement window at the start of the
-			// statement the chain descends into. A bare `else` block
-			// is part of the preceding if-statement, whose condition
-			// does NOT dominate the else branch.
-			cut := childStmt
-			if cut != pos {
-				j := skipSpaceBack(body, cut-1)
-				if (j >= 0 && body[j] == '}') || isBareElseOpen(body, cut) {
-					cut = ifStmtStartBefore(body, cut)
-				}
-			}
-			if opener+1 <= cut && cut <= len(body) {
-				window := cond + body[opener+1:cut]
-				if strings.Contains(window, "_isUnsafeSignalUrl") || strings.Contains(window, "_originOK") {
-					gated = true
-				}
-			}
-			if nodeStart < reportStart {
-				reportStart = nodeStart
-			}
-			if nodeStart == 0 {
-				break
-			}
-			p = nodeStart
-			childStmt = nodeStart
-		}
-		if !gated {
-			t.Errorf("SECURITY: [combobox-nav] pickOption assigns location.href without a dominating _isUnsafeSignalUrl/_originOK gate; guard window:\n%s", body[reportStart:pos+len("location.href")])
-		}
-	}
-	if !foundAssignment {
-		t.Error("pickOption no longer contains a location.href fallback — update this pin to the new navigation form")
-	}
-}
-
 // innermostOpenerBefore returns the index of the innermost unmatched `{`
 // at or before pos-1 in s, or -1. Scanning backwards, a `}` raises the
 // depth and the `{` that pairs with it is skipped.
@@ -451,24 +325,6 @@ func innermostOpenerBefore(s string, pos int) int {
 			depth++
 		case '{':
 			if depth == 0 {
-				return i
-			}
-			depth--
-		}
-	}
-	return -1
-}
-
-// matchParenBack returns the index of the `(` that pairs with the `)` at
-// index i in s, or -1.
-func matchParenBack(s string, i int) int {
-	depth := 0
-	for ; i >= 0; i-- {
-		switch s[i] {
-		case ')':
-			depth++
-		case '(':
-			if depth <= 1 {
 				return i
 			}
 			depth--
@@ -490,66 +346,6 @@ func skipSpaceBack(s string, pos int) int {
 	return -1
 }
 
-// isBareElseOpen reports whether the block opener at index i in s is a
-// bare `else {` (no condition of its own), i.e. the preceding token is
-// the else keyword.
-func isBareElseOpen(s string, i int) bool {
-	j := skipSpaceBack(s, i-1)
-	if j < 3 || j-3 > len(s)-1 {
-		return false
-	}
-	if s[j-3:j+1] != "else" {
-		return false
-	}
-	// Reject identifiers merely ending in "else" (e.g. `xelse`).
-	if k := j - 4; k >= 0 {
-		c := s[k]
-		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-			return false
-		}
-	}
-	return true
-}
-
-// ifStmtStartBefore returns the start of the if-statement the bare
-// `else` block at index elseOpen belongs to: its condition's `(` when
-// the associated if-block is headed by one, else that block's `{`.
-func ifStmtStartBefore(s string, elseOpen int) int {
-	j := skipSpaceBack(s, elseOpen-1)
-	if j >= 3 && s[j-3:j+1] == "else" {
-		// Bare `else {` — hop over the keyword to the if-block's `}`.
-		j = skipSpaceBack(s, j-4)
-	}
-	if j < 0 || s[j] != '}' {
-		return elseOpen
-	}
-	depth := 0
-	open := -1
-	for i := j; i >= 0; i-- {
-		switch s[i] {
-		case '}':
-			depth++
-		case '{':
-			depth--
-			if depth == 0 {
-				open = i
-			}
-		}
-		if open >= 0 {
-			break
-		}
-	}
-	if open < 0 {
-		return elseOpen
-	}
-	if k := skipSpaceBack(s, open-1); k >= 0 && s[k] == ')' {
-		if m := matchParenBack(s, k); m >= 0 {
-			return m
-		}
-	}
-	return open
-}
-
 // moduleSrcValidatesNameShape asserts the split-module loader validates
 // its name against the shape the framework emits before building a
 // script src from it. loadModule's name arrives from the DOM: the
@@ -562,7 +358,7 @@ func ifStmtStartBefore(s string, elseOpen int) int {
 // data-behavior gate's comment documents and the reason
 // TestBehaviorAttrRejectsForeignSrc pins that sibling. Every emitted
 // name (runtime.ModuleNames, and every internal loadModule call site:
-// rpc, widgets, toasts, popover, fileupload) is [A-Za-z0-9_-]+, so an
+// rpc, widgets, toasts, popover) is [A-Za-z0-9_-]+, so an
 // anchored allow-list rejects nothing legitimate.
 //
 // Surfaces: loadModule in the composed runtime.js AND its fragment
@@ -651,21 +447,13 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		anchor string // unique literal at the selector call site
 		where  string // human-readable surface description
 	}{
-		{"src/conditionalfield.js", `'[name="'`, "data-when-name value → [name=…] lookup"},
-		{"src/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
-		{"src/carousel.js", `data-fui-carousel-deferred-for="`, "carousel id → manifest script lookup"},
-		{"src/carousel.js", `'[data-fui-carousel-defer="`, "manifest key → defer placeholder lookup"},
-		{"src/rangeslider.js", `data-fui-range-slider="`, "data-fui-range-slider value → pair lookups (3 selectors)"},
-		{"src/slider.js", `output[for="`, "input id → output[for=…] lookup"},
+		{"../../framework/headless/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
 		{"src/widgets.js", `link[data-fui-style="`, "widget name → style-link dedup lookup"},
 		{"runtime.js", `link[data-fui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
 		{"runtime.js", `[data-widget="${`, "closest data-component/data-widget value → hydrate lookup (composed from frag/boot.js)"},
 		// Control group: these sites escape today and must keep doing so.
 		{"src/sse.js", `'[data-island="'`, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
-		{"src/toasts.js", `'[data-fui-toast-stack="'`, "toast stack name lookup"},
-		{"src/sortablelist.js", `data-fui-sortable-group="`, "sortable group lookup"},
-		{"src/panehost.js", `'[data-fui-pane-key="'`, "URL-borne pane key lookup"},
-		{"src/scrollspy.js", `'#' + cssEscape(`, "anchor id lookup (module-local cssEscape shim)"},
+		{"../../framework/headless/sortablelist.js", `data-hui-sortable-group="`, "sortable group lookup"},
 		{"src/widgets.js", `'[data-fui-widget="'`, "widget name → mounted-widget lookup"},
 		{"src/widgets.js", `'[data-fui-backdrop="'`, "widget name → backdrop lookup"},
 		{"runtime.js", `'[data-fui-signal="'`, "signal name → consumer fanout lookup"},
@@ -810,8 +598,7 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 		from, to string // unique literals bracketing the fetch→mount span
 		where    string
 	}{
-		{"src/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
-		{"src/infinitescroll.js", "await fetch(path", "tmp.innerHTML = html", "infinite-scroll append"},
+		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
 		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
 		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
 	}
@@ -946,29 +733,27 @@ func TestAttributePathSegmentsValidated(t *testing.T) {
 // namespace the server reads back (and the real dismissal is never stored
 // under its own key).
 func TestBannerDismissCookieEncodesId(t *testing.T) {
-	// Benign banner at boot gives the marker scanner its load trigger;
-	// the crafted banner is injected post-boot, the reachable shape for
+	// The banner runtime is retired; the dismissal memory (and its
+	// cookie mirror) lives in the registered headless module now. The
+	// crafted banner is injected post-boot, the reachable shape for
 	// attribute injection (island swap / RPC innerHTML / SPA merge).
 	g := startGadgetServer(t, `[]`, `
-<div data-fui-comp="ui-banner" id="bn0">
-  <button type="button" id="dismiss0" data-fui-banner-dismiss
-          data-fui-banner-dismiss-id="boot-marker">x</button>
-</div>`)
+<div data-hui-system="" data-hui-system-id="boot-marker" id="bn0"></div>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.banner&&window.__gofastr.banner.rescan)`, nil,
+		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.loadedModules&&window.__gofastr.loadedModules.headless)`, nil,
 			chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 		chromedp.Evaluate(`(function () {
 			var bn = document.createElement('div');
-			bn.setAttribute('data-fui-comp', 'ui-banner');
+			bn.setAttribute('data-hui-system', '');
+			bn.setAttribute('data-hui-system-id', 'probe=x; Path=/');
 			var b = document.createElement('button');
 			b.type = 'button';
-			b.setAttribute('data-fui-banner-dismiss', '');
-			b.setAttribute('data-fui-banner-dismiss-id', 'probe=x; Path=/');
+			b.setAttribute('data-hui-system-dismiss', '');
 			bn.appendChild(b);
 			document.body.appendChild(bn);
 			b.click();
@@ -1000,61 +785,9 @@ func TestBannerDismissCookieEncodesId(t *testing.T) {
 // retarget openPane at another pane, plant non-canonical classes, or
 // throw out of the delegated click listener. paneEl escapes the value
 // with CSS.escape (the family rule its own pane-key lookup set).
-func TestPaneHostCraftedValueNoOp(t *testing.T) {
-	// Tertiary first in document order: a two-branch crafted selector
-	// must not resolve to it.
-	g := startGadgetServer(t, `[]`, `
-<div data-fui-pane-host id="ph1">
-  <div data-fui-pane="tertiary" id="pane-ter" hidden>T</div>
-  <div data-fui-pane="secondary" id="pane-sec" hidden>S</div>
-</div>
-<div data-fui-pane-host id="ph2">
-  <div data-fui-pane="secondary" id="pane-sec2" hidden>S2</div>
-</div>`)
-
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-	var raw string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(g.Srv.URL+"/"),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.loadedModules&&window.__gofastr.loadedModules.panehost)`, nil,
-			chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
-		chromedp.Evaluate(`(function () {
-			window.__paneErr = '';
-			window.addEventListener('error', function (e) { window.__paneErr = e.message || String(e); });
-			var b1 = document.createElement('button');
-			b1.setAttribute('data-fui-pane-open', 'secondary"], [data-fui-pane="tertiary');
-			document.getElementById('ph1').appendChild(b1);
-			var b2 = document.createElement('button');
-			b2.setAttribute('data-fui-pane-open', 'b"ad');
-			document.getElementById('ph2').appendChild(b2);
-			b1.click();
-			b2.click();
-			var bad = [];
-			if (!document.getElementById('pane-ter').hasAttribute('hidden')) bad.push('wrong pane opened (tertiary)');
-			if (!document.getElementById('pane-sec').hasAttribute('hidden')) bad.push('secondary opened');
-			if (!document.getElementById('pane-sec2').hasAttribute('hidden')) bad.push('ph2 secondary opened');
-			var h = document.getElementById('ph1');
-			for (var i = 0; i < h.classList.length; i++) {
-				var c = h.classList[i];
-				if (c !== 'ui-pane-host' && !/^ui-pane-host--(secondary|tertiary)-open$/.test(c)) {
-					bad.push('non-canonical class ' + c);
-				}
-			}
-			if (window.__paneErr) bad.push('threw: ' + window.__paneErr);
-			return JSON.stringify(bad);
-		})()`, &raw),
-	); err != nil {
-		t.Fatal(err)
-	}
-	var bad []string
-	if err := json.Unmarshal([]byte(raw), &bad); err != nil {
-		t.Fatalf("probe returned %q: %v", raw, err)
-	}
-	if len(bad) > 0 {
-		t.Errorf("SECURITY: [panehost-selector] crafted data-fui-pane-open value was interpolated raw into the pane selector: %s — a crafted value must match nothing so the click is a no-op", strings.Join(bad, "; "))
-	}
-}
+// The pane-host crafted-value contract moved with the module:
+// framework/headless TestE2E_PaneHostCraftedValueNoOp owns it now
+// (the spellings are data-hui-pane-*, the module headless-panehost).
 
 // TestRpcScrollSelectorDegradesOnly pins that a post-success UI hint
 // (data-fui-rpc-scroll-to) degrades without corrupting the RPC result:
@@ -1229,28 +962,20 @@ func insideTryBlock(s string, pos int) bool {
 // handler that carries it.
 //
 // Surfaces (drift tripwire — every anchor must keep existing):
-//   - src/copy.js            data-fui-copy-text-from
 //   - src/widgethelpers.js   data-fui-fill-input, data-fui-charcount-source
-//   - src/shortcut.js        data-fui-shortcut-target
 //   - src/rpc.js             data-fui-rpc-scroll-to
 //   - frag/signals.js        data-fui-scroll-bottom-on-update
-//   - src/backtotop.js       data-fui-btt-target
-//   - src/infinitescroll.js  data-fui-infinite-items
-//   - src/scrollspy.js       data-fui-scrollspy, data-fui-scrollspy-target
-//   - src/toc.js             data-fui-toc
+//
+// (scrollspy and toc are retired; their selector-by-design lookups
+// moved into framework/headless's headless-rail module, whose own
+// try/catch owns the degrade contract now. infinitescroll is retired
+// with its pattern: nothing in the repository used it.)
 func TestSelectorByDesignLookupsGuarded(t *testing.T) {
 	anchors := []struct{ file, anchor string }{
-		{"src/copy.js", `document.querySelector(sel)`},
 		{"src/widgethelpers.js", `widget.querySelector(sel)`},
 		{"src/widgethelpers.js", `sel && document.querySelector(sel)`},
-		{"src/shortcut.js", `el.querySelector(sel)`},
 		{"src/rpc.js", `document.querySelector(scrollSel)`},
 		{"frag/signals.js", `node.querySelector(sel)`},
-		{"src/backtotop.js", `document.querySelector(scrollTarget)`},
-		{"src/infinitescroll.js", `wrap.querySelector(itemsSel)`},
-		{"src/scrollspy.js", `document.querySelector(observeSel)`},
-		{"src/scrollspy.js", `root.querySelectorAll(targetSel)`},
-		{"src/toc.js", `document.querySelector(target)`},
 	}
 	for _, a := range anchors {
 		if !strings.Contains(readSrc(t, a.file), a.anchor) {

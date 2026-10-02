@@ -49,6 +49,12 @@ func createTheme() style.Theme {
 		CodeText:    "oklch(0.96 0.006 80)",
 		CodeBorder:  "oklch(0.28 0.006 75)",
 
+		// Dark mode keeps the framework's dark palette on purpose: this
+		// theme is dark-first (the light scheme above already paints the
+		// warm near-black ladder), and the framework's zinc dark values
+		// are the deliberate dark scheme. Empty Dark = "no dark change".
+		Dark: &theme.Overrides{},
+
 		// System stack instead of Google Fonts so the page works under the
 		// framework's `default-src 'self'` CSP. Geist/JetBrains Mono in the
 		// prototype become the closest system equivalents. Design intent of
@@ -63,16 +69,27 @@ func createTheme() style.Theme {
 		RadiusLg: 10,
 	})
 
+	// The v2 1240px column: ui.Container(ContainerWide) caps at the
+	// theme's wide width, so the site uses it instead of a local
+	// .container-site helper.
+	t.Layout.WideWidth.Value = "1240px"
+	// The site's bar is 60px; --size-header-height is the token the
+	// owned siteheader package (and ui.ContentRow's viewport mode)
+	// reads, so the height lives here, once.
+	t.Layout.HeaderHeight.Value = "60px"
+
 	// Spacing, v2 ladder is 4/8/12/16/24/32/48 mapped to XS..XXXL.
-	// Larger steps (64/96/128) get added as raw :root vars in the stylesheet
-	// since there's no canonical slot above XXXL.
+	// The NAMES stay the framework defaults (xs…3xl) so owned sheets
+	// and framework components read one vocabulary; only the values
+	// are the site's. Larger steps (64/96) are app tokens declared in
+	// the site's owned packages (sitefooter/siteheader tokens files).
 	t.Spacing.XS = style.Spacing{Name: "xs", Value: 4}
 	t.Spacing.SM = style.Spacing{Name: "sm", Value: 8}
 	t.Spacing.MD = style.Spacing{Name: "md", Value: 12}
 	t.Spacing.LG = style.Spacing{Name: "lg", Value: 16}
 	t.Spacing.XL = style.Spacing{Name: "xl", Value: 24}
-	t.Spacing.XXL = style.Spacing{Name: "xxl", Value: 32}
-	t.Spacing.XXXL = style.Spacing{Name: "xxxl", Value: 48}
+	t.Spacing.XXL = style.Spacing{Name: "2xl", Value: 32}
+	t.Spacing.XXXL = style.Spacing{Name: "3xl", Value: 48}
 
 	return t
 }

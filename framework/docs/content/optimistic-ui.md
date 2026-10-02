@@ -72,10 +72,9 @@ the same attribute name across primitives so a single CSS selector
 The lifecycle is **button-scoped and re-entry-safe**. While a button is in
 `pending`:
 
-- `OptimisticAction` ignores further clicks (`if (state === 'committed' ||
-  state === 'pending') return;` in `optimisticaction.js`).
-- `ToggleAction` does the same (`if (state === 'pending') return;` in
-  `toggleaction.js`).
+- `OptimisticAction` ignores further clicks (the pending/committed
+  re-entry guard in the kernel's `action` module).
+- `ToggleAction` does the same (the same `data-hui-action*` guard).
 - `sortablelist` ignores new grabs until the active commit settles.
 
 For mutations that must be **globally** idempotent across buttons, tabs,
@@ -197,7 +196,7 @@ users. The primitives handle this differently:
   reduce)`; the visible label flip is unchanged because it carries
   information, not decoration.
 - **`aria-live`** regions announce sortable grab/move/rollback/conflict
-  events (the polite region is wired in `sortablelist.js`).
+  events (the polite region is wired into the `headless-sortablelist` module).
 
 The two button primitives (`OptimisticAction`, `ToggleAction`) do **not**
 today emit a spoken "Saved" / "Rolled back" announcement; they rely on
@@ -242,8 +241,9 @@ already complete are linked, not rebuilt.
 following, watch / unwatch, subscribe / unsubscribe, default-plan picker.
 
 **Primitive:** `ui.ToggleAction` (`framework/ui/toggleaction.go`). Runtime:
-`toggleaction.js`. SSR ships the initial state via `Committed`; the
-runtime mirrors it onto `aria-pressed` and flips idle↔committed on click.
+the kernel's `action` module through the `data-hui-action*` hooks. SSR ships
+the initial state via `Committed`; the runtime mirrors it onto `aria-pressed`
+and flips idle↔committed on click.
 A second click reverts when `AllowUntoggle` (or `UntoggleEndpoint`) is
 set; without it the button is sticky once committed, matching
 `OptimisticAction`.
@@ -283,7 +283,8 @@ validates the new one.
 
 **Primitive:** `ui.OptimisticAction` (`framework/ui/optimisticaction.go`)
 as the commit trigger, paired with a text field whose prior value is the
-rollback target. Runtime: `optimisticaction.js`. The button flips to its
+rollback target. Runtime: the kernel's `action` module through the
+`data-hui-action*` hooks. The button flips to its
 success label optimistically, fires its endpoint, and on non-2xx shakes
 and reverts. The `error` shake animation respects `prefers-reduced-motion`.
 
@@ -370,11 +371,13 @@ it was), while a sibling `text`-mode status node renders a
 human-readable "Error: <status> — <text>" line.
 
 **The temp-row pattern (what "optimistic" adds):** a *true* optimistic
-create paints the row before the fetch resolves. That requires either (a)
-an island with a small amount of registered JS that mints a `temp:<id>`
+create paints the row before the fetch resolves. That requires an
+island with a small amount of registered JS that mints a `temp:<id>`
 row, fires the RPC, and swaps the temp row for the authoritative one on
-2xx, or (b) a future runtime attribute in the `data-fui-optimistic-*`
-family. The pattern's invariants, whichever path you take:
+2xx (the retired `data-fui-optimistic-*` family never shipped; the
+headless action contract — `data-hui-action*` — announces the trigger's
+busy/committed/rollback states, and the temp-row swap stays the
+island's). The pattern's invariants:
 
 1. Mint a temp id only the client will see; never let the server persist
    it.
@@ -483,11 +486,12 @@ byte-identical, row still present).
 **Use for:** reordering within a list, or moving cards between columns on
 a board, where two users can move the same item concurrently.
 
-**Primitive:** `core-ui/patterns/sortablelist` with `Config.Version`
-(the concurrency token) and `Config.ConflictRPC` (the reconciliation
-endpoint). Runtime: `sortablelist.js`.
+**Primitive:** `framework/ui.SortableList` with `SortableListConfig.Version`
+(the concurrency token) and `SortableListConfig.ConflictRPC` (the reconciliation
+endpoint; `ui.SortableListItems` renders the fresh rows it returns).
+Runtime: the registered `headless-sortablelist` module.
 
-**Compose:** one `sortablelist.Render` per column, all sharing the same
+**Compose:** one `ui.SortableList` per column, all sharing the same
 `Group` (the board id), each with a unique `Container` (the column id).
 `Version` is appended to every commit POST as `version=<token>`. A 409
 response triggers `ConflictRPC` (a GET), whose response body replaces the
@@ -495,15 +499,15 @@ destination column's `innerHTML`.
 
 <!-- gofastr:compile
 import "fmt"
-import patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
 type w4Col struct{ Title, ID string }
 type w4Board struct{ Version int }
 var col = w4Col{Title: "todo", ID: "col-1"}
 var board = w4Board{Version: 2}
-var items []patternsSortablelist.Item
+var items []ui.SortableItem
 -->
 ```go
-patternsSortablelist.Render(patternsSortablelist.Config{
+ui.SortableList(ui.SortableListConfig{
     Label:       col.Title,
     Group:       "board-1",
     Container:   col.ID,
@@ -553,7 +557,8 @@ a 3-column kanban backed by the package-level `kanbanBoard` store, with
 "which list does this belong to" radio-like control rendered as buttons.
 
 **Primitive:** `ui.ToggleAction` with a shared `Group` key. Runtime:
-`toggleaction.js`. Committing any button in the group optimistically
+the kernel's `action` module through the `data-hui-action*` hooks
+(`data-hui-action-group`). Committing any button in the group optimistically
 reverts the previously-committed sibling (no extra RPC; the server stays
 the source of truth and a later navigation refreshes from server state).
 
@@ -608,9 +613,9 @@ recipe is not a separate component; it is the failure path every other
 recipe must survive.
 
 **Primitive:** the `error`/`idle` revert path in the kernel's
-`action` module (bound by the `framework/ui` adapters
-`optimisticaction.js` and `toggleaction.js`), the rollback in
-`sortablelist.js`, and `ui.NetworkRetryBanner` for the global "you
+`action` module (bound through the `data-hui-action*` hooks the
+headless action primitives render), the rollback in
+the registered `headless-sortablelist` module, and `ui.NetworkRetryBanner` for the global "you
 appear to be offline" surface.
 
 **What happens on failure:**
@@ -628,12 +633,14 @@ appear to be offline" surface.
 - `sortablelist` restores the destination column from its captured
   snapshot. With `Version` set, a 409 takes the conflict-refresh path
   instead; without it, any non-2xx rolls back.
-- `NetworkRetryBanner` shows after a configurable run of failures
-  (`FailureThreshold`, default 3). It hides when the Retry button's
-  health-check returns 2xx, or when app code calls
-  `window.__gofastr.networkStatus.reportRecovery()`. It does **not** wrap
-  `window.fetch`; apps wire `reportFailure`/`reportRecovery` into their
-  own RPC error handlers.
+- `NetworkRetryBanner` shows when the framework reports the
+  connection lost with a retry scheduled (the headless module follows
+  `window.__gofastr.sseStatus`; the failure-count and SSE-silence
+  triggers retired with the old module). It hides when the Retry
+  button's health-check returns 2xx, or when app code calls
+  `window.__gofastr.networkStatus.reportRecovery()`. It does **not**
+  wrap `window.fetch`; apps wire `reportFailure`/`reportRecovery`
+  into their own RPC error handlers.
 
 **Retry.** The primitives do not auto-retry; they roll back and let the
 user try again. For mutations that should retry transparently (sync,

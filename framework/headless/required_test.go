@@ -84,7 +84,7 @@ func TestChoiceRefusesAnUnknownType(t *testing.T) {
 // refusals were the ones a port left in another package's name.
 func TestPaginationRefusesAnUnnamedNav(t *testing.T) {
 	refuse(t, "AriaLabel", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/x?p=%d", Island: fixtureIsland}, nil)
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "/x", Island: fixtureIsland}, nil)
 	})
 }
 
@@ -116,17 +116,19 @@ func TestInputOwnedIsForBoundsOnly(t *testing.T) {
 	has(t, got, `max="9"`, "a folded bound was dropped")
 }
 
-// A pager whose pattern has no %d renders every page at one URL.
-func TestPaginationRefusesAPatternWithoutThePage(t *testing.T) {
-	refuse(t, "%d", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/apps", AriaLabel: "Pages", Island: fixtureIsland}, nil)
+// A pager whose Path is not a URL the anchor policy allows is refused
+// at render, the same refusal every href this package writes meets:
+// an off-origin path never reaches an anchor.
+func TestPaginationRefusesAPathTheAnchorPolicyRejects(t *testing.T) {
+	refuse(t, "same-origin", func() {
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "javascript:x", AriaLabel: "Pages"}, nil)
 	})
 }
 
 // Every href a component writes goes through the framework's anchor
 // policy. A Button's rejected href renders the disabled-link posture;
-// a Form's action, a Tag's or an Alert's dismiss, and a pager's
-// pattern are refused at render.
+// a Form's action, a Tag's or an Alert's dismiss, and a pager's Path
+// are refused at render.
 func TestHrefsGoThroughTheAnchorPolicy(t *testing.T) {
 	got := Button(ButtonProps{Label: "Go", Href: "javascript:alert(1)"}, nil)
 	hasNot(t, got, "href=", "a javascript: href reached the anchor")
@@ -138,8 +140,8 @@ func TestHrefsGoThroughTheAnchorPolicy(t *testing.T) {
 	refuse(t, "DismissHref", func() {
 		Alert(AlertProps{Title: "T", DismissHref: "//evil/x", Island: fixtureIsland}, nil)
 	})
-	refuse(t, "HrefPattern", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "javascript:%d", AriaLabel: "Pages", Island: fixtureIsland}, nil)
+	refuse(t, "Path", func() {
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "//evil/x", AriaLabel: "Pages"}, nil)
 	})
 	refuse(t, "data-fui-rpc", func() {
 		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-fui-rpc": "//evil/x"}}, nil)
@@ -185,10 +187,34 @@ func TestExtrasAndOverridesStoreKeysFolded(t *testing.T) {
 			continue
 		}
 		refuse(t, "two spellings", func() {
-			sp.WithParts(Skin{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: html.Attrs{"role": "a", "ROLE": "b"}}})
+			sp.WithParts(Classes{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: html.Attrs{"role": "a", "ROLE": "b"}}})
 		})
 		break
 	}
 }
 
 var nameAttr = regexp.MustCompile(`(?i)\sname="`)
+
+// The short hex form is a colour, and the module that binds this
+// component expands it on every keystroke. Rendering it as an error
+// would open a legal token in the error state and clear the error the
+// moment its owner retyped the same value — which is what the theme
+// editor's own tokens look like when a host authors "#FFF".
+func TestColorAcceptsShortHexAndExpandsItForThePicker(t *testing.T) {
+	h := string(Color(ColorProps{Name: "primary", Value: "#FFF"}, nil))
+	if !strings.Contains(h, `value="#FFFFFF"`) {
+		t.Errorf("the picker needs the expanded form:\n%s", h)
+	}
+	if !strings.Contains(h, `value="#FFF"`) {
+		t.Errorf("the text input keeps what its owner wrote:\n%s", h)
+	}
+	if strings.Contains(h, "data-invalid") {
+		t.Errorf("a short hex colour is not an invalid value:\n%s", h)
+	}
+	// A value the picker genuinely cannot show still marks the shell
+	// and keeps its text verbatim.
+	ref := string(Color(ColorProps{Name: "primary", Value: "var(--brand)"}, nil))
+	if !strings.Contains(ref, "data-invalid") || !strings.Contains(ref, "var(--brand)") {
+		t.Errorf("a token reference must stay verbatim and mark the shell:\n%s", ref)
+	}
+}

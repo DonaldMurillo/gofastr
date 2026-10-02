@@ -2,12 +2,10 @@ package ui
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
-	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 )
 
 // loadedFlagAssign matches the loadedModules ASSIGNMENT (an equals
@@ -62,19 +60,13 @@ func TestFlagBeforeInstallReadsTheWriteNotTheInit(t *testing.T) {
 // first bind throws, and it never registers — and the source must bind
 // through window.__gofastr.action rather than a machine of its own.
 func TestActionAdaptersRequireThePrimitive(t *testing.T) {
+	// The two adapters retired with this change: the headless action
+	// module owns the buttons, and a registration left beside it
+	// would double-bind every action button. Their absence is
+	// asserted here, where their registration used to live.
 	for name := range map[string]struct{}{"optimisticaction": {}, "toggleaction": {}} {
-		e, ok := registry.LookupBehavior(name)
-		if !ok {
-			t.Fatalf("%s is not registered: the component's module is not on the page", name)
-		}
-		if !slices.Equal(e.Requires, []string{"action"}) {
-			t.Errorf("%s requires %v, want exactly [action]: the primitive must be registered before the adapter evaluates", name, e.Requires)
-		}
-		if !strings.Contains(e.Source, "action.bind") {
-			t.Errorf("%s does not bind through window.__gofastr.action: the machine is the primitive's, written once", name)
-		}
-		if !strings.Contains(e.Source, "loadedModules") {
-			t.Errorf("%s never sets its loaded flag: the kernel cannot tell it is armed, so inserted markup is never handed to it", name)
+		if _, ok := registry.LookupBehavior(name); ok {
+			t.Fatalf("%s is still registered: the headless action module owns the button; delete the adapter with its source", name)
 		}
 	}
 }
@@ -92,14 +84,12 @@ func TestActionAdaptersRequireThePrimitive(t *testing.T) {
 // bare identifier match is satisfied by the guard and holds nothing.
 // Contract: core-ui/ARCHITECTURE.md "Component behaviour".
 func TestActionAdaptersSetLoadedFlagBeforeInstalling(t *testing.T) {
+	// Retired with the adapters: the headless module keeps the
+	// flag-before-install contract, and its own gate in
+	// framework/headless (TestModuleKeepsTheKernelContract) walks it.
 	for _, name := range []string{"optimisticaction", "toggleaction"} {
-		e, ok := registry.LookupBehavior(name)
-		if !ok {
-			t.Fatalf("%s is not registered: the component's module is not on the page", name)
-		}
-		src := minify.Minify(e.Source)
-		if why := flagBeforeInstall(src); why != "" {
-			t.Errorf("%s %s: a retry re-executes the file and would install it twice", name, why)
+		if _, ok := registry.LookupBehavior(name); ok {
+			t.Fatalf("%s is still registered: the headless action module owns the button", name)
 		}
 	}
 }

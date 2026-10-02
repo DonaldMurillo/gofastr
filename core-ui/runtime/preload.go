@@ -23,52 +23,35 @@ type demandLoadMarker struct {
 var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-rpc", "rpc"},
 	{"data-kiln-tool", "rpc"},
-	{"data-fui-copy-text-from", "copy"},
 	{"data-fui-computed", "computed"},
 	{"data-fui-compute", "compute"},
-	{"data-fui-fileupload", "fileupload"},
 	{"data-fui-popover-anchor", "popover"},
-	{"data-fui-menu", "menu"},
-	{"data-fui-toast-stack", "toasts"},
-	{"data-fui-toast", "toasts"},
-	{`name="gofastr-sse"`, "sse"},
+	// SSE opens on demand: the module loads for a page that takes
+	// pushes (any island region or the offline banner that reads the
+	// stream's mirrored state), not for the availability meta, which
+	// every session-bearing page carries.
+	{"data-island", "sse"},
+	{"data-hui-system-offline", "sse"},
 	{"data-fui-widget", "widgets"},
 	{"data-fui-open", "widgets"},
-	{`role="combobox"`, "combobox"},
-	{`role="tree"`, "tree"},
-	{"data-fui-infinite-scroll", "infinitescroll"},
-	{"data-fui-banner-dismiss", "banner"},
-	{"data-fui-slider-mirror", "slider"},
-	{"data-fui-number-step", "numberinput"},
 	{"data-fui-autogrow", "textarea"},
-	{"data-fui-multiselect-chips", "multiselect"},
-	{`data-fui-comp="ui-dropzone"`, "dropzone"},
-	{"data-fui-range-slider", "rangeslider"},
-	{"data-fui-tag-input", "taginput"},
-	{"data-fui-animated-counter", "animatedcounter"},
-	{"data-fui-toc", "toc"},
-	{"data-fui-scrollspy", "scrollspy"},
-	{`data-fui-comp="ui-network-retry-banner"`, "networkretrybanner"},
-	{"data-fui-sortable", "sortablelist"},
-	{"data-fui-shortcut-focus", "shortcut"},
-	{"data-fui-shortcut-click", "shortcut"},
-	{`data-fui-comp="ui-lightbox"`, "lightbox"},
-	{"data-fui-carousel", "carousel"},
-	{"data-fui-theme-toggle", "themeswitch"},
-	{"data-fui-sidebar-collapse", "sidebar"},
-	{"data-fui-sidebar-group-toggle", "sidebar"},
-	{"data-fui-back-to-top", "backtotop"},
-	{`data-fui-comp="ui-conditional-field"`, "conditionalfield"},
-	{`data-fui-comp="ui-password-input"`, "passwordinput"},
 	{`data-fui-comp="ui-search-input"`, "searchinput"},
-	{`data-fui-comp="ui-form-repeater"`, "formrepeater"},
 	{"data-fui-dropdown-wrap", "dropdown"},
 	{"data-fui-reveal", "reveal"},
 	{"data-fui-animate-signal", "animate"},
 	{"data-fui-drag-dismiss", "dragdismiss"},
-	{"data-fui-disclosure", "disclosure"},
-	{"data-fui-pane-host", "panehost"},
 	{"data-fui-poll", "poll"},
+	// The layout demand modules (docs/DESIGN-layout-outlets.md
+	// "### Opt-in"): transition loads on a declared cell or
+	// vocabulary. (parts has no DOM marker — it loads off the route
+	// manifest; the ENVELOPE module has no boot trigger at all: an
+	// outlet/area marker costs a page nothing until its first
+	// navigation; and LOADING is module-side: its scheduler is the
+	// envelope navigator's, so the template marker means nothing
+	// without it and the envelope module loads it at evaluation — no
+	// row here or in the scanner table the drift test aligns with.)
+	{"data-fui-vt", "transition"},
+	{"data-fui-vt-kinds", "transition"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load
@@ -111,7 +94,6 @@ func NeededModules(pageHTML string) []string {
 			add(m.Module)
 		}
 	}
-	// Registered behaviours preload by the same rule, from the markers
 	// they declared rather than from the table.
 	for _, name := range neededBehaviors(pageHTML) {
 		add(name)

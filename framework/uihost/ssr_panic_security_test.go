@@ -120,14 +120,14 @@ func TestSSRRenderPanicContained(t *testing.T) {
 	// Control A: WITH a default layout the full-page arm renders through
 	// SafeRenderCtx — the panic is contained and the request completes.
 	aCtl := app.NewApp("red-ssr-render-ctl")
-	aCtl.SetDefaultLayout(app.NewLayout("red-ctl"))
+	aCtl.SetDefaultLayout(bareLayout("red-ctl"))
 	aCtl.Register("/", panicScreen{}, nil)
 	ssrGetNoPanic(t, "ssr-rendercomponent-unnetted", New(aCtl), "/", nil)
 
 	// Control B: a plain ScreenPage partial (no intercept) stays contained
 	// (renderPartial's ScreenPage arm already uses SafeRenderCtx).
 	aPart := app.NewApp("red-ssr-partial-ctl")
-	aPart.SetDefaultLayout(app.NewLayout("red-ctl"))
+	aPart.SetDefaultLayout(bareLayout("red-ctl"))
 	aPart.Register("/", panicScreen{}, nil)
 	ssrGetNoPanic(t, "ssr-rendercomponent-unnetted", New(aPart), "/", map[string]string{
 		"X-Gofastr-Navigate": "1",
@@ -169,14 +169,14 @@ func TestSSRLoadPanicContained(t *testing.T) {
 	// Load panic escapes EVEN WITH SetDefaultLayout: Load runs before the
 	// SafeRenderCtx render arm is ever reached.
 	a := app.NewApp("red-ssr-load")
-	a.SetDefaultLayout(app.NewLayout("red-ctl"))
+	a.SetDefaultLayout(bareLayout("red-ctl"))
 	a.Register("/", &loadBoom{}, nil)
 	ssrGetNoPanic(t, "ssr-loadhook-unnetted", New(a), "/", nil)
 
 	// Control: a Load *error* (not panic) must render the error path —
 	// proves the arm is exercised and fails through the error channel.
 	aErr := app.NewApp("red-ssr-load-ctl")
-	aErr.SetDefaultLayout(app.NewLayout("red-ctl"))
+	aErr.SetDefaultLayout(bareLayout("red-ctl"))
 	aErr.Register("/", &loadErr{}, nil)
 	rec := ssrGetNoPanic(t, "ssr-loadhook-unnetted", New(aErr), "/", nil)
 	if rec.Code != http.StatusNotFound {
@@ -188,7 +188,7 @@ func TestSSRLoadPanicContained(t *testing.T) {
 	// working (fail-fast registration stays), while the post-Load re-read
 	// on GET / (2nd call on the per-request copy) must not escape.
 	aT := app.NewApp("red-ssr-title")
-	aT.SetDefaultLayout(app.NewLayout("red-ctl"))
+	aT.SetDefaultLayout(bareLayout("red-ctl"))
 	func() {
 		defer func() {
 			if r := recover(); r != nil {

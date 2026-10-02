@@ -1,0 +1,38 @@
+/* The review frame: summary, file tree, diff, comments.
+   Phone: one column, no tree. Tablet: comments under the
+   diff. Wide: three columns. */
+:scope {
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-areas: "summary" "main" "comments";
+}
+@media (--above-md) {
+  :scope {
+    grid-template-columns: 14rem minmax(0, 1fr);
+    grid-template-areas:
+      "summary summary"
+      "files   main"
+      "files   comments";
+  }
+}
+@media (--above-xl) {
+  :scope {
+    grid-template-columns: 14rem minmax(0, 1fr) 20rem;
+    grid-template-areas:
+      "summary summary summary"
+      "files   main    comments";
+  }
+}
+/* Kit roots placed here. Their insides stay theirs. */
+.summary  { grid-area: summary; }
+.files    { grid-area: files; display: none; }
+.main     { grid-area: main; }
+.comments { grid-area: comments; }
+@media (--above-md) {
+  .files {
+    display: block;
+    position: sticky;
+    inset-block-start: var(--spacing-md);
+    align-self: start;
+  }
+}

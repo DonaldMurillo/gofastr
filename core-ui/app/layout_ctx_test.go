@@ -30,10 +30,10 @@ func (c ctxChrome) RenderCtx(ctx context.Context) render.HTML {
 
 func TestLayoutChromeReceivesContext(t *testing.T) {
 	a := NewApp("ctxchrome")
-	layout := NewLayout("main").
-		WithSidebar(ctxChrome{prefix: "SIDEBAR"}).
-		WithHeader(ctxChrome{prefix: "HEADER"}).
-		WithFooter(ctxChrome{prefix: "FOOTER"})
+	layout := chromeShell("main",
+		ctxChrome{prefix: "HEADER"},
+		ctxChrome{prefix: "SIDEBAR"},
+		ctxChrome{prefix: "FOOTER"})
 	a.RegisterScreen(NewScreen("/p", &stubComponent{html: render.Raw("BODY")}), layout)
 
 	ctx := context.WithValue(context.Background(), layoutCtxKey{}, "ada")

@@ -33,6 +33,10 @@ func createTheme() style.Theme {
 		CodeText:    "oklch(0.96 0.006 80)",
 		CodeBorder:  "oklch(0.28 0.006 75)",
 
+		// Dark mode keeps the framework's dark palette on purpose (the
+		// light scheme above is already the dark-first brand ladder).
+		Dark: &theme.Overrides{},
+
 		FontBody:    "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
 		FontHeading: "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
 		FontMono:    "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace",
@@ -46,7 +50,7 @@ func createTheme() style.Theme {
 	t.Spacing.MD = style.Spacing{Name: "md", Value: 12}
 	t.Spacing.LG = style.Spacing{Name: "lg", Value: 16}
 	t.Spacing.XL = style.Spacing{Name: "xl", Value: 24}
-	t.Spacing.XXL = style.Spacing{Name: "xxl", Value: 32}
-	t.Spacing.XXXL = style.Spacing{Name: "xxxl", Value: 48}
+	t.Spacing.XXL = style.Spacing{Name: "2xl", Value: 32}
+	t.Spacing.XXXL = style.Spacing{Name: "3xl", Value: 48}
 	return t
 }

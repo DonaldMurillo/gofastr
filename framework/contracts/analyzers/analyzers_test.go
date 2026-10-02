@@ -18,10 +18,27 @@ import (
 // that kills a linter, so absence is asserted as loudly as presence.
 func fixture(t *testing.T, files map[string]string) []contracts.Diagnostic {
 	t.Helper()
-	dir := t.TempDir()
 	if _, ok := files["go.mod"]; !ok {
 		files["go.mod"] = "module example.com/app\n\ngo 1.26\n"
 	}
+	dir := t.TempDir()
+	seedFixture(t, dir, files)
+	return runFixture(t, dir)
+}
+
+// fixtureRoot is fixture with the pass root moved inside the tree: the
+// pass a `gofastr verify` run from a subdirectory of a module (or a
+// go.work root) builds, where the go.mod sits above the root.
+func fixtureRoot(t *testing.T, rootRel string, files map[string]string) []contracts.Diagnostic {
+	t.Helper()
+	dir := t.TempDir()
+	seedFixture(t, dir, files)
+	return runFixture(t, filepath.Join(dir, rootRel))
+}
+
+// seedFixture writes a fixture's files under dir.
+func seedFixture(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
 	for name, body := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -31,8 +48,13 @@ func fixture(t *testing.T, files map[string]string) []contracts.Diagnostic {
 			t.Fatal(err)
 		}
 	}
+}
+
+// runFixture runs every analyzer over a fixture root.
+func runFixture(t *testing.T, root string) []contracts.Diagnostic {
+	t.Helper()
 	cfg := contracts.DefaultConfig()
-	pass, err := contracts.NewPass(dir, cfg)
+	pass, err := contracts.NewPass(root, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

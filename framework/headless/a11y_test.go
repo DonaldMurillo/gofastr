@@ -15,6 +15,14 @@ func has(t *testing.T, got render.HTML, want, why string) {
 	}
 }
 
+// hasNoContract fails when got carries any framework runtime
+// attribute. data-fui-internal is left out: it is the owned-style
+// boundary every component renders, not an island contract.
+func hasNoContract(t *testing.T, got render.HTML, why string) {
+	t.Helper()
+	hasNot(t, render.HTML(strings.ReplaceAll(string(got), ` data-fui-internal=""`, "")), "data-fui", why)
+}
+
 func hasNot(t *testing.T, got render.HTML, unwanted, why string) {
 	t.Helper()
 	if strings.Contains(string(got), unwanted) {
@@ -60,14 +68,16 @@ func TestFieldWiresLabelHintAndErrorToTheControl(t *testing.T) {
 	has(t, got, `id="port-hint"`, "the hint has no id to be referenced by")
 	has(t, got, `aria-describedby="port-hint"`, "the control is not tied to its hint")
 
-	// An error replaces the hint in the description rather than
-	// joining it: when something is wrong, the correction is what
-	// needs to be heard first, and reading both buries it.
+	// The error JOINS the hint in the description, ahead of it: the
+	// hint is the rule the value must obey and the error is the
+	// violation, so dropping the rule exactly when it was broken is
+	// dropping it when it is needed most. The correction is read
+	// first because it comes first.
 	bad := Field(FieldProps{Label: "Port", For: "p2", Hint: "1–65535", Error: "Already in use."}, nil,
 		func(c FieldControl) render.HTML {
 			return Input(InputProps{Name: "p2", ID: c.ID, DescribedBy: c.DescribedBy, Invalid: c.Invalid}, nil)
 		})
-	has(t, bad, `aria-describedby="p2-error"`, "the control is not tied to its error")
+	has(t, bad, `aria-describedby="p2-error p2-hint"`, "the control is not tied to its error and its hint")
 	has(t, bad, `aria-invalid="true"`, "an errored field does not mark its control invalid")
 
 	// The error itself has to interrupt. A message that appears
@@ -117,8 +127,8 @@ func TestChoiceGroupCarriesItsQuestion(t *testing.T) {
 }
 
 func TestPaginationIsNavigationWithACurrentPage(t *testing.T) {
-	got := Pagination(PaginationProps{Page: 2, Pages: 5, HrefPattern: "/x?p=%d", AriaLabel: "Pages",
-		Island: fixtureIsland}, nil)
+	got := Pagination(PaginationProps{Page: 2, Pages: 5, Path: "/x", PageParam: "p",
+		AriaLabel: "Pages", Island: fixtureIsland}, nil)
 	has(t, got, "<nav", "pagination is not a nav landmark")
 	has(t, got, `aria-current="page"`, "pagination does not mark the current page")
 	if n := count(got, `aria-current="page"`); n != 1 {
@@ -126,8 +136,56 @@ func TestPaginationIsNavigationWithACurrentPage(t *testing.T) {
 	}
 }
 
+// The explicit roles look redundant on a displayed <table> and are
+// not: a cards collapse sets display:block on the table's elements,
+// and a table element displayed as a block loses its implicit table
+// semantics in Chromium and WebKit. The roles are what keep a
+// collapsed table a table for assistive tech, and scope="col" is
+// what ties each header to its column. Survey 2026-09-20 §4: nothing
+// in the repo asserted these directly — they arrived from
+// core-ui/html and were pinned only by meridian's axe runs.
+func TestTableIsATableWithScopedColumnHeaders(t *testing.T) {
+	got := Table(TableProps{
+		Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}, {Key: "env", Header: "Environment"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}}},
+	}, nil)
+	// Two substrings bind every role to its element: the head with
+	// both headers scoped, and the body row with both cells.
+	has(t, got, `<table role="table"><caption id="table-applications-caption">Applications</caption>`+
+		`<thead role="rowgroup"><tr role="row"><th aria-sort="none" role="columnheader" scope="col"><a href="?dir=asc&amp;sort=name">Name</a></th>`+
+		`<th role="columnheader" scope="col">Environment</th></tr></thead>`,
+		"the head lost a role, a scope, or the caption that names the table")
+	has(t, got, `<tbody role="rowgroup"><tr role="row"><td data-label="Name" role="cell">blog</td><td data-label="Environment" role="cell">production</td></tr></tbody></table>`,
+		"the body lost a role or a cell's label")
+}
+
+// The scroll region is keyboard-reachable (WCAG 2.1.1: a region that
+// can only be scrolled with a mouse fails it, and axe reports
+// scrollable-region-focusable) and, when the table has a caption,
+// named by it: the focus stop announces what it is. tabindex is
+// always 0 — the server cannot know whether this table overflows at
+// the reader's width, so the region is reachable before it scrolls.
+// Adrian Roselli's responsive-table pattern.
+func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
+	got := Table(TableProps{ID: "apps", Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog")}}},
+	}, nil)
+	// One substring binds the three attributes to the one element
+	// that wraps the table, and the caption's id to the name that
+	// points at it: attributes render sorted, so the shape is exact.
+	has(t, got, `<div aria-labelledby="apps-caption" data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
+
+	unnamed := Table(TableProps{
+		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
+	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
+	has(t, unnamed, `<div data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
+}
+
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
-	got := Steps(StepsProps{Labels: []string{"Account", "Plan", "Pay"}, Current: 2}, nil)
+	got := Steps(StepsProps{Steps: []Step{{Label: "Account"}, {Label: "Plan"}, {Label: "Pay"}}, Current: 2}, nil)
 	has(t, got, `aria-current=`, "the current step is not marked")
 }
 
@@ -215,6 +273,20 @@ func TestSectionHeadingLevelIsHonoured(t *testing.T) {
 	has(t, Section(SectionProps{Title: "Apps", Level: 9}, nil), "<h2", "an impossible level produced an invalid element")
 }
 
+// A section named by Label alone still renders its eyebrow: the
+// caller's heading rides in the body, and the kicker decorates it —
+// the site's numbered sections are this shape, and losing the kicker
+// changed the page the class-map move was meant to keep identical.
+func TestSectionLabelledByNameKeepsItsEyebrow(t *testing.T) {
+	got := Section(SectionProps{Label: "The numbers", Eyebrow: "01 / the numbers"}, nil,
+		render.HTML("<h2>The numbers</h2><p>x</p>"))
+	has(t, got, `aria-label="The numbers"`, "the section is not named by its label")
+	has(t, got, `aria-hidden="true" data-fui-internal="">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
+	if b, h := strings.Index(string(got), "01 / the numbers"), strings.Index(string(got), "<h2"); b > h {
+		t.Errorf("the kicker renders after the heading it decorates:\n%s", got)
+	}
+}
+
 // A separator between groups is meaningful and is an <hr>, which
 // already means "thematic break" — no role to claim. A line drawn for
 // looks is decoration, and announcing "separator" at every flourish on
@@ -241,11 +313,11 @@ func TestLabelledDividerKeepsItsRoleAndHidesItsRules(t *testing.T) {
 	}
 }
 
-// One lookup per axis, never a combined key: a skin keyed on
+// One lookup per axis, never a combined key: a class map keyed on
 // "root--md--center" has to enumerate every gap crossed with every
 // alignment, and the first pair nobody thought of renders unstyled.
 func TestLayoutModifiersAreIndependent(t *testing.T) {
-	sk := Skin{
+	sk := Classes{
 		PartRoot:             "ds-stack",
 		"root--gap-lg":       "ds-stack--gap-lg",
 		"root--align-center": "ds-stack--align-center",
@@ -549,7 +621,7 @@ func TestActionExtraAttrsCannotStealTheLifecycle(t *testing.T) {
 	hasNot(t, got, "//evil.example", "an extra redirected the mutation to another origin")
 	hasNot(t, got, "forged", "an extra forged a runtime hook")
 	hasNot(t, got, `"stolen"`, "an extra renamed the root")
-	hasNot(t, got, "mine", "an extra replaced the skin's class")
+	hasNot(t, got, "mine", "an extra replaced the class map's class")
 	has(t, got, `data-testid="keep"`, "an ordinary attribute was dropped — then the escape hatch is not one")
 
 	toggle := ToggleAction(ToggleActionProps{

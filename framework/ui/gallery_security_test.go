@@ -9,10 +9,11 @@ import (
 
 // TestGalleryDropsDangerousHref pins that a Gallery anchor href never
 // resolves to an executable scheme. Item Src (default + lightbox
-// branches) and HrefFn output all flow through the framework allow-list
-// (framework/ui/safety.go::safeURL); javascript:/data:/vbscript:/
-// protocol-relative URLs are dropped so the thumbnail renders as a
-// non-navigating figure instead of an XSS click target.
+// branches) and HrefFn output all flow through the headless primitive's
+// anchor and image-source policies (urlsafe.CleanAnchor /
+// urlsafe.ImageSource); javascript:/data:/vbscript:/ protocol-relative
+// URLs are dropped so the thumbnail renders as a non-navigating figure
+// instead of an XSS click target.
 func TestGalleryDropsDangerousHref(t *testing.T) {
 	dangerous := []string{
 		"javascript:alert(document.cookie)",
@@ -62,5 +63,24 @@ func assertNoDangerHref(t *testing.T, out, payload string) {
 	}
 	if strings.Contains(out, `href="//evil.example`) {
 		t.Fatalf("protocol-relative href reached gallery output:\n%s", out)
+	}
+}
+
+// An item whose Src the anchor policy refuses renders href="#". It must
+// not also carry target=_blank, or a click opens a blank tab.
+func TestGalleryRefusedSrcGetsNoNewTab(t *testing.T) {
+	got := string(ui.Gallery(ui.GalleryConfig{Items: []ui.GalleryItem{
+		{Src: "javascript:alert(1)", Alt: "bad"},
+		{Src: "/ok.png", Alt: "good"},
+	}}))
+	bad, _, ok := strings.Cut(got, `</li>`)
+	if !ok || !strings.Contains(bad, `alt="bad"`) {
+		t.Fatalf("first item missing:\n%s", got)
+	}
+	if strings.Contains(bad, `target="_blank"`) {
+		t.Errorf("refused Src still opens a new tab:\n%s", got)
+	}
+	if !strings.Contains(got, `href="/ok.png" rel="noopener" target="_blank"`) {
+		t.Errorf("safe Src lost its new-tab link:\n%s", got)
 	}
 }

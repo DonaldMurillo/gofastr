@@ -99,7 +99,7 @@ const (
 func newEmbedFixture(t *testing.T, mutate ...func(*fembed.Config)) embedFixture {
 	t.Helper()
 	application := app.NewApp("Embed Test")
-	application.SetDefaultLayout(app.NewLayout("main").WithHeader(&testHeaderComp{}))
+	application.SetDefaultLayout(headerLayout("main", &testHeaderComp{}))
 	reportsScreen := app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports")
 	otherScreen := app.NewScreen("/other", &embedSubjectComp{}).WithTitle("Other")
 	application.RegisterScreen(reportsScreen, nil)

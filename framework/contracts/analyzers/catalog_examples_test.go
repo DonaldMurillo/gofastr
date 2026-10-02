@@ -159,6 +159,20 @@ var examplesNeedingMoreContext = map[string]string{
 	contracts.RuleUnknownThemeToken:      "fires on a .css file; its example is CSS, which no Go snippet can carry", // not-a-secret: a rule id, flagged only because the constant name ends in "Token"
 	contracts.RuleHardcodedTokenValue:    "fires only inside the design-system trees (core-ui/, framework/ui/, …); a snippet at an app's root is an app surface, where GOFASTR1801 already reports any CSS at all",
 	contracts.RuleFallbackDrift:          "fires only inside the design-system trees, like GOFASTR1807; an app-root snippet is GOFASTR1801's finding",
+	contracts.RuleStaleStyleSource:       "fires on a .style.css file whose sibling <name>_style.gen.go is missing or stale; the pair is two files, which no one-file snippet can carry",
+	contracts.RuleOwnerlessStylesheet:    "fires on a .css file; its example is CSS, which no Go snippet can carry",
+	contracts.RuleKitClassSelector:       "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleImportant:              "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleRawMediaWidth:          "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleAnimationNoReduced:     "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleUpstreamCandidate:      "lists *.style.css files; its example is CSS, which no Go snippet can carry",
+	contracts.RuleDuplicateStyleName:     "needs two *.style.css files in two directories",
+	contracts.RuleKitRootStyle:           "needs a *.style.css, its generated handle, and the Go that passes a class to a kit root: three files",
+	contracts.RuleOwnedHandleLeak:        "needs a generated handle, the package that attaches it, and a second package using it",
+	contracts.RuleAppSheetSelector:       "fires on app.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleTokenCustomProperty:    "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleDuplicateTokenValue:    "fires on a *.tokens.css; its example is CSS, which no Go snippet can carry",
+	contracts.RuleRepeatedLiteral:        "needs two *.style.css files",
 }
 
 // The other half: a rule whose bad example does NOT produce it has either

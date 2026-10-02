@@ -175,7 +175,7 @@ func TestE2E_Toast_ServerHeaderFiresToast(t *testing.T) {
 		// The server-toast button on site is labelled "Server: header".
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Server: header')).click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('.ui-notification__title')).map(n => n.textContent).join(',')`, &titles),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('.fui-notification__title')).map(n => n.textContent).join(',')`, &titles),
 	); err != nil {
 		t.Fatalf("toast server: %v", err)
 	}
@@ -197,9 +197,9 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`window.__gofastr.toast({variant: 'danger', title: 'Test alert', body: 'body'})`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('.ui-notification__title')?.textContent`, &title),
-		chromedp.Evaluate(`document.querySelector('.ui-notification')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('.ui-notification')?.getAttribute('aria-live')`, &live),
+		chromedp.Evaluate(`document.querySelector('.fui-notification__title')?.textContent`, &title),
+		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('role')`, &role),
+		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('aria-live')`, &live),
 	); err != nil {
 		t.Fatalf("toast client: %v", err)
 	}
@@ -230,8 +230,8 @@ func TestE2E_Menu_RolesAndKeyboardNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/menu"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('summary.ui-menu__trigger')?.getAttribute('aria-haspopup')`, &triggerHasPopup),
-		chromedp.Evaluate(`document.querySelector('summary.ui-menu__trigger').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger')?.getAttribute('aria-haspopup')`, &triggerHasPopup),
+		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger').click()`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('[role="menu"]')?.getAttribute('role')`, &panelRole),
 		// Keyboard nav: dispatch on the focused item so e.target.closest works.
@@ -293,10 +293,10 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sidebar"),
 		pageReady(),
-		chromedp.Evaluate(`!!document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
+		chromedp.Evaluate(`!!document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
 		// Click via JS so the test is viewport-independent, the open is gated
 		// on the runtime handler, not CSS visibility.
-		chromedp.Evaluate(`document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
 		// Coalesce undefined→'' so an absent drawer fails on the assertion below
@@ -338,28 +338,32 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		chromedp.Evaluate(`localStorage.removeItem("`+storageKey+`")`, nil),
 		chromedp.Reload(),
 		pageReady(),
-		chromedp.WaitVisible(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
-		chromedp.Click(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar-collapse]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
+		chromedp.WaitVisible(`[data-hui-sidebar-toggle]`, chromedp.ByQuery),
+		chromedp.Click(`[data-hui-sidebar-toggle]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar-toggle]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
 		// Labels are clipped (visually-hidden pattern), NOT display:none,
 		// focusable links must keep their accessible names when collapsed.
 		chromedp.Evaluate(`(() => {
-			const l = document.querySelector('[data-fui-sidebar] .ui-sidebar__label');
+			const l = document.querySelector('[data-hui-sidebar] .fui-sidebar__label');
 			const cs = getComputedStyle(l);
 			return cs.position === 'absolute' && l.getBoundingClientRect().width <= 1 && cs.display !== 'none';
 		})()`, &labelHidden),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar] .fui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
 		chromedp.Reload(),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
 		chromedp.Evaluate(`
-			const sidebar = document.querySelector('[data-fui-sidebar]');
-			sidebar.classList.remove('ui-sidebar--collapsible');
-			sidebar.classList.add('ui-sidebar--off-canvas');
+			const sidebar = document.querySelector('[data-hui-sidebar]');
+			// An off-canvas render names the variant on the root AND on the
+			// drawer hamburger (its visibility keys on its own modifier, so
+			// the standalone SidebarDrawerTrigger works outside the root).
+			sidebar.classList.remove('fui-sidebar--collapsible');
+			sidebar.classList.add('fui-sidebar--off-canvas');
+			sidebar.querySelector('.fui-sidebar__hamburger').classList.replace('fui-sidebar__hamburger--collapsible', 'fui-sidebar__hamburger--off-canvas');
 			[
-				getComputedStyle(sidebar.querySelector('.ui-sidebar__inline')).display === 'none',
-				getComputedStyle(sidebar.querySelector('.ui-sidebar__hamburger')).display !== 'none'
+				getComputedStyle(sidebar.querySelector('.fui-sidebar__inline')).display === 'none',
+				getComputedStyle(sidebar.querySelector('.fui-sidebar__hamburger')).display !== 'none'
 			]
 		`, &offCanvasState),
 	); err != nil {

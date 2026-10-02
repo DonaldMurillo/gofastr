@@ -141,20 +141,20 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
-	sortBtn := `.ui-data-table th:first-child button.ui-data-table__sort`
+	sortAnchor := `.fui-data-table th:first-child a.fui-data-table__sort`
 	var mark int
 	var first, loc string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
-		// Two clicks on the Name header: asc, then desc. Each swap
-		// re-renders the island, so re-query the button per click.
-		chromedp.Click(sortBtn, chromedp.ByQuery),
+		// Two clicks on the Name anchor: asc, then desc. Each swap
+		// re-renders the island, so re-query the anchor per click.
+		chromedp.Click(sortAnchor, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Click(sortBtn, chromedp.ByQuery),
+		chromedp.Click(sortAnchor, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('.ui-data-table tbody tr td').innerText`, &first),
+		chromedp.Evaluate(`document.querySelector('.fui-data-table tbody tr td').innerText`, &first),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),
 		chromedp.Evaluate(`location.search`, &loc),
 	); err != nil {
@@ -166,8 +166,10 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 	if mark != 1 {
 		t.Error("window marker lost: sort caused a document navigation, not an island swap")
 	}
-	if loc != "?sort=name&dir=desc" {
-		t.Errorf("push-state URL = %q, want ?sort=name&dir=desc", loc)
+	// The primitive builds the href through net/url, whose Encode
+	// orders parameters alphabetically.
+	if loc != "?dir=desc&sort=name" {
+		t.Errorf("push-state URL = %q, want ?dir=desc&sort=name", loc)
 	}
 }
 
@@ -183,13 +185,15 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 	var loc string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
 		// 10 seeded customers at page size 8 → the seed data alone
-		// paginates. Page 2 holds the last two rows.
-		chromedp.Click(`.ui-data-table__footer button[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
+		// paginates. Page 2 holds the last two rows. The pager is the
+		// typed one: page anchors keep their hrefs and carry the RPC
+		// contract beside them.
+		chromedp.Click(`.fui-data-table__footer a[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('.ui-data-table tbody tr').length`, &rows),
+		chromedp.Evaluate(`document.querySelectorAll('.fui-data-table tbody tr').length`, &rows),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),
 		chromedp.Evaluate(`location.search`, &loc),
 	); err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -59,6 +60,7 @@ var docIntents = []docIntent{
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release, plus gofastr upgrade, the guided helper."},
+			{"release-0-86", "What changed in v0.86.0", "The UI-layer rebuild: headless components, fui-* classes, the layout primitive and owned styles, with every breaking change and how to move an app."},
 			{"stability", "API stability", "Compatibility windows, deprecation rules, and the public v1 promise."},
 		},
 	},
@@ -111,7 +113,7 @@ var docIntents = []docIntent{
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},
 			{"layouts", "Screens and layouts", "Layout chains: nesting with ScreenGroup, per-layer markers, deepest-shared-layer swaps, prefetch, scroll restore."},
 			{"ui-new-components", "New components", "The minimal-register + SSR-inline + hydrate contract."},
-			{"ui-headless", "Headless components", "Structure, roles and hooks with no classes: parts, skins, seams, islands, and the harness that pins them."},
+			{"ui-headless", "Headless components", "Structure, roles and hooks with no classes: parts, class maps, slots, binds, islands, and the harness that pins them."},
 			{"theming", "Theming", "The token catalog, dark mode, ui.Themed, and the --ui-* override vars."},
 			{"widgets", "Widget builder", "Build islands that hydrate against a registered handler."},
 			{"form-module", "Forms", "Server-validated forms with island-swapped error states."},
@@ -337,12 +339,12 @@ func (s *DocPageScreen) Render() render.HTML {
 			html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
 	}
 
-	return ui.DocLayout(ui.DocLayoutConfig{
+	return docpage.Render(docpage.Config{
 		Nav: docCatalogSidebar(s.Entry.Slug),
-		Crumbs: []ui.DocCrumb{
-			{Label: "Docs", Href: "/docs/"},
-			{Label: intent.Title, Href: "/docs/#" + intent.Slug},
-			{Label: s.Entry.Title},
+		Crumbs: []ui.Crumb{
+			{Text: "Docs", Href: "/docs/"},
+			{Text: intent.Title, Href: "/docs/#" + intent.Slug},
+			{Text: s.Entry.Title, Current: true},
 		},
 		Pager: docPrevNext(s.Entry.Slug),
 	}, content)
@@ -379,7 +381,7 @@ func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
 }
 
 // docPrevNext computes the previous/next doc in catalog order for the pager.
-func docPrevNext(slug string) *ui.DocPager {
+func docPrevNext(slug string) *docpage.PagerConfig {
 	flat := flatDocs()
 	idx := -1
 	for i, d := range flat {
@@ -388,7 +390,7 @@ func docPrevNext(slug string) *ui.DocPager {
 			break
 		}
 	}
-	p := ui.DocPager{PrevHref: "/docs/", PrevLabel: "Docs index"}
+	p := docpage.PagerConfig{PrevHref: "/docs/", PrevLabel: "Docs index"}
 	if idx > 0 {
 		p.PrevHref, p.PrevLabel = "/docs/"+flat[idx-1].Slug, flat[idx-1].Title
 	}

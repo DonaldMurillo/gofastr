@@ -1,0 +1,34 @@
+# Migration registry for `gofastr upgrade`: the top file.
+#
+# The registry is one file per release under releases/<version>.yml, plus
+# this file. The format, every matcher, and the maintenance rule are
+# documented for contributors in framework/docs/content/cli.md, under
+# "The migration registry".
+#
+# Maintenance rule: EVERY release PR bumps `through` below; a release that
+# lands BREAKING changes also adds releases/<version>.yml (same policy as
+# CHANGELOG.md).
+
+# The registry is complete through this release: releases <= through with
+# no file under releases/ genuinely had no migration-relevant changes.
+# Targets beyond it make the CLI warn that it may be out of date.
+through: v0.86.0
+
+# Where a kept `ui-*` component name is an identifier, not a class: a
+# sheet name passed to the style registry (core-ui/registry.RegisterStyle,
+# .Lookup), a drawer name (preset.Drawer's argument, SidebarConfig's and
+# SectionMenuConfig's DrawerName, the data-fui-open attribute that
+# carries it), and the data-fui-comp marker value. Each symbol exists at
+# v0.85.0 and at HEAD, so an app scanned before upgrading resolves them.
+marker_sinks:
+  calls:
+    - func: gofastr/core-ui/registry.RegisterStyle
+      arg: 0
+    - func: gofastr/core-ui/registry.Lookup
+      arg: 0
+    - func: gofastr/core-ui/widget/preset.Drawer
+      arg: 0
+  fields:
+    - gofastr/framework/ui.SidebarConfig.DrawerName
+    - gofastr/core-ui/interactive.SectionMenuConfig.DrawerName
+  attr_keys: [data-fui-comp, data-fui-open]

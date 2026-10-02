@@ -249,3 +249,34 @@ func TestScaffoldEntityRefusesLegacyLayout(t *testing.T) {
 		t.Error("entities/comments.go written into a legacy layout — output would not compile")
 	}
 }
+
+// ---- `gofastr init`: the emitted app must compile ----
+
+// TestRunInitGeneratesBuildableApp: init's main.go template is the file
+// users compile first, and it shared no build proof with the blueprint
+// path (cov_init_test.go asserts the file set and main.go strings
+// only). Run the real generation, pin the module to this repo with a
+// replace (the harness the blueprint build test uses), and build every
+// package it emitted.
+func TestRunInitGeneratesBuildableApp(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
+	writeAddGoMod(t, filepath.Join(dir, "myapp"), "local/myapp")
+	buildGenerated(t, filepath.Join(dir, "myapp"))
+}
+
+// ---- `gofastr theme init`: the scaffolded theme.go must compile ----
+
+// TestRunThemeInitScaffoldCompiles: the theme starter was only
+// contains-linted (theme_test.go walks the const and touches symbols);
+// a field rename inside the literal was caught by the hand-maintained
+// required-list, not by a compiler. Generate the file for real and
+// build it against the repo.
+func TestRunThemeInitScaffoldCompiles(t *testing.T) {
+	dir := t.TempDir()
+	writeAddGoMod(t, dir, "example.com/themegen")
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runThemeInit(nil) })
+	buildGenerated(t, dir)
+}

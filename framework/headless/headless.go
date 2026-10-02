@@ -9,13 +9,13 @@
 // tied to its input by aria-describedby, whether a pager says which
 // page is current — none of that changes when the palette does, and
 // all of it is testable without rendering a pixel (a11y_test.go,
-// harness_test.go). A skin is then free to be redrawn, or replaced
+// harness_test.go). A class map is then free to be redrawn, or replaced
 // entirely, without putting a single accessibility guarantee back at
 // risk.
 //
-// A component here is a pure function from its props and a Skin to
-// HTML. The Skin decides what class each named Part carries; a nil
-// Skin renders the same markup with no classes at all, which is what
+// A component here is a pure function from its props and a Classes to
+// HTML. The Classes decides what class each named Part carries; a nil
+// Classes renders the same markup with no classes at all, which is what
 // "headless" means and what the goldens pin. Seven things are named in
 // a component's contract, and the harness checks each: its Parts, its
 // runtime hooks (data-hui-*), what a caller may set on its Parts
@@ -36,10 +36,10 @@
 // "headless" through the same seam a stylesheet uses
 // (registry.RegisterBehavior), the host serves it at
 // /__gofastr/runtime/headless.js, and the kernel loads it when one of
-// its markers is on the page. No skin dresses the parts yet: the skin,
-// the stylesheet and that adoption follow in their own changes, and
-// framework/ui remains today's styled layer, not rendering through
-// this package.
+// its markers is on the page. The styled layer's adoption has begun:
+// framework/ui's Button family renders through this package dressed
+// with the fui-button class map, and the remaining families follow in
+// their own changes.
 package headless
 
 import (
@@ -50,10 +50,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Part names an element inside a component. A skin styles parts; the
+// Part names an element inside a component. A class map styles parts; the
 // structure names them. Adding a part is a change to both layers, which
-// is the point: a skin cannot invent a hook the markup does not offer,
-// and the markup cannot quietly drop one a skin is using.
+// is the point: a class map cannot invent a hook the markup does not offer,
+// and the markup cannot quietly drop one a class map is using.
 type Part string
 
 // The shared vocabulary. Component-specific parts live beside their
@@ -82,15 +82,15 @@ const (
 	PartVisuallyHidden Part = "visually-hidden"
 )
 
-// Skin maps parts to class names. Nil is valid and renders unstyled.
-type Skin map[Part]string
+// Classes maps parts to class names. Nil is valid and renders unstyled.
+type Classes map[Part]string
 
-// Class returns the class for a part, or "" when the skin has none.
-func (s Skin) Class(p Part) string { return s[p] }
+// Class returns the class for a part, or "" when the class map has none.
+func (s Classes) Class(p Part) string { return s[p] }
 
-// Variant returns the class a skin uses for a named variant of a part,
+// Variant returns the class a class map uses for a named variant of a part,
 // looked up as "<part>--<variant>". Empty when unstyled or unknown.
-func (s Skin) Variant(p Part, variant string) string {
+func (s Classes) Variant(p Part, variant string) string {
 	if variant == "" {
 		return ""
 	}
@@ -100,7 +100,7 @@ func (s Skin) Variant(p Part, variant string) string {
 // El builds one element: the part's class, then the caller's attrs,
 // then children. Attrs the component owns always win over ExtraAttrs,
 // which is why they are passed separately.
-func El(tag string, s Skin, p Part, own html.Attrs, children ...render.HTML) render.HTML {
+func El(tag string, s Classes, p Part, own html.Attrs, children ...render.HTML) render.HTML {
 	attrs := html.Attrs{}
 	for k, v := range own {
 		attrs[k] = v
@@ -156,6 +156,23 @@ func Mark(a html.Attrs, names ...string) html.Attrs {
 	return a
 }
 
+// Internal returns own with data-fui-internal set: the attribute an
+// owned style's @scope stops at. A component puts it on each subtree
+// that holds none of the caller's content (a header built from a Title
+// string, a control's input, a dismiss button), and never on an
+// element that holds a slot, or on any ancestor of one: content passed
+// in stays in the owner's reach. The component's root is never marked;
+// an owner may place it. A mark under another mark is inert. own is
+// not modified; nil is fine.
+func Internal(own html.Attrs) html.Attrs {
+	out := make(html.Attrs, len(own)+1)
+	for k, v := range own {
+		out[k] = v
+	}
+	out["data-fui-internal"] = ""
+	return out
+}
+
 // Flag sets a boolean attribute when on.
 func Flag(a html.Attrs, name string, on bool) html.Attrs {
 	if on {
@@ -189,6 +206,14 @@ func refused(key string) bool {
 	k := strings.ToLower(key)
 	switch k {
 	case "style", "data-behavior", "data-island", "data-widget", "data-component", "data-bind", "data-action":
+		return true
+	}
+
+	// The on* family: an event handler attribute is inline script, the
+	// thing every other extra-attrs filter in the tree (ui.scrubAttrs,
+	// kiln/world) refuses outright. A data-driven host surface handing
+	// one in is a stored-XSS primitive, not an escape hatch.
+	if strings.HasPrefix(k, "on") {
 		return true
 	}
 	for _, prefix := range []string{"data-hui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
@@ -238,11 +263,17 @@ func Merge(a, b html.Attrs) html.Attrs {
 	return out
 }
 
-// Describe wires an input to its hint and error by id, returning the
-// aria-describedby value. This is the whole reason a field is a
+// Describe wires an input to its error and its hint by id, returning
+// the aria-describedby value. This is the whole reason a field is a
 // component and not three elements in a row: the relationship has to
 // be built from the same ids the elements are given, in one place, or
 // it silently rots.
+//
+// The error comes first, so the correction is read before the rule it
+// violated; both ids ride in one attribute whenever both are set —
+// the hint is the rule the value must obey, and dropping it from the
+// description exactly when it was broken is dropping it when the
+// reader needs it most.
 func Describe(id, hint, errText string) (describedBy, hintID, errID string) {
 	if id == "" {
 		return "", "", ""
@@ -251,7 +282,8 @@ func Describe(id, hint, errText string) (describedBy, hintID, errID string) {
 	if errText != "" {
 		errID = id + "-error"
 		ids = append(ids, errID)
-	} else if hint != "" {
+	}
+	if hint != "" {
 		hintID = id + "-hint"
 		ids = append(ids, hintID)
 	}

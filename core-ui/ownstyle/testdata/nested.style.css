@@ -1,0 +1,9 @@
+/* Nested rules keep their declaration terminators: without a `;`
+   after the last declaration a browser reads the nested rule as part
+   of the value and drops both. */
+.card {
+  color: var(--color-text);
+  &:hover { color: var(--color-primary); }
+  .b & { color: var(--color-text); }
+  @media (--above-md) { padding: var(--spacing-md); }
+}

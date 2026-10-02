@@ -41,6 +41,39 @@ func TestIdempotentRegistration(t *testing.T) {
 	}
 }
 
+// A style registered after the host built its catalog never reaches
+// the runtime, so a soft navigation shows its component unstyled.
+// Registration past that point fails loudly instead.
+func TestRegisterAfterFreezePanics(t *testing.T) {
+	IsolateForTest(t)
+	fn := func(style.Theme) string { return ".a{}" }
+	RegisterStyle("before-freeze", fn)
+	Freeze()
+	RegisterStyle("before-freeze", fn) // identical re-registration stays a no-op
+	defer func() {
+		r := recover()
+		want := `registry: style "late" registered after the component catalog froze; register styles at package init`
+		if r != want {
+			t.Fatalf("panic = %v, want %q", r, want)
+		}
+	}()
+	RegisterStyle("late", fn)
+}
+
+func TestIsolateForTestStartsUnfrozen(t *testing.T) {
+	IsolateForTest(t)
+	Freeze()
+	t.Run("inner", func(t *testing.T) {
+		IsolateForTest(t)
+		RegisterStyle("inside", func(style.Theme) string { return "" })
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if !frozen {
+		t.Fatal("restoring an inner isolation cleared the outer freeze")
+	}
+}
+
 func TestConflictingRegistrationPanics(t *testing.T) {
 	reset()
 	fn1 := func(t style.Theme) string { return "x" }
@@ -130,6 +163,30 @@ func TestScanFindsAllMarkers(t *testing.T) {
 	for i := range got {
 		if got[i] != want[i] {
 			t.Errorf("Scan[%d]=%q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// An owned style's root carries data-fui-scope; its sheet loads the
+// same way a kit component's does. One element may carry both.
+func TestScanReadsScopeMarkers(t *testing.T) {
+	html := `<div data-fui-scope="board"><article class="fui-card" data-fui-comp="card" data-fui-scope="review"></article></div>`
+	got := strings.Join(Scan(html), ",")
+	if got != "board,card,review" {
+		t.Fatalf("Scan got %q, want board,card,review", got)
+	}
+}
+
+func TestScanRefusesUnsafeScopeNames(t *testing.T) {
+	for _, html := range []string{
+		`<div data-fui-scope="../x"></div>`,
+		`<div data-fui-scope="a b"></div>`,
+		`<div data-fui-scope="a?b"></div>`,
+		`<div data-fui-scope=""></div>`,
+		`<div xdata-fui-scope="masquerade"></div>`,
+	} {
+		if got := Scan(html); len(got) != 0 {
+			t.Errorf("Scan(%s) = %v, want none", html, got)
 		}
 	}
 }

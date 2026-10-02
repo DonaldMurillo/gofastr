@@ -20,7 +20,7 @@ app:
     accent: "#F97316"
     success: "#16A34A"
     warning: "#EAB308"
-    danger: "#DC2626"
+    danger: "#B91C1C"
     info: "#0EA5E9"
 
 entities:

@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // PipelineSource is one entry in a typed responsive source set,
@@ -134,8 +135,8 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	if cfg.Fallback == "" {
 		panic("ui: PipelineImage requires Fallback")
 	}
-	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
-		panic("ui: PipelineImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
+	if cfg.Alt == "" && !strings.Contains(cfg.Class, "fui-image--decorative") {
+		panic("ui: PipelineImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 
 	// Same URL allow-list OptimizedImage applies: drop unsafe schemes on
@@ -159,19 +160,26 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 
 	lqip := placeholderImage(cfg.Placeholder)
+	if lqip != "" {
+		// Placeholder is a data: URI string, never a caller's markup,
+		// so the placeholder image is always this component's own;
+		// its root becomes a sibling here rather than one an owner
+		// could place, so its own marks collapse into a single one.
+		lqip = headless.Own(lqip)
+	}
 
-	cls := "ui-image"
+	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
-		cls += " ui-image--fit-" + string(cfg.Fit)
+		cls += " fui-image--fit-" + string(cfg.Fit)
 	}
 	if cfg.Aspect != ImageAspectAuto {
-		cls += " ui-image--aspect-" + string(cfg.Aspect)
+		cls += " fui-image--aspect-" + string(cfg.Aspect)
 	}
 	if cfg.Rounded {
-		cls += " ui-image--rounded"
+		cls += " fui-image--rounded"
 	}
 	if lqip != "" {
-		cls += " ui-image--placeheld"
+		cls += " fui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -203,7 +211,7 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	img := html.Image(html.ImageConfig{
 		Src:        cfg.Fallback,
 		Alt:        cfg.Alt,
-		Class:      "ui-image__img",
+		Class:      "fui-image__img",
 		ExtraAttrs: imgAttrs,
 	})
 
@@ -216,7 +224,11 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 		}))
 	}
 	children = append(children, img)
-	picture := render.Tag("picture", nil, children...)
+	// The source groups and the fallback img are both built from this
+	// component's own fields (Sources, a struct slice, carries no
+	// render.HTML), so picture — with no wrapper an owner could reach
+	// around — is the topmost internal element here.
+	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, children...)
 
 	// The placeholder is emitted before the picture so the real image paints
 	// over it in DOM order. Both are positioned, so tree order decides,

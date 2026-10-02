@@ -1040,5 +1040,5 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// Rendered for one subject. Never cache, never share.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write([]byte(app.EmbedLayout().Wrap(res.HTML)))
+	_, _ = w.Write([]byte(app.EmbedLayout().WrapCtx(r.Context(), res.HTML)))
 }

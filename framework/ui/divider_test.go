@@ -20,15 +20,21 @@ func TestDividerLabelledRendersDivWithRole(t *testing.T) {
 	h := Divider(DividerConfig{Label: "OR"})
 	mustContain(t, h, `role="separator"`)
 	mustContain(t, h, "OR")
-	mustContain(t, h, "ui-divider--labelled")
-	mustContain(t, h, "ui-divider__label")
+	mustContain(t, h, "fui-divider--labelled")
+	mustContain(t, h, "fui-divider__label")
 }
 
-func TestDividerVerticalAlwaysUsesRole(t *testing.T) {
+// A vertical break renders an <hr aria-orientation="vertical">: the
+// element is already the separator, so the role is implied rather
+// than claimed on a div beside it.
+func TestDividerVerticalIsAnOrientedHr(t *testing.T) {
 	h := Divider(DividerConfig{Orientation: DividerVertical})
-	mustContain(t, h, `role="separator"`)
+	mustContain(t, h, "<hr")
 	mustContain(t, h, `aria-orientation="vertical"`)
-	mustContain(t, h, "ui-divider--vertical")
+	mustContain(t, h, "fui-divider--vertical")
+	if strings.Contains(string(h), `role="separator"`) {
+		t.Fatalf("an hr is already a separator; a role on it is said twice:\n%s", h)
+	}
 }
 
 func TestDividerExtraAttrsOnEveryRootShape(t *testing.T) {

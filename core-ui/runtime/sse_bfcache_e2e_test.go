@@ -23,6 +23,7 @@ import (
 func TestSSEClosesStreamOnHardNav(t *testing.T) {
 	var active atomic.Int32
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -52,13 +53,15 @@ func TestSSEClosesStreamOnHardNav(t *testing.T) {
 		defer active.Add(-1)
 		<-r.Context().Done()
 	})
-	// Page A carries the SSE meta; page B is a plain document, so the
-	// only stream that can exist after the navigation is A's leftover.
+	// Page A carries the SSE meta and a push target (the island: the
+	// stream only opens for a page that takes pushes); page B is a
+	// plain document, so the only stream that can exist after the
+	// navigation is A's leftover.
 	mux.HandleFunc("/a", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head>`+
 			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-1">`+
-			`</head><body><span id="ready-a">a</span>`+
+			`</head><body><div data-island="a"></div><span id="ready-a">a</span>`+
 			`<script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 	mux.HandleFunc("/b", func(w http.ResponseWriter, _ *http.Request) {

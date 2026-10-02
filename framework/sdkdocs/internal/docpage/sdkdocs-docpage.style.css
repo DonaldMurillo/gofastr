@@ -1,0 +1,58 @@
+/* The SDK reference page: nav | article | contents, on the 85rem
+   measure the framework's retired ui.DocLayout drew for this site
+   (sdkdocs is framework code and cannot import an example, so it
+   keeps this copy of the docs page). The nav slot brings its own
+   styling — interactive.SectionMenu ships the sticky rail + the
+   phone drawer — and this sheet only sizes its column. */
+:scope {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 220px;
+  gap: var(--spacing-2xl);
+  /* Filling the flex cell the app layout hands the page is geometry (ui.DocLayout's own reason for the same line), not a look shared with the other sheets' fills */
+  inline-size: 100%;
+  min-inline-size: 0px;
+  max-inline-size: 85rem;
+  margin-inline: auto;
+  padding: var(--spacing-xl);
+}
+/* A page with no contents rail releases the column. */
+:scope:has(> .toc:empty) { grid-template-columns: 220px minmax(0, 1fr); }
+.toc:empty { display: none; }
+
+/* The nav rail's own column: wide content (a long entity name in the
+   menu) must not stretch the track past the viewport. */
+.nav { min-inline-size: 0px; }
+
+/* The article column: capped at a reading measure, and never wider
+   than its track however long a code line runs. */
+.article {
+  max-inline-size: 45rem;
+  min-inline-size: 0px;
+}
+
+/* Breadcrumbs: the mono voice for the trail, the component's own
+   rhythm inside it. */
+.crumbs {
+  margin-block-end: var(--spacing-xl);
+  font-family: var(--font-mono);
+}
+
+/* One column below SectionMenu's own swap point: the rail becomes the
+   "SDK docs" pill + drawer there, so this grid gives up its column in
+   the same breath. */
+/* gofastr:allow(GOFASTR1812) collapses in lockstep with interactive.SectionMenu's own 899.98px rail→drawer swap, the same edge the framework's doc layout used */
+@media (max-width: 899.98px) {
+  :scope {
+    display: block;
+    max-inline-size: none;
+    padding: var(--spacing-lg);
+  }
+  /* display:block drops the grid gap — restore separation between the
+     stacked menu pill and the article below it. */
+  :scope > * + * { margin-block-start: var(--spacing-xl); }
+  .toc { display: none; }
+  .article {
+    max-inline-size: none;
+    overflow-x: hidden;
+  }
+}

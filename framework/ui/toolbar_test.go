@@ -68,8 +68,8 @@ func TestToolbarAlignVariantClass(t *testing.T) {
 			Align:  a,
 			Groups: []ToolbarGroup{{Children: []render.HTML{Button(ButtonConfig{Label: "Z"})}}},
 		}))
-		if !strings.Contains(h, "ui-toolbar--"+a) {
-			t.Errorf("Align=%s should emit .ui-toolbar--%s:\n%s", a, a, h)
+		if !strings.Contains(h, "fui-toolbar--"+a) {
+			t.Errorf("Align=%s should emit .fui-toolbar--%s:\n%s", a, a, h)
 		}
 	}
 }
@@ -105,7 +105,7 @@ func TestToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `role="toolbar"`, `aria-label="Format"`, `class="ui-toolbar mine"`,
+		`data-test="hook"`, `role="toolbar"`, `aria-label="Format"`, `class="fui-toolbar mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("root missing %q:\n%s", want, root)

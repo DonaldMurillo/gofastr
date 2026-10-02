@@ -201,7 +201,10 @@ icon-less apps never 404 on every page load.
 `<title>` comes from the screen: the `Title` set at registration
 (`app.NewScreen(...).WithTitle("Pricing")`) or a `ScreenTitle() string`
 method (re-read after `Load`, so dynamic routes can title themselves
-from data). The app name is appended: `Pricing — Freightline`.
+from data). The app name is appended: `Pricing — Freightline`. If the
+title already ends with the exact suffix ` — Freightline`, it is left
+unchanged. Full pages, recovery screens, not-found outlet pages and
+client-navigation title headers use this rule.
 
 ## Enforcing all of this
 

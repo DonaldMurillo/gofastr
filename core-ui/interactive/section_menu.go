@@ -94,7 +94,7 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 			html.Span(html.TextConfig{Class: "fui-section-menu__trigger-label"}, render.Text(trigger)),
 		))
 	}
-	children = append(children, html.Div(html.DivConfig{Class: "fui-section-menu__rail"}, sectionMenuBody(cfg)))
+	children = append(children, html.Div(html.DivConfig{Class: "fui-section-menu__rail"}, sectionMenuBody(cfg, true)))
 
 	cls := "fui-section-menu"
 	if cfg.Class != "" {
@@ -140,25 +140,27 @@ func (s sectionMenuDrawerSlot) Render() render.HTML {
 	return sectionMenuStyle.WrapHTML(html.Div(
 		html.DivConfig{Class: "fui-section-menu fui-section-menu--drawer"},
 		html.Div(html.DivConfig{Class: "fui-section-menu__drawer-head"}, closeBtn),
-		sectionMenuBody(s.cfg),
+		sectionMenuBody(s.cfg, false),
 	))
 }
 
 var _ component.Component = sectionMenuDrawerSlot{}
 
-// sectionMenuBody renders the lead item + groups.
-func sectionMenuBody(cfg SectionMenuConfig) render.HTML {
+// sectionMenuBody renders the lead item + groups. The desktop rail
+// (rail true) renders every group open: collapse is a drawer behaviour,
+// so Collapsed applies to the drawer only.
+func sectionMenuBody(cfg SectionMenuConfig, rail bool) render.HTML {
 	children := []render.HTML{}
 	if cfg.Lead != nil {
 		children = append(children, sectionMenuLink(*cfg.Lead, "fui-section-menu__lead"))
 	}
 	for _, g := range cfg.Groups {
-		children = append(children, sectionMenuGroup(g))
+		children = append(children, sectionMenuGroup(g, rail))
 	}
 	return html.Div(html.DivConfig{Class: "fui-section-menu__body"}, children...)
 }
 
-func sectionMenuGroup(g SectionGroup) render.HTML {
+func sectionMenuGroup(g SectionGroup, forceOpen bool) render.HTML {
 	items := make([]render.HTML, 0, len(g.Items))
 	hasActive := false
 	for _, it := range g.Items {
@@ -180,10 +182,11 @@ func sectionMenuGroup(g SectionGroup) render.HTML {
 
 	attrs := map[string]string{
 		"class":               "fui-section-menu__group",
-		"data-fui-disclosure": "",
+		"data-hui-disclosure": "",
 	}
-	// Open when not explicitly collapsed, or whenever it holds the active item.
-	if !g.Collapsed || hasActive {
+	// Open when not explicitly collapsed, whenever it holds the active
+	// item, and always in the rail.
+	if !g.Collapsed || hasActive || forceOpen {
 		attrs["open"] = ""
 	}
 	return render.Tag("details", attrs,
@@ -225,7 +228,7 @@ func sectionMenuCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
   margin-bottom: var(--spacing-md, 8px);
   color: var(--color-text, currentColor);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
 }
 [data-fui-comp="fui-section-menu"] .fui-section-menu__lead.is-active,
@@ -242,7 +245,10 @@ func sectionMenuCSS(_ style.Theme) string {
   gap: 6px;
   cursor: pointer;
   list-style: none;
-  padding: var(--spacing-sm, 4px) 0;
+  /* The label starts where the lead does (12px), so on a rail with no
+     padding of its own it does not touch the edge; the links indent
+     under it at 22px. */
+  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
   margin-bottom: var(--spacing-sm, 4px);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 0.75rem);
@@ -296,7 +302,7 @@ func sectionMenuCSS(_ style.Theme) string {
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 /* ── Drawer body: groups collapse (respect their open state) ──────── */
@@ -341,6 +347,9 @@ func sectionMenuCSS(_ style.Theme) string {
   }
   /* The rail shows every group expanded — collapse is a drawer behaviour. */
   [data-fui-comp="fui-section-menu"] .fui-section-menu__rail .fui-section-menu__list { display: block; }
+  /* A rail group a reader clicks shut stays shown: browsers hide closed
+     <details> content through ::details-content. */
+  [data-fui-comp="fui-section-menu"] .fui-section-menu__rail .fui-section-menu__group::details-content { content-visibility: visible; }
   [data-fui-comp="fui-section-menu"] .fui-section-menu__rail .fui-section-menu__chevron { display: none; }
   [data-fui-comp="fui-section-menu"] .fui-section-menu__rail .fui-section-menu__group-summary { cursor: default; }
 }`

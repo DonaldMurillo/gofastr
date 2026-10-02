@@ -21,7 +21,7 @@ import (
 // arm produces a real document, not a bare fragment.
 func TestRenderScreenE2E_BrandedRecoveryPaints(t *testing.T) {
 	application := app.NewApp("fieldassist")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(
 		app.NewScreen("/", &rawHTMLComp{html: `<h1 id="home">sessions</h1>`}).WithTitle("home"),
 		nil,

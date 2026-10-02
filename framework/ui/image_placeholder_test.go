@@ -25,20 +25,20 @@ func TestPipelineImagePlaceholderPaints(t *testing.T) {
 	assertPlaceholderPainted(t, out)
 	// The placeholder must precede the <picture> so the real image paints
 	// over it in DOM order without needing a z-index.
-	if strings.Index(out, "ui-image__lqip") > strings.Index(out, "<picture") {
+	if classTokenIndex(out, "fui-image__lqip") > strings.Index(out, "<picture") {
 		t.Error("placeholder must be emitted before <picture>")
 	}
 }
 
 func assertPlaceholderPainted(t *testing.T, out string) {
 	t.Helper()
-	if !strings.Contains(out, `class="ui-image__lqip"`) {
+	if !strings.Contains(out, `class="fui-image__lqip"`) {
 		t.Fatalf("no placeholder element rendered: %s", out)
 	}
 	if !strings.Contains(out, testPlaceholder) {
 		t.Errorf("placeholder src missing: %s", out)
 	}
-	if !strings.Contains(out, "ui-image--placeheld") {
+	if !classTokenPresent(out, "fui-image--placeheld") {
 		t.Errorf("root is missing the --placeheld class: %s", out)
 	}
 	// Decorative: must not be announced.
@@ -61,7 +61,7 @@ func TestPlaceholderIsNotLazyOrAsync(t *testing.T) {
 		Src: "/hero.jpg", Alt: "Hero", Width: 800, Height: 600,
 		Placeholder: testPlaceholder,
 	}))
-	start := strings.Index(out, "ui-image__lqip")
+	start := classTokenIndex(out, "fui-image__lqip")
 	if start < 0 {
 		t.Fatalf("no placeholder element rendered: %s", out)
 	}
@@ -104,10 +104,10 @@ func TestBadPlaceholderDegradesSilently(t *testing.T) {
 					Placeholder: tc.placeholder,
 				}))
 			}()
-			if strings.Contains(out, "ui-image__lqip") {
+			if classTokenPresent(out, "fui-image__lqip") {
 				t.Errorf("bad placeholder %q was rendered: %s", tc.placeholder, out)
 			}
-			if strings.Contains(out, "ui-image--placeheld") {
+			if classTokenPresent(out, "fui-image--placeheld") {
 				t.Errorf("bad placeholder %q still set --placeheld: %s", tc.placeholder, out)
 			}
 			if strings.Contains(out, tc.placeholder) {
@@ -125,7 +125,7 @@ func TestNoPlaceholderMeansNoExtraElement(t *testing.T) {
 	out := string(OptimizedImage(OptimizedImageConfig{
 		Src: "/hero.jpg", Alt: "Hero", Width: 8, Height: 6,
 	}))
-	if strings.Contains(out, "ui-image__lqip") || strings.Contains(out, "placeheld") {
+	if classTokenPresent(out, "fui-image__lqip") || classTokenPresent(out, "placeheld") {
 		t.Errorf("unexpected placeholder markup: %s", out)
 	}
 }

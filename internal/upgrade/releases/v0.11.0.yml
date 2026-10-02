@@ -1,0 +1,10 @@
+version: v0.11.0
+title: Multi-replica + security remediation
+notes:
+  - change: battery/admin exposure is opt-in
+    breaking: true
+    hits: review
+    guidance: "An app that registered the admin battery implicitly no longer serves it; register it explicitly with a Config."
+    find:
+      uses:
+        - gofastr/battery/admin.New

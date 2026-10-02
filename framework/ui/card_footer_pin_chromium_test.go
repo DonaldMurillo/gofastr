@@ -33,7 +33,7 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 					"padding padding padding padding padding padding padding."))),
 		Card(CardConfig{Heading: "Short", Description: "Config-only card.",
 			Footer: render.Text("footer")}),
-		// The linked variant nests everything in .ui-card__inner; unless
+		// The linked variant nests everything in .fui-card__inner; unless
 		// that wrapper grows to fill the stretched <a>, the footer pins
 		// to the inner's edge, not the card's.
 		Card(CardConfig{Heading: "Linked", Description: "Config-only linked card.",
@@ -82,7 +82,7 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-comp="ui-card"]')).map(c => {
-			const f = c.querySelector('.ui-card__footer');
+			const f = c.querySelector('.fui-card__footer');
 			return {top: c.getBoundingClientRect().top,
 				gap: c.getBoundingClientRect().bottom - f.getBoundingClientRect().bottom};
 		})`, &cards),

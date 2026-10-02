@@ -29,6 +29,7 @@ func serveStaticCompCSSPage(t *testing.T, marked bool) (*httptest.Server, *atomi
 		link = `<link rel="stylesheet" href="/css/static-probe.css?v=1" data-fui-style="static-probe" id="fui-css-static-probe">`
 	}
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))

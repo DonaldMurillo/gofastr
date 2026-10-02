@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -161,18 +163,46 @@ func TestRenderBlueprintBlockTypes(t *testing.T) {
 		block BlueprintBlock
 		want  string
 	}{
-		{BlueprintBlock{Type: "p", Text: "hi"}, "render.Tag(\"p\""},
+		{BlueprintBlock{Type: "p", Text: "hi"}, "html.Paragraph(html.TextConfig{Class: \"\"}, render.Text(\"hi\"))"},
+		{BlueprintBlock{Type: "text", Text: "hi", Class: "lead"}, "html.Paragraph(html.TextConfig{Class: \"lead\"}, render.Text(\"hi\"))"},
 		{BlueprintBlock{Type: "heading", Level: 2, Text: "H"}, "html.Heading"},
 		{BlueprintBlock{Type: "h3", Text: "H"}, "Level: 3"},
 		{BlueprintBlock{Type: "h6", Text: "H"}, "Level: 6"},
 		{BlueprintBlock{Type: "link", Href: "/x", Text: "L"}, "html.Link"},
 		{BlueprintBlock{Type: "section", Text: "S", Class: "c"}, "section"},
-		{BlueprintBlock{Type: "weird", Text: "D"}, "div"},
+		{BlueprintBlock{Type: "weird", Text: "D"}, "html.Div(html.DivConfig{Class: \"\"}, render.Text(\"D\"))"},
+		{BlueprintBlock{Type: "weird", Text: "D", Class: "k"}, "html.Div(html.DivConfig{Class: \"k\"}, render.Text(\"D\"))"},
 	}
 	for _, c := range cases {
 		got := renderBlueprintBlockForScreen(Blueprint{}, BlueprintScreen{}, c.block, nil, nil, "/api")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("block %q → %s, want substring %q", c.block.Type, got, c.want)
+		}
+	}
+}
+
+// TestBlueprintTypedBlockHelpersAreByteIdentical: the p/div emitters
+// switched from render.Tag to html.Paragraph/html.Div on the claim the
+// typed helpers produce the same bytes. Pin it at the exact call shapes
+// emitted, for both the classless and the classed block: writeAttrs
+// renders nil and the empty map identically, and buildAttrs only sets
+// class when non-empty — if either drifts, a generated app's markup
+// changes with no diff in the generator's own tests.
+func TestBlueprintTypedBlockHelpersAreByteIdentical(t *testing.T) {
+	for _, class := range []string{"", "lead"} {
+		attrs := map[string]string(nil)
+		if class != "" {
+			attrs = map[string]string{"class": class}
+		}
+		oldP := string(render.Tag("p", attrs, render.Text("hi")))
+		newP := string(html.Paragraph(html.TextConfig{Class: class}, render.Text("hi")))
+		if oldP != newP {
+			t.Errorf("p class=%q: render.Tag gives %q, html.Paragraph gives %q", class, oldP, newP)
+		}
+		oldD := string(render.Tag("div", attrs, render.Text("hi")))
+		newD := string(html.Div(html.DivConfig{Class: class}, render.Text("hi")))
+		if oldD != newD {
+			t.Errorf("div class=%q: render.Tag gives %q, html.Div gives %q", class, oldD, newD)
 		}
 	}
 }

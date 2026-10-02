@@ -1,0 +1,7 @@
+version: v0.40.0
+title: Strict mode + dev a11y gate
+notes:
+  - change: gofastr dev now runs the static accessibility lint on every rebuild, exactly like gofastr build
+    breaking: false
+    guidance: "Apps with standing a11y findings stop at the dev rebuild instead of at build/CI. Fix the findings (each prints a guided hint) or run gofastr dev --no-a11y while you do; the flag is an escape hatch, not a setting."
+    nodetect: standing findings are a11y fields left unset in element configs — absent values have no spelling; the dev loop names each

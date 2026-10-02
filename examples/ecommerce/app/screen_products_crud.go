@@ -23,7 +23,7 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
 	return html.Div(html.DivConfig{},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("ShopFront")),
-		render.Tag("p", nil, render.Text("Welcome to our store. Browse our products and categories.")),
+		html.Paragraph(html.TextConfig{Class: ""}, render.Text("Welcome to our store. Browse our products and categories.")),
 		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithEmpty("No products available yet.").WithIsland("/api/tables/home/products").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }

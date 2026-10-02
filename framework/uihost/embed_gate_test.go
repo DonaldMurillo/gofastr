@@ -321,13 +321,15 @@ func TestReserveDistinguishesDuplicateFromFull(t *testing.T) {
 // core-ui/runtime, which is where the bug actually lived. Neither test is
 // sufficient alone and this comment exists so the pair is not mistaken for
 // end-to-end coverage.
-func TestEmbedComponentCSSFollowsTheCustomerTheme(t *testing.T) {
-	// Reads the theme value DIRECTLY rather than emitting var(), which is the
-	// whole class of component this fix exists for.
-	registry.RegisterStyle("r3themeprobe", func(th style.Theme) string {
-		return ".r3themeprobe{color:" + th.Colors.Primary.Value + "}"
-	})
+// r3ThemeProbeStyle reads the theme value DIRECTLY rather than emitting
+// var(), which is the whole class of component the embed theme fix
+// exists for. It registers at package init: a host freezes the
+// registry when it first builds its catalog.
+var r3ThemeProbeStyle = registry.RegisterStyle("r3themeprobe", func(th style.Theme) string {
+	return ".r3themeprobe{color:" + th.Colors.Primary.Value + "}"
+})
 
+func TestEmbedComponentCSSFollowsTheCustomerTheme(t *testing.T) {
 	f := newEmbedFixture(t)
 	customer := "#0d9488"
 	param := embedThemeParam(t, map[string]string{"color-primary": customer})

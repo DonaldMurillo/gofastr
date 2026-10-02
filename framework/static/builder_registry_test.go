@@ -2,11 +2,9 @@ package static
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -16,7 +14,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-var ssgNameSeq atomic.Int64
+// Test styles register at package init, like real component styles: a
+// host freezes the registry when it first builds its catalog, and a
+// later RegisterStyle panics.
+var (
+	ssgCompStyle  = testCompStyle("ssg-comp")
+	pwaCompStyles = []*registry.Style{testCompStyle("pwa-ssg-comp-1"), testCompStyle("pwa-ssg-comp-2")}
+)
+
+func testCompStyle(name string) *registry.Style {
+	return registry.RegisterStyle(name, func(theme style.Theme) string {
+		return style.NewComponentSheet(name, theme).
+			Rule(".x").Set("color", "red").End().
+			MustBuild()
+	})
+}
 
 // styledScreen renders a component wrapped by a registered Style. The
 // home page references the marker, so SSG must emit the per-component
@@ -33,13 +45,8 @@ func (s *styledScreen) Render() render.HTML {
 }
 
 func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
-	// Unique name per test run; registry is process-global.
-	name := fmt.Sprintf("ssg-comp-%d", ssgNameSeq.Add(1))
-	st := registry.RegisterStyle(name, func(theme style.Theme) string {
-		return style.NewComponentSheet(name, theme).
-			Rule(".x").Set("color", "red").End().
-			MustBuild()
-	})
+	st := ssgCompStyle
+	name := st.Name()
 
 	a := coreapp.NewApp("SSGTest")
 	a.Register("/", &styledScreen{style: st}, nil)

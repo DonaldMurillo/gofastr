@@ -42,8 +42,10 @@ func runGenerate(args []string) {
 		generateProject(args[1:])
 	case "entity":
 		generateScaffoldEntity(args[1:])
-	case "screen":
-		generateScaffoldScreen(args[1:])
+	case "package":
+		runGeneratePackage(args[1:])
+	case "styles":
+		runGenerateStyles(args[1:])
 	case "cli":
 		runGenerateCLI(args[1:])
 	case "sdk":
@@ -54,7 +56,7 @@ func runGenerate(args []string) {
 		osExit(1)
 	default:
 		fail("Unknown resource type: %s", resourceType)
-		info("Supported: all, entity, screen, cli, sdk")
+		info("Supported: all, entity, screen, package, styles, cli, sdk")
 		osExit(1)
 	}
 }
@@ -67,6 +69,8 @@ Usage:
   gofastr generate --config=<gofastr.codegen.yml>
   gofastr generate entity <name> [--out=<dir>] [--dry-run]
   gofastr generate screen <name> [--out=<dir>] [--dry-run]
+  gofastr generate package [<name>] [--out=<dir>] [--dry-run]
+  gofastr generate styles [patterns]
   gofastr generate cli [flags]
   gofastr generate sdk [flags]
 
@@ -75,6 +79,9 @@ Modes:
   --config=<path>  Run configured project generators and extensions
   entity           Add an editable entity stub through the blueprint pipeline
   screen           Add an editable server-rendered screen stub
+  package          Copy a canonical chrome package (siteheader, sitefooter,
+                   docpage) into the app as owned code; no name lists them
+  styles           Typed Go for app tokens and owned style sheets
   cli              Generate a customer-facing CLI for the app API
   sdk              Generate Go and JavaScript/TypeScript API clients
 

@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/axecov"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
@@ -369,39 +368,26 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 //     enumerated; the generator emits no such shape.
 func (ds *UIHost) strictChromeLinkFindings(cfg StrictConfig) []strictFinding {
 	probe := newGETProbe(ds.coreRouter)
-	// href → "layout %q %s" origin of the first chrome that carried it.
-	// One finding per href, however many layouts repeat it: the fix is
-	// one registration (or one edit) either way.
+	// href → "layout %q chrome" origin of the first chrome that carried
+	// it. One finding per href, however many layouts repeat it: the fix
+	// is one registration (or one edit) either way.
 	broken := map[string]string{}
 	for _, l := range ds.strictLayouts() {
-		for _, slot := range []struct {
-			name string
-			comp component.Component
-		}{
-			{"header", l.Header},
-			{"sidebar", l.Sidebar},
-			{"footer", l.Footer},
-		} {
-			if slot.comp == nil {
+		// A layout's chrome is its build's static markup (plus outlet
+		// defaults), rendered whole: the build function is the only
+		// place a header, sidebar, or footer lives since the
+		// fixed-template slots were removed.
+		html := string(l.WrapCtx(context.Background(), ""))
+		for _, href := range extractChromeHrefs(html) {
+			path, internal := internalRoutePath(href)
+			if !internal || cfg.exempt(path) {
 				continue
 			}
-			html, err := component.SafeRenderCtx(context.Background(), slot.comp)
-			if err != nil {
-				slog.Warn("uihost strict: chrome render failed; its links are unchecked",
-					"layout", l.Name, "slot", slot.name, "err", err)
+			if ds.chromeLinkResolves(path, probe) {
 				continue
 			}
-			for _, href := range extractChromeHrefs(string(html)) {
-				path, internal := internalRoutePath(href)
-				if !internal || cfg.exempt(path) {
-					continue
-				}
-				if ds.chromeLinkResolves(path, probe) {
-					continue
-				}
-				if _, seen := broken[href]; !seen {
-					broken[href] = fmt.Sprintf("layout %q %s", l.Name, slot.name)
-				}
+			if _, seen := broken[href]; !seen {
+				broken[href] = fmt.Sprintf("layout %q chrome", l.Name)
 			}
 		}
 	}

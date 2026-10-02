@@ -1,0 +1,4 @@
+/* The desktop search field's resting width, and the narrowest it
+   shrinks to before the bar runs out of room. */
+@property --size-appbar-search { syntax: "<length>"; inherits: true; initial-value: 26rem; }
+@property --size-appbar-search-min { syntax: "<length>"; inherits: true; initial-value: 20rem; }

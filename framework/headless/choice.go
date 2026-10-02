@@ -3,7 +3,7 @@ package headless
 // The choice family: checkbox, radio and switch (one control wrapped
 // by its label) and the fieldset groups that hold a set of them under
 // one legend. Roles, the label-wraps-control relationship and the
-// group semantics live here; the row's visual shape lives in the skin.
+// group semantics live here; the row's visual shape lives in the class map.
 
 import (
 	"strconv"
@@ -47,7 +47,7 @@ type ChoiceProps struct {
 // control, so clicking the text toggles it with no for/id pair to
 // keep in sync — and the wrap itself is the accessible target, which
 // is why the control's own small box already passes WCAG 2.5.8.
-func Choice(p ChoiceProps, s Skin) render.HTML {
+func Choice(p ChoiceProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Choice requires Label — an unlabelled choice is a bug, not a variant")
 	}
@@ -75,8 +75,8 @@ func Choice(p ChoiceProps, s Skin) render.HTML {
 	}
 
 	return El("label", s, PartRoot, nil,
-		El("input", s, PartControl, input),
-		El("span", s, PartText, nil, text...),
+		El("input", s, PartControl, Internal(input)),
+		El("span", s, PartText, Internal(nil), text...),
 	)
 }
 
@@ -103,7 +103,7 @@ type SwitchProps struct {
 // switch states the shape to assistive tech. The track, the thumb and
 // the motion are the stylesheet's, keyed off :checked, so nothing in
 // this markup can fall out of step with the state.
-func Switch(p SwitchProps, s Skin) render.HTML {
+func Switch(p SwitchProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Switch requires Label — an on/off switch about nothing is a bug, not a variant")
 	}
@@ -120,10 +120,10 @@ func Switch(p SwitchProps, s Skin) render.HTML {
 	Flag(input, "checked", p.Checked)
 	Flag(input, "disabled", p.Disabled)
 	return El("label", s, PartRoot, nil,
-		El("input", s, PartControl, input),
+		El("input", s, PartControl, Internal(input)),
 		// No part: the switch's text span carries no class today and
-		// PartText is left to the skin to decide.
-		El("span", s, PartText, nil, render.Text(p.Label)),
+		// PartText is left to the class map to decide.
+		El("span", s, PartText, Internal(nil), render.Text(p.Label)),
 	)
 }
 
@@ -134,6 +134,12 @@ type GroupProps struct {
 	// Legend is the group's shared label. Required: a set of choices
 	// with no question above them is as broken as an unlabelled input.
 	Legend string
+	// Required marks the legend with data-required, the same state
+	// attribute a Field puts on its label, so a class map can draw
+	// the mark a sighted reader looks for. It is a cue, not a
+	// constraint: what the browser and the parser enforce is the
+	// required attribute on the leaves, which the caller sets there.
+	Required bool
 
 	ID    string
 	Extra html.Attrs
@@ -142,14 +148,18 @@ type GroupProps struct {
 // Group renders the fieldset. The legend is a real <legend> inside a
 // real <fieldset>: that pair is the native group semantic, naming
 // every control inside without a single aria attribute.
-func Group(p GroupProps, s Skin, items ...render.HTML) render.HTML {
+func Group(p GroupProps, s Classes, items ...render.HTML) render.HTML {
 	if p.Legend == "" {
 		panic("headless: Group requires Legend — a set of choices with no question above them is as broken as an unlabelled input")
 	}
 	attrs := Safe(p.Extra)
 	attrsSet(attrs, "id", p.ID)
+	legendAttrs := Attrs(nil)
+	if p.Required {
+		legendAttrs["data-required"] = ""
+	}
 	kids := append([]render.HTML{
-		El("legend", s, PartLabel, nil, render.Text(p.Legend)),
+		El("legend", s, PartLabel, Internal(legendAttrs), render.Text(p.Legend)),
 	}, items...)
 	return El("fieldset", s, PartRoot, attrs, kids...)
 }
@@ -159,7 +169,7 @@ func init() {
 		Name:    "Choice",
 		Anatomy: []Part{PartRoot, PartControl, PartText, PartHint},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "checkbox with a hint",
 				Why:  "the label WRAPS the control, so the hit area is the whole row and there is no for/id pair left to go stale",
@@ -177,7 +187,7 @@ func init() {
 		Name:    "Switch",
 		Anatomy: []Part{PartRoot, PartControl, PartText},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "on",
 				Why:  "a checkbox that says role=switch: it submits like a checkbox and is announced as on or off rather than checked or unchecked",
@@ -190,13 +200,20 @@ func init() {
 		Name:    "Group",
 		Anatomy: []Part{PartRoot, PartLabel},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "radio set",
 				Why:  "the legend is the question the choices answer — without it a screen reader reads three labels and never says what is being decided",
 				HTML: Group(GroupProps{Legend: "Restart policy"}, s,
 					Choice(ChoiceProps{Type: "radio", Name: "policy", Value: "always", Label: "Always"}, k.For("Choice")),
 					Choice(ChoiceProps{Type: "radio", Name: "policy", Value: "failure", Label: "On failure"}, k.For("Choice"))),
+			}, {
+				Name: "required set",
+				Why:  "the cue and the rule are two different things: data-required on the legend is what a sighted reader looks for, and the required attribute on a leaf is what the browser enforces — a group carrying only one of them is a group that either lies or looks optional",
+				HTML: Group(GroupProps{Legend: "Plan", Required: true}, s,
+					Choice(ChoiceProps{Type: "radio", Name: "plan", Value: "free", Label: "Free",
+						Extra: html.Attrs{"required": ""}}, k.For("Choice")),
+					Choice(ChoiceProps{Type: "radio", Name: "plan", Value: "pro", Label: "Pro"}, k.For("Choice"))),
 			}}
 		},
 	})

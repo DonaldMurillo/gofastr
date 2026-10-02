@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -122,12 +121,36 @@ func TestDataTableEmptyTitleOverrideWins(t *testing.T) {
 func TestDataTableSortAriaLabelTVars(t *testing.T) {
 	swapDefault(t, i18nui.KeyTableSortBy, "Sortby {column}")
 	out := htmlString(t, DataTable(DataTableConfig{
-		Columns:         []Column{{Key: "name", Sortable: true}},
-		SortHrefPattern: "?sort=%s&dir=%s",
-		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		Columns: []Column{{Key: "name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
 	}))
 	if !strings.Contains(out, `aria-label="Sortby name"`) {
 		t.Fatalf("missing TVars sort aria-label:\n%s", out)
+	}
+}
+
+// DataTable's sort announcement resolves the three table keys through
+// i18nui: the sentence and both direction words, substituted by name
+// on the server.
+func TestDataTableAnnouncementI18n(t *testing.T) {
+	swapDefault(t, i18nui.KeyTableSortedBy, "PROBE-SORTED {column} {direction}")
+	swapDefault(t, i18nui.KeyTableDirAscending, "PROBE-ASC")
+	swapDefault(t, i18nui.KeyTableDirDescending, "PROBE-DESC")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		SortBy:  "name",
+	}))
+	if !strings.Contains(out, `data-hui-table-announcement="PROBE-SORTED Name PROBE-ASC"`) {
+		t.Fatalf("missing announcement probes:\n%s", out)
+	}
+	desc := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		SortBy:  "name", SortDir: SortDesc,
+	}))
+	if !strings.Contains(desc, `data-hui-table-announcement="PROBE-SORTED Name PROBE-DESC"`) {
+		t.Fatalf("missing descending probe:\n%s", desc)
 	}
 }
 
@@ -139,8 +162,8 @@ func TestDataTableThreadsI18nPagination(t *testing.T) {
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "x", Header: "X"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-		Pagination: &pagination.Config{
-			Total: 2, Current: 1, HrefPattern: "?p=%d",
+		Pagination: &PaginationConfig{
+			Pages: 2, Page: 1,
 		},
 	}))
 	for _, want := range []string{"PROBE-PAG", "PROBE-PREV", "PROBE-NEXT"} {
@@ -184,9 +207,11 @@ func TestFilterToolbarAllLabelTVars(t *testing.T) {
 	}
 }
 
-// Carousel "Go to slide N" dot aria-labels use TVars.
+// Carousel "Go to slide N" dot aria-labels use TVars. The words moved
+// to the headless Strings table with the primitive: the key the bridge
+// reads is the Hui one ({n}-shaped).
 func TestCarouselGoToSlideTVars(t *testing.T) {
-	swapDefault(t, i18nui.KeyCarouselGoTo, "Goto {slide}")
+	swapDefault(t, i18nui.KeyHuiCarouselGoToSlide, "Goto {n}")
 	out := htmlString(t, Carousel(CarouselConfig{
 		Label:  "gallery",
 		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},

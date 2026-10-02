@@ -15,7 +15,6 @@ because each release lands the demo + the code together.
 | Live behavior (click it, drag it)    | Run the website: `./scripts/dev-watch.sh` → `/components/<slug>` |
 | Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
 | Full-page composition choice          | `gofastr docs ui-composition-recipes`                           |
-| Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
 | Runtime data-fui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
 | What's coming / deferred             | [`ROADMAP.md` §2](../../../ROADMAP.md)                                  |
@@ -62,16 +61,16 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Buttons & form controls
 
-- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes
-- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate
-- **toggle**: `framework/ui.Checkbox` / `Radio` / `Switch`, labelled native inputs, FieldErrors-aware
-- **checkboxgroup**: `framework/ui.CheckboxGroup` / `RadioGroup`, `<fieldset>` of checkboxes / radios with shared label + errors
-- **colorfield**: `framework/ui.ColorField`, colour swatch beside a text input holding the same value, as one control; the text input is the source of truth, so values the native picker cannot represent (`transparent`, `var(--x)`) survive. Use `ColorPicker` when a swatch + label is enough
+- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes, rendered through the headless structure with the `fui-button` class map. `Disabled` renders the disabled state (a `disabled` key in `ExtraAttrs` panics pointing at the field). Every `data-fui-*` key in `ExtraAttrs` is runtime wiring and travels the typed `Action` seam; a key outside the vocabulary panics naming it — under the old carrier contract it rendered as a dead attribute. The admitted vocabulary: `data-fui-rpc`, `-rpc-method`, `-rpc-body`, `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`, `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`, `-rpc-scroll-to`, `-rpc-refresh` (re-poll a widget after success), `-confirm`, `-signal-set`, `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`, `-deeplink`, `-toast`, `-pane-open`, `-pane-key` (a keyed pane's deep-link identity), `-pane-close`, `-prefetch`, `-intercept-close` — the shapes `interactive.Action.Attrs()` / `OpenOnClick` / `PaneKey` and friends produce; every other `data-fui-*` key belongs to the component that renders its own markup for it
+- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate. `External` owns `target`/`rel` (noopener). Carries the four link-legal wiring keys (`data-fui-push-state`, `-prefetch`, `-open`, `-deeplink`); every other `data-fui-*` key is refused, as always — a link navigates, a button acts
+- **toggle**: `framework/ui.Checkbox` / `Radio` / `Switch`, labelled native inputs rendered through `headless.Choice` / `headless.Switch` — one inline run, the label wrapping the control; FieldErrors-aware, an error wrapping the run and its message in one unit
+- **checkboxgroup**: `framework/ui.CheckboxGroup` / `RadioGroup`, `headless.Group` fieldset of checkboxes / radios; the group's message (error, else hint) belongs to the group, never to each leaf
+- **colorfield**: `framework/ui.ColorField`, colour swatch beside a text input holding the same value, as one control (`headless.Color`'s affix shell); the text input is the source of truth and requires a `Name`, so values the native picker cannot represent (`transparent`, `var(--x)`) survive and mark the shell instead of degrading — the swatch falls back to black; the headless module keeps the swatch and the text one value for every value the picker can show (the short `#abc` form expands for the swatch and is pickable, not an error). Use `ColorPicker` when a swatch + label is enough
 - **segmented**: `framework/ui.SegmentedControl`, radio-group styled as a sliding pill bar
 - **counter**: `framework/ui.Counter`, signal-driven numeric counter with +/− buttons
 - **signaltoggle**: `framework/ui.SignalToggle`, `role="switch"` button bound to a boolean signal
 - **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
-- **passwordinput**: `framework/ui.PasswordInput`, password field with show/hide toggle
+- **passwordinput**: `framework/ui.PasswordInput`, password field with a show/hide reveal button rendered through `headless.Password` — the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
@@ -83,22 +82,23 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **timepicker**: `framework/ui.TimePicker`, styled native `<input type=time>`
 - **select**: `framework/ui.Select`, labelled native `<select>` with help, error, placeholder, and required marker
 - **taginput**: `framework/ui.TagInput`, free-form chips, Enter/comma to commit, Backspace to remove
-- **multiselect**: `core-ui/patterns/multiselect`, checkbox group with chip display above
+- **multiselect**: `framework/ui.MultiSelect`, checkbox group inside a disclosure with a chips strip above; submits as a plain form (the field name repeats per checked option, no script needed), the chips are the enhancement the `headless-multiselect` module rebuilds from the checkboxes' own state
 - **form**: `framework/ui.Form`, opinionated `<form>` wrapper with submit + error summary
 - **formfield**: `framework/ui.FormField`, labelled input with required + help + error states
+- **control**: `framework/ui.Control`, styled native input (email, password, datetime-local, file, tel, url, search…) for a FormField builder
 - **textfield**: `framework/ui.TextField`, typed labelled native text field with required, help, error, autocomplete, and length attributes
 - **numberfield**: `framework/ui.NumberField`, typed labelled native number field with explicit min/max/step bounds
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds
 - **formsection**: `framework/ui.FormSection`, grouped fields with a shared heading + description
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors
-- **conditionalfield**: `framework/ui.ConditionalField` (+ `ConditionalFieldVisible` inverse), form section shown/hidden by another field's value
+- **conditionalfield**: `framework/ui.ConditionalField`, form region visible on first paint and hidden by the runtime until the watched field matches
 - **formrepeater**: `framework/ui.FormRepeater`, dynamic list of repeating field groups (add / remove rows)
 - **repeater**: `framework/ui.Repeater`, dynamic add / remove item list with min / max limits
 - **stepwizard**: `framework/ui.StepWizard`, multi-step form with a progress indicator bar
 
 ### Selection & input composition
 
-- **combobox**: `core-ui/patterns/combobox`, debounced search with RPC-driven listbox
+- **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **commandpalette**: `framework/ui.CommandPalette`, ⌘K modal + combobox composition
 - **globalsearch**: `framework/ui.GlobalSearch`, sticky inline `/`-shortcut search bar
 - **dropzone**: `framework/ui.FileDropzone`, hero file-drop surface with image previews
@@ -109,25 +109,22 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **recordsummary**: `framework/ui.RecordSummary`, compact dominant record or event summary with status, next-decision, balanced phone metrics, a bounded support rail, ownership, and a lead-region natural-width action that stays early on phones
 - **skiplink**: `framework/ui.SkipLink`, focus-visible bypass link for jumping to main content
 - **pageheader**: `framework/ui.PageHeader`, top-of-page header with title / eyebrow / subtitle / actions
-- **siteheader**: `framework/ui.SiteHeader`, top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity; `PersistentActions` keeps one journey-critical control in the bar at every width (no drawer copy)
-- **sitefooter**: `framework/ui.SiteFooter`, multi-column footer grid + bottom strip
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
-- **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager). The pager's direction lines come from `DocPager.PrevDirLabel` / `NextDirLabel`; empty keeps `← Previous` / `Next →`. The arrow is part of the value, so a translation can move it to the other side of the word
-- **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the demand-loaded `tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
-- **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
-- **pagination**: `core-ui/patterns/pagination`, numeric page navigation
+- **contentrow**: `framework/ui.ContentRow`, the page's content row — a start column (the nav landmark `ContentRowConfig.NavLabel` names, wrapping a `ui.Sidebar` whose own inner nav names only the links list), the main column, an optional toolbar band above main beside the nav, and an optional context aside that releases its width around an empty outlet. `Breakpoint` picks the stack width (below md by default, below lg to match `SidebarConfig.DrawerBreakpoint`); `Viewport: true` fills the rest of the viewport below the header and scrolls each column on its own — the row reads the header's height from `--size-header-height` and cannot style its parent, so recipes pair it with a page-tall `ui.Stack{Screen: true}` and the fixed header band.
+- **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the `headless-tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
+- **breadcrumbs**: `framework/ui.Breadcrumbs`, `<nav aria-label>` landmark over an ordered trail; the last step (or the one carrying `Current`) is `aria-current="page"` text, never a link to itself, and separators are `aria-hidden`
+  `CompactMobile: true` shows the final two steps below md and hides the leading separator; the full trail remains on desktop.
+- **pagination**: `framework/ui.Pagination`, numeric page pager with typed query props (`Path`, `Query url.Values`, `PageParam` default `p`) — every href is built through `net/url` with the page parameter replaced, never a `%d` pattern; `Window` sizes the page neighbourhood, `OmitPrevNext` drops the ends. The Island is optional, the Table posture: a list screen's page anchors are plain navigations the client router intercepts, and a pager inside an island region (a `DataTable` footer) carries the RPC contract beside its hrefs and the `data-hui-page` hook the table module restores focus through. `core-ui/patterns/pagination` is retired: this is the only pager
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
+- **sidebardrawertrigger**: `framework/ui.SidebarDrawerTrigger`, the sidebar's drawer toggle rendered on its own — the relocated hamburger a header row carries while the sidebar itself lives in the body; pass the SAME `SidebarConfig` the `ui.Sidebar` render uses and the pair stays one logical control (the trigger hides itself at >= md exactly like the sidebar's inline copy, so `SuppressDrawerTrigger` and a relocated trigger never draw two)
 - **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-fui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before.
-- **tabs**: `core-ui/patterns/tabs`, `<details>`-based tab strip, zero JS
-- **tree**: `core-ui/patterns/tree`, recursive tree with roving tabindex + lazy-load
+- **tree**: `framework/ui.Tree`, WAI-ARIA treeview on the headless primitive: roving tabindex, arrows/Home/End/type-ahead bound by the registered `headless-tree` module; leaf hrefs are real anchors, a static branch is real markup, and a `LazyPath` branch keeps the kernel's rpc wiring on its toggle with a hidden signal-bound group (`LazySignalPrefix` names the signal)
 - **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
 - **steprail**: `framework/ui.StepRail`, vertical numbered step rail with an active step + anchor links
 - **steps**: `framework/ui.ProgressSteps`, linear step indicator (horizontal + vertical)
 
 ### Disclosure / surface widgets
 
-- **accordion**: `core-ui/patterns/accordion`, Group + Stack disclosure variants
-- **disclosure**: `core-ui/patterns/disclosure`, single styled `<details>`
 - **collapsible**: `framework/ui.Collapsible`, styled `<details>` with clickable summary + Escape-to-close
 - **modal**: `core-ui/widget/preset.Modal`, focus-trapped dialog with deeplink
 - **drawer**: `core-ui/widget/preset.Drawer`, edge-mounted sliding panel
@@ -142,14 +139,17 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Layout & display
 
-- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out
-- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding
+- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out. `StackConfig.Screen: true` makes the stack the page column: at least one viewport tall (100dvh) with its last child pushed to the bottom — the option a recipe uses to keep a short page's footer at the bottom of the screen
+- **listdetail**: `framework/ui.ListDetail`, a labelled, keyboard-scrollable list beside a detail slot. Keep it in the group layout to preserve its node and scroll position while detail navigation swaps the primary slot. On phones the detail stacks above the list. `ExtraAttrs` accepts the two markers returned by `LayoutTree.VTRegion()` for whole-region transitions.
+- **listdetailplaceholder**: `framework/ui.ListDetailPlaceholder`, marks an unselected detail screen for `ListDetailConfig.MobileSinglePane`. This opt-in phone mode shows the list on an index and the detail on an issue, including a missing issue; desktop remains split. `BackHref` (with `BackLabel`, default "Back") adds a link to the list at the top of the detail pane, shown only while a phone shows the detail alone; it requires `MobileSinglePane`. The default ListDetail still stacks both regions on phones.
+- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding; `Width: ContainerPage` caps at the page measure (`--size-page-width`, 66rem) — the editorial column a contained page's main and its header/footer bands share. Like the bands, its content box is the measure and the page gutter (`--size-page-gutter`, clamp(20px, 5vw, 32px)) sits outside it, so main's text starts on the header brand's edge at every width; `Pad` is the page's block rhythm: `ContainerPadPage` pads under the header (`--ui-container-pad-start`, clamp(40px, 6vw, 64px)) and above the footer (`--ui-container-pad-end`, clamp(48px, 7vw, 80px)), `ContainerPadEnd` only above the footer; an unknown value panics
 - **section**: `framework/ui.Section`, labelled content section with heading + description
-- **responsive**: `framework/ui.Responsive`, viewport-swap pair (independent desktop / mobile variants)
+- **responsive**: `framework/ui.Responsive`, viewport-swap pair (independent desktop / mobile variants). `Below` picks the breakpoint the mobile variant shows below: `ui.StackBelowMD` (the zero value, 48rem) or `ui.StackBelowLG` (64rem)
 - **panehost**: `framework/ui.PaneHost`, primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed**: `framework/ui.Themed`, wraps a subtree in a registered section-level theme override
 - **workbench**: `framework/ui.Workbench`, viewport-height inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest (an `<iframe>` in the pane fills it edge to edge); stacks below 720px
-- **card**: `framework/ui.Card`, labelled `<section>` with header/body/footer
+- **card**: `framework/ui.Card`, a surface with header/body/footer over `headless.Card`; `Href` makes the whole card one link
+  An interactive card with `aria-current="page"` receives the active surface treatment, including marks applied by the runtime's navigation sweep.
 - **sticky**: `framework/ui.Sticky`, theme-token sticky wrapper for top or bottom edge pinning
 - **aspectratio**: `framework/ui.AspectRatio`, CLS-safe aspect-ratio wrapper for media and embeds
 - **image**: `framework/ui.OptimizedImage`, responsive `<picture>` with CLS-safe Width/Height
@@ -158,10 +158,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **gallery**: `framework/ui.Gallery`, Grid / Strip / Masonry thumbnail surface
 - **lightbox**: `framework/ui.Lightbox`, zoom-overlay modal; pairs with Gallery
 - **carousel**: `framework/ui.Carousel`, horizontal scroll-snap slider
-- **infinitescroll**: `core-ui/patterns/infinitescroll`, IntersectionObserver-driven lazy feed
-- **sortablelist**: `core-ui/patterns/sortablelist`, drag-and-drop + keyboard reorderable list
-- **nestedlist**: `core-ui/patterns/nestedlist`, recursive `<ul>`/`<ol>` with native `<details>` collapse on branches
-- **scrollspy**: `core-ui/patterns/scrollspy`, IntersectionObserver-based active-section tracking for any nav of in-page anchors
+- **sortablelist**: `framework/ui.SortableList`, drag-and-drop + keyboard reorderable list on the headless primitive (Space grabs, arrows move, Space drops, Esc cancels); the commit is the pattern's server round trip — 2xx confirms, non-2xx reverts, linked columns share `Group`, a versioned 409 refetches fresh rows (`SortableListItems` is that fragment)
 - **optimisticaction**: `framework/ui.OptimisticAction`, button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
 - **toggleaction**: `framework/ui.ToggleAction`, OptimisticAction's three-state cousin: idle ↔ committed with optional untoggle endpoint and `Group` mutex (committing one reverts its siblings)
 - **networkretrybanner**: `framework/ui.NetworkRetryBanner`, persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
@@ -169,25 +166,25 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 ### Data display
 
 - **metricband**: `framework/ui.MetricBand`, flat semantic signal band (one row wide, two columns on phones) for related facts that should not become a wall of cards; `Hint` adds a trend or qualifier
-- **datatable**: `framework/ui.DataTable`, sortable / paginated / island-swappable rows
+- **datatable**: `framework/ui.DataTable`, sortable / paginated / island-swappable rows; a sort header is an anchor in both postures — the URL is a list screen's state, and an embedded table's anchors carry the island contract beside their hrefs
 - **statcard**: `framework/ui.StatCard`, metric card with label/value/trend. A 4-card dashboard row lives in a `ui.Grid`; the Grid default `Min: "16rem"` wraps 3+1 inside a sidebar-narrowed content column (~900px). For a 4-up row that fits (and degrades to 2+2 on tablet), pass `Grid(GridConfig{Min: "13rem"}, …)`; the `Min` knob is the intended control, not a Grid default change (16rem stays right for general content cards).
 - **animatedcounter**: `framework/ui.AnimatedCounter`, IntersectionObserver-driven tick
 - **timeline**: `framework/ui.Timeline`, vertical event rail
 - **sparkline**: `framework/ui.Sparkline`, pure-SVG inline trend chart
 - **piechart**: `framework/ui.PieChart`, SVG ratio chart (donut variant via InnerRadius)
-- **barchart**: `framework/ui.BarChart`, categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `ShowAxis` adds left value-axis ticks + gridlines. Per-bar `Color` accepts a palette token (primary/info/success/warning/danger), a registered status variant name, or a hex/rgb/hsl/oklch/var() CSS color; any other value falls back to the theme primary.
+- **barchart**: `framework/ui.BarChart`, categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `FitHeight` sizes the SVG to hug the tallest bar (a 96px cap) instead of the fixed `Height`, so no blank band pads the space above the caps — bar ratios stay identical, only the padding goes. `ShowAxis` adds left value-axis ticks + gridlines. Per-bar `Color` accepts a palette token (primary/info/success/warning/danger), a registered status variant name, or a hex/rgb/hsl/oklch/var() CSS color; any other value falls back to the theme primary.
 - **linechart**: `framework/ui.LineChart`, multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
 - **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; the `HighlightLines` *func* pre-tokenizes lines for syntax highlighting, and the `HighlightLines []LineRange` *field* (fence `{1,3-5}`), `Diff`, `HighlightWords`, and `Wrap` add line bands, diff marking, word marks, and soft wrapping — see [CodeBlock: line highlighting, diffs, wrapping](#codeblock-line-highlighting-diffs-wrapping)
-- **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `patterns/tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
+- **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `headless.Tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer
-- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
-- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
+- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. `Measure: true` caps the line length at a reading width (`--ui-markdown-measure`, 72ch) for long-form pages in a wide column; generated markdown blocks set it. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
+- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views; stacks labels above values in narrow containers, including desktop context cards, and on phones
+- **progress**: `framework/ui.Progress`, native `<progress>` with theme styling; determinate (`Value` 0..`Max`, clamped at render) or indeterminate (`Value` < 0), labelled visibly (`ShowLabel`) or through `aria-label`. A named-stage walk is `ProgressSteps`, a different component
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
-- **progress**: `core-ui/patterns/progress`, native `<progress>` with theme styling
-- **skeleton**: `core-ui/patterns/skeleton`, pure-CSS shimmer placeholders
+- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar` / `SkeletonTimeline` / `SkeletonLine`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset; the timeline preset draws event-shaped rows (dot, name line, two text lines) matching what `ui.Timeline` arrivals look like, and `SkeletonLine` draws ONE capped bar — the loading twin of a breadcrumb trail or a one-line label (an area's `Loading.Show`, a crumbs skeleton)
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
 ### Tags, badges, filters
@@ -222,6 +219,10 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 
 ## Sidebar: server-owned collapse state
+
+A sidebar group has `Children` and no `Href`: its label opens and closes
+the group. Put the section's overview page in the group's first child
+link instead. Setting both `Children` and `Href` panics with this fix.
 
 `SidebarConfig.CurrentPath` already splits who decides the active item:
 set it and the server renders the highlight, leave it empty and the
@@ -274,7 +275,7 @@ Three more knobs round out the contract surface:
   click. For hosts whose specs pin that markup shape. Two `<details>`
   behaviours do not carry over: group open state is not persisted
   across navigation (every swap resets a group to its server-rendered
-  state; the details dialect carries `data-fui-disclosure-persist`),
+  state; the details dialect carries `data-hui-disclosure-persist`),
   and the dialect needs JavaScript — without the runtime module a
   closed group's links are unreachable, while `<details>` opens
   natively with JS off.
@@ -294,6 +295,22 @@ Three more knobs round out the contract surface:
   can mark the current section. Wrap static markup in
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state; `Footer` stays below the nav.
+- `MatchPath` rides the rendered link as `data-fui-match-prefix` (the
+  value, not the href, is the prefix): the server marks the item
+  current on first paint, and the runtime's active-link sweep keeps it
+  lit across client navigations into the section — without it the
+  exact-href sweep clears the highlight the moment the URL grows a
+  deeper segment inside a kept shell.
+- `SuppressDrawerTrigger: true` plus `ui.SidebarDrawerTrigger(cfg)`
+  moves the hamburger into your own chrome (the page header, left of
+  the brand): the standalone button is the same trigger — same class,
+  same `data-fui-open` widget contract, same `>= md` self-hiding from
+  the component's stylesheet. `MountSidebar` still mounts the drawer
+  itself, once, as always.
+- `NativeMobile: true` adds a native disclosure for browsers with scripting
+  disabled. CSS selects it with `(scripting: none)`; scripted browsers keep
+  the mounted drawer and its focus and Escape behavior. Keep calling
+  `MountSidebar`. The fallback uses the same filtered items and group markup.
 
 ---
 
@@ -378,7 +395,7 @@ diff, wrap long lines, and cap its height without leaving Markdown:
 | `scroll` | `Scroll` | caps body height at `--ui-code-block-scroll-max`, scrolls |
 | `{1,3-5}` or `highlight=1,3-5` | `HighlightLines []LineRange` | background band on those lines (1-based, inclusive) |
 | `diff` | `Diff` | lines starting `+` (and `+++`) get an added band, `-` (and `---`) a removed band; the marker stays in the text |
-| `words="err,nil"` / `words=err,nil` | `HighlightWords []string` | literal matches wrapped in `<mark class="ui-code-block__mark">` |
+| `words="err,nil"` / `words=err,nil` | `HighlightWords []string` | literal matches wrapped in `<mark class="fui-code-block__mark">` |
 | `wrap` (`nowrap` / `wrap=false` off) | `Wrap` | soft-wrap long lines instead of horizontal scrolling |
 
 Unknown options are ignored, and so is an invalid `highlight=` or
@@ -437,7 +454,7 @@ not.
 The framework's drift tests catch most of these; this list is a
 helpful pre-flight read for human reviewers.
 
-1. **Implementation**: `framework/ui/<name>.go` (or `core-ui/patterns/<name>/`).
+1. **Implementation**: `framework/ui/<name>.go`.
 2. **Theme-token CSS only**: register your own `RegisterStyle`; use
    `var(--color-*, fallback)` etc. No top-level `.ui-*` rules in
    `examples/site/styles.go`, the site chrome is page-only.
@@ -492,8 +509,11 @@ helpful pre-flight read for human reviewers.
 - **Writing a new runtime module when composition already covers it.**
   Check `preset.Modal` / `preset.Popover` / `preset.Drawer` +
   `data-fui-open` + `data-fui-deeplink` + signal binding first.
-  Lightbox and NotificationBell ship with zero new JS by composing
-  them. New modules are the expensive path (budget, tests, docs).
+  NotificationBell ships with zero new JS by composing them; the
+  Lightbox composed the same primitives and then earned a module for
+  the behaviour composition cannot give (gallery stepping,
+  pinch-zoom). New modules are the expensive path (budget, tests,
+  docs).
 - **Styling a component from `examples/site/styles.go`.** Top-level
   `.ui-*` rules in the site stylesheet are forbidden; the site chrome
   is page-only. A component owns its CSS via `registry.RegisterStyle`

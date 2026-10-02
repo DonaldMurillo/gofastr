@@ -14,7 +14,7 @@ func TestPaneHostDeepLinkMarker(t *testing.T) {
 		Secondary:     render.Text("S"),
 		DeepLinkParam: "pane",
 	})
-	mustContain(t, h, `data-fui-pane-deeplink="pane"`)
+	mustContain(t, h, `data-hui-pane-deeplink="pane"`)
 }
 
 // Opt-in: a host that does not ask for URL round-tripping must not carry
@@ -25,7 +25,7 @@ func TestPaneHostNoDeepLinkMarkerByDefault(t *testing.T) {
 		Primary:   render.Text("P"),
 		Secondary: render.Text("S"),
 	}))
-	if strings.Contains(h, "data-fui-pane-deeplink") {
+	if strings.Contains(h, "data-hui-pane-deeplink") {
 		t.Fatalf("marker emitted without DeepLinkParam:\n%s", h)
 	}
 }
@@ -85,8 +85,10 @@ func TestPaneDeepLinkDrivesSSROpen(t *testing.T) {
 		SecondaryOpen: slot == "secondary",
 		TertiaryOpen:  slot == "tertiary",
 	})
-	mustContain(t, h, "ui-pane-host--tertiary-open")
-	if strings.Contains(string(h), "ui-pane-host--secondary-open") {
-		t.Fatalf("secondary should stay closed:\n%s", h)
+	paneHasClass(t, string(h), `data-hui-panehost`, `fui-pane-host--tertiary-open`)
+	for _, tok := range paneClassTokens(t, string(h), `data-hui-panehost`) {
+		if tok == "fui-pane-host--secondary-open" {
+			t.Fatalf("secondary should stay closed:\n%s", h)
+		}
 	}
 }

@@ -19,9 +19,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // serveControlsPage renders the editor chrome: the token controls (left),
@@ -84,7 +88,7 @@ func renderTokenControls(tokens map[string]string) string {
 		// bespoke badge markup: the count is what the operator scans for.
 		parts = append(parts, ui.Collapsible(ui.CollapsibleConfig{
 			Summary: fmt.Sprintf("%s (%d)", g.Name, len(g.Tokens)),
-			Open:    g.Name == "Colors" || g.Name == "Colors (dark)",
+			Open:    g.Name == "Colors" || g.Name == "Colors (dark)" || g.Name == "Component options",
 		}, rows...))
 	}
 	return string(ui.Stack(ui.StackConfig{Gap: ui.GapSM}, parts...))
@@ -93,19 +97,22 @@ func renderTokenControls(tokens map[string]string) string {
 func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 	groupMap := make(map[string]*tokenGroupEntry)
 	order := map[string]int{
-		"Colors":        0,
-		"Colors (dark)": 1,
-		"Spacing":       2,
-		"Radii":         3,
-		"Fonts":         4,
-		"Typography":    5,
-		"Shadows":       6,
-		"Z-Index":       7,
-		"Durations":     8,
-		"Easings":       9,
-		"Breakpoints":   10,
-		"Code":          11,
-		"Code (dark)":   12,
+		"Colors":            0,
+		"Component options": 1,
+		"Colors (dark)":     2,
+		"Spacing":           3,
+		"Radii":             4,
+		"Fonts":             5,
+		"Typography":        6,
+		"Font weights":      7,
+		"Sizes":             8,
+		"Shadows":           9,
+		"Z-Index":           10,
+		"Durations":         11,
+		"Easings":           12,
+		"Breakpoints":       13,
+		"Code":              14,
+		"Code (dark)":       15,
 	}
 	for k, v := range tokens {
 		gn := tokenGroupName(k)
@@ -120,8 +127,21 @@ func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 		ge.Tokens = append(ge.Tokens, tokenControl{Key: k, Value: v, Type: tokenControlType(k)})
 	}
 	out := make([]tokenGroupEntry, 0, len(groupMap))
+	// Component options follow the catalogue's order (density, then the
+	// button family, then the field family); every other group is by key.
+	catalogue := map[string]int{}
+	for i, o := range uitheme.Options() {
+		catalogue["component."+o.Key] = i
+	}
 	for _, g := range groupMap {
-		sort.Slice(g.Tokens, func(i, j int) bool { return g.Tokens[i].Key < g.Tokens[j].Key })
+		sort.Slice(g.Tokens, func(i, j int) bool {
+			ci, iok := catalogue[g.Tokens[i].Key]
+			cj, jok := catalogue[g.Tokens[j].Key]
+			if iok && jok {
+				return ci < cj
+			}
+			return g.Tokens[i].Key < g.Tokens[j].Key
+		})
 		out = append(out, *g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Order < out[j].Order })
@@ -135,14 +155,20 @@ func tokenGroupName(key string) string {
 	switch {
 	case strings.HasPrefix(base, "color-"):
 		group = "Colors"
+	case strings.HasPrefix(base, "component."):
+		group = "Component options"
 	case strings.HasPrefix(base, "tk-"):
 		group = "Code"
 	case strings.HasPrefix(base, "spacing-"):
 		group = "Spacing"
 	case strings.HasPrefix(base, "radii-"):
 		group = "Radii"
+	case strings.HasPrefix(base, "font-weight-"):
+		group = "Font weights"
 	case strings.HasPrefix(base, "font-"):
 		group = "Fonts"
+	case strings.HasPrefix(base, "size-"):
+		group = "Sizes"
 	case strings.HasPrefix(base, "breakpoint-"):
 		group = "Breakpoints"
 	case strings.HasPrefix(base, "shadow-"):
@@ -170,80 +196,88 @@ func tokenGroupName(key string) string {
 // hex back to it). Integer-px tokens strip the "px" suffix for display and
 // the JS re-appends it on submit.
 //
-// Each row is a ui-form-field: the design system's stylesheet styles every
-// descendant input/select/textarea via [data-fui-comp="ui-form-field"] input,
-// so we get label spacing, focus rings, and the is-error affordance for free
-// with no per-control CSS. The token key is carried on data-token (so the
-// editor JS can find each control by key) and data-field on the wrapper (so
-// the JS can flip is-error without selecting on a bespoke class).
+// Each row is a ui.FormField with ReserveError: the field renders an
+// empty error paragraph (id <control-id>-error, already wired into the
+// control's aria-describedby, and taken out of the grid by the
+// stylesheet while it is empty) that the editor's JS fills on apply
+// failure — no re-render, no bespoke data-err-for lookup. The token key rides on
+// data-token (so the editor JS finds each control by key) and
+// data-field on the wrapper (so the JS can flip the error state
+// without selecting on a bespoke class).
 func renderOneControl(t tokenControl) render.HTML {
+	// Component options render as ui.Select rather than a FormField row:
+	// Select composes its own headless.Field with a readable label, and
+	// its members are a closed list the catalogue owns. A component key
+	// the catalogue does not know falls through to the text control
+	// below — an unrecognised prefix is never hidden.
+	if t.Type == "select" {
+		if opt, ok := componentOptionCatalogue[t.Key]; ok {
+			return componentOptionSelect(t, opt)
+		}
+	}
 	displayValue := t.Value
 	if t.Type == "number-px" {
 		displayValue = strings.TrimSuffix(t.Value, "px")
 	}
 	id := controlInputID(t.Key)
 
-	var inputFrag render.HTML
-	switch t.Type {
-	case "color":
-		// ui.ColorField is the design system's swatch + hex-input pair. Both
-		// inputs carry data-token so the editor's JS wires them as one control;
-		// the swatch writes its hex into the text input, which is the source of
-		// truth (it can hold values the native picker cannot represent).
-		inputFrag = ui.ColorField(ui.ColorFieldConfig{
-			Value:       t.Value,
-			SwatchValue: colorSwatchValue(t.Value),
-			TextID:      id,
-			SwatchLabel: t.Key + " colour swatch",
-			// Matches the visible <label> text below, so the announced name and
-			// the seen name are the same string.
-			TextLabel: t.Key,
-			SwatchAttrs: map[string]string{
-				"data-token": t.Key,
-				"data-type":  "color-swatch",
-			},
-			TextAttrs: map[string]string{
-				"data-token": t.Key,
-				"data-type":  t.Type,
-			},
-		})
-	case "number", "number-px":
-		inputFrag = render.VoidTag("input", map[string]string{
-			"type":       "number",
-			"value":      displayValue,
-			"id":         id,
-			"data-token": t.Key,
-			"data-type":  t.Type,
-		})
-	default:
-		inputFrag = render.VoidTag("input", map[string]string{
-			"type":       "text",
-			"value":      t.Value,
-			"id":         id,
-			"data-token": t.Key,
-			"data-type":  t.Type,
-		})
+	buildInput := func(c headless.FieldControl) render.HTML {
+		switch t.Type {
+		case "color":
+			// ui.ColorField is the design system's swatch + hex-input
+			// affix shell, bound by the headless behaviour module: the
+			// module keeps the swatch and the hex one value in both
+			// directions and marks the shell when the text holds
+			// something the picker cannot show. Both inputs carry
+			// data-token so the editor's JS finds the control by key;
+			// the hex input is the source of truth.
+			return ui.ColorField(ui.ColorFieldConfig{
+				Name:        t.Key,
+				Value:       t.Value,
+				Field:       c,
+				SwatchLabel: t.Key + " colour swatch",
+				// Matches the visible <label> text below, so the announced name and
+				// the seen name are the same string.
+				TextLabel: t.Key,
+				SwatchAttrs: map[string]string{
+					"data-token": t.Key,
+					"data-type":  "color-swatch",
+				},
+				// The field's wiring rides Field above, which is the
+				// typed seam; an aria-describedby here would be a
+				// second source for the same fact, and the component
+				// drops it as its own anyway.
+				TextAttrs: map[string]string{
+					"data-token": t.Key,
+					"data-type":  t.Type,
+				},
+			})
+		case "number", "number-px":
+			return ui.Control(ui.ControlConfig{
+				Field: c, Type: "number", Name: t.Key, Value: displayValue,
+				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
+			})
+		default:
+			// Name is the token key: these controls live outside any
+			// form (nothing submits), and the name says what the value
+			// is the moment one ever wraps them.
+			return ui.Control(ui.ControlConfig{
+				Field: c, Type: "text", Name: t.Key, Value: t.Value,
+				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
+			})
+		}
 	}
 
-	label := render.Tag("label", map[string]string{
-		"class": "ui-form-field__label",
-		"for":   id,
-	}, render.Text(t.Key))
-
-	// Empty error span: the JS fills this on apply failure. data-err-for is
-	// the JS's lookup key; the design system's ui-form-field__error class
-	// colours it via the --color-danger token.
-	errSpan := render.Tag("span", map[string]string{
-		"class":        "ui-form-field__error",
-		"data-err-for": t.Key,
+	return ui.FormField(ui.FormFieldConfig{
+		Label:        t.Key,
+		For:          id,
+		ReserveError: true,
+		Input:        buildInput,
+		ExtraAttrs: html.Attrs{
+			"data-field":      t.Key,
+			"data-field-type": t.Type,
+		},
 	})
-
-	return render.Tag("div", map[string]string{
-		"class":           "ui-form-field",
-		"data-fui-comp":   "ui-form-field",
-		"data-field":      t.Key,
-		"data-field-type": t.Type,
-	}, label, inputFrag, errSpan)
 }
 
 // controlInputID derives a stable, HTML-legal id from a token key. Used as
@@ -263,25 +297,62 @@ func controlInputID(key string) string {
 	return "te-input-" + b.String()
 }
 
-// colorSwatchValue returns a #rrggbb form the <input type="color"> can
-// render, or "#000000" when the value is not a plain 3/4/6/8-digit hex (the
-// picker cannot represent oklch/color-mix/var(), but the text input beside
-// it always holds the true value).
-func colorSwatchValue(v string) string {
-	hex := strings.TrimPrefix(v, "#")
-	switch len(hex) {
-	case 3:
-		// #rgb → #rrggbb
-		r, g, b := hex[0], hex[1], hex[2]
-		return "#" + string([]byte{r, r, g, g, b, b})
-	case 6, 8:
-		return "#" + hex[:6]
+// componentOptionCatalogue indexes the option catalogue by flattened
+// token key ("component.button.treatment"), the shape the controls map
+// carries. Built once: the catalogue is static for the process life.
+var componentOptionCatalogue = func() map[string]uitheme.Option {
+	m := make(map[string]uitheme.Option, len(uitheme.Options()))
+	for _, o := range uitheme.Options() {
+		m["component."+o.Key] = o
 	}
-	return "#000000"
+	return m
+}()
+
+// componentOptionSelect renders one component option as a ui.Select: the
+// design system's labelled native select, its options the catalogue's
+// members in declaration order with the current value selected. The key
+// rides data-token exactly as every other control does, so the editor's
+// JS applies a change the same way it applies a typed value; the label
+// is the readable form of the key.
+func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
+	options := make([]ui.SelectOption, 0, len(opt.Members))
+	matched := false
+	for _, m := range opt.Members {
+		options = append(options, ui.SelectOption{Value: m, Text: m, Selected: m == t.Value})
+		matched = matched || m == t.Value
+	}
+	// A value no member matches would otherwise show as the first member
+	// while the theme holds something else: say what the theme holds.
+	// Picking it again is refused by the apply path like any non-member.
+	if !matched {
+		options = append([]ui.SelectOption{{Value: t.Value, Text: t.Value, Selected: true}}, options...)
+	}
+	return ui.Select(ui.SelectConfig{
+		Name:    t.Key,
+		Label:   componentOptionLabel(t.Key),
+		ID:      controlInputID(t.Key),
+		Options: options,
+		ExtraAttrs: html.Attrs{
+			"data-token": t.Key,
+			"data-type":  t.Type,
+		},
+	})
+}
+
+// componentOptionLabel renders a component option key as the label its
+// select shows: "component.button.treatment" → "Button treatment".
+// Derived from the key, not a second list: the option's name is its key.
+func componentOptionLabel(key string) string {
+	base := strings.TrimPrefix(key, "component.")
+	if base == "" {
+		return key
+	}
+	words := strings.ReplaceAll(base, ".", " ")
+	return strings.ToUpper(words[:1]) + words[1:]
 }
 
 // themeEditPageHTML composes the editor chrome from design-system primitives
-// (ui.Stack, ui.Cluster, ui.Button, the ui-callout variant surface) plus the
+// (ui.Stack, ui.Cluster, ui.Button, the fui-callout variant surface) plus the
 // framework's ui.Workbench inspector shell. The chrome
 // LINKS /__gofastr/app.css with no ?t= query, so it renders against the
 // host app's DEFAULT theme, pinning the controls to known-good tokens even
@@ -296,10 +367,13 @@ func colorSwatchValue(v string) string {
 // of this file.
 func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 	// Sidebar header: title + action buttons. ui.Cluster with justify-between
-	// pushes the actions to the trailing edge; the title leads.
-	title := render.Tag("h1", map[string]string{
-		"class": "ui-pageheader__title",
-	}, render.Text("theme edit"))
+	// pushes the actions to the trailing edge; the title leads. The h1
+	// carries no class: fui-page-header__title is scoped under the
+	// PageHeader marker and styles nothing outside one, and no
+	// design-system class styles a workbench rail heading — the old
+	// ui-pageheader__title named nothing, so the heading's rendering is
+	// the browser's own h1 either way.
+	title := render.Tag("h1", nil, render.Text("theme edit"))
 	schemeBtn := ui.Button(ui.ButtonConfig{
 		Label:   "◐ Light",
 		Variant: ui.ButtonSecondary,
@@ -318,23 +392,23 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 	}, title, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, schemeBtn, writeBtn))
 
 	// Status line: a Callout the JS updates by swapping its variant class.
-	// ui-callout--<success|danger|warning|info|neutral> recolours the leading
+	// fui-callout--<success|danger|warning|info|neutral> recolours the leading
 	// glyph via the --color-* tokens, so the chrome needs no per-status CSS.
 	statusBox := render.Tag("div", map[string]string{
 		"id":            "te-status",
 		"role":          "status",
 		"aria-live":     "polite",
-		"class":         "ui-callout ui-callout--neutral",
+		"class":         "fui-callout fui-callout--neutral",
 		"data-fui-comp": "ui-callout",
-	}, render.Tag("div", map[string]string{"class": "ui-callout__body"}, render.Text("")))
+	}, render.Tag("div", map[string]string{"class": "fui-callout__body"}, render.Text("")))
 
 	// Contrast panel: JS fills this. Same Callout shape; the JS swaps to
-	// ui-callout--warning when findings exist, hidden when none.
+	// fui-callout--warning when findings exist, hidden when none.
 	contrastBox := render.Tag("div", map[string]string{
 		"id":            "te-contrast",
 		"role":          "alert",
 		"hidden":        "",
-		"class":         "ui-callout ui-callout--warning",
+		"class":         "fui-callout fui-callout--warning",
 		"data-fui-comp": "ui-callout",
 	})
 
@@ -392,10 +466,25 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		}))
 	}
 
+	// The chrome ships the runtime too: the colour controls bind
+	// through the headless behaviour module (data-hui-color), so the
+	// kernel has to be on the page to load it. The behaviours block
+	// in the head is the same inert JSON a host page embeds (the
+	// kernel reads it at boot), and runtime.js loads before the
+	// chrome's own script, the order host scripts keep.
+	behaviors := runtime.BehaviorsJSON()
+	if len(behaviors) > 0 {
+		head = append(head,
+			render.Tag("script", map[string]string{
+				"type": "application/json", "id": "gofastr-behaviors",
+			}, render.HTML(behaviors)))
+	}
+
 	page := render.Tag("html", map[string]string{"lang": "en", "data-color-scheme": "light"},
 		render.Tag("head", nil, head...),
 		render.Tag("body", nil,
 			bodyInner,
+			render.Tag("script", map[string]string{"src": "/__gofastr/runtime.js", "defer": ""}),
 			render.Tag("script", nil, render.HTML(themeEditChromeJS)),
 		),
 	)
@@ -426,15 +515,15 @@ const themeEditChromeJS = `
   var pendingError = null;
 
   function setStatus(msg, kind) {
-    // Status lives inside a ui-callout. The variant class drives the colour
+    // Status lives inside a fui-callout. The variant class drives the colour
     // via the design system's --color-* tokens, so kind is mapped to a
     // Callout variant rather than a bespoke .te-status--<kind> rule.
     var variant = 'neutral';
     if (kind === 'ok') variant = 'success';
     else if (kind === 'err') variant = 'danger';
-    var body = statusEl.querySelector('.ui-callout__body');
+    var body = statusEl.querySelector('.fui-callout__body');
     if (body) body.textContent = msg || '';
-    statusEl.className = 'ui-callout ui-callout--' + variant;
+    statusEl.className = 'fui-callout fui-callout--' + variant;
   }
 
   function authHeaders() {
@@ -461,25 +550,29 @@ const themeEditChromeJS = `
     return findDataElement('[data-token]:not([data-type="color-swatch"])', 'data-token', key);
   }
 
+  function errNodeFor(input) {
+    // The reserved error paragraph: ui.FormField rendered it with the
+    // id derived from the control's own (ReserveError), already wired
+    // into the input's aria-describedby.
+    return document.getElementById(input.id + '-error');
+  }
+
   function showError(key, msg) {
     var input = findTextInput(key) || findDataElement('[data-token]', 'data-token', key);
     if (!input) return;
-    // Flip the design system's is-error class on the wrapping form-field.
-    // The variant CSS ([data-fui-comp="ui-form-field"].is-error input)
-    // recolours the input border via --color-danger: no bespoke invalid
-    // class needed.
-    var field = input.closest('[data-field]');
-    if (field) field.classList.add('is-error');
-    var errEl = findDataElement('[data-err-for]', 'data-err-for', key);
+    // The field's error state, on the control itself: aria-invalid is
+    // what the stylesheet colours the border from, and what the
+    // reserved error node's contract asks the filling caller to set.
+    input.setAttribute('aria-invalid', 'true');
+    var errEl = errNodeFor(input);
     if (errEl) errEl.textContent = msg || 'invalid';
   }
 
   function clearError(key) {
     var input = findTextInput(key);
     if (!input) return;
-    var field = input.closest('[data-field]');
-    if (field) field.classList.remove('is-error');
-    var errEl = findDataElement('[data-err-for]', 'data-err-for', key);
+    input.removeAttribute('aria-invalid');
+    var errEl = errNodeFor(input);
     if (errEl) errEl.textContent = '';
   }
 
@@ -623,13 +716,18 @@ const themeEditChromeJS = `
   // short quiet period so rapid typing doesn't flood the server.
   function onControlInput(input) {
     var key = input.dataset.token;
+    var value;
     if (input.dataset.type === 'color-swatch') {
-      // The colour picker writes its hex into the sibling text input, which
-      // is the actual source of truth; let the text input's handler fire.
-      var text = input.parentElement.querySelector('[data-token]:not([data-type="color-swatch"])');
-      if (text) { text.value = input.value; key = text.dataset.token; input = text; }
+      // The headless behaviour module owns the swatch→text sync: it
+      // writes the picked hex (uppercased) into the text input — the
+      // source of truth — and clears the shell's invalid mark. What
+      // is left here is the apply, from the same hex the sync is
+      // writing, uppercased to match it. Which listener runs first
+      // cannot change the value applied.
+      value = input.value.toUpperCase();
+    } else {
+      value = readControl(input);
     }
-    var value = readControl(input);
     pendingValues[key] = value;
     clearTimeout(pendingTimers[key]);
     pendingTimers[key] = setTimeout(function() {

@@ -1,0 +1,45 @@
+/* The site's top bar: --size-header-height tall over one rule, its
+   content on the page measure (--size-page-width, with
+   --size-page-gutter outside it) — the same column ui.Container's page
+   width gives main, so the brand sits on main's text edge. The links
+   fit beside the brand at every width, so nothing folds away and there
+   is no phone menu. */
+:scope {
+  border-block-end: 1px solid var(--color-border);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+  max-inline-size: calc(var(--size-page-width) + 2 * var(--size-page-gutter));
+  block-size: var(--size-header-height);
+  padding-inline: var(--size-page-gutter);
+  margin-inline: auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-shrink: 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+  margin-inline-start: auto;
+}
+.links a {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-ease-out);
+}
+.links a:hover,
+.links a[aria-current="page"] { color: var(--color-text); }

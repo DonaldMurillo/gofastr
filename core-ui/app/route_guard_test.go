@@ -84,7 +84,7 @@ func TestGuardStaticWithoutSetParamsOK(t *testing.T) {
 // (Router.ScreenGroup → Router.Screen). A dynamic group screen without
 // SetParams must panic when the group is mounted on the router.
 func TestGuardGroupDynamicNoSetParamsPanics(t *testing.T) {
-	group := NewScreenGroup("/admin", NewLayout("admin"))
+	group := NewScreenGroup("/admin", bareShell("admin"))
 	group.Screen(NewScreen("users/:id", &nakedComp{}), nil)
 
 	r := NewRouter()

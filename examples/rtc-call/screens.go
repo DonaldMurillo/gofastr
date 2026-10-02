@@ -110,8 +110,8 @@ func (s *LobbyScreen) RenderCtx(ctx context.Context) render.HTML {
 					"title": "lowercase letters, digits, and hyphens"},
 			}),
 		),
-		html.Paragraph(html.TextConfig{},
-			render.Text("The room is whatever you and the people you call agree on: it is a name, not a reservation. The server relays the WebRTC handshake and never sees or hears the call.")),
+		ui.Markdown(ui.MarkdownConfig{Measure: true,
+			Source: "The room is whatever you and the people you call agree on: it is a name, not a reservation. The server relays the WebRTC handshake and never sees or hears the call."}),
 	)
 }
 
@@ -149,11 +149,11 @@ func (s *RoomScreen) RenderCtx(ctx context.Context) render.HTML {
 				// enables them once the room is hydrated, so nothing can
 				// acquire a camera with no room to publish to.
 				ui.Button(ui.ButtonConfig{Label: "Share camera", ID: "call-share", Type: "button",
-					ExtraAttrs: html.Attrs{"disabled": ""}}),
+					Disabled: true}),
 				// Mute needs an audio track to toggle, so it waits for
 				// the share; app.js enables it.
 				ui.Button(ui.ButtonConfig{Label: "Mute", ID: "call-mute", Type: "button",
-					ExtraAttrs: html.Attrs{"disabled": ""}}),
+					Disabled: true}),
 				// Leave is a plain link. app.js is a document-scoped
 				// script, so the runtime loads the lobby as a real
 				// document (register_script.go: a navigation that
@@ -220,7 +220,7 @@ func localTile(name string) render.HTML {
 // log); the form is POST so even a stray submit never serializes into a
 // query string.
 func chatSection(ctx context.Context, room string) render.HTML {
-	return ui.Section(ui.SectionConfig{Heading: "Chat", Ctx: ctx,
+	return ui.Section(ui.SectionConfig{Heading: "Chat",
 		Description: "Messages travel on a negotiated data channel, peer to peer. The server relays neither chat nor media."},
 		html.UnorderedList(html.ListConfig{ID: "call-chat"}),
 		ui.Form(ui.FormConfig{
@@ -235,7 +235,7 @@ func chatSection(ctx context.Context, room string) render.HTML {
 				Required: true, MaxLength: 500, Placeholder: "Hello", Disabled: true,
 			}),
 			ui.Button(ui.ButtonConfig{Label: "Send", ID: "call-chat-send", Type: "submit",
-				ExtraAttrs: html.Attrs{"disabled": ""}}),
+				Disabled: true}),
 		),
 	)
 }

@@ -14,9 +14,9 @@ import (
 
 // TestSSE_IslandSwapLoadsComponentCSS pins that an SSE island update
 // whose HTML introduces a NEW [data-fui-comp] gets its component CSS
-// loaded. nav / signals / poll / widgets / infinitescroll all call
-// scanAndLoadCSS after their innerHTML swap, sse.js was the only swap
-// path that did not, so a server-pushed island bringing in a styled
+// loaded. nav / signals / poll / widgets all call scanAndLoadCSS after
+// their innerHTML swap, sse.js was the only swap path that did not, so
+// a server-pushed island bringing in a styled
 // component rendered unstyled.
 func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 	var cssHits atomic.Int32
@@ -25,6 +25,7 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))

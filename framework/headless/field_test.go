@@ -1,7 +1,7 @@
 package headless
 
 // The conditional-field contract: a region that depends on another
-// field. Asserted at the nil skin.
+// field. Asserted at the nil Classes.
 import (
 	"testing"
 

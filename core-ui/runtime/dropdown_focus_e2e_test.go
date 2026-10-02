@@ -22,6 +22,7 @@ func TestDropdownEscapeRestoresPanelFocusWithoutStealingOtherDismissals(t *testi
 	}
 
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write([]byte(js))

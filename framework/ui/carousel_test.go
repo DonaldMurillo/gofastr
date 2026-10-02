@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -24,6 +24,29 @@ func TestCarouselRequiresLabel(t *testing.T) {
 		}
 	}()
 	Carousel(CarouselConfig{Slides: []CarouselSlide{{Content: render.Text("x")}}})
+}
+
+func TestCarouselCSSRestoresTheOverlaidChrome(t *testing.T) {
+	css := carouselCSS(style.Theme{})
+	// Item 18's contract: the stage is the arrows' positioning
+	// context (so they centre on the track, not the dot row), the
+	// arrows are round overlaid controls with a CSS chevron — not
+	// underlined text links — and the dots are pip indicators with a
+	// 24px hit area, not visible numbers.
+	for _, want := range []string{
+		// The stage must actually BE the positioning context — an
+		// empty rule with the right selector positions the arrows
+		// against an ancestor and the chrome quietly drifts.
+		"[data-fui-comp=\"ui-carousel\"] .fui-carousel__stage {\n  /* Positioning context for the overlaid prev/next arrows, so they\n     centre on the track and cannot overlap the dot row below\n     (WCAG 2.2 target-size). The stage is also at least as tall as\n     its overlaid controls: a short track would otherwise let the\n     44px arrows poke into the dots row and clip the outer dots'\n     target envelopes. */\n  position: relative;\n  min-block-size: var(--spacing-touch-target, 44px);\n}",
+		"border-radius: 999px;",
+		".fui-carousel__prev::before,",
+		".fui-carousel__dot::after {",
+		"inline-size: 10px;",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("carouselCSS lost %q — the overlaid chrome regressed:\n%s", want, css)
+		}
+	}
 }
 
 func TestCarouselSlideRequiresContent(t *testing.T) {
@@ -62,8 +85,8 @@ func TestCarouselDotsByDefault(t *testing.T) {
 		},
 	}))
 	// Match the dot CLASS literal: the container class
-	// "ui-carousel__dots" shares the substring otherwise.
-	if c := strings.Count(h, `class="ui-carousel__dot"`); c != 3 {
+	// "fui-carousel__dots" shares the substring otherwise.
+	if c := strings.Count(h, `class="fui-carousel__dot"`); c != 3 {
 		t.Errorf("expected 3 pagination dots, got %d:\n%s", c, h)
 	}
 	if !strings.Contains(h, `aria-current="true"`) {
@@ -79,7 +102,7 @@ func TestCarouselNoDotsHidesPagination(t *testing.T) {
 			{Content: render.Text("a")}, {Content: render.Text("b")},
 		},
 	}))
-	if strings.Contains(h, `class="ui-carousel__dot"`) {
+	if strings.Contains(h, `class="fui-carousel__dot"`) {
 		t.Errorf("NoDots=true should not emit dots:\n%s", h)
 	}
 }
@@ -89,7 +112,7 @@ func TestCarouselArrowsByDefault(t *testing.T) {
 		Label:  "x",
 		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
 	}))
-	if !strings.Contains(h, "ui-carousel__nav--prev") || !strings.Contains(h, "ui-carousel__nav--next") {
+	if !strings.Contains(h, "fui-carousel__prev") || !strings.Contains(h, "fui-carousel__next") {
 		t.Errorf("Carousel should render Prev/Next by default:\n%s", h)
 	}
 }
@@ -100,8 +123,8 @@ func TestCarouselAutoRotateMarker(t *testing.T) {
 		AutoRotateMs: 4000,
 		Slides:       []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
 	}))
-	if !strings.Contains(h, `data-fui-carousel-autorotate="4000"`) {
-		t.Errorf("AutoRotateMs should emit data-fui-carousel-autorotate:\n%s", h)
+	if !strings.Contains(h, `data-hui-carousel-rotate-ms="4000"`) {
+		t.Errorf("AutoRotateMs should emit data-hui-carousel-rotate-ms:\n%s", h)
 	}
 }
 
@@ -111,8 +134,8 @@ func TestCarouselLoopMarker(t *testing.T) {
 		Loop:   true,
 		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
 	}))
-	if !strings.Contains(h, `data-fui-carousel-loop="true"`) {
-		t.Errorf("Loop=true should emit data-fui-carousel-loop:\n%s", h)
+	if !strings.Contains(h, `data-hui-carousel-loop`) {
+		t.Errorf("Loop=true should emit data-hui-carousel-loop:\n%s", h)
 	}
 }
 
@@ -122,63 +145,8 @@ func TestCarouselVisiblePerViewClampedAndApplied(t *testing.T) {
 		VisiblePerView: 99,
 		Slides:         []CarouselSlide{{Content: render.Text("a")}},
 	}))
-	if !strings.Contains(h, "ui-carousel--cols-8") {
+	if !strings.Contains(h, "fui-carousel--cols-8") {
 		t.Errorf("VisiblePerView clamps to 8:\n%s", h)
-	}
-}
-
-func TestCarouselVirtualScrollPlaceholdersAndManifest(t *testing.T) {
-	slides := make([]CarouselSlide, 0, 12)
-	for i := range 12 {
-		slides = append(slides, CarouselSlide{Content: render.HTML("<img src='img" + strconv.Itoa(i) + ".jpg' alt=''>")})
-	}
-	h := string(Carousel(CarouselConfig{
-		Label:                    "x",
-		VirtualScroll:            true,
-		VirtualWindow:            3,
-		VirtualPlaceholderHeight: "240px",
-		Slides:                   slides,
-	}))
-	// First 3 slides render content; the rest are placeholders.
-	// The literal "<img" sequence appears only in hydrated slides;
-	// the manifest body has escaped "<img" instead.
-	if !strings.Contains(h, "<img src='img2.jpg'") {
-		t.Errorf("first 3 slides should ship hydrated; <img2 missing:\n%s", h)
-	}
-	if strings.Contains(h, "<img src='img11.jpg'") {
-		t.Errorf("slides outside window should be deferred; found <img11 inline:\n%s", h)
-	}
-	if !strings.Contains(h, `data-fui-carousel-defer="3"`) {
-		t.Errorf("slide 3 should be a placeholder:\n%s", h)
-	}
-	if !strings.Contains(h, `data-fui-carousel-defer="11"`) {
-		t.Errorf("slide 11 should be a placeholder:\n%s", h)
-	}
-	if !strings.Contains(h, "min-block-size:240px") {
-		t.Errorf("VirtualPlaceholderHeight should apply to placeholders:\n%s", h)
-	}
-	if !strings.Contains(h, "data-fui-carousel-deferred-for=") {
-		t.Errorf("expected deferred-content manifest script:\n%s", h)
-	}
-	// Manifest JSON should contain the deferred slide HTML escaped.
-	if !strings.Contains(h, "img11.jpg") {
-		t.Errorf("manifest should carry deferred slide HTML (img11):\n%s", h)
-	}
-}
-
-func TestCarouselVirtualScrollClampsWindow(t *testing.T) {
-	h := string(Carousel(CarouselConfig{
-		Label:         "x",
-		VirtualScroll: true,
-		VirtualWindow: 50, // > slide count
-		Slides:        []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
-	}))
-	// No slides should be deferred when window exceeds slide count.
-	if strings.Contains(h, "data-fui-carousel-defer=") {
-		t.Errorf("window > slide count should hydrate everything; got defer attr:\n%s", h)
-	}
-	if strings.Contains(h, "data-fui-carousel-deferred-for=") {
-		t.Errorf("no deferred slides → no manifest script:\n%s", h)
 	}
 }
 
@@ -221,40 +189,6 @@ func TestCarouselConcurrentRenderUniqueIDs(t *testing.T) {
 			t.Fatalf("duplicate carousel id %q under concurrent render — counter is racy", id)
 		}
 		seen[id] = true
-	}
-}
-
-func TestCarouselVirtualScrollManifestEscapesScripts(t *testing.T) {
-	slides := []CarouselSlide{
-		{Content: render.HTML("a")},
-		{Content: render.HTML("b")},
-		{Content: render.HTML("<script>evil()</script>")},
-	}
-	h := string(Carousel(CarouselConfig{
-		Label:         "x",
-		VirtualScroll: true,
-		VirtualWindow: 1,
-		Slides:        slides,
-	}))
-	// The literal `</script>` sequence inside the JSON manifest must
-	// be escaped so it doesn't prematurely terminate the <script> tag.
-	// strings.Count of the un-escaped close tag = 1: the genuine
-	// closing tag of the manifest's own <script> element. Two would
-	// mean a script-injection footgun. (Go's encoding/json escapes
-	// `<` and `>` to < / > by default, so the inner script
-	// text never reaches the HTML parser as a literal close-tag.)
-	if strings.Count(h, "</script>") != 1 {
-		t.Errorf("manifest must escape inline </script> sequences (count > 1 = injection footgun):\n%s", h)
-	}
-	// Sanity: no literal "</scr"+"ipt>" sequence inside the manifest
-	// body (the closing tag we count is the manifest's own).
-	bodyStart := strings.Index(h, `data-fui-carousel-deferred-for=`)
-	bodyEnd := strings.LastIndex(h, "</script>")
-	if bodyStart < 0 || bodyEnd < 0 || bodyStart >= bodyEnd {
-		t.Fatalf("could not locate manifest body in:\n%s", h)
-	}
-	if strings.Contains(h[bodyStart:bodyEnd], "</script>") {
-		t.Errorf("manifest body contains an unescaped </script>:\n%s", h)
 	}
 }
 

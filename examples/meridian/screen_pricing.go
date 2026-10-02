@@ -42,10 +42,14 @@ func (s *PricingScreen) ScreenSEO() uihost.SEO {
 }
 
 func (s *PricingScreen) Render() render.HTML {
-	return html.Div(html.DivConfig{},
+	// The screen owns its rhythm: the page frame (marketingLayout)
+	// supplies only the measure; the stack's gap spaces the blocks.
+	// html.Div root: the pack reader (reverseRenderBody) accepts a
+	// tag-primitive root; the stack inside owns the rhythm.
+	return html.Div(html.DivConfig{}, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Pricing", Subtitle: "Start free. Upgrade when revenue does.", Eyebrow: ""}),
 		ui.Grid(ui.GridConfig{Min: "16rem"}, ui.PricingCard(ui.PricingCardConfig{Name: "Starter", HeadingLevel: 2, Price: "$29", Period: "/mo", Description: "For solo founders finding their first customers.", Features: []string{"Up to 100 customers", "Core billing & invoices", "Email support"}, CTALabel: "Start free", CTAHref: "/signup"}), ui.PricingCard(ui.PricingCardConfig{Name: "Pro", HeadingLevel: 2, Price: "$99", Period: "/mo", Description: "For growing teams that live in their revenue.", Features: []string{"Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"}, CTALabel: "Start free", CTAHref: "/signup", Featured: true}), ui.PricingCard(ui.PricingCardConfig{Name: "Scale", HeadingLevel: 2, Price: "$299", Period: "/mo", Description: "For high-volume revenue and finance teams.", Features: []string{"Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"}, CTALabel: "Contact sales", CTAHref: "/signup"})),
-	)
+	))
 }
 
 // mountPricingScreen mounts the pricing screen with site.

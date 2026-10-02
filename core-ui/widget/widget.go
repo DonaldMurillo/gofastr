@@ -752,9 +752,17 @@ func MountBuilder(r *router.Router, b *Builder) {
 //
 // Implemented as a func, not a const, because the hashes are computed
 // lazily from the embedded JS bytes.
+//
+// The inert JSON blocks come first. The kernel reads the behaviours
+// block (#gofastr-behaviors) at boot, in the same pass that installs
+// the interaction bridge, so a block that follows the runtime script
+// is read as absent and every registered behaviour's marker goes
+// unscanned: kiln's copy-transcript button stayed dead that way once
+// the copy fragment retired into headless-feedback. framework/uihost
+// places its blocks in <head> for the same reason.
 func RuntimeTag() string {
-	return `<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>` +
-		RuntimeModuleManifestScript()
+	return RuntimeModuleManifestScript() +
+		`<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>`
 }
 
 // MountRuntime registers the framework runtime endpoints on r:

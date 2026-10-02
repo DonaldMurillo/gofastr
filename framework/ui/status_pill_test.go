@@ -21,22 +21,22 @@ func TestStatusPillRendersLabelAndMarker(t *testing.T) {
 
 func TestStatusPillDotOptIn(t *testing.T) {
 	with := string(StatusPill(StatusPillConfig{Label: "x", Dot: true}))
-	if !strings.Contains(with, "ui-status-pill__dot") {
+	if !strings.Contains(with, "fui-status-pill__dot") {
 		t.Errorf("Dot:true should emit the dot span:\n%s", with)
 	}
 	without := string(StatusPill(StatusPillConfig{Label: "x"}))
-	if strings.Contains(without, "ui-status-pill__dot") {
+	if strings.Contains(without, "fui-status-pill__dot") {
 		t.Errorf("Dot defaults off; should not emit dot span:\n%s", without)
 	}
 }
 
 func TestStatusPillAccentToneModifier(t *testing.T) {
 	h := string(StatusPill(StatusPillConfig{Label: "x", Tone: StatusPillAccent}))
-	if !strings.Contains(h, "ui-status-pill--accent") {
+	if !strings.Contains(h, "fui-status-pill--accent") {
 		t.Errorf("accent tone should emit modifier class:\n%s", h)
 	}
 	neutral := string(StatusPill(StatusPillConfig{Label: "x"}))
-	if strings.Contains(neutral, "ui-status-pill--accent") {
+	if strings.Contains(neutral, "fui-status-pill--accent") {
 		t.Errorf("neutral (default) tone should not emit accent modifier:\n%s", neutral)
 	}
 }
@@ -79,5 +79,21 @@ func TestStatusPillHonorsHidden(t *testing.T) {
   display: none;
 }`) {
 		t.Fatalf("status pill CSS has no [hidden] rule that spares until-found:\n%s", css)
+	}
+}
+
+// The pill's and the fact box's custom properties are host knobs, not
+// class names: the site overrides the pill's accent border by name,
+// and a rename detaches it (the captures caught it once).
+func TestStatusPillAndFactBoxKeepTheirHostKnobs(t *testing.T) {
+	pill := statusPillCSS(style.Theme{})
+	if !strings.Contains(pill, "var(--ui-status-pill-accent-border,") {
+		t.Errorf("the pill's accent border knob was renamed:\n%s", pill)
+	}
+	box := factBoxCSS(style.Theme{})
+	for _, knob := range []string{"var(--ui-fact-box-value-size,", "var(--ui-fact-box-value-color,"} {
+		if !strings.Contains(box, knob) {
+			t.Errorf("the fact box lost %s:\n%s", knob, box)
+		}
 	}
 }

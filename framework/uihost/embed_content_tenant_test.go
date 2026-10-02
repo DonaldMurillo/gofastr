@@ -47,7 +47,7 @@ func (c *tenantEchoComp) RenderCtx(ctx context.Context) render.HTML {
 func tenantFixture(t *testing.T, mutate func(*fembed.Config)) embedFixture {
 	t.Helper()
 	application := app.NewApp("Embed Tenant Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	scr := app.NewScreen("/reports", &tenantEchoComp{}).WithTitle("Reports")
 	application.RegisterScreen(scr, nil)
 

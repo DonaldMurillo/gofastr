@@ -389,9 +389,8 @@ jobs:
     # "(blocking)", so the suffix must stay in `name`.
     name: "browser e2e · ${{ matrix.suite }} (blocking)"
     runs-on: ubuntu-latest
-    # Budget = the largest per-suite go-test timeout (meridian, 25m) plus
-    # setup; the timeouts on each `run` are unchanged from the serialized
-    # steps they replace.
+    # Budget = the largest per-suite go-test timeout (site-axe, 30m) plus
+    # setup.
     timeout-minutes: 35
     env:
       CGO_ENABLED: "1"
@@ -402,11 +401,12 @@ jobs:
           - suite: site
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
           - suite: site-axe
-            # 15m, not 10, the gate scans every page under BOTH color
-            # schemes (≈3.5min locally; CI runners are slower). Its own
+            # 30m: the gate scans every page under BOTH color schemes,
+            # ≈8.5min locally and 11-15min on CI runners (2026-09), so a
+            # 15m limit failed slow runners with nothing hung. Its own
             # shard: CLAUDE.md documents the axe suite flaking when it
             # shares a go-test run with the other chromedp tests.
-            run: go test -count=1 -timeout=15m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
           - suite: kiln-integration
             run: go test -count=1 -timeout=15m ./kiln/integration/
           - suite: gofastr-cli
@@ -447,23 +447,26 @@ jobs:
             # framework/ui + framework/pluginhost ship render guards
             # behind `-tags chromium` (card footer pinning, image
             # placeholder paint, srcset data-URI parsing, WASM tier
-            # instantiation). No other root-module step passes that
-            # tag — the nested chromepdf comment below is about a
-            # separate Go module and its tagged tests stay out of
-            # scope here — so before this shard those guards never ran
-            # in CI: a `go test` without the tag silently compiles the
-            # files out and passes. Verified locally green before
-            # landing: `go test -tags chromium ./framework/ui/
+            # instantiation), and cmd/gofastr/packages ships the
+            # canonical chrome packages' own capture tests behind the
+            # same tag. No other root-module step passes that tag — the
+            # nested chromepdf comment below is about a separate Go
+            # module and its tagged tests stay out of scope here — so
+            # before this shard those guards never ran in CI: a
+            # `go test` without the tag silently compiles the files out
+            # and passes. Verified locally green before landing:
+            # `go test -tags chromium ./framework/ui/
             # ./framework/pluginhost/` (~12s).
-            # -p 1: both packages drive their own headless Chrome, and go
-            # test runs packages CONCURRENTLY by default. Launching two
-            # Chromes on one runner is the documented "chrome failed to
-            # start" contention this workflow already serializes elsewhere
-            # (see the header note on TestBlueprintCLIGeneratesEntireWorkingAppE2E).
-            # It bit here as "websocket url timeout reached" in
-            # TestCardFooterPinsToBottomInGrid on a PR that touched neither
-            # package.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/
+            # -p 1: these packages drive their own headless Chrome, and
+            # go test runs packages CONCURRENTLY by default. Launching
+            # several Chromes on one runner is the documented "chrome
+            # failed to start" contention this workflow already
+            # serializes elsewhere (see the header note on
+            # TestBlueprintCLIGeneratesEntireWorkingAppE2E). It bit here
+            # as "websocket url timeout reached" in
+            # TestCardFooterPinsToBottomInGrid on a PR that touched
+            # neither package.
+            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./cmd/gofastr/packages/...
           - suite: ui-quality-evals
             # Its capture tests drive a real headless Chrome; kept out of
             # the deterministic -p 2 run for the same contention reason.
@@ -521,11 +524,20 @@ jobs:
     # names exactly and TestReleaseManifestMatchesCI pins the sync.
     name: "historical upgrade fixtures (blocking)"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25m: the scan gates type-check each fixture against its own-era
+    # gofastr release (mattn/go-sqlite3 needs cgo, cold compile on the
+    # runner) on top of the two build+boot cycles.
+    timeout-minutes: 25
     env:
       CGO_ENABLED: "0" # the upgraded fixtures use the pure-Go sqlite driver
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history, every release tag included. The registry symbol gate reads Go source
+          # at each release's prior tag (git ls-tree / git show), and a
+          # shallow clone has none — the test fails with fetch instructions
+          # rather than skipping when tags are absent.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5

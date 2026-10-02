@@ -1,0 +1,5 @@
+/* gofastr:allow-file(GOFASTR1809) upgrade fixture: an app written for an old release, read by the upgrade scanner and never served */
+.fui\2d button { color: red; }
+.card { color: VAR(--color-text-muted); }
+.card { --color\2d text-muted: red; }
+.ui-button-group { color: blue; }

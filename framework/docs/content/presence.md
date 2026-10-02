@@ -254,5 +254,10 @@ where it sits in the ladder.
   roster stays single-replica.
 - **Re-threading presence on SPA navigation.** The SSE topic is set from
   the page's `?presence=` on initial load; a client-side nav to a presence
-  page won't re-join the topic. Full-load the presence page (or re-open the
-  SSE connection) so the join fires.
+  page won't re-join a NEW topic (the meta is not rewritten). The stream
+  itself now follows the page: it closes when the last push target
+  leaves (so navigating away drops the viewer from the roster) and a
+  navigation back to the roster island re-joins the topic the meta
+  carries — the topic the document was loaded with. A user who landed
+  on the presence page via SPA nav from an unrelated page joins
+  nothing; full-load the presence URL so the join fires.

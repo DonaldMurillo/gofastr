@@ -20,24 +20,24 @@ import (
 
 // ─── Card ───────────────────────────────────────────────────────────
 
-func TestE2E_Card_LabelledByHeading(t *testing.T) {
+func TestE2E_Card_HeadingInsideTheCard(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var labelledBy, role string
+	var headingText, role string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/card"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"]')?.getAttribute('aria-labelledby') || ''`, &labelledBy),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"] h3')?.textContent.trim() || ''`, &headingText),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"]')?.getAttribute('role') || ''`, &role),
 	); err != nil {
 		t.Fatalf("card: %v", err)
 	}
-	if !strings.HasPrefix(labelledBy, "ui-card-") {
-		t.Errorf("card aria-labelledby = %q, want ui-card-*", labelledBy)
+	if headingText == "" {
+		t.Error("the card's heading is missing: a titled card draws its heading inside the header part")
 	}
-	if role != "region" {
-		t.Errorf("card role = %q, want region", role)
+	if role != "" {
+		t.Errorf("card role = %q, want none: headless.Card is a div, not a landmark", role)
 	}
 }
 
@@ -72,10 +72,10 @@ func TestE2E_OptimizedImage_HasWidthHeightAndLazyLoading(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/image"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('width') || ''`, &w),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('height') || ''`, &h),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('loading') || ''`, &loading),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('decoding') || ''`, &decoding),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('width') || ''`, &w),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('height') || ''`, &h),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('loading') || ''`, &loading),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('decoding') || ''`, &decoding),
 	); err != nil {
 		t.Fatalf("image: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestE2E_Tooltip_TriggerHasAriaDescribedBy(t *testing.T) {
 		chromedp.Navigate(base+"/components/tooltip"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-tooltip"] button')?.getAttribute('aria-describedby') || ''`, &describedBy),
-		chromedp.Evaluate(`document.querySelector('.ui-tooltip__pop')?.getAttribute('role') || ''`, &popRole),
+		chromedp.Evaluate(`document.querySelector('.fui-tooltip__pop')?.getAttribute('role') || ''`, &popRole),
 	); err != nil {
 		t.Fatalf("tooltip: %v", err)
 	}
@@ -123,8 +123,8 @@ func TestE2E_Tag_DismissButtonHasAccessibleLabel(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/tag"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-tag__dismiss')?.getAttribute('aria-label') || ''`, &ariaLabel),
-		chromedp.Evaluate(`document.querySelector('.ui-tag__dismiss')?.getAttribute('data-fui-rpc') || ''`, &rpcPath),
+		chromedp.Evaluate(`document.querySelector('a.fui-tag__dismiss')?.getAttribute('aria-label') || ''`, &ariaLabel),
+		chromedp.Evaluate(`document.querySelector('a.fui-tag__dismiss')?.getAttribute('href') || ''`, &rpcPath),
 	); err != nil {
 		t.Fatalf("tag: %v", err)
 	}
@@ -142,22 +142,21 @@ func TestE2E_Spinner_HasStatusRoleAndAriaBusy(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var role, ariaBusy, hiddenLabel string
+	var role, hiddenLabel string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/spinner"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('role') || ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('aria-busy') || ''`, &ariaBusy),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .ui-visually-hidden')?.textContent || ''`, &hiddenLabel),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .fui-visually-hidden')?.textContent || ''`, &hiddenLabel),
 	); err != nil {
 		t.Fatalf("spinner: %v", err)
 	}
 	if role != "status" {
 		t.Errorf("role = %q, want status", role)
 	}
-	if ariaBusy != "true" {
-		t.Errorf("aria-busy = %q, want true", ariaBusy)
-	}
+	// aria-busy is not the spinner's to claim: role=status is the
+	// contract, and busy belongs to the region an in-flight RPC
+	// marks (the runtime writes it on the form or button).
 	if !strings.Contains(hiddenLabel, "Loading") {
 		t.Errorf("expected screen-reader label containing 'Loading', got %q", hiddenLabel)
 	}
@@ -196,7 +195,7 @@ func TestE2E_FileUpload_NativeInputAndDropZone(t *testing.T) {
 		// Site demo: name="avatar", accept="image/*"
 		chromedp.Evaluate(`document.querySelector('input[name="avatar"]')?.getAttribute('type') || ''`, &inputType),
 		chromedp.Evaluate(`document.querySelector('input[name="avatar"]')?.getAttribute('accept') || ''`, &accept),
-		chromedp.Evaluate(`document.querySelector('[data-fui-fileupload]') !== null`, &hasDropZone),
+		chromedp.Evaluate(`document.querySelector('[data-hui-drop]') !== null`, &hasDropZone),
 	); err != nil {
 		t.Fatalf("fileupload: %v", err)
 	}
@@ -207,7 +206,7 @@ func TestE2E_FileUpload_NativeInputAndDropZone(t *testing.T) {
 		t.Errorf("expected accept attribute to be passed through")
 	}
 	if !hasDropZone {
-		t.Errorf("expected data-fui-fileupload drop zone marker")
+		t.Errorf("expected the headless drop hook on the zone")
 	}
 }
 
@@ -230,11 +229,11 @@ func TestE2E_FileUpload_PreviewShowsFilename(t *testing.T) {
 			return '';
 		})()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-fileupload"] .ui-fileupload__filename')?.textContent || ''`, &preview),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || ''`, &preview),
 	); err != nil {
 		t.Fatalf("fileupload preview: %v", err)
 	}
 	if !strings.Contains(preview, "photo.jpg") {
-		t.Errorf("filename preview should contain photo.jpg; got %q", preview)
+		t.Errorf("the chosen-files list should contain photo.jpg; got %q", preview)
 	}
 }

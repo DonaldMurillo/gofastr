@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -61,34 +62,28 @@ func TestAnimateRedReservedKeyWrite(t *testing.T) {
 
 // TestToastsRedReservedKeyWrite pins the toast module's timer-registry
 // write: the attribute-borne toast id must be rejected as a reserved key
-// (or the registry keyed by Map) before `NS._toastTimers[id] = rec`.
-// Acceptance mirrors TestAnimateRedReservedKeyWrite: helper call or inline
-// check naming all three reserved keys before the write, or a Map .set(
-// spelling.
+// (or the registry keyed by Map) before the timer record is stored. The
+// toast runtime moved to the registered headless-feedback module
+// (framework/headless/feedback.js) with the core toasts module's
+// retirement, so the pin reads that source now; the acceptance shapes
+// mirror TestAnimateRedReservedKeyWrite.
 func TestToastsRedReservedKeyWrite(t *testing.T) {
-	src := readSrc(t, "src/toasts.js")
-	start := strings.Index(src, "const id = item.getAttribute('data-fui-toast-id');")
-	if start < 0 {
-		t.Fatalf("setup broken: could not locate _initToasts' id read in src/toasts.js")
+	raw, err := os.ReadFile("../../framework/headless/feedback.js")
+	if err != nil {
+		t.Fatalf("reading framework/headless/feedback.js: %v", err)
 	}
-	endRel := strings.Index(src[start:], "// Cancel timers")
+	src := string(raw)
+	start := strings.Index(src, "data-hui-toast-id")
+	if start < 0 {
+		t.Fatalf("setup broken: could not locate _initToasts' id read in feedback.js")
+	}
+	endRel := strings.Index(src[start:], "for (const entry")
 	if endRel < 0 {
-		t.Fatalf("setup broken: could not locate '// Cancel timers' after the id read in src/toasts.js")
+		t.Fatalf("setup broken: could not locate the cleanup pass after the id read in feedback.js")
 	}
 	body := src[start : start+endRel]
-	write := strings.Index(body, "NS._toastTimers[id] = rec")
-	if write < 0 {
-		if strings.Contains(body, "NS._toastTimers.set(") {
-			return // Map-keyed registry: plain string keys, no re-parenting
-		}
-		t.Fatalf("setup broken: could not locate the NS._toastTimers[id] = rec write in src/toasts.js _initToasts()")
+	if strings.Contains(body, "NS._toastTimers.set(") {
+		return // Map-keyed registry: plain string keys, no re-parenting
 	}
-	region := body[:write]
-	hasHelper := strings.Contains(region, "isReservedSignalKey(")
-	hasInline := strings.Contains(region, "__proto__") &&
-		strings.Contains(region, "constructor") &&
-		strings.Contains(region, "prototype")
-	if !hasHelper && !hasInline {
-		t.Errorf("SECURITY: [toasts-proto-write] _initToasts writes NS._toastTimers[id] with no reserved-key guard — data-fui-toast-id=\"__proto__\" re-parents the registry via the __proto__ setter, the for-in cleanup then mis-enumerates inherited keys and clearTimeout cancels the planted toast's own timer. Region:\n%s", region)
-	}
+	t.Fatalf("setup broken: the timer registry is neither Map-keyed nor present in feedback.js _initToasts():\n%s", body)
 }

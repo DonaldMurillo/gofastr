@@ -33,7 +33,7 @@ func (c *seoTestComp) HeadHTML() string {
 
 func TestWithHeadHTML(t *testing.T) {
 	application := app.NewApp("HeadTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application,
@@ -73,7 +73,7 @@ func TestWithHeadHTMLNotInjectedByDefault(t *testing.T) {
 
 func TestWithFavicon(t *testing.T) {
 	application := app.NewApp("FaviconTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithFavicon("/static/favicon.ico"))
@@ -87,7 +87,7 @@ func TestWithFavicon(t *testing.T) {
 
 func TestWithThemeColor(t *testing.T) {
 	application := app.NewApp("ThemeColorTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithThemeColor("#f7f5ee"))
@@ -101,7 +101,7 @@ func TestWithThemeColor(t *testing.T) {
 
 func TestWithDescription(t *testing.T) {
 	application := app.NewApp("DescTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithDescription("A test site for head injection"))
@@ -115,7 +115,7 @@ func TestWithDescription(t *testing.T) {
 
 func TestWithOpenGraph(t *testing.T) {
 	application := app.NewApp("OGTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithOpenGraph(OG{
@@ -139,7 +139,7 @@ func TestWithOpenGraph(t *testing.T) {
 
 func TestWithTwitterCard(t *testing.T) {
 	application := app.NewApp("TwitterTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithTwitterCard(TwitterCard{
@@ -161,7 +161,7 @@ func TestWithTwitterCard(t *testing.T) {
 
 func TestWithCanonicalURL(t *testing.T) {
 	application := app.NewApp("CanonicalTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithCanonicalURL("https://example.com/page"))
@@ -175,7 +175,7 @@ func TestWithCanonicalURL(t *testing.T) {
 
 func TestWithPreconnect(t *testing.T) {
 	application := app.NewApp("PreconnectTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"))
@@ -194,7 +194,7 @@ func TestWithPreconnect(t *testing.T) {
 
 func TestSEOScreenOverride(t *testing.T) {
 	application := app.NewApp("SEOTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 
 	seoComp := &seoTestComp{
 		headHTML: `<meta name="description" content="Per-screen SEO"><meta property="og:title" content="Custom OG Title">`,
@@ -214,7 +214,7 @@ func TestSEOScreenOverride(t *testing.T) {
 func TestSEOScreenPlusGlobalHead(t *testing.T) {
 	// Both global (WithHeadHTML) and per-screen head should appear
 	application := app.NewApp("CombinedTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 
 	seoComp := &seoTestComp{
 		headHTML: `<meta property="og:title" content="Screen OG">`,
@@ -246,7 +246,7 @@ func TestSEOScreenPlusGlobalHead(t *testing.T) {
 func TestSEOScreenNoOverride(t *testing.T) {
 	// Screen that doesn't implement SEOScreen should work fine
 	application := app.NewApp("NoSEOTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithFavicon("/favicon.ico"))
@@ -266,7 +266,7 @@ func TestSEOScreenNoOverride(t *testing.T) {
 
 func TestAllTypedHelpersCombined(t *testing.T) {
 	application := app.NewApp("AllHelpers")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application,
@@ -318,7 +318,7 @@ func TestAllTypedHelpersCombined(t *testing.T) {
 func TestTypedHelpersEscapeAttrs(t *testing.T) {
 	// Ensure typed helpers escape user-provided values
 	application := app.NewApp("EscapeTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application, WithDescription(`<script>alert("xss")</script>`))
@@ -339,7 +339,7 @@ func TestTypedHelpersEscapeAttrs(t *testing.T) {
 
 func TestRenderStaticPageIncludesHeadTags(t *testing.T) {
 	application := app.NewApp("StaticHeadTest")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
 	host := New(application,

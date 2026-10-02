@@ -144,10 +144,12 @@ func TestBottomSheetPaintsPanel(t *testing.T) {
 	}
 }
 
-// Full-bleed bodies opt out of the default panel: a slot root element
-// carrying .fui-slot-bare, and Lightbox viewers ([data-fui-lightbox])
-// which center bare media on the backdrop. The opt-out markers sit on
-// the slot's root child, one level under the painted panel.
+// Full-bleed bodies opt out of the default panel through the one
+// generic escape hatch: a slot root element carrying .fui-slot-bare
+// (Lightbox viewers and the command palette put it on their roots).
+// The opt-out marker sits on the slot's root child, one level under
+// the painted panel, and the always-shipped selector names no
+// framework/ui component.
 func TestCenterPanelBareOptOut(t *testing.T) {
 	def := preset.Modal("slot-bare-probe").
 		Slot("body", stubComponent{`<p>hello</p>`}).
@@ -159,9 +161,14 @@ func TestCenterPanelBareOptOut(t *testing.T) {
 		t.Fatalf("center panel rule has no :not(:has(…)) opt-out:\n%s", css)
 	}
 	sel := css[i : strings.Index(css[i:], "{")+i]
-	for _, want := range []string{"> .fui-slot > .fui-slot-bare", "> .fui-slot > [data-fui-lightbox]"} {
+	for _, want := range []string{"> .fui-slot > .fui-slot-bare"} {
 		if !strings.Contains(sel, want) {
 			t.Errorf("panel opt-out selector missing %q: %s", want, sel)
+		}
+	}
+	for _, gone := range []string{"data-fui-lightbox", "ui-cmd-palette"} {
+		if strings.Contains(sel, gone) {
+			t.Errorf("panel opt-out selector still names %q — the shrunk selector must not name a framework/ui component: %s", gone, sel)
 		}
 	}
 }

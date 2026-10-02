@@ -28,6 +28,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/examples/webmcp-remote-assist/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -82,7 +84,24 @@ func buildApp() *framework.App {
 	// The canonical theme: light and dark palettes from one token set,
 	// so the pages follow the operator's OS preference with no CSS here.
 	site.WithTheme(theme.Default())
-	layout := uiapp.NewLayout("main").WithHeader(&siteHeaderComponent{})
+	layout := uiapp.NewLayout("main", uiapp.LayoutSpec{}, func(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			// The top bar is the site's own package (siteheader): the
+			// banner landmark on the page measure, the brand against
+			// the nav on the far edge. The two links fit beside the
+			// brand at phone widths, so there is no phone menu.
+			siteheader.Render(siteheader.Config{
+				Name: "Remote assist",
+				Links: []siteheader.Link{
+					{Label: "Overview", Href: "/"},
+					{Label: "Support", Href: "/support", Section: true},
+				},
+			}),
+			// The row (no sidebar) gives main its growth: a page-tall
+			// stack without a footer pushes a bare last child down.
+			ui.ContentRow(ui.ContentRowConfig{},
+				ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())))
+	})
 	site.SetDefaultLayout(layout)
 
 	site.RegisterScreen(uiapp.NewScreen("/", &LandingScreen{}).WithTitle("Remote assist"), nil)
@@ -213,21 +232,6 @@ func supportScope(path string) bool {
 // carry nothing.
 func assistDocScope(path string) bool {
 	return supportScope(path) || path == "/session" || strings.HasPrefix(path, "/session/")
-}
-
-// siteHeaderComponent is the shared chrome. Its nav link to "/" is the
-// visible way out of the console: crossing the document scope is a
-// full navigation, which is what retires the tools.
-type siteHeaderComponent struct{}
-
-func (h *siteHeaderComponent) Render() render.HTML {
-	return ui.SiteHeader(ui.SiteHeaderConfig{
-		Brand: ui.Link(ui.LinkConfig{Href: "/", Text: "Remote assist"}),
-		NavItems: []ui.SiteHeaderLink{
-			{Label: "Overview", Href: "/"},
-			{Label: "Support", Href: "/support"},
-		},
-	})
 }
 
 // guard answers role failures with real pages (ui-wiring's recovery

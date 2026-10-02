@@ -23,9 +23,9 @@ const BehaviorName = "headless"
 // color, and grow, lines and skeleton-last are read by a stylesheet
 // and no script, so none of the four is a marker.
 var behaviorMarkers = []string{
-	"[data-hui-reveal]", "[data-hui-color]", "[data-hui-when]",
+	"[data-hui-reveal]", "[data-hui-color]",
 	"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
-	"[data-hui-system]",
+	"[data-hui-system]", "[data-hui-table]",
 }
 
 // The module that binds the data-hui-* hooks, registered the way a
@@ -39,9 +39,26 @@ var behaviorMarkers = []string{
 // gate reads every registry.Markers call in the tree and refuses an
 // argument it cannot read.
 var _ = uiregistry.RegisterBehavior(BehaviorName, behaviorJS,
-	uiregistry.Markers("[data-hui-reveal]", "[data-hui-color]", "[data-hui-when]",
+	uiregistry.Markers("[data-hui-reveal]", "[data-hui-color]",
 		"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
-		"[data-hui-system]"),
+		"[data-hui-system]", "[data-hui-table]"),
+	// A first click on a table's sort anchor or its pager's page
+	// anchor can land while this module is still cold-fetching. The
+	// bridge retains the click and replays it on the anchor once the
+	// module has registered, so the sort or page turn is recorded —
+	// and the island swap it triggers still restores focus
+	// afterwards — instead of being the one click the cold-cache
+	// window ate (gofastr#436's seam).
+	uiregistry.Interactions(
+		uiregistry.Interaction{
+			Event:    "click",
+			Selector: "[data-hui-table-sort]",
+		},
+		uiregistry.Interaction{
+			Event:    "click",
+			Selector: "[data-hui-page]",
+		},
+	),
 	// The action hooks bind through the kernel's action primitive
 	// (core-ui/runtime/src/action.js): the loader has it registered
 	// before this module evaluates, so armActions below can call

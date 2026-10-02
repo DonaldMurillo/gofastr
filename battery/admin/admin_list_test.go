@@ -8,6 +8,7 @@ package admin
 import (
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -100,5 +101,39 @@ func TestEntity_ListRendersSearchBox(t *testing.T) {
 	body := get(h, "/admin/e/posts").Body.String()
 	if !strings.Contains(body, `name="q"`) {
 		t.Fatalf("list should render a search input (name=\"q\"); got %q", body)
+	}
+}
+
+func TestEntity_ListPageOutOfRangeIsTheLastPage(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	// Limit 4 over 5 rows → 2 pages; page 2 holds the fifth post.
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}, EntityListLimit: 4}, testUser{"u1"})
+	seedTitles(h, "Alpha", "Bravo", "Charlie", "Delta", "Echo")
+
+	for _, tc := range []struct {
+		raw       string
+		wantPage  string
+		wantFirst string
+	}{
+		{"/admin/e/posts?p=999", "2", "Echo"},
+		{"/admin/e/posts?p=0", "1", "Alpha"},
+		{"/admin/e/posts?p=-3", "1", "Alpha"},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			// The typed pager refuses a page outside 1..Pages: without
+			// the clamp the panic escapes renderTable and fails here.
+			body := get(h, tc.raw).Body.String()
+			if !strings.Contains(body, ">"+tc.wantFirst+"<") {
+				t.Fatalf("[page-clamp] request %q did not render page %s's first row %q", tc.raw, tc.wantPage, tc.wantFirst)
+			}
+			m := regexp.MustCompile(`<a aria-current="page" href="([^"]*)"`).FindStringSubmatch(body)
+			if m == nil {
+				t.Fatalf("[page-clamp] request %q rendered no current page anchor", tc.raw)
+			}
+			if u, err := url.Parse(m[1]); err != nil || u.Query().Get("p") != tc.wantPage {
+				t.Fatalf("[page-clamp] request %q: the pager's current page href is %q, want p=%s", tc.raw, m[1], tc.wantPage)
+			}
+		})
 	}
 }

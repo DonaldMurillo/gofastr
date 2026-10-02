@@ -1,0 +1,11 @@
+version: v0.76.0
+title: signed A2A agent cards, MCP App widget authoring, inbound Web Bot Auth
+notes:
+  - change: new opt-in surfaces - AgentCardConfig.SigningKeys (signed agent cards + a JWKS endpoint), mcp.WidgetDocument, host-theme consumption in the widget client, and WithWebBotAuth's Verify field
+    breaking: false
+    guidance: "All additive and opt-in. An app that sets none of them serves exactly what it served before; the Web Bot Auth publishing side is unchanged and pinned byte-for-byte by a test when Verify is unset."
+    nodetect: "all additive and opt-in; an app that sets none of them serves exactly what it served before"
+  - change: enabling agent-card signing now requires an explicitly pinned BaseURL, and the host refuses to mount without one
+    breaking: false
+    nodetect: "a new requirement on a new feature; no existing caller can hit it"
+    guidance: "New requirement on a new feature, so no existing caller can hit it. A signed card whose URLs derive from the request Host header would hand an attacker a validly-signed card pointing at their own endpoint, so the mount fails loudly rather than serving one. Set WithAgentReady{BaseURL} or WithSitemap{BaseURL}."

@@ -14,10 +14,10 @@ func TestTerminalBlockRendersHeadDotBodyAndLines(t *testing.T) {
 	))
 	for _, want := range []string{
 		`data-fui-comp="ui-terminal-block"`,
-		"ui-terminal-block__head",
-		"ui-terminal-block__dot",
+		"fui-terminal-block__head",
+		"fui-terminal-block__dot",
 		"$ install",
-		"ui-terminal-block__body",
+		"fui-terminal-block__body",
 		"$ go install ...",
 		"→ done",
 	} {
@@ -28,10 +28,10 @@ func TestTerminalBlockRendersHeadDotBodyAndLines(t *testing.T) {
 }
 
 func TestTerminalLineTones(t *testing.T) {
-	if got := string(TerminalOut("x")); !strings.Contains(got, "ui-terminal-block__out") {
+	if got := string(TerminalOut("x")); !classTokenPresent(got, "fui-terminal-block__out") {
 		t.Errorf("TerminalOut should carry the muted class:\n%s", got)
 	}
-	if got := string(TerminalOK("y")); !strings.Contains(got, "ui-terminal-block__ok") {
+	if got := string(TerminalOK("y")); !classTokenPresent(got, "fui-terminal-block__ok") {
 		t.Errorf("TerminalOK should carry the success class:\n%s", got)
 	}
 }

@@ -1,9 +1,26 @@
 # Spec: behaviour registers like style
 
+> Historical: superseded by what shipped — `framework/headless`'s
+> registered behaviour modules (`core-ui/registry.RegisterBehavior`)
+> and the `data-hui-action*` action contract; the
+> `optimisticaction`/`toggleaction` adapters this spec planned were
+> deleted. Kept for the design record.
+
 Status: accepted and underway, proposed 2026-09-15. Steps 1–3 of the
 sequence below are done (the seam with its tests, `framework/headless`'s
 registration, and dependencies + readiness with the action primitive and
-the two action adapters); steps 4–6 are open. Implements the direction
+the two action adapters); steps 4–6 are open.
+
+Registered modules of `framework/headless` at the 3a navigation
+cutover: `headless` (the original), `headless-controls`,
+`headless-collections`, `headless-wizard`, `headless-feedback`,
+`headless-navigation` (shortcuts folded in), `headless-rail`,
+`headless-toc`, `headless-disclosure`, `headless-menu`,
+`headless-combobox`, `headless-tabs`, `headless-carousel`,
+`headless-panehost`, `headless-sidebar`. Retired with them, their
+`core-ui/runtime/src` fragments deleted: scrollspy, toc, disclosure,
+menu, combobox, tabs, carousel, panehost, sidebar (searchinput and
+multiselect stay, widgets-owned). Implements the direction
 from the runtime exploration: the browser runtime is composed on the fly
 per page and loads its features lazily, and a component's behaviour is
 registered by the package that renders its markup, the way its
@@ -155,9 +172,14 @@ after the fetch.
   them with no change of its own.
 - The manifest block `#gofastr-runtime-modules` keeps its shape (name to
   hash). A second inert block, `#gofastr-behaviors`, carries
-  `{ "<name>": { "s": ["[data-x]", ...], "i": true } }` for registered
-  behaviours only. Emitted wherever the manifest is emitted: live pages,
-  the static export, the embed frame.
+  `{ "<name>": { "s": ["[data-x]", ...], "i": true, "r": ["<name>", ...],
+  "x": [{ "event": "click", "selector": "[data-x]" }, ...] } }` for
+  registered behaviours only. `s` is the markers, `i` the idle flag, `r`
+  the required modules, `x` the interactions the kernel's bridge
+  retains. Every key but `s` is omitted when the behaviour declares
+  nothing for it, so a behaviour that wants none of them pays no bytes.
+  Emitted wherever the manifest is emitted: live pages, the static
+  export, the embed frame.
 - Preload: `runtime.NeededModules(pageHTML)` also matches registered
   markers, so the host's `<link rel="preload" as="script">` covers them.
   A marker `[data-x]` matches as the attribute name `data-x`;
@@ -166,20 +188,34 @@ after the fetch.
 
 ### The kernel (`frag/boot.js`)
 
-One addition. At boot the kernel reads `#gofastr-behaviors` once and
-appends its entries to the scan list:
+One addition. At boot the kernel reads the descriptors once — the
+global a live page sets, or the inline block an export and the embed
+frame carry — and both the scan and the interaction bridge iterate the
+kernel's own table and this list together:
 
 ```js
 const _registered = (() => {
   try {
-    const el = document.getElementById('gofastr-behaviors');
-    const o = el ? JSON.parse(el.textContent) : {};
-    return Object.keys(o).map(n => ({ name: n, selector: o[n].s.join(','), idle: !!o[n].i }));
+    const o = window.__gofastr_behaviors ||
+      JSON.parse((document.getElementById('gofastr-behaviors') || {}).textContent || '{}');
+    return Object.entries(o).map(([n, v]) => ({
+      name: n,
+      selector: v.s.join(','),
+      idle: !!v.i,
+      requires: v.r || [],
+      interactions: (v.x || []).filter((y) => y && y.event),
+    }));
   } catch (_) { return []; }
 })();
 ```
 
-and `_scanForModules` iterates `_moduleMarkers.concat(_registered)`.
+`_scanForModules` iterates `_moduleMarkers.concat(_registered)`, and so
+does the interaction bridge's install loop: a registered behaviour's
+interactions are retained during its own cold-cache fetch and replayed
+on the original node exactly as a table module's are. The parse sits
+above the bridge because the bridge installs its listeners in the same
+boot pass and reads this list there; below it, the `const` is a
+temporal dead zone and the page dies.
 `loadModule` needs no change: the name resolves through the manifest to
 the same URL shape, and the identifier guard already rejects anything
 that is not `[\w-]+`. `data-fui-prefetch="<name>"` works for a registered
@@ -207,15 +243,25 @@ documented table. A registered behaviour is not an owner in
 
 A behaviour may need another module before it can bind: the action
 adapters need the action primitive. The loader is the one place every
-load goes through (marker scan, idle queue, hover prefetch), so
-dependencies live there and nowhere else. One path is not on that list
-yet: the interaction bridge (boot.js's interaction-time load, which
-prevents the default, loads the module, and replays the event) iterates
-the kernel's own `_moduleMarkers` table only — it cannot see registered
-descriptors, so a registered behaviour has no interaction trigger today
-and the bridge neither delays nor dispatches for it. Teaching the
-bridge to read registered descriptors is the later change that unblocks
-the lightbox move (sequence step 5), not this one.
+load goes through (marker scan, idle queue, hover prefetch, interaction
+bridge), so dependencies live there and nowhere else. Teaching the
+bridge to read registered descriptors was its own change (2026-09-20,
+the interaction-descriptor layer): a behaviour declares the
+interactions it needs retained — `Interactions(...)` beside
+`Markers(...)`, the bridge's own spec shape (event, selector, and for
+a keydown the keys and the scope selector that arms the retention) —
+the behaviours block carries them as `x` beside `s`, `i` and `r`, and
+the kernel's bridge installs its retention listeners over the
+registered descriptors exactly as over its own table. That was the
+prerequisite the lightbox move waited on (sequence step 5's ordering
+note), because a lightbox's first click or arrow key can land while
+its module is still cold-fetching. The lightbox then moved
+(2026-09-20, same day): `framework/ui/lightbox.js` is the first
+registered module that declares interactions — the prev/next clicks
+and the arrow keys over an open viewer — and with it the kernel's
+table and bridge literals lost their last interaction entry. The
+kernel names no lightbox at all now; `TestRuntimeDemandInteractionBridgeIsGeneric`
+fails on one appearing again.
 
 - `registry.Requires(names...)` declares the modules that must be
   loaded before this one. A name is an embedded kernel module or a
@@ -395,10 +441,19 @@ Dependencies and the primitive add:
    each a `RegisterBehavior` in the Go file that renders its markup;
    the kernel's table and `preload.go`'s mirror lose the entry; the
    `ui-*` literals leave the runtime with it. The interaction bridge
-   reads registered descriptors too before lightbox moves.
-6. `core-ui/patterns`, the same way. What remains in `core-ui/runtime`
-   is the kernel, its fragments, and the kernel-side modules: the
-   primitives, the manifest-driven loaders and the widget internals.
+   reads registered descriptors too before lightbox moves. (Done
+   2026-09-20: `registry.Interactions`, the manifest's `x` field, and
+   the kernel's merged install loop — this change is what unblocked
+   the lightbox move, which landed with it: the lightbox is the first
+   of these moves, the module, its viewer anatomy
+   (`framework/headless.LightboxViewer`) and its descriptor all owned
+   by the component's packages, and the kernel's table holds no
+   lightbox entry.)
+6. `core-ui/patterns` is gone entirely (every pattern moved to
+   framework/ui on its headless primitive or was deleted). What
+   remains in `core-ui/runtime` is the kernel, its fragments, and the
+   kernel-side modules: the primitives, the manifest-driven loaders
+   and the widget internals.
 
 ## Open questions
 

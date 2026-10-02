@@ -139,6 +139,19 @@ func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
 	}
 }
 
+func TestWhereAmpersandScopesWithoutWeight(t *testing.T) {
+	ss := NewComponentSheet("card", DefaultTheme())
+	ss.Rule(":where(& .actions) > .item, :where(&).wide").Set("margin", "0").End()
+	got, err := ss.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	want := `:where([data-fui-comp="card"] .actions) > .item, :where([data-fui-comp="card"]).wide`
+	if !strings.Contains(got, want) {
+		t.Errorf("missing %q:\n%s", want, got)
+	}
+}
+
 // TestComponentSheetEmptySelectorPartWraps ensures the empty-part error
 // (e.g. `, .b` or `.a, , .b`) also wraps ErrUnscopable so callers can
 // detect "this selector list can't be scoped" via one errors.Is check.

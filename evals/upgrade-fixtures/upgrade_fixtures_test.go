@@ -12,7 +12,7 @@
 //     is how an unreleased bump lands without a published tag);
 //  3. applies the fixture's migration.patch, the manual Go-source edits
 //     `gofastr upgrade --apply` cannot do mechanically, one hunk per
-//     upgrades.yml entry;
+//     registry note (internal/upgrade/releases);
 //  4. runs go mod tidy + go build (the mechanical steps `--apply` runs);
 //  5. boots the upgraded binary against a copy of seed.db;
 //  6. asserts the full runtime contract over the existing data.
@@ -46,6 +46,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
 // fixturesRoot is this package's directory (evals/upgrade-fixtures/).
@@ -90,6 +92,13 @@ func TestHistoricalUpgrades(t *testing.T) {
 	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
 		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the historical upgrade fixtures (shells out, boots servers, needs network)")
 	}
+	// The scan gates run go/packages in-process. The own-version type-check
+	// needs cgo (the old fixtures pin mattn/go-sqlite3) and the module
+	// proxy, and no workspace or vendor flags from the caller's shell may
+	// leak in. Commands shelled out below set their own CGO_ENABLED=0.
+	t.Setenv("CGO_ENABLED", "1")
+	t.Setenv("GOFLAGS", "-mod=mod")
+	t.Setenv("GOWORK", "off")
 	root := repoRoot(t)
 	manifest := mustLoadManifest(t)
 	for _, fx := range historicalFixtures {
@@ -107,30 +116,31 @@ func upgradeAndAssert(t *testing.T, root string, fx fixture, want manifestEntry)
 	appDir := filepath.Join(work, "app")
 	mustCopyDir(t, filepath.Join(fixturesRoot(t), "fixtures", fx.name), appDir)
 
+	// 0. Mode 1: the fixture as generated, type-checked against the
+	// gofastr release it pins — the typed matchers resolve symbols the way
+	// the affected app sees them.
+	gateOwnVersionScan(t, fx, appDir)
+
 	// 1. Point gofastr at the current repo tree.
 	rewriteGomodReplace(t, appDir, root)
 
-	// 1b. The shipped detector must flag the pre-upgrade source: the notes in
-	// upgrades.yml carry detect regexes, and migration.patch encodes exactly
-	// the edits they demand. If the detector goes quiet here, the registry
-	// stopped covering this historical path.
-	assertShippedUpgradeDetector(t, root, appDir, true)
+	// 1b. Mode 2: pointed at this tree, still unpatched — every compile
+	// error the upgrade causes must be explained by an in-range note, and
+	// the CLI binary path stays covered by one smoke run.
+	gateBrokenScanAtHead(t, root, fx, appDir)
 
-	// 2. Apply the manual migration edits (one hunk per upgrades.yml entry).
+	// 2. Apply the manual migration edits (one hunk per registry note).
 	run(t, appDir, "apply migration.patch", "git", "apply", "-p1", "migration.patch")
+
+	// 2b. Mode 5: patched, still at this tree — no retired spelling
+	// survives and the app type-checks again.
+	gatePatchedScanAtHead(t, fx, appDir)
 
 	// 3. Mechanical steps, exactly what `gofastr upgrade --apply` runs after
 	//    the source edits: resolve modules, then compile. CGO_ENABLED=0 because
 	//    the migrated app uses the pure-Go sqlite driver (v0.56.0 swap).
 	run(t, appDir, "go mod tidy", "go", "mod", "tidy")
 	run(t, appDir, "go build", "go", "build", "-o", filepath.Join(work, "bin"), ".")
-
-	// 3b. Post-patch the detector must still RUN cleanly (exit 0). It is NOT
-	// asserted hit-free: many registry regexes intentionally match the
-	// corrected usage too (they mark lines to review, NewEntitySessionStore,
-	// WithReadHooks, not pre-migration-only patterns), so "no hits after
-	// patching" is not a property the registry promises.
-	assertShippedUpgradeDetector(t, root, appDir, false)
 
 	// 4. Boot the upgraded app against a copy of the frozen pre-upgrade DB.
 	dbPath := filepath.Join(work, "run.db")
@@ -233,9 +243,13 @@ func assertRuntimeContract(t *testing.T, fx fixture, base string, want manifestE
 }
 
 // TestUpgradeFailsWhenMigrationSkipped is the negative proof: deliberately do
-// NOT apply migration.patch, and `go build` must fail with a message naming the
-// field the v0.54.0 grouped-config move removed. A green build here would mean
-// the driver could not catch a skipped upgrade step, which defeats its purpose.
+// NOT apply migration.patch, and `go build` must fail with a message naming
+// what the upgrade removed. A green build here would mean the driver could
+// not catch a skipped upgrade step, which defeats its purpose. Two shapes
+// count as actionable: the v0.54.0 grouped-config move's "unknown field"
+// naming a removed flat field, and the pagination pattern's retirement naming
+// the import the migration.patch deletes — a missing package is the one error
+// that says "this import is gone" outright.
 func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
 		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the negative upgrade-fixture proof")
@@ -248,8 +262,9 @@ func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 	rewriteGomodReplace(t, appDir, root)
 
 	// NO migration.patch, simulating skipping every manual step from
-	// upgrades.yml. The flat EntityConfig fields (Public/CRUD/OwnerField/MCP)
-	// were removed in v0.54.0, so the build must fail naming one of them.
+	// the registry. The flat EntityConfig fields (Public/CRUD/OwnerField/MCP)
+	// were removed in v0.54.0 and core-ui/patterns/pagination was deleted
+	// later, so the build must fail naming one of them or the import.
 	cmd := exec.CommandContext(ctxWithTimeout(t, 5*time.Minute), "go", "build", "./...")
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod")
@@ -258,8 +273,9 @@ func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 		t.Fatalf("go build SUCCEEDED with the migration skipped — the driver cannot detect a skipped upgrade step (expected a compile error)")
 	}
 	joined := string(out)
-	// The error names the removed flat field, that is the "useful message".
-	if !strings.Contains(joined, "unknown field") || !regexp.MustCompile(`Public|CRUD|OwnerField|MCP|Access`).MatchString(joined) {
+	actionable := (strings.Contains(joined, "unknown field") && regexp.MustCompile(`Public|CRUD|OwnerField|MCP|Access`).MatchString(joined)) ||
+		strings.Contains(joined, "core-ui/patterns/pagination")
+	if !actionable {
 		t.Fatalf("build failed but the error is not actionable:\n%s", joined)
 	}
 	t.Logf("negative proof OK — skipping migration.patch fails the build as expected:\n%s", firstLines(joined, 8))
@@ -327,6 +343,8 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 		// Stable dev secret so the app boots deterministically (dev_mode is on).
 		"JWT_SECRET=upgrade-fixture-test-secret-32chars-min!!",
 		"GOFASTR_DEV_MCP=0",
+		// The test picked the port; a worktree's isolation would remap it.
+		"GOFASTR_ISOLATION=off",
 	)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
@@ -337,6 +355,7 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 
 	base := "http://" + addr
 	deadline := time.Now().Add(60 * time.Second)
+	last := "no response"
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(base + "/")
 		if err == nil {
@@ -344,12 +363,16 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 			if resp.StatusCode == 200 {
 				return ra
 			}
+			last = resp.Status
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+	// The child wrote through the same open file, so the shared offset
+	// sits at the end of what it wrote: rewind before reading it back.
+	_, _ = logf.Seek(0, io.SeekStart)
 	bootLog, _ := io.ReadAll(logf)
 	ra.kill()
-	t.Fatalf("upgraded app did not become ready on %s within 60s. Boot log:\n%s", addr, firstLines(string(bootLog), 40))
+	t.Fatalf("upgraded app did not become ready on %s within 60s (last GET /: %s). Boot log:\n%s", addr, last, firstLines(string(bootLog), 40))
 	return nil
 }
 
@@ -638,7 +661,7 @@ func rewriteGomodReplace(t *testing.T, appDir, repoRoot string) {
 	s := string(b)
 	// Drop any existing gofastr replace directive.
 	s = regexp.MustCompile(`(?m)^replace\s+github\.com/DonaldMurillo/gofastr\b[^\n]*\n`).ReplaceAllString(s, "")
-	s = regexp.MustCompile(`(?m)^go\s+\S+$`).ReplaceAllString(s, "go "+repoGoDirective(t, repoRoot))
+	s = regexp.MustCompile(`(?m)^go\s+\S+[ \t]*(//.*)?$`).ReplaceAllString(s, "go "+repoGoDirective(t, repoRoot))
 	if !strings.HasSuffix(s, "\n") {
 		s += "\n"
 	}
@@ -664,13 +687,12 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 	return ""
 }
 
-// assertShippedUpgradeDetector runs the CURRENT tree's `gofastr upgrade`
-// (registry embedded in the CLI, no network: --to pinned to the registry's
-// newest version) against appDir and asserts whether its detect regexes hit.
-// Pre-patch they must ("found in your project:"), post-patch they must not,
-// together the two directions prove the shipped detector and the fixture's
-// migration.patch describe the same upgrade.
-func assertShippedUpgradeDetector(t *testing.T, root, appDir string, expectHits bool) {
+// cliUpgradeSmokeRun keeps the shipped binary path covered: `gofastr
+// upgrade` with the registry embedded in the CLI must run cleanly (exit 0)
+// against appDir. What the run FINDS is asserted by the scan gates over
+// scan.Run; this only proves the binary still loads its registry, scans and
+// renders without failing.
+func cliUpgradeSmokeRun(t *testing.T, root, appDir string) {
 	t.Helper()
 	cli := filepath.Join(t.TempDir(), "gofastr-cli")
 	run(t, root, "build gofastr CLI", "go", "build", "-o", cli, "./cmd/gofastr")
@@ -680,32 +702,23 @@ func assertShippedUpgradeDetector(t *testing.T, root, appDir string, expectHits 
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("gofastr upgrade %s --to %s failed: %v\n%s", appDir, target, err, firstLines(string(out), 30))
+		t.Fatalf("gofastr upgrade %s --to %s (smoke run) failed: %v\n%s", appDir, target, err, firstLines(string(out), 30))
 	}
-	if expectHits && !strings.Contains(string(out), "found in your project:") {
-		t.Fatalf("shipped upgrade detector reported NO hits on the pre-upgrade fixture (registry coverage lost?)\n%s", firstLines(string(out), 40))
-	}
+	t.Logf("CLI smoke run ok:\n%s", firstLines(strings.TrimSpace(string(out)), 10))
 }
 
-// latestRegistryVersion parses the newest `- version: vX.Y.Z` entry from the
-// CLI's embedded registry source so the detector run needs no network.
-func latestRegistryVersion(t *testing.T, root string) string {
+// latestRegistryVersion returns the newest release in the registry
+// embedded in the CLI, so the smoke run needs no network.
+func latestRegistryVersion(t *testing.T, _ string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(root, "cmd", "gofastr", "upgrades.yml"))
+	reg, err := upgrade.Load()
 	if err != nil {
-		t.Fatalf("read upgrades.yml: %v", err)
+		t.Fatalf("load the migration registry: %v", err)
 	}
-	last := ""
-	for line := range strings.SplitSeq(string(raw), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if v, ok := strings.CutPrefix(trimmed, "- version: "); ok {
-			last = strings.TrimSpace(v)
-		}
+	if len(reg.Releases) == 0 {
+		t.Fatal("the migration registry has no releases")
 	}
-	if last == "" {
-		t.Fatal("no `- version:` entries found in upgrades.yml")
-	}
-	return last
+	return reg.Releases[len(reg.Releases)-1].Version
 }
 
 func run(t *testing.T, dir, label string, name string, args ...string) {

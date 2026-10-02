@@ -1,75 +1,20 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
 
-func TestUpgradeRegistryParsesAndIsSorted(t *testing.T) {
-	reg, err := loadUpgradeRegistry()
-	if err != nil {
-		t.Fatalf("loadUpgradeRegistry: %v", err)
-	}
-	if len(reg) < 5 {
-		t.Fatalf("registry suspiciously small: %d releases", len(reg))
-	}
-	for i, r := range reg {
-		if _, err := parseSemver(r.Version); err != nil {
-			t.Errorf("release %d version %q: %v", i, r.Version, err)
-		}
-		if len(r.Notes) == 0 {
-			t.Errorf("release %s has no notes", r.Version)
-		}
-		for _, n := range r.Notes {
-			if n.Change == "" || n.Guidance == "" {
-				t.Errorf("release %s: note missing change/guidance: %+v", r.Version, n)
-			}
-		}
-		if i > 0 && !semverLess(reg[i-1].Version, r.Version) {
-			t.Errorf("registry not sorted ascending: %s before %s", reg[i-1].Version, r.Version)
-		}
-	}
-}
-
-func TestSemverLess(t *testing.T) {
-	cases := []struct {
-		a, b string
-		want bool
-	}{
-		{"v0.3.0", "v0.4.0", true},
-		{"v0.4.0", "v0.3.0", false},
-		{"v0.9.0", "v0.10.0", true},
-		{"v0.23.0", "v0.23.0", false},
-		{"v0.23.0", "v0.23.1", true},
-		{"v1.0.0", "v0.25.0", false},
-	}
-	for _, c := range cases {
-		if got := semverLess(c.a, c.b); got != c.want {
-			t.Errorf("semverLess(%s, %s) = %v, want %v", c.a, c.b, got, c.want)
-		}
-	}
-}
-
-func TestUpgradeNotesInRange(t *testing.T) {
-	reg := []upgradeRelease{
-		{Version: "v0.3.0"}, {Version: "v0.5.0"}, {Version: "v0.21.0"}, {Version: "v0.23.0"},
-	}
-	got := releasesInRange(reg, "v0.5.0", "v0.23.0")
-	if len(got) != 2 || got[0].Version != "v0.21.0" || got[1].Version != "v0.23.0" {
-		t.Errorf("expected (v0.5.0, v0.23.0] = [v0.21.0 v0.23.0], got %+v", got)
-	}
-	// current == target → empty.
-	if got := releasesInRange(reg, "v0.23.0", "v0.23.0"); len(got) != 0 {
-		t.Errorf("same-version range must be empty, got %+v", got)
-	}
-	// Unknown current (older than everything) includes all up to target.
-	if got := releasesInRange(reg, "", "v0.5.0"); len(got) != 2 {
-		t.Errorf("empty current means from-the-beginning, got %+v", got)
-	}
-}
+// Registry parsing and validation live in internal/upgrade
+// (registry_test.go): the embedded file, the refusal table, the
+// semver helpers. What stays here is the CLI: go.mod reading, argument
+// parsing, and the renderer.
 
 func TestGoModGofastrVersion(t *testing.T) {
 	dir := t.TempDir()
@@ -110,107 +55,6 @@ replace github.com/DonaldMurillo/gofastr => ../gofastr
 	}
 }
 
-func TestUpgradeDetectorsPointAtLines(t *testing.T) {
-	dir := t.TempDir()
-	writeUpgradeFixture(t, dir, "theme/theme.go", `package theme
-
-import "github.com/DonaldMurillo/gofastr/framework/ui/theme"
-
-func T() any { return theme.Default(theme.Overrides{}) }
-`)
-	rel := upgradeRelease{Version: "v0.23.0", Notes: []upgradeNote{{
-		Change: "theme.Default() is now adaptive", Breaking: true,
-		Guidance: "…", Detect: `theme\.Default\(`,
-	}}}
-	report := formatUpgradeNotes(dir, []upgradeRelease{rel})
-	if !strings.Contains(report, "v0.23.0") || !strings.Contains(report, "theme.Default() is now adaptive") {
-		t.Errorf("report missing release/note, got:\n%s", report)
-	}
-	if !strings.Contains(report, filepath.Join("theme", "theme.go")+":5") {
-		t.Errorf("report must point at the detected line, got:\n%s", report)
-	}
-}
-
-func TestParseUpgradeArgsForms(t *testing.T) {
-	for _, args := range [][]string{{"--to", "v0.23.0"}, {"--to=v0.23.0"}} {
-		opts, bad := parseUpgradeArgs(args)
-		if bad != "" || opts.to != "v0.23.0" {
-			t.Errorf("args %v: to=%q bad=%q", args, opts.to, bad)
-		}
-	}
-	opts, bad := parseUpgradeArgs([]string{"./app", "--apply"})
-	if bad != "" || opts.root != "./app" || !opts.apply {
-		t.Errorf("got %+v bad=%q", opts, bad)
-	}
-	if _, bad := parseUpgradeArgs([]string{"--wat"}); bad != "--wat" {
-		t.Errorf("unknown flag must be reported, got %q", bad)
-	}
-}
-
-func writeUpgradeFixture(t *testing.T, dir, rel, body string) {
-	t.Helper()
-	full := filepath.Join(dir, rel)
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestUpgradeRegistryThroughCoversNewestEntry(t *testing.T) {
-	reg, through, err := loadUpgradeRegistryFull()
-	if err != nil {
-		t.Fatalf("loadUpgradeRegistryFull: %v", err)
-	}
-	if _, err := parseSemver(through); err != nil {
-		t.Fatalf("through: %v", err)
-	}
-	if last := reg[len(reg)-1].Version; semverLess(through, last) {
-		t.Errorf("through %s is older than the newest entry %s", through, last)
-	}
-}
-
-// TestUpgradeRegistryThroughMatchesChangelog is the maintenance
-// tripwire: every release PR bumps CHANGELOG.md, and the registry's
-// `through` marker must move with it, otherwise `gofastr upgrade`
-// wrongly warns (or worse, wrongly reassures) about registry coverage.
-func TestUpgradeRegistryThroughMatchesChangelog(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
-	if err != nil {
-		t.Fatalf("read CHANGELOG.md: %v", err)
-	}
-	re := regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`)
-	m := re.FindStringSubmatch(string(body))
-	if m == nil {
-		t.Fatal("no release heading found in CHANGELOG.md")
-	}
-	_, through, err := loadUpgradeRegistryFull()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "v" + m[1]; through != want {
-		t.Errorf("upgrades.yml through=%s but CHANGELOG's latest release is %s — bump `through` in the release PR", through, want)
-	}
-}
-
-func TestUpgradeRegistryDetectorsCompile(t *testing.T) {
-	reg, err := loadUpgradeRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range reg {
-		for _, n := range r.Notes {
-			if n.Detect == "" {
-				continue
-			}
-			if _, err := regexp.Compile(n.Detect); err != nil {
-				t.Errorf("%s %q: detect regex does not compile: %v", r.Version, n.Change, err)
-			}
-		}
-	}
-}
-
 func TestGoModGofastrVersionBlockReplace(t *testing.T) {
 	dir := t.TempDir()
 	writeUpgradeFixture(t, dir, "go.mod", `module example.com/app
@@ -233,73 +77,350 @@ replace (
 	}
 }
 
-func TestSemverPrereleaseAndPseudoVersions(t *testing.T) {
-	// A pseudo-version sits between its base's predecessor and the base.
-	if !semverLess("v0.25.0", "v0.25.1-0.20260715120000-abcdef123456") {
-		t.Errorf("pseudo-version of v0.25.1 must be newer than v0.25.0")
+func TestParseUpgradeArgsForms(t *testing.T) {
+	for _, args := range [][]string{{"--to", "v0.23.0"}, {"--to=v0.23.0"}} {
+		opts, bad := parseUpgradeArgs(args)
+		if bad != "" || opts.to != "v0.23.0" {
+			t.Errorf("args %v: to=%q bad=%q", args, opts.to, bad)
+		}
 	}
-	if !semverLess("v0.25.1-0.20260715120000-abcdef123456", "v0.25.1") {
-		t.Errorf("prerelease must sort before its release")
+	opts, bad := parseUpgradeArgs([]string{"./app", "--apply"})
+	if bad != "" || opts.root != "./app" || !opts.apply {
+		t.Errorf("got %+v bad=%q", opts, bad)
 	}
-	if semverLess("v0.25.1", "v0.25.1-0.20260715120000-abcdef123456") {
-		t.Errorf("release must not sort before its own prerelease")
-	}
-	// Prerelease targets parse.
-	if _, err := parseSemver("v0.26.0-rc.1"); err != nil {
-		t.Errorf("prerelease target must parse: %v", err)
-	}
-	// releasesInRange with a pseudo-version current skips already-crossed releases.
-	reg := []upgradeRelease{{Version: "v0.23.0"}, {Version: "v0.25.0"}}
-	got := releasesInRange(reg, "v0.24.1-0.20260701000000-aaaaaaaaaaaa", "v0.25.0")
-	if len(got) != 1 || got[0].Version != "v0.25.0" {
-		t.Errorf("pseudo-version current must not re-include older notes, got %+v", got)
+	if _, bad := parseUpgradeArgs([]string{"--wat"}); bad != "--wat" {
+		t.Errorf("unknown flag must be reported, got %q", bad)
 	}
 }
 
-// A breaking note in the release being shipped must carry a detector.
-// `gofastr upgrade` uses it to point at the exact lines the release will
-// break; without one the note is advice the tool cannot locate for you.
-//
-// Scoped to the newest release deliberately. Older entries are
-// grandfathered: several describe changes no regex can find (a removed
-// CLI subcommand, a default that flipped from allow to deny), and
-// backfilling them would mean inventing detectors that match nothing.
-// The rule that matters is that each new release ships complete.
-func TestNewestReleaseBreakingNotesHaveDetectors(t *testing.T) {
-	reg, through, err := loadUpgradeRegistryFull()
-	if err != nil {
-		t.Fatalf("load registry: %v", err)
-	}
-	var newest *upgradeRelease
-	for i := range reg {
-		if reg[i].Version == through {
-			newest = &reg[i]
-		}
-	}
-	if newest == nil {
-		t.Fatalf("no release matching through=%s", through)
-	}
-	for _, note := range newest.Notes {
-		if note.Breaking && strings.TrimSpace(note.Detect) == "" {
-			t.Errorf("%s: breaking note %q has no detect regex — `gofastr upgrade` cannot show the user where it bites", newest.Version, note.Change)
+func TestParseUpgradeArgsFrom(t *testing.T) {
+	for _, args := range [][]string{{"--from", "v0.85.0"}, {"--from=v0.85.0"}} {
+		opts, bad := parseUpgradeArgs(args)
+		if bad != "" || opts.from != "v0.85.0" {
+			t.Errorf("args %v: from=%q bad=%q", args, opts.from, bad)
 		}
 	}
 }
 
-// The registry writes "BREAKING: …" into the change line and the renderer
-// prefixes "! BREAKING:" of its own, so every breaking note rendered as
-// "! BREAKING: BREAKING: …" from the first one onward.
-func TestBreakingMarkerIsNotDoubled(t *testing.T) {
-	cases := map[string]string{
-		"BREAKING: the module requires Go 1.27": " the module requires Go 1.27",
-		"breaking: lowercase form":              " lowercase form",
-		"BREAKING:no space":                     "no space",
-		"a plain change line":                   "a plain change line",
-		"the word BREAKING: mid-sentence":       "the word BREAKING: mid-sentence",
+// bumpedApp writes an app whose go.mod already names v0.86.0: the user
+// ran go get before gofastr upgrade.
+func bumpedApp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "go.mod", "module app\n\ngo 1.27\n\nrequire "+gofastrModule+" v0.86.0\n")
+	return dir
+}
+
+func TestUpgradeBumpedGoModHintsFrom(t *testing.T) {
+	dir := bumpedApp(t)
+	out := covT_capStdout(t, func() { runUpgrade([]string{dir, "--to", "v0.86.0"}) })
+	if !strings.Contains(out, "nothing to do") || !strings.Contains(out, "--from") {
+		t.Fatalf("a bumped go.mod must point at --from:\n%s", out)
 	}
-	for in, want := range cases {
-		if got := trimBreakingPrefix(in); got != want {
-			t.Errorf("trimBreakingPrefix(%q) = %q, want %q", in, got, want)
+}
+
+func TestUpgradeFromOverridesGoMod(t *testing.T) {
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true}, nil
+	})
+	dir := bumpedApp(t)
+	out := covT_capStdout(t, func() { runUpgrade([]string{dir, "--from", "v0.85.0", "--to", "v0.86.0"}) })
+	if !strings.Contains(out, "Current: v0.85.0 (--from)") {
+		t.Fatalf("--from must replace the go.mod version:\n%s", out)
+	}
+	if strings.Contains(out, "nothing to do") || !strings.Contains(out, "v0.86.0") {
+		t.Fatalf("--from must report the v0.86.0 notes:\n%s", out)
+	}
+}
+
+func TestUpgradeFromRejectsBadVersion(t *testing.T) {
+	dir := bumpedApp(t)
+	code := covT_capExit(t, func() { runUpgrade([]string{dir, "--from", "latest", "--to", "v0.86.0"}) })
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 for a non-semver --from", code)
+	}
+}
+
+func writeUpgradeFixture(t *testing.T, dir, rel, body string) {
+	t.Helper()
+	full := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stubScan replaces the engine entry for one test.
+func stubScan(t *testing.T, fn func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error)) {
+	t.Helper()
+	old := scanRun
+	scanRun = fn
+	t.Cleanup(func() { scanRun = old })
+}
+
+func oneRelease(notes ...*upgrade.Note) []upgrade.Release {
+	return []upgrade.Release{{Version: "v0.23.0", Title: "Auth", Notes: notes}}
+}
+
+func TestUpgradeReportRendersHits(t *testing.T) {
+	note := &upgrade.Note{
+		Change: "theme.Default() is now adaptive", Breaking: true,
+		Guidance: "Pass Overrides.",
+		Find:     upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "p", Name: "N"}}},
+	}
+	sinks := upgrade.MarkerSinks{AttrKeys: []string{"data-fui-comp"}}
+	stubScan(t, func(root string, notes []*upgrade.Note, gotSinks upgrade.MarkerSinks) (*scan.Result, error) {
+		if len(notes) != 1 || notes[0] != note {
+			t.Errorf("engine must receive the in-range notes, got %d", len(notes))
 		}
+		if len(gotSinks.AttrKeys) != 1 || gotSinks.AttrKeys[0] != "data-fui-comp" {
+			t.Errorf("engine must receive the registry's marker sinks, got %+v", gotSinks)
+		}
+		return &scan.Result{
+			TypeChecked: true,
+			Hits: map[*upgrade.Note][]scan.Hit{
+				// Deliberately out of order: the renderer sorts.
+				note: {
+					{File: "web/b.go", Line: 3, Col: 1, Why: "why-b"},
+					{File: "theme/theme.go", Line: 5, Col: 12, Why: "p.N"},
+					{File: "gofastr.yml", Line: 9, Why: "config auth"}, // no column
+				},
+			},
+		}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), sinks)
+	for _, want := range []string{
+		"v0.23.0: Auth",
+		"! BREAKING: theme.Default() is now adaptive",
+		"Pass Overrides.",
+		"Edit these:",
+		"theme/theme.go:5:12  p.N",
+		"gofastr.yml:9  config auth",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report missing %q, got:\n%s", want, report)
+		}
+	}
+	if strings.Index(report, "theme/theme.go") > strings.Index(report, "web/b.go") {
+		t.Errorf("hits must print in file order, got:\n%s", report)
+	}
+	if strings.Contains(report, "Compile errors") {
+		t.Errorf("no Unexplained errors were reported, got:\n%s", report)
+	}
+}
+
+// The report leads with the lines that must change, then the lines to
+// look at, then the notes nothing in the project touched. A hit read
+// from a compile error is an edit whatever its note says: the line no
+// longer builds.
+func TestUpgradeReportSplitsEditFromCheck(t *testing.T) {
+	edit := &upgrade.Note{Change: "symbol removed", Breaking: true, Guidance: "g-edit"}
+	review := &upgrade.Note{Change: "default flipped", Breaking: true, Review: true, Guidance: "g-review"}
+	quiet := &upgrade.Note{Change: "nothing here", Breaking: true, Review: true, Guidance: "g-quiet"}
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Hits: map[*upgrade.Note][]scan.Hit{
+			edit:   {{File: "a.go", Line: 1, Col: 1, Why: "uses x.Gone"}},
+			review: {{File: "b.go", Line: 2, Col: 1, Why: "uses x.Flipped"}, {File: "c.go", Line: 3, Col: 1, Why: "uses x.Flipped", Err: "too many arguments"}},
+		}}, nil
+	})
+	report := upgradeReport(t.TempDir(), []upgrade.Release{
+		{Version: "v0.22.0", Title: "Old", Notes: []*upgrade.Note{review}},
+		{Version: "v0.23.0", Title: "Auth", Notes: []*upgrade.Note{edit, quiet}},
+	}, upgrade.MarkerSinks{})
+	order := []string{
+		"Edit these",
+		"v0.22.0: Old", "default flipped", "c.go:3:1", "too many arguments",
+		"v0.23.0: Auth", "symbol removed", "a.go:1:1",
+		"Check these",
+		"v0.22.0: Old", "default flipped", "b.go:2:1",
+		"Nothing found for these",
+		"v0.23.0: Auth", "nothing here", "g-quiet",
+	}
+	rest := report
+	for _, want := range order {
+		i := strings.Index(rest, want)
+		if i < 0 {
+			t.Fatalf("report missing %q after the previous lines, got:\n%s", want, report)
+		}
+		rest = rest[i+len(want):]
+	}
+	if strings.Count(report, "b.go:2:1") != 1 || strings.Count(report, "c.go:3:1") != 1 {
+		t.Errorf("each hit prints once, got:\n%s", report)
+	}
+	// A note prints once per section holding its hits, and under
+	// "Nothing found" only when it has none.
+	for change, want := range map[string]int{"symbol removed": 1, "default flipped": 2, "nothing here": 1} {
+		if got := strings.Count(report, change); got != want {
+			t.Errorf("%q prints %d times, want %d, got:\n%s", change, got, want, report)
+		}
+	}
+}
+
+func TestUpgradeReportCapsHitsAtTwenty(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	const total = 25
+	var hits []scan.Hit
+	for i := range total {
+		hits = append(hits, scan.Hit{File: fmt.Sprintf("f%02d.go", i+1), Line: 1, Col: 1, Why: "w"})
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Hits: map[*upgrade.Note][]scan.Hit{note: hits}}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	rendered := strings.Count(report, ":1:1  w")
+	if rendered != maxNoteHits {
+		t.Errorf("rendered %d hit lines, want the cap of %d", rendered, maxNoteHits)
+	}
+	if !strings.Contains(report, "… and 5 more") {
+		t.Errorf("capped hits must end with a count line, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportListsUnexplained(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	const total = 22
+	var unexplained []scan.Hit
+	for i := range total {
+		unexplained = append(unexplained, scan.Hit{
+			File: fmt.Sprintf("e%02d.go", i+1), Line: 2, Col: 3,
+			Why: fmt.Sprintf("undefined: ui.SiteHeader%d", i+1),
+		})
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Unexplained: unexplained}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	if !strings.Contains(report, "Compile errors no note explains:") {
+		t.Errorf("report missing the unexplained block, got:\n%s", report)
+	}
+	if !strings.Contains(report, "e01.go:2:3  undefined: ui.SiteHeader1") {
+		t.Errorf("report missing the first unexplained error, got:\n%s", report)
+	}
+	rendered := strings.Count(report, "undefined: ui.SiteHeader")
+	if rendered != maxNoteHits {
+		t.Errorf("rendered %d unexplained errors, want the cap of %d", rendered, maxNoteHits)
+	}
+	if !strings.Contains(report, "… and 2 more") {
+		t.Errorf("capped errors must end with a count line, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportListsUnscanned(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	var unscanned []string
+	for i := range maxNoteHits + 3 {
+		unscanned = append(unscanned, fmt.Sprintf("x%02d.go (no satisfiable build configuration)", i+1))
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Unscanned: unscanned}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	head, _, _ := strings.Cut(report, "v0.23.0")
+	if !strings.Contains(head, "NOTE: 23 files could not be scanned") {
+		t.Errorf("the unscanned NOTE must lead the report, got:\n%s", report)
+	}
+	if !strings.Contains(head, "  x01.go (no satisfiable build configuration)\n") {
+		t.Errorf("report missing the first unscanned file, got:\n%s", report)
+	}
+	if got := strings.Count(report, "(no satisfiable build configuration)"); got != maxNoteHits {
+		t.Errorf("rendered %d unscanned files, want the cap of %d", got, maxNoteHits)
+	}
+	if !strings.Contains(head, "  … and 3 more\n") {
+		t.Errorf("capped files must end with a count line, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportPositionlessError(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{Unexplained: []scan.Hit{{Why: "go: inconsistent vendoring\n\tsee go help vendor"}}}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	if !strings.Contains(report, "  (no position)  go: inconsistent vendoring\n      \tsee go help vendor\n") {
+		t.Errorf("positionless error must render with no position and indented continuation lines, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportShowsCompileError(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{Hits: map[*upgrade.Note][]scan.Hit{note: {
+			{File: "a.go", Line: 3, Col: 5, Why: "field x.Config.Public", Err: "unknown field Public in struct literal"},
+			{File: "b.go", Line: 7, Col: 2, Why: "x.Config"},
+		}}}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	if !strings.Contains(report, "a.go:3:5  field x.Config.Public\n          compile error: unknown field Public in struct literal\n") {
+		t.Errorf("a hit read from a compile error must show the error under it, got:\n%s", report)
+	}
+	if strings.Count(report, "compile error:") != 1 {
+		t.Errorf("a typed hit must not carry a compile-error line, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportNotesBrokenTypeCheck(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	var broken []string
+	for i := range 7 {
+		broken = append(broken, fmt.Sprintf("example.com/app/p%d", i+1))
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{Broken: broken}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	if !strings.Contains(report, "did not type-check") {
+		t.Errorf("report missing the not-type-checked NOTE, got:\n%s", report)
+	}
+	if !strings.Contains(report, "example.com/app/p5") {
+		t.Errorf("NOTE must name the first five broken packages, got:\n%s", report)
+	}
+	if strings.Contains(report, "example.com/app/p6") || strings.Contains(report, "example.com/app/p7,") {
+		t.Errorf("NOTE must cap at five packages, got:\n%s", report)
+	}
+	if !strings.Contains(report, "and 2 more") {
+		t.Errorf("NOTE must count the packages past the cap, got:\n%s", report)
+	}
+	if i := strings.Index(report, "NOTE: the app did not type-check"); i > strings.Index(report, "v0.23.0") {
+		t.Errorf("the NOTE must print before the notes, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportScansErrorShowsNotes(t *testing.T) {
+	notes := []*upgrade.Note{
+		{Change: "first change", Breaking: true, Guidance: "first guidance"},
+		{Change: "second change", Breaking: true, Guidance: "second guidance"},
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return nil, fmt.Errorf("no go.mod at or above %s", root)
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(notes...), upgrade.MarkerSinks{})
+	for _, want := range []string{
+		"NOTE: could not scan this project",
+		"no go.mod at or above",
+		"! BREAKING: first change",
+		"first guidance",
+		"! BREAKING: second change",
+		"second guidance",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("engine failure must not cost guidance: missing %q, got:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "Edit these") || strings.Contains(report, "Check these") {
+		t.Errorf("a failed scan renders no hit sections, got:\n%s", report)
+	}
+}
+
+func TestUpgradeReportEmptyRangeSkipsScan(t *testing.T) {
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		t.Error("no notes in range: the engine must not run")
+		return nil, nil
+	})
+	report := upgradeReport(t.TempDir(), nil, upgrade.MarkerSinks{})
+	want := "No migration notes between these versions: the mechanical steps below are all there is.\n"
+	if report != want {
+		t.Errorf("got:\n%s\nwant:\n%s", report, want)
 	}
 }

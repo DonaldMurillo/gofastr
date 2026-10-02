@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -49,12 +50,12 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 		pageReady(),
 		// Step 2 visible: assert the step heading, indicator state.
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var heading = document.querySelector('.ui-step-wizard__heading');
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var heading = document.querySelector('.fui-step-wizard__heading');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			return {
 				heading: heading ? heading.textContent.trim() : '',
-				step0: dots[0] ? dots[0].className : '',
-				step1: dots[1] ? dots[1].className : '',
+				step0: dots[0] ? dots[0].getAttribute('data-state') : '',
+				step1: dots[1] ? dots[1].getAttribute('data-state') : '',
 			};
 		})())`, &raw),
 	)
@@ -72,11 +73,11 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	if !strings.Contains(s2.Heading, "Preferences") {
 		t.Errorf("expected step 2 heading 'Preferences', got %q", s2.Heading)
 	}
-	if !strings.Contains(s2.Step0, "is-completed") {
-		t.Errorf("step 0 should be completed, got class %q", s2.Step0)
+	if s2.Step0 != "done" {
+		t.Errorf("step 0 should be completed, got attrs %q", s2.Step0)
 	}
-	if !strings.Contains(s2.Step1, "is-current") {
-		t.Errorf("step 1 should be current, got class %q", s2.Step1)
+	if s2.Step1 != "current" {
+		t.Errorf("step 1 should be current, got attrs %q", s2.Step1)
 	}
 
 	// Step 2: fill theme then Continue.
@@ -90,7 +91,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 		pageReady(),
 		// Step 3: assert heading + Submit visible (no Continue).
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var heading = document.querySelector('.ui-step-wizard__heading');
+			var heading = document.querySelector('.fui-step-wizard__heading');
 			var btns = document.querySelectorAll('button[name="wizard_action"]');
 			var labels = Array.from(btns).map(b => b.textContent.trim());
 			return {
@@ -144,6 +145,101 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	}
 }
 
+// ─── Wizard: an empty step-one submit is refused ───────────────────
+// The form is novalidate (the server owns validation), so the browser
+// would happily advance an empty step: the handler has to refuse it,
+// re-render step one with the messages, and record nothing.
+func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	wizardDemoReset()
+	var raw string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/forms/wizard"),
+		pageReady(),
+		// Continue with BOTH required fields empty (Click, not Submit:
+		// chromedp.Submit does not fire the submit event).
+		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+	)
+	if err != nil {
+		t.Fatalf("chromedp empty submit: %v", err)
+	}
+
+	// The click is a full-page POST; the re-render can land outside the
+	// suite's settle on a loaded runner (and an evaluate that starts
+	// mid-navigation dies with "target navigated"), so probe for the
+	// failed step's summary with a bounded retry instead of one fixed
+	// sleep.
+	shown := false
+	for range 25 {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(
+			`document.readyState === 'complete' && document.getElementById('wd-form-errors') !== null`,
+			&shown)); err == nil && shown {
+			break
+		}
+		if !shown {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	if !shown {
+		t.Fatal("the failed step's summary never rendered after the empty submit")
+	}
+
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`JSON.stringify((() => {
+			var heading = document.querySelector('.fui-step-wizard__heading');
+			var summary = document.querySelector('[data-hui-form-errors] [role="alert"], #wd-form-errors');
+			var nameErr = document.getElementById('wd-name-error');
+			var emailErr = document.getElementById('wd-email-error');
+			return {
+				heading: heading ? heading.textContent.trim() : '',
+				summary: summary ? summary.textContent.trim() : '',
+				nameErr: nameErr ? nameErr.textContent.trim() : '',
+				emailErr: emailErr ? emailErr.textContent.trim() : '',
+				// The VALUE, not its presence: aria-invalid="false" is a
+				// non-empty string, so a control reporting no error to
+				// assistive technology would satisfy a presence check.
+				nameInvalid: (document.getElementById('wd-name') || {getAttribute: () => null}).getAttribute('aria-invalid') === 'true',
+			};
+		})())`, &raw),
+	)
+	if err != nil {
+		t.Fatalf("chromedp probe of the failed step: %v", err)
+	}
+	var got struct {
+		Heading     string
+		Summary     string
+		NameErr     string
+		EmailErr    string
+		NameInvalid bool
+	}
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if !strings.Contains(got.Heading, "Personal info") {
+		t.Errorf("an empty submit left step one (heading %q)", got.Heading)
+	}
+	if !strings.Contains(got.Summary, "Please fix") {
+		t.Errorf("the validation summary is missing (summary %q)", got.Summary)
+	}
+	if !strings.Contains(got.NameErr, "full name is required") {
+		t.Errorf("the name message is missing (nameErr %q)", got.NameErr)
+	}
+	if !strings.Contains(got.EmailErr, "email is required") {
+		t.Errorf("the email message is missing (emailErr %q)", got.EmailErr)
+	}
+	if !got.NameInvalid {
+		t.Error("the name control is not marked aria-invalid after the failed submit")
+	}
+	if last := wizardDemoLast(); last != nil {
+		t.Errorf("an empty submit recorded a payload: %v", last)
+	}
+}
+
 // ─── Wizard: Back preserves values ──────────────────────────────────
 
 func TestE2E_Wizard_BackPreservesState(t *testing.T) {
@@ -178,7 +274,7 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 		// Step 2 must show the previously-checked radio.
 		chromedp.Evaluate(`JSON.stringify((() => {
 			var checked = document.querySelector('input[name="wd-theme"]:checked');
-			var heading = document.querySelector('.ui-step-wizard__heading');
+			var heading = document.querySelector('.fui-step-wizard__heading');
 			return {
 				heading: heading ? heading.textContent.trim() : '',
 				themeValue: checked ? checked.value : '',
@@ -215,9 +311,13 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	wizardDemoReset()
 
 	// Drive to step 3, then simulate a stale POST with step=3 and wizard_action=next.
+	// Step one is filled: the handler validates before advancing, so an
+	// empty submit would (correctly) stay on step one.
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/forms/wizard"),
 		pageReady(),
+		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
+		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
 		pageReady(),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
@@ -231,9 +331,9 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	var raw string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			var current = -1;
-			dots.forEach((d, i) => { if (d.classList.contains('is-current')) current = i; });
+			dots.forEach((d, i) => { if (d.getAttribute('data-state') === 'current') current = i; });
 			var hiddenStep = document.querySelector('input[type="hidden"][name="_step"]');
 			return {
 				dots: dots.length,
@@ -265,9 +365,9 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 		chromedp.Evaluate(`JSON.stringify((() => {
 			// After submit, either confirmation page or still wizard step 2.
 			var confirm = document.querySelector('[data-wizard-confirm]');
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			var current = -1;
-			dots.forEach((d, i) => { if (d.classList.contains('is-current')) current = i; });
+			dots.forEach((d, i) => { if (d.getAttribute('data-state') === 'current') current = i; });
 			return {
 				confirm: !!confirm,
 				dots: dots.length,
@@ -309,8 +409,8 @@ func TestE2E_PasswordInputToggle(t *testing.T) {
 		chromedp.Navigate(base+"/components/passwordinput"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var btn = document.querySelector('[data-fui-comp="ui-password-input"] .ui-password-input__toggle');
-			var input = document.querySelector('[data-fui-comp="ui-password-input"] input');
+			var btn = document.querySelector('[data-hui-reveal]');
+			var input = document.querySelector('[data-hui-affix-input]');
 			if (!btn || !input) return {ok: false};
 			var initial = {type: input.type, pressed: btn.getAttribute('aria-pressed')};
 			btn.click();

@@ -11,6 +11,7 @@ import (
 const (
 	PartSectionHead Part = "section-head"
 	PartSectionBody Part = "section-body"
+	PartSectionBrow Part = "section-eyebrow"
 	PartDividerLine Part = "divider-line"
 )
 
@@ -28,12 +29,12 @@ const (
 //     must be hidden, or a screen reader announces "separator" at
 //     every visual flourish on the page.
 //
-// Everything else here — gaps, tracks, gutters — is the skin's, and
+// Everything else here — gaps, tracks, gutters — is the class map's, and
 // these types exist so an app never writes a grid-template by hand.
 
 // StackProps is vertical flow: one thing after another, with one gap.
 type StackProps struct {
-	// Gap is a name from the scale, passed through to the skin. It is
+	// Gap is a name from the scale, passed through to the class map. It is
 	// not a length, because a system with arbitrary gaps has no
 	// rhythm — and the one the framework ships proves the point: its
 	// Grid takes a free-form Min that nothing ever read.
@@ -41,27 +42,38 @@ type StackProps struct {
 	// Align is cross-axis alignment: "start", "center", "end". Empty
 	// stretches, which is what a stack of cards wants.
 	Align string
+	// Justify is main-axis distribution: "start", "center", "end",
+	// "between". Empty packs to the start, which is what a page's
+	// blocks do.
+	Justify string
 	// Tag overrides the element. A list of things should be a list;
 	// this is how a Stack becomes one without a second component.
 	Tag string
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root.
+	Parts Parts
 }
 
 // Stack renders vertical flow.
-func Stack(p StackProps, s Skin, children ...render.HTML) render.HTML {
+func Stack(p StackProps, s Classes, children ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
-	mods(own, s, "gap", p.Gap, "align", p.Align)
-	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
+	mods(own, s, "gap", p.Gap, "align", p.Align, "justify", p.Justify)
+	return b.El(orDefault(p.Tag, "div"), PartRoot, own, children...)
 }
 
 func init() {
 	Register(Spec{
-		Name:    "Stack",
+		Name: "Stack",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Stack(StackProps{Gap: "lg", Parts: parts}, s, render.HTML("<p>One.</p>"))
+		},
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "default gap",
 				Why:  "no gap named is still a gap: the default is this primitive's own rhythm, so two pages that say nothing agree",
@@ -87,7 +99,7 @@ func init() {
 // of tags, a toolbar.
 type ClusterProps struct {
 	Gap string
-	// Align is cross-axis: "center" by default in the skin, because a
+	// Align is cross-axis: "center" by default in the class map, because a
 	// row of controls of different heights should line up on their
 	// middles.
 	Align string
@@ -101,6 +113,9 @@ type ClusterProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root.
+	Parts Parts
 }
 
 // Cluster renders a wrapping row.
@@ -110,21 +125,25 @@ type ClusterProps struct {
 // search field the slack and the groups their labels. Cluster is for
 // content that wraps — tags, badges, a byline's parts — where the row
 // is a layout fact and nothing in it is a control.
-func Cluster(p ClusterProps, s Skin, children ...render.HTML) render.HTML {
+func Cluster(p ClusterProps, s Classes, children ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap, "align", p.Align, "justify", p.Justify)
 	if p.NoWrap {
 		mods(own, s, "wrap", "none")
 	}
-	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
+	return b.El(orDefault(p.Tag, "div"), PartRoot, own, children...)
 }
 
 func init() {
 	Register(Spec{
-		Name:    "Cluster",
+		Name: "Cluster",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Cluster(ClusterProps{Gap: "sm", Parts: parts}, s, render.HTML("<p>One.</p>"))
+		},
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			button := func(label, variant string) render.HTML {
 				return Button(ButtonProps{Label: label, Variant: variant}, k.For("Button"))
 			}
@@ -158,7 +177,7 @@ type GridProps struct {
 	// A length is what the framework's Grid takes, and it silently did
 	// nothing for every value: the component wrote a data attribute
 	// and no stylesheet ever read it. A named step cannot rot that way
-	// — the skin either has a rule for the name or the name is a typo
+	// — the class map either has a rule for the name or the name is a typo
 	// that shows up the first time anyone looks.
 	Min string
 	Gap string
@@ -166,21 +185,28 @@ type GridProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root.
+	Parts Parts
 }
 
 // Grid renders the auto-fitting grid.
-func Grid(p GridProps, s Skin, children ...render.HTML) render.HTML {
+func Grid(p GridProps, s Classes, children ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap, "min", p.Min)
-	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
+	return b.El(orDefault(p.Tag, "div"), PartRoot, own, children...)
 }
 
 func init() {
 	Register(Spec{
-		Name:    "Grid",
+		Name: "Grid",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Grid(GridProps{Gap: "lg", Parts: parts}, s, render.HTML("<p>One.</p>"))
+		},
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "minimum column and gap",
 				Why:  "Min is a floor — a column never gets narrower than the named step before the grid gives one up — and the name is what keeps the floor wired: the framework's Grid took a free-form Min that nothing read, so every auto-fit grid was the default width whatever its author asked",
@@ -202,21 +228,28 @@ type ContainerProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root.
+	Parts Parts
 }
 
 // Container renders the measure.
-func Container(p ContainerProps, s Skin, children ...render.HTML) render.HTML {
+func Container(p ContainerProps, s Classes, children ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "size", p.Size)
-	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
+	return b.El(orDefault(p.Tag, "div"), PartRoot, own, children...)
 }
 
 func init() {
 	Register(Spec{
-		Name:    "Container",
+		Name: "Container",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Container(ContainerProps{Size: "sm", Parts: parts}, s, render.HTML("<p>One.</p>"))
+		},
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			measure := func(size, body string) render.HTML {
 				return Container(ContainerProps{Size: size}, s, render.HTML(body))
 			}
@@ -252,6 +285,13 @@ type SectionProps struct {
 	// in the landmark list, so Section renders a plain div until it
 	// has a title to be named by.
 	Title string
+	// Eyebrow is a short kicker above the title ("01 / Overview"). It
+	// is aria-hidden: it decorates a heading the reader has already
+	// heard, and reading both is hearing the section's name twice. A
+	// section named by Label alone renders it too — the caller's
+	// heading rides in the body, and the kicker decorates it from
+	// above.
+	Eyebrow string
 	// Level is the heading level, 2 by default. It is a real decision
 	// and not a style: heading levels are how a screen reader user
 	// moves through a page, and a section under an <h1> that renders
@@ -259,43 +299,96 @@ type SectionProps struct {
 	Level int
 	// Description is supporting text under the heading.
 	Description string
+	// DescriptionHTML is supporting text that carries markup — code,
+	// links. When set it takes precedence over Description.
+	DescriptionHTML render.HTML
+	// Label names the region when there is no Title to name it by.
+	// A named section without a heading is still a landmark; an
+	// unnamed one renders as a plain div. With both set, Title wins:
+	// the heading names the region and Label is not read.
+	Label string
 	// Actions sit opposite the heading — a button, a filter.
 	Actions render.HTML
 	Gap     string
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on every part the region draws.
+	Parts Parts
 }
 
 // Section renders the region.
-func Section(p SectionProps, s Skin, children ...render.HTML) render.HTML {
-	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
+func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
+	own := Merge(Safe(p.ExtraAttrs, "aria-label"), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap)
-	body := El("div", s, PartSectionBody, nil, children...)
-	if p.Title == "" {
-		return El("div", s, PartRoot, own, body)
+	// The body holds only the caller's children; with none passed it
+	// draws nothing of its own either, so an empty body is itself the
+	// topmost of an (empty) internal subtree.
+	bodyOwn := html.Attrs(nil)
+	if len(children) == 0 {
+		bodyOwn = Internal(nil)
 	}
-
+	body := b.El("div", PartSectionBody, bodyOwn, children...)
+	if p.Title == "" {
+		if p.Label != "" {
+			// A named section without a heading is still a landmark:
+			// the name arrives by aria-label instead of by a heading
+			// to be labelled by.
+			own["aria-label"] = p.Label
+			if p.Eyebrow != "" {
+				// The caller's heading rides in the body when the
+				// section is named by Label alone, and the eyebrow
+				// still decorates it — a named section is not an
+				// unnamed one, and the kicker was never the name.
+				return b.El("section", PartRoot, own,
+					b.El("p", PartSectionBrow,
+						Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.Text(p.Eyebrow)),
+					body)
+			}
+			return b.El("section", PartRoot, own, body)
+		}
+		return b.El("div", PartRoot, own, body)
+	}
 	titleID := p.ID
 	if titleID == "" {
-		titleID = slugID(p.Title)
+		titleID = slugID("section", p.Title)
 	}
 	titleID += "-title"
 	own["aria-labelledby"] = titleID
 
-	head := []render.HTML{
-		El(headingTag(p.Level), s, PartTitle,
-			Attrs(map[string]string{"id": titleID}), render.Text(p.Title)),
+	// The header holds only the eyebrow, the title and Description when
+	// there is no DescriptionHTML; with one the header is an ancestor
+	// of a slot, so the boundary moves down to the eyebrow and the
+	// title (the description directly holds the slot, so it is left
+	// unmarked either way).
+	headOwn, partOwn := Internal(nil), html.Attrs(nil)
+	if p.DescriptionHTML != "" {
+		headOwn, partOwn = nil, Internal(nil)
 	}
-	if p.Description != "" {
-		head = append(head, El("p", s, PartDesc, nil, render.Text(p.Description)))
+	head := make([]render.HTML, 0, 3)
+	if p.Eyebrow != "" {
+		head = append(head, b.El("p", PartSectionBrow,
+			Merge(Attrs(map[string]string{"aria-hidden": "true"}), partOwn), render.Text(p.Eyebrow)))
 	}
-	headWrap := El("div", s, PartHeader, nil, head...)
+	head = append(head, b.El(headingTag(p.Level), PartTitle,
+		Merge(Attrs(map[string]string{"id": titleID}), partOwn), render.Text(p.Title)))
+	if p.DescriptionHTML != "" {
+		head = append(head, b.El("p", PartDesc, nil, p.DescriptionHTML))
+	} else if p.Description != "" {
+		// Description-as-text never holds a slot, but it only renders
+		// when DescriptionHTML is empty — exactly when headOwn already
+		// marks the whole header — so it is left unmarked to avoid a
+		// repeat.
+		head = append(head, b.El("p", PartDesc, nil, render.Text(p.Description)))
+	}
+	headWrap := b.El("div", PartHeader, headOwn, head...)
 	if p.Actions != "" {
-		headWrap = El("div", s, PartSectionHead, nil, headWrap,
-			El("div", s, PartFooter, nil, p.Actions))
+		headWrap = b.El("div", PartSectionHead, nil, headWrap,
+			b.El("div", PartFooter, nil, p.Actions))
 	}
-	return El("section", s, PartRoot, own, headWrap, body)
+	return b.El("section", PartRoot, own, headWrap, body)
 }
 
 func headingTag(level int) string {
@@ -305,15 +398,16 @@ func headingTag(level int) string {
 	return "h" + string(rune('0'+level))
 }
 
-// slugID derives a stable id from a title, so a section without an
+// slugID derives a stable id from a title, so a component without an
 // explicit ID still has one for aria-labelledby to point at. Two
-// sections with the same title on one page collide — which is a real
+// regions with the same title on one page collide — which is a real
 // limit, and the reason ID exists.
 //
-// The prefix is "section-", not the skin's class namespace: this layer
-// does not know what anyone calls their classes, and an id that
-// borrowed that name would tie the structure to one skin.
-func slugID(s string) string {
+// The prefix is the component's own ("section", "table"), not the
+// class map's namespace: this layer does not know what anyone calls
+// their classes, and an id that borrowed that name would tie the
+// structure to one class map.
+func slugID(prefix, s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
 	for _, r := range s {
@@ -334,7 +428,7 @@ func slugID(s string) string {
 	for len(out) > 0 && out[len(out)-1] == '-' {
 		out = out[:len(out)-1]
 	}
-	return "section-" + string(out)
+	return prefix + "-" + string(out)
 }
 
 // DividerProps is a line between things.
@@ -352,6 +446,9 @@ type DividerProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root, the lines and the label.
+	Parts Parts
 }
 
 // Divider renders the line.
@@ -360,37 +457,39 @@ type DividerProps struct {
 // break", so no role has to be claimed. A decorative one is a div that
 // says nothing, because the alternative — an <hr> with aria-hidden —
 // is a semantic element being told to lie.
-func Divider(p DividerProps, s Skin) render.HTML {
+func Divider(p DividerProps, s Classes) render.HTML {
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	if p.Vertical {
 		mods(own, s, "orient", "vertical")
 		own["aria-orientation"] = "vertical"
 	}
-	part := PartRoot
 	if p.Decorative {
 		delete(own, "aria-orientation")
 		own["aria-hidden"] = "true"
-		return El("div", s, part, own)
+		return b.El("div", PartRoot, own)
 	}
 	if p.Label == "" {
-		return El("hr", s, part, own)
+		return b.El("hr", PartRoot, own)
 	}
 	// With a label the line cannot be an <hr> — it has no content
 	// model — so the role is stated on the element that replaces it.
 	own["role"] = "separator"
-	return El("div", s, part, own,
-		El("span", s, PartDividerLine, Attrs(map[string]string{"aria-hidden": "true"}), render.HTML("")),
-		El("span", s, PartText, nil, render.Text(p.Label)),
-		El("span", s, PartDividerLine, Attrs(map[string]string{"aria-hidden": "true"}), render.HTML("")),
+	return b.El("div", PartRoot, own,
+		b.El("span", PartDividerLine, Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.HTML("")),
+		b.El("span", PartText, Internal(nil), render.Text(p.Label)),
+		b.El("span", PartDividerLine, Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.HTML("")),
 	)
 }
-
 func init() {
 	Register(Spec{
-		Name:    "Divider",
+		Name: "Divider",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Divider(DividerProps{Label: "or", Parts: parts}, s)
+		},
 		Anatomy: []Part{PartRoot, PartDividerLine, PartText},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "horizontal",
 				Why:  "the default is a real hr: a break between two groups of content means separator, and the element already says it, so no role is claimed",
@@ -411,13 +510,13 @@ func init() {
 // mods looks up one class per modifier and joins them onto the
 // element, as Button does with its variant and size.
 //
-// One lookup per modifier, never a combined key: a skin keyed on
+// One lookup per modifier, never a combined key: a class map keyed on
 // "root--md--center" would have to enumerate every gap crossed with
 // every alignment, and the first value nobody thought to combine
 // renders unstyled. Keys are namespaced by axis ("gap-md",
 // "align-center") so a gap named "center" could never collide with an
 // alignment named "center".
-func mods(own html.Attrs, s Skin, pairs ...string) {
+func mods(own html.Attrs, s Classes, pairs ...string) {
 	for i := 0; i+1 < len(pairs); i += 2 {
 		axis, value := pairs[i], pairs[i+1]
 		if value == "" {
@@ -431,10 +530,13 @@ func mods(own html.Attrs, s Skin, pairs ...string) {
 
 func init() {
 	Register(Spec{
-		Name:    "Section",
-		Anatomy: []Part{PartRoot, PartTitle, PartDesc, PartHeader, PartSectionHead, PartSectionBody, PartFooter},
+		Name: "Section",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Section(SectionProps{Title: "Volumes", Parts: parts}, s, render.HTML("<p>Two.</p>"))
+		},
+		Anatomy: []Part{PartRoot, PartSectionBrow, PartTitle, PartDesc, PartHeader, PartSectionHead, PartSectionBody, PartFooter},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "named",
 				Why:  "a name is what makes it a landmark, and the name comes from the heading itself rather than a second string that can drift from it",
@@ -442,8 +544,17 @@ func init() {
 					Actions: Button(ButtonProps{Label: "Add", Variant: "secondary"}, k.For("Button"))}, s,
 					render.HTML("<p>Two volumes.</p>")),
 			}, {
+				Name: "an eyebrow",
+				Why:  "the kicker above the title is hidden from the tree: it decorates a heading the reader has already heard, and reading the section's name twice is the alternative",
+				HTML: Section(SectionProps{Eyebrow: "01 / Overview", Title: "The cluster"}, s,
+					render.HTML("<p>One leader, two workers.</p>")),
+			}, {
+				Name: "named without a heading",
+				Why:  "a name is what makes it a landmark, and a label the page already carries can name a region whose heading lives somewhere else",
+				HTML: Section(SectionProps{Label: "Settings"}, s, render.HTML("<p>Loose but named.</p>")),
+			}, {
 				Name: "unnamed",
-				Why:  "no title means a plain div: a section with no name is a row in the landmark list that says nothing, which is worse than not being in it",
+				Why:  "no title and no label means a plain div: a section with no name is a row in the landmark list that says nothing, which is worse than not being in it",
 				HTML: Section(SectionProps{}, s, render.HTML("<p>Loose content.</p>")),
 			}, {
 				Name: "deeper in the outline",
@@ -469,7 +580,7 @@ type SpacerProps struct {
 	//
 	// It travels as data-hui-grow rather than a style, because an
 	// inline style is a rule the CSP drops and a class per factor is
-	// a class the skin has to enumerate from a number it cannot see.
+	// a class the class map has to enumerate from a number it cannot see.
 	Grow int
 	// Min and Max bound the space, as names from the gap scale rather
 	// than lengths: a spacer with a floor keeps a contents list legible
@@ -500,7 +611,7 @@ type SpacerProps struct {
 // and empty: the space is the whole content, and a screen reader user
 // gets the term and the value as neighbours, which is the same fact
 // the leader line draws for the eye.
-func Spacer(p SpacerProps, s Skin) render.HTML {
+func Spacer(p SpacerProps, s Classes) render.HTML {
 	if p.Grow < 1 || p.Grow > 4 {
 		panic("headless: Spacer Grow must be 1 through 4 — the stylesheet wires those four factors, and 0 is a spacer that cannot grow")
 	}
@@ -529,7 +640,7 @@ func init() {
 		Anatomy: []Part{PartRoot},
 		Hooks:   []string{"data-hui-grow"},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "plain",
 				Why:  "it renders nothing, says nothing, and is in the markup only because a row needs a thing to grow — the space between two controls is the skin's, not a third control somebody wedged between them",

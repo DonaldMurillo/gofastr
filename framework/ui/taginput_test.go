@@ -28,7 +28,7 @@ func TestTagInputEmitsTextInputWithMarker(t *testing.T) {
 	if !strings.Contains(h, `type="text"`) {
 		t.Errorf("expected <input type=text>:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-tag-input="tags"`) {
+	if !strings.Contains(h, `data-hui-tag-input="tags"`) {
 		t.Errorf("expected runtime marker:\n%s", h)
 	}
 	if !strings.Contains(h, `autocomplete="off"`) {

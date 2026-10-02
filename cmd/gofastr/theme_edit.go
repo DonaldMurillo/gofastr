@@ -242,6 +242,10 @@ func printThemeEditHelp() {
 	fmt.Println()
 	fmt.Println("Boots a local theme configurator with a live preview.")
 	fmt.Println()
+	fmt.Println("The controls pane groups tokens (Colors, Component options,")
+	fmt.Println("Spacing, ...). Component options render as selects listing the")
+	fmt.Println("values each option accepts; picking one re-renders the preview.")
+	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  --addr=host:port   Bind address (default 127.0.0.1:0 = ephemeral loopback).")
 	fmt.Println("  --out=path         Write-back destination (default theme/theme.go).")
@@ -545,15 +549,19 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 // controls page renders. Derived purely from the key prefix, the same
 // prefix walkTokens/tokenPair use, so a token added to style.Theme later
 // gets a usable control automatically. "color" tokens get a colour picker,
-// integer-px and unitless-integer tokens get number inputs, everything else
-// (fonts, shadows, durations, easings, font-sizes, code colours) gets a
-// text input. An unrecognised prefix falls through to "text", never hidden.
+// integer-px and unitless-integer tokens (z-index, font weights) get number inputs, "component.*"
+// keys get a select listing the option catalogue's members, and everything
+// else (fonts, shadows, durations, easings, font-sizes, sizes, code colours) gets
+// a text input. An unrecognised prefix falls through to "text", never
+// hidden.
 func tokenControlType(key string) string {
 	base := strings.TrimPrefix(key, "dark.")
 	switch {
 	case strings.HasPrefix(base, "color-"):
 		return "color"
-	case strings.HasPrefix(base, "z-"):
+	case strings.HasPrefix(base, "component."):
+		return "select"
+	case strings.HasPrefix(base, "z-"), strings.HasPrefix(base, "font-weight-"):
 		return "number"
 	case strings.HasPrefix(base, "spacing-"), strings.HasPrefix(base, "radii-"), strings.HasPrefix(base, "breakpoint-"):
 		return "number-px"
@@ -703,24 +711,30 @@ func buildContrastPairs() []contrastPair {
 	// Each status tone twice: as a filled control, and as label text on its own
 	// 15% tint. core-ui/style/theme.go is explicit that the tint is the harder
 	// target, which is exactly why it must actually be measured.
-	//
-	// The fill's foreground is var(--color-primary-fg), because that is what the
-	// design system paints there: `.ui-button--danger` and `.ui-badge--danger`
-	// both set `color: var(--color-primary-fg)` on a `--color-danger`
-	// background, and styles_components.go says so explicitly: "Themes that
-	// override --color-danger own keeping >=4.5:1 against --color-primary-fg."
-	//
-	// Hardcoding #ffffff here measured a pair the UI never renders. In the
-	// default dark scheme --color-primary-fg is #111827 and the status tones are
-	// light, so the probe reported four failures, white on #F87171 at 2.77:1,
-	// for text nothing paints. A checker that invents failures is as useless as
-	// one that cannot report them; both teach the operator to ignore it.
+	// The fill's foreground follows what the design system paints there.
+	// Danger's ink is its own token: `.fui-button--danger` consumes the
+	// --fui-button-danger trio the component-options compiler derives
+	// from `--color-danger` / `--color-danger-fg`, so the danger pair is
+	// measured danger-fg on danger. The other tones are still measured
+	// against --color-primary-fg, the ink their white-text fills are
+	// tuned for (core-ui/style's DefaultTheme note). Hardcoding #ffffff
+	// instead measured a pair the UI never renders: in the default dark
+	// scheme --color-primary-fg is #111827 and the status tones are
+	// light, so the probe reported four failures, white on #F87171 at
+	// 2.77:1, for text nothing paints. A checker that invents failures
+	// is as useless as one that cannot report them; both teach the
+	// operator to ignore it.
 	for _, tone := range []string{"danger", "success", "warning", "info"} {
+		fillFg := "var(--color-primary-fg)"
+		if tone == "danger" {
+			fillFg = "var(--color-danger-fg)"
+		}
 		pairs = append(pairs,
-			contrastPair{"primary-fg|" + tone, "primary-fg-" + tone,
-				"var(--color-primary-fg)", "var(--color-" + tone + ")"},
+			contrastPair{tone + "-fg|" + tone, tone + "-fg-" + tone,
+				fillFg, "var(--color-" + tone + ")"},
 			contrastPair{tone + "|" + tone + "-tint", tone + "-tint", "var(--color-" + tone + ")",
-				"color-mix(in srgb, var(--color-" + tone + ") 15%, var(--color-surface))"})
+				"color-mix(in srgb, var(--color-" + tone + ") 15%, var(--color-surface))"},
+		)
 	}
 	return pairs
 }

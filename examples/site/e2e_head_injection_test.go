@@ -104,14 +104,14 @@ func TestE2E_HeadInjection_NoSEOLeakageAcrossPages(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	// /components/accordion page should not carry /seo-specific tags.
-	headHTML := collectHeadHTML(t, ctx, base+"/components/accordion")
+	// /components/collapsible page should not carry /seo-specific tags.
+	headHTML := collectHeadHTML(t, ctx, base+"/components/collapsible")
 
 	// Global og:title is fine; but /seo-specific per-page og:description
-	// with "SEO" context should not bleed onto accordion.
+	// with "SEO" context should not bleed onto collapsible.
 	ogTitleCount := strings.Count(headHTML, `<meta property="og:title"`)
 	if ogTitleCount > 1 {
-		t.Errorf("expected 1 og:title on /components/accordion (global only), got %d", ogTitleCount)
+		t.Errorf("expected 1 og:title on /components/collapsible (global only), got %d", ogTitleCount)
 	}
 }
 
@@ -125,7 +125,7 @@ func TestE2E_HeadInjection_MultiplePagesAllGetGlobalTags(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	for _, path := range []string{"/", "/components/accordion", "/components/tabs"} {
+	for _, path := range []string{"/", "/components/collapsible", "/components/tabs"} {
 		t.Run(path, func(t *testing.T) {
 			headHTML := collectHeadHTML(t, ctx, base+path)
 			// All pages should carry the global OG title.
@@ -160,18 +160,18 @@ func TestE2E_HeadInjection_TitleTag(t *testing.T) {
 		t.Errorf("home page title should contain 'GoFastr', got %q", title)
 	}
 
-	// Verify the components/accordion page title too.
-	var accordionTitle string
+	// Verify the components/collapsible page title too.
+	var collapsibleTitle string
 	err = chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/accordion"),
+		chromedp.Navigate(base+"/components/collapsible"),
 		pageReady(),
-		chromedp.Evaluate(`document.title`, &accordionTitle),
+		chromedp.Evaluate(`document.title`, &collapsibleTitle),
 	)
 	if err != nil {
-		t.Fatalf("chromedp accordion: %v", err)
+		t.Fatalf("chromedp collapsible: %v", err)
 	}
-	if !strings.Contains(accordionTitle, "Accordion") {
-		t.Errorf("accordion page title should contain 'Accordion', got %q", accordionTitle)
+	if !strings.Contains(collapsibleTitle, "Collapsible") {
+		t.Errorf("collapsible page title should contain 'Accordion', got %q", collapsibleTitle)
 	}
 }
 

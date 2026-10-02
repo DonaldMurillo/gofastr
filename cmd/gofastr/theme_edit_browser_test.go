@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -270,7 +271,7 @@ func TestEditReachesPreview(t *testing.T) {
 	var before string
 	_ = chromedp.Run(ctx, chromedp.Evaluate(tePreviewTokenJS("--color-primary"), &before))
 
-	const want = "#FF00FF" // distinct from the default #4F46E5
+	const want = "#166534" // distinct from the default #4F46E5, and AA-safe under white ink (7.13:1): the theme guard refuses a lower pair
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", want), nil)); err != nil {
 		t.Fatalf("set color-primary: %v", err)
 	}
@@ -287,6 +288,57 @@ func TestEditReachesPreview(t *testing.T) {
 	t.Fatalf("preview never reflected the edit: --color-primary was %q before, %q after; want %q.\n"+
 		"The apply→RegisterThemeVariant→app.css swap path did not land in the rendered iframe.",
 		before, got, want)
+}
+
+// TestSwatchPickSyncsThroughHeadless pins the colour-sync ownership:
+// the editor's own JS no longer copies the picked hex into the text
+// input — the headless behaviour module (data-hui-color) does, and
+// the editor's apply reads the same hex. A pick must land the
+// uppercase value in the text input (the source of truth), clear the
+// shell's invalid mark, and reach the preview through the normal
+// apply path.
+func TestSwatchPickSyncsThroughHeadless(t *testing.T) {
+	_, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	var synced bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function () {
+		var swatch = document.querySelector('[data-token="color-primary"][data-type="color-swatch"]'); // not-a-secret: a selector for the editor's colour-primary row; data-token is the theme TOKEN NAME, not a credential
+		var shell = swatch && swatch.closest('[data-hui-color]');
+		if (!swatch || !shell) return false;
+		shell.setAttribute('data-invalid', ''); // the mark a stale non-hex value leaves
+		swatch.value = '#7c3aed';
+		swatch.dispatchEvent(new Event('input', { bubbles: true }));
+		return true;
+	})()`, &synced)); err != nil || !synced {
+		t.Fatalf("no swatch to pick on (err=%v synced=%v) — the editor's colour controls lost their headless hooks", err, synced)
+	}
+
+	deadline := time.Now().Add(12 * time.Second)
+	for time.Now().Before(deadline) {
+		var text, preview string
+		var markedInvalid bool
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(teReadControlJS("color-primary"), &text),
+			chromedp.Evaluate(`(function () {
+				var s = document.querySelector('[data-token="color-primary"][data-type="color-swatch"]'); // not-a-secret: a selector for the editor's colour-primary row; data-token is the theme TOKEN NAME, not a credential
+				var shell = s && s.closest('[data-hui-color]');
+				return shell ? shell.hasAttribute('data-invalid') : true;
+			})()`, &markedInvalid),
+			chromedp.Evaluate(tePreviewTokenJS("--color-primary"), &preview),
+		); err != nil {
+			t.Fatalf("read state: %v", err)
+		}
+		if strings.EqualFold(strings.TrimSpace(text), "#7c3aed") && !markedInvalid &&
+			strings.EqualFold(strings.TrimSpace(preview), "#7c3aed") {
+			return // pass: the module synced, unmarked, and the apply landed
+		}
+	}
+	t.Fatal("a swatch pick did not sync through the headless module and land in the preview — either data-hui-color lost its binding or the editor's apply no longer reads the picked hex")
 }
 
 // TestContrastPanelReportsFailure pins that the checker CAN fail. Set
@@ -368,7 +420,9 @@ func TestWriteIncludesLastEdit(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
-	const want = "#ABCDEF"
+	// An AA-safe blue under the default white ink: the theme guard
+	// refuses a primary pair under 4.5:1, and the write must succeed.
+	const want = "#1D4ED8"
 	// Type + click in ONE round-trip: the click beats the 300ms timer.
 	raceStart := time.Now()
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teTypeAndWriteJS("color-primary", want), nil)); err != nil {
@@ -542,4 +596,166 @@ func writeTwiceStep(t *testing.T, ctx context.Context, key, value, statusSub str
 		t.Fatalf("click Write: %v", err)
 	}
 	waitStatusContains(t, ctx, statusSub, 12*time.Second)
+}
+
+// TestReservedErrorNodeFillsAndClears pins the reserved error node's
+// whole contract on the real control: an invalid edit fills the node
+// the server rejects, marks the control aria-invalid, and a corrected
+// value clears both. The preview and write-back tests never touch this
+// path — they only ever send valid values.
+func TestReservedErrorNodeFillsAndClears(t *testing.T) {
+	_, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	probe := `(function () {
+  var el = document.querySelector('[data-token="color-primary"]:not([data-type="color-swatch"])'); // not-a-secret: a CSS selector for the editor's colour-primary row; data-token here is the theme TOKEN NAME, not a credential
+  var errEl = document.getElementById(el.id + '-error');
+  return (errEl ? errEl.textContent : '') + '\u0000' + (el.getAttribute('aria-invalid') || '');
+})()`
+	stateOf := func(s string) (msg, invalid string) {
+		msg, invalid, _ = strings.Cut(s, "\u0000")
+		return strings.TrimSpace(msg), strings.TrimSpace(invalid)
+	}
+
+	// An invalid colour: the apply endpoint rejects it, the reserved
+	// node fills, the control is marked invalid.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", "not-a-color"), nil)); err != nil {
+		t.Fatalf("set invalid color-primary: %v", err)
+	}
+	var state struct{ Msg, Invalid string }
+	deadline := time.Now().Add(12 * time.Second)
+	var raw string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &raw))
+		state.Msg, state.Invalid = stateOf(raw)
+		if state.Msg != "" && state.Invalid == "true" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if state.Msg == "" {
+		t.Fatal("the reserved error node never filled after the rejected edit")
+	}
+	if state.Invalid != "true" {
+		t.Fatalf("the control is not marked aria-invalid after the rejected edit (got %q)", state.Invalid)
+	}
+
+	// A valid value clears both: the message empties, the state goes.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", "#166534"), nil)); err != nil {
+		t.Fatalf("set valid color-primary: %v", err)
+	}
+	deadline = time.Now().Add(12 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &raw))
+		state.Msg, state.Invalid = stateOf(raw)
+		if state.Msg == "" && state.Invalid == "" {
+			return // pass
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("the error state never cleared after a valid edit: msg=%q invalid=%q", state.Msg, state.Invalid)
+}
+
+// tePickSelectJS returns a JS expression that picks an option on a
+// token's select control and dispatches the same 'input' event a real
+// pick dispatches — the wiring the editor's JS installs on every
+// [data-token] control, selects included (a select fires 'input' on
+// change, exactly like a typed input).
+func tePickSelectJS(key, value string) string {
+	return fmt.Sprintf(`(function () {
+  var el = document.querySelector('select[data-token=%[1]q]');
+  if (!el) throw new Error('no select for ' + %[1]q);
+  el.value = %[2]q;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  return el.value;
+})()`, key, value)
+}
+
+// tePreviewButtonBgJS yields the preview iframe's computed background
+// for the first primary button: the gallery's Button demo renders one
+// with .fui-button--primary, whose sheet reads
+// var(--fui-button-primary-bg) — the custom property the button
+// treatment option compiles to. Filled resolves a colour; outline
+// resolves transparent.
+const tePreviewButtonBgJS = `(function () {
+  var f = document.getElementById('te-frame');
+  if (!f || !f.contentDocument) return '';
+  var b = f.contentDocument.querySelector('.fui-button--primary');
+  if (!b) return '';
+  return f.contentWindow.getComputedStyle(b).backgroundColor;
+})()`
+
+// TestComponentOptionSelectReachesPreviewAndWriteBack is the component
+// options' whole round trip through a real browser: pick "outline" on
+// the Button treatment select, watch the preview's primary button lose
+// its fill (the variant is re-registered and the iframe's app.css
+// swaps), then Write and read the emitted theme.go, which must carry
+// the option. A control that applies nothing, or a write-back that
+// drops component options, both fail here.
+func TestComponentOptionSelectReachesPreviewAndWriteBack(t *testing.T) {
+	srv, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	// Baseline: the default treatment is filled, so the primary button
+	// paints a real colour, not transparency.
+	var before string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tePreviewButtonBgJS, &before)); err != nil {
+		t.Fatalf("read baseline button background: %v", err)
+	}
+	if before == "" {
+		t.Fatal("no primary button in the preview iframe — the gallery button demo is gone")
+	}
+	if before == "rgba(0, 0, 0, 0)" {
+		t.Fatalf("baseline primary button is already transparent (%q) — the filled default is not what the preview shows", before)
+	}
+
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tePickSelectJS("component.button.treatment", "outline"), nil)); err != nil {
+		t.Fatalf("pick outline on the button treatment select: %v", err)
+	}
+	waitStatusContains(t, ctx, "updated component.button.treatment", 12*time.Second)
+
+	// The preview's rendered CSS must change: outline draws a
+	// transparent background where filled drew the primary colour.
+	deadline := time.Now().Add(12 * time.Second)
+	var after string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(tePreviewButtonBgJS, &after))
+		if after == "rgba(0, 0, 0, 0)" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if after != "rgba(0, 0, 0, 0)" {
+		t.Fatalf("preview primary button background never went transparent: %q before, %q after — the treatment option did not reach the rendered variant CSS", before, after)
+	}
+
+	// Write-back carries the option into the emitted theme.go.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('te-write').click()`, nil)); err != nil {
+		t.Fatalf("click Write: %v", err)
+	}
+	waitStatusContains(t, ctx, "wrote", 12*time.Second)
+	src, err := os.ReadFile(srv.outPath)
+	if err != nil {
+		t.Fatalf("read written theme: %v", err)
+	}
+	if !strings.Contains(string(src), `"button.treatment": "outline"`) {
+		t.Fatalf("written theme does not carry the outline treatment:\n%s", truncate(string(src), 400))
+	}
+	// The four options nobody touched survive the write too.
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			continue
+		}
+		if !regexp.MustCompile(regexp.QuoteMeta(`"`+o.Key+`":`) + `\s+"`).MatchString(string(src)) {
+			t.Errorf("written theme dropped the untouched option %q:\n%s", o.Key, truncate(string(src), 400))
+		}
+	}
 }

@@ -7,7 +7,7 @@ import (
 
 func TestIcon_BuiltInsRegistered(t *testing.T) {
 	for _, name := range []string{
-		"check", "close", "chevron-up", "chevron-down",
+		"check", "close", "menu", "chevron-up", "chevron-down",
 		"chevron-left", "chevron-right",
 		"info", "warning", "danger", "success",
 	} {
@@ -59,7 +59,7 @@ func TestIcon_SizeOverridesDefault(t *testing.T) {
 
 func TestIcon_CustomClass(t *testing.T) {
 	got := string(Icon("check", IconConfig{Class: "my-icon"}))
-	if !strings.Contains(got, "ui-icon my-icon") {
+	if !classTokenPresent(got, "fui-icon") || !classTokenPresent(got, "my-icon") {
 		t.Errorf("expected base + custom class, got: %s", got)
 	}
 }

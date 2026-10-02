@@ -23,7 +23,7 @@ out. Each group writes CSS variables with a fixed prefix:
 
 | Theme group | Emits | Examples |
 |---|---|---|
-| `Colors` | `--color-<name>` | `--color-primary`, `--color-surface`, `--color-text-muted`, `--color-danger`, `--color-code-surface` |
+| `Colors` | `--color-<name>` | `--color-primary`, `--color-primary-fg`, `--color-danger`, `--color-danger-fg`, `--color-text-muted`, `--color-code-surface` |
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
 | `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full` |
@@ -32,8 +32,9 @@ out. Each group writes CSS variables with a fixed prefix:
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
+| `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
-| `Layout` | `--spacing-touch-target` | the WCAG minimum tap-target size (44px); buttons and inputs use it for sizing |
+| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
 | `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
 Token names come from the Go field path, converted to kebab-case
@@ -50,26 +51,221 @@ Three entry points produce a `style.Theme` you pass to
 
 - **`style.DefaultTheme()`**: the fully-populated, lower-level light
   baseline. It leaves `DarkColors` empty on purpose, for compatibility.
-- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**:
+- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", Dark: &theme.Overrides{Primary: "#5EEAD4"}})`**:
   the adaptive theme fresh scaffolds start with. It ships complete,
   contrast-safe light and dark palettes, plus a flat override struct for
-  the tokens hosts change most often: the light palette, explicit dark
-  token values, the three font stacks, and the radius scale. Light
-  overrides are not copied into dark mode automatically, because
-  contrast-safe values are usually different for dark. Any field you
-  don't set keeps its default.
+  the tokens hosts change most often: the light palette, the dark
+  palette (`Dark`, the same typed colour fields as the light), the
+  three font stacks, and the radius scale. Light overrides are not
+  copied into dark mode automatically, because contrast-safe values
+  are usually different for dark; a light colour with no dark twin
+  logs a warning naming it. Any field you don't set keeps its default.
 - **`gofastr theme init`**: writes `theme/theme.go`, the full adaptive
   default as a literal you own and can edit directly. Use this for apps
   that will keep changing their theme over time; edit `Colors` and
   `DarkColors` together.
 
-If your app needs tokens beyond the built-in set, embed `style.Theme`
-in your own struct and add fields. Framework components only read the
-embedded built-in tokens; your own components can read the extra
-fields directly.
-
 Check the result at `/__gofastr/app.css`; your values should show up
 as `:root` custom properties.
+
+## App tokens: `Theme.Extend`
+
+When your app needs a value the built-in set doesn't have, a brand
+accent, a hero spacing, a display weight, declare it as a token
+rather than a literal in a stylesheet. Group your tokens in a struct
+of typed fields and pass it to `Extend`:
+
+```go
+type brandTokens struct {
+	BrandGlow style.Color      // --color-brand-glow
+	HeroGap   style.Size       // --size-hero-gap
+	Display   style.FontWeight // --font-weight-display
+}
+
+t := theme.Default().Extend(brandTokens{
+	BrandGlow: style.Color{Value: "#FF7A00"},
+	HeroGap:   style.Size{Value: "clamp(2rem, 6vw, 5rem)"},
+	Display:   style.FontWeight{Value: 800},
+})
+t.DarkColors["brand-glow"] = "#FFB066"
+site.WithTheme(t)
+```
+
+The field's type picks the prefix and its name the rest, the same rule
+the built-in groups follow, so `--size-hero-gap` sits beside
+`--size-page-width` and reads as one vocabulary. An explicit `Name`
+overrides the field name. Nested structs work the way the built-in
+groups do.
+
+An app token goes everywhere a built-in token goes:
+
+- the `:root` block, and every `ui.Themed` scope;
+- the dark blocks, when `DarkColors` names an app colour (an app colour
+  without a dark value shows up in the dark-palette boot warning, like
+  a built-in one);
+- `ThemeToTokens` and `ApplyTokens`, validated by its type (a `Size`
+  takes a CSS length or a `calc()`/`clamp()`/`min()`/`max()` over
+  lengths, never a bare word);
+- `ThemeHash`, so the stylesheet URL changes when an app token does;
+- `Validate`, which names the field when a value is missing
+  (`main.brandTokens.HeroGap: Size.Value (Name="hero-gap"): value is empty`).
+
+`Extend` copies what you pass it and leaves its receiver alone. It
+panics when a token would emit a key the theme already emits, naming
+both fields: a `Primary style.Color` in your struct would declare
+`--color-primary` a second time, and whichever declaration the cascade
+reached last would paint the page. `Validate` makes the same check, so
+a hand-built `Theme.Extensions` slice can't slip a duplicate past it.
+
+Framework components read only the built-in tokens.
+
+## App tokens in CSS: `<name>.tokens.css`
+
+Writing the struct by hand works, but the stylesheets that read your
+tokens are CSS, and the tokens belong next to them. Declare them in a
+`<name>.tokens.css` file instead and let `gofastr gen styles` write the
+Go:
+
+```css
+/* acme.tokens.css */
+
+/* Space above and below the home hero. */
+@property --size-hero-gap { syntax: "<length>"; inherits: true; initial-value: clamp(2rem, 6vw, 5rem); }
+@property --color-highlight { syntax: "<color>"; inherits: true; initial-value: #0F766E; }
+@property --font-weight-display { syntax: "<number>"; inherits: true; initial-value: 800; }
+@property --duration-unroll { syntax: "<time>"; inherits: true; initial-value: 260ms; }
+
+@media (--dark) {
+  :root { --color-highlight: #5EEAD4; }
+}
+```
+
+A tokens file holds `@property` rules and, at most, one
+`@media (--dark) { :root { … } }` block of dark colour values. Nothing
+else: a class rule, another media query, or a dark value for a
+non-colour token is an error. Each `@property`:
+
+- is named `--<type>-<name>`, where the prefix is a token type
+  (`color`, `font`, `spacing`, `radii`, `shadow`, `z`, `duration`,
+  `easing`, `text`, `font-weight`, `size`) and the name is lowercase
+  kebab-case,
+- declares the syntax that matches its type,
+- says `inherits: true`, since a theme token must reach every element,
+- has an `initial-value`, validated exactly as `ApplyTokens` validates
+  that type.
+
+| Prefix | Go type | `syntax` |
+|---|---|---|
+| `--color-` | `style.Color` | `"<color>"` |
+| `--size-` | `style.Size` | `"<length>"` or `"<length-percentage>"` |
+| `--text-` | `style.FontSize` | `"<length>"` or `"<length-percentage>"` |
+| `--spacing-`, `--radii-` | `style.Spacing`, `style.Radius` | `"<length>"` |
+| `--font-weight-` | `style.FontWeight` | `"<number>"` or `"<integer>"` |
+| `--z-` | `style.ZIndexValue` | `"<integer>"` |
+| `--duration-` | `style.Duration` | `"<time>"` |
+| `--font-`, `--shadow-`, `--easing-` | `style.Font`, `style.Shadow`, `style.Easing` | `"*"` |
+
+Breakpoints and `--tk-*` code colours can't be app tokens; media
+queries read the custom-media names, and code colours belong to the
+built-in palette.
+
+The generator writes `acme_tokens.gen.go` beside the file, in the
+directory's package. The tokens are grouped the way `style.Theme`
+groups its own, and a CSS comment above an `@property` becomes the
+field's doc comment:
+
+```go
+// Code generated by "gofastr gen styles" from acme.tokens.css. DO NOT EDIT.
+var Tokens = acmeTokens{
+	Colors:      acmeColors{Highlight: style.Color{Name: "highlight", Value: "#0F766E"}},
+	Durations:   acmeDurations{Unroll: style.Duration{Name: "unroll", Value: 260 * time.Millisecond}},
+	FontWeights: acmeFontWeights{Display: style.FontWeight{Name: "display", Value: 800}},
+	Sizes:       acmeSizes{HeroGap: style.Size{Name: "hero-gap", Value: "clamp(2rem, 6vw, 5rem)"}},
+}
+
+func (acmeTokens) DarkTokens() map[string]string {
+	return map[string]string{"highlight": "#5EEAD4"}
+}
+```
+
+A package with more than one tokens file names each var after its file
+(`AcmeTokens`, `BrandTokens`). Add the set to the theme with `Extend`:
+
+```go
+site.WithTheme(theme.Default().Extend(ui.Tokens))
+```
+
+`Extend` reads `DarkTokens` from any value that has the method and
+merges it into `DarkColors`, so the dark block above reaches
+`data-color-scheme="dark"` with no extra line. It panics when a dark
+key isn't one of the set's own colours, or when the value isn't a
+colour. A theme with an empty `DarkColors` (`style.DefaultTheme()`)
+has no dark mode, so the dark values are dropped with it.
+
+Go code reads a token through its field: `ui.Tokens.Sizes.HeroGap.CSS()`
+is `var(--size-hero-gap)`. CSS reads it as `var(--size-hero-gap)`.
+
+`style.ParseToken(key, value)` is the parser underneath: it returns the
+typed slot for a `--<type>-<name>` key and a CSS value, or the
+validation error.
+
+### What the checks enforce
+
+`gofastr gen styles` and `gofastr verify` check owned sheets against
+the built-in tokens plus every app token in the program, so a sheet in
+one package can read a token declared in another.
+
+- **GOFASTR1806**: in a `*.style.css`, `var(--name)` must name a token
+  the theme or a tokens file declares. A fallback,
+  `var(--brand-glow, #FF7A00)`, does not waive it: the fallback hides
+  the missing declaration, and the value it carries is an untyped
+  literal. Declare the token, or waive the line with a reason.
+- **GOFASTR1807**: a literal equal to a token's value must read the
+  token. This covers app tokens too, and font weights
+  (`font-weight: 600` is `var(--font-weight-semibold)`) and sizes
+  (`width`, `height`, `inline-size`, `block-size`, their `min-`/`max-`
+  forms, and `flex-basis`). Padding, margin and gap compare against
+  spacing only.
+- **GOFASTR1821**: an app token whose value is already another token's
+  value of the same type, built-in or app (`--color-brand: #4F46E5`
+  where `--color-primary` is `#4F46E5`). Read the other token, or give
+  the new one its own value.
+- **GOFASTR1822** (warning): the same literal written in two or more
+  owned sheets of one program for the same token type. Declare it once as a token and
+  read `var()` in each. Values that are not a design choice pass: a zero
+  in any unit (`margin: 0`, `padding: 0 0`), `100%`, and `z-index: -1`.
+
+A tokens file may not reuse a built-in name (`--color-primary`), and a
+token is declared in one file only.
+
+The checks that compare files (duplicate style names, GOFASTR1821 and
+GOFASTR1822, a token declared twice) judge one program at a time: a
+`main` package plus every package its imports resolve to. Build
+constraints are evaluated for each shipped platform (darwin and linux
+on amd64 and arm64, windows on amd64), and a package under a nested
+`go.mod` imports through that module's path. Two binaries in one module
+may each carry their own `siteheader` copy, so
+`generate package siteheader --out=alpha/siteheader` beside
+`--out=beta/siteheader` generates both. Packages no `main` imports are
+checked together as one group. A sheet two programs share is judged
+against each program's tokens, not their union, because a binary
+carries only its own. `gofastr gen styles` runs the same grouping as
+`gofastr verify`, so the two cannot disagree. One gap remains: a build
+tag that names no platform (a project's own `extra`) is treated as
+set, so the imports of a `//go:build !extra` file are never followed.
+
+When a line is deliberately off-token, waive the rule in place:
+
+```css
+.legacy { color: var(--vendor-ink); } /* gofastr:allow(GOFASTR1806) vendor widget sets this */
+```
+
+The marker starts the comment, names one rule and carries a reason. It
+covers its own line when code comes before it, otherwise the next line
+with code. A marker with no reason waives nothing.
+
+`gofastr theme edit` edits the built-in tokens; app tokens stay in
+their tokens file.
 
 ## Editing live: `gofastr theme edit`
 
@@ -105,6 +301,17 @@ The preview renders the `framework/gallery` catalog, every design-system
 component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
 
+The controls pane groups tokens — Colors first, then **Component
+options**, then the rest. Component options (density, the button
+treatment and radius, the field layout and radius) render as selects
+whose options are exactly the members the option vocabulary accepts,
+with the current value preselected: the list comes from
+`theme.Options()` in `framework/ui/theme`, so a new option cannot
+appear without its control following. Picking one applies through the
+same `ApplyTokens` path as a typed token, and the API behind it refuses
+a non-member value or an unknown `component.*` key with a 4xx, leaving
+the working theme untouched.
+
 **Contrast checking runs in the browser**, not in Go. `getComputedStyle`
 resolves every colour space (`oklch()`, `color-mix()`, `var()`) natively.
 The checker reads RGBA values through a canvas, composites text over the
@@ -112,8 +319,12 @@ measured probe background, then composites any transparent probe background
 over the page background. A transparent page canvas falls back to white.
 Pairs below 4.5:1 are flagged for both light and dark schemes. The pairs
 checked are the ones `core-ui/style/theme.go` documents: text tiers on
-`surface`, `primary-fg` on `primary`, and each status tone both as a
-white-text fill and as label text on its own 15% tint.
+`surface`, `primary-fg` on `primary`, `danger-fg` on `danger`, and each
+status tone both as a white-text fill and as label text on its own 15%
+tint. `Theme.Validate` additionally refuses, at boot, a hex
+`primary` × `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 —
+in the light palette and, key by key with the light token as the
+fallback for an absent key, in a non-empty `DarkColors` map.
 
 **Write-back** emits `%q` string literals, then writes a temporary file in the
 target directory, calls `fsync`, and renames it over the destination. Each
@@ -243,6 +454,166 @@ every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
 
+### Scoped themes and dark mode
+
+A registered override with a dark palette (`DarkColors` or `DarkCode`)
+follows the document's scheme, not the wrapper's: the same two
+selectors that flip the root theme flip the scope —
+`[data-color-scheme="dark"] .fui-theme-<hash>` for the explicit toggle
+and a `prefers-color-scheme` fallback that stops applying once the
+user forced light. Flip `ui.ThemeToggle` (or set
+`data-color-scheme` on `<html>`) and every scoped theme with a dark
+palette recolors with the page.
+
+A scope with **no** dark palette stays **light** in dark mode. Its
+light declarations block inheritance, on purpose: a dark section on a
+light page is a theme with a dark palette, not an accident of
+inheritance. If you want a section to follow the page's scheme, give
+its override the dark values too.
+
+## Component options
+
+Tokens retune the palette and the scales; **component options** decide
+how a component family draws itself. They live in the theme, beside
+the tokens, and travel the same roads (`ThemeToTokens`,
+`ApplyTokens` under the `component.` prefix, the theme-edit writeback,
+`ThemeHash`). Today the theme stores them and the compiler emits their
+variables; no component stylesheet reads those variables yet, so an
+option changes nothing on screen until the first rebuilt component
+(Button, the next PR) consumes them:
+
+```go
+t := theme.Default(theme.Overrides{
+    Components: theme.ComponentOptions{
+        Density: theme.Compact,
+        Button:  theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square},
+    },
+})
+```
+
+The flattened form on `style.Theme` is a map —
+`Components{"density": "compact", "button.treatment": "outline",
+"button.radius": "square"}` — with a fixed grammar (lowercase
+dot-separated keys, one lowercase word per value) that
+`Theme.Validate` enforces at boot. The grammar is checked at boot; the
+vocabulary — is `"cozy"` a density? — at boot when the styled layer is
+linked (`framework/ui`'s compiler runs inside `Validate`), otherwise
+at first render, where the compiler lives.
+
+Two axes, and keeping them apart is the point:
+
+- **Variant** (`ui.ButtonPrimary`, `ui.ButtonDanger`, ghost) is what a
+  button *means*. A danger button says danger whatever the theme.
+- **Treatment** (`theme.Filled`, `theme.Outline`, `theme.Soft`) is how
+  a theme *draws* that meaning: where the ink goes. Primary and danger
+  supply the semantic colour; the treatment decides fill against
+  border. Changing the treatment restyles every variant at once — that
+  is what it is for.
+
+**Density versus explicit size:** `Density` (`theme.Comfortable`,
+`theme.Compact`) retunes control heights and gaps theme-wide. The
+comfortable height rides the `--spacing-touch-target` token (44px by
+default — raise `Layout.TouchTarget` and comfortable controls grow
+with it); compact is a deliberate 36px squeeze below that floor, and
+the md/sm spacing step separates controls in each. An explicit `Size`
+on one component always wins over density — density is the default
+rhythm, not a ceiling. Reach for density when a whole screen should
+tighten; reach for a size when one control must.
+
+Zero values mean *unspecified* while overrides merge, and only then:
+`theme.Default()` flattens a complete set (Comfortable, Filled,
+Round), and an explicit `Comfortable`, `Filled` or `Round` in a later
+override **resets** an earlier one rather than being ignored. Every
+theme the framework builds therefore declares the full option set.
+
+### How options reach CSS (and why they nest)
+
+`core-ui/style` cannot draw the options — it does not know what a
+density is. The one function that can is the **component-options
+compiler** `framework/ui` registers from its `init`
+(`style.RegisterComponentOptionsCompiler`, one per process; a late
+registration panics because the host freezes `app.css` at first
+render). It turns the flattened options into `--fui-*` custom
+properties:
+
+A binary that never imports `framework/ui` — a host built on
+`framework/uihost` alone — registers no compiler: it stores options it
+cannot draw, emits none of the `--fui-*` variables, and still hashes
+option-different themes apart (`ThemeHash` fingerprints the flattened
+options directly, not only the compiled output), so adding the styled
+layer later cannot silently alias two themes that were distinct all
+along.
+
+Registration carries the framework's complete default set, and that
+set is the **:root floor**: a theme with no `Components` of its own (a
+bare `style.DefaultTheme()`, the `gofastr theme init` scaffold, a host
+with no `App.Theme`) emits the defaults at `:root`, so the component
+rules consuming `--fui-*` variables resolve on every host. The floor
+is root-only — a scoped theme with no options inherits its parent's
+variables, which is the nesting contract — and it does not touch a
+theme's identity: an optionless theme hashes as optionless in every
+binary. There are still no in-CSS fallbacks (`var(--x, fallback)`):
+the floor lives at `:root`, where one declaration covers every rule.
+
+| Option | Emits |
+|---|---|
+| `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
+| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
+| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
+| `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
+| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
+| `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
+| `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
+| `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |
+
+The `.fui-button--primary` and `.fui-button--danger` rules in the
+`ui-button` sheet consume those trios (`background:
+var(--fui-button-primary-bg)` and friends); secondary and ghost draw
+themselves and read no treatment.
+
+The field family's rules in the `ui-form-field` sheet consume
+`--fui-field-columns` (the label/control track split),
+`--fui-field-message-column` (which track the hint and error sit in)
+and `--fui-field-radius` (what the field's inputs, selects and
+summaries draw). Inline is a preference, not a promise: below a stated
+width the sheet stacks the row whatever the theme asked for, the
+control track's minimum is zero so a long value can never force
+overflow, and a long label wraps rather than widening its track.
+Choice rows (checkbox, radio, switch and their groups) keep their own
+wrapping-label structure and deliberately ignore the columns
+variables.
+
+The cascade rule: **theme boundaries declare the option variables,
+component rules consume them.** A component stylesheet writes
+`border-radius: var(--fui-button-radius)` and never redeclares the
+variable; a treatment that changes fill, text and border together is
+three variables, never a descendant rule (`.fui-theme-a .fui-button`
+would outrank the component's own variant and state selectors, and
+could not nest). Because every theme declares the complete set, an
+inner `ui.Themed` scope redeclares all of it and wins by proximity:
+nesting A → B → A ends on A's values.
+
+The declarations are re-emitted at every boundary — root and scope,
+light and dark — because a custom property's `var()` references
+compute where the declaration sits: `--fui-button-primary-bg:
+var(--color-primary)` declared only at `:root` would carry the root's
+resolved primary into a scope with its own palette.
+
+**See it:** the product site renders the whole contract on one page under
+each of five boot-registered themes, `/examples/headless/{theme}/landing`:
+`default` (comfortable · filled · round), `dense` (compact · outline ·
+square), `soft` (soft · pill, violet), `editorial` (filled · square, a
+serif face) and `contrast` (outline · pill, 7:1 pairs), each with its own
+dark palette. The page carries a theme switcher, the same palette under
+two option sets, an A → B → A nest, and the browser proofs that read the
+computed values (`examples/site/e2e_headless_landing_test.go`,
+`examples/site/e2e_headless_themes_test.go`).
+
+The `fui-` prefix is reserved for `framework/ui`'s class names and
+option variables. Writing `fui-button` on your own markup gets the
+framework's styling whenever that sheet is on the page. Headless has
+its own prefix: the `data-hui-*` hooks belong to `framework/headless`.
+
 ## Token map: `ThemeToTokens` / `ApplyTokens`
 
 Two surfaces need to move tokens in and out of a `style.Theme` as a flat
@@ -335,25 +706,25 @@ hash := host.RegisterThemeVariant(brand) // framework/uihost.UIHost
 ## Per-component knobs: the `--ui-*` variables
 
 Some components expose dimensions or accents that aren't global
-tokens: a container's max width, a doc layout's rail width, a code
-block's scroll max height. These are exposed as
-`--ui-<component>-<knob>` variables with built-in fallbacks, so a host
-can override them from its own stylesheet without forking the
-component:
+tokens: a gallery's column count, a markdown block's reading measure.
+These are exposed as `--ui-<component>-<knob>` variables with
+built-in fallbacks, so a host can override them from its own
+stylesheet without forking the component:
 
 ```css
 /* app.css or a style.Contribute block */
-:root { --ui-container-wide: 1240px; }
+:root { --ui-markdown-measure: 68ch; }
 ```
+
+A dimension every page shares is a theme token instead: the page
+column, its gutter, the header height and `ui.Container`'s caps live
+in `Theme.Layout` (`t.Layout.WideWidth.Value = "1240px"`).
 
 You can also scope them: set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each
 component's source lists its knobs next to the CSS that reads them
-(for example `ui.Container`: `--ui-container-default/narrow/wide`;
-`ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`; the layout
-shells: `--ui-layout-container-width/gutter/header-height`, read by
-`app.LayoutBaseCSS`); grep `framework/ui` and `core-ui/app` for
-`--ui-` to see the full list.
+(for example `ui.Container`: `--ui-container-pad-start/end`); grep `framework/ui`
+and `core-ui/app` for `--ui-` to see the full list.
 
 ## Why you can't just override component CSS
 
@@ -363,7 +734,7 @@ first and `/__gofastr/app.css` after it. But a component's CSS can
 load lazily, after hydration, when it first shows up in an island
 response, a widget, or an SPA navigation; then its `<link>` gets appended
 to the end of `<head>`, after `app.css`. So a site rule with the same
-specificity as a component's internal rule (`.ui-button { background:
+specificity as a component's internal rule (`.fui-button { background:
 … }`) wins on one page and silently loses on another, depending on how
 that component's stylesheet arrived. Reaching for `!important` or a
 higher-specificity selector "fixes" it today and breaks again the next
@@ -411,3 +782,19 @@ its internals from the outside.
   "works," but dark mode and every other consumer of that token never
   see it. For a one-section reskin, use `ui.Themed` plus a registered
   override theme instead.
+- **Writing `fui-` classes on your own markup.** The prefix belongs
+  to `framework/ui`; a hand-written `fui-button` picks up the
+  framework's styling whenever that stylesheet is loaded, today or
+  after any release. Style your own markup with your own classes.
+- **Redeclaring an option variable on a component.** A rule like
+  `.my-button { --fui-button-radius: 0; }` blocks inheritance, so the
+  component stops following the enclosing `ui.Themed` scope. Options
+  are declared at theme boundaries (`theme.Overrides.Components`) and
+  consumed by component rules; that is the whole contract.
+- **Expecting a scope without a dark palette to follow dark mode.** It
+  stays light, on purpose: its light declarations block inheritance.
+  Give the override `DarkColors` if the section should flip with the
+  page.
+- **Confusing Variant with Treatment.** `ui.ButtonPrimary` is what the
+  button means; `theme.Outline` is how the theme draws it. A variant
+  is a per-component prop; a treatment is a theme-wide option.

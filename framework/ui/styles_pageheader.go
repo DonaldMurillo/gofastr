@@ -30,14 +30,21 @@ func pageHeaderCSS(t style.Theme) string {
 			"border-bottom", "1px solid var(--color-border, #E4E4E7)",
 		).
 		End().
-		Rule(".ui-page-header__text").
+		Rule(".fui-page-header__text").
 		Set("display", "grid", "gap", "var(--spacing-xs, 2px)").
 		End().
-		Rule(".ui-page-header__eyebrow").
+		Rule(".fui-page-header__title-row").
+		Set("display", "flex", "flex-wrap", "wrap", "align-items", "center",
+			"gap", "var(--spacing-md, 8px)", "min-inline-size", "0").
+		End().
+		Rule(".fui-page-header__title-row > .fui-page-header__title").
+		Set("min-inline-size", "0", "overflow-wrap", "anywhere").
+		End().
+		Rule(".fui-page-header__eyebrow").
 		Set(
 			"margin", "0",
 			"font-size", "var(--text-xs, 0.75rem)",
-			"font-weight", "600",
+			"font-weight", "{font-weight.semibold}",
 			"text-transform", "uppercase",
 			"letter-spacing", "0.06em",
 			"color", "var(--color-text-subtle, #71717A)",
@@ -46,25 +53,31 @@ func pageHeaderCSS(t style.Theme) string {
 		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host
 		// scale titles to editorial display type app-wide without
 		// restyling the component's internals.
-		Rule(".ui-page-header__title").
+		Rule(".fui-page-header__title").
 		Set(
 			"margin", "0",
 			"font-size", "var(--ui-page-header-title-size, var(--text-2xl, 1.5rem))",
-			"font-weight", "700",
+			"font-weight", "{font-weight.bold}",
 			"line-height", "var(--ui-page-header-title-leading, 1.25)",
 			"letter-spacing", "var(--ui-page-header-title-tracking, normal)",
 			"color", "var(--color-text, #18181B)",
 		).
 		End().
-		Rule(".ui-page-header__subtitle").
+		Rule(".fui-page-header__subtitle").
 		Set("margin", "0", "color", "var(--color-text-muted, #52525B)").
 		End().
-		Rule(".ui-page-header__actions").
+		Rule(".fui-page-header__actions").
 		Set(
 			"display", "flex",
 			"flex-wrap", "wrap",
 			"gap", "var(--spacing-sm, 4px)",
 		).
+		End().
+		Rule("&.fui-page-header--compact").
+		Set("padding", "0", "border-bottom", "0").
+		End().
+		Rule("&.fui-page-header--compact h2.fui-page-header__title").
+		Set("font-size", "var(--text-lg)", "line-height", "1.3").
 		End().
 		MustBuild()
 }

@@ -16,10 +16,15 @@ type stubSource struct {
 	rows       []map[string]any
 	countCalls []crud.ListOptions
 	listCalls  []crud.ListOptions
+	// countErr, when set, is what CountAll returns beside a zero count.
+	countErr error
 }
 
 func (s *stubSource) CountAll(_ context.Context, opts crud.ListOptions) (int, error) {
 	s.countCalls = append(s.countCalls, opts)
+	if s.countErr != nil {
+		return 0, s.countErr
+	}
 	return len(s.rows), nil
 }
 
@@ -106,8 +111,12 @@ func TestConfigListPassesURLQueryToDataSource(t *testing.T) {
 		t.Fatalf("ListAll calls = %d, want 1", len(source.listCalls))
 	}
 	opts := source.listCalls[0]
-	if opts.Limit != 10 || opts.Offset != 10 {
-		t.Errorf("paging options = limit %d offset %d, want 10/10", opts.Limit, opts.Offset)
+	// The stub holds one row, so the run is one page at size 10: the
+	// requested ?p=2 is out of range and the screen clamps it to the
+	// last real page (page 1) before fetching — offset 0, never the
+	// empty window offset 10 would fetch.
+	if opts.Limit != 10 || opts.Offset != 0 {
+		t.Errorf("paging options = limit %d offset %d, want 10/0 (p=2 clamped to the one-page run)", opts.Limit, opts.Offset)
 	}
 	if len(opts.Sorts) != 1 || opts.Sorts[0].Field != "amount" || !opts.Sorts[0].Desc {
 		t.Errorf("sort options = %#v, want amount desc", opts.Sorts)
@@ -196,4 +205,56 @@ func TestFormatHelpers(t *testing.T) {
 	if !strings.Contains(string(h), "Past Due") {
 		t.Fatalf("enum format missing label: %s", h)
 	}
+}
+
+// relationSelect walks the labels map, and a map's iteration order is
+// randomized per run — the options it writes must not be. The order is
+// sorted by value (the mapwriter rule), and two renders of the same
+// relation are byte-identical.
+func TestRelationSelectOptionsAreDeterministic(t *testing.T) {
+	labels := map[string]string{
+		"c-3": "Cain", "c-1": "Ada Lovelace", "c-5": "Edsger Dijkstra",
+		"c-2": "Grace Hopper", "c-6": "Blaise Pascal", "c-4": "Alan Turing",
+	}
+	cfg := Config{}
+	first := string(cfg.relationSelect(Field{Key: "customer_id", Label: "Customer"}, "f-customer_id", labels, "c-2"))
+	second := string(cfg.relationSelect(Field{Key: "customer_id", Label: "Customer"}, "f-customer_id", labels, "c-2"))
+	if first != second {
+		t.Fatalf("two renders of the same relation differ:\n%s\n---\n%s", first, second)
+	}
+	// The order is not merely stable, it is sorted: assert the
+	// <option> value sequence directly.
+	want := []string{"", "c-1", "c-2", "c-3", "c-4", "c-5", "c-6"}
+	got := []string{}
+	for _, seg := range strings.Split(first, "<option ") {
+		if v := betweenAttr(seg, "value"); v != "" || len(got) == 0 {
+			got = append(got, v)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("option count = %d, want %d:\n%s", len(got), len(want), first)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("option %d = %q, want %q (sorted by value):\n%s", i, got[i], want[i], first)
+		}
+	}
+	// The current value stays selected wherever it sits in the order.
+	if !strings.Contains(first, `selected="" value="c-2"`) {
+		t.Errorf("the current relation is not marked selected:\n%s", first)
+	}
+}
+
+// betweenAttr pulls attr="…" out of an <option …-shaped segment.
+func betweenAttr(seg, attr string) string {
+	needle := attr + `="`
+	i := strings.Index(seg, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := seg[i+len(needle):]
+	if j := strings.IndexByte(rest, '"'); j >= 0 {
+		return rest[:j]
+	}
+	return ""
 }

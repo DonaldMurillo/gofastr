@@ -201,10 +201,13 @@ func TestE2E_IdleFallbackUsesRIC(t *testing.T) {
             if (window.__gofastr.loadedModules) {
                 delete window.__gofastr.loadedModules['sse'];
             }
-            if (!document.querySelector('meta[name="gofastr-sse"]')) {
-                const m = document.createElement('meta');
-                m.setAttribute('name', 'gofastr-sse');
-                document.head.appendChild(m);
+            // The sse module loads on a PUSH TARGET (an island region
+            // or the offline banner), not on the availability meta:
+            // inject one so the scan has something to find.
+            if (!document.querySelector('[data-island]')) {
+                const d = document.createElement('div');
+                d.setAttribute('data-island', 'ric-probe');
+                document.body.appendChild(d);
             }
 
             // Dispatch the navigate event that drives _scanForModules

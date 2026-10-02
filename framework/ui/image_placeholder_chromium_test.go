@@ -64,8 +64,8 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 		chromedp.Sleep(2500*time.Millisecond),
 		// Read the colour actually composited at the middle of the image box.
 		chromedp.Evaluate(`(() => {
-			const lqip = document.querySelector('.ui-image__lqip');
-			const real = document.querySelector('.ui-image__img');
+			const lqip = document.querySelector('.fui-image__lqip');
+			const real = document.querySelector('.fui-image__img');
 			if (!lqip) return "NO-LQIP";
 			if (!real) return "NO-IMG";
 			const lr = lqip.getBoundingClientRect();
@@ -91,9 +91,9 @@ func TestPlaceholderPaintsWhileSourceIsPending(t *testing.T) {
 	t.Logf("boxes: %s", pixel)
 	switch {
 	case pixel == "NO-LQIP":
-		t.Fatal("no .ui-image__lqip element rendered — the placeholder never reached the DOM")
+		t.Fatal("no .fui-image__lqip element rendered — the placeholder never reached the DOM")
 	case pixel == "NO-IMG":
-		t.Fatal("no .ui-image__img element rendered")
+		t.Fatal("no .fui-image__img element rendered")
 	case strings.HasPrefix(pixel, "HIDDEN"):
 		t.Fatalf("the placeholder is in the DOM but not painted (%s) — "+
 			"a user on a slow connection sees nothing", pixel)

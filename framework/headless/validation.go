@@ -73,7 +73,7 @@ type ValidationSummaryProps struct {
 //
 // Rendering it with no errors renders nothing: an empty "there is a
 // problem" box that announces itself is a lie that interrupts.
-func ValidationSummary(p ValidationSummaryProps, s Skin) render.HTML {
+func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
 		panic("headless: ValidationSummary requires ID — two summaries on one page would share one title id, breaking both labels")
@@ -112,14 +112,16 @@ func ValidationSummary(p ValidationSummaryProps, s Skin) render.HTML {
 
 	return b.El("div", PartRoot, own,
 		b.El(headingTag(p.Level), PartTitle,
-			Attrs(map[string]string{"id": titleIDFor(p.ID)}),
+			Internal(Attrs(map[string]string{"id": titleIDFor(p.ID)})),
 			render.Text(orDefault(p.Title, p.Strings.Resolve().ThereIsAProblem))),
-		b.El("ul", PartErrorList, nil, items...),
+		// Every error is built from FieldError's strings, never from
+		// caller markup, so the whole list is the component's own.
+		b.El("ul", PartErrorList, Internal(nil), items...),
 	)
 }
 
 // titleIDFor names the heading the summary is labelled by. The
-// fallback prefix is structural, not the skin's class namespace: this
+// fallback prefix is structural, not the class map's namespace: this
 // layer does not know what anyone calls their classes. The ID is
 // required, so the name is always the summary's own.
 func titleIDFor(id string) string {
@@ -133,6 +135,8 @@ const (
 	PartTimelineItem Part = "timeline-item"
 	PartTimelineMark Part = "timeline-mark"
 	PartTimelineTime Part = "timeline-time"
+	PartTimelineHead Part = "timeline-head"
+	PartTimelineMeta Part = "timeline-meta"
 	PartTimelineBody Part = "timeline-body"
 )
 
@@ -148,8 +152,13 @@ type Event struct {
 	// RFC 3339. Without it "3 days ago" is a string no assistive tech,
 	// translation layer or scraper can resolve to a moment.
 	Machine string
-	// Tone lets the skin colour the marker — "success", "danger".
+	// Tone lets the class map colour the marker — "success", "danger".
 	Tone string
+	// Meta is the secondary line beside the title — an actor, a
+	// relative time ("by dom", "2h ago") — in the header row, read
+	// after the title it qualifies. When is the timestamp contract;
+	// Meta is a caption with no machine form.
+	Meta string
 	// Body is extra markup under the detail: a log excerpt, actions.
 	Body render.HTML
 }
@@ -162,6 +171,9 @@ type TimelineProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the list and every part it draws.
+	Parts Parts
 }
 
 // Timeline renders the events as an ordered list.
@@ -174,22 +186,25 @@ type TimelineProps struct {
 // The dots and the connecting line are aria-hidden. They are a picture
 // of the ordering that the list already states, and announcing them
 // would mean hearing "bullet" before every entry.
-func Timeline(p TimelineProps, s Skin) render.HTML {
+func Timeline(p TimelineProps, s Classes) render.HTML {
 	if len(p.Events) == 0 {
 		panic("headless: Timeline requires at least one event")
 	}
+	b := p.Parts.Box(s)
 	items := make([]render.HTML, 0, len(p.Events))
 	for _, e := range p.Events {
 		if e.Title == "" {
 			panic("headless: Event requires Title")
 		}
 		kids := make([]render.HTML, 0, 4)
-		markAttrs := Attrs(map[string]string{"aria-hidden": "true"})
-		part := PartTimelineMark
-		if e.Tone != "" {
-			part = Part(string(PartTimelineMark) + "--" + e.Tone)
+		markAttrs := internalIf(e.Body != "", Attrs(map[string]string{"aria-hidden": "true"}))
+		// Tone reaches the class map as the mark's variant, joined to
+		// the mark's own class the way Alert's tone joins its root: a
+		// tinted dot is still a dot.
+		if cls := s.Variant(PartTimelineMark, e.Tone); cls != "" {
+			markAttrs["class"] = cls
 		}
-		kids = append(kids, El("span", s, part, markAttrs, render.HTML("")))
+		kids = append(kids, b.El("span", PartTimelineMark, markAttrs, render.HTML("")))
 
 		body := make([]render.HTML, 0, 4)
 		if e.When != "" {
@@ -201,39 +216,51 @@ func Timeline(p TimelineProps, s Skin) render.HTML {
 				if _, err := time.Parse(time.RFC3339, e.Machine); err != nil {
 					panic("headless: Event Machine must be an RFC 3339 timestamp, not " + strconv.Quote(e.Machine))
 				}
-				body = append(body, El("time", s, PartTimelineTime,
-					Attrs(map[string]string{"datetime": e.Machine}), render.Text(e.When)))
+				body = append(body, b.El("time", PartTimelineTime,
+					internalIf(e.Body != "", Attrs(map[string]string{"datetime": e.Machine})), render.Text(e.When)))
 			} else {
-				body = append(body, El("span", s, PartTimelineTime, nil, render.Text(e.When)))
+				body = append(body, b.El("span", PartTimelineTime, internalIf(e.Body != "", nil), render.Text(e.When)))
 			}
 		}
-		body = append(body, El("p", s, PartTitle, nil, render.Text(e.Title)))
+		// The title is marked by the header row when there is one.
+		body = append(body, b.El("p", PartTitle, internalIf(e.Body != "" && e.Meta == "", nil), render.Text(e.Title)))
+		if e.Meta != "" {
+			// The meta line and the title share a header row: the meta
+			// qualifies the title, and DOM order keeps the title first
+			// for a reader who hears the event before its attribution.
+			headRow := body[len(body)-1]
+			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(e.Body != "", nil),
+				headRow,
+				b.El("span", PartTimelineMeta, nil, render.Text(e.Meta)))
+		}
 		if e.Detail != "" {
-			body = append(body, El("p", s, PartDesc, nil, render.Text(e.Detail)))
+			body = append(body, b.El("p", PartDesc, internalIf(e.Body != "", nil), render.Text(e.Detail)))
 		}
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
-		kids = append(kids, El("div", s, PartTimelineBody, nil, body...))
-		items = append(items, El("li", s, PartTimelineItem, nil, kids...))
+		// A caller's Body makes the item a slot ancestor; without one
+		// the whole item is the component's own.
+		kids = append(kids, b.El("div", PartTimelineBody, nil, body...))
+		items = append(items, b.El("li", PartTimelineItem, internalIf(e.Body == "", nil), kids...))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
 		"id": p.ID, "aria-label": p.Label,
 	}))
-	return El("ol", s, PartRoot, own, items...)
+	return b.El("ol", PartRoot, own, items...)
 }
 
 func init() {
 	Register(Spec{
 		Name:    "ValidationSummary",
 		Anatomy: []Part{PartRoot, PartTitle, PartErrorList, PartErrorItem, PartErrorLink},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return ValidationSummary(ValidationSummaryProps{ID: "errors",
 				Errors: []FieldError{{For: "name", Message: "Enter an app name."}},
 				Parts:  parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "after a failed submit",
 				Why:  "it interrupts and can take focus, and every error is a link to the field it is about — a list of complaints you cannot navigate to is a list you have to hunt through",
@@ -269,9 +296,12 @@ func init() {
 
 	Register(Spec{
 		Name:    "Timeline",
-		Anatomy: []Part{PartRoot, PartTimelineItem, PartTimelineMark, PartTimelineTime, PartTimelineBody, PartTitle, PartDesc},
+		Anatomy: []Part{PartRoot, PartTimelineItem, PartTimelineMark, PartTimelineTime, PartTimelineHead, PartTimelineMeta, PartTimelineBody, PartTitle, PartDesc},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Timeline(TimelineProps{Events: []Event{{Title: "Deployed"}}, Parts: parts}, s)
+		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "history",
 				Why:  "an event with no tone is the ordinary case and draws an untinted marker; ordered, because the order is the content: a screen reader announces the count and the position, so \"3 of 7\" locates you in the history without seeing the line down the left",
@@ -281,6 +311,12 @@ func init() {
 					{Title: "Build failed", Detail: "Exit 1 in the test stage.", When: "4 days ago",
 						Machine: "2026-09-07T09:12:00Z", Tone: "danger"},
 					{Title: "Configuration changed", When: "5 days ago", Machine: "2026-09-06T16:40:00Z"},
+				}}, s),
+			}, {
+				Name: "attributed",
+				Why:  "the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution",
+				HTML: Timeline(TimelineProps{Label: "Audit log", Events: []Event{
+					{Title: "Role granted", Meta: "by dom", Detail: "admin, on the api app."},
 				}}, s),
 			}}
 		},

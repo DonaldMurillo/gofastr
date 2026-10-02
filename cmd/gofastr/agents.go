@@ -396,8 +396,8 @@ than approximating its shape with Box/Card/Stack. For a dominant record or
 operational state, start with RecordSummary + MetricBand, keep actions in an
 Actions slot or Cluster, and do not repeat the same state in a Banner. Keep a
 RecordSummary description to one or two sentences; use its compact Aside for
-supporting owner/presence context and MetricBand hints for trends. Use
-SiteHeader.MobileBrand for a long phone identity. On wide detail routes, pair
+supporting owner/presence context and MetricBand hints for trends. Give a long
+product name a short phone wordmark in the app's header package. On wide detail routes, pair
 related bounded modules such as DetailLists in Grid rather than leaving a
 narrow stacked column beside an accidental empty rail; reflow the pair on
 phones. Cluster wraps whole controls by default; reserve ClusterConfig.NoWrap

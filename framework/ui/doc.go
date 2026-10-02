@@ -38,8 +38,9 @@
 //	BackToTop:            fixed scroll-to-top affordance after a threshold
 //	Banner:               page-level persistent status strip (dismissible)
 //	BarChart:             categorical SVG bar chart
+//	Breadcrumbs:         labelled nav trail ending at the current page
 //	Box:                  padded/bordered layout box
-//	Button:               primary/secondary/danger/ghost variants
+//	Button:               primary/secondary/danger/ghost variants, Disabled, Action wiring seam
 //	Callout:              inline info/warning/danger/neutral block
 //	Card:                 labelled <section> with header/body/footer
 //	Carousel:             horizontal scroll-snap slider
@@ -48,15 +49,16 @@
 //	CheckboxGroup:        <fieldset> of checkboxes with shared label + errors
 //	Cluster:              horizontal layout that wraps by default (NoWrap opts out)
 //	CodeBlock:            styled <pre><code> sample block
+//	Combobox:            input owning a listbox of suggestions (static or island-backed)
 //	CodeTabs:             one snippet in several languages behind a zero-JS tab strip
 //	Collapsible:          styled <details> disclosure with summary
 //	ColorField:           colour swatch beside a text input, one control
 //	ColorPicker:          styled native <input type=color>
 //	CommandPalette:       ⌘K modal + combobox composition
-//	ConditionalField:     form section hidden until another field matches
-//	ConditionalFieldVisible: inverse: visible until the field matches
+//	ConditionalField:     form region visible until the watched field mismatches (the runtime hides it)
 //	ConfirmAction:        trigger + themed alertdialog modal pair
 //	Container:            max-width page wrapper with breakpoint padding
+//	ContentRow:           nav column + main + optional context aside row
 //	CopyButton:           clipboard button with SR-announced confirmation
 //	Counter:              signal-driven counter with +/− buttons
 //	DataTable:            sortable/paginated table (island-friendly)
@@ -64,7 +66,6 @@
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise
-//	DocLayout:            doc page skeleton (nav rail + article + pager)
 //	EmptyState:           title/description/action block for no-data screens
 //	FactBox:              labelled tile (label-first OR value-first KPI)
 //	FileDropzone:         hero file-drop surface with image previews
@@ -86,9 +87,12 @@
 //	LineChart:            multi-series SVG time-series chart
 //	Link:                 typed-variant anchor with unsafe-href sanitizing
 //	LinkButton:            anchor styled as Button, for CTAs that navigate
+//	ListDetail:           kept scrollable list beside routed detail, stacked on phones
+//	ListDetailPlaceholder: unselected detail for a single-pane phone list/detail view
 //	Markdown:             themed wrapper over core/markdown
 //	Menu:                 <details>-driven dropdown menu (keyboard + ARIA; submenus, radio rows)
 //	MetricBand:           compact semantic band of one to six related signals
+//	MultiSelect:          checkbox-group disclosure with a chips summary
 //	Muted:                subdued inline <span> for secondary text
 //	NetworkRetryBanner:   RPC-failure banner with health-probe retry
 //	Notification:         toast-styled inline notification (variant + dismiss)
@@ -101,12 +105,14 @@
 //	Workbench:            scrolling rail beside a filling pane (inspector shell)
 //	PaneHost:             primary pane + openable secondary/tertiary side panes
 //	PasswordInput:        password field with show/hide toggle
+//	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage:        multi-format <picture> consuming framework/image
 //	                       VariantSet output (typed sources + a stacked
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing
 //	PricingCard:          plan tile with price + feature list + CTA
+//	Progress:             native <progress> bar, determinate or indeterminate
 //	ProgressSteps:        linear step indicator (horizontal + vertical)
 //	Radio:                labelled radio with FieldErrors wiring
 //	RadioGroup:           <fieldset> of radios with shared label + errors
@@ -122,16 +128,19 @@
 //	ShortcutHint:         OS-aware keyboard chord chips
 //	Sidebar:              responsive primary navigation (inline/drawer)
 //	SidebarBody:          nav content only, for a mirroring drawer slot
+//	SidebarDrawerTrigger: the drawer hamburger standalone, for host chrome
 //	SignalToggle:         role=switch bound to a boolean signal
 //	SignOut:              logout form POSTing the auth sign-out endpoint
-//	SiteFooter:           multi-column footer grid + bottom strip
-//	SiteHeader:           top bar with brand + nav + actions + mobile drawer
 //	SkeletonAvatar:       circular shimmer placeholder
 //	SkeletonCard:         card-shaped shimmer placeholder
 //	SkeletonRow:          row-shaped shimmer placeholder
+//	SkeletonLine:         one short shimmer bar (a trail, a one-line label)
+//	SkeletonTimeline:     event-row shimmer placeholder (dot + lines)
 //	SkipLink:             focus-visible bypass link to main content
 //	Slider:               <input type=range> with optional live value mirror
 //	Sparkline:            pure-SVG inline trend chart
+//	SortableList:         drag + keyboard reorderable list with server-authoritative commit
+//	SortableListItems:    the rows-only fragment a 409 reconciliation returns
 //	Spinner:              inline role="status" loading indicator
 //	Stack:                vertical layout with gap
 //	StatCard:             metric tile with label/value/trend
@@ -140,13 +149,14 @@
 //	StepRail:             sticky numbered nav for multi-step pages
 //	StepWizard:           multi-step form with a progress indicator bar
 //	Sticky:               theme-token sticky wrapper (top/bottom pinning)
-//	Switch:               iOS-style toggle (Checkbox variant)
+//	Switch:               iOS-style toggle switch with role=switch
 //	TableOfContents:      auto-built sticky nav from <h2>/<h3>
 //	Tabs:                 signal-driven tab strip
 //	Tag:                  interactive pill (filter link or × dismiss)
 //	TagInput:             free-form chips, Enter/comma to commit
 //	TerminalBlock:        terminal transcript with a labelled header
 //	TextArea:             multi-line input with typed Autogrow
+//	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
@@ -155,6 +165,7 @@
 //	ToggleAction:         three-state commit/untoggle button with mutex groups
 //	Toolbar:              role=toolbar wrapper for grouped actions
 //	Tooltip:              CSS-only hover/focus reveal
+//	Tree:                 WAI-ARIA treeview (roving tabindex, lazy branches)
 //	ValidationSummary:    inline summary of form validation errors
 //
 // Layout primitives (Stack, Cluster, Grid, Center, Spacer, Box) share

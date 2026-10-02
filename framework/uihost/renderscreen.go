@@ -3,9 +3,12 @@ package uihost
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/store"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // ScreenResponse names the response-wide HTTP semantics for
@@ -19,9 +22,12 @@ type ScreenResponse struct {
 	// than panicking inside net/http.
 	Status int
 
-	// CacheControl overrides the default "private, no-store".
-	// Recovery pages are per-user; only set something else with a
-	// reason.
+	// CacheControl overrides the default "private, no-store" on the
+	// bare arm (a client navigation's partial body). The full document
+	// always answers no-store with Vary: Cookie, because it carries the
+	// session chrome and may carry a Set-Cookie; this field does not
+	// change it. Recovery pages are per-user; only set something else
+	// with a reason.
 	CacheControl string
 }
 
@@ -52,11 +58,11 @@ const screenCacheControlDefault = "private, no-store"
 // host's WithNotFoundScreen 404 stays truthful because RenderScreen is
 // only reached when a guard chose to answer.
 //
-// Full and partial (X-Gofastr-Navigate) requests get the same status
-// and cache policy. The partial arm carries the bare component body:
-// the runtime surfaces a non-2xx partial as a navigation error and
-// stays on the current page, while a full load renders the branded
-// page. Neither arm mints a session or sets a cookie.
+// Full and partial (X-Gofastr-Navigate) requests get the same status.
+// The partial arm carries the bare component body under the caller's
+// cache policy and mints nothing; the full arm finishes through the
+// same tail every page runs (finishPageDocument): verify-or-mint the
+// session, no-store + Vary: Cookie, chrome, seed, widget SSR.
 func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp component.Component, resp ScreenResponse) {
 	status := resp.Status
 	if status == 0 {
@@ -81,7 +87,8 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		return
 	}
 
-	body, err := component.SafeRenderCtx(r.Context(), comp)
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	body, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		w.Header().Set("Cache-Control", cacheControl)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -103,7 +110,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 
 	if ds.App != nil && ds.App.Router != nil {
 		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.Wrap(body)
+			body = layout.WrapCtx(r.Context(), body)
 		}
 	}
 	appName := "GoFastr"
@@ -117,10 +124,18 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	// Same convention as the page pipeline: "<page> — <app>".
 	if t, ok := comp.(app.ScreenTitler); ok {
 		if name := t.ScreenTitle(); name != "" {
-			title = name + " — " + appName
+			title = name
+			if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
+				title += suffix
+			}
 		}
 	}
-	page := ds.injectChrome(ds.documentShell(r.URL.Path, title, string(body)), r.URL.Path, "", "")
-	w.WriteHeader(status)
-	fmt.Fprint(w, page)
+	// The full arm finishes through the same tail every page runs
+	// (finishPageDocument): session verify-or-mint with the id in the
+	// chrome, no-store + Vary: Cookie (overriding cacheControl — a
+	// document carrying per-user chrome and a session token must never
+	// enter a shared cache), signal seed, widget SSR. The partial arm
+	// above keeps its bare cache policy and mints nothing.
+	ds.finishPageDocument(w, r, ctx,
+		render.HTML(ds.documentShell(r.URL.Path, title, string(body))), r.URL.Path, comp, status)
 }

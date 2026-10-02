@@ -16,12 +16,15 @@ package main
 import (
 	"errors"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -74,6 +77,10 @@ func wizardDemoStore(v url.Values) {
 // POST → read wizard_action ("next" | "back") and _step (the step the form
 // was submitted from), clamp the next step into [0, len-1], and re-render. On
 // the final-step "next" the payload is recorded and a confirmation page shows.
+// wizardDemoStepCount is how many steps the demo has; the handler and
+// the completeness check read the same number.
+const wizardDemoStepCount = 3
+
 func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 	values := url.Values{}
 	action := ""
@@ -105,14 +112,39 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	totalSteps := 3
+	// The server owns validation (the form is novalidate), so the
+	// submitted step is validated before the flow advances or the
+	// confirmation renders: a blank or malformed value re-renders the
+	// same step with the field's error set and the summary populated.
+	errs := ui.FieldErrors{}
+	if r.Method == http.MethodPost && action == "next" {
+		errs = wizardDemoValidate(submittedStep, values)
+	}
+
+	totalSteps := wizardDemoStepCount
 	current := submittedStep
 
 	switch action {
 	case "next":
+		// A step that failed validation re-renders itself; the flow
+		// neither advances nor confirms on an invalid step.
+		if len(errs) > 0 {
+			current = submittedStep
+			break
+		}
 		// Final-step Next means Submit, capture and confirm. Guard against
 		// a stale POST with _step=last pushing past the last index.
 		if submittedStep >= totalSteps-1 {
+			// The step number came from the client, so a post of the
+			// final step carrying only the final field would otherwise
+			// confirm having skipped the name and the email. Every
+			// required field is checked here, and a failure sends the
+			// reader to the first step that is wrong.
+			if all, badStep := wizardDemoComplete(values); len(all) > 0 {
+				errs = all
+				current = badStep
+				break
+			}
 			wizardDemoStore(values)
 			render.RespondHTML(w, wizardDemoConfirmation(values))
 			return
@@ -131,16 +163,69 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		current = totalSteps - 1
 	}
 
-	render.RespondHTML(w, wizardDemoPage(current, values))
+	render.RespondHTML(w, wizardDemoPage(current, values, errs))
 }
 
-func wizardDemoPage(current int, values url.Values) render.HTML {
+// wizardDemoValidate checks the fields visible on the given step and
+// returns the per-field errors. Steps past the wizard's range have no
+// visible fields to validate (their POST is clamped onto a real step
+// before rendering).
+//
+// It is not the whole story on a final submit: see wizardDemoComplete.
+// wizardDemoComplete validates every required field the wizard
+// collects, whatever step the client says it is on.
+//
+// The step number arrives in the request, so a client can post the
+// FINAL step with only the final step's field and skip the ones
+// before it. Validating the submitted step alone trusts that number;
+// this is the check that does not. A field that fails here belongs to
+// an earlier step, so the answer sends the reader back to the first
+// step that is wrong rather than confirming or re-rendering a step
+// whose own fields are fine.
+func wizardDemoComplete(values url.Values) (ui.FieldErrors, int) {
+	for step := range wizardDemoStepCount {
+		if errs := wizardDemoValidate(step, values); len(errs) > 0 {
+			return errs, step
+		}
+	}
+	return ui.FieldErrors{}, 0
+}
+
+func wizardDemoValidate(step int, values url.Values) ui.FieldErrors {
+	errs := ui.FieldErrors{}
+	if step != 0 {
+		return errs
+	}
+	if strings.TrimSpace(values.Get("wd-name")) == "" {
+		errs["wd-name"] = "Your full name is required."
+	}
+	if v := strings.TrimSpace(values.Get("wd-email")); v == "" {
+		errs["wd-email"] = "Your email is required."
+	} else if _, err := mail.ParseAddress(v); err != nil {
+		errs["wd-email"] = "That email address does not look right."
+	}
+	return errs
+}
+
+func wizardDemoPage(current int, values url.Values, errs ui.FieldErrors) render.HTML {
 	wiz := ui.StepWizard(ui.StepWizardConfig{
 		Action:       wizardDemoPath,
 		Method:       "POST",
 		CurrentStep:  current,
 		HiddenFields: wizardDemoHiddenCarry(current, values),
-		Steps:        wizardDemoSteps(values),
+		Steps:        wizardDemoSteps(values, errs),
+		// The handler owns the step flow and answers every POST
+		// server-side, so the form is novalidate for the same reason
+		// the newsletter's is: a browser validation bubble on an
+		// untouched step would trap the flow the demo exists to show.
+		ExtraAttrs: html.Attrs{"novalidate": ""},
+		// The failed submit re-renders through the same summary and
+		// focus hook ui.Form uses; the control ids equal the field
+		// names, so the summary's links need no FieldIDs map.
+		ID:          "wd-form",
+		Errors:      errs,
+		FieldLabels: map[string]string{"wd-name": "Full name", "wd-email": "Email"},
+		FieldOrder:  []string{"wd-name", "wd-email"},
 	})
 
 	body := render.Tag("body", nil,
@@ -215,20 +300,7 @@ func wizardDemoHiddenCarry(current int, values url.Values) []render.HTML {
 	return out
 }
 
-func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
-	nameAttrs := html.Attrs{}
-	if v := values.Get("wd-name"); v != "" {
-		nameAttrs["value"] = v
-	}
-	emailAttrs := html.Attrs{}
-	if v := values.Get("wd-email"); v != "" {
-		emailAttrs["value"] = v
-	}
-	commentsAttrs := html.Attrs{}
-	if v := values.Get("wd-comments"); v != "" {
-		commentsAttrs["value"] = v
-	}
-
+func wizardDemoSteps(values url.Values, errs ui.FieldErrors) []ui.StepWizardStep {
 	themeLight := []ui.RadioGroupOption{
 		{Label: "Light", Value: "light"},
 		{Label: "Dark", Value: "dark"},
@@ -240,17 +312,17 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 			Heading:     "Personal info",
 			Description: "Your basic details.",
 			Fields: []render.HTML{
-				ui.FormField(ui.FormFieldConfig{
-					Label: "Full name", For: "wd-name", Required: true,
-					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-name", ID: "wd-name", ExtraAttrs: nameAttrs,
-					}),
+				ui.TextField(ui.TextFieldConfig{
+					Name: "wd-name", Label: "Full name", ID: "wd-name", Required: true,
+					Value: values.Get("wd-name"), Error: errs["wd-name"],
 				}),
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Email", For: "wd-email", Required: true,
-					Input: html.Input(html.InputConfig{
-						Type: "email", Name: "wd-email", ID: "wd-email", ExtraAttrs: emailAttrs,
-					}),
+					Error: errs["wd-email"],
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "wd-email",
+							Value: values.Get("wd-email")})
+					},
 				}),
 			},
 		},
@@ -265,11 +337,9 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 			Heading:     "Review",
 			Description: "Add a final comment.",
 			Fields: []render.HTML{
-				ui.FormField(ui.FormFieldConfig{
-					Label: "Comments", For: "wd-comments",
-					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-comments", ID: "wd-comments", ExtraAttrs: commentsAttrs,
-					}),
+				ui.TextField(ui.TextFieldConfig{
+					Name: "wd-comments", Label: "Comments", ID: "wd-comments",
+					Value: values.Get("wd-comments"),
 				}),
 			},
 		},

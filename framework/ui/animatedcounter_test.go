@@ -16,20 +16,20 @@ func TestAnimatedCounterSSRRendersFinalValue(t *testing.T) {
 
 func TestAnimatedCounterEmitsRuntimeMarkers(t *testing.T) {
 	h := string(AnimatedCounter(AnimatedCounterConfig{To: 99, From: 10, DurationMs: 800}))
-	if !strings.Contains(h, `data-fui-animated-counter="99"`) {
-		t.Errorf("expected data-fui-animated-counter=99:\n%s", h)
+	if !strings.Contains(h, `data-hui-counter-animate=""`) {
+		t.Errorf("expected the animate hook:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-animated-counter-from="10"`) {
-		t.Errorf("expected data-fui-animated-counter-from=10:\n%s", h)
+	if !strings.Contains(h, `data-hui-counter-from="10"`) {
+		t.Errorf("expected the count the animation starts from:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-animated-counter-ms="800"`) {
-		t.Errorf("expected data-fui-animated-counter-ms=800:\n%s", h)
+	if !strings.Contains(h, `data-hui-counter-ms="800"`) {
+		t.Errorf("expected the duration bound:\n%s", h)
 	}
 }
 
 func TestAnimatedCounterDurationDefaults(t *testing.T) {
 	h := string(AnimatedCounter(AnimatedCounterConfig{To: 1}))
-	if !strings.Contains(h, `data-fui-animated-counter-ms="1200"`) {
+	if !strings.Contains(h, `data-hui-counter-ms="1200"`) {
 		t.Errorf("expected default ms=1200:\n%s", h)
 	}
 }
@@ -38,24 +38,24 @@ func TestAnimatedCounterPrefixSuffix(t *testing.T) {
 	h := string(AnimatedCounter(AnimatedCounterConfig{
 		To: 100, Prefix: "$", Suffix: "+",
 	}))
-	if !strings.Contains(h, "ui-animated-counter__prefix") || !strings.Contains(h, "$") {
+	if !strings.Contains(h, "fui-animated-counter__prefix") || !strings.Contains(h, "$") {
 		t.Errorf("Prefix should render:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-animated-counter__suffix") || !strings.Contains(h, "+") {
+	if !strings.Contains(h, "fui-animated-counter__suffix") || !strings.Contains(h, "+") {
 		t.Errorf("Suffix should render:\n%s", h)
 	}
 }
 
 func TestAnimatedCounterExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := AnimatedCounter(AnimatedCounterConfig{To: 42, ExtraAttrs: map[string]string{
-		"data-test": "hook", "data-fui-animated-counter": "999", "Class": "evil",
+		"data-test": "hook", "data-hui-counter-from": "999", "Class": "evil",
 	}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
+	root := string(h)
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("root missing data-test:\n%s", root)
 	}
-	if !strings.Contains(root, `data-fui-animated-counter="42"`) {
-		t.Errorf("animation marker lost its framework value:\n%s", root)
+	if !strings.Contains(root, `data-hui-counter-from="0"`) {
+		t.Errorf("the animation's start value lost its framework value:\n%s", root)
 	}
 	for _, banned := range []string{"999", "evil"} {
 		if strings.Contains(root, banned) {

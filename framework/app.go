@@ -57,6 +57,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
 // Mountable is anything that can register routes on the framework's router.
@@ -1744,6 +1745,14 @@ func NewApp(opts ...AppOption) *App {
 		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger())
 		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
+
+	// Retired-markup check: in test binaries and `gofastr dev`, every
+	// response whose body is markup (pages, island RPC answers, widget
+	// chrome, JSON signal values) is scanned for names the upgrade
+	// registry retired. Installed independent of the default chain so
+	// WithoutDefaultMiddleware apps are covered; in production it hands
+	// the handler its writer untouched and never loads the registry.
+	a.router.Use(retired.Middleware(dev.Enabled))
 
 	// Propagate DB to registry and its entities
 	if a.DB != nil {

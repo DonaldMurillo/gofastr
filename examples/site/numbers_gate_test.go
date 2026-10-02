@@ -38,8 +38,12 @@ func TestNumbersStripRendersMeasuredValues(t *testing.T) {
 	// A sanity band, not the budget: core-ui/runtime/budget_test.go
 	// holds the kernel to its byte line (coreGoalGZ). This only proves
 	// the strip measured the kernel and not a whole bundle or nothing.
-	if kb < 5 || kb > 14 {
-		t.Errorf("measured runtime gzip = %.1f KB — outside the plausible 5–14 KB band; the kernel budget lives in core-ui/runtime/budget_test.go", kb)
+	// The band was raised 14 → 20 KB on 2026-09-26 (spike/layout-parts,
+	// parallel part requests replacing the stream reader): the kernel
+	// budget lines moved with measured numbers, and the band follows
+	// the measured artifact, not the other way round.
+	if kb < 5 || kb > 20 {
+		t.Errorf("measured runtime gzip = %.1f KB — outside the plausible 5–20 KB band; the kernel budget lives in core-ui/runtime/budget_test.go", kb)
 	}
 
 	count := embeddedDocCount()

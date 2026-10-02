@@ -29,6 +29,9 @@ func TestTokenNamesSortedAndComplete(t *testing.T) {
 	if !seen["radii-lg"] {
 		t.Errorf("radii-lg missing — the exact token issue #214's typo needed")
 	}
+	if !seen["color-danger-fg"] {
+		t.Errorf("color-danger-fg missing — the filled danger button's ink token must stay in the lint vocabulary")
+	}
 	if seen["radius-lg"] {
 		t.Errorf("radius-lg present — that is the issue #214 typo, not a token")
 	}

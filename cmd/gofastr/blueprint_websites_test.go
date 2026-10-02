@@ -118,12 +118,12 @@ func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 	if strings.Contains(screens, `"data-fui-rpc": "/api/items"`) {
 		t.Error("entity_form still emits a raw data-fui-rpc attribute map")
 	}
-	// Enum field renders <option> elements for its declared values.
-	if !strings.Contains(screens, `value=\"draft\"`) || !strings.Contains(screens, `value=\"published\"`) {
+	// Enum field renders typed SelectOptions for its declared values.
+	if !strings.Contains(screens, `Value: "draft"`) || !strings.Contains(screens, `Value: "published"`) {
 		t.Error("enum field did not render option elements")
 	}
-	// Relation field renders a select bound to its target entity.
-	if !strings.Contains(screens, `data-rel-entity=\"categories\"`) {
+	// Relation field renders a typed Select bound to its target entity.
+	if !strings.Contains(screens, `"data-rel-entity": "categories"`) {
 		t.Error("relation field did not render a target-bound select")
 	}
 }
@@ -209,7 +209,7 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 	if !strings.Contains(screens, "ui.AuthCard(") || !strings.Contains(screens, `Action: "/auth/login"`) {
 		t.Errorf("login_form did not render a ui.AuthCard form posting to /auth/login:\n%s", screens)
 	}
-	if !strings.Contains(screens, `name=\"email\"`) || !strings.Contains(screens, `name=\"password\"`) {
+	if !strings.Contains(screens, `Name: "email"`) || !strings.Contains(screens, `Name: "password"`) {
 		t.Error("login form missing email/password inputs")
 	}
 

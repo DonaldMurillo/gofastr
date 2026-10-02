@@ -1,0 +1,7 @@
+version: v0.26.0
+title: Technical SEO + enforced accessibility
+notes:
+  - change: gofastr build enforces the static accessibility lint
+    breaking: false
+    guidance: "Builds now fail on missing required a11y fields in core-ui/html element configs (Alt on images, Label on buttons/landmarks, Legend, For, …) with a guided fix hint per finding. Icon-only buttons with ExtraAttrs aria-label pass. Fix the findings (see gofastr docs accessibility) or skip once with --no-a11y."
+    nodetect: standing findings are a11y fields left unset in element configs — absent values have no spelling; the build output names each

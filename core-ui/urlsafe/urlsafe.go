@@ -4,7 +4,7 @@
 // It exists because the same ~40-line guard had been re-derived five times:
 // framework/ui.safeURL, framework/uihost.isSafeHeadURL,
 // framework/crud.isSafeMediaURL, framework/experimental/apiversions, and
-// core-ui/patterns/combobox.safePushHref, while core-ui/html, the layer
+// the retired core-ui/patterns/combobox.safePushHref, while core-ui/html, the layer
 // all of them render through, had none. Copies drift; a copy that does not
 // exist is worse. New URL sinks call this package rather than growing a
 // sixth copy.
@@ -165,8 +165,8 @@ func Clean(u string, p Policy) string {
 // CleanAnchor returns u when it is safe to render as an href / action /
 // formaction value (http(s), relative, fragment, mailto, tel) under the
 // Anchor policy, and "" otherwise. It is the one shared helper for anchor-
-// style URL sinks; framework/ui and the breadcrumbs, nestedlist and tree
-// patterns all delegate here instead of each re-wrapping Clean(u, Anchor).
+// style URL sinks; framework/ui and the framework/headless primitives
+// (breadcrumbs, tree and the rest) all delegate here instead of each re-wrapping Clean(u, Anchor).
 func CleanAnchor(u string) string {
 	return Clean(u, Anchor)
 }

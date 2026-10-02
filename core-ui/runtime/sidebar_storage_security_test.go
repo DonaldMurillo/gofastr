@@ -27,46 +27,9 @@ import (
 // covers the same namespace through a server-served page (including the
 // legacy migration on the /auto restore path).
 
-// TestSidebarStorageKeyIsEncoded: an injected sidebar root whose
-// data-fui-sidebar-storage names another feature's key must not be able to
-// write that key on collapse — and the toggle must still persist, inside
-// the sidebar's own namespace.
-func TestSidebarStorageKeyIsEncoded(t *testing.T) {
-	g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-
-	var foreign, namespaced string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(g.Srv.URL+"/"),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// Post-boot injection: the reachable shape for attribute injection
-		// (island swap / RPC innerHTML / SPA page merge).
-		chromedp.Evaluate(`document.getElementById('host').innerHTML =
-			'<div class="ui-sidebar ui-sidebar--collapsible" id="sbx" data-fui-sidebar ' +
-			'data-fui-sidebar-storage="gofastr.planted-by-attr">' +
-			'<button type="button" id="sbxc" data-fui-sidebar-collapse>Collapse</button></div>'; true`, nil),
-		// Wait for the demand-loaded sidebar module to wire (MutationObserver
-		// scan), then click the collapse button.
-		chromedp.Poll(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.sidebar)`, nil,
-			chromedp.WithPollingTimeout(8*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
-		chromedp.Click(`#sbxc`, chromedp.ByID),
-		chromedp.Sleep(300*time.Millisecond),
-		chromedp.Evaluate(`String(localStorage.getItem('gofastr.planted-by-attr'))`, &foreign),
-		chromedp.Evaluate(`String(localStorage.getItem('gofastr.sidebar-collapse.' + encodeURIComponent('gofastr.planted-by-attr')))`, &namespaced),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if foreign != "null" && foreign != "" {
-		t.Errorf("SECURITY: an attribute-borne data-fui-sidebar-storage value wrote "+
-			"localStorage['gofastr.planted-by-attr']=%q — the key must be namespaced and encoded "+
-			"so injected markup cannot clobber any localStorage key on the origin", foreign)
-	}
-	if namespaced != "true" {
-		t.Errorf("the collapse toggle must still persist inside the sidebar namespace: "+
-			"localStorage['gofastr.sidebar-collapse.gofastr.planted-by-attr']=%q, want \"true\"", namespaced)
-	}
-}
-
+// The sidebar storage-key encoding contract moved with the module:
+// framework/headless TestE2E_SidebarStorageKeyIsEncoded owns it now
+// (the spellings are data-hui-sidebar-*, the module headless-sidebar).
 // TestPersistStorageKeyIsEncoded: an injected input whose
 // data-fui-persist-storage names another feature's key must not be able to
 // write that key — and the draft must still persist, inside the persist

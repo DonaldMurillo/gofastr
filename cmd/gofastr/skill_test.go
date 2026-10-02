@@ -23,7 +23,7 @@ func TestEmbeddedHostSkillMatchesRepo(t *testing.T) {
 		"description to one or two sentences",
 		"`Aside` for owner/presence context",
 		"first useful phone viewport",
-		"SiteHeaderConfig.MobileBrand",
+		"gofastr generate package siteheader",
 		"ClusterConfig.NoWrap",
 		"Host apps ship zero bespoke CSS",
 	} {

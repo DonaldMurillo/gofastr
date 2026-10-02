@@ -157,7 +157,7 @@ func TestUIHost_RuntimeModuleCarriesNoSniffHeader(t *testing.T) {
 // resolveBaseURL derives the origin per request.
 func newAgentLinkHost(opts ...Option) *UIHost {
 	application := app.NewApp("AgentLinkSec")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	base := []Option{WithAgentReady(AgentReadyConfig{
 		AgentCard: &AgentCardConfig{Name: "X", MCPEndpoint: "/mcp"},
@@ -254,7 +254,7 @@ func TestDiscoveryURLsIgnoreForwardedProto(t *testing.T) {
 // WithPublicLLMMD (the only emitter that concatenates the request path).
 func TestLinkAlternatePathControlBytes(t *testing.T) {
 	application := app.NewApp("LinkPathSec")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/notes/{slug}", &plainComp{}).WithTitle("Notes"), nil)
 	host := New(application,
 		WithPublicLLMMD(),

@@ -47,7 +47,7 @@ const (
 
 // AlertProps is a message about something that happened, or is true.
 type AlertProps struct {
-	// Tone names the kind of message: the skin turns it into colour
+	// Tone names the kind of message: the class map turns it into colour
 	// through the root's "<part>--<tone>" variant. It is passed
 	// through, not interpreted; the tone word is what carries it to a
 	// reader.
@@ -67,6 +67,10 @@ type AlertProps struct {
 	Title string
 	// Text is the detail, in prose.
 	Text string
+	// Body is the detail as markup — a list, a code sample, nested
+	// content that is not an action. It renders after Text; prose
+	// belongs in Text, and actions in Actions.
+	Body render.HTML
 	// Icon is decorative. The tone word carries the meaning.
 	Icon render.HTML
 	// Actions are the controls: retry, view logs, dismiss.
@@ -109,10 +113,10 @@ type AlertProps struct {
 }
 
 // Alert renders the message.
-func Alert(p AlertProps, s Skin) render.HTML {
+func Alert(p AlertProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
-	if p.Title == "" {
-		panic("headless: Alert requires Title")
+	if p.Title == "" && p.Text == "" && p.Body == "" {
+		panic("headless: Alert requires Title, Text or Body — a coloured box that says nothing is decoration pretending to be a message")
 	}
 	own := Merge(Safe(p.ExtraAttrs, "role"), Attrs(map[string]string{"id": p.ID}))
 	if p.Focus {
@@ -131,6 +135,13 @@ func Alert(p AlertProps, s Skin) render.HTML {
 		own["class"] = cls
 	}
 
+	// The header holds the caller's icon when there is one, so the
+	// owned-style boundary sits on the title; with no icon the whole
+	// header is the component's own and the boundary moves up to it.
+	headOwn, titleOwn := html.Attrs(nil), Internal(nil)
+	if p.Icon == "" {
+		headOwn, titleOwn = Internal(nil), nil
+	}
 	head := make([]render.HTML, 0, 3)
 	if p.Icon != "" {
 		head = append(head, b.El("span", PartIcon,
@@ -144,12 +155,17 @@ func Alert(p AlertProps, s Skin) render.HTML {
 		// failed").
 		title = append(title, b.El("span", PartToneWord, nil, render.Text(p.ToneWord+": ")))
 	}
-	title = append(title, render.Text(p.Title))
-	head = append(head, b.El("p", PartTitle, nil, title...))
+	if p.Title != "" || p.ToneWord != "" {
+		title = append(title, render.Text(p.Title))
+		head = append(head, b.El("p", PartTitle, titleOwn, title...))
+	}
 
-	kids := []render.HTML{b.El("div", PartHeader, nil, head...)}
+	kids := []render.HTML{b.El("div", PartHeader, headOwn, head...)}
 	if p.Text != "" {
-		kids = append(kids, b.El("p", PartDesc, nil, render.Text(p.Text)))
+		kids = append(kids, b.El("p", PartDesc, Internal(nil), render.Text(p.Text)))
+	}
+	if p.Body != "" {
+		kids = append(kids, b.El("div", PartBody, nil, p.Body))
 	}
 	if p.Actions != "" {
 		kids = append(kids, b.El("div", PartFooter, nil, p.Actions))
@@ -168,7 +184,7 @@ func Alert(p AlertProps, s Skin) render.HTML {
 		// with it.
 		dismiss := Merge(Attrs(map[string]string{"href": p.DismissHref, "aria-label": label}),
 			p.Island.attrs(p.DismissHref, "GET"))
-		kids = append(kids, b.El("a", PartDismiss, dismiss, render.Text("×")))
+		kids = append(kids, b.El("a", PartDismiss, Internal(dismiss), render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)
 }
@@ -176,15 +192,15 @@ func Alert(p AlertProps, s Skin) render.HTML {
 func init() {
 	Register(Spec{
 		Name:    "Alert",
-		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartToneWord, PartTitle, PartDesc, PartFooter, PartDismiss},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartToneWord, PartTitle, PartDesc, PartBody, PartFooter, PartDismiss},
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Alert(AlertProps{Title: "Deploy failed", Text: "Exit 1 in the test stage.", Tone: "danger",
 				ToneWord: "Error", Icon: SpecimenGlyph, Actions: render.HTML("<a href=\"/logs\">View logs</a>"),
 				DismissHref: "/apps?dismiss=1", Island: Island{Endpoint: "/island/alerts", Signal: "alerts"},
 				Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "loud",
 				Why:  "something went wrong and the reader must be interrupted: assertive, with the tone said in words as well as drawn in colour",
@@ -204,6 +220,15 @@ func init() {
 				Why:  "the confirmation after a post-and-redirect — present at load, so the only reliable way to announce it is to put the reader on it",
 				HTML: Alert(AlertProps{Title: "App restarted", Focus: true, ID: "restarted"},
 					k.Variant("Alert", "success")),
+			}, {
+				Name: "with a body",
+				Why:  "the detail as markup: a persistent callout's contents are a list or a sample, and putting markup in the prose part would wrap it in a paragraph no validator allows",
+				HTML: Alert(AlertProps{Title: "Two apps need attention", Tone: "warning",
+					Body: render.HTML("<ul><li>blog: disk at 91%</li><li>wiki: 4 restarts overnight</li></ul>")}, s),
+			}, {
+				Name: "no headline",
+				Why:  "a message with no headline is still a message — the titleless shape is how a status line interrupts, and the refusal is saved for the box that says nothing at all",
+				HTML: Alert(AlertProps{Text: "Two apps need attention.", Tone: "warning", Live: LivePolite}, s),
 			}}
 		},
 	})
@@ -211,8 +236,14 @@ func init() {
 	Register(Spec{
 		Name:    "Button",
 		Anatomy: []Part{PartRoot, PartIcon},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			// Icon-only, so the fixture draws the icon part too: a
+			// class or an attribute a caller sets on either part has
+			// somewhere to land and the sweep can see it arrive.
+			return Button(ButtonProps{AriaLabel: "Close", Icon: SpecimenGlyph, Variant: "ghost", Parts: parts}, s)
+		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "labelled",
 				Why:  "the ordinary case, and the reason type is always stated: inside a form the default is submit",
@@ -225,6 +256,10 @@ func init() {
 				Name: "link that looks like a button",
 				Why:  "it navigates, so it is an anchor — a button that changes the URL is a button a middle click cannot open",
 				HTML: Button(ButtonProps{Label: "Read the docs", Variant: "primary", Href: "/docs"}, s),
+			}, {
+				Name: "off-site link",
+				Why:  "a link that leaves the site opens a new tab and severs the opener — target=_blank without the noopener rel hands the destination a window handle back",
+				HTML: Button(ButtonProps{Label: "Read the changelog", Variant: "primary", Href: "https://example.com/docs", External: true}, s),
 			}, {
 				Name: "disabled link",
 				Why:  "a disabled anchor is not a thing in HTML, so the href goes and aria-disabled says why, rather than leaving a live link that looks dead",

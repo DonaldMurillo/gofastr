@@ -6,23 +6,24 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	fwpagination "github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -157,15 +158,6 @@ func (c Config) sortable(k string) bool {
 	for _, f := range c.Fields {
 		if f.Key == k {
 			return !f.NoQuery
-		}
-	}
-	return false
-}
-
-func (c Config) hasField(k string) bool {
-	for _, f := range c.Fields {
-		if f.Key == k {
-			return true
 		}
 	}
 	return false
@@ -391,7 +383,7 @@ func (c Config) List(ctx context.Context) render.HTML {
 			body = append(body, tb)
 		}
 	}
-	table := c.table(ctx, total)
+	table := c.table(ctx, total, err == nil)
 	if c.IslandPath != "" {
 		// The island wrapper: sort/page RPC responses (the same Table HTML,
 		// served by TableHandler) replace this element's innerHTML.
@@ -411,10 +403,14 @@ func (c Config) Table(ctx context.Context) render.HTML {
 	if !c.canRead(ctx) {
 		return c.accessDenied()
 	}
-	return c.table(ctx, -1)
+	return c.table(ctx, -1, false)
 }
 
-func (c Config) table(ctx context.Context, total int) render.HTML {
+// table renders the grid for ctx's query state. known says whether
+// total is a real count: List passes the count it took (false when
+// the count failed), TableHandler passes -1 so the count is taken
+// here. Only a known total may clamp the requested page.
+func (c Config) table(ctx context.Context, total int, known bool) render.HTML {
 	q := appui.QueryFromContext(ctx)
 	page := 1
 	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
@@ -437,10 +433,24 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	if total < 0 {
 		var err error
 		total, err = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
+		known = err == nil
 		if err != nil {
 			// Same as List: the count feeds pagination chrome only.
 			slog.Warn("resource: count", "entity", c.Title, "error", err)
 		}
+	}
+	// The requested page is clamped into the real run BEFORE the rows
+	// are fetched: ?p=999 on a two-page list is a URL anyone can type,
+	// and the typed pager refuses a page outside 1..Pages. The clamp
+	// lands the reader on the last page's rows under a pager saying
+	// the last page — never a 500, and never an empty page under a
+	// pager that claims another. No rows means one page: page 1, the
+	// empty state, no pager. A failed count is not a run of zero pages:
+	// the rows are fetched at the page asked for, and no pager renders
+	// (a total of 0 draws none), so nothing is refused and the reader
+	// is not shown page 1's rows under a URL that says another.
+	if pages := int(math.Ceil(float64(total) / float64(limit))); known && page > pages {
+		page = max(pages, 1)
 	}
 	// WithReadHooks: these rows are rendered to an end user.
 	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: fwpagination.OffsetForPage(page, limit)})
@@ -472,32 +482,53 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
 	}
 
-	// carry preserves search + active facets across sort-header and pagination
-	// links (which are <a> navigations, not the toolbar form) so those actions
-	// never silently drop the current filter set.
-	var carry strings.Builder
+	// query carries the search and active facets across a sort-header
+	// click (an <a> navigation, not the toolbar form) so sorting never
+	// silently drops the current filter set. The typed sort props own
+	// sort and dir: the primitive replaces them in the carry rather
+	// than appending duplicate pairs.
+	query := url.Values{}
 	if search != "" {
-		carry.WriteString("q=" + url.QueryEscape(search) + "&")
+		query.Set("q", search)
 	}
 	for _, ff := range c.Filters {
 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			carry.WriteString(url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&")
+			query.Set(ff.Key, v)
 		}
 	}
 	dt := ui.DataTableConfig{
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-		SortHrefPattern: "?" + carry.String() + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
+		Query: query,
+		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
 	}
 	if c.IslandPath != "" {
-		// Island mode: sort headers become data-fui-rpc buttons and the
-		// pagination inherits the same signal/endpoint pair automatically.
-		dt.IslandSignal = c.islandSignal()
-		dt.IslandEndpoint = c.IslandPath
+		// Island mode: the sort anchors and the pager's page anchors
+		// carry the GET RPC contract beside their hrefs, all hitting
+		// the same endpoint and signal.
+		dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry.String() + "p=%d"}
+		// The pager keeps the search, the facets AND the active sort:
+		// turning a page must not drop the order the reader chose
+		// (the defect the changelog once recorded as pre-existing).
+		// The typed pager replaces p in the carry rather than
+		// appending a second page parameter.
+		pagerQ := url.Values{}
+		for k, vs := range query {
+			for _, v := range vs {
+				pagerQ.Add(k, v)
+			}
+		}
+		if sortCol != "" {
+			pagerQ.Set("sort", sortCol)
+			if q.Get("dir") == "desc" {
+				pagerQ.Set("dir", "desc")
+			} else {
+				pagerQ.Set("dir", "asc")
+			}
+		}
+		dt.Pagination = &ui.PaginationConfig{Pages: pages, Page: page, Query: pagerQ}
 	}
 	return ui.DataTable(dt)
 }
@@ -741,7 +772,15 @@ func (c Config) relatedList(ctx context.Context, rl RelatedList, id string) rend
 		}
 		uiRows = append(uiRows, ui.Row{ID: rid, Cells: cells})
 	}
-	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
+	// The caption names the table and its scroll region (a detail page
+	// stacks several related lists, and an unnamed role=region beside
+	// another unnamed one is a landmark axe cannot tell apart), and it
+	// is hidden: the section heading right above already says the same
+	// thing, and a reader should not be shown it twice.
+	return render.Join(head, ui.DataTable(ui.DataTableConfig{
+		Caption: rl.Title, CaptionHidden: true,
+		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
+	}))
 }
 
 // relatedRelationLabels resolves the FK columns of an entity's relations to
@@ -839,9 +878,7 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 		if edit {
 			cur = cell(rowValue(row, f.Key))
 		}
-		fields = append(fields, ui.FormField(ui.FormFieldConfig{
-			Label: f.Label, For: "f-" + f.Key, Input: c.formInput(ctx, f, cur, rel),
-		}))
+		fields = append(fields, c.formField(ctx, f, cur, rel))
 	}
 	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
 	return render.Join(
@@ -850,36 +887,48 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 	)
 }
 
-// formInput builds the typed control for one field, prefilled with cur. Enums
-// and relations render their options server-side; relations resolve to the same
-// human label the list/detail show.
-func (c Config) formInput(ctx context.Context, f Field, cur string, rel map[string]map[string]string) render.HTML {
+// formField renders one labelled control for the create/edit form,
+// built from the field's wiring: the label association, the
+// description chain and the invalid state reach the control through
+// the FormField builder, never beside it.
+func (c Config) formField(ctx context.Context, f Field, cur string, rel map[string]map[string]string) render.HTML {
 	id := "f-" + f.Key
 	if labels, ok := rel[f.Key]; ok {
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
-		for val, label := range labels {
-			opts = append(opts, html.SelectOption{Value: val, Text: label, Selected: val == cur})
-		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+		return c.relationSelect(f, id, labels, cur)
 	}
 	switch f.Type {
 	case "enum":
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
+		opts := []ui.SelectOption{{Value: "", Text: "— Select —"}}
 		for _, v := range f.Values {
-			opts = append(opts, html.SelectOption{Value: v, Text: title(v), Selected: v == cur})
+			opts = append(opts, ui.SelectOption{Value: v, Text: title(v), Selected: v == cur})
 		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+		return ui.Select(ui.SelectConfig{Name: f.Key, Label: f.Label, ID: id, Options: opts})
 	case "text":
-		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
+		return ui.TextArea(ui.TextAreaConfig{Name: f.Key, Label: f.Label, ID: id, Value: cur, Rows: 4})
 	case "bool", "boolean":
-		attrs := html.Attrs{}
-		if truthy(cur) {
-			attrs["checked"] = "checked"
-		}
-		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
+		return ui.Checkbox(ui.ToggleConfig{Name: f.Key, Label: f.Label, ID: id, Value: "on", Checked: truthy(cur)})
 	default:
-		return html.Input(html.InputConfig{Type: inputType(f.Type), Name: f.Key, ID: id, Value: cur})
+		return ui.FormField(ui.FormFieldConfig{
+			Label: f.Label, For: id,
+			Input: func(fc headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: fc, Type: inputType(f.Type), Name: f.Key, Value: cur})
+			},
+		})
 	}
+}
+
+// relationSelect renders a belongs-to picker: a Select whose options
+// are the related records, resolved to the same human label the
+// list/detail show.
+func (c Config) relationSelect(f Field, id string, labels map[string]string, cur string) render.HTML {
+	opts := []ui.SelectOption{{Value: "", Text: "— Select —"}}
+	// The labels map is walked in sorted key order, never ranged
+	// directly: a map's iteration order is randomized per run, and
+	// this loop writes markup (the repo's mapwriter rule).
+	for _, val := range slices.Sorted(maps.Keys(labels)) {
+		opts = append(opts, ui.SelectOption{Value: val, Text: labels[val], Selected: val == cur})
+	}
+	return ui.Select(ui.SelectConfig{Name: f.Key, Label: f.Label, ID: id, Options: opts})
 }
 
 // inputType maps a field type to an <input type=...>.

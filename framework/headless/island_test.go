@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -96,11 +97,20 @@ func TestIslandRefusesTheUnwired(t *testing.T) {
 	refuse(t, "Signal", func() { Island{Endpoint: "/island/apps"}.attrs("", "GET") })
 }
 
-// The contract lands on the element that keeps the href or the action,
-// so the no-script path and the island are one element — and the href
-// or action is still there for no script.
+// The contract lands on the element that keeps the href, so the
+// no-script path and the island are one element — and the href is
+// still there for no script. The pager's Island is optional, the
+// Table posture: a plain render is a list screen's navigation (the
+// URL is the truth for a list), and only an embedded pager carries
+// the contract beside its hrefs.
 func TestPaginationCarriesTheContractOnItsAnchors(t *testing.T) {
-	got := Pagination(PaginationProps{Page: 5, Pages: 5, HrefPattern: "/apps?page=%d",
+	plain := Pagination(PaginationProps{Page: 5, Pages: 5, Path: "/apps", PageParam: "page",
+		AriaLabel: "Pages"}, nil)
+	has(t, plain, `href="/apps?page=4"`, "the plain pager lost its href")
+	hasNoContract(t, plain, "a list screen's plain pager carried an island contract it was not given")
+	hasNot(t, plain, "data-hui-page", "a plain pager rendered a page hook nothing reads")
+
+	island := Pagination(PaginationProps{Page: 5, Pages: 5, Path: "/apps", PageParam: "page",
 		AriaLabel: "Pages", Island: fixtureIsland}, nil)
 	for _, want := range []string{
 		`href="/apps?page=4"`,
@@ -108,13 +118,14 @@ func TestPaginationCarriesTheContractOnItsAnchors(t *testing.T) {
 		`data-fui-rpc-method="GET"`,
 		`data-fui-rpc-signal="apps"`,
 		`data-fui-push-state="/apps?page=4"`,
+		`data-hui-page="4"`,
 	} {
-		has(t, got, want, "the page anchor did not carry both destinations")
+		has(t, island, want, "the page anchor did not carry both destinations")
 	}
 	// The disabled end carries no contract: it goes nowhere. Attributes
 	// render sorted, so a disabled anchor would show the pair.
-	has(t, got, `aria-disabled="true"`, "the last page's Next is not disabled")
-	hasNot(t, got, `aria-disabled="true" data-fui-rpc`, "the disabled Next carried a contract")
+	has(t, island, `aria-disabled="true"`, "the last page's Next is not disabled")
+	hasNot(t, island, `aria-disabled="true" data-fui-`, "the disabled Next carried a contract or a page hook")
 }
 
 func TestToolbarSearchIsTheFormThatCarriesTheContract(t *testing.T) {
@@ -128,7 +139,7 @@ func TestToolbarSearchIsTheFormThatCarriesTheContract(t *testing.T) {
 // A caller cannot forge or override the contract through ExtraAttrs:
 // Safe drops every data-fui-* key, so the only way in is the Island.
 func TestTheContractCannotBeSmuggled(t *testing.T) {
-	smuggled := Pagination(PaginationProps{Page: 2, Pages: 5, HrefPattern: "/x?p=%d",
+	smuggled := Pagination(PaginationProps{Page: 2, Pages: 5, Path: "/x", PageParam: "p",
 		AriaLabel: "Pages", Island: fixtureIsland,
 		ExtraAttrs: map[string]string{"data-fui-rpc": "/evil"}}, nil)
 	hasNot(t, smuggled, "/evil", "a request arrived through ExtraAttrs, which is for decoration")
@@ -139,11 +150,9 @@ func TestTheContractCannotBeSmuggled(t *testing.T) {
 // the link-only render the framework's first hard rule forbids: the
 // Island is required, so that render cannot be built. A partially-set
 // island is not a link-only render but a broken one, and is refused by
-// its own rule.
+// its own rule — whichever posture the component renders, a pager
+// included: its optional Island is optional, not unvalidated.
 func TestRequiredIslandsRefuseTheLinkOnlyRender(t *testing.T) {
-	refuse(t, "Island", func() {
-		Pagination(PaginationProps{Page: 2, Pages: 5, HrefPattern: "/x?p=%d", AriaLabel: "Pages"}, nil)
-	})
 	refuse(t, "Island", func() {
 		ToolbarSearch(ToolbarSearchProps{}, nil, Input(InputProps{Name: "q", AriaLabel: "q"}, nil))
 	})
@@ -151,7 +160,7 @@ func TestRequiredIslandsRefuseTheLinkOnlyRender(t *testing.T) {
 		Tag(TagProps{Label: "env=prod", DismissHref: "/apps?env="}, nil)
 	})
 	refuse(t, "Signal", func() {
-		Pagination(PaginationProps{Page: 2, Pages: 5, HrefPattern: "/x?p=%d", AriaLabel: "Pages",
+		Pagination(PaginationProps{Page: 2, Pages: 5, Path: "/x", PageParam: "p", AriaLabel: "Pages",
 			Island: Island{Endpoint: "/island/apps"}}, nil)
 	})
 }
@@ -161,7 +170,7 @@ func TestRequiredIslandsRefuseTheLinkOnlyRender(t *testing.T) {
 // puts the POST contract on the form that keeps its action.
 func TestOptionalIslandsAreOptional(t *testing.T) {
 	plain := Form(FormProps{Action: "/apps"}, nil)
-	hasNot(t, plain, "data-fui", "a form with no Island carries framework attributes")
+	hasNoContract(t, plain, "a form with no Island carries framework attributes")
 	isled := Form(FormProps{Action: "/apps", Island: fixtureIsland}, nil)
 	has(t, isled, `action="/apps"`, "the form lost its action")
 	has(t, isled, `data-fui-rpc="/island/apps" data-fui-rpc-method="POST" data-fui-rpc-signal="apps"`,
@@ -179,7 +188,7 @@ func TestTagCarriesTheContractOnItsDismiss(t *testing.T) {
 		"the dismiss did not carry the GET contract with the href's query")
 	has(t, got, `data-fui-push-state="/apps?env="`, "the dismiss did not write the URL")
 	fixed := Tag(TagProps{Label: "env=prod", Island: fixtureIsland}, nil)
-	hasNot(t, fixed, "data-fui", "a tag with nothing to dismiss carries the contract anyway")
+	hasNoContract(t, fixed, "a tag with nothing to dismiss carries the contract anyway")
 }
 
 // The one "wired and is not" failure Island.check exists to catch: a
@@ -190,7 +199,7 @@ func TestTagCarriesTheContractOnItsDismiss(t *testing.T) {
 func TestIslandRefusesAReservedSignal(t *testing.T) {
 	for _, name := range []string{"__proto__", "constructor", "prototype"} {
 		refuse(t, "reserved", func() {
-			Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/x?p=%d", AriaLabel: "Pages",
+			Pagination(PaginationProps{Page: 1, Pages: 2, Path: "/x", PageParam: "p", AriaLabel: "Pages",
 				Island: Island{Endpoint: "/island/apps", Signal: name}}, nil)
 		})
 		refuse(t, "reserved", func() {
@@ -204,6 +213,17 @@ func TestIslandRefusesAReservedSignal(t *testing.T) {
 	}
 }
 
+// The Form Request seam names signals too, and an empty one is not a
+// name: the submit would succeed and land in a region that never
+// updates. Refused beside the reserved names, with the same shape of
+// message the seam's other empties get.
+func TestFormRequestRefusesAnEmptySignal(t *testing.T) {
+	refuse(t, "empty", func() {
+		Form(FormProps{Action: "/x",
+			Request: html.Attrs{"data-fui-rpc": "/x", "data-fui-rpc-signal": ""}}, nil)
+	})
+}
+
 // The same-origin guard covers the whole class it names: "//host" is
 // protocol-relative, and the URL parser reads a backslash the same
 // way, so "/\\host" resolves off-origin and the runtime declines to
@@ -211,7 +231,7 @@ func TestIslandRefusesAReservedSignal(t *testing.T) {
 // prevent.
 func TestEndpointsRefuseTheBackslashSpelling(t *testing.T) {
 	refuse(t, "same-origin", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/x?p=%d", AriaLabel: "Pages",
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "/x", PageParam: "p", AriaLabel: "Pages",
 			Island: Island{Endpoint: "/\\evil.com/x", Signal: "apps"}}, nil)
 	})
 	refuse(t, "same-origin", func() {
@@ -257,4 +277,42 @@ func TestAlertDismissIsAnIsland(t *testing.T) {
 	refuse(t, "Island", func() {
 		Alert(AlertProps{Title: "Deploy failed", DismissHref: "/apps?dismiss=1"}, nil)
 	})
+}
+
+// A Form says its submit is an RPC exactly once. Island and Request
+// are two ways of saying it, and the second one to arrive would have
+// to win or lose by precedence — a silent choice between two things a
+// caller meant. The refusal is the contract; this is the test nobody
+// had watched fail.
+func TestFormRefusesIslandAndRequestTogether(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a Form carrying both Island and Request must panic, not pick one")
+		}
+		msg, _ := r.(string)
+		for _, want := range []string{"Island", "Request", "pick one"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("panic %q does not say %q", msg, want)
+			}
+		}
+	}()
+	Form(FormProps{
+		Action:  "/apps",
+		Island:  Island{Endpoint: "/island/apps", Signal: "apps"},
+		Request: Action{"data-fui-rpc": "/apps"},
+	}, nil)
+}
+
+// Either one alone is fine: the refusal is about the pair, not about
+// the fields.
+func TestFormAcceptsIslandOrRequestAlone(t *testing.T) {
+	isle := string(Form(FormProps{Action: "/apps", Island: Island{Endpoint: "/island/apps", Signal: "apps"}}, nil))
+	if !strings.Contains(isle, "data-fui-rpc") {
+		t.Errorf("an Island form carries no rpc wiring:\n%s", isle)
+	}
+	req := string(Form(FormProps{Action: "/apps", Request: Action{"data-fui-rpc": "/apps"}}, nil))
+	if !strings.Contains(req, `data-fui-rpc="/apps"`) {
+		t.Errorf("a Request form carries no rpc wiring:\n%s", req)
+	}
 }

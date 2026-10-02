@@ -41,7 +41,7 @@ func TestLineChartEmitsOnePathPerSeries(t *testing.T) {
 		},
 	}))
 	// 2 line paths, no area paths (Area false).
-	if c := strings.Count(h, "ui-line-chart__line"); c < 2 {
+	if c := classTokenCount(h, "fui-line-chart__line"); c < 2 {
 		t.Errorf("expected 2 line classes, got %d:\n%s", c, h)
 	}
 }
@@ -50,7 +50,7 @@ func TestLineChartAreaEmitsAreaPath(t *testing.T) {
 	h := string(LineChart(LineChartConfig{
 		Series: []LineSeries{{Name: "S", Values: []float64{1, 2, 3}, Area: true}},
 	}))
-	if !strings.Contains(h, "ui-line-chart__area") {
+	if !classTokenPresent(h, "fui-line-chart__area") {
 		t.Errorf("Series.Area=true should emit area path:\n%s", h)
 	}
 }
@@ -60,7 +60,7 @@ func TestLineChartShowLegendEmitsCircles(t *testing.T) {
 		ShowLegend: true,
 		Series:     []LineSeries{{Name: "A", Values: []float64{1, 2}}},
 	}))
-	if !strings.Contains(h, "ui-line-chart__legend") {
+	if !classTokenPresent(h, "fui-line-chart__legend") {
 		t.Errorf("ShowLegend should emit legend text:\n%s", h)
 	}
 	if !strings.Contains(h, "<circle ") {

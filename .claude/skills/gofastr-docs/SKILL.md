@@ -122,10 +122,12 @@ was needed.
 
 **You landed a BREAKING change / you're cutting a release:**
 - CHANGELOG.md entry (BREAKING items called out explicitly)
-- `cmd/gofastr/upgrades.yml`: every release PR bumps `through`; a
-  release with BREAKING or migration-relevant changes also adds its
-  entry (one-line guidance, optional `detect` regex; this parser has
-  no block scalars). `TestUpgradeRegistryThroughMatchesChangelog`
+- `internal/upgrade/`: every release PR bumps `through` in
+  `registry.yml`; a release with BREAKING or migration-relevant changes
+  also adds `releases/<version>.yml` (one-line guidance, a `find` block
+  of typed matchers, or a
+  one-line `nodetect` reason when no spelling differs; the parser has
+  no block scalars). `TestThroughMatchesChangelog`
   gates it against the CHANGELOG's latest heading.
 - SECURITY.md "Supported versions": the latest-minor line
 - If the release adds host-facing surface (a new battery, uihost
