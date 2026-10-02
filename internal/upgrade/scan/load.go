@@ -490,7 +490,9 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 							return true
 						case tag == "gccgo":
 							return false
-						case tag == "linux" && goos == "android":
+						case tag == "linux" && goos == "android",
+							tag == "darwin" && goos == "ios",
+							tag == "solaris" && goos == "illumos":
 							return true
 						}
 						for i, t := range free {

@@ -157,6 +157,22 @@ func stuck() {}
 	}
 }
 
+// go/build lets GOOS=android satisfy linux, ios satisfy darwin and
+// illumos satisfy solaris, so a file whose name pins the first and
+// whose constraint names the second builds; the solver must agree.
+func TestSolveImpliedOSTags(t *testing.T) {
+	for _, c := range []struct{ name, tag, goos string }{
+		{"x_android.go", "linux", "android"},
+		{"x_ios.go", "darwin", "ios"},
+		{"x_illumos.go", "solaris", "illumos"},
+	} {
+		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
+		if !ok || cfg.goos != c.goos {
+			t.Errorf("%s with //go:build %s: got %+v ok=%v, want GOOS=%s", c.name, c.tag, cfg, ok, c.goos)
+		}
+	}
+}
+
 // genProgram is a `go run gen.go` generator: package main beside
 // package pages, kept out of every build by the ignore tag.
 const genProgram = `//go:build ignore
