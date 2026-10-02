@@ -1,0 +1,27 @@
+version: v0.78.0
+title: repo analyzer lane, queue claim fencing, ambient-tx event correctness
+notes:
+  - change: "queue schema and claim protocol - DBQueue mints a claim_token on Dequeue and every completion arm (Ack/Nack) matches on it; queue_jobs gains a user_id column reachable by App.EraseUserData"
+    breaking: false
+    guidance: "Both columns auto-migrate. Rows enqueued before user_id existed carry '', which the erase plane treats as unowned - set queue.Job.UserID on enqueue for per-user jobs you want erasable. Completions from a lease that expired and was re-claimed now fail instead of flipping the re-claimant's row; that refusal is the fix, not a fault."
+    nodetect: "the columns auto-migrate; setting Job.UserID is per-job intent, and a lease-expired completion failing is the fix"
+  - change: "SQLite claim transactions (DBQueue dequeue, outbox relay) now issue BEGIN IMMEDIATE, taking the write lock before the read"
+    breaking: false
+    guidance: "Behavioural fix to match their documented serialisation. Under heavy multi-worker contention SQLITE_BUSY can surface at claim time where a duplicate claim previously slipped through; the worker retry loop already handles it."
+    nodetect: "behavioural fix inside the claim path; the worker retry loop already handles it"
+  - change: "lifecycle events for CRUD writes joined to an ambient transaction are drained from a commit queue by the tx owner (App.InTx and crud's own tx) instead of probing the live *sql.Tx; the caller-owned db.WithTx fallback still probes, warns once per process, and its Postgres confirm query is fixed (it never parsed, so those events were always dropped)"
+    breaking: false
+    guidance: "Framework-owned paths are unchanged in behaviour, minus a wire-protocol race. If you Begin your own tx and wrap it with db.WithTx, switch to db.WithTxQueue and call queue.RunAfterCommit() after Commit succeeds - it removes the probe and, on Postgres, is the difference between your events firing and not."
+    find:
+      uses:
+        - gofastr/framework/db.WithTx
+  - change: "BREAKING for direct callers of the llm.md generators - crud.RegistryLLMMD / RegistryLLMMDHandler take func(*entity.Entity) crud.MountInfo (was bool), and crud.EntityLLMMD / LLMMDHandler / LLMMDHandlerFor gained an optional LLMMDOptions"
+    breaking: true
+    guidance: "The framework's own route registration passes both automatically; only hand-rolled mounts change. Pass LLMMDOptions{ReadOnly: true} beside a read-only mount so the generated docs stop advertising write endpoints that answer 404/405."
+    find:
+      uses:
+        - gofastr/framework/crud.RegistryLLMMD
+        - gofastr/framework/crud.RegistryLLMMDHandler
+        - gofastr/framework/crud.EntityLLMMD
+        - gofastr/framework/crud.LLMMDHandler
+        - gofastr/framework/crud.LLMMDHandlerFor

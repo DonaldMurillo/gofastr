@@ -1,0 +1,344 @@
+version: v0.86.0
+title: Headless design system
+notes:
+  - change: "style.ThemeRef.Hash is a method now; RegisterThemeOverride hashes lazily so package-level registration is safe in a library that does not import framework/ui"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/style.ThemeRef.Hash
+    guidance: "Move ref.Hash field reads to ref.Hash(); registering during init no longer hashes, freezes the component-options compiler hook, or panics framework/ui's later init."
+  - change: "disabled belongs to ButtonConfig.Disabled; a disabled key in ui.Button's ExtraAttrs panics pointing at the field"
+    breaking: true
+    find:
+      fields:
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: disabled
+    guidance: "Move the disabled key out of ui.Button's ExtraAttrs into the Disabled field — any spelling of the attr key panics at render now."
+  - change: "the button wiring vocabulary is typed: every data-fui-* key on a button routes through the Action seam and a key outside the admitted vocabulary panics at render, naming the key"
+    breaking: true
+    find:
+      fields:
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-signal
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-endpoint
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-method
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-allow-untoggle
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-untoggle-endpoint
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-idle
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-committed
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-toggle-group
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-optimistic-idle
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-optimistic-success
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-optimistic-endpoint
+        - field: gofastr/framework/ui.ButtonConfig.ExtraAttrs
+          key: data-fui-optimistic-method
+    guidance: "Build button wiring with the interactive Action seam (interactive.Post/Put/Delete(...).OnSuccess(...).Attrs()) instead of data-fui-* keys in ExtraAttrs; the admitted vocabulary keeps its spelling, everything else panics."
+  - change: "the button classes are fui-button*; the ui-button class no longer exists in any emitted markup or stylesheet"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-button]
+      css:
+        classes: [ui-button]
+    guidance: "Call ui.Button / ui.LinkButton instead of hand-rolled class=\"ui-button\" markup, and rename .ui-button selectors (Form's block-actions, FilterToolbar, admin row actions) to .fui-button."
+  - change: "the form family's Input is a builder and its classes are fui-form*/fui-field*/fui-select*; hand-rolled ui-form/ui-form-field/ui-select class markup renders unstyled"
+    breaking: true
+    find:
+      uses:
+        - gofastr/framework/ui.FormFieldConfig.Input
+      strings:
+        classes: [ui-form, ui-form-field, ui-form-section, ui-select, ui-input-group, ui-validation-summary]
+      css:
+        classes: [ui-form, ui-form-field, ui-form-section, ui-select, ui-input-group, ui-validation-summary]
+    guidance: "FormFieldConfig.Input now takes func(headless.FieldControl) render.HTML — build the control with ui.Control, a typed field, or ui.PasswordInput's Field — and rename ui-form/ui-form-field/ui-select markup to the fui-* names."
+  - change: "ui.ValidationSummary requires ID, and a ui.Form rendering Errors requires FormConfig.ID"
+    breaking: true
+    nodetect: "no line-level spelling: ValidationSummaryConfig gained a required ID and FormConfig.ID became required when Errors is set, but every identifier survives — old and new call sites read identically per line."
+    guidance: "Give every ui.ValidationSummary an ID and every ui.Form that renders Errors a FormConfig.ID; the summary's id is derived from the form's."
+  - change: "form wiring rides the request seam: data-fui-* and data-action-* keys in ui.Form's ExtraAttrs are admitted vocabulary or a render-time panic, and data-fui-rpc-body, after-text, after-disable, scroll-to and push-state are refused outright"
+    breaking: true
+    find:
+      fields:
+        - field: gofastr/framework/ui.FormConfig.ExtraAttrs
+          key: data-fui-rpc-body
+        - field: gofastr/framework/ui.FormConfig.ExtraAttrs
+          key: data-fui-rpc-after-text
+        - field: gofastr/framework/ui.FormConfig.ExtraAttrs
+          key: data-fui-rpc-after-disable
+        - field: gofastr/framework/ui.FormConfig.ExtraAttrs
+          key: data-fui-rpc-scroll-to
+        - field: gofastr/framework/ui.FormConfig.ExtraAttrs
+          key: data-fui-push-state
+    guidance: "Build form wiring with interactive.Post(...).OnSuccess(...).Attrs(); a form serializes its own fields, so a static body and the four button-only effects panic at render."
+  - change: "an unsafe FormConfig.Action panics at render; the # substitution is gone"
+    breaking: true
+    find:
+      fields:
+        - field: gofastr/framework/ui.FormConfig.Action
+          value: '^(javascript:|//)'
+    guidance: "Fix the action URL — one the anchor policy refuses (protocol-relative //host, javascript:, control bytes) is a panic where the mistake was made, not a silent action=\"#\"."
+  - change: "FormConfig.Summary moved inside the validation summary and now renders even when Errors is empty"
+    breaking: true
+    nodetect: "no line-level spelling: FormConfig.Summary keeps its name and type (only its rendered shape moved), and the sentence's new home ValidationSummaryConfig.General is an addition, not a rename."
+    guidance: "Review FormConfig.Summary callers: the sentence renders as a row inside ui.ValidationSummary above the per-field links, no longer as an error Callout's whole body."
+  - change: "the bespoke-behaviour classes are fui-upload*/fui-drop*/fui-when/fui-textarea/fui-search*, and the conditionalfield, fileupload and dropzone runtime modules are deleted"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-fileupload, ui-dropzone, ui-conditional-field, ui-textarea, ui-search-input]
+        attrs: [data-fui-fileupload]
+      css:
+        classes: [ui-fileupload, ui-dropzone, ui-conditional-field, ui-textarea, ui-search-input]
+    guidance: "Call ui.FileUpload / ui.FileDropzone / ui.ConditionalField / ui.TextArea / ui.SearchInput instead of the old class markup; the three deleted modules 404 if hand-loaded, and hand-rolled data-fui-fileupload zones lose their drag-drop."
+  - change: "ui.ConditionalField renders visible; ConditionalFieldVisible and EvaluateInitialState are gone"
+    breaking: true
+    find:
+      uses:
+        - gofastr/framework/ui.ConditionalFieldVisible
+        - gofastr/framework/ui.ConditionalFieldConfig.EvaluateInitialState
+      strings:
+        attrs: [data-when-name, data-when-value, data-fui-cond-disabled]
+    guidance: "Drop ConditionalFieldVisible/EvaluateInitialState (visible-until-armed is the default), rename data-when-name/data-when-value to data-hui-when/data-hui-when-value, and retarget data-fui-cond-disabled CSS to data-hui-when-off."
+  - change: "ui.FileUpload's and ui.TextArea's markup changed shape with their headless adoption"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-fileupload__filename]
+      css:
+        classes: [ui-fileupload__filename]
+    guidance: "The upload's hint renders inside the zone (<id>-accept, joined into aria-describedby) with the error below as role=alert, the filename paragraph is a module-filled role=list plus a status sentence; TextArea is a fui-field shell around a fui-textarea control."
+  - change: "the Lightbox viewer's classes are fui-lightbox* and its image carries data-fui-lightbox-image"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-lightbox]
+      css:
+        classes: [ui-lightbox]
+    guidance: "Rename ui-lightbox__* selectors and markup to fui-lightbox__* and read the image via data-fui-lightbox-image; a core-ui-only page hand-rolling the markup must import framework/ui so the module links in."
+  - change: "display classes are fui-* (charts, images incl. the gallery DOM move, code incl. fui-code-tabs, markdown, terminal, avatar, icon, color picker, diff viewer, metric band, record summary, pricing card, auth card, sign out, optimistic/toggle action)"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-bar-chart, ui-line-chart, ui-pie-chart, ui-sparkline, ui-optimized-image, ui-pipeline-image, ui-image, ui-gallery, ui-code-block, ui-code-tabs, ui-markdown, ui-terminal-block, ui-terminal-ok, ui-terminal-out, ui-avatar, ui-avatar-group, ui-icon, ui-color-picker, ui-diff-viewer, ui-metric-band, ui-record-summary, ui-pricing-card, ui-auth-card, ui-sign-out, ui-optimistic-action, ui-toggle-action]
+      css:
+        classes: [ui-bar-chart, ui-line-chart, ui-pie-chart, ui-sparkline, ui-optimized-image, ui-pipeline-image, ui-image, ui-gallery, ui-code-block, ui-code-tabs, ui-markdown, ui-terminal-block, ui-terminal-ok, ui-terminal-out, ui-avatar, ui-avatar-group, ui-icon, ui-color-picker, ui-diff-viewer, ui-metric-band, ui-record-summary, ui-pricing-card, ui-auth-card, ui-sign-out, ui-optimistic-action, ui-toggle-action]
+    guidance: "Rename ui-* selectors to fui-* for the display family; registered sheet names and data-fui-comp markers stay."
+  - change: "shell classes are fui-* (hero, hero split, site header, site footer, doc layout, workbench, toolbar, filter toolbar, sidebar, responsive, themed)"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-hero, ui-site-header, ui-site-footer, ui-doc-layout, ui-doc-prev-next, ui-workbench, ui-toolbar, ui-filter-toolbar, ui-sidebar, ui-responsive, ui-themed]
+      css:
+        classes: [ui-hero, ui-site-header, ui-site-footer, ui-doc-layout, ui-doc-prev-next, ui-workbench, ui-toolbar, ui-filter-toolbar, ui-sidebar, ui-responsive, ui-themed]
+    guidance: "Rename ui-* selectors to fui-* for the shell family; ui.Sidebar renders through headless.Sidebar (byte pins re-read: sorted attribute order, hidden=\"\" spelling), and an item with both Href and Children, a blank Label, or control bytes in DrawerName/CollapseStorageKey now panics — fix the config."
+  - change: "the residue is fui-* (data table, segmented, palette parts, JSONViewer parts, polling indicator, shortcut hint, confirm action, tooltip, search input, visually hidden)"
+    breaking: true
+    find:
+      strings:
+        classes: [ui-data-table, ui-segmented, ui-cmd-palette, ui-json-viewer, ui-polling-indicator, ui-shortcut-hint, ui-confirm-action, ui-tooltip, ui-visually-hidden]
+      css:
+        classes: [ui-data-table, ui-segmented, ui-cmd-palette, ui-json-viewer, ui-polling-indicator, ui-shortcut-hint, ui-confirm-action, ui-tooltip, ui-visually-hidden]
+    guidance: "Rename ui-* selectors to fui-* for the residue family; the framework/gallery prefix gate refuses any ui-* class token in a rendered catalog entry from here on."
+  - change: "html.DetailsConfig.Disclosure is gone; html.Details renders a plain <details>"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/html.DetailsConfig.Disclosure
+    guidance: "Render headless.Disclosure or ui.Collapsible (data-hui-disclosure markup) for a disclosure with behaviour."
+  - change: "the kernel no longer reads data-fui-disclosure, data-fui-disclosure-persist, data-fui-pane-deeplink or data-fui-scrollspy"
+    breaking: true
+    find:
+      strings:
+        attrs: [data-fui-disclosure, data-fui-disclosure-persist, data-fui-pane-deeplink, data-fui-scrollspy]
+    guidance: "Close-on-navigate belongs to the headless-disclosure module (data-hui-disclosure markup, data-hui-disclosure-persist=\"<key>\" to survive soft navigation), the pane deep link is data-hui-pane-deeplink, and the scroll-spy rail is data-hui-rail."
+  - change: "the ten legacy token aliases are no longer emitted at :root or inside theme-override scope blocks (--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong)"
+    breaking: true
+    find:
+      strings:
+        properties: [--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong]
+      css:
+        properties: [--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong]
+    guidance: "Reference the canonical ColorSet token instead (the CHANGELOG table maps each alias to its replacement or color-mix value); a stylesheet setting one as a theme token deletes the line — nothing reads it."
+  - change: "gofastr pack reads the auth form's hidden next input only as html.Input(html.InputConfig{Type: \"hidden\", Name: \"next\", ...})"
+    breaking: true
+    find:
+      strings:
+        match: 'name=\\?"next'
+    guidance: "Switch a hand-maintained render.Raw(\"<input ...>\") hidden next field to the html.Input call (the generator's spelling) or the packed blueprint emits next: \"\"."
+  - change: "core-ui/patterns/accordion is deleted; none replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/accordion
+    guidance: "A stacked disclosure group is ui.Collapsible sections, an exclusive one is ui.Collapsible sections sharing a CollapsibleConfig.Name (the native <details name> group); the accordion style name and its .accordion* classes are gone."
+  - change: "core-ui/patterns/nestedlist is deleted; none replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/nestedlist
+    guidance: "A recursive list with native collapse is ui.Tree (the WAI-ARIA treeview) or plain ui.Collapsible sections; the nestedlist style name and its .nested-list* classes are gone."
+  - change: "core-ui/patterns/infinitescroll is deleted; none replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/infinitescroll
+      strings:
+        attrs: [data-fui-infinite-]
+        match: 'X-Gofastr-Infinite-Cursor'
+    guidance: "A lazy feed composes a poll or an island on the appending region; the infinitescroll module, its data-fui-infinite-* hooks and the header contract are gone."
+  - change: "core-ui/patterns/breadcrumbs is deleted; ui.Breadcrumbs replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/breadcrumbs
+    guidance: "breadcrumbs.New(Config, ...Crumb) becomes ui.Breadcrumbs(ui.BreadcrumbsConfig{...}, ui.Crumb{...}); Crumb.Text/Href/Current keep their names, the default label resolves through Strings/i18nui, and separators are rendered aria-hidden spans."
+  - change: "core-ui/patterns/progress is deleted; ui.Progress replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/progress
+    guidance: "progress.New(Config) becomes ui.Progress(ui.ProgressConfig{...}); LabelVisible is spelled ShowLabel, a value past Max clamps at render and a non-finite one renders indeterminate."
+  - change: "core-ui/patterns/multiselect is deleted; ui.MultiSelect replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/multiselect
+      strings:
+        attrs: [data-fui-multiselect, data-fui-multiselect-]
+    guidance: "multiselect.Render(Config) becomes ui.MultiSelect(ui.MultiSelectConfig{...}); Option keeps its fields, the placeholder and chip remove labels resolve through Strings/i18nui, and the classes are .fui-multiselect* under the ui-multiselect marker."
+  - change: "core-ui/patterns/sortablelist is deleted; ui.SortableList replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/sortablelist
+      strings:
+        attrs: [data-fui-sortable, data-fui-sortable-]
+    guidance: "sortablelist.Render/RenderItems become ui.SortableList/ui.SortableListItems; Item is SortableItem with Key/Label/Content unchanged, the commit payload and versioned-409 path keep their contract, and the classes are .fui-sortablelist*."
+  - change: "core-ui/patterns/tree is deleted; ui.Tree replaces it"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/tree
+      uses:
+        - gofastr/core-ui/patterns/tree.Config.SignalPrefix
+      strings:
+        attrs: [data-fui-tree-toggle]
+    guidance: "tree.Render(Config) becomes ui.Tree(ui.TreeConfig{...}); Node is TreeItem with fields unchanged, SignalPrefix is LazySignalPrefix, a lazy branch's toggle keeps the kernel's data-fui-rpc wiring verbatim, and duplicate node ids refuse at render."
+  - change: "app.NewLayout is the tree-layout constructor NewLayout(name, spec, build); the single-argument form and the WithHeader/WithSidebar/WithFooter/WithContainer/WithStickyHeader builders are deleted (not deprecated), with the fixed Header/Sidebar/Footer/Container/StickyHeader fields"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.NewLayout
+    guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and the BREAKING changelog entry for the port spelled end to end."
+  - change: "Layout.WithHeader is removed; the header renders in the layout build"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WithHeader
+    guidance: "Move the header component into the build (component.SafeRenderCtx) and make it the first child of ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, hdr, ...). A screen stack pushes its last child to the bottom of the viewport, so never end it with a bare l.Primary(): end it with the footer, or with a ui.ContentRow, which grows to fill (ui.ContentRow(ui.ContentRowConfig{}, l.Primary()) when there is no footer)."
+  - change: "Layout.WithSidebar is removed; the sidebar row is ui.ContentRow"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WithSidebar
+    guidance: "Render your sidebar in the build and pass it as ui.ContentRow's Sidebar: ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()). With a header, the row is the last child of ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, hdr, row) and grows to fill the screen. ui.MountSidebar for the drawer is unchanged."
+  - change: "Layout.WithFooter is removed; the footer renders in the layout build"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WithFooter
+    guidance: "Move the footer component into the build and make it the last child of ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, ...), which keeps it at the bottom of a short page; gofastr generate package sitefooter copies a footer to start from."
+  - change: "Layout.WithContainer is removed; the centered editorial column is ui.Container"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WithContainer
+    guidance: "WithContainer put the header, content and footer in one centered column with the page measure, gutter and vertical padding. Wrap l.Primary() in ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()), and the header and footer in ui.Container(ui.ContainerConfig{Width: ui.ContainerPage}, ...), so all three share the measure; a bare ui.ContainerConfig{} is the narrower content width. The measure and gutter are the theme's Layout.PageWidth and Layout.PageGutter (--size-page-width, --size-page-gutter)."
+  - change: "Layout.WithStickyHeader is removed; the sticky band is ui.Sticky"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WithStickyHeader
+    guidance: "Wrap the header in ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop}, hdr) as the screen stack's first child; it sticks on the theme's sticky layer, as the old modifier did. ui.Sticky paints nothing, and the old wrapper painted --ui-layout-header-bg, so give the header its own background in its owned sheet; the header gofastr generate package siteheader copies is sticky with its background already."
+  - change: "app.LayoutBaseCSS is deleted; the structural CSS moved into the ui.Stack, ui.ContentRow and ui.Container sheets"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.LayoutBaseCSS
+    guidance: "Delete the reference and compose ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, ...), ui.ContentRow and ui.Container for the shapes that CSS covered; their dimensions are theme tokens (see the page-dimension note). A hand-rolled shell keeps whatever CSS it shipped."
+  - change: "Layout.Wrap is removed; WrapCtx stays and renders a tree layout"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.Wrap
+    guidance: "Call WrapCtx(ctx, body) — the primary fills from the body, outlets render their Default; battery/rtc fanout.Wrap is unrelated and untouched."
+  - change: "the page dimensions are theme tokens; app CSS can no longer set the --ui-layout-* and --ui-container-* width, height and gutter variables"
+    breaking: true
+    find:
+      strings:
+        properties: [--ui-layout-container-width, --ui-layout-header-height, --ui-layout-header-bg, --ui-layout-gutter, --ui-container-narrow, --ui-container-default, --ui-container-wide]
+      css:
+        properties: [--ui-layout-container-width, --ui-layout-header-height, --ui-layout-header-bg, --ui-layout-gutter, --ui-container-narrow, --ui-container-default, --ui-container-wide]
+    guidance: "Set the size on the theme instead of redeclaring a variable: --ui-layout-container-width is Layout.PageWidth (--size-page-width), the gutter is Layout.PageGutter (--size-page-gutter; --ui-layout-gutter survives only as ui.Container's internal variable and ignores an app's value), --ui-layout-header-height is Layout.HeaderHeight (--size-header-height), and --ui-container-narrow/default/wide are Layout.NarrowWidth/ContentWidth/WideWidth. The header background belongs to the app's own header sheet."
+  - change: "ui.SiteHeader, ui.SiteFooter and ui.DocLayout are deleted, with their Config, Link, Column, Drawer, DocPager, DocPrevNext and DocCrumb parts"
+    breaking: true
+    find:
+      uses:
+        - gofastr/framework/ui.SiteHeader
+        - gofastr/framework/ui.SiteHeaderConfig
+        - gofastr/framework/ui.SiteHeaderLink
+        - gofastr/framework/ui.SiteFooter
+        - gofastr/framework/ui.SiteFooterConfig
+        - gofastr/framework/ui.SiteFooterLink
+        - gofastr/framework/ui.SiteFooterColumn
+        - gofastr/framework/ui.DocLayout
+        - gofastr/framework/ui.DocLayoutConfig
+        - gofastr/framework/ui.DocPager
+        - gofastr/framework/ui.DocPrevNext
+        - gofastr/framework/ui.DocCrumb
+    guidance: "Run gofastr generate package siteheader, sitefooter and docpage to copy owned packages (Go, owned style sheet, tests) into the app, then call siteheader.Render, sitefooter.Render and docpage.Render and change them freely. Crumbs are ui.Breadcrumbs (DocCrumb{Label, Href} is Crumb{Text, Href}); the pager is docpage.Pager."
+  - change: "four unused exports are removed: html.ContainerType, style.DarkSchemeCSS, gallery.MustLookup and ui.ToastStackSignal"
+    breaking: true
+    find:
+      uses:
+        - gofastr/core-ui/html.ContainerType
+        - gofastr/core-ui/style.DarkSchemeCSS
+        - gofastr/framework/gallery.MustLookup
+        - gofastr/framework/ui.ToastStackSignal
+    guidance: "Set container-type as a CSS property (ContainerType emitted an ignored HTML attribute), set Theme.DarkColors instead of DarkSchemeCSS, call gallery.Lookup and check its bool, and use preset.ToastStack(name) for the toast signal."
+  - change: "auto-named size-scale tokens are 2xl/3xl: AutoFillNames maps XXL and XXXL to the numeric spellings DefaultTheme and the framework CSS already use, so derived token names equal the canonical ones"
+    breaking: true
+    find:
+      strings:
+        properties: [--spacing-xxl, --spacing-xxxl, --text-xxl, --text-xxxl, --breakpoint-xxl]
+        match: '\{(spacing|typography|text|breakpoints?)\.x{2,3}l\}'
+      css:
+        properties: [--spacing-xxl, --spacing-xxxl, --text-xxl, --text-xxxl, --breakpoint-xxl]
+    guidance: "App CSS or StyleSheet strings reading --spacing-xxl/--spacing-xxxl/--text-xxl/--text-xxxl/--breakpoint-xxl, or the {spacing.xxl}-style token references that resolve to them, (the variables any auto-named theme emitted: the theme init starter, the theme edit write-back, a hand-written Theme with Value-only tokens) must switch to the 2xl/3xl spellings — the framework never read the xxl/xxxl names and silently fell back to its hard-coded values."
+  - change: "ui.DataTableConfig.Pagination is a *ui.PaginationConfig, and core-ui/patterns/pagination is deleted"
+    breaking: true
+    find:
+      imports:
+        - gofastr/core-ui/patterns/pagination
+      uses:
+        - gofastr/core-ui/patterns/pagination.Config
+        - gofastr/core-ui/patterns/pagination.New
+    guidance: "&pagination.Config{Total: pages, Current: page, HrefPattern: \"?\" + q + \"p=%d\"} becomes &ui.PaginationConfig{Pages: pages, Page: page, Query: query} (a url.Values of the state to carry); pagination.New is ui.Pagination, and Window and OmitPrevNext keep their meaning."
+  - change: "ui.DataTableConfig loses SortHrefPattern, IslandSignal and IslandEndpoint: sorting is typed props"
+    breaking: true
+    find:
+      uses:
+        - gofastr/framework/ui.DataTableConfig.SortHrefPattern
+        - gofastr/framework/ui.DataTableConfig.IslandSignal
+        - gofastr/framework/ui.DataTableConfig.IslandEndpoint
+    guidance: "SortHrefPattern becomes Query url.Values (the request state a sort carries) with optional Path, SortParam and DirParam; IslandSignal + IslandEndpoint become Island: headless.Island{Endpoint, Signal}. The island sort control is an <a> in both postures (th a.fui-data-table__sort), and the stylesheet draws the direction glyph from aria-sort."

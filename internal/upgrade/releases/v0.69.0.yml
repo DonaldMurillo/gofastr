@@ -1,0 +1,17 @@
+version: v0.69.0
+title: "Silent failures made loud: inert theme tokens, dark-palette gaps, stale dev assets"
+notes:
+  - change: "gofastr verify gains GOFASTR1806: a var(--name) the theme does not emit"
+    breaking: false
+    guidance: "A new ERROR-severity rule that can fail a verify run which passed before, because an invalid var() is not a CSS error: it resolves to nothing, the declaration is dropped, and nothing reported it. The pass now reads .css files as well as Go source. It flags a reference the theme does not emit and names the nearest token; it stays quiet for a reference carrying a fallback, a custom property declared in any scanned stylesheet, and the --ui-*/--fui-* component knobs. Fix the spelling (style.TokenNames lists what the theme emits), add a fallback, declare the property yourself, or waive it in the stylesheet with a /* gofastr:allow(GOFASTR1806) reason */ directive."
+    nodetect: "the rule itself reports each affected var() with its fix; there is no fixed spelling to find"
+  - change: A theme with a partial dark palette warns once at boot
+    breaking: false
+    guidance: "An app whose Theme.DarkColors is non-empty but missing color tokens now gets one WARN at startup naming them. Those tokens were already painting their light values under a dark preference, which is usually a contrast bug; the warning is new, the rendering is not. A key present with an EMPTY value counts too, and is the worse case: an empty custom property is valid CSS, so it overrides the light declaration and the consuming declaration is dropped rather than falling back. An empty DarkColors is a light-only theme by design and stays silent."
+    find:
+      uses:
+        - gofastr/core-ui/style.Theme.DarkColors
+  - change: "GOFASTR1801 no longer reports a Go short variable declaration as a stylesheet"
+    breaking: false
+    guidance: "fill := \"var(--color-surface)\" failed the build: fill and stroke are CSS property names and legal Go identifiers, so the colon of := satisfied the property colon. Only a fix, so nothing to do on upgrade, but a suppression added to work around it is now stale and gofastr verify will report it as such."
+    nodetect: "the stale gofastr:allow marker is a comment no matcher reads, and gofastr verify reports stale suppressions itself"

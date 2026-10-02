@@ -524,11 +524,20 @@ jobs:
     # names exactly and TestReleaseManifestMatchesCI pins the sync.
     name: "historical upgrade fixtures (blocking)"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25m: the scan gates type-check each fixture against its own-era
+    # gofastr release (mattn/go-sqlite3 needs cgo, cold compile on the
+    # runner) on top of the two build+boot cycles.
+    timeout-minutes: 25
     env:
       CGO_ENABLED: "0" # the upgraded fixtures use the pure-Go sqlite driver
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history, every release tag included. The registry symbol gate reads Go source
+          # at each release's prior tag (git ls-tree / git show), and a
+          # shallow clone has none — the test fails with fetch instructions
+          # rather than skipping when tags are absent.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5

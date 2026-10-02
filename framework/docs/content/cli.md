@@ -153,7 +153,83 @@ each command to the doc that covers it.
 - `gofastr upgrade`: move to a newer release. Lists every migration
   note between your `go.mod` version and the target (`--to vX.Y.Z`;
   without it the newest tagged release is resolved via the proxy) and
-  points at affected lines; `--apply` runs the steps ([upgrading](upgrading.md)).
+  points at the exact lines each change affects — Go through the type
+  checker, CSS through its tokenizer, `gofastr.yml` through its parser;
+  the registry format is documented under "The migration registry"
+  below. `--apply` runs the steps ([upgrading](upgrading.md)).
+
+### The migration registry (`gofastr upgrade`)
+
+The registry lives in `internal/upgrade/` and is embedded in the CLI:
+`registry.yml` holds the `through:` marker every release PR bumps and
+the marker sinks, and `releases/<version>.yml` holds one file per
+release that carries migration-relevant changes (the file name must be
+its version). Each note is a one-line
+`change`, whether it is `breaking`, a one-line `guidance`, and one of
+two things: a `find:` block saying which code the change affects, or a
+`nodetect:` one-liner saying why nothing can (a default that flipped, a
+removed CLI flag). The parser is strict: an unknown key, a regex that
+does not compile or a malformed symbol fails the build's registry tests,
+never a user's upgrade.
+
+```yaml
+# internal/upgrade/releases/v0.87.0.yml
+version: v0.87.0
+title: Site chrome moves to owned packages
+notes:
+  - change: 'BREAKING: ui.SiteHeader is now siteheader.Render'
+    breaking: true
+    guidance: "Swap the ui.SiteHeader call for siteheader.Render(siteheader.Config{...})."
+    find:
+      uses: [gofastr/framework/ui.SiteHeader]
+      strings:
+        classes: [ui-site-header]
+```
+
+Each matcher reads the code the way its language means it:
+
+- `uses`: Go objects, spelled `import.path.Name` or
+  `import.path.Type.Member` (a leading `gofastr/` is the module
+  shorthand). Every reference the type checker resolves to the symbol is
+  a hit — calls, selectors, method values, embedded promotion,
+  composite-literal keys, generics.
+- `imports`: an import path, or a `path/...` subtree.
+- `fields`: a composite-literal field. `field` names `Type.Field`; `key`
+  requires the value to be a map literal holding that constant string
+  key; `value` is a regex the constant string value must match.
+- `strings`: constant-folded Go string values. `classes` matches a
+  whitespace-delimited class token (BEM variants included), or a
+  `.name` selector when the value holds a CSS rule block; `attrs` an
+  attribute name (a trailing `-` is a prefix); `properties` a `--x`
+  custom property; `match` a regex, the last resort.
+- `css`: `.css` files through the CSS tokenizer — class selectors and
+  custom properties.
+- `config`: `gofastr.yml` keys (`*` matches any one key or list item),
+  with an optional `value` regex over the scalar.
+- `gomod`: the `go` directive; `go_below: "1.27"` flags an older one.
+- `text`: a per-line regex over files matching a glob, for languages
+  nothing above reads (shell, JS). Go and CSS files are refused: their
+  matchers read them structurally.
+
+When the app does not type-check against its current gofastr version
+(the `go.mod` was bumped first), the Go matchers fall back to the
+compile errors: an error message naming a `uses` symbol or a `fields`
+entry with no key or value condition (under the declared type or a
+type alias of it, such as `framework.EntityConfig` for
+`framework/entity.EntityConfig`), or a missing `imports` package, is a
+hit at the error's position. An error on a line
+the typed matchers already hit counts as explained (a changed method
+signature still resolves, so the call is found even though the error
+text names no package). Errors no note explains are listed at the end
+of the report.
+
+`marker_sinks:` (top level) lists where a kept `ui-*` name is an
+identifier, not a class: `calls` (a function or method argument
+position), `fields` (a struct field), `attr_keys` (a map-literal key).
+A `strings.classes` value that only reaches marker sinks is not a hit,
+so registered sheet names and `data-fui-comp` markers stay silent.
+An argument to a `testing` call (`t.Fatal`, `t.Errorf`, `t.Run`) is a
+failure message or subtest name, so no string matcher reads it.
 
 ## Verify
 

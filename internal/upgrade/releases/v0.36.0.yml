@@ -1,0 +1,14 @@
+version: v0.36.0
+title: Mandatory OAuth linking + multi-replica RBAC/seed hardening
+notes:
+  - change: OAuth login requires a durable OAuthLinker store (#98)
+    breaking: true
+    guidance: "OAuth2Plugin.Init now FAILS CLOSED when the configured UserStore does not implement OAuthLinker — the legacy email-only fallback is gone (an IdP emitting an unverified email could otherwise sign in as an existing account). Use auth.NewEntityUserStore (now a linker; it creates a <table>_oauth_links table on EnsureSchema) or set AuthConfig.AllowInMemoryStores:true for local dev. A verified-email OAuth login now REFUSES (409) an existing password account; the user adds the provider via the new authenticated GET /auth/oauth/{provider}/link flow. OIDC now enforces email_verified."
+    find:
+      uses:
+        - gofastr/battery/auth.NewOAuth2Plugin
+        - gofastr/battery/auth.OAuth2Config
+  - change: Cross-replica RBAC + advisory-locked seeds (#99)
+    breaking: false
+    guidance: "To propagate runtime grant/revoke across replicas, pass your access.GrantStore to framework.WithGrantStore alongside WithFanout — grant/revoke then refresh every replica (re-read from DB; code-defined baseline grants preserved). Additive: single-process apps are unaffected. Startup seeds + WithSeed hooks now run under a distinct Postgres advisory lock so N replicas seed once; a MaxOpenConns(1) pool skips the lock with a WARN — keep the pool above 1 for multi-replica seed coordination."
+    nodetect: additive opt-in for multi-replica deployments; single-process apps unaffected

@@ -1,0 +1,19 @@
+version: v0.13.0
+title: Component correctness
+notes:
+  - change: Unknown component variants panic at build time
+    breaking: true
+    guidance: "ui.Card / ui.ToggleAction (like ui.Button) now reject unregistered variant names at screen construction. Fix the typo or register the custom variant before first use."
+    nodetect: an unregistered variant name is a data typo; the panic names it at construction
+  - change: html.Button requires a label
+    breaking: true
+    guidance: "An empty Label with no aria-label now panics at build time. Icon-only buttons pass ExtraAttrs aria-label — `gofastr audit a11y` finds these statically."
+    nodetect: the break is a Label left empty — an absent value has no spelling
+  - change: Plain modals paint a real panel
+    breaking: true
+    guidance: "preset.Modal slots now render inside .fui-panel (surface, border, padding). Bodies that own their chrome opt out with .fui-slot-bare; selectors targeting .fui-pos-center > .fui-slot move to .fui-panel."
+    find:
+      strings:
+        classes: [fui-pos-center]
+      css:
+        classes: [fui-pos-center]

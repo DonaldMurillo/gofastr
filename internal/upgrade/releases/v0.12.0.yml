@@ -1,0 +1,7 @@
+version: v0.12.0
+title: Blueprint output layout
+notes:
+  - change: gofastr generate emits a flat package main
+    breaking: true
+    guidance: "Regenerated blueprint apps are one flat package. Existing multi-package generated apps keep working; regeneration adopts the flat layout."
+    nodetect: existing multi-package apps keep compiling and running unchanged; only regenerated output differs

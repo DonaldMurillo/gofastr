@@ -1078,25 +1078,40 @@ are listed under Added above, not here.
   button transparent and the write-back carries
   `"button.treatment": "outline"` into the emitted theme.go.
 
-- `gofastr upgrade` knows v0.86.0 ("Headless design system"): 40 notes
-  covering the 33 rows of the migration ledger above (the layout row
-  takes eight). 38 of them carry a `detect` regex the CLI runs per-line
-  over a project's non-test .go files and its .css sheets to point at
-  the exact lines the
-  release breaks — import paths
-  of the deleted `core-ui/patterns/*` packages, removed fields
-  (`SignalPrefix`, `LabelVisible`), removed classes (`ui-button`,
-  `ui-form-field`, the ten `--color-*` aliases), retired hooks
-  (`data-fui-fileupload`, `data-fui-tree-toggle`). The other two notes
-  have no line-level spelling an app carries (`ui.ValidationSummary`'s new
-  required `ID`, `FormConfig.Summary`'s moved render), so they carry a
-  `nodetect` reason instead — a new registry field, mandatory when
-  used, so an omission is a documented decision rather than an
-  oversight — and a test drives every detect through the real
-  detectHits path against one pre-stack line it must flag and the
-  migrated spelling it must stay silent on. A second test runs every
-  v0.86.0 detect over the migrated `examples/` tree and requires zero
-  hits.
+- `gofastr upgrade` reads a project the way the compiler does. Every
+  registry note carries a `find:` block, or a one-line `nodetect:`
+  reason when no spelling an app carries differs (a default that
+  flipped, a removed CLI flag). The scan loads the project once through
+  the type checker, tests included, and matches:
+  - `uses`: references resolved to the declaring object, so calls,
+    method values, embedded promotion, composite-literal keys, generic
+    instantiations and aliased imports all count, and a longer name
+    (`SiteHeaderConfig` for `SiteHeader`) does not;
+  - `imports`, and `fields` (a composite-literal field, optionally with
+    a map-key or value condition);
+  - `strings`: Go constant strings after constant folding, read as
+    class tokens, HTML attribute names, CSS custom properties or a
+    regex. A `ui-*` name that only reaches a marker sink (a registered
+    sheet name, a `data-fui-comp` value) is not a hit, and neither is
+    a `testing` call's message;
+  - `css` through the CSS tokenizer, `config` (`gofastr.yml`) through
+    the YAML parser, `gomod` against the `go` directive, and `text` as
+    the per-line last resort for files no parser reads (shell, JS).
+
+  When the project no longer compiles (the `go.mod` was bumped first),
+  the Go matchers read the compile errors instead: an error naming a
+  `uses` symbol or a missing `imports` package is a hit at its
+  position, an error on a line a typed matcher already hit counts as
+  explained, and the report lists every error no note explains. The
+  registry is one file per release under `internal/upgrade/releases/`:
+  294 notes from v0.3.0 on (181 `find`, 113 `nodetect`), 42 of them
+  for v0.86.0 ("Headless design system"). Parse errors name the file
+  and line. The registry tests refuse an unknown key, a note with
+  neither `find` nor `nodetect`, a v0.86.0 string or CSS matcher that
+  fires on its migrated spelling, and any v0.86.0 hit on the migrated
+  `examples/` tree; CI also refuses a `uses` symbol that did not exist
+  at the release before its note, and checks each historical fixture
+  app's `migration.patch` hunk by hunk against the scan.
 
 - `framework/headless` gains the navigation primitives `Rail`,
   `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,

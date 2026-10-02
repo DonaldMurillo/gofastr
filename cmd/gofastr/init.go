@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
 func runInit(args []string) {
@@ -362,7 +363,7 @@ func normalizeFrameworkVersion(v string) string {
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v
 	}
-	if _, err := parseSemver(v); err != nil {
+	if _, err := upgrade.ParseSemver(v); err != nil {
 		return ""
 	}
 	return v

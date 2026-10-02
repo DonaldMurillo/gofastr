@@ -1,0 +1,9 @@
+version: v0.62.0
+title: Green-gated releases and fail-closed generated boot
+notes:
+  - change: Generated apps abort startup on failed migrations or seed rows
+    breaking: false
+    guidance: "Behavioral: `gofastr init` scaffolds now exit on a migrator.Up error instead of logging 'Migration warning' and starting, and blueprint seed hooks return the first failing row's error (WithSeed errors abort Start). A deploy that previously came up over an unapplied schema, or with seed rows silently dropped, now fails the rollout with the entity named. Regenerate to pick both up, and fix the migration or seed data rather than restoring warn-and-boot."
+    find:
+      strings:
+        match: '^(Migration warning|seed %s: skipping row)'

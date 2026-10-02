@@ -1,0 +1,7 @@
+version: v0.71.1
+title: Relay forwards trailing-slash tails
+notes:
+  - change: battery/relay forwards trailing-slash subtree tails
+    nodetect: "fix only; no configuration changes"
+    breaking: false
+    guidance: "Fix only. Vendor SDK paths like /i/v0/e/ previously died as the relay's own 400; they now reach the upstream with the slash intact. Mid-path empty segments are still refused. No configuration changes."

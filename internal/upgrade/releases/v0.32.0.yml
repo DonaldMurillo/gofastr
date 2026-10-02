@@ -1,0 +1,15 @@
+version: v0.32.0
+title: Customer-facing CLI generation
+notes:
+  - change: gofastr generate cli (#85)
+    breaking: false
+    guidance: "New generator: run from an app root to emit a standalone customer CLI under cli/ wrapping the app's entities/client package — CRUD, batch, SSE watch, scoped-token login. Additive; custom.go is the dev-owned extension seam and survives --force regens."
+    nodetect: additive generator; nothing in an existing app changes
+  - change: auth.RequireAPIScopes blanket scope gate
+    breaking: false
+    guidance: "Minted API-token scopes were advisory unless per-route RequireScope was mounted. Mount auth.RequireAPIScopes(\"/api\") after TokenMiddleware to enforce them across the auto-CRUD tree; sessions and off-prefix paths are untouched. Additive — but hosts that mint scoped tokens should adopt it."
+    nodetect: advisory adoption of a new middleware; no existing code breaks
+  - change: Generated typed client grows Token, batch, Watch, and Do
+    breaking: false
+    guidance: "entities/client gains an opt-in Token field (Authorization: Bearer), BatchCreate/BatchUpdate/BatchDelete<Entity>, Watch<Entity> (SSE), and a raw Do escape hatch. Regenerate the client (gofastr generate --force from your blueprint, or re-run pack+generate) to pick them up; existing call sites keep compiling."
+    nodetect: additive client surface; existing call sites keep compiling

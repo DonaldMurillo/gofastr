@@ -3,8 +3,11 @@ package docs
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
 // readDoc loads a shipped doc by name from content/. The doc corpus is
@@ -185,7 +188,7 @@ func TestHooksDocReadSurfacesIncludeTypedQuery(t *testing.T) {
 }
 
 // CHANGELOG.md promises breaking changes are marked **BREAKING**, and
-// cmd/gofastr/upgrades.yml records the same releases for `gofastr upgrade`.
+// internal/upgrade's registry records the same releases for `gofastr upgrade`.
 // Those two must agree: the changelog section is what feeds
 // `gh release create --notes-file`, and the registry is what an upgrading
 // project actually reads. A release marked breaking in one and not the other
@@ -201,21 +204,21 @@ func TestChangelogAgreesWithUpgradesOnBreaking(t *testing.T) {
 		known, ok := breakingByVersion[ver.version]
 		if !ok {
 			// A release with no migration-relevant change gets no
-			// upgrades.yml entry; that is the documented shape, and it is
+			// registry file; that is the documented shape, and it is
 			// also how a release with no breaking change looks.
 			known = false
 		}
 		marked := marksBreaking(ver.body)
 		switch {
 		case known && !marked:
-			t.Errorf("cmd/gofastr/upgrades.yml marks %s breaking, but its CHANGELOG.md "+
+			t.Errorf("internal/upgrade/releases/%[1]s.yml marks %[1]s breaking, but its CHANGELOG.md "+
 				"section never says BREAKING — the release notes come from that section, "+
 				"so an upgrading reader is not warned", ver.version)
 		case marked && !known:
-			t.Errorf("CHANGELOG.md marks %s BREAKING, but cmd/gofastr/upgrades.yml has no "+
+			t.Errorf("CHANGELOG.md marks %s BREAKING, but internal/upgrade/releases/ has no "+
 				"breaking note for it — `gofastr upgrade` will not surface the change. "+
-				"upgrades.yml's own maintenance rule: a release that lands BREAKING "+
-				"changes adds its entry there", ver.version)
+				"The registry's maintenance rule: a release that lands BREAKING "+
+				"changes adds releases/<version>.yml", ver.version)
 		}
 	}
 }
@@ -269,27 +272,20 @@ func changelogVersions(t *testing.T) []changelogSection {
 	return out
 }
 
-// upgradeRegistryBreaking reports, per release in cmd/gofastr/upgrades.yml,
-// whether any of its notes is `breaking: true`. The file is deliberately
-// simple YAML (its header says the parser has no block scalars), so a line
-// scan reads it the same way the CLI's does.
+// upgradeRegistryBreaking reports, per release in the migration registry
+// (internal/upgrade), whether any of its notes is `breaking: true`.
 func upgradeRegistryBreaking(t *testing.T) map[string]bool {
 	t.Helper()
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("load the migration registry: %v", err)
+	}
 	out := map[string]bool{}
-	cur := ""
-	for line := range strings.SplitSeq(readRepo(t, "cmd/gofastr/upgrades.yml"), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if v, ok := strings.CutPrefix(trimmed, "- version:"); ok {
-			cur = strings.TrimSpace(v)
-			out[cur] = false
-			continue
-		}
-		if cur != "" && trimmed == "breaking: true" {
-			out[cur] = true
-		}
+	for _, r := range reg.Releases {
+		out[r.Version] = slices.ContainsFunc(r.Notes, func(n *upgrade.Note) bool { return n.Breaking })
 	}
 	if len(out) == 0 {
-		t.Fatal("cmd/gofastr/upgrades.yml has no `- version:` entries")
+		t.Fatal("the migration registry has no releases")
 	}
 	return out
 }

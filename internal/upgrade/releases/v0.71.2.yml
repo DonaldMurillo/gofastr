@@ -1,0 +1,7 @@
+version: v0.71.2
+title: Card footers pin to the card edge
+notes:
+  - change: ui.Card footers carry margin-top auto and the linked variant's inner wrapper grows to fill the anchor
+    nodetect: "fix only; no configuration changes"
+    breaking: false
+    guidance: "Fix only. Config-only cards (Heading/Description/Footer with no body children) in a stretch context — a ui.Grid row, an align-stretch flex parent — previously floated the footer mid-card; it now pins to the bottom edge, for plain and linked (Href) cards alike. No configuration changes."

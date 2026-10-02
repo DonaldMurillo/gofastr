@@ -1,0 +1,16 @@
+version: v0.4.0
+title: Declaration-driven entities
+notes:
+  - change: Legacy entities/*.json declaration format removed
+    breaking: true
+    guidance: "Declare entities in Go (framework/entity.EntityDeclaration) or a blueprint. `gofastr generate` emits the Go form; JSON files are no longer read."
+    find:
+      uses:
+        - gofastr/framework.App.EntityFromFile
+        - gofastr/framework.App.EntitiesFromDir
+        - gofastr/framework.App.GroupEntitiesFromDir
+        - gofastr/framework/entity.LoadEntityDeclaration
+        - gofastr/framework/entity.LoadEntityDeclarations
+      text:
+        - glob: "entities/*.json"
+          match: '"(name|table|fields)"[[:space:]]*:'

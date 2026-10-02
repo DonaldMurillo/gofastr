@@ -55,13 +55,27 @@ same-version generator bug, not a cross-version migration step).
 Per fixture, `TestHistoricalUpgrades`:
 
 1. Copies the fixture to a temp dir.
-2. Adds `replace github.com/DonaldMurillo/gofastr => <repo root>` to its
+2. Scans it with the typed scanner (`internal/upgrade/scan`) as generated,
+   still pinned to its own release (module proxy, cgo for the old sqlite
+   driver): it must type-check there, and every `migration.patch` hunk that
+   edits a `.go`, `.css`, `gofastr.yml` or `go.mod` file must be matched by
+   some in-range note inside the hunk's old line range (a short, justified
+   table exempts hunks no note can find — pure insertions with no retired
+   spelling).
+3. Adds `replace github.com/DonaldMurillo/gofastr => <repo root>` to its
    `go.mod`. This is how an unreleased bump lands without a published tag.
-3. Applies `migration.patch`: the manual Go-source edits `gofastr upgrade
-   --apply` cannot do, one hunk per `upgrades.yml` entry.
-4. Runs `go mod tidy` + `go build` (the mechanical steps `--apply` runs).
-5. Boots the upgraded binary against a copy of `seed.db`.
-6. Asserts, over HTTP (no browser):
+4. Scans again, still unpatched, against the current tree: the app must NOT
+   type-check, every compile error the upgrade causes must be explained by an
+   in-range note, breaking-note hits on Go/CSS files must land inside the
+   patch's old ranges, and one `gofastr upgrade` CLI smoke run keeps the
+   shipped binary path covered.
+5. Applies `migration.patch`: the manual Go-source edits `gofastr upgrade
+   --apply` cannot do, one hunk per registry note (`internal/upgrade/releases/`).
+   A third scan asserts no breaking note's strings/css/config/gomod matcher
+   still hits (no retired spelling survived) and that the app type-checks again.
+6. Runs `go mod tidy` + `go build` (the mechanical steps `--apply` runs).
+7. Boots the upgraded binary against a copy of `seed.db`.
+8. Asserts, over HTTP (no browser):
    - SSR renders (`GET /`, `GET /tags` → 200).
    - Public CRUD survives (`GET /api/tags` → the seeded count).
    - OpenAPI is auth-gated (401 anon, 200 authed) and names every entity.
@@ -77,9 +91,18 @@ skips `migration.patch` and asserts `go build` fails with an actionable error
 naming the removed `EntityConfig` fields. A green build there would mean the
 driver cannot detect a skipped upgrade step, which defeats its purpose.
 
+The registry-side gates live beside the driver:
+`TestRegistrySymbolsExistedAtPriorTag` reads each note's `uses`/`fields`
+symbols and `imports` paths out of the git history at the newest tag below
+the note's release (syntactically, via `go/parser` over `git show`), so a
+typo, or a symbol spelled at its HEAD path when it lived elsewhere back then,
+fails the job instead of silently matching nothing. It needs the repo's tags:
+locally `git fetch --tags origin`; the CI job checks out with
+`fetch-depth: 0`.
+
 ## The migration itself (what's in migration.patch)
 
-Two documented `upgrades.yml` entries, identical for both fixtures:
+Two documented registry notes, identical for both fixtures:
 
 - **v0.54.0, grouped EntityConfig.** The flat `OwnerField` / `Public` / `CRUD`
   / `MCP` / `Access` fields move to `Scope` and `Exposure`. `migration.patch`
@@ -110,12 +133,12 @@ Two documented `upgrades.yml` entries, identical for both fixtures:
   that ignores the argument compiles and silently drops the wiring, which is
   the defect the builder exists to prevent.
 
-  These unreleased steps have **no `upgrades.yml` entries yet**, and
-  deliberately so: the
-  registry is keyed by released version and its `through:` marker is pinned to
-  the newest CHANGELOG release heading (two tests enforce both). The entries get
-  written when the release carrying the framework/ui rebuild is cut; the
-  fixtures cannot wait for that, because they build against the current tree.
+  These unreleased steps had **no registry notes** when the fixtures were
+  written (the registry is keyed by released version and its `through:`
+  marker is pinned to the newest CHANGELOG release heading; two tests
+  enforce both). The coverage gate now enforces their arrival: it fails on
+  the hunks they explain until the notes carrying the release land in
+  `internal/upgrade/releases/`, so a forgotten entry cannot merge quietly.
 
 Everything else the v0.38.0 / v0.53.0 generators emitted (the screens, the auth
 wiring) compiles against the current tree unchanged.
@@ -136,10 +159,12 @@ modules, and boots servers). The CI job `upgrade-fixtures` sets the env var.
 
 ## CI
 
-Non-blocking for the v0.63 release (promotable to blocking once it has a stretch
-of green runs). It runs the driver against the current tree. The job restores
-the per-SHA Go cache the `test` job writes and is bounded by a 15-minute
-timeout.
+Blocking since 2026-08-16 (promoted after a stretch of green runs). It runs
+the whole package — the driver, the negative proof, and the registry symbol
+gate — against the current tree, checks out with `fetch-depth: 0` so the tags
+the symbol gate reads are present, restores the per-SHA Go cache the `test`
+job writes, and is bounded by a 25-minute timeout (the own-version scans
+compile the old eras' module trees, including the cgo sqlite driver).
 
 ## Adding a new fixture
 

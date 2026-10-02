@@ -1,200 +1,29 @@
 package main
 
 import (
-	_ "embed"
+	"cmp"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
+	"slices"
 	"strings"
 
-	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
 )
 
 // gofastrModule is the module path both go.mod inspection and the
 // mechanical upgrade steps operate on.
 const gofastrModule = "github.com/DonaldMurillo/gofastr"
 
-// upgradesYML is the migration registry: one entry per release that
-// carries migration-relevant changes, maintained alongside CHANGELOG.md
-// (a release PR with a BREAKING change adds its entry here in the same
-// PR). `gofastr upgrade` reads it to guide a project from its current
-// version to a target.
-//
-//go:embed upgrades.yml
-var upgradesYML string
+// scanRun is the engine entry point; a var so tests can stub the scan
+// while exercising the renderer.
+var scanRun = scan.Run
 
-// upgradeNote is one migration-relevant change within a release.
-type upgradeNote struct {
-	Change   string // one-line summary
-	Breaking bool
-	Guidance string // one-line, actionable
-	Detect   string // optional Go regex run per-line over the project's .go files
-	Nodetect string // optional one-line reason a breaking note has no detect (no line-level spelling exists)
-}
-
-// upgradeRelease groups the notes for one tagged release.
-type upgradeRelease struct {
-	Version string // vX.Y.Z
-	Title   string
-	Notes   []upgradeNote
-}
-
-// loadUpgradeRegistry parses the embedded registry. Returned releases
-// keep file order, which the registry test pins to ascending semver.
-// through is the release the registry is complete up to. Releases at
-// or below it with no entry genuinely had no migration-relevant
-// changes, while targets beyond it are newer than this CLI's knowledge.
-func loadUpgradeRegistry() ([]upgradeRelease, error) {
-	rel, _, err := loadUpgradeRegistryFull()
-	return rel, err
-}
-
-func loadUpgradeRegistryFull() ([]upgradeRelease, string, error) {
-	root, err := coreyaml.Parse(upgradesYML)
-	if err != nil {
-		return nil, "", fmt.Errorf("upgrades.yml: %w", err)
-	}
-	through := yamlString(root.Map["through"])
-	if _, err := parseSemver(through); err != nil {
-		return nil, "", fmt.Errorf("upgrades.yml: %w", err)
-	}
-	list := root.Map["releases"]
-	if list == nil || list.Kind != coreyaml.List {
-		return nil, "", fmt.Errorf("upgrades.yml: missing releases list")
-	}
-	var out []upgradeRelease
-	for _, item := range list.List {
-		if item.Kind != coreyaml.Map {
-			return nil, "", fmt.Errorf("upgrades.yml: release entry is not a map (line %d)", item.Line)
-		}
-		rel := upgradeRelease{
-			Version: yamlString(item.Map["version"]),
-			Title:   yamlString(item.Map["title"]),
-		}
-		if notes := item.Map["notes"]; notes != nil && notes.Kind == coreyaml.List {
-			for _, n := range notes.List {
-				if n.Kind != coreyaml.Map {
-					continue
-				}
-				rel.Notes = append(rel.Notes, upgradeNote{
-					Change:   yamlString(n.Map["change"]),
-					Breaking: yamlBool(n.Map["breaking"]),
-					Guidance: yamlString(n.Map["guidance"]),
-					Detect:   yamlString(n.Map["detect"]),
-					Nodetect: yamlString(n.Map["nodetect"]),
-				})
-			}
-		}
-		out = append(out, rel)
-	}
-	return out, through, nil
-}
-
-func yamlString(n *coreyaml.Node) string {
-	if n == nil || n.Kind != coreyaml.Scalar {
-		return ""
-	}
-	switch v := n.Value.(type) {
-	case string:
-		return v
-	case int:
-		return strconv.Itoa(v)
-	default:
-		return ""
-	}
-}
-
-func yamlBool(n *coreyaml.Node) bool {
-	if n == nil || n.Kind != coreyaml.Scalar {
-		return false
-	}
-	b, _ := n.Value.(bool)
-	return b
-}
-
-// semver is a parsed version: the vX.Y.Z core plus any prerelease
-// suffix (which is also how Go pseudo-versions look:
-// v0.25.1-0.20260715120000-abcdef123456).
-type semver struct {
-	nums [3]int
-	pre  string // "" for a release; the "-…" tail (sans dash) otherwise
-}
-
-// parseSemver parses vMAJOR.MINOR.PATCH with an optional -prerelease
-// (or +build, ignored) suffix, covering the pseudo-versions Go writes
-// into go.mod.
-func parseSemver(v string) (semver, error) {
-	var out semver
-	if !strings.HasPrefix(v, "v") {
-		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-	}
-	core := strings.TrimPrefix(v, "v")
-	if i := strings.IndexByte(core, '+'); i >= 0 {
-		core = core[:i]
-	}
-	if i := strings.IndexByte(core, '-'); i >= 0 {
-		out.pre = core[i+1:]
-		core = core[:i]
-	}
-	parts := strings.Split(core, ".")
-	if len(parts) != 3 {
-		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-		}
-		out.nums[i] = n
-	}
-	return out, nil
-}
-
-// semverLess reports a < b. Same-core comparisons follow semver: a
-// prerelease (or pseudo-version) sorts before its release; two
-// prereleases compare lexically (exact enough for pseudo-version
-// timestamps). Malformed versions compare as lowest so an unknown
-// current version includes every registry entry up to target.
-func semverLess(a, b string) bool {
-	av, aerr := parseSemver(a)
-	bv, berr := parseSemver(b)
-	if aerr != nil {
-		return berr == nil
-	}
-	if berr != nil {
-		return false
-	}
-	for i := 0; i < 3; i++ {
-		if av.nums[i] != bv.nums[i] {
-			return av.nums[i] < bv.nums[i]
-		}
-	}
-	if (av.pre == "") != (bv.pre == "") {
-		return av.pre != "" // prerelease < release
-	}
-	return av.pre < bv.pre
-}
-
-// releasesInRange returns the registry entries in (current, target],
-// i.e. everything the project crosses when moving current → target.
-// An empty/unknown current includes everything up to target.
-func releasesInRange(reg []upgradeRelease, current, target string) []upgradeRelease {
-	var out []upgradeRelease
-	for _, r := range reg {
-		if current != "" && !semverLess(current, r.Version) {
-			continue
-		}
-		if semverLess(target, r.Version) {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
-}
+// maxNoteHits caps the hits rendered per note (and the unexplained
+// compile errors) so one pervasive pattern doesn't drown the report.
+const maxNoteHits = 20
 
 // goModGofastrVersion reads root/go.mod and returns the required
 // gofastr version plus whether a replace directive overrides it (a
@@ -240,62 +69,69 @@ func goModGofastrVersion(root string) (version string, replaced bool, err error)
 	return version, replaced, nil
 }
 
-// detectHits runs one note's regex over the project's source and
-// returns "file:line" hits (root-relative), capped so one pervasive
-// pattern doesn't drown the report. Scanned are non-test .go files and
-// .css stylesheets — owned .style.css/.tokens.css sheets and plain app
-// styles alike — because several releases' breaks are CSS class and
-// token renames a Go-only scan can never see. The same directories are
-// skipped for both.
-func detectHits(root, pattern string) []string {
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil
+// upgradeReport scans root once for every note in range and renders
+// the whole notes block: the not-type-checked NOTE, the releases with
+// their guidance and hits, and the unexplained compile errors. When
+// the engine cannot run at all the notes still print, with no hits:
+// guidance never depends on the scan succeeding.
+func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerSinks) string {
+	var notes []*upgrade.Note
+	for _, r := range inRange {
+		notes = append(notes, r.Notes...)
 	}
-	const maxHits = 20
-	var hits []string
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || len(hits) >= maxHits {
-			return filepath.SkipAll
-		}
-		if d.IsDir() {
-			name := d.Name()
-			switch name {
-			case "vendor", ".git", "node_modules", "dist", "bin", "build", "tmp":
-				return fs.SkipDir
+	if len(notes) == 0 {
+		return formatUpgradeNotes(nil, inRange)
+	}
+	result, err := scanRun(root, notes, sinks)
+	if err != nil {
+		var b strings.Builder
+		fmt.Fprintf(&b, "NOTE: could not scan this project (%v); no lines are\n", err)
+		b.WriteString("      pointed at below, but every note still carries its guidance.\n\n")
+		b.WriteString(formatUpgradeNotes(nil, inRange))
+		return b.String()
+	}
+	var b strings.Builder
+	if !result.TypeChecked {
+		b.WriteString("NOTE: the app did not type-check against its current gofastr version, so\n")
+		b.WriteString("      the Go matches below come from its compile errors, not the type\n")
+		b.WriteString("      checker. Packages that failed: " + brokenList(result.Broken) + ".\n\n")
+	}
+	b.WriteString(formatUpgradeNotes(result, inRange))
+	if len(result.Unexplained) > 0 {
+		b.WriteString("Compile errors no note explains:\n")
+		for i, h := range result.Unexplained {
+			if i == maxNoteHits {
+				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unexplained)-maxNoteHits)
+				break
 			}
-			if strings.HasPrefix(name, ".") && name != "." {
-				return fs.SkipDir
-			}
-			return nil
+			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(h.Why, "\n", "\n      "))
 		}
-		scan := strings.HasSuffix(path, ".css") ||
-			(strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go"))
-		if !scan {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		for i, line := range strings.Split(string(body), "\n") {
-			if re.MatchString(line) {
-				hits = append(hits, rel+":"+strconv.Itoa(i+1))
-				if len(hits) >= maxHits {
-					break
-				}
-			}
-		}
-		return nil
-	})
-	return hits
+	}
+	return b.String()
+}
+
+// brokenList renders the broken-package list, capped: at most five
+// names, then "and N more".
+func brokenList(broken []string) string {
+	const max = 5
+	if len(broken) == 0 {
+		return "none reported"
+	}
+	shown, extra := broken, 0
+	if len(broken) > max {
+		shown, extra = broken[:max], len(broken)-max
+	}
+	s := strings.Join(shown, ", ")
+	if extra > 0 {
+		s += fmt.Sprintf(", and %d more", extra)
+	}
+	return s
 }
 
 // formatUpgradeNotes renders the migration notes for the releases a
-// project crosses, running each note's detector against root so the
-// report points at the exact lines that need attention.
-func formatUpgradeNotes(root string, releases []upgradeRelease) string {
+// project crosses, each note followed by the lines the scan found in
+// the project. A nil result renders every note with no hits.
+func formatUpgradeNotes(result *scan.Result, releases []upgrade.Release) string {
 	if len(releases) == 0 {
 		return "No migration notes between these versions: the mechanical steps below are all there is.\n"
 	}
@@ -320,11 +156,17 @@ func formatUpgradeNotes(root string, releases []upgradeRelease) string {
 			}
 			fmt.Fprintf(&b, "  %s %s\n", marker, change)
 			fmt.Fprintf(&b, "      %s\n", n.Guidance)
-			if n.Detect != "" {
-				if hits := detectHits(root, n.Detect); len(hits) > 0 {
-					b.WriteString("      found in your project:\n")
-					for _, h := range hits {
-						fmt.Fprintf(&b, "        %s\n", h)
+			hits := sortedHits(result, n)
+			if len(hits) > 0 {
+				b.WriteString("      found in your project:\n")
+				for i, h := range hits {
+					if i == maxNoteHits {
+						fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
+						break
+					}
+					fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), h.Why)
+					if h.Err != "" {
+						fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(h.Err, "\n", "\n          "))
 					}
 				}
 			}
@@ -332,6 +174,38 @@ func formatUpgradeNotes(root string, releases []upgradeRelease) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// sortedHits copies a note's hits out of the scan result in the
+// report's stable order: file, line, column.
+func sortedHits(result *scan.Result, note *upgrade.Note) []scan.Hit {
+	if result == nil {
+		return nil
+	}
+	hits := append([]scan.Hit(nil), result.Hits[note]...)
+	slices.SortStableFunc(hits, func(a, b scan.Hit) int {
+		if c := strings.Compare(a.File, b.File); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Line, b.Line); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Col, b.Col)
+	})
+	return hits
+}
+
+// hitPos renders a hit's position; the column is dropped for matchers
+// that have none (gomod, config), and an error the go command reported
+// without a position reads "(no position)".
+func hitPos(h scan.Hit) string {
+	if h.File == "" {
+		return "(no position)"
+	}
+	if h.Col > 0 {
+		return fmt.Sprintf("%s:%d:%d", h.File, h.Line, h.Col)
+	}
+	return fmt.Sprintf("%s:%d", h.File, h.Line)
 }
 
 // resolveLatestVersion asks the module proxy for the newest tagged
@@ -406,7 +280,7 @@ func runUpgrade(args []string) {
 		osExit(2)
 	}
 
-	reg, through, err := loadUpgradeRegistryFull()
+	reg, err := upgrade.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		osExit(1)
@@ -426,7 +300,7 @@ func runUpgrade(args []string) {
 			osExit(1)
 		}
 	}
-	if _, err := parseSemver(target); err != nil {
+	if _, err := upgrade.ParseSemver(target); err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		osExit(1)
 	}
@@ -438,7 +312,7 @@ func runUpgrade(args []string) {
 	}
 	fmt.Printf("Target:  %s\n\n", target)
 
-	if !semverLess(current, target) {
+	if !upgrade.SemverLess(current, target) {
 		if current == target {
 			fmt.Println("Already on the target release: nothing to do.")
 			return
@@ -448,19 +322,19 @@ func runUpgrade(args []string) {
 		fmt.Println()
 	}
 	lo, hi := current, target
-	if semverLess(target, current) {
+	if upgrade.SemverLess(target, current) {
 		lo, hi = target, current
 	}
 	// Key the staleness warning on the UPPER bound of the inspected
 	// range rather than only the target. A downgrade FROM a version newer
 	// than the registry also spans releases this binary doesn't know.
-	if semverLess(through, hi) {
-		fmt.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", through)
+	if upgrade.SemverLess(reg.Through, hi) {
+		fmt.Printf("NOTE: this CLI's migration registry is complete through %s: the\n", reg.Through)
 		fmt.Printf("range shown reaches %s, so it may cross notes this binary doesn't\n", hi)
 		fmt.Println("know. Install the newest involved CLI first and re-run:")
 		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", gofastrModule, hi)
 	}
-	fmt.Print(formatUpgradeNotes(opts.root, releasesInRange(reg, lo, hi)))
+	fmt.Print(upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks))
 	fmt.Println("Consult the release notes for the full story:")
 	fmt.Printf("    https://github.com/DonaldMurillo/gofastr/releases\n\n")
 
