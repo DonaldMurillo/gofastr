@@ -1104,7 +1104,10 @@ are listed under Added above, not here.
   position, an error on a line a typed matcher already hit counts as
   explained, and the report lists every error no note explains.
   Versions compare by semver precedence, so `rc.2` sorts before
-  `rc.10`. The
+  `rc.10`.
+  `--from vX.Y.Z` names the release the code was written for, since a
+  bumped `go.mod` already names the target; without it that run reports
+  "nothing to do" and points at the flag. The
   registry is one file per release under `internal/upgrade/releases/`:
   294 notes from v0.3.0 on (181 `find`, 113 `nodetect`), 42 of them
   for v0.86.0 ("Headless design system"). Parse errors name the file

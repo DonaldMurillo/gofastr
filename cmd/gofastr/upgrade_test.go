@@ -93,6 +93,54 @@ func TestParseUpgradeArgsForms(t *testing.T) {
 	}
 }
 
+func TestParseUpgradeArgsFrom(t *testing.T) {
+	for _, args := range [][]string{{"--from", "v0.85.0"}, {"--from=v0.85.0"}} {
+		opts, bad := parseUpgradeArgs(args)
+		if bad != "" || opts.from != "v0.85.0" {
+			t.Errorf("args %v: from=%q bad=%q", args, opts.from, bad)
+		}
+	}
+}
+
+// bumpedApp writes an app whose go.mod already names v0.86.0: the user
+// ran go get before gofastr upgrade.
+func bumpedApp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "go.mod", "module app\n\ngo 1.27\n\nrequire "+gofastrModule+" v0.86.0\n")
+	return dir
+}
+
+func TestUpgradeBumpedGoModHintsFrom(t *testing.T) {
+	dir := bumpedApp(t)
+	out := covT_capStdout(t, func() { runUpgrade([]string{dir, "--to", "v0.86.0"}) })
+	if !strings.Contains(out, "nothing to do") || !strings.Contains(out, "--from") {
+		t.Fatalf("a bumped go.mod must point at --from:\n%s", out)
+	}
+}
+
+func TestUpgradeFromOverridesGoMod(t *testing.T) {
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true}, nil
+	})
+	dir := bumpedApp(t)
+	out := covT_capStdout(t, func() { runUpgrade([]string{dir, "--from", "v0.85.0", "--to", "v0.86.0"}) })
+	if !strings.Contains(out, "Current: v0.85.0 (--from)") {
+		t.Fatalf("--from must replace the go.mod version:\n%s", out)
+	}
+	if strings.Contains(out, "nothing to do") || !strings.Contains(out, "v0.86.0") {
+		t.Fatalf("--from must report the v0.86.0 notes:\n%s", out)
+	}
+}
+
+func TestUpgradeFromRejectsBadVersion(t *testing.T) {
+	dir := bumpedApp(t)
+	code := covT_capExit(t, func() { runUpgrade([]string{dir, "--from", "latest", "--to", "v0.86.0"}) })
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 for a non-semver --from", code)
+	}
+}
+
 func writeUpgradeFixture(t *testing.T, dir, rel, body string) {
 	t.Helper()
 	full := filepath.Join(dir, rel)

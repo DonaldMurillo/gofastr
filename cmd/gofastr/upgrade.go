@@ -224,22 +224,25 @@ func resolveLatestVersion() (string, error) {
 
 type upgradeOpts struct {
 	root  string
+	from  string
 	to    string
 	apply bool
 }
 
 // parseUpgradeArgs resolves `gofastr upgrade` arguments: an optional
-// positional root, --to in both `--to=v` and `--to v` spellings,
-// --apply, and --help. badFlag carries the first unknown flag.
+// positional root, --from and --to in both `--to=v` and `--to v`
+// spellings, --apply, and --help. badFlag carries the first unknown flag.
 func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 	opts := upgradeOpts{root: "."}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--to" && i+1 < len(args) {
-			arg = "--to=" + args[i+1]
+		if (arg == "--to" || arg == "--from") && i+1 < len(args) {
+			arg += "=" + args[i+1]
 			i++
 		}
 		switch {
+		case strings.HasPrefix(arg, "--from="):
+			opts.from = strings.TrimPrefix(arg, "--from=")
 		case strings.HasPrefix(arg, "--to="):
 			opts.to = strings.TrimPrefix(arg, "--to=")
 		case arg == "--apply":
@@ -259,7 +262,7 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 func runUpgrade(args []string) {
 	opts, bad := parseUpgradeArgs(args)
 	if bad == "--help" {
-		fmt.Println("Usage: gofastr upgrade [root] [--to vX.Y.Z] [--apply]")
+		fmt.Println("Usage: gofastr upgrade [root] [--from vX.Y.Z] [--to vX.Y.Z] [--apply]")
 		fmt.Println()
 		fmt.Println("Guides an app from its current GoFastr release to a newer one: reads")
 		fmt.Println("the project's go.mod, shows every migration note between the two")
@@ -269,6 +272,10 @@ func runUpgrade(args []string) {
 		fmt.Println("Without --to the newest tagged release is resolved via the module")
 		fmt.Println("proxy. With --apply the mechanical steps run for you: go get, go mod")
 		fmt.Println("tidy, go build ./..., go test ./….")
+		fmt.Println()
+		fmt.Println("--from names the release the code was written for when go.mod no")
+		fmt.Println("longer says so: run go get first and go.mod already names the")
+		fmt.Println("target, which hides every note in between.")
 		fmt.Println()
 		fmt.Println("Install the TARGET version of this CLI first: an older binary's")
 		fmt.Println("registry can't know about newer releases:")
@@ -291,6 +298,14 @@ func runUpgrade(args []string) {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		osExit(1)
 	}
+	currentFrom := "go.mod"
+	if opts.from != "" {
+		if err := upgrade.ValidateSemver(opts.from); err != nil {
+			fmt.Fprintf(os.Stderr, "upgrade: --from: %v\n", err)
+			osExit(1)
+		}
+		current, currentFrom = opts.from, "--from"
+	}
 
 	target := opts.to
 	if target == "" {
@@ -305,8 +320,8 @@ func runUpgrade(args []string) {
 		osExit(1)
 	}
 
-	fmt.Printf("Current: %s (go.mod)\n", current)
-	if replaced {
+	fmt.Printf("Current: %s (%s)\n", current, currentFrom)
+	if replaced && opts.from == "" {
 		fmt.Println("         NOTE: go.mod has a replace directive for gofastr: the")
 		fmt.Println("         version above may not be what actually builds.")
 	}
@@ -315,6 +330,11 @@ func runUpgrade(args []string) {
 	if !upgrade.SemverLess(current, target) {
 		if current == target {
 			fmt.Println("Already on the target release: nothing to do.")
+			if opts.from == "" {
+				fmt.Println("If go.mod was bumped before this run, re-run with the release the")
+				fmt.Println("code was written for to see the notes and the lines they affect:")
+				fmt.Printf("    gofastr upgrade --from vX.Y.Z --to %s\n", target)
+			}
 			return
 		}
 		fmt.Println("Target is OLDER than the current version. Downgrades aren't guided;")

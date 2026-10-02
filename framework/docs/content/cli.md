@@ -156,7 +156,9 @@ each command to the doc that covers it.
   points at the exact lines each change affects — Go through the type
   checker, CSS through its tokenizer, `gofastr.yml` through its parser;
   the registry format is documented under "The migration registry"
-  below. `--apply` runs the steps ([upgrading](upgrading.md)).
+  below. `--apply` runs the steps ([upgrading](upgrading.md)). If
+  `go.mod` was bumped before the run, pass `--from vX.Y.Z` (the release
+  the code was written for); otherwise the range is empty.
 
 ### The migration registry (`gofastr upgrade`)
 
