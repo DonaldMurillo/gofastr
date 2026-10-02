@@ -661,7 +661,7 @@ func rewriteGomodReplace(t *testing.T, appDir, repoRoot string) {
 	s := string(b)
 	// Drop any existing gofastr replace directive.
 	s = regexp.MustCompile(`(?m)^replace\s+github\.com/DonaldMurillo/gofastr\b[^\n]*\n`).ReplaceAllString(s, "")
-	s = regexp.MustCompile(`(?m)^go\s+\S+$`).ReplaceAllString(s, "go "+repoGoDirective(t, repoRoot))
+	s = regexp.MustCompile(`(?m)^go\s+\S+[ \t]*(//.*)?$`).ReplaceAllString(s, "go "+repoGoDirective(t, repoRoot))
 	if !strings.HasSuffix(s, "\n") {
 		s += "\n"
 	}

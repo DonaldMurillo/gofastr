@@ -1152,7 +1152,8 @@ are listed under Added above, not here.
   that did not exist at the release before its note and a
   `hits: review` symbol its own release removed, checks each
   historical fixture app's `migration.patch` hunk by hunk against the
-  scan.
+  scan, and scans a fixture app holding one instance of every code
+  shape a review found the scanner misreading, line by line.
 
 - Rendered pages are checked for retired markup. A class built at run
   time (`fmt.Sprintf("ui-%s", kind)`, a name read from the database)
