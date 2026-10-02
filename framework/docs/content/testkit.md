@@ -65,8 +65,17 @@ or stylesheet); run gofastr upgrade
 
 Attribute values never match — `data-fui-comp="ui-sidebar"` is a kept
 component marker, not the retired `ui-sidebar` class — and a migrated
-spelling reports nothing. Full pages, navigation partials, deferred
-parts, and 404/405/error documents are all scanned.
+spelling reports nothing.
+
+Every response on the app router is read by its `Content-Type`: full
+pages, navigation partials, deferred parts, 404/405/error documents,
+island RPC answers, and widget chrome are scanned as markup (`text/html`
+and `text/plain`, which the runtime applies to an html-mode signal as
+markup). JSON answers and widget `/state` snapshots are walked string
+by string, and each string holding a tag is scanned, so an island that
+renders a retired class only after a click still fails the test.
+Stylesheets, scripts, event streams, and downloads are not read, and a
+hijacked connection is dropped from the scan.
 
 The scan runs only in test binaries and under `gofastr dev` (which
 warns once per path and name, so a livereload loop cannot flood the

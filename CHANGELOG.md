@@ -1150,9 +1150,17 @@ are listed under Added above, not here.
 - Rendered pages are checked for retired markup. A class built at run
   time (`fmt.Sprintf("ui-%s", kind)`, a name read from the database)
   never appears in source, so in Go test binaries and under
-  `gofastr dev` the framework scans each finite HTML response it serves
-  (full pages, navigation partials, deferred parts, error documents)
-  for the classes and attributes the registry's breaking notes retire.
+  `gofastr dev` the framework scans every markup response its router
+  serves (full pages, navigation partials, deferred parts, error
+  documents, island RPC answers, widget chrome, and each HTML string
+  in a JSON answer such as a widget's `/state`) for the classes and
+  attributes the registry's breaking notes retire, read the way a
+  browser reads them: nothing inside comments or raw-text elements
+  (`script`, `style`, `textarea`, `title`, `iframe`, `noembed`,
+  `noframes`, `xmp`, `noscript`, everything after `plaintext`),
+  character references decoded, the first of duplicate attributes
+  only. Stylesheets, scripts, Markdown, event streams and hijacked
+  connections are not read.
   `framework.TestHarness` fails the test on each one, other test
   servers log it at warn level, and `gofastr dev` warns once per path
   and name. Attribute values never match, so a kept

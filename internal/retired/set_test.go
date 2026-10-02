@@ -14,6 +14,7 @@ releases:
     notes:
       - change: "the ui-button class is gone"
         breaking: true
+        hits: edit
         find:
           strings:
             classes: [ui-button]
@@ -29,9 +30,17 @@ releases:
     notes:
       - change: "the ui-form family is renamed"
         breaking: true
+        hits: edit
         find:
           strings:
             classes: [ui-form]
+      - change: "the kit stopped emitting two generic names"
+        breaking: true
+        hits: edit
+        find:
+          strings:
+            classes: [card, ui-form-old]
+            attrs: [data-placeholder, data-when-name, data-hui-old]
 `
 
 func fixtureSet(t *testing.T) *Set {
@@ -55,6 +64,30 @@ func TestSetFromRegistryBreakingOnly(t *testing.T) {
 	}
 	if set.matchAttr([]byte("data-fui-signal")) == nil {
 		t.Error("retired attr data-fui-signal missing")
+	}
+}
+
+// Only the kit's own namespaces reach the runtime set: an app may own a
+// "card" class or a data-placeholder attribute, and the kit no longer
+// emitting one says nothing about the app's markup. The source scan
+// still reports them.
+func TestSetKitNamespacesOnly(t *testing.T) {
+	set := fixtureSet(t)
+	for _, name := range []string{"card"} {
+		if set.matchClass(name) != nil {
+			t.Errorf("generic class %q reached the runtime set", name)
+		}
+	}
+	if set.matchClass("ui-form-old") == nil {
+		t.Error("kit class ui-form-old missing")
+	}
+	for _, name := range []string{"data-placeholder", "data-when-name"} {
+		if set.matchAttr([]byte(name)) != nil {
+			t.Errorf("generic attr %q reached the runtime set", name)
+		}
+	}
+	if set.matchAttr([]byte("data-hui-old")) == nil {
+		t.Error("kit attr data-hui-old missing")
 	}
 }
 

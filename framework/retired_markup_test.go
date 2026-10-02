@@ -26,6 +26,7 @@ releases:
     notes:
       - change: "the ui-button class is gone"
         breaking: true
+        hits: edit
         find:
           strings:
             classes: [ui-button]
@@ -102,10 +103,58 @@ func TestHarnessScansNavPartials(t *testing.T) {
 	}
 }
 
-// Whatever the shipped registry retires, the framework's own page
-// chrome (runtime injection, layout shell, kit components) must not
-// carry it: this reads the live registry, not the fixture.
-func TestKitPageCleanAgainstLiveRegistry(t *testing.T) {
+// Island RPC answers, widget chrome and widget state are app-router
+// routes like any page: an island that renders a
+// retired class only after a click is reported, as an HTML
+// fragment or as a JSON signal value. WithoutDefaultMiddleware does
+// not opt out. (A real widget is not mounted here: core-ui/widget's
+// registry is process-global, and every later page in this package
+// would SSR its chrome.)
+func TestHarnessScansIslandResponses(t *testing.T) {
+	reg, err := upgrade.Parse(retiredFixtureRegistry)
+	if err != nil {
+		t.Fatalf("parse fixture registry: %v", err)
+	}
+	retired.UseForTest(t, retired.FromRegistry(reg))
+	app := NewApp(WithoutDefaultMiddleware())
+	app.Router().Post("/api/island", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<ul class="ui-%s"><li>row</li></ul>`, "button")
+	}))
+	app.Router().Post("/api/signal", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"list":"<li data-%s=\"x\">row</li>"}`, "fui-signal")
+	}))
+	reporter := &renderFailureTB{TB: t}
+	harness := TestHarness(reporter, app)
+
+	cases := []struct {
+		method, path, want string
+	}{
+		{"POST", "/api/island", `POST /api/island: retired markup: class "ui-button"`},
+		{"POST", "/api/signal", `POST /api/signal: retired markup: attr "data-fui-signal"`},
+	}
+	for _, c := range cases {
+		reporter.messages = nil
+		resp := harness.Request(c.method, c.path, nil).Execute()
+		if resp.Status() != 200 {
+			t.Fatalf("%s %s: status %d: %s", c.method, c.path, resp.Status(), resp.Body())
+		}
+		found := false
+		for _, m := range reporter.messages {
+			found = found || strings.HasPrefix(m, c.want)
+		}
+		if !found {
+			t.Errorf("%s %s: reports = %q, want one starting %q", c.method, c.path, reporter.messages, c.want)
+		}
+	}
+}
+
+// The harness reads the live registry, once, and uihost's own page
+// shell (runtime injection, layout markers) carries nothing it retires.
+// Whether the kit's components and widget chrome are clean is
+// framework/gallery's retired_markup_test.go, which renders all of them.
+func TestHarnessUsesLiveRegistry(t *testing.T) {
 	retired.ResetForTest(t)
 	site := uiapp.NewApp("retired-kit-check")
 	site.Register("/", kitChromeScreen{}, nil)

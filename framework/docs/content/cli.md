@@ -297,8 +297,13 @@ The registry has a second reader. `gofastr upgrade` scans an app's
 *source*; a name built at run time (`fmt.Sprintf("ui-%s", kind)`, a
 class read from the database) never appears there, but the rendered
 HTML can't hide it. So in Go test binaries and under `gofastr dev`, the
-framework scans each HTML response it serves for the registry's retired
-classes and `data-fui-*` attributes: `framework.TestHarness` fails the
+framework scans each markup response it serves (pages, island RPC
+answers, widget chrome, HTML carried in JSON signal values) for the
+registry's retired classes and `data-fui-*` attributes, read the way a
+browser reads them (nothing inside comments or raw-text elements such
+as `script`, `iframe` and `noscript`; character references decoded;
+the first of duplicate attributes only):
+`framework.TestHarness` fails the
 test on each one, and `gofastr dev` warns once per path and name
 ([testkit](testkit.md)). Production binaries never scan and never load
 the registry — the check has no serving cost and no link on

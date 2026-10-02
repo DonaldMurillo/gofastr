@@ -9,8 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/dev"
-	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
 // ScreenResponse names the response-wide HTTP semantics for
@@ -66,10 +64,6 @@ const screenCacheControlDefault = "private, no-store"
 // same tail every page runs (finishPageDocument): verify-or-mint the
 // session, no-store + Vary: Cookie, chrome, seed, widget SSR.
 func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp component.Component, resp ScreenResponse) {
-	// A host-shaped recovery screen is a finite HTML response: scan it
-	// like a page when the retired-markup check is armed.
-	w, finishScan := retired.Arm(w, r, dev.Enabled())
-	defer finishScan()
 	status := resp.Status
 	if status == 0 {
 		if sc, ok := comp.(ScreenStatusCode); ok {

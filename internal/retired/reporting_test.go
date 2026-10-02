@@ -16,21 +16,16 @@ import (
 // page is a fixture page carrying the fixture registry's retired names.
 const page = `<!DOCTYPE html><html><body><div class="ui-button">go</div><span data-fui-signal>x</span></body></html>`
 
-// serve runs one request through a handler that has wrapped w with Arm
-// and calls the returned finish, the way uihost does.
+// serve runs one request through Middleware, the way the app router
+// does.
 func serve(t *testing.T, r *http.Request, handler func(w http.ResponseWriter, r *http.Request), devMode bool) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	inner := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w, finish := Arm(w, req, devMode)
-		handler(w, req)
-		finish()
-	})
-	inner.ServeHTTP(rec, r)
+	Middleware(func() bool { return devMode })(http.HandlerFunc(handler)).ServeHTTP(rec, r)
 	return rec
 }
 
-func TestArmDeliversToReporter(t *testing.T) {
+func TestScanDeliversToReporter(t *testing.T) {
 	UseForTest(t, fixtureSet(t))
 	var got []string
 	ctx := renderdiagRetiredReporter(func(m string) { got = append(got, m) })
@@ -55,7 +50,7 @@ func TestArmDeliversToReporter(t *testing.T) {
 
 // A clean page reports nothing: migrated spellings and kept marker
 // values are not findings.
-func TestArmCleanPageReportsNothing(t *testing.T) {
+func TestScanCleanPageReportsNothing(t *testing.T) {
 	UseForTest(t, fixtureSet(t))
 	var got []string
 	ctx := renderdiagRetiredReporter(func(m string) { got = append(got, m) })
@@ -70,7 +65,7 @@ func TestArmCleanPageReportsNothing(t *testing.T) {
 
 // Without a reporter (an httptest server built by hand), the finding
 // logs at warn level.
-func TestArmWithoutReporterLogs(t *testing.T) {
+func TestScanWithoutReporterLogs(t *testing.T) {
 	UseForTest(t, fixtureSet(t))
 	var logs bytes.Buffer
 	old := slog.Default()
@@ -86,7 +81,7 @@ func TestArmWithoutReporterLogs(t *testing.T) {
 
 // Dev mode warns once per (path, name) per process: a livereload loop
 // must not flood the console.
-func TestArmDevDedupesPerPathAndName(t *testing.T) {
+func TestScanDevDedupesPerPathAndName(t *testing.T) {
 	UseForTest(t, fixtureSet(t))
 	var logs bytes.Buffer
 	old := slog.Default()
@@ -124,41 +119,33 @@ func TestArmDevDedupesPerPathAndName(t *testing.T) {
 // Production posture: outside dev mode, with the scan disarmed, the
 // registry is never loaded even when the page carries retired names.
 // The armed twin proves the same harness would have loaded it.
-func TestArmProductionNeverLoadsRegistry(t *testing.T) {
+func TestScanProductionNeverLoadsRegistry(t *testing.T) {
 	ResetForTest(t)
-	prod := ProductionScan(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w, finish := Arm(w, r, false)
+	handler := Middleware(func() bool { return false })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, page)
-		finish()
 	}))
-	prod.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	ProductionScan(t, handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if Loads() != 0 {
 		t.Fatalf("production posture loaded the registry %d times", Loads())
 	}
 	// The guard is real: the same handler without the exemption loads.
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	w, finish := Arm(rec, r, false)
-	fmt.Fprint(w, page)
-	finish()
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if Loads() != 1 {
 		t.Fatalf("armed scan loaded the registry %d times, want 1", Loads())
 	}
 }
 
-// Arm on a disarmed (production-posture) request still passes writes
-// through untouched.
-func TestArmProductionPassthrough(t *testing.T) {
+// A disarmed (production-posture) request passes writes through
+// untouched.
+func TestScanProductionPassthrough(t *testing.T) {
 	UseForTest(t, fixtureSet(t))
 	var got []string
 	ctx := renderdiagRetiredReporter(func(m string) { got = append(got, m) })
-	prod := ProductionScan(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w, finish := Arm(w, r, false)
+	prod := ProductionScan(t, Middleware(func() bool { return false })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusTeapot)
 		fmt.Fprint(w, page)
-		finish()
-	}))
+	})))
 	rec := httptest.NewRecorder()
 	prod.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(ctx))
 	if rec.Code != http.StatusTeapot || rec.Body.String() != page {
@@ -169,46 +156,20 @@ func TestArmProductionPassthrough(t *testing.T) {
 	}
 }
 
-// A handler that streams with Flush keeps working under the tee.
-func TestArmFlushStreams(t *testing.T) {
-	UseForTest(t, fixtureSet(t))
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	w, finish := Arm(rec, r, false)
-	rc := http.NewResponseController(w)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, "<div class=\"ui-button\">")
-	if err := rc.Flush(); err != nil {
-		t.Fatalf("flush failed under the tee: %v", err)
-	}
-	fmt.Fprint(w, "</div>")
-	finish()
-	if !strings.Contains(rec.Body.String(), "ui-button") {
-		t.Fatalf("streamed body lost: %q", rec.Body.String())
-	}
-}
-
-// Double-Arm (a handler hooked at two layers) still scans once: the
-// inner no-op keeps one response from reporting every finding twice.
-func TestArmIdempotent(t *testing.T) {
-	UseForTest(t, fixtureSet(t))
-	var got []string
-	ctx := renderdiagRetiredReporter(func(m string) { got = append(got, m) })
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
-	var innerFinish func()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w, finish := Arm(w, r, false)
-		innerFinish = finish
-		fmt.Fprint(w, page)
-		finish()
+// A handler that streams with Flush keeps working under the tee, and
+// http.NewResponseController reaches the real writer through Unwrap.
+func TestScanFlushStreams(t *testing.T) {
+	rec, _ := serveMW(t, func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, "<div class=\"ui-button\">")
+		if err := rc.Flush(); err != nil {
+			t.Fatalf("flush failed under the tee: %v", err)
+		}
+		fmt.Fprint(w, "</div>")
 	})
-	w, finish := Arm(rec, r, false)
-	handler(w, r)
-	finish()
-	innerFinish()
-	if n := len(got); n != 2 {
-		t.Fatalf("double arm reported %d findings, want exactly 2 (one class + one attr, scanned once): %q", n, got)
+	if !rec.Flushed || !strings.Contains(rec.Body.String(), "ui-button") {
+		t.Fatalf("streamed body lost or not flushed: %q", rec.Body.String())
 	}
 }
 
