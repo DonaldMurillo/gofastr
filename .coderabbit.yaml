@@ -17,6 +17,11 @@ reviews:
     - "!gen/**"
     - "!**/testdata/**"
     - "!core-ui/runtime/frag/SYMBOLS.txt"
+    # Upgrade fixture apps are old-release code on purpose, and the
+    # release registry is data the parser and registry tests gate;
+    # reviewing them would push a release PR past the file limit.
+    - "!evals/upgrade-fixtures/fixtures/**"
+    - "!internal/upgrade/releases/*.yml"
   path_instructions:
     - path: "**/*.go"
       instructions: |
