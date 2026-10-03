@@ -26,7 +26,8 @@ import (
 
 // AssertHiddenFromGoList writes a Go package under parent/name, runs
 // `go list ./...` in parent, and fails t if the package shows up. It removes
-// what it created, and leaves an existing parent/name in place.
+// its probe, and parent/name too when it created that directory and nothing
+// else has written there since.
 func AssertHiddenFromGoList(t testing.TB, parent, name string) {
 	t.Helper()
 	scratch := filepath.Join(parent, name)
@@ -41,12 +42,15 @@ func AssertHiddenFromGoList(t testing.TB, parent, name string) {
 	if err := os.MkdirAll(probe, 0o700); err != nil {
 		t.Fatalf("mkdir %s: %v", probe, err)
 	}
+	// Remove only the probe, then the scratch directory if this call made it
+	// and it is empty. A gate in another test binary can create the same
+	// directory between the Stat and the MkdirAll; a recursive remove would
+	// delete its live files.
 	t.Cleanup(func() {
-		if created {
-			_ = os.RemoveAll(scratch)
-			return
-		}
 		_ = os.RemoveAll(probe)
+		if created {
+			_ = os.Remove(scratch)
+		}
 	})
 	if err := fileperm.WriteOwnerOnly(filepath.Join(probe, "probe.go"), []byte("package listprobe\n")); err != nil {
 		t.Fatalf("write probe: %v", err)
