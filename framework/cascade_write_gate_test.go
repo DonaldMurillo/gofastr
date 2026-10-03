@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -265,5 +266,74 @@ func TestBelongsToUnregisteredTargetSkips(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		resp := ta.Post("/posts", map[string]any{"title": "t", "author_id": "u1"})
 		resp.AssertStatus(t, http.StatusCreated)
+	})
+}
+
+// TestCascadeParentEventOmitsChildren: the parent's created/updated event
+// carries the parent row only. The cascade-written child rides its own
+// event, gated and redacted as its own entity; a copy inside the parent's
+// payload would reach a parent subscriber past the child's read gate.
+func TestCascadeParentEventOmitsChildren(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		seedCascadeDB(t, db)
+		app := cascadeTestApp(t, db)
+		var mu sync.Mutex
+		var userRecords []map[string]any
+		profiles := 0
+		capture := func(_ context.Context, e event.Event) error {
+			d, ok := e.Data.(map[string]any)
+			if !ok {
+				return nil
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			switch d["entity"] {
+			case "users":
+				rec, _ := d["record"].(map[string]any)
+				userRecords = append(userRecords, rec)
+			case "profiles":
+				profiles++
+			}
+			return nil
+		}
+		defer app.Events().Subscribe(event.EntityCreated, capture)()
+		defer app.Events().Subscribe(event.EntityUpdated, capture)()
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+
+		resp := ta.Post("/users", map[string]any{"name": "Ann", "profile": map[string]any{"bio": "private"}})
+		resp.AssertStatus(t, http.StatusCreated)
+		var created struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(resp.Body()), &created); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if _, ok := created.Data["profile"].(map[string]any); !ok {
+			t.Fatalf("response lost the cascade child: %v", created.Data)
+		}
+		id, _ := created.Data["id"].(string)
+		ta.Put("/users/"+id, map[string]any{"name": "Ann", "profile": map[string]any{"bio": "still private"}}).
+			AssertStatus(t, http.StatusOK)
+
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			mu.Lock()
+			done := len(userRecords) >= 2 && profiles >= 2
+			mu.Unlock()
+			if done || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(userRecords) != 2 || profiles != 2 {
+			t.Fatalf("got %d users events and %d profiles events, want 2 and 2", len(userRecords), profiles)
+		}
+		for i, rec := range userRecords {
+			if _, leaked := rec["profile"]; leaked {
+				t.Errorf("users event %d carries the cascade child: %v", i, rec)
+			}
+		}
 	})
 }

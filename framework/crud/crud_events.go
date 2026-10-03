@@ -70,7 +70,7 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 	data := map[string]any{
 		eventKeyEntity: ch.Entity.GetName(),
 		eventKeyTable:  ch.Entity.GetTable(),
-		eventKeyRecord: record,
+		eventKeyRecord: ch.withoutCascadeChildren(record),
 	}
 	if ch.Entity.Config.Scope.MultiTenant {
 		if tid := tenant.GetTenantID(ctx); tid != "" {
@@ -97,6 +97,37 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 		}
 	}
 	return data
+}
+
+// withoutCascadeChildren returns record minus the cascade-written relations a
+// create or update attached for its response. Each child already publishes
+// its own event under its own entity, where the child's read gate and
+// redaction apply; a copy inside the parent's payload reached any parent
+// subscriber with neither. The caller's map is left intact: the response
+// still carries the children.
+func (ch *CrudHandler) withoutCascadeChildren(record any) any {
+	row, ok := record.(map[string]any)
+	if !ok || ch.Entity == nil {
+		return record
+	}
+	var out map[string]any
+	for _, rel := range ch.Entity.Config.Relations {
+		if !rel.CascadeWrite {
+			continue
+		}
+		key := ch.convertKey(rel.Name)
+		if _, ok := row[key]; !ok {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(row)
+		}
+		delete(out, key)
+	}
+	if out == nil {
+		return record
+	}
+	return out
 }
 
 // StageEvent durably stages an entity lifecycle event when an outbox is
