@@ -284,4 +284,4 @@ In-process and typed queries can apply nested filters directly:
       }).
       Find(ctx)
   ```
-  `WhereNested` accepts one or more `framework.NestedFilter` objects (with `filter.Values` for `filter.OpIn`) and is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.
+  `WhereNested` accepts one or more `framework.NestedFilter` objects (set `NestedFilter.Values` for `filter.OpIn`) and is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.
