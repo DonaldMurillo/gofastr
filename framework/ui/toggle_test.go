@@ -289,3 +289,25 @@ func TestCheckboxGroupExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("fieldset missing data-test:\n%s", root)
 	}
 }
+
+// The checkbox's check is two corner-keyword gradient strokes. An
+// angle gradient (45deg, 135deg) only runs corner to corner in a
+// square tile; in the 12x9 tile the long leg used, the strokes missed
+// each other and every checked box drew a crossed mark (caught in a
+// desktop-window capture, then in plain Chrome).
+func TestCheckboxCheckUsesCornerGradients(t *testing.T) {
+	css := toggleCSS(style.Theme{})
+	i := strings.Index(css, ".fui-choice--checkbox .fui-choice__input:checked {")
+	if i < 0 {
+		t.Fatal("no checked-checkbox rule")
+	}
+	rule := css[i : i+strings.Index(css[i:], "}")]
+	for _, want := range []string{"linear-gradient(to top right,", "linear-gradient(to bottom right,"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("checked rule lacks %q:\n%s", want, rule)
+		}
+	}
+	if strings.Contains(rule, "deg,") {
+		t.Errorf("checked rule still draws with an angle gradient:\n%s", rule)
+	}
+}
