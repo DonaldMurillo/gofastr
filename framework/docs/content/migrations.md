@@ -288,8 +288,19 @@ needs a data-specific `USING` clause, so review and hand-tighten. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
-table, rename, and recreate the entity's declared indices. Rows are carried
-over, not regenerated; a required-but-undefaulted column added in the same
+table, rename, and recreate the entity's indices (the declared ones and the
+automatic belongs_to foreign-key indices). Dropping the old table runs every
+`ON DELETE` action onto it while foreign keys are on, so a `CASCADE` child
+(every many_to_many pivot) would lose its rows and a `SET NULL` child its
+links. `ApplySchemaDiffWithOptions` therefore runs a rebuild on one
+connection with foreign keys off and rolls it back if `PRAGMA
+foreign_key_check` finds a violation the change introduced. `migrate
+generate` cannot do the same, because the runner applies each file inside a
+transaction, where the pragma has no effect: it refuses a rebuild that a
+`CASCADE` or `SET NULL` key references and names those tables. Write that
+migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
+foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
+Rows are carried over, not regenerated; a required-but-undefaulted column added in the same
 change still fails loud on a populated table until you backfill it, and the
 change ships no `Down` (the pre-migration constraints are not recoverable),
 so a SQLite retype is forward-only. Renames: declare

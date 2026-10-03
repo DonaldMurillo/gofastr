@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"log/slog"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -554,35 +557,11 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
 	// An index with neither Columns nor Expression is a no-op (legacy: empty
 	// Columns used to silently skip; we preserve that for the all-zero case).
-	for _, idx := range ent.Config.Indices {
-		if len(idx.Columns) == 0 && idx.Expression == "" {
-			continue
-		}
+	// entityIndices adds the automatic belongs_to FK indices, the same list
+	// the diff, the snapshot and the SQLite rebuild use.
+	for _, idx := range entityIndices(ent) {
 		if _, err := exec.ExecContext(ctx, indexDDL(safeTable, idx)); err != nil {
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
-		}
-	}
-
-	// Auto-index foreign keys on BelongsTo relations for fast relation traversal:
-	for _, rel := range ent.Config.Relations {
-		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
-			continue
-		}
-		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
-			continue
-		}
-		hasIdx := false
-		for _, idx := range ent.Config.Indices {
-			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], rel.ForeignKey) {
-				hasIdx = true
-				break
-			}
-		}
-		if !hasIdx {
-			idx := entity.Index{Columns: []string{rel.ForeignKey}}
-			if _, err := exec.ExecContext(ctx, indexDDL(safeTable, idx)); err != nil {
-				return fmt.Errorf("create fk index on %s(%s): %w", ent.GetTable(), rel.ForeignKey, err)
-			}
 		}
 	}
 	return nil
@@ -797,6 +776,40 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		out = append(out, fkClause)
 	}
 	return out, nil
+}
+
+// mutatingFKReferrers names the tables whose foreign keys onto ent's table
+// carry an ON DELETE action that changes rows: every generated pivot of a
+// many_to_many on either side (always CASCADE), and each belongs_to that
+// declares CASCADE or SET NULL. Sorted, without duplicates.
+func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []string {
+	if ent == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, name := range slices.Sorted(maps.Keys(all)) {
+		other := all[name]
+		for _, rel := range other.Config.Relations {
+			switch rel.Type {
+			case entity.RelManyToMany:
+				if rel.Through != "" && (other == ent || all[rel.Entity] == ent) {
+					seen[rel.Through] = true
+				}
+			case entity.RelManyToOne:
+				if all[rel.Entity] != ent || rel.ForeignKey == "" {
+					continue
+				}
+				// foreignKeyClauses emits no key on the owner column.
+				if other.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, other.Config.Scope.OwnerField) {
+					continue
+				}
+				if rel.OnDelete == entity.OnDeleteCascade || rel.OnDelete == entity.OnDeleteSetNull {
+					seen[other.GetTable()] = true
+				}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // UnionEntities returns one entity per name, with the field, index, relation,
@@ -1187,101 +1200,136 @@ func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string 
 	return "TEXT"
 }
 
+// generatedPivots yields each many_to_many relation whose Through table the
+// migrator creates itself: the first declaration of each table (matched
+// case-insensitively) in the given order, skipping a table some registered
+// entity already owns. AutoMigrate, DiffSchema and the snapshot all walk it,
+// so reciprocal declarations resolve to the same canonical pivot.
+func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) iter.Seq2[*entity.Entity, entity.Relation] {
+	return func(yield func(*entity.Entity, entity.Relation) bool) {
+		seen := make(map[string]bool)
+		for _, ent := range ordered {
+			for _, rel := range ent.Config.Relations {
+				if rel.Type != entity.RelManyToMany || rel.Through == "" {
+					continue
+				}
+				key := strings.ToLower(rel.Through)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				if pivotHasEntity(rel.Through, all) {
+					continue
+				}
+				if !yield(ent, rel) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func pivotHasEntity(table string, all map[string]*entity.Entity) bool {
+	if all[table] != nil {
+		return true
+	}
+	for _, e := range all {
+		if strings.EqualFold(e.GetTable(), table) {
+			return true
+		}
+	}
+	return false
+}
+
+// pivotSpec is the generated table behind one many_to_many relation.
+type pivotSpec struct {
+	Safe         string            // validated table name
+	Cols         map[string]string // column -> SQL type
+	DDL          string            // CREATE TABLE IF NOT EXISTS
+	DropDDL      string
+	IndexDDL     string // index on the target key column
+	DropIndexDDL string
+}
+
+// buildPivotSpec renders the pivot table for rel, declared on ent: both key
+// columns typed like the primary keys they reference, a composite primary
+// key, ON DELETE CASCADE to both sides, and an index on the target key.
+func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity, dialect Dialect) (pivotSpec, error) {
+	safeThrough, err := query.SafeIdent(rel.Through)
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid through table %q: %w", rel.Name, rel.Through, err)
+	}
+	target, ok := all[rel.Entity]
+	if !ok {
+		return pivotSpec{}, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
+	}
+	safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid local key %q: %w", rel.Name, rel.LocalKey, err)
+	}
+	safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
+	}
+	safeSourceTable, err := query.SafeIdent(ent.GetTable())
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid source table %q: %w", rel.Name, ent.GetTable(), err)
+	}
+	safeTargetTable, err := query.SafeIdent(target.GetTable())
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
+	}
+	sourcePK := ent.PrimaryKey
+	if sourcePK == "" {
+		sourcePK = "id"
+	}
+	safeSourcePK, err := query.SafeIdent(sourcePK)
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
+	}
+	targetPK := target.PrimaryKey
+	if targetPK == "" {
+		targetPK = "id"
+	}
+	safeTargetPK, err := query.SafeIdent(targetPK)
+	if err != nil {
+		return pivotSpec{}, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
+	}
+
+	sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
+	targetPKType := fkColumnSQLType(target, targetPK, dialect)
+	idxName := fmt.Sprintf("idx_%s_%s", safeThrough, safeTargetKey)
+	return pivotSpec{
+		Safe: safeThrough,
+		Cols: map[string]string{safeLocalKey: sourcePKType, safeTargetKey: targetPKType},
+		DDL: fmt.Sprintf(
+			"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
+			safeThrough,
+			safeLocalKey, sourcePKType,
+			safeTargetKey, targetPKType,
+			safeLocalKey, safeTargetKey,
+			safeLocalKey, safeSourceTable, safeSourcePK,
+			safeTargetKey, safeTargetTable, safeTargetPK,
+		),
+		DropDDL:      fmt.Sprintf("DROP TABLE IF EXISTS %s", safeThrough),
+		IndexDDL:     fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s(%s)", idxName, safeThrough, safeTargetKey),
+		DropIndexDDL: fmt.Sprintf("DROP INDEX IF EXISTS %s", idxName),
+	}, nil
+}
+
 // migratePivotTables synthesizes and creates pivot tables for ManyToMany relations
 // that do not have an explicitly registered entity table.
 func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect) error {
-	seenPivot := make(map[string]bool)
-	for _, ent := range ordered {
-		for _, rel := range ent.Config.Relations {
-			if rel.Type != entity.RelManyToMany || rel.Through == "" {
-				continue
-			}
-			pivotTable := rel.Through
-			key := strings.ToLower(pivotTable)
-			if seenPivot[key] {
-				continue
-			}
-			seenPivot[key] = true
-
-			// If the pivot table is already explicitly registered as an entity, it has its own table migration.
-			hasEntity := false
-			if all != nil {
-				if all[pivotTable] != nil {
-					hasEntity = true
-				} else {
-					for _, e := range all {
-						if strings.EqualFold(e.GetTable(), pivotTable) {
-							hasEntity = true
-							break
-						}
-					}
-				}
-			}
-			if hasEntity {
-				continue
-			}
-
-			safeThrough, err := query.SafeIdent(pivotTable)
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid through table %q: %w", rel.Name, pivotTable, err)
-			}
-			target, ok := all[rel.Entity]
-			if !ok {
-				return fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
-			}
-			safeLocalKey, err := query.SafeIdent(rel.LocalKey)
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid local key %q: %w", rel.Name, rel.LocalKey, err)
-			}
-			safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
-			}
-			safeSourceTable, err := query.SafeIdent(ent.GetTable())
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid source table %q: %w", rel.Name, ent.GetTable(), err)
-			}
-			safeTargetTable, err := query.SafeIdent(target.GetTable())
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
-			}
-			sourcePK := ent.PrimaryKey
-			if sourcePK == "" {
-				sourcePK = "id"
-			}
-			safeSourcePK, err := query.SafeIdent(sourcePK)
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
-			}
-			targetPK := target.PrimaryKey
-			if targetPK == "" {
-				targetPK = "id"
-			}
-			safeTargetPK, err := query.SafeIdent(targetPK)
-			if err != nil {
-				return fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
-			}
-
-			sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
-			targetPKType := fkColumnSQLType(target, targetPK, dialect)
-
-			pivotDDL := fmt.Sprintf(
-				"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
-				safeThrough,
-				safeLocalKey, sourcePKType,
-				safeTargetKey, targetPKType,
-				safeLocalKey, safeTargetKey,
-				safeLocalKey, safeSourceTable, safeSourcePK,
-				safeTargetKey, safeTargetTable, safeTargetPK,
-			)
-			if _, err := exec.ExecContext(ctx, pivotDDL); err != nil {
-				return fmt.Errorf("create pivot table %s: %w", pivotTable, err)
-			}
-
-			idxTarget := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", safeThrough, safeTargetKey, safeThrough, safeTargetKey)
-			if _, err := exec.ExecContext(ctx, idxTarget); err != nil {
-				return fmt.Errorf("create index on pivot table %s(%s): %w", pivotTable, safeTargetKey, err)
-			}
+	for ent, rel := range generatedPivots(ordered, all) {
+		spec, err := buildPivotSpec(ent, rel, all, dialect)
+		if err != nil {
+			return err
+		}
+		if _, err := exec.ExecContext(ctx, spec.DDL); err != nil {
+			return fmt.Errorf("create pivot table %s: %w", rel.Through, err)
+		}
+		if _, err := exec.ExecContext(ctx, spec.IndexDDL); err != nil {
+			return fmt.Errorf("create index on pivot table %s(%s): %w", rel.Through, rel.ForeignKeyTarget, err)
 		}
 	}
 	return nil

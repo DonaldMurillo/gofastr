@@ -106,101 +106,22 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				orderedPivots = append(orderedPivots, all[n])
 			}
 		}
-		seenPivot := make(map[string]bool)
-		for _, ent := range orderedPivots {
-			for _, rel := range ent.Config.Relations {
-				if rel.Type != entity.RelManyToMany || rel.Through == "" {
-					continue
-				}
-				pivotTable := rel.Through
-				key := strings.ToLower(pivotTable)
-				if seenPivot[key] {
-					continue
-				}
-				hasEntity := false
-				if all != nil {
-					if all[pivotTable] != nil {
-						hasEntity = true
-					} else {
-						for _, e := range all {
-							if strings.EqualFold(e.GetTable(), pivotTable) {
-								hasEntity = true
-								break
-							}
-						}
-					}
-				}
-				if hasEntity {
-					continue
-				}
-				seenPivot[key] = true
-				target := all[rel.Entity]
-				if target == nil {
-					continue
-				}
-				sourcePK := ent.PrimaryKey
-				if sourcePK == "" {
-					sourcePK = "id"
-				}
-				targetPK := target.PrimaryKey
-				if targetPK == "" {
-					targetPK = "id"
-				}
-				sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
-				targetPKType := fkColumnSQLType(target, targetPK, dialect)
-				safeThrough, err := query.SafeIdent(pivotTable)
-				if err != nil {
-					continue
-				}
-				safeLocalKey, err := query.SafeIdent(rel.LocalKey)
-				if err != nil {
-					continue
-				}
-				safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
-				if err != nil {
-					continue
-				}
-				safeSourceTable, err := query.SafeIdent(ent.GetTable())
-				if err != nil {
-					continue
-				}
-				safeSourcePK, err := query.SafeIdent(sourcePK)
-				if err != nil {
-					continue
-				}
-				safeTargetTable, err := query.SafeIdent(target.GetTable())
-				if err != nil {
-					continue
-				}
-				safeTargetPK, err := query.SafeIdent(targetPK)
-				if err != nil {
-					continue
-				}
-
-				snap.Tables[safeThrough] = map[string]string{
-					safeLocalKey:  sourcePKType,
-					safeTargetKey: targetPKType,
-				}
-				pivotDDL := fmt.Sprintf(
-					"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
-					safeThrough,
-					safeLocalKey, sourcePKType,
-					safeTargetKey, targetPKType,
-					safeLocalKey, safeTargetKey,
-					safeLocalKey, safeSourceTable, safeSourcePK,
-					safeTargetKey, safeTargetTable, safeTargetPK,
-				)
-				if snap.TableDDL == nil {
-					snap.TableDDL = map[string]string{}
-				}
-				snap.TableDDL[safeThrough] = pivotDDL
-				if snap.Indices == nil {
-					snap.Indices = map[string][]string{}
-				}
-				snap.Indices[safeThrough] = []string{
-					fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", safeThrough, safeTargetKey, safeThrough, safeTargetKey),
-				}
+		for ent, rel := range generatedPivots(orderedPivots, all) {
+			// The desired snapshot skips what cannot render; the diff
+			// reports the same relation as an error.
+			spec, err := buildPivotSpec(ent, rel, all, dialect)
+			if err != nil {
+				continue
 			}
+			snap.Tables[spec.Safe] = spec.Cols
+			if snap.TableDDL == nil {
+				snap.TableDDL = map[string]string{}
+			}
+			snap.TableDDL[spec.Safe] = spec.DDL
+			if snap.Indices == nil {
+				snap.Indices = map[string][]string{}
+			}
+			snap.Indices[spec.Safe] = []string{spec.IndexDDL}
 		}
 	}
 	if len(plan.Views) > 0 {
@@ -297,6 +218,23 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 			return "", "", SchemaSnapshot{}, err
 		}
 		changes = append(changes, pivotChanges...)
+	}
+
+	// A SQLite rebuild drops its table, and the migration runner applies
+	// this file inside a transaction, where PRAGMA foreign_keys is a no-op:
+	// every ON DELETE action onto the table would fire against live rows.
+	// Refuse rather than write a file that empties a pivot.
+	for _, c := range changes {
+		if c.sqliteRebuildOf == "" {
+			continue
+		}
+		if refs := mutatingFKReferrers(all[c.sqliteRebuildOf], all); len(refs) > 0 {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot generate this SQLite column type change: rebuilding the table drops it, "+
+				"and the ON DELETE CASCADE / SET NULL foreign keys in %s would delete or unlink their rows; "+
+				"write this migration by hand with -- +migrate NoTransaction and PRAGMA foreign_keys=OFF around the rebuild, "+
+				"or apply it with ApplySchemaDiffWithOptions, which turns foreign keys off for the rebuild",
+				c.sqliteRebuildOf, strings.Join(refs, ", "))
+		}
 	}
 
 	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
