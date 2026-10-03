@@ -7,6 +7,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **Affected-only test scope.** `go run ./cmd/affected` prints the
+  packages whose tests could change outcome given what differs between
+  the working tree and `origin/main`: the changed packages, their
+  transitive importers, and the packages whose tests import one of
+  those. Files under `testdata` and embedded assets mark their owning
+  package. With a command after `--` it runs that command with the set
+  appended and skips it when the set is empty. `make test`,
+  `make analyze`, `make test-race`, `make test-pg`, the pre-commit and
+  pre-push hooks, `make red-tests`, `scripts/coverage-floors.sh` and CI's
+  pull-request run (vet, the deterministic sweep, the coverage floors
+  and each browser-e2e shard) all use it. `GOFASTR_TEST_ALL=1`,
+  `./scripts/test-all.sh` and the new `make test-all` run everything;
+  pushes to main and the merge queue always do. A change to go.mod,
+  go.sum or the tool itself, or a base ref that cannot be resolved,
+  widens to the full run rather than skipping anything.
+
 ## [0.86.0] - 2026-09-24
 
 **BREAKING.** v0.86.0 rebuilds the UI layer and deprecates nothing: a
