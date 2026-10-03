@@ -152,12 +152,15 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Help)))
 	}
 
+	// The id is the input's alone: the label's for and the buttons'
+	// data-hui-number-input-for name it, and the module resolves it
+	// with getElementById, which answers the first element carrying
+	// it. A group that carried it too was that first element.
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name", "step",
 		"value", "min", "max", "disabled", "required", "aria-invalid", "aria-describedby"),
 		Attrs(map[string]string{
 			"role":       "group",
 			"aria-label": p.Label,
-			"id":         p.ID,
 		}))
 	return b.El("div", PartRoot, own, kids...)
 }
@@ -283,8 +286,10 @@ func Slider(p SliderProps, s Classes) render.HTML {
 		))
 	}
 
-	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
-		"min", "max", "step", "value", "disabled", "aria-label"), Attrs(map[string]string{"id": p.ID}))
+	// The id is the range input's alone (the label and the output
+	// point at it), as in NumberInput.
+	own := Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
+		"min", "max", "step", "value", "disabled", "aria-label")
 	Mark(own, "data-hui-slider")
 	if p.Disabled {
 		own["data-state"] = "disabled"

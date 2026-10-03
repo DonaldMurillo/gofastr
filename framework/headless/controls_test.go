@@ -3,6 +3,8 @@ package headless
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // The new control family's own contracts, beside the universal sweeps
@@ -229,4 +231,27 @@ func TestRatingRefusesBrokenGroupsAndClampsPostedValues(t *testing.T) {
 	has(t, over, `aria-label="3 out of 3" checked=""`, "a posted value above Max did not clamp to the ceiling")
 	neg := Rating(RatingProps{Name: "score", Label: "Score", Value: -1}, nil)
 	hasNot(t, neg, `checked=""`, "a posted negative value checked something")
+}
+
+// The caller's ID is the control's, and only the control's: the
+// label's for, the steppers' data-hui-number-input-for (the module
+// resolves it with getElementById, which answers the FIRST element
+// carrying the id) and a page's own lookups all land on the input. A
+// group wrapper carrying the same id was the first element, so a
+// configured ID made the steppers step nothing (#460).
+func TestNumberInputAndSliderGiveTheIDToTheControlOnly(t *testing.T) {
+	for name, got := range map[string]render.HTML{
+		"NumberInput": NumberInput(NumberInputProps{Name: "size", Label: "Size", ID: "size-ctl"}, nil),
+		"Slider":      Slider(SliderProps{Name: "size", Label: "Size", ID: "size-ctl"}, nil),
+	} {
+		if n := strings.Count(string(got), `id="size-ctl"`); n != 1 {
+			t.Errorf("%s: id=\"size-ctl\" appears %d times, want once, on the input:\n%s", name, n, got)
+		}
+		input := string(got)[strings.Index(string(got), "<input "):]
+		input = input[:strings.Index(input, ">")+1]
+		if !strings.Contains(input, `id="size-ctl"`) {
+			t.Errorf("%s: the id is not on the control: %s", name, input)
+		}
+		has(t, got, `for="size-ctl"`, name+": the label does not point at the control")
+	}
 }

@@ -264,6 +264,15 @@ Any element with `data-fui-action="close"` dismisses the widget:
 <button data-fui-action="close">×</button>
 ```
 
+Through `ui.Button` the same attribute rides `ExtraAttrs`, which hands
+every `data-fui-*` key to the typed Action seam; `close` is the only
+value the runtime reads, so any other value is refused at render:
+
+```go
+ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonGhost,
+    ExtraAttrs: html.Attrs{"data-fui-action": "close"}})
+```
+
 ### Recipe: a form inside a modal
 
 Forms inside a widget are **owned by the widget runtime, not the page
