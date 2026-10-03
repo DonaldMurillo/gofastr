@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
 // safeIdentifierRE constrains nested-filter field names to a SQL-safe
@@ -34,46 +35,32 @@ func isSafeIdentifier(s string) bool {
 	return safeIdentifierRE.MatchString(s)
 }
 
-// nestedFilter is one parsed `?author.name=alice` style predicate.
+// relationHop describes one hop in a multi-level relation traversal.
+type relationHop struct {
+	Relation   entity.Relation
+	Target     *entity.Entity
+	Table      string
+	SoftDelete bool
+	Scopes     []filter.ParsedFilter
+}
+
+// nestedFilter is one parsed `?author.name=alice` or `?author.team.name=x` style predicate.
 type nestedFilter struct {
-	Relation entity.Relation
-	Field    string
-	Op       filter.FilterOp
-	Value    string   // single-value ops (eq/gt/like/…)
-	Values   []string // OpIn: the full value set, emitted as one IN (...)
-	// isBool marks a filter on a Bool-typed target column so
-	// buildExistsSubquery binds a Go bool for true/false spellings,
-	// a raw string binds TEXT against SQLite's INTEGER storage and
-	// matches nothing (same coercion as filter.ParseFiltersValues).
-	isBool bool
-	// softDelete marks a target entity that hides trashed rows on every other
-	// read surface, so the EXISTS clause must hide them too.
-	softDelete bool
-	// scopes are the target's row-scope predicates — owner, tenant, and the
-	// target's Exposure.ReadScope — that the EXISTS subquery must carry so
-	// it counts only rows the caller could already read one at a time
-	// through the target's own list route. They are attached by
-	// scopeNestedFiltersForCaller, which is the only thing that makes a
-	// scoped target safe to filter across; see its doc comment. ParsedFilter
-	// (not a local eq-only shape) so the read-scope operators render through
-	// renderReadScope like every other sink.
-	scopes []filter.ParsedFilter
-	// table is the RESOLVED target's table name. Relation.Entity is the
-	// registry KEY (the entity name), and the two differ whenever a host
-	// declares Name != Table or registers a versioned entity. Every check this
-	// file performs, declared fields, Hidden/NoQuery, soft delete, the
-	// owner/tenant refusal, is made against the resolved target, so the SQL
-	// has to run against that same target's table or the validation describes
-	// one table while the query reads another. The eager path documents the
-	// identical contract (see eager.go, "The SELECT targets the entity's
-	// TABLE, not Relation.Entity").
-	table string
+	Hops       []relationHop
+	Relation   entity.Relation // 1-hop fallback
+	Field      string
+	Op         filter.FilterOp
+	Value      string   // single-value ops (eq/gt/like/…)
+	Values     []string // OpIn: the full value set, emitted as one IN (...)
+	isBool     bool
+	softDelete bool                  // 1-hop fallback
+	scopes     []filter.ParsedFilter // 1-hop fallback
+	table      string                // 1-hop fallback
 }
 
 // parseNestedFilters extracts dotted-path query params and resolves their
-// relation references against the entity's declared relations. Only
-// single-level nesting is supported today (`?author.name=alice`); deeper
-// paths like `?author.team.name=x` are rejected for now.
+// relation references against the entity's declared relations. Multi-hop
+// nesting is supported up to depth 4 (e.g. `?comments.post.author.name=alice`).
 //
 // Suffixes (_gt/_gte/_lt/_lte/_like/_in) mirror ParseFilters semantics, but
 // the suffix applies to the FIELD half, not the relation half:
@@ -88,30 +75,50 @@ func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Reg
 }
 
 func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
-	relsByName := map[string]entity.Relation{}
-	for _, rel := range ent.Config.Relations {
-		relsByName[rel.Name] = rel
+	if ent == nil {
+		return nil, nil
 	}
-
-	// filter.FilterSuffixes is the canonical operator-suffix table, reuse
-	// it instead of rebuilding a local literal per call. Order is the same
-	// (longer suffixes first) so ?author.name_gte=v matches _gte not _gt.
-
 	var out []nestedFilter
 	for key, values := range q {
 		if !strings.Contains(key, ".") || len(values) == 0 {
 			continue
 		}
-		parts := strings.SplitN(key, ".", 2)
-		relName, fieldRaw := parts[0], parts[1]
-		if strings.Contains(fieldRaw, ".") {
-			return nil, fmt.Errorf("nested filter %q: multi-level paths not supported (yet)", key)
+		parts := strings.Split(key, ".")
+		if len(parts) < 2 {
+			continue
 		}
-		rel, ok := relsByName[relName]
-		if !ok {
-			return nil, fmt.Errorf("nested filter %q: unknown relation %q", key, relName)
+		if len(parts) > maxIncludeDepth+1 {
+			return nil, fmt.Errorf("nested filter %q: too many relation hops (max %d)", key, maxIncludeDepth)
 		}
 
+		currentEntity := ent
+		var hops []relationHop
+		for i := 0; i < len(parts)-1; i++ {
+			relName := parts[i]
+			rel, ok := relationByName(currentEntity, relName)
+			if !ok {
+				rel, ok = relationByName(currentEntity, casing.ToSnake(relName))
+			}
+			if !ok {
+				return nil, fmt.Errorf("nested filter %q: unknown relation %q", key, relName)
+			}
+			target, err := entity.ResolveTarget(registry, currentEntity, rel.Entity)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
+			}
+			if target == nil {
+				return nil, fmt.Errorf("nested filter %q: relation target %q resolved to no entity", key, rel.Entity)
+			}
+			hops = append(hops, relationHop{
+				Relation:   rel,
+				Target:     target,
+				Table:      resolvedTable(target, rel),
+				SoftDelete: target.Config.Scope.SoftDelete,
+			})
+			currentEntity = target
+		}
+
+		fieldRaw := parts[len(parts)-1]
 		fieldName := fieldRaw
 		op := filter.OpEq
 		for _, s := range filter.FilterSuffixes {
@@ -122,45 +129,15 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			}
 		}
 
-		// Refuse field names that aren't plain SQL identifiers. The
-		// downstream buildExistsSubquery interpolates this directly
-		// into the SQL; without this check a query like
-		// `?author.name OR 1=1 --=foo` becomes a tautology.
+		// Refuse field names that aren't plain SQL identifiers.
 		if !isSafeIdentifier(fieldName) {
 			return nil, fmt.Errorf("nested filter %q: unsafe field name", key)
 		}
 
-		// Validate the field against the target entity's schema.
-		//
-		// A Hidden column is treated as NOT declared, the identical error to
-		// a nonexistent field, so the response can't distinguish hidden from
-		// absent. Otherwise a nested predicate (?author.password_hash_like=…)
-		// would resurrect exactly the value-disclosure oracle the flat-filter
-		// Hidden exclusion blocks, just one relation hop away.
-		//
-		// FAIL CLOSED on a resolution error, and resolve against the SOURCE's
-		// version. This block used to be wrapped in
-		// `if registry != nil { if err == nil { … } }`, which skipped every
-		// check on two independent paths: resolution fails precisely when a
-		// name has several versions, so two versions of "users" disabled the
-		// Hidden check; and a relation pointing at a real table that no entity
-		// registers, auth_users is the documented case, dropped it too.
-		// isSafeIdentifier gates the SHAPE of a name, not its membership, so
-		// either way ?author.password_hash_like=$2a$ reached SQL as a
-		// value-disclosure oracle. ResolveTarget also errors on a nil registry,
-		// so there is nothing left to guard: no schema, no filter.
-		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
-		if err != nil {
-			return nil, fmt.Errorf("nested filter %q: cannot resolve relation target %q: %w", key, rel.Entity, err)
-		}
-		// Match the column name OR the field's wire key. A client is told the
-		// field is called "content"; ?author.content=x must work for the same
-		// reason ?content=x does on the flat path. Hidden and NoQuery both win
-		// under BOTH names, resolving an alias past a refusal would make the
-		// wire key a way around the guard.
+		target := currentEntity
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
-			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) {
+			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) || casing.ToSnake(fieldName) == f.Name {
 				known = !f.Hidden
 				blocked = known && f.NoQuery
 				if known {
@@ -170,33 +147,33 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 				break
 			}
 		}
-		// A NoQuery column is in the response, so it can be named
-		// rather than folded into the not-declared rejection.
 		if blocked {
 			return nil, fmt.Errorf("nested filter %q: field %q cannot be filtered", key, fieldName)
 		}
 		if !known {
-			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, rel.Entity)
+			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, target.GetName())
 		}
 
+		nf := nestedFilter{
+			Hops:       hops,
+			Relation:   hops[0].Relation,
+			Field:      fieldName,
+			Op:         op,
+			isBool:     isBool,
+			softDelete: hops[0].SoftDelete,
+			table:      hops[0].Table,
+		}
 		if op == filter.OpIn {
-			// Coalesce into ONE filter emitting `col IN (...)`. Splitting into
-			// separate AND-ed EXISTS made a to-one relation (BelongsTo/HasOne)
-			// unmatchable, a single related row can't equal every value, so
-			// `?author.name_in=a,b` silently returned nothing. One IN matches
-			// the top-level _in semantics, including the union across
-			// repeated keys (filter.SplitINValuesBounded) and the entry cap
-			// the flat path enforces, same cap, same error shape, so the
-			// nested surface can't drive uncapped placeholders per request.
 			vals, total := filter.SplitINValuesBounded(values, filter.MaxINListEntries)
 			if total > filter.MaxINListEntries {
 				return nil, fmt.Errorf("nested filter %q: in-list on %q has %d entries (max %d)",
 					key, fieldName, total, filter.MaxINListEntries)
 			}
-			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Values: vals, isBool: isBool, softDelete: target.Config.Scope.SoftDelete, table: resolvedTable(target, rel)})
+			nf.Values = vals
 		} else {
-			out = append(out, nestedFilter{Relation: rel, Field: fieldName, Op: op, Value: values[0], isBool: isBool, softDelete: target.Config.Scope.SoftDelete, table: resolvedTable(target, rel)})
+			nf.Value = values[0]
 		}
+		out = append(out, nf)
 	}
 	return out, nil
 }
@@ -221,51 +198,54 @@ type NestedFilter struct {
 // applies in parseNestedFilters. Unknown relations, unknown fields, and
 // unsafe identifiers return an error so typed callers see the same 400-class
 // failures.
-//
-// It does NOT itself run scopeNestedFiltersForCaller — it validates the shape,
-// nothing more. Its in-process callers, ListAll and CountAll, run the
-// narrowing separately and unconditionally (scopeNestedFiltersInProcess), so a
-// spec resolved here and executed there carries the same owner, tenant, and
-// read-scope predicates the HTTP path applies. Anything that resolves a spec
-// and skips that step is reintroducing the count oracle.
 func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []NestedFilter) ([]nestedFilter, error) {
-	if len(specs) == 0 {
+	if ent == nil || len(specs) == 0 {
 		return nil, nil
-	}
-	relsByName := map[string]entity.Relation{}
-	for _, rel := range ent.Config.Relations {
-		relsByName[rel.Name] = rel
 	}
 	out := make([]nestedFilter, 0, len(specs))
 	for _, spec := range specs {
-		rel, ok := relsByName[spec.Relation]
-		if !ok {
-			return nil, fmt.Errorf("nested filter: unknown relation %q", spec.Relation)
+		relParts := strings.Split(spec.Relation, ".")
+		if len(relParts) > maxIncludeDepth {
+			return nil, fmt.Errorf("nested filter %q: too many relation hops (max %d)", spec.Relation, maxIncludeDepth)
 		}
-		if !isSafeIdentifier(spec.Field) {
+
+		currentEntity := ent
+		var hops []relationHop
+		for _, relName := range relParts {
+			rel, ok := relationByName(currentEntity, relName)
+			if !ok {
+				rel, ok = relationByName(currentEntity, casing.ToSnake(relName))
+			}
+			if !ok {
+				return nil, fmt.Errorf("nested filter: unknown relation %q", relName)
+			}
+			target, err := entity.ResolveTarget(registry, currentEntity, rel.Entity)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: cannot resolve relation target %q: %w",
+					spec.Relation, spec.Field, rel.Entity, err)
+			}
+			if target == nil {
+				return nil, fmt.Errorf("nested filter %q.%q: relation target %q resolved to no entity",
+					spec.Relation, spec.Field, rel.Entity)
+			}
+			hops = append(hops, relationHop{
+				Relation:   rel,
+				Target:     target,
+				Table:      resolvedTable(target, rel),
+				SoftDelete: target.Config.Scope.SoftDelete,
+			})
+			currentEntity = target
+		}
+
+		field := spec.Field
+		if !isSafeIdentifier(field) {
 			return nil, fmt.Errorf("nested filter %q.%q: unsafe field name", spec.Relation, spec.Field)
 		}
-		// Unresolvable target refuses, exactly as on the HTTP path, and
-		// resolves against the source's version for the same reason.
-		// Skipping the check here let a typed caller predicate on any column
-		// of an unregistered table, or of whichever version Get happened to
-		// return.
-		target, err := entity.ResolveTarget(registry, ent, rel.Entity)
-		if err != nil {
-			return nil, fmt.Errorf("nested filter %q.%q: cannot resolve relation target %q: %w",
-				spec.Relation, spec.Field, rel.Entity, err)
-		}
-		field := spec.Field
+
+		target := currentEntity
 		known, blocked, isBool := false, false, false
 		for _, f := range target.GetFields() {
-			if f.Name == field || (f.WireName != "" && f.WireName == field) {
-				// A Hidden target column is treated as not-declared,
-				// the same value-disclosure-oracle rejection the HTTP
-				// path applies in parseNestedFilters. Without this, a
-				// typed caller passing a partially user-influenced
-				// field name rebuilds the oracle one relation hop away.
-				// NoQuery is blocked too, but named: it is visible in
-				// responses, so hiding its existence buys nothing.
+			if f.Name == field || (f.WireName != "" && f.WireName == field) || casing.ToSnake(field) == f.Name {
 				known = !f.Hidden
 				blocked = known && f.NoQuery
 				if known {
@@ -279,14 +259,28 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 			return nil, fmt.Errorf("nested filter %q.%q: field cannot be filtered", spec.Relation, spec.Field)
 		}
 		if !known {
-			return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, rel.Entity)
+			return nil, fmt.Errorf("nested filter %q.%q: field not declared on %q", spec.Relation, spec.Field, target.GetName())
 		}
-		nf := nestedFilter{Relation: rel, Field: field, Op: spec.Op, isBool: isBool, softDelete: target.Config.Scope.SoftDelete, table: resolvedTable(target, rel)}
-		if spec.Op == filter.OpIn {
-			// Same entry cap the HTTP path enforces (SplitINValuesBounded
-			// in parseNestedFiltersValues): each value becomes one
-			// placeholder in the EXISTS clause, so an unbounded slice is
-			// the same statement-size vector the cap exists to bound.
+		op := spec.Op
+		if op == "" {
+			op = filter.OpEq
+		}
+		switch op {
+		case filter.OpEq, filter.OpGt, filter.OpGte, filter.OpLt, filter.OpLte, filter.OpLike, filter.OpIn:
+			// valid
+		default:
+			return nil, fmt.Errorf("nested filter %q.%q: unsupported operator %q", spec.Relation, spec.Field, spec.Op)
+		}
+		nf := nestedFilter{
+			Hops:       hops,
+			Relation:   hops[0].Relation,
+			Field:      field,
+			Op:         op,
+			isBool:     isBool,
+			softDelete: hops[0].SoftDelete,
+			table:      hops[0].Table,
+		}
+		if op == filter.OpIn {
 			if len(spec.Values) > filter.MaxINListEntries {
 				return nil, fmt.Errorf("nested filter %q.%q: in-list has %d entries (max %d)",
 					spec.Relation, field, len(spec.Values), filter.MaxINListEntries)
@@ -326,129 +320,149 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, par
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
 // parseNestedFilters when the registry can't validate the field.
 //
-// parentTable / parentPK / rel.Entity / rel.ForeignKey / rel.Through /
-// rel.LocalKey / rel.ForeignKeyTarget all originate from server-defined
-// metadata, not request input, so they don't need the same gate.
+// Relation metadata (parentTable, parentPK, rel.Entity, rel.ForeignKey, rel.Through,
+// rel.LocalKey, rel.ForeignKeyTarget) may originate from dynamic definitions or API endpoints
+// (e.g. kiln add_entity/update_entity), so defense-in-depth isSafeIdentifier gates apply
+// across buildHopSubquery as well.
 func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
-	rel := nf.Relation
-	// relTable, never rel.Entity. See nestedFilter.table.
-	relTable := nf.table
+	hops := nf.Hops
+	if len(hops) == 0 {
+		relTable := nf.table
+		if relTable == "" {
+			relTable = nf.Relation.Entity
+		}
+		hops = []relationHop{{
+			Relation:   nf.Relation,
+			Table:      relTable,
+			SoftDelete: nf.softDelete,
+			Scopes:     nf.scopes,
+		}}
+	}
+
+	col := nf.Field
+	if !isSafeIdentifier(col) {
+		return "1 = 0", nil
+	}
+
+	for _, hop := range hops {
+		for _, sc := range hop.Scopes {
+			if !isSafeIdentifier(sc.Field) {
+				return "1 = 0", nil
+			}
+		}
+	}
+
+	return buildHopSubquery(parentTable, parentPK, hops, nf)
+}
+
+func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf nestedFilter) (string, []any) {
+	if len(hops) == 0 {
+		return "1 = 1", nil
+	}
+
+	hop := hops[0]
+	rel := hop.Relation
+	relTable := hop.Table
 	if relTable == "" {
 		relTable = rel.Entity
 	}
-	col := nf.Field
-	if !isSafeIdentifier(col) {
-		// "1 = 0" is an unconditionally-false predicate that lets the
-		// outer query still build but matches nothing. Better than
-		// returning an error here, buildExistsSubquery has no error
-		// channel and the parse layer normally catches unsafe names;
-		// this is the last-line defence.
+	targetPK := "id"
+	if hop.Target != nil && hop.Target.PrimaryKey != "" {
+		targetPK = hop.Target.PrimaryKey
+	}
+
+	if parentPK == "" {
+		parentPK = "id"
+	}
+
+	if !isSafeIdentifier(parentTable) || !isSafeIdentifier(parentPK) || !isSafeIdentifier(relTable) || !isSafeIdentifier(targetPK) {
 		return "1 = 0", nil
 	}
-	// Build the predicate on the target column, preceded by the caller's row
-	// scopes. Placeholders are local $N; QueryBuilder.Build renumbers them by
-	// the running offset when it composes the fragment.
-	//
-	// Renumbering is POSITIONAL BY ENCOUNTER — the first placeholder token in
-	// the string becomes the first arg, whatever digit it carries — so args
-	// must be appended in the order the placeholders APPEAR. The scope clauses
-	// are emitted first, so their values go into args first. Getting that
-	// backwards binds the caller's owner id to the field predicate and the
-	// searched value to the owner column: the query returns nothing, which
-	// reads as "no matching rows" rather than as a bug.
-	var args []any
 
-	// Narrow the subquery to the caller's own rows. Without this the EXISTS
-	// clause counts EVERY row in the target table: it does not return them, but
-	// the parent's row count moves with the guessed value, which is a count
-	// oracle over any column of any other owner's or tenant's data. The
-	// predicates come from scopeNestedFiltersForCaller, which reuses the same
-	// builder the include and eager paths use, so a narrowed subquery counts
-	// exactly the rows the target's own list route would have served.
-	//
-	// Owner/tenant eq predicates and the target's ReadScope (eq/neq/in/not_in)
-	// all render through renderReadScope: one renderer, one meaning, the
-	// same fragment shape every other sink uses.
-	for _, sc := range nf.scopes {
-		if !isSafeIdentifier(sc.Field) {
-			// A scope column that is not a plain identifier cannot be emitted,
-			// and dropping it would silently widen the subquery back to every
-			// row. Match nothing instead.
-			return "1 = 0", nil
-		}
+	subTable := relTable
+	aliasClause := relTable
+	if relTable == parentTable {
+		subTable = relTable + "_sub"
+		aliasClause = fmt.Sprintf("%s %s", relTable, subTable)
 	}
+
+	var args []any
 	var scopeClause string
-	if len(nf.scopes) > 0 {
+	if len(hop.Scopes) > 0 {
 		var scopeArgs []any
-		scopeClause, scopeArgs = renderReadScope(nf.scopes, relTable, 1)
+		scopeClause, scopeArgs = renderReadScope(hop.Scopes, subTable, 1)
 		if scopeClause == "" {
-			// Non-empty predicates that render to nothing means the renderer
-			// refused them; matching nothing is the only safe answer.
 			return "1 = 0", nil
 		}
 		args = append(args, scopeArgs...)
 	}
 
-	var predicate string
-	if nf.Op == filter.OpIn {
-		if len(nf.Values) == 0 {
-			return "1 = 0", nil
+	var innerPredicate string
+	if len(hops) == 1 {
+		col := nf.Field
+		var fieldPred string
+		if nf.Op == filter.OpIn {
+			if len(nf.Values) == 0 {
+				return "1 = 0", nil
+			}
+			ph := make([]string, len(nf.Values))
+			for i, v := range nf.Values {
+				ph[i] = fmt.Sprintf("$%d", len(args)+1)
+				args = append(args, filter.BoolBind(nf.isBool, v))
+			}
+			fieldPred = fmt.Sprintf("%s.%s IN (%s)", subTable, col, strings.Join(ph, ","))
+		} else if nf.Op == filter.OpLike {
+			fieldPred = fmt.Sprintf("%s.%s LIKE $%d"+filter.LikeEscapeSuffix, subTable, col, len(args)+1)
+			args = append(args, filter.EscapeLikePattern(nf.Value))
+		} else {
+			fieldPred = fmt.Sprintf("%s.%s %s $%d", subTable, col, opToSQL(nf.Op), len(args)+1)
+			args = append(args, filter.BoolBind(nf.isBool, nf.Value))
 		}
-		ph := make([]string, len(nf.Values))
-		for i, v := range nf.Values {
-			ph[i] = fmt.Sprintf("$%d", len(args)+1)
-			args = append(args, filter.BoolBind(nf.isBool, v))
-		}
-		predicate = fmt.Sprintf("%s.%s IN (%s)", relTable, col, strings.Join(ph, ","))
-	} else if nf.Op == filter.OpLike {
-		// One operator, one meaning: `_like` is a literal substring at
-		// every depth. Nested filters used to pass the caller's value
-		// through as a raw LIKE pattern while the top level escaped and
-		// wrapped it, so `?author.name_like=100%` prefix-matched instead of
-		// finding "100% cotton" — and a bare `%` matched every row.
-		predicate = fmt.Sprintf("%s.%s LIKE $%d"+filter.LikeEscapeSuffix, relTable, col, len(args)+1)
-		args = append(args, filter.EscapeLikePattern(nf.Value))
+		innerPredicate = fieldPred
 	} else {
-		predicate = fmt.Sprintf("%s.%s %s $%d", relTable, col, opToSQL(nf.Op), len(args)+1)
-		args = append(args, filter.BoolBind(nf.isBool, nf.Value))
-	}
-	if scopeClause != "" {
-		predicate = scopeClause + " AND " + predicate
+		subSQL, subArgs := buildHopSubquery(subTable, targetPK, hops[1:], nf)
+		args = append(args, subArgs...)
+		innerPredicate = subSQL
 	}
 
-	// Every other read surface hides soft-deleted rows, the routes via
-	// ApplySoftDeleteFilter, the eager loaders via their softDeleteFilter
-	// argument. This subquery did not, so `?rel.field=` counted trashed rows
-	// and became a value oracle over data that GET /api/<entity>/{id} answers
-	// 404 for. No placeholder needed, so it composes with the renumbering.
-	if nf.softDelete {
-		predicate = fmt.Sprintf("%s.deleted_at IS NULL AND %s", relTable, predicate)
+	if scopeClause != "" {
+		innerPredicate = scopeClause + " AND " + innerPredicate
+	}
+	if hop.SoftDelete {
+		innerPredicate = fmt.Sprintf("%s.deleted_at IS NULL AND %s", subTable, innerPredicate)
 	}
 
 	switch rel.Type {
 	case entity.RelManyToOne:
-		// posts.author_id → users.id
-		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.%s AND %s)",
-			relTable, relTable, parentTable, rel.ForeignKey, predicate,
-		), args
-	case entity.RelHasOne, entity.RelHasMany:
-		// target.fk = parent.pk
+		if !isSafeIdentifier(rel.ForeignKey) {
+			return "1 = 0", nil
+		}
 		return fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
-			relTable, relTable, rel.ForeignKey, parentTable, parentPK, predicate,
+			aliasClause, subTable, targetPK, parentTable, rel.ForeignKey, innerPredicate,
+		), args
+	case entity.RelHasOne, entity.RelHasMany:
+		if !isSafeIdentifier(rel.ForeignKey) {
+			return "1 = 0", nil
+		}
+		return fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
+			aliasClause, subTable, rel.ForeignKey, parentTable, parentPK, innerPredicate,
 		), args
 	case entity.RelManyToMany:
-		// parent → pivot → target
+		if !isSafeIdentifier(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
+			return "1 = 0", nil
+		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.id = %s.%s WHERE %s.%s = %s.%s AND %s)",
-			relTable, rel.Through,
-			relTable, rel.Through, rel.ForeignKeyTarget,
+			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s)",
+			aliasClause, rel.Through,
+			subTable, targetPK, rel.Through, rel.ForeignKeyTarget,
 			rel.Through, rel.LocalKey, parentTable, parentPK,
-			predicate,
+			innerPredicate,
 		), args
+	default:
+		return "1 = 0", nil
 	}
-	return "1 = 0", nil
 }
 
 // opToSQL maps a FilterOp to its SQL operator.
@@ -530,28 +544,55 @@ func (ch *CrudHandler) scopeNestedFiltersForCaller(ctx context.Context, filters 
 // rows the caller may not see. Splitting the two is the whole fix: the leak
 // was never the missing posture check, it was the missing predicates.
 func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedFilter, checkPosture bool) error {
-	if len(filters) == 0 || ch.Registry == nil {
+	if len(filters) == 0 {
 		return nil
 	}
+	if ch.Registry == nil {
+		return fmt.Errorf("nested filter: registry required for scoping")
+	}
 	for i := range filters {
-		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, filters[i].Relation.Entity)
-		if err != nil {
-			// Unresolvable target: refuse rather than filter against a table
-			// nobody vouched for, matching the include path's stance.
-			return &includeForbiddenError{Entity: filters[i].Relation.Entity}
+		if len(filters[i].Hops) == 0 {
+			target, err := entity.ResolveTarget(ch.Registry, ch.Entity, filters[i].Relation.Entity)
+			if err != nil || target == nil {
+				// Unresolvable target: refuse rather than filter against a table
+				// nobody vouched for, matching the include path's stance.
+				return &includeForbiddenError{Entity: filters[i].Relation.Entity}
+			}
+			probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
+			if checkPosture && !probe.CanReadScoped(ctx) {
+				return &includeForbiddenError{Entity: target.GetName()}
+			}
+			var scopes []filter.ParsedFilter
+			scopes = append(scopes, eagerScopeFilters(ctx, target)...)
+			scopes = append(scopes, readScopeFilters(ctx, target)...)
+			filters[i].scopes = scopes
+			continue
 		}
-		probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
-		if checkPosture && !probe.CanReadScoped(ctx) {
-			return &includeForbiddenError{Entity: target.GetName()}
+
+		parent := ch.Entity
+		for h := range filters[i].Hops {
+			target := filters[i].Hops[h].Target
+			if target == nil {
+				var err error
+				target, err = entity.ResolveTarget(ch.Registry, parent, filters[i].Hops[h].Relation.Entity)
+				if err != nil || target == nil {
+					return &includeForbiddenError{Entity: filters[i].Hops[h].Relation.Entity}
+				}
+				filters[i].Hops[h].Target = target
+			}
+			probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
+			if checkPosture && !probe.CanReadScoped(ctx) {
+				return &includeForbiddenError{Entity: target.GetName()}
+			}
+			var scopes []filter.ParsedFilter
+			scopes = append(scopes, eagerScopeFilters(ctx, target)...)
+			scopes = append(scopes, readScopeFilters(ctx, target)...)
+			filters[i].Hops[h].Scopes = scopes
+			if h == 0 {
+				filters[i].scopes = scopes
+			}
+			parent = target
 		}
-		var scopes []filter.ParsedFilter
-		scopes = append(scopes, eagerScopeFilters(ctx, target)...)
-		// The target's ReadScope narrows the same subquery: without it a
-		// `?rel.field=` count is an oracle over rows the target's own route
-		// refuses (the drafts), one question at a time. Same builder as
-		// every other sink.
-		scopes = append(scopes, readScopeFilters(ctx, target)...)
-		filters[i].scopes = scopes
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,19 @@ import (
 // resolves without a go.mod, a replace directive, or a network fetch.
 // Gitignored; removed before and after the test so a killed run cannot
 // leave a package behind that later trips `go build ./...`.
-const scratchPkg = "blueprintgen"
+// The leading underscore is what keeps the window shut: the directory
+// is created mid-test and filled a moment later, so a `go list ./...`
+// in another package's test binary at that instant used to fail hard
+// with "no Go files in". Go's tooling ignores a "_"-prefixed directory
+// when expanding `./...`, at every moment, while still resolving an
+// explicit import path through it.
+const scratchPkg = "_blueprintgen"
+
+// TestScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
+// exists, or a parallel `go build ./...` sees a half-written package.
+func TestScratchHiddenFromGoList(t *testing.T) {
+	scratchdir.AssertHiddenFromGoList(t, ".", scratchPkg)
+}
 
 // TestBlueprintStillGenerates compiles gofastr.yml.
 //

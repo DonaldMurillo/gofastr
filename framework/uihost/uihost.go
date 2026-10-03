@@ -1551,7 +1551,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 			ds.serveResolverError(w, r, path, pe)
 			return
 		}
-		ds.serveNotFound(w, r, path)
+		ds.serveRenderError(w, r, path, err)
 		return
 	}
 	switch res.Kind {
@@ -2540,12 +2540,45 @@ func (ds *UIHost) serveResolverError(w http.ResponseWriter, r *http.Request, pat
 	ds.serveError(w, r, path)
 }
 
-// serveError is serveNotFound's 500 twin: the error body through the
-// app's root layout when one exists (a navigation fetch carrying
-// X-Gofastr-From gets the partial/envelope shape instead, so the
-// runtime shows the page inside the live shell), else a minimal
-// document. No error text in any body.
+// serveRenderError discriminates the render pipeline's error channel,
+// which folds every failure into one error return. A contained panic
+// (app.ErrScreenPanicked, from a screen's Render or its Load) is a
+// server bug: one Error log line naming the path and the scrubbed
+// panic, then a 500. The silent 404 this used to answer cost an agent
+// its longest debugging loop. Every other error keeps the 404 it always
+// had (a Load that RETURNS an error is the documented screen-chooses-
+// not-found contract), but a route that resolves is no longer silent:
+// one Warn line carries the path and the error. A path no route owns
+// stays a plain, unlogged 404; an unknown URL is not an incident.
+func (ds *UIHost) serveRenderError(w http.ResponseWriter, r *http.Request, path string, err error) {
+	if errors.Is(err, app.ErrScreenPanicked) {
+		slog.Default().Error("uihost: screen render panicked; serving 500",
+			"path", textsafe.ScrubControlBytes(path),
+			"panic", textsafe.Recovered(err))
+		ds.serveError(w, r, path)
+		return
+	}
+	if _, _, ok := ds.App.Router.Resolve(path); ok {
+		slog.Default().Warn("uihost: screen render failed; serving 404",
+			"path", textsafe.ScrubControlBytes(path),
+			"err", textsafe.Recovered(err))
+	}
+	ds.serveNotFound(w, r, path)
+}
+
+// serveError is serveNotFound's 500 twin. A request whose Accept header
+// names a machine representation gets an RFC 9457 problem document;
+// otherwise the error body renders through the app's root layout when
+// one exists (a navigation fetch carrying X-Gofastr-From gets the
+// partial/envelope shape instead, so the runtime shows the page inside
+// the live shell), else a minimal document. Vary: Accept on every arm,
+// and no error text or request path in any body.
 func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string) {
+	if acceptsProblemJSON(r) {
+		ds.serveServerError(w, r, path)
+		return
+	}
+	w.Header().Add("Vary", "Accept")
 	if ds.App != nil && r.Header.Get("X-Gofastr-Navigate") == "1" && r.Header.Get("X-Gofastr-From") != "" {
 		if ds.serveErrorPartial(w, r, path) {
 			return
@@ -2561,6 +2594,45 @@ func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string
 			`<body><main role="main"><h1>Something went wrong</h1><p>This page could not be loaded. Try again in a moment.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
 		stdhtml.EscapeString(ds.LangForPath(path)))
+}
+
+// serveServerError writes a bare 500 with no root layout: an RFC 9457
+// problem document when the Accept header names a machine
+// representation, a minimal HTML page otherwise, Vary: Accept on both
+// arms. It echoes nothing: neither the path (a hostile URL is a
+// reflection vector no error page needs) nor any panic text
+// (host/component state). serveError delegates its problem+json arm
+// here; the embed content route uses it directly, since a frame must
+// not receive the site's root layout.
+func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path string) {
+	w.Header().Add("Vary", "Accept")
+	if acceptsProblemJSON(r) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(struct {
+			Type   string `json:"type"`
+			Title  string `json:"title"`
+			Status int    `json:"status"`
+			Detail string `json:"detail"`
+		}{
+			Type:   "about:blank",
+			Title:  "Internal Server Error",
+			Status: http.StatusInternalServerError,
+			Detail: "The page failed to render.",
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	appName := "GoFastr"
+	if ds.App != nil && ds.App.Name != "" {
+		appName = ds.App.Name
+	}
+	fmt.Fprintf(w,
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Server error: %s</title></head>`+
+			`<body><main role="main"><h1>500: Server error</h1><p>The page failed to render.</p>`+
+			`<p><a href="/">Back to home</a></p></main></body></html>`,
+		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName))
 }
 
 // renderErrorDocument is renderNotFoundDocument's 500 twin, finished
@@ -2793,7 +2865,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 			ds.serveResolverError(w, r, path, pe)
 			return
 		}
-		ds.serveNotFound(w, r, path)
+		ds.serveRenderError(w, r, path, err)
 		return
 	}
 	switch res.Kind {

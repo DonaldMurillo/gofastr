@@ -232,7 +232,9 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	b.WriteString("## Page Content\n\n")
 	content, err := component.SafeRenderCtx(ctx, comp)
 	if err != nil {
-		log.Printf("llm.md: render error for %s: %v", path, err)
+		// The path is request-derived and the error carries panicked-on
+		// component state: scrub both so neither can forge a log line.
+		log.Printf("llm.md: render error for %s: %s", textsafe.ScrubControlBytes(path), textsafe.Recovered(err))
 		b.WriteString("_(error rendering content: see server logs)_\n")
 		return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
 	}

@@ -32,7 +32,17 @@ import (
 // *http.Request but only consult ctx + URL query.
 func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 	r := httptest.NewRequest(method, path, nil)
-	return r.WithContext(ctx)
+	return r.WithContext(context.WithValue(ctx, inProcessKey{}, true))
+}
+
+// inProcessKey marks a syntheticRequest: the caller is Go code using the
+// in-process API, not a client that came through a route.
+type inProcessKey struct{}
+
+// inProcess reports whether r was built by syntheticRequest.
+func inProcess(r *http.Request) bool {
+	v, _ := r.Context().Value(inProcessKey{}).(bool)
+	return v
 }
 
 // CreateOne runs the full Create pipeline (BeforeCreate hooks → INSERT →

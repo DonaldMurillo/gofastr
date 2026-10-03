@@ -7,6 +7,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **A screen that panics is a logged 500, never a silent 404.** A
+  render or `Load` panic on any serving path (full page with or
+  without a layout, partial navigation, overlay, and the embed content
+  route) used to answer 404 with nothing in the server log, and the
+  layout-less page even shipped the panic text inside a 200 body. It
+  now answers 500 with an error log line naming the path and the
+  scrubbed panic, and the app's error page, which echoes neither. A `Load` that
+  returns an error keeps the 404 it contracted but is logged at Warn;
+  a path no route owns still 404s silently. Hosts can discriminate via
+  the new `app.ErrScreenPanicked` sentinel. A screen implementing
+  `component.ErrorBoundary` answers its own `RenderError` markup on
+  every serving path, still logged; before, the layout path dropped it
+  for a 404. A static export
+  (`framework/static`) now fails on such a screen instead of
+  publishing the error box; a screen with a layout already failed it.
+  The llm.md render path scrubs the path and panic it logs. Covered by the
+  `screen_panic_500_test.go` suite in `framework/uihost`.
+
 ## [0.86.0] - 2026-09-24
 
 **BREAKING.** v0.86.0 rebuilds the UI layer and deprecates nothing: a

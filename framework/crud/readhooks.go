@@ -298,7 +298,8 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 // across reads and writes without touching the in-process API, which stays
 // raw so read-modify-write still works.
 func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) (map[string]any, error) {
-	if ch.Hooks == nil || result == nil || len(ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+	parentHooks := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterGet)) > 0
+	if result == nil || (!parentHooks && !ch.hasCascadeAttachments(result)) {
 		return result, nil
 	}
 	// Redact a DEEP copy. The caller has already handed `result` to EmitEvent,
@@ -317,6 +318,15 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	// it and racing the subscriber that reads it. deepCopyRecord is the same
 	// helper redactEventRecord uses, for the same reason.
 	row := deepCopyRecord(result)
+	// Cascade-written children get their own entity's read hooks here, on
+	// the copy, after commit: running them inside the write handed the
+	// redacted child to AfterCreate/AfterUpdate, the outbox and the event.
+	if err := ch.applyCascadeChildReadHooks(withRealRequest(WithReadHooks(r.Context()), r), row); err != nil {
+		return nil, err
+	}
+	if !parentHooks {
+		return row, nil
+	}
 	id := ""
 	if v, ok := row[ch.convertKey(ch.PrimaryKey)]; ok {
 		id = fmt.Sprint(v)
@@ -482,4 +492,51 @@ func foldHookRow(relation string, i int, row, want map[string]any) error {
 // sameMap reports whether two maps are the same underlying object.
 func sameMap(a, b map[string]any) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+// hasCascadeAttachments reports whether a write result carries any
+// cascade-written relation that child read hooks could apply to.
+func (ch *CrudHandler) hasCascadeAttachments(result map[string]any) bool {
+	if ch.ChildHooks == nil || ch.Entity == nil {
+		return false
+	}
+	for _, rel := range ch.Entity.Config.Relations {
+		if _, ok := result[ch.convertKey(rel.Name)]; ok && rel.CascadeWrite {
+			return true
+		}
+	}
+	return false
+}
+
+// applyCascadeChildReadHooks runs child entity read hooks over cascade-written
+// relation attachments in a write response. runResponseHooks calls it on a
+// deep copy after commit; it must never run on the row the write is still
+// using. No-op without ChildHooks or when read hooks are not enabled on ctx.
+func (ch *CrudHandler) applyCascadeChildReadHooks(ctx context.Context, result map[string]any) error {
+	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(result) == 0 || ch.Entity == nil {
+		return nil
+	}
+	var nodes []*IncludeNode
+	for _, rel := range ch.Entity.Config.Relations {
+		if !rel.CascadeWrite {
+			continue
+		}
+		key := ch.convertKey(rel.Name)
+		if _, ok := result[key]; !ok {
+			continue
+		}
+		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
+		if err != nil || target == nil {
+			continue
+		}
+		nodes = append(nodes, &IncludeNode{
+			Name:     rel.Name,
+			Relation: rel,
+			Target:   target,
+		})
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	return ch.applyChildReadHooks(ctx, nodes, []map[string]any{result})
 }

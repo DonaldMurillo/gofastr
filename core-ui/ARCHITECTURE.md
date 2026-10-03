@@ -76,6 +76,39 @@ the same rule.
 **Forms and mutations** follow the in-page pattern: POST to the island's
 RPC handler, response carries the new island HTML.
 
+## Screen render failures: 404 vs 500
+
+The render pipeline folds every failure into one error return; the host
+discriminates on it:
+
+- **A panic in a screen's `Render` or `Load`** is a server bug. It is
+  contained (`component.SafeRenderCtx` / `safeScreenLoad`), wrapped
+  with `app.ErrScreenPanicked`, and answered **500**. The host logs one
+  `slog` Error line naming the path and the scrubbed panic
+  (`textsafe.Recovered`); a `Render` panic also gets the component
+  recovery's own Error line with the stack. The panic text never reaches the response
+  body. Same outcome on every serving path: full page with layout,
+  layout-less page, partial navigation, overlay, and the embed content
+  route.
+- **A `Render` panic in a screen that implements
+  `component.ErrorBoundary`** answers with the screen's own
+  `RenderError` markup on every serving path, with the panic still
+  logged with its stack. The screen took ownership of its failure. A
+  `Load` panic is still a 500: the boundary covers rendering only.
+- **A `Load` that returns an error** keeps the 404 it contracted (the
+  screen chose "not found"; `uihost.ScreenStatusCode` renders a body
+  with a chosen status instead), logged at Warn with the path so it is
+  no longer silent.
+- **A path no route owns** stays a plain 404 and logs nothing.
+
+The 500 is the same error page a failed route resolver gets
+(`serveError`): RFC 9457 `application/problem+json` for machine
+Accepts, otherwise the error body (`WithErrorScreen`, or the built-in
+one) through the root layout, or a minimal document when there is no
+root layout. `Vary: Accept` on every arm, and no arm echoes the path or
+the panic. The embed content route answers the minimal document
+directly, since a frame must not receive the site's root layout.
+
 ---
 
 ## What is an island?

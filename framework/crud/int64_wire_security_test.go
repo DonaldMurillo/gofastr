@@ -155,4 +155,18 @@ func TestIntJSONRoundTripsOrRefuses(t *testing.T) {
 			t.Fatalf("control: string form stored %d, want exact — if the string form also corrupts, the finding moves to the bind layer", got)
 		}
 	})
+
+	t.Run("http create stores exact int64 literal without refusal", func(t *testing.T) {
+		ch, db := intLedger(t)
+		req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/wire_ledger",
+			Body: `{"amount": 9007199254740993}`, UserID: "alice"})
+		rr := httptest.NewRecorder()
+		ch.Create()(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created for exact int64 JSON literal, got %d: %s", rr.Code, rr.Body.String())
+		}
+		if got := storedAmount(t, db); got != bigSent {
+			t.Fatalf("stored amount %d, want %d", got, bigSent)
+		}
+	})
 }

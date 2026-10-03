@@ -1,6 +1,7 @@
 package ecommerce_test
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,19 @@ import (
 // arrangement examples/meridian/blueprint_gate_test.go uses. Gitignored, and
 // removed before and after the run so a killed test cannot leave a package
 // behind that later trips `go build ./...`.
-const scratchPkg = "blueprintgen"
+// The leading underscore is what keeps the window shut: the directory
+// is created mid-test and filled a moment later, so a `go list ./...`
+// in another package's test binary at that instant used to fail hard
+// with "no Go files in". Go's tooling ignores a "_"-prefixed directory
+// when expanding `./...`, at every moment, while still resolving an
+// explicit import path through it.
+const scratchPkg = "_blueprintgen"
+
+// TestScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
+// exists, or a parallel `go build ./...` sees a half-written package.
+func TestScratchHiddenFromGoList(t *testing.T) {
+	scratchdir.AssertHiddenFromGoList(t, ".", scratchPkg)
+}
 
 // realModule is the module path the committed app/ is generated under. The
 // scratch copy appends scratchPkg to it, and normalizeModule below undoes that
