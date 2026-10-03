@@ -229,8 +229,11 @@ jobs:
           go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool=/tmp/gofastr-vettool
 
       - name: Test (deterministic packages)
-        # -timeout=20m, -p 2 to keep httptest/chromedp sockets off the
-        # ephemeral-port ceiling. Intentionally NO -count=1: Go's
+        # -timeout=20m. The old `-p 2` kept chromedp sockets off the
+        # ephemeral-port ceiling while chromedp suites ran here; those now
+        # run in browser-e2e, so the step uses the runner's full core count
+        # (2026-10: with -p 2 both slots were saturated and the step was
+        # the critical path of every PR). Intentionally NO -count=1: Go's
         # content-addressed test cache (persisted across runs by the
         # per-SHA cache step above) then skips re-executing any package
         # whose sources + transitive deps + test inputs are byte-identical
@@ -251,17 +254,23 @@ jobs:
         #     Chrome-contention class as core-ui/runtime)
         #   - evals/ui-quality/internal/evalrunner (its capture tests drive
         #     a real headless Chrome; same class)
+        #   - examples/tracker, examples/layoutlab (chromedp e2e suites,
+        #     3 and 2 minutes each; they filled a -p 2 slot here for the
+        #     whole step and belong with the other browser suites)
         #   - cmd/gofastr browser tests via -skip (the rest of the
         #     package stays blocking). These drive a real Chrome over a
-        #     livereload websocket; under -p 2 with every other package
-        #     they contend for Chrome/sockets and the websocket connect
-        #     times out. They run serialized in browser-e2e instead.
+        #     livereload websocket; beside every other package they
+        #     contend for Chrome/sockets and the websocket connect times
+        #     out. They run serialized in browser-e2e instead.
         # Scoped to the affected packages on pull requests (see the job
         # env); everything on main.
+        # -coverprofile: the coverage-floors step below reads this one
+        # merged profile instead of running the floored suites a second
+        # time. Own-package coverage, the same arithmetic as `-cover`.
         run: |
           go run ./cmd/affected \
-            -exclude 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
-            -- go test -timeout=20m -p 2 \
+            -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+            -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
 
       - name: Race detector (concurrency packages)
@@ -300,15 +309,20 @@ jobs:
         # the fix is an exported test seam — not a timeout bump.
         # 20m (not the old 15m) because the root package suite is larger
         # than the rest of this list combined.
+        #
+        # The list is a -match regexp over cmd/affected's output, so a pull
+        # request races only the listed packages its change reaches; main
+        # (GOFASTR_TEST_ALL=1) races the whole list. The regexp spells the
+        # same set as these patterns did:
+        #   ./framework ./battery/queue/... ./battery/cache/...
+        #   ./framework/outbox/... ./framework/fanout/... ./core/fanout/...
+        #   ./framework/cron/... ./framework/event/... ./framework/hook/...
+        #   ./framework/ratelimit/... ./framework/lifecycle/...
+        #   ./framework/slowquery/... ./core/stream/... ./framework/uihost/...
         run: |
-          go test -race -timeout=20m \
-            ./framework \
-            ./battery/queue/... ./battery/cache/... \
-            ./framework/outbox/... ./framework/fanout/... ./core/fanout/... \
-            ./framework/cron/... ./framework/event/... ./framework/hook/... \
-            ./framework/ratelimit/... ./framework/lifecycle/... \
-            ./framework/slowquery/... ./core/stream/... \
-            ./framework/uihost/...
+          go run ./cmd/affected \
+            -match 'gofastr/(framework|battery/(queue|cache)(/.*)?|framework/(outbox|fanout|cron|event|hook|ratelimit|lifecycle|slowquery|uihost)(/.*)?|core/(fanout|stream)(/.*)?)$' \
+            -- go test -race -timeout=20m
 
       - name: Nested module (battery/print/chromepdf)
         # battery/print/chromepdf is its own go module: a nested module that
@@ -323,10 +337,13 @@ jobs:
         run: cd battery/print/chromepdf && go build ./... && go vet ./... && go test ./...
 
       - name: Coverage floors (claimed packages)
-        # Re-runs `go test -cover` for only the floor-gated packages and
-        # fails if any drops below its floor (~2 points under the recorded
-        # value). Floor table + exclusions live in the script.
-        run: bash scripts/coverage-floors.sh
+        # Measures every floor-gated package from the Test step's merged
+        # profile and fails if any drops below its floor (~2 points under
+        # the recorded value). No second test run: that cost four to five
+        # minutes of this job (2026-10). On main every floor must appear in
+        # the profile; on a pull request a floor outside the affected set
+        # is skipped. Floor table + exclusions live in the script.
+        run: COVERPROFILE="$RUNNER_TEMP/cover.out" bash scripts/coverage-floors.sh
 
       - name: Contracts (gofastr verify)
         # The framework held to its own contract. Runs AFTER the test step
@@ -429,14 +446,28 @@ jobs:
           - suite: site
             pkg: examples/site$
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
-          - suite: site-axe
+          # The axe gate scans every page under BOTH color schemes: 11-15
+          # minutes on one runner (2026-09), the longest browser shard once
+          # the blocking job was trimmed. GOFASTR_AXE_SHARD=k/n splits its
+          # work list across runners (examples/site/axe_test.go: every n-th
+          # item from k, so the two halves are exactly the whole gate). Its
+          # own shards: CLAUDE.md documents the axe suite flaking when it
+          # shares a go-test run with the other chromedp tests. 30m: a 15m
+          # limit once failed slow runners with nothing hung.
+          - suite: site-axe-0
             pkg: examples/site$
-            # 30m: the gate scans every page under BOTH color schemes,
-            # ≈8.5min locally and 11-15min on CI runners (2026-09), so a
-            # 15m limit failed slow runners with nothing hung. Its own
-            # shard: CLAUDE.md documents the axe suite flaking when it
-            # shares a go-test run with the other chromedp tests.
-            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: GOFASTR_AXE_SHARD=0/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+          - suite: site-axe-1
+            pkg: examples/site$
+            run: GOFASTR_AXE_SHARD=1/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+          # Moved out of the blocking job's Test step (2026-10): both are
+          # chromedp e2e suites and filled one of its two package slots.
+          - suite: tracker
+            pkg: examples/tracker$
+            run: go test -count=1 -timeout=10m ./examples/tracker/
+          - suite: layoutlab
+            pkg: examples/layoutlab$
+            run: go test -count=1 -timeout=10m ./examples/layoutlab/
           - suite: kiln-integration
             pkg: kiln/integration$
             run: go test -count=1 -timeout=15m ./kiln/integration/

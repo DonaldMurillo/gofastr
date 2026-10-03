@@ -60,7 +60,15 @@
 #   flake surface into this gate.
 #
 # Usage:
-#   ./scripts/coverage-floors.sh
+#   ./scripts/coverage-floors.sh                          # runs each floored package itself
+#   COVERPROFILE=cover.out ./scripts/coverage-floors.sh   # reads one merged profile instead
+#
+# The second form is CI's: the blocking job's Test step already runs every
+# affected package with -coverprofile, so measuring the floors from that one
+# file removes a second run of the same suites (four to five minutes of the
+# job). Whole-package and bucket percentages are the same arithmetic in both
+# forms (covered statements over total), which is what `go test -cover`
+# prints.
 
 set -euo pipefail
 
@@ -213,14 +221,52 @@ trap 'rm -rf "$profdir"' EXIT
 # computes the closure against origin/main; GOFASTR_TEST_ALL=1 checks every
 # floor. A row whose package is not in the set prints nothing, the summary
 # line below says how many were skipped.
+#
+# COVERPROFILE=<file>: measure every floor from one merged profile that an
+# earlier `go test -coverprofile=<file> <packages>` wrote (CI's Test step
+# runs every affected package that way) instead of re-running the suites
+# here. A row whose package has no statements in the file was outside that
+# run's scope and is skipped as unaffected, except under GOFASTR_TEST_ALL=1,
+# where every floor must be present and a missing one FAILS: that is the
+# full run, and a floor it cannot see is a floor nobody checks.
 affected=""
-if [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
+if [ -n "${COVERPROFILE:-}" ]; then
+  if [ ! -r "$COVERPROFILE" ]; then
+    echo "FAIL  COVERPROFILE=$COVERPROFILE is not readable"; exit 2
+  fi
+  module_path=$(go list -m)
+elif [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
   affected=$(go run ./cmd/affected -format dir)
 fi
 skipped=0
 is_affected() {
+  [ -n "${COVERPROFILE:-}" ] && return 0 # the profile decides, see slice_profile
   [ "${GOFASTR_TEST_ALL:-}" = "1" ] && return 0
   printf '%s\n' "$affected" | grep -Fxq -- "${1%/}"
+}
+
+# slice_profile PKG → path to PKG's slice of $COVERPROFILE: the mode header
+# plus every row whose file sits DIRECTLY in the package directory (a
+# subpackage's rows carry another path segment and belong to its own row).
+# Returns 1 when the package has no rows.
+slice_profile() {
+  local pkg="$1" key prof rel prefix
+  key=$(echo "$pkg" | tr -c 'A-Za-z0-9' '_')
+  prof="$profdir/$key.out"
+  if [ ! -f "$prof" ]; then
+    rel="${pkg#./}"; rel="${rel%/}"
+    prefix="$module_path/$rel/"
+    awk -v pre="$prefix" '
+      NR==1 { print; next }
+      index($0, pre)==1 {
+        rest = substr($0, length(pre)+1)
+        sub(/:.*/, "", rest)
+        if (rest !~ /\//) print
+      }
+    ' "$COVERPROFILE" > "$prof"
+  fi
+  [ "$(wc -l < "$prof")" -gt 1 ] || return 1
+  echo "$prof"
 }
 
 # profile_for PKG → path to a cached coverprofile for PKG (runs the suite
@@ -281,7 +327,18 @@ while read -r pkg floor filter; do
   label="$pkg"
   [ -n "$filter" ] && label="$pkg [$filter]"
 
-  if [ -z "$filter" ]; then
+  if [ -n "${COVERPROFILE:-}" ]; then
+    # One merged profile from the Test step; no second run of the suite.
+    if ! prof=$(slice_profile "$pkg"); then
+      if [ "${GOFASTR_TEST_ALL:-}" = "1" ]; then
+        echo "FAIL  $label — no statements in COVERPROFILE on a full run (was the package tested?)"; fail=1
+      else
+        skipped=$((skipped + 1))
+      fi
+      continue
+    fi
+    cov=$(bucket_cov "$prof" "$filter")
+  elif [ -z "$filter" ]; then
     # Whole-package fast path.
     if ! out=$(go test -cover "$pkg" 2>&1); then
       echo "$out"; echo "FAIL  $label — tests failed (no coverage measurement)"; fail=1; continue

@@ -3,18 +3,23 @@
 # Every name below MUST be present, completed, and "success" on the tag
 # commit's main-push CI run before scripts/release-gate.sh lets the release
 # publish. Sourced from the job `name:` fields in .github/workflows/ci.yml:
-# the `test` job, the `security` job, the 9 matrix shards of `browser-e2e`
+# the `test` job, the `security` job, the 13 matrix shards of `browser-e2e`
 # (one check run per shard), and the `upgrade-fixtures` job.
 #
 # This file is cross-checked against ci.yml by
 # cmd/gofastr/release_gate_test.go (TestReleaseManifestMatchesCI): renaming a
 # CI job without updating this list breaks the BUILD, not silently the gate
 # (the v0.63 PR #193 rename orphaned branch-protection contexts for exactly
-# this reason — a rename must not be able to slip past the gate).
+# this reason — a rename must not be able to slip past the gate). Branch
+# protection on main carries the same list and is edited by hand: a rename
+# here needs the matching edit there at merge time.
 build · vet · test (blocking)
 vulncheck · secrets · mod-verify (blocking)
 browser e2e · site (blocking)
-browser e2e · site-axe (blocking)
+browser e2e · site-axe-0 (blocking)
+browser e2e · site-axe-1 (blocking)
+browser e2e · tracker (blocking)
+browser e2e · layoutlab (blocking)
 browser e2e · kiln-integration (blocking)
 browser e2e · gofastr-cli (blocking)
 browser e2e · core-ui-runtime (blocking)
