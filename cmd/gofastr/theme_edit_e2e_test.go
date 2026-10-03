@@ -90,6 +90,7 @@ func themeBrowserCtx(t *testing.T) context.Context {
 
 func TestMain(m *testing.M) {
 	code := m.Run()
+	removeSharedGofastrBin()
 	if themeBrowserKill != nil {
 		themeBrowserKill()
 	}

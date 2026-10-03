@@ -128,7 +128,6 @@ func TestGenerateTypeScriptCommandShowsMigrationError(t *testing.T) {
 	// (for example /tmp versus /private/tmp on macOS) cannot split module identity.
 	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "ts")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected generate ts to fail after removal\n%s", output)
@@ -271,7 +270,6 @@ codegen:
 `)
 	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

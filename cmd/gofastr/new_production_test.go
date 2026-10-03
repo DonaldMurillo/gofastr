@@ -90,18 +90,15 @@ func TestNewHandlerOverwrite(t *testing.T) {
 
 // ----- (d) Help / usage exit codes -----
 
-// Build the binary once and reuse for the help tests. Uses go build into
-// a tempdir so we don't pollute the source tree.
+// buildGofastrBin returns the package-wide shared gofastr binary
+// (testbin_test.go), built once for the whole suite.
 func buildGofastrBin(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	out := testExecutablePath(filepath.Join(dir, "gofastr"))
-	cmd := exec.Command("go", "build", "-o", out, ".")
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	bin, err := gofastrTestBinary()
+	if err != nil {
 		t.Fatalf("go build: %v", err)
 	}
-	return out
+	return bin
 }
 
 func TestNewNoArgsExitsNonZero(t *testing.T) {
