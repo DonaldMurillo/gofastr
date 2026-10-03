@@ -301,3 +301,61 @@ func TestRedactEventRecordSkipsWithoutHooks(t *testing.T) {
 		t.Fatal("the delivery was dropped when there was nothing to redact")
 	}
 }
+
+func TestApplyCascadeChildReadHooks_RedactsChildren(t *testing.T) {
+	child := entity.Define("profiles", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "secret", Type: schema.String},
+		},
+	})
+	parent := entity.Define("users", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "id", Type: schema.String}},
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id").WithCascadeWrite(true),
+		},
+	})
+
+	childReg := hook.NewHookRegistry()
+	childReg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
+		payload, ok := data.(*hook.GetPayload)
+		if !ok {
+			return nil
+		}
+		delete(payload.Result, "secret")
+		return nil
+	})
+
+	ch := &CrudHandler{
+		Entity:     parent,
+		PrimaryKey: "id",
+		Registry:   stubRegistry{byName: map[string]*entity.Entity{"users": parent, "profiles": child}},
+		ChildHooks: func(name string) *hook.HookRegistry {
+			if name == "profiles" {
+				return childReg
+			}
+			return nil
+		},
+	}
+
+	result := map[string]any{
+		"id": "u1",
+		"profile": map[string]any{
+			"id":     "p1",
+			"secret": "topsecret",
+		},
+	}
+
+	ctx := WithReadHooks(context.Background())
+	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
+		t.Fatalf("applyCascadeChildReadHooks: %v", err)
+	}
+
+	prof, ok := result["profile"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected profile map, got: %#v", result["profile"])
+	}
+	if _, hasSecret := prof["secret"]; hasSecret {
+		t.Fatalf("expected child secret to be redacted by child AfterGet hook, but got: %#v", prof)
+	}
+}

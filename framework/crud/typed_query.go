@@ -24,12 +24,13 @@ import (
 // limits, tenant scope, and soft-delete behave identically to the HTTP path)
 // and runs the same eager-load helpers when Include() is set.
 type TypedQuery[T any] struct {
-	handler  *CrudHandler
-	wheres   []entity.Condition
-	orders   []entity.Order
-	limit    *int
-	offset   *int
-	includes []string
+	handler       *CrudHandler
+	wheres        []entity.Condition
+	orders        []entity.Order
+	limit         *int
+	offset        *int
+	includes      []string
+	nestedFilters []NestedFilter
 }
 
 // NewTypedQuery starts a new query against the handler's entity. Callers
@@ -41,6 +42,12 @@ func NewTypedQuery[T any](h *CrudHandler) *TypedQuery[T] {
 // Where appends an AND condition. Multiple Where calls AND together.
 func (q *TypedQuery[T]) Where(c entity.Condition) *TypedQuery[T] {
 	q.wheres = append(q.wheres, c)
+	return q
+}
+
+// WhereNested appends relation-scoped nested filters (e.g. relation "author.profile", field "bio", op OpLike, value "Alice").
+func (q *TypedQuery[T]) WhereNested(filters ...NestedFilter) *TypedQuery[T] {
+	q.nestedFilters = append(q.nestedFilters, filters...)
 	return q
 }
 
@@ -65,9 +72,8 @@ func (q *TypedQuery[T]) Include(rels ...string) *TypedQuery[T] {
 }
 
 // buildSelect materialises a fresh SELECT QueryBuilder reflecting the
-// query's current state. Re-buildable: Find/First/Count call it
-// independently so each pass gets its own renumbered placeholders.
-func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
+// query's wheres, orders, and nested-filter EXISTS clauses.
+func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, error) {
 	cols := q.handler.visibleFields()
 	qb := query.Select(cols...).From(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
@@ -75,6 +81,16 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 	}
 	for _, o := range q.orders {
 		o.Apply(qb)
+	}
+	if len(q.nestedFilters) > 0 {
+		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+		if err != nil {
+			return nil, err
+		}
+		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+			return nil, err
+		}
+		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
 	}
 	if q.limit != nil {
 		qb.Limit(*q.limit)
@@ -87,7 +103,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 	q.handler.ApplyOwnerScope(qb, req)
 	q.handler.ApplyReadScope(qb, req)
 	q.handler.ApplySoftDeleteFilter(qb, req)
-	return qb
+	return qb, nil
 }
 
 // requireTenantCtx enforces tenant isolation for typed-repo queries: a
@@ -99,8 +115,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) *query.QueryBuilder {
 // Note: owner scope is deliberately NOT gated here, typed repos are trusted
 // in-process code and an owner-less caller (admin/system) legitimately reads
 // across owners (see TestTypedQuery_AdminCallerWithoutOwnerSeesAll). Tenant is
-// a hard isolation boundary; owner is a softer scope-to-me. The HTTP layer
-// still gates owner via RequireOwner.
+// the strict boundary.
 func (q *TypedQuery[T]) requireTenantCtx(ctx context.Context) error {
 	return q.handler.requireTenantContext(ctx)
 }
@@ -115,7 +130,10 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 	if err := q.requireTenantCtx(ctx); err != nil {
 		return nil, nil, err
 	}
-	qb := q.buildSelect(ctx)
+	qb, err := q.buildSelect(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	sqlStr, args := qb.Build()
 	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -184,6 +202,8 @@ func (q *TypedQuery[T]) Find(ctx context.Context) ([]*T, error) {
 // also run AfterList: that would redact more than the entity's own routes do
 // and make the two surfaces disagree in the other direction.
 func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
+	prevLimit := q.limit
+	defer func() { q.limit = prevLimit }()
 	one := 1
 	q.limit = &one
 	raw, req, err := q.findRaw(ctx)
@@ -218,6 +238,16 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	cb := query.Count(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
 		cb.Where(c.SQL(), c.Args()...)
+	}
+	if len(q.nestedFilters) > 0 {
+		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+		if err != nil {
+			return 0, err
+		}
+		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+			return 0, err
+		}
+		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
@@ -287,9 +317,9 @@ func marshalStructToRow(src any) (map[string]any, error) {
 
 // Exists returns true if at least one row matches the current WHERE chain.
 // Cheaper than First+IsNotFound for the "do any match?" question because it
-// runs a COUNT(*) with LIMIT 1 internally.
+// runs a COUNT(*) internally without mutating query state.
 func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
-	n, err := q.Limit(1).Count(ctx)
+	n, err := q.Count(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -298,8 +328,9 @@ func (q *TypedQuery[T]) Exists(ctx context.Context) (bool, error) {
 
 // UpdateAll applies the same field updates to every row matching the
 // current Where chain and returns the number of rows touched. Ignores
-// Limit/Offset/Order, the underlying SQL is a plain UPDATE with the
-// same WHERE predicate that Find would use.
+// Limit/Offset/Order, the underlying SQL is a plain UPDATE with tenant,
+// owner, soft-delete, and Where/WhereNested predicates applied (mirroring
+// write-side scoping, without read scopes).
 //
 // Fields are snake-cased map[string]any (the framework's wire shape). For
 // type-safe updates, marshal a partial struct with framework.MarshalEntity
@@ -311,32 +342,82 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("UpdateAll: no fields to set")
 	}
+	// Normalize incoming keys (e.g. camelCase wire shapes) to canonical DB column names.
+	body := q.handler.unconvertMapKeys(fields)
+
+	if err := q.handler.validateMediaURLs(body); err != nil {
+		return 0, err
+	}
+
 	// Same integer-exactness gate as the HTTP update path: a host map
 	// carrying a float64 (decoded elsewhere from JSON) must not silently
 	// round an Int column above 2^53.
-	if err := q.handler.coerceIntColumnValues(fields); err != nil {
+	if err := q.handler.coerceIntColumnValues(body); err != nil {
+		return 0, err
+	}
+
+	vr := schema.ValidatePartial(q.handler.entitySchema(), body)
+	if !vr.Valid {
+		return 0, &ValidationError{fields: vr.Errors}
+	}
+
+	if err := q.handler.checkBelongsToScope(ctx, body); err != nil {
 		return 0, err
 	}
 	ub := query.Update(q.handler.Entity.GetTable())
-	for k, v := range fields {
-		// Don't allow callers to mutate the primary key wholesale via bulk
-		// update, that's almost always a bug.
-		if k == q.handler.PrimaryKey {
+	ownerField := q.handler.Entity.Config.Scope.OwnerField
+	tenantCol := ""
+	if q.handler.Entity.Config.Scope.MultiTenant {
+		tenantCol = q.handler.Entity.Config.TenantColumn()
+	}
+	anySet := false
+	for _, f := range q.handler.Entity.GetFields() {
+		if f.Name == q.handler.PrimaryKey || f.AutoGenerate != schema.AutoNone {
 			continue
 		}
-		ub.Set(k, q.handler.bindJSONValue(k, v))
+		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
+			continue
+		}
+		// Mirror doUpdate: refuse to let callers reassign ownership or
+		// tenant via a bulk update (transfer-by-tamper).
+		if ownerField != "" && f.Name == ownerField {
+			continue
+		}
+		if tenantCol != "" && f.Name == tenantCol {
+			continue
+		}
+		val, ok := body[f.Name]
+		if !ok {
+			continue
+		}
+		ub.Set(f.Name, q.handler.bindJSONValue(f.Name, val))
+		anySet = true
 	}
 	// Restamp updated_at on the bulk update, mirroring the single-row
 	// doUpdate path. Skip it when the caller already supplied updated_at
 	// explicitly (e.g. a backfill) and when the entity has no auto-timestamp
 	// updated_at column.
 	if col := autoUpdatedAtColumn(q.handler.Entity); col != "" {
-		if _, supplied := fields[col]; !supplied {
+		if _, supplied := body[col]; !supplied {
 			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
+			anySet = true
 		}
+	}
+	if !anySet {
+		return 0, errNoFieldsToUpdate
 	}
 	for _, c := range q.wheres {
 		ub.Where(c.SQL(), c.Args()...)
+	}
+	if len(q.nestedFilters) > 0 {
+		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+		if err != nil {
+			return 0, err
+		}
+		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+			return 0, err
+		}
+		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
 	}
 	// Soft-deleted rows are logically gone, a bulk UPDATE must not reach
 	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
@@ -369,6 +450,16 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		for _, c := range q.wheres {
 			ub.Where(c.SQL(), c.Args()...)
 		}
+		if len(q.nestedFilters) > 0 {
+			nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+			if err != nil {
+				return 0, err
+			}
+			if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+				return 0, err
+			}
+			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		}
 		// Don't re-stamp rows that are already soft-deleted, they're
 		// logically gone, and re-touching them would resurrect their
 		// delete timestamp and inflate the affected-row count.
@@ -387,6 +478,16 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	db := query.Delete(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
 		db.Where(c.SQL(), c.Args()...)
+	}
+	if len(q.nestedFilters) > 0 {
+		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+		if err != nil {
+			return 0, err
+		}
+		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+			return 0, err
+		}
+		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)

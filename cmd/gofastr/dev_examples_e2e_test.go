@@ -57,7 +57,7 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 			port := nextE2EPort(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			dev := exec.CommandContext(ctx, bin, "dev", "-p", port, "--dir", dir, "--no-a11y")
-			dev.Env = append(os.Environ(),
+			dev.Env = append(append(os.Environ(), devTempEnv(t)...),
 				// The child resolves isolation from its cwd; a linked worktree
 				// would silently remap the polled port.
 				"GOFASTR_ISOLATION=off",
@@ -76,7 +76,6 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 				_ = killTestProcessTree(dev)
 				cancel()
 				_ = dev.Wait()
-				removeDevServerBinary(dev)
 			})
 			base := waitForBanner(t, &out, 30*time.Second)
 			if want := "http://localhost:" + port; base != want {

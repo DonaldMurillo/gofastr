@@ -483,3 +483,34 @@ func foldHookRow(relation string, i int, row, want map[string]any) error {
 func sameMap(a, b map[string]any) bool {
 	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
+
+// applyCascadeChildReadHooks runs child entity read hooks over cascade-written relation attachments
+// in the write response if ChildHooks are configured and read hooks are enabled on ctx.
+func (ch *CrudHandler) applyCascadeChildReadHooks(ctx context.Context, result map[string]any) error {
+	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(result) == 0 || ch.Entity == nil {
+		return nil
+	}
+	var nodes []*IncludeNode
+	for _, rel := range ch.Entity.Config.Relations {
+		if !rel.CascadeWrite {
+			continue
+		}
+		key := ch.convertKey(rel.Name)
+		if _, ok := result[key]; !ok {
+			continue
+		}
+		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
+		if err != nil || target == nil {
+			continue
+		}
+		nodes = append(nodes, &IncludeNode{
+			Name:     rel.Name,
+			Relation: rel,
+			Target:   target,
+		})
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+	return ch.applyChildReadHooks(ctx, nodes, []map[string]any{result})
+}

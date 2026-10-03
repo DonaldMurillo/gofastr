@@ -137,6 +137,19 @@ func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool 
 	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
 }
 
+// CanWriteRecordScoped reports whether ctx may write this entity's record: enforces
+// declared RBAC write permissions (Access.Write/Create/Update), honoring WithServerWrites.
+func (ch *CrudHandler) CanWriteRecordScoped(ctx context.Context, op crudOp, id string) bool {
+	if serverWrites(ctx) {
+		return true
+	}
+	perm := ch.permissionForOp(op)
+	if perm == "" {
+		return true
+	}
+	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+}
+
 // canReadEntityGate answers the part of the read posture that is a GATE rather
 // than a row filter: the baseline session requirement and RBAC.
 //

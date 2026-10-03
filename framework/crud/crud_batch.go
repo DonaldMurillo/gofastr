@@ -237,7 +237,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
-		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		txErr := ch.inTx(WithReadHooks(r.Context()), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				res, err := ch.doCreate(ctx, r, body)
@@ -347,7 +347,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
-		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
+		txErr := ch.inTx(WithReadHooks(r.Context()), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				idVal, ok := body[ch.PrimaryKey]
