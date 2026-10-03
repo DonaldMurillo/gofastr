@@ -17,7 +17,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the route's 403). The gate judges only what the `/mcp` request's
   context shows: with no user, or no role policy and no Decider on it
   (a policy mounted on a route group), the tool stays listed and the
-  route decides, so no call the route allows is refused. Mount
+  route decides. With a Decider on it, `get`, `update` and `delete`
+  stay listed too, since the route asks the Decider per record. So no
+  call the route allows is refused. Mount
   `framework.AccessMiddleware` with `app.Use` to get the hiding.
 
 ## [0.86.0] - 2026-09-24

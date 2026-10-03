@@ -66,13 +66,14 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		schema      map[string]any
 		handler     mcp.ToolHandler
 		op          crudOp
+		item        bool // the route judges one record: Ref{Type, ID}
 		write       bool // dev-implied entities mark their write tools
 	}{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), opRead, false},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, true},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), opUpdate, true},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), opRead, true, false},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), opUpdate, true, true},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true, true},
 	}
 	for _, def := range defs {
 		// Every tool carries the Access permission its route enforces
@@ -80,7 +81,7 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		// router; the gate also drops the tool from tools/list, so a
 		// caller without posts:delete does not see posts_delete or its
 		// input schema.
-		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op))}
+		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item))}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
 		}
@@ -98,9 +99,11 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 
 // mcpToolGate returns the per-caller precondition for one entity tool:
 // the entity's Access permission for op, the check requirePermission runs
-// on the route. It is collection-level: a resource-aware Decider is asked
-// about the entity, not a row, and the per-id check still runs on the
-// route.
+// on the route, at the same Ref{Type} the route uses for list and create.
+// get, update and delete (item) are judged on the route at Ref{Type, ID},
+// and a Decider may answer per record, so with a Decider on the context
+// an item tool is left to the route; a role policy is record-blind and
+// still judges it.
 //
 // It judges only what the MCP request's own context can show. With no
 // user on it, the credentials may still be resolved on the redispatch (the
@@ -112,12 +115,16 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 // it always did. Owner and tenant scoping are left to the route too: they
 // narrow rows rather than refuse the entity, and their context may only
 // exist after the router's middleware.
-func (ch *CrudHandler) mcpToolGate(op crudOp) func(ctx context.Context) error {
+func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if _, ok := handler.GetUser(ctx); !ok {
 			return nil
 		}
-		if access.PolicyFromContext(ctx) == nil && access.GetDecider(ctx) == nil {
+		decider := access.GetDecider(ctx)
+		if access.PolicyFromContext(ctx) == nil && decider == nil {
+			return nil
+		}
+		if item && decider != nil {
 			return nil
 		}
 		perm := ch.permissionForOp(op)

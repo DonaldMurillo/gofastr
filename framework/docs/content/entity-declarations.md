@@ -1293,9 +1293,12 @@ Each tool carries its operation's `Exposure.Access` permission as a
 `WithToolGate` gate: `list` and `get` need `Access.Read`, `create`,
 `update` and `delete` need theirs. A signed-in caller without
 `posts:write` does not see `posts_create` in `tools/list`, and calling it
-by name is refused before the router runs. The check is the route's
-collection-level one, so a resource-aware Decider is asked about the
-entity (`Ref{Type}`), not a row.
+by name is refused before the router runs. A resource-aware Decider is
+asked about the entity (`Ref{Type}`), as the route asks for `list` and
+`create`. The route judges `get`, `update` and `delete` per record
+(`Ref{Type, ID}`), so with a Decider on the context those three stay
+listed and the route decides; a role policy, which does not depend on the
+record, still hides them.
 
 The gate judges only what the `/mcp` request's own context shows. When it
 carries no user (the credentials may still be resolved on the
