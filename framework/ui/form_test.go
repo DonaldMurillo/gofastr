@@ -299,3 +299,46 @@ func TestFormHideSubmitOmitsButton(t *testing.T) {
 		t.Errorf("HideSubmit should omit all buttons, got: %s", h)
 	}
 }
+
+// A checkbox or radio in a FormField keeps its intrinsic size: the
+// field's input rule (full-track width, touch-target height) painted a
+// checkbox as a 40-point box.
+func TestFormFieldInputRuleSkipsCheckbox(t *testing.T) {
+	css := formFieldCSS(style.Theme{})
+	i := strings.Index(css, "width: 100%;")
+	if i < 0 {
+		t.Fatal("form field CSS has no full-width input rule")
+	}
+	sel := css[strings.LastIndex(css[:i], "}")+1 : i]
+	if !strings.Contains(sel, `input:not([type="checkbox"]):not([type="radio"])`) {
+		t.Errorf("full-width input rule applies to checkboxes and radios:\n%s", sel)
+	}
+}
+
+// Every text control shares the --ui-control-padding-y knob (default
+// 10px) so a dense surface tightens them together.
+func TestControlsShareControlPaddingKnob(t *testing.T) {
+	for name, css := range map[string]string{
+		"button":     buttonCSS(style.Theme{}),
+		"form-field": formFieldCSS(style.Theme{}),
+	} {
+		if !strings.Contains(css, "padding: var(--ui-control-padding-y, 10px)") {
+			t.Errorf("%s CSS does not read --ui-control-padding-y", name)
+		}
+	}
+}
+
+// A select and a textarea floor at the touch-target token like every
+// other control, so a theme that lowers it (the desktop theme's 24)
+// lowers them too; a literal 44px left the select 43 points tall in a
+// desktop window.
+func TestSelectTextareaFloorAtTouchTarget(t *testing.T) {
+	for name, css := range map[string]string{
+		"select":   selectCSS(style.Theme{}),
+		"textarea": textAreaCSS(style.Theme{}),
+	} {
+		if !strings.Contains(css, "min-block-size: var(--spacing-touch-target, 44px);") {
+			t.Errorf("%s does not floor at --spacing-touch-target", name)
+		}
+	}
+}

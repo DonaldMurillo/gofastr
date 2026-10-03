@@ -137,7 +137,7 @@ func timePickerCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-base, 1rem);
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);

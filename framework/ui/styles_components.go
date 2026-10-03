@@ -62,9 +62,12 @@ func buttonCSS(t style.Theme) string {
   /* Token-scaled touch target: --spacing-touch-target defaults to
      44px (WCAG 2.5.5 floor). Apps that want a larger tap zone for
      accessibility-mode skins can bump it via theme.Layout.
-     TouchTarget without forking the component. */
+     TouchTarget without forking the component. The block padding is
+     the --ui-control-padding-y knob (default 10px), shared with the
+     text inputs, so a dense surface (a desktop window) tightens every
+     control at once. */
   min-height: var(--spacing-touch-target);
-  padding: 10px var(--spacing-lg);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-lg);
   border: 1px solid transparent;
   border-radius: var(--radii-md);
   font: inherit;
@@ -406,17 +409,20 @@ func formFieldCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-form-field"] input,
+[data-fui-comp="ui-form-field"] input:not([type="checkbox"]):not([type="radio"]),
 [data-fui-comp="ui-form-field"] textarea,
 [data-fui-comp="ui-form-field"] select {
   /* Fill the field track: the field root is display:grid with an
      auto-sized column, so an unsized <input> otherwise keeps its
-     intrinsic ~20ch width instead of the panel/container width. */
+     intrinsic ~20ch width instead of the panel/container width.
+     Checkboxes and radios keep their intrinsic size: stretched to the
+     track and the touch-target height, WebKit paints them as a
+     40-point box. The label, not the box, is their tap target. */
   width: 100%;
   box-sizing: border-box;
   /* Token-scaled touch target (see ui-button). */
   min-height: var(--spacing-touch-target);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);

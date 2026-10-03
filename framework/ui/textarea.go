@@ -137,13 +137,13 @@ func textAreaCSS(_ style.Theme) string {
 [data-fui-comp="ui-textarea"] .ui-textarea__input {
   font: inherit;
   font-size: var(--text-base, 1rem);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
   resize: vertical;
-  min-block-size: 44px;
+  min-block-size: var(--spacing-touch-target, 44px);
   line-height: 1.5;
 }
 [data-fui-comp="ui-textarea"] .ui-textarea__input[data-fui-autogrow] {

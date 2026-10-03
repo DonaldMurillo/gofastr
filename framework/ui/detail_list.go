@@ -62,7 +62,10 @@ func detailListCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-detail-list"] .ui-detail-list__row {
   display: grid;
-  grid-template-columns: minmax(7rem, 13rem) 1fr;
+  /* --ui-detail-list-label-track lets a narrow container (a side
+     panel) cap the label column: the default track grows to 13rem
+     before the value column gets any width. */
+  grid-template-columns: var(--ui-detail-list-label-track, minmax(7rem, 13rem)) 1fr;
   gap: var(--spacing-lg, 16px);
   align-items: baseline;
   padding: var(--spacing-sm, 4px) 0;

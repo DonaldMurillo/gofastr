@@ -215,8 +215,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   updater) and runs unchanged over HTTP behind `--serve`. The timer's
   state lives in the `sessions` table, so restarts resume and the
   interactive layer stays stateless.
+- `framework/ui`: two `--ui-*` knobs. `--ui-control-padding-y` (default
+  `10px`) is the block padding every text control and button shares,
+  and `--ui-detail-list-label-track` (default `minmax(7rem, 13rem)`) is
+  `ui.DetailList`'s label column. Unset, both render as before.
 
 ### Fixed
+- **A checkbox or radio inside `ui.FormField` renders at its own
+  size.** The field's input rule stretched every `<input>` to the full
+  track width and the touch-target height, so a checkbox painted as a
+  40-point box. The rule now skips checkboxes and radios.
+- `ui.Select` and `ui.TextArea` floor at `--spacing-touch-target`
+  like the other controls instead of a literal `44px`, so a theme that
+  changes `Layout.TouchTarget` changes them too.
 - **`App.Shutdown` no longer stalls on a connection that never sent a
   request.** A browser's speculative preconnect or an HTTP client's
   spare dial leaves a connection in `net/http`'s StateNew, which

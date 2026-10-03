@@ -155,7 +155,7 @@ func selectCSS(_ style.Theme) string {
 [data-fui-comp="ui-select"] .ui-select__input {
   font: inherit;
   font-size: var(--text-base, 1rem);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -167,7 +167,7 @@ func selectCSS(_ style.Theme) string {
   background-position: right 12px center;
   padding-right: 36px;
   cursor: pointer;
-  min-block-size: 44px;
+  min-block-size: var(--spacing-touch-target, 44px);
 }
 [data-fui-comp="ui-select"] .ui-select__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
