@@ -292,7 +292,7 @@ fmt-check:
 	@echo "  ✓ Code formatted"
 
 vet:
-	go vet ./...
+	go run ./cmd/affected -- go vet
 	@echo "  ✓ go vet clean"
 
 secret-scan:
