@@ -1,4 +1,4 @@
-.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -55,8 +55,18 @@ embed-check:
 $(DIST_DIR):
 	@mkdir -p $(DIST_DIR)
 
+# Affected packages only: cmd/affected walks the import graph from what
+# differs between the working tree and origin/main (staged, unstaged and
+# untracked files all count) and appends the closure to the command, the way
+# `nx affected` scopes a JS monorepo. No -count=1: Go's content-addressed
+# test cache then also skips packages whose inputs are byte-identical to a
+# prior pass. Test everything with GOFASTR_TEST_ALL=1 or ./scripts/test-all.sh,
+# which stays the authoritative full run (-count=1, port-exhaustion retry).
 test:
-	go test -count=1 -short ./...
+	go run ./cmd/affected -- go test -short
+
+test-all:
+	./scripts/test-all.sh
 
 # Adversarial red-test suite: open security findings expressed as tests
 # that assert the SECURE behaviour and fail until the finding is fixed.
@@ -68,9 +78,11 @@ red-tests:
 
 # Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.
+# Affected packages, except that a change under internal/analyzers or
+# cmd/vettool vets everything: a new rule can flag code nobody touched.
 analyze: $(DIST_DIR)
 	go build -o $(DIST_DIR)/vettool ./cmd/vettool
-	go vet -vettool=$(DIST_DIR)/vettool ./...
+	go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool=$(DIST_DIR)/vettool
 
 # Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
 # point at a local PG you don't mind us creating per-test schemas in.
@@ -108,7 +120,7 @@ postgres-down:
 
 # Run framework tests against the compose Postgres, starting it if needed.
 test-pg: postgres-up
-	TEST_POSTGRES_DSN="$(COMPOSE_PG_DSN)" go test -count=1 ./framework/...
+	TEST_POSTGRES_DSN="$(COMPOSE_PG_DSN)" go run ./cmd/affected -match '/framework(/|$$)' -- go test -count=1
 
 # Subset: only the Postgres halves of the dual-dialect subtests. Useful when
 # iterating on a Postgres-specific bug to skip the SQLite branch's noise.
@@ -116,7 +128,7 @@ test-pg-only:
 	@if [ -z "$$TEST_POSTGRES_DSN" ]; then \
 		$(MAKE) postgres-up; \
 	fi
-	TEST_POSTGRES_DSN="$${TEST_POSTGRES_DSN:-$(COMPOSE_PG_DSN)}" go test -count=1 -run '/postgres' ./framework/...
+	TEST_POSTGRES_DSN="$${TEST_POSTGRES_DSN:-$(COMPOSE_PG_DSN)}" go run ./cmd/affected -match '/framework(/|$$)' -- go test -count=1 -run '/postgres'
 
 # -short skips the chromedp e2e suites (site, meridian, kiln browser):
 # under the race detector they run 2-3x slower, blow the default test
@@ -124,7 +136,7 @@ test-pg-only:
 # Library/unit/integration tests — where data races live — all run.
 # For the full-fat race sweep use RACE=1 ./scripts/test-all.sh.
 test-race:
-	go test -race -short -count=1 -timeout=15m ./...
+	go run ./cmd/affected -- go test -race -short -count=1 -timeout=15m
 
 # ---- Benchmarks ----
 #
