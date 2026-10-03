@@ -202,7 +202,7 @@ func spikeTest(t *spikeLog) {
 	fwApp.Use(rec.wrap)
 
 	site := uiapp.NewApp("spike")
-	layout := uiapp.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 	site.SetDefaultLayout(layout)
 	site.Register("/", &homeScreen{}, layout)
 	site.Register("/two", &twoScreen{}, layout)
@@ -793,4 +793,12 @@ func (s *scenario) report(t *spikeLog) {
 	for _, p := range s.problems {
 		t.Errorf("%s", p)
 	}
+}
+
+// containerLayout is the plain page-column layout: the content in a
+// centered ui.Container.
+func containerLayout(name string) *uiapp.Layout {
+	return uiapp.NewLayout(name, uiapp.LayoutSpec{}, func(_ context.Context, l *uiapp.LayoutTree) render.HTML {
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())
+	})
 }

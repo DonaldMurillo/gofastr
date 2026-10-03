@@ -15,7 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// footerLink mirrors ui.SiteFooterLink's shape. The test builds the
+// footerLink is one link in a footer column. The test builds the
 // markup raw instead of importing framework/ui: that package's init
 // registers LoadAlways component styles into the process-global
 // registry, which changes every page's CSS link set and breaks the
@@ -27,27 +27,27 @@ type footerLink struct {
 	Href  string
 }
 
-// chromeFooter stands in for the blueprint generator's marketing footer
-// (ui.SiteFooter with a Legal column) — the live instance this check
-// exists for: footer link columns declared as data at app-wiring time.
+// chromeFooter stands in for the marketing footer the blueprint
+// generator writes into an app (its sitefooter package, with a Legal
+// column) — the live instance this check exists for: footer link
+// columns declared as data at app-wiring time.
 //
-// It is raw anchor markup, not a real ui.SiteFooter, and nothing here
+// It is raw anchor markup, not the generated package, and nothing here
 // enforces that the two agree: importing framework/ui into this package
 // registers ui-button/ui-page-header/ui-sidebar as LoadAlways in the
 // process-global style registry, which breaks TestComponentCSS_* in the
 // same package (proven by a three-way isolation run). So this pins the
 // CHECK, not the component. Fidelity to the generator's real output is
 // pinned where framework/ui is importable, by the marketing-link test in
-// cmd/gofastr. If SiteFooter ever stops emitting plain href anchors,
-// that test is what notices, not this one.
+// cmd/gofastr. If the generated footer ever stops emitting plain href
+// anchors, that test is what notices, not this one.
 func chromeFooter(links ...footerLink) component.Component {
 	var b strings.Builder
-	b.WriteString(`<div class="ui-site-footer"><div class="ui-site-footer__grid"><div class="ui-site-footer__col">`)
-	b.WriteString(`<p class="ui-site-footer__col-title">Legal</p><ul>`)
+	b.WriteString(`<footer><nav aria-label="Legal"><p>Legal</p><ul>`)
 	for _, l := range links {
 		fmt.Fprintf(&b, `<li><a href=%q>%s</a></li>`, l.Href, l.Label)
 	}
-	b.WriteString(`</ul></div></div></div>`)
+	b.WriteString(`</ul></nav></footer>`)
 	return app.NewStaticComponent(render.HTML(b.String()))
 }
 
@@ -58,11 +58,7 @@ func linkHost(t *testing.T, mkOpts func() []Option, chrome ...component.Componen
 	t.Helper()
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
-	layout := app.NewLayout("marketing")
-	for _, c := range chrome {
-		layout = layout.WithFooter(c)
-	}
-	a.SetDefaultLayout(layout)
+	a.SetDefaultLayout(footerLayout("marketing", chrome...))
 	opts := mkOpts()
 	return New(a, opts...)
 }
@@ -89,7 +85,7 @@ func bootCheckPanic(t *testing.T, ds *UIHost, afterMount func(r *router.Router))
 }
 
 // The vacuity test: the check must fire on the real generator shape —
-// a ui.SiteFooter whose Legal column links /terms and /privacy while
+// a footer whose Legal column links /terms and /privacy while
 // no route, file, or endpoint serves either.
 func TestStrictFlagsChromeLinkToUnregisteredPath(t *testing.T) {
 	ds := linkHost(t, strictSiteOptions, chromeFooter(
@@ -100,7 +96,7 @@ func TestStrictFlagsChromeLinkToUnregisteredPath(t *testing.T) {
 	if msg == "" {
 		t.Fatal("footer links to unregistered /terms and /privacy did not fail strict boot")
 	}
-	for _, want := range []string{"/terms", "/privacy", `layout "marketing" footer`} {
+	for _, want := range []string{"/terms", "/privacy", `layout "marketing" chrome`} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("panic missing %q:\n%s", want, msg)
 		}
@@ -111,7 +107,7 @@ func TestStrictChromeLinkToRegisteredPathPasses(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
 	a.Register("/terms", &describedScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Terms", Href: "/terms"},
 	)))
 	ds := New(a, strictSiteOptions()...)
@@ -161,7 +157,7 @@ func TestStrictChromeLinkStripsFragmentAndQueryBeforeResolving(t *testing.T) {
 	a.Register("/terms", &describedScreen{}, nil)
 	// /terms#x and /terms?y must resolve to the /terms screen; a href
 	// to /nope#x must still be a finding.
-	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Terms", Href: "/terms#privacy-policy"},
 		footerLink{Label: "Terms", Href: "/terms?lang=de"},
 	)))
@@ -176,7 +172,7 @@ func TestStrictChromeLinkResolvesDynamicRoute(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
 	a.Register("/docs/:slug", &staticPathsScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Docs", Href: "/docs/install"},
 	)))
 	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
@@ -341,22 +337,18 @@ type panickingChrome struct{}
 
 func (p *panickingChrome) Render() render.HTML { panic("needs request context") }
 
-func TestStrictChromeRenderFailureSkipsSlotAndWarns(t *testing.T) {
-	buf := captureLog(t)
+func TestStrictChromeRenderFailureContainedByBuild(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").
-		WithHeader(&panickingChrome{}).
-		WithFooter(chromeFooter(footerLink{Label: "Terms", Href: "/terms"})))
+	a.SetDefaultLayout(chromeTestLayout("marketing", &panickingChrome{}, nil, chromeFooter(footerLink{Label: "Terms", Href: "/terms"})))
 	ds := New(a, strictSiteOptions()...)
 	msg := bootCheckPanic(t, ds, nil)
-	// The panicking header is skipped with a warning, not a boot
-	// failure; the footer's finding still fails the boot.
+	// A chrome component that fails to render is contained by the
+	// layout build exactly as it is on a real page (its links are
+	// simply unchecked — coverage, not enforcement); the rest of the
+	// chrome's findings still fail the boot.
 	if !strings.Contains(msg, "/terms") {
 		t.Fatalf("footer finding lost while header panicked:\n%s", msg)
-	}
-	if !strings.Contains(buf.String(), "chrome render failed") {
-		t.Fatalf("panicking chrome not warned about; log was:\n%s", buf.String())
 	}
 }
 
@@ -372,7 +364,7 @@ func ctxHeader() component.Component {
 func TestStrictChecksContextAwareChrome(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").WithHeader(ctxHeader()))
+	a.SetDefaultLayout(headerLayout("marketing", ctxHeader()))
 	ds := New(a, strictSiteOptions()...)
 	msg := bootCheckPanic(t, ds, nil)
 	if !strings.Contains(msg, "/dashboard") {
@@ -385,8 +377,7 @@ func TestStrictChecksContextAwareChrome(t *testing.T) {
 func TestStrictChecksPerScreenLayoutChrome(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
-	a.Register("/app", &describedScreen{}, app.NewLayout("app").
-		WithSidebar(app.NewStaticComponent(render.HTML(`<nav><a href="/admin/console">Console</a></nav>`))))
+	a.Register("/app", &describedScreen{}, sidebarLayout("app", app.NewStaticComponent(render.HTML(`<nav><a href="/admin/console">Console</a></nav>`))))
 	ds := New(a, strictSiteOptions()...)
 	msg := bootCheckPanic(t, ds, nil)
 	if !strings.Contains(msg, "/admin/console") {
@@ -461,7 +452,7 @@ func TestStrictChromeLinkEntityEscapedHrefResolves(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
 	a.Register("/legal&terms", &describedScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Legal", Href: "/legal&amp;terms"},
 	)))
 	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {
@@ -471,7 +462,7 @@ func TestStrictChromeLinkEntityEscapedHrefResolves(t *testing.T) {
 	// pass above is the unescape working, not an exemption swallowing it.
 	a2 := app.NewApp("demo")
 	a2.Register("/", &describedScreen{}, nil)
-	a2.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a2.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Legal", Href: "/legal&amp;terms"},
 	)))
 	if msg := bootCheckPanic(t, New(a2, strictSiteOptions()...), nil); !strings.Contains(msg, "/legal&terms") {
@@ -487,7 +478,7 @@ func TestStrictChromeLinkPercentEncodedNonASCIIResolves(t *testing.T) {
 	a := app.NewApp("demo")
 	a.Register("/", &describedScreen{}, nil)
 	a.Register("/docs/café", &describedScreen{}, nil)
-	a.SetDefaultLayout(app.NewLayout("marketing").WithFooter(chromeFooter(
+	a.SetDefaultLayout(footerLayout("marketing", chromeFooter(
 		footerLink{Label: "Café docs", Href: "/docs/caf%C3%A9"},
 	)))
 	if msg := bootCheckPanic(t, New(a, strictSiteOptions()...), nil); msg != "" {

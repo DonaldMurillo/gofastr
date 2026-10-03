@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
@@ -31,6 +34,27 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// toggleaction left the embedded modules for the behaviour seam:
+	// framework/ui registers it beside the Go that renders its markup,
+	// and this package's test binary cannot link framework/ui (an
+	// import cycle), so the adapter is registered from its real
+	// source on disk, in an isolated registry, and the page carries
+	// the inline behaviours block the kernel reads. The bytes are the
+	// ones the host serves; only the registration's origin differs.
+	registry.IsolateForTest(t)
+	// The retired framework/ui/toggleaction adapter is gone; the
+	// action lifecycle is the headless module's now. The fixture
+	// registers that module exactly as its owner package does, so the
+	// invalidation scenarios run against the real binder.
+	headlessJS, err := os.ReadFile("../../framework/headless/behavior.js")
+	if err != nil {
+		t.Fatalf("reading framework/headless/behavior.js: %v", err)
+	}
+	registry.RegisterBehavior("headless", string(headlessJS),
+		registry.Markers("[data-hui-reveal]", "[data-hui-color]",
+			"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
+			"[data-hui-system]", "[data-hui-table]"), registry.Requires("action"))
+	behaviorsBlock := string(BehaviorsJSON())
 
 	var mu sync.Mutex
 	counts := map[string]int{}
@@ -119,7 +143,7 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintf(w, `<!doctype html><html><head><title>inval</title>%s</head><body>
+		fmt.Fprintf(w, `<!doctype html><html><head><title>inval</title>%s<script type="application/json" id="gofastr-behaviors">%s</script></head><body>
   <main role="main" tabindex="-1">
     <a id="open" href="/items?view=open">open</a>
     <a id="closed" href="/items?view=closed">closed</a>
@@ -128,9 +152,8 @@ func invalidationSrv(t *testing.T) *httptest.Server {
     <a id="redir" href="/redir">redir</a>
     <button id="mut-items" data-fui-rpc="/mut-items" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">a</button>
     <button id="mut-fail" data-fui-rpc="/mut-fail" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">e</button>
-    <button id="tog" data-fui-comp="ui-toggle-action" data-state="idle"
-            data-fui-toggle-endpoint="/mut-items">
-      <span data-fui-toggle-idle>t</span><span data-fui-toggle-committed hidden>c</span>
+    <button id="tog" data-hui-action="" data-hui-action-endpoint="/mut-items" data-state="idle">
+      <span data-hui-action-idle>t</span><span data-hui-action-done hidden>c</span>
     </button>
     <button id="mut-exact" data-fui-rpc="/mut-exact" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">b</button>
     <button id="mut-all" data-fui-rpc="/mut-all" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">c</button>
@@ -139,7 +162,7 @@ func invalidationSrv(t *testing.T) *httptest.Server {
   </main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
-</body></html>`, routesJSON)
+</body></html>`, routesJSON, behaviorsBlock)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

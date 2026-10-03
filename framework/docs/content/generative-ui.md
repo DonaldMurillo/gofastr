@@ -12,7 +12,7 @@ they get different answers here.
 ## 1. Agents building your app's UI — the supported path
 
 An agent writing a GoFastr app composes `framework/ui` and
-`core-ui/patterns` components. It does not write CSS and does not
+`framework/ui` components. It does not write CSS and does not
 hand-roll structural markup. The framework backs that constraint with
 tooling rather than advice:
 

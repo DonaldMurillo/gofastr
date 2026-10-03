@@ -1,0 +1,51 @@
+version: v0.38.0
+title: Stateless interactive layer + pull-first reactivity ladder
+notes:
+  - change: WithFanout requires an app secret (#112)
+    breaking: true
+    hits: review
+    guidance: "Sessions are stateless HMAC tokens; a multi-replica deployment (WithFanout) now FAILS AT BOOT unless framework.WithSecret or GOFASTR_SECRET supplies the shared signing secret (>=32 chars, e.g. `openssl rand -base64 32`) on every replica. Single replica with no secret keeps the zero-config per-boot key. Sticky sessions are no longer part of the scaling contract."
+    find:
+      uses:
+        - gofastr/framework.WithFanout
+  - change: Dead stateful island/signal surface removed (#112)
+    breaking: true
+    hits: edit
+    guidance: "UIHost.RegisterSignal / RegisterWidget / PushIsland / GetSession, the SignalAny interface, and POST /__gofastr/signal/{id} are gone, as are island.Manager.Register/Unregister/Push/Get/ListBySession, Island.SessionID, and Island.Update. Server push = render the HTML yourself and call Manager.PushUpdate (or presence); the client-side signal seed (#gofastr-signals) is unrelated and unchanged."
+    find:
+      uses:
+        - gofastr/framework/uihost.UIHost.RegisterSignal
+        - gofastr/framework/uihost.UIHost.RegisterWidget
+        - gofastr/framework/uihost.UIHost.PushIsland
+        - gofastr/framework/uihost.UIHost.GetSession
+        - gofastr/framework/uihost.SignalAny
+        - gofastr/core-ui/island.Manager.Register
+        - gofastr/core-ui/island.Manager.Unregister
+        - gofastr/core-ui/island.Manager.Push
+        - gofastr/core-ui/island.Manager.Get
+        - gofastr/core-ui/island.Manager.ListBySession
+        - gofastr/core-ui/island.Island.SessionID
+        - gofastr/core-ui/island.Island.Update
+      text:
+        - glob: "**/*.js"
+          match: '__gofastr/signal/'
+  - change: island.Manager.Subscribe returns a per-subscriber channel + cancel
+    breaking: true
+    hits: edit
+    guidance: "Subscribe(sessionID) now returns (<-chan IslandUpdate, func()) — each SSE connection gets its own channel and updates broadcast to ALL of a session's tabs (they previously competed for one shared channel). The cancel func replaces the removed Manager.Unsubscribe; ConnectSession changed identically."
+    find:
+      uses:
+        - gofastr/core-ui/island.Manager.Subscribe
+        - gofastr/core-ui/island.Manager.ConnectSession
+        - gofastr/core-ui/island.Manager.Unsubscribe
+  - change: Widget SSE bindings replaced by polling (#112)
+    breaking: true
+    hits: edit
+    guidance: "Builder.SSE / SSERefetch / SSERefresh / SSEReload and the SSEBinding type are removed — each widget opened a private EventSource, contradicting the one-bus contract. Passive freshness is Builder.Poll(interval) (re-fetches /state, re-applies changed signals) or page-level data-fui-poll + data-fui-poll-src; genuinely push-shaped surfaces use the shared /__gofastr/sse bus. See `gofastr docs reactivity` for the ladder."
+    find:
+      uses:
+        - gofastr/core-ui/widget.Builder.SSE
+        - gofastr/core-ui/widget.Builder.SSERefetch
+        - gofastr/core-ui/widget.Builder.SSERefresh
+        - gofastr/core-ui/widget.Builder.SSEReload
+        - gofastr/core-ui/widget.SSEBinding

@@ -6,6 +6,10 @@ Updating `go.mod` does NOT update the CLI binary; keep them on the same
 release. Every command below uses `vX.Y.Z` as a placeholder; substitute
 the release you're upgrading to.
 
+Crossing v0.86.0? Read [What changed in v0.86.0](release-0-86.md)
+first. That release rebuilt the UI layer, and the page lists every
+breaking change with what replaces it.
+
 ## The guided path: `gofastr upgrade`
 
 The CLI embeds a migration registry: one entry per release that
@@ -21,6 +25,7 @@ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 gofastr upgrade                # plan against the newest tagged release
 gofastr upgrade --to vX.Y.Z    # plan against a specific release
 gofastr upgrade --apply        # also run go get / tidy / build / test
+gofastr upgrade --from vA.B.C  # go.mod already bumped: name the old release
 ```
 
 The plan lists each in-between release's notes (BREAKING entries called
@@ -92,6 +97,11 @@ tag: `go install` builds don't always carry injected version metadata.
   registry ships inside the CLI, so a binary older than the target
   can't know the target's notes (it warns when this happens). Install
   the target CLI first, then plan the upgrade.
+- **Running `go get` before `gofastr upgrade`.** The plan starts at the
+  version in `go.mod`, so a bumped `go.mod` hides every note in between
+  ("Already on the target release"). Pass `--from` with the release the
+  code was written for, and the scan points at the same lines, through
+  the compile errors when the app no longer type-checks.
 - **Skipping the release notes on a multi-release jump.** Breaking
   changes are per-release; jumping vA→vD means reading B, C, and D.
   `gofastr upgrade` collects all of them for exactly this case.

@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"log"
@@ -31,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/rtc-call/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -69,7 +71,20 @@ func main() {
 func buildApp() *framework.App {
 	site := uiapp.NewApp("rtc-call")
 	site.WithTheme(theme.Default())
-	layout := uiapp.NewLayout("main").WithContainer().WithHeader(&siteHeaderComponent{})
+	layout := uiapp.NewLayout("main", uiapp.LayoutSpec{}, func(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			// The top bar is the site's own package (siteheader): the
+			// brand and the one nav link, on the page measure, over a
+			// single rule.
+			siteheader.Render(siteheader.Config{
+				Name:  "RTC call",
+				Links: []siteheader.Link{{Label: "Lobby", Href: "/"}},
+			}),
+			// The row (no sidebar) gives main its growth: a page-tall
+			// stack without a footer pushes a bare last child down.
+			ui.ContentRow(ui.ContentRowConfig{},
+				ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())))
+	})
 	site.SetDefaultLayout(layout)
 
 	site.RegisterScreen(uiapp.NewScreen("/", &LobbyScreen{}).WithTitle("Join a call"), nil)
@@ -116,18 +131,6 @@ func buildApp() *framework.App {
 	}
 
 	return fwApp
-}
-
-// siteHeaderComponent is the shared chrome.
-type siteHeaderComponent struct{}
-
-func (h *siteHeaderComponent) Render() render.HTML {
-	return ui.SiteHeader(ui.SiteHeaderConfig{
-		Brand: ui.Link(ui.LinkConfig{Href: "/", Text: "RTC call"}),
-		NavItems: []ui.SiteHeaderLink{
-			{Label: "Lobby", Href: "/"},
-		},
-	})
 }
 
 // roomDocScope is the app.js document scope: the room page only. The

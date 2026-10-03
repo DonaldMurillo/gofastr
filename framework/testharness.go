@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
 // TestApp wraps an App for in-memory testing (no real HTTP listener).
@@ -53,8 +54,21 @@ func TestHarness(t testing.TB, app *App) *TestApp {
 	// line. Opt out with GOFASTR_NO_SEMANTIC_COVERAGE.
 	RecordSemanticCoverage(t, app)
 	return &TestApp{
-		App:    app,
-		router: app.router,
+		App: app,
+		router: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := renderdiag.WithObserver(r.Context(), func(message string) {
+				t.Helper()
+				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
+			})
+			// Retired markup (names the upgrade registry retired, found
+			// in rendered HTML) fails the test the same way, through its
+			// own channel: it is a migration finding, never a 500.
+			ctx = renderdiag.WithRetiredReporter(ctx, func(message string) {
+				t.Helper()
+				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
+			})
+			app.router.ServeHTTP(w, r.WithContext(ctx))
+		}),
 	}
 }
 

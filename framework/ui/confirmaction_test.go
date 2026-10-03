@@ -17,7 +17,7 @@ func TestConfirmActionTrigger(t *testing.T) {
 	wants := []string{
 		`<button`,
 		`data-fui-open="delete-user-1"`,
-		`ui-button ui-button--danger`,
+		`fui-button fui-button--danger`,
 		`>Delete</button>`,
 	}
 	for _, w := range wants {
@@ -59,8 +59,8 @@ func TestConfirmActionVariant(t *testing.T) {
 		Body:           "Now?",
 		RPCPath:        "/save",
 	})
-	if !strings.Contains(string(trigger), "ui-button--primary") {
-		t.Errorf("expected ui-button--primary, got: %s", trigger)
+	if !strings.Contains(string(trigger), "fui-button--primary") {
+		t.Errorf("expected fui-button--primary, got: %s", trigger)
 	}
 }
 
@@ -105,8 +105,8 @@ func TestConfirmActionSlotRendersAlertdialog(t *testing.T) {
 		`data-fui-rpc-close="`,
 		`data-fui-rpc="/row/9"`,
 		`data-fui-rpc-method="POST"`,
-		`ui-button--danger`,
-		`ui-button--ghost`,
+		`fui-button--danger`,
+		`fui-button--ghost`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(body, w) {
@@ -149,8 +149,8 @@ func TestConfirmActionAutofocusConfirm(t *testing.T) {
 		AutofocusConfirm: true,
 	})
 	body := string(b.Definition().Slots[0].Component.Render())
-	dangerTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--danger"))
-	ghostTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--ghost"))
+	dangerTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--danger"))
+	ghostTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--ghost"))
 	if !strings.Contains(dangerTag, "autofocus") {
 		t.Errorf("expected autofocus on Confirm (danger) when AutofocusConfirm=true, got tag: %s", dangerTag)
 	}
@@ -173,13 +173,13 @@ func TestConfirmActionSuccessSignal(t *testing.T) {
 		SuccessSignal: "row-list",
 	})
 	body := string(b.Definition().Slots[0].Component.Render())
-	dangerTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--danger"))
+	dangerTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--danger"))
 	if !strings.Contains(dangerTag, `data-fui-rpc-signal="row-list"`) {
 		t.Errorf("expected data-fui-rpc-signal=\"row-list\" on the Confirm button, got tag: %s", dangerTag)
 	}
 	// Sanity: the Cancel button must NOT carry the signal. Only the
 	// confirm action reconciles state.
-	ghostTag := substringFromTag(body, "<button", strings.Index(body, "ui-button--ghost"))
+	ghostTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--ghost"))
 	if strings.Contains(ghostTag, "data-fui-rpc-signal") {
 		t.Errorf("did NOT expect data-fui-rpc-signal on Cancel, got tag: %s", ghostTag)
 	}

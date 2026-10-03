@@ -36,7 +36,7 @@ func prefsApp(t *testing.T) (*framework.App, *desktop.Battery) {
 	t.Helper()
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	site := appui.NewApp("PrefsHarness")
-	layout := appui.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 	site.SetDefaultLayout(layout)
 	site.Register("/", uiScreen{"UI home"}, layout)
 

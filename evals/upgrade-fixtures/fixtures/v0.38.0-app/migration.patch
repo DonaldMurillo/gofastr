@@ -1,5 +1,19 @@
+diff --git a/entities/tags.go b/entities/tags.go
+index e74de3f..00a5b53 100644
+--- a/entities/tags.go
++++ b/entities/tags.go
+@@ -255,8 +255,7 @@ func registerTags(app *framework.App) {
+ 		Fields: []schema.Field{
+ 			{Name: "name", Type: schema.String, Required: true, Unique: true},
+ 		},
+-		Public:     true,
+-		CRUD:       boolPtr(true),
++		Exposure:  &framework.ExposureConfig{CRUD: boolPtr(true), Public: true},
+ 		Properties: map[string]any{"icon": "tag", "label": "Tags"},
+ 	})
+ 	_ = Tags{}
 diff --git a/entities/tasks.go b/entities/tasks.go
-index 47b2aa0..1a2d49d 100644
+index 085cb44..9bc50d8 100644
 --- a/entities/tasks.go
 +++ b/entities/tasks.go
 @@ -270,9 +270,8 @@ func registerTasks(app *framework.App) {
@@ -14,22 +28,8 @@ index 47b2aa0..1a2d49d 100644
  		Properties: map[string]any{"icon": "check-square", "label": "Tasks"},
  	})
  	_ = Tasks{}
-diff --git a/entities/tags.go b/entities/tags.go
-index e2fc82e..04b830e 100644
---- a/entities/tags.go
-+++ b/entities/tags.go
-@@ -255,8 +255,7 @@ func registerTags(app *framework.App) {
- 		Fields: []schema.Field{
- 			{Name: "name", Type: schema.String, Required: true, Unique: true},
- 		},
--		Public:     true,
--		CRUD:       boolPtr(true),
-+		Exposure:  &framework.ExposureConfig{CRUD: boolPtr(true), Public: true},
- 		Properties: map[string]any{"icon": "tag", "label": "Tags"},
- 	})
- 	_ = Tags{}
 diff --git a/entities/users.go b/entities/users.go
-index 41ae6ad..a6e8d00 100644
+index 05d25e6..f7454d9 100644
 --- a/entities/users.go
 +++ b/entities/users.go
 @@ -258,8 +258,10 @@ func registerUsers(app *framework.App) {
@@ -46,7 +46,7 @@ index 41ae6ad..a6e8d00 100644
  	})
  	_ = Users{}
 diff --git a/main.go b/main.go
-index a32c7d5..5d67179 100644
+index 790c4e8..90a75aa 100644
 --- a/main.go
 +++ b/main.go
 @@ -17,7 +17,7 @@ import (
@@ -58,3 +58,166 @@ index a32c7d5..5d67179 100644
  
  	"example.com/upgrade-fixture/entities"
  )
+diff --git a/resource.go b/resource.go
+--- a/resource.go
++++ b/resource.go
+@@ -13,10 +13,10 @@ import (
+ 
+ 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+ 	"github.com/DonaldMurillo/gofastr/core/render"
+ 	"github.com/DonaldMurillo/gofastr/framework"
+ 	"github.com/DonaldMurillo/gofastr/framework/filter"
++	"github.com/DonaldMurillo/gofastr/framework/headless"
+ 	"github.com/DonaldMurillo/gofastr/framework/ui"
+ )
+ 
+@@ -206,7 +206,14 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
+ 	}
+ 
+ 	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
++	// v0.86.0: the typed pager refuses a page outside 1..Pages, so the
++	// requested page is clamped into the real run before the rows are
++	// fetched: ?p=999 on a two-page list lands on the last page's rows
++	// under a pager saying the last page, never a 500 from a URL.
++	if pages := int(math.Ceil(float64(total) / float64(limit))); page > pages {
++		page = max(pages, 1)
++	}
+ 	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+ 
+ 	var actions render.HTML
+ 	if c.CanCreate {
+@@ -258,26 +265,26 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
+ 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
+ 	}
+ 
+-	// carry preserves search + active facets across sort-header and pagination
+-	// links (which are <a> navigations, not the toolbar form) so those actions
+-	// never silently drop the current filter set.
+-	carry := ""
++	// query carries search + active facets across sort-header and pagination
++	// links (which are <a> navigations, not the toolbar form) so those
++	// actions never silently drop the current filter set. The typed sort
++	// props own sort and dir.
++	query := url.Values{}
+ 	if search != "" {
+-		carry += "q=" + url.QueryEscape(search) + "&"
++		query.Set("q", search)
+ 	}
+ 	for _, ff := range c.Filters {
+ 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
+-			carry += url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&"
++			query.Set(ff.Key, v)
+ 		}
+ 	}
+ 	dt := ui.DataTableConfig{
+ 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
+-		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+-		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
+-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
++		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")), Query: query,
++		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText)},
+ 	}
+ 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
+-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
++		dt.Pagination = &ui.PaginationConfig{Pages: pages, Page: page, Query: query}
+ 	}
+ 	body = append(body, ui.DataTable(dt))
+ 	return render.Join(body...)
+@@ -505,7 +512,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+ 			cur = resCell(resGet(row, f.Key))
+ 		}
+ 		fields = append(fields, ui.FormField(ui.FormFieldConfig{
+-			Label: f.Label, For: "f-" + f.Key, Input: c.formInput(ctx, f, cur, rel),
++			Label: f.Label, For: "f-" + f.Key,
++			// v0.86.0: Input is a builder. The field hands the control
++			// its id, its aria-describedby and its invalid state before
++			// the control renders, instead of splicing them in after.
++			Input: func(fc headless.FieldControl) render.HTML {
++				return c.formInput(ctx, fc, f, cur, rel)
++			},
+ 		}))
+ 	}
+ 	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
+@@ -518,14 +531,26 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+ // formInput builds the typed control for one field, prefilled with cur. Enums
+ // and relations render their options server-side; relations resolve to the same
+ // human label the list/detail show.
+-func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, rel map[string]map[string]string) render.HTML {
+-	id := "f-" + f.Key
++func (c ResourceConfig) formInput(ctx context.Context, fc headless.FieldControl, f ResField, cur string, rel map[string]map[string]string) render.HTML {
++	// The id and the description come from the field now: one source
++	// for both halves of the label/control relationship.
++	id := fc.ID
++	wired := html.Attrs{}
++	if fc.DescribedBy != "" {
++		wired["aria-describedby"] = fc.DescribedBy
++	}
++	if fc.Invalid {
++		wired["aria-invalid"] = "true"
++	}
++	if fc.Required {
++		wired["required"] = "required"
++	}
+ 	if labels, ok := rel[f.Key]; ok {
+ 		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
+ 		for val, label := range labels {
+ 			opts = append(opts, html.SelectOption{Value: val, Text: label, Selected: val == cur})
+ 		}
+-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
++		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts, ExtraAttrs: wired})
+ 	}
+ 	switch f.Type {
+ 	case "enum":
+@@ -533,17 +558,20 @@ func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, r
+ 		for _, v := range f.Values {
+ 			opts = append(opts, html.SelectOption{Value: v, Text: resTitle(v), Selected: v == cur})
+ 		}
+-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
++		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts, ExtraAttrs: wired})
+ 	case "text":
+-		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
++		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4, ExtraAttrs: wired})
+ 	case "bool", "boolean":
+ 		attrs := html.Attrs{}
++		for k, v := range wired {
++			attrs[k] = v
++		}
+ 		if resTruthy(cur) {
+ 			attrs["checked"] = "checked"
+ 		}
+ 		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
+ 	default:
+-		return html.Input(html.InputConfig{Type: resInputType(f.Type), Name: f.Key, ID: id, Value: cur})
++		return html.Input(html.InputConfig{Type: resInputType(f.Type), Name: f.Key, ID: id, Value: cur, ExtraAttrs: wired})
+ 	}
+ }
+ 
+
+diff --git a/app.go b/app.go
+--- a/app.go
++++ b/app.go
+@@ -8,9 +8,11 @@ import (
+ 	"github.com/DonaldMurillo/gofastr/battery/auth"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/app"
++	"github.com/DonaldMurillo/gofastr/core-ui/component"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
++	"github.com/DonaldMurillo/gofastr/core/render"
+ 	"github.com/DonaldMurillo/gofastr/core/handler"
+ 	"github.com/DonaldMurillo/gofastr/core/router"
+ 	"github.com/DonaldMurillo/gofastr/framework"
+ 	"github.com/DonaldMurillo/gofastr/framework/access"
+ 	"github.com/DonaldMurillo/gofastr/framework/ui"
+@@ -69,6 +71,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
+ 	sbCfg := sidebarConfig()
+ 	sb := ui.Sidebar(sbCfg)
+-	appLayout = app.NewLayout("app").WithSidebar(sb)
++	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
++		nav, _ := component.SafeRenderCtx(ctx, sb)
++		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
++	})
+ 	site.SetDefaultLayout(appLayout)
+ 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
+ 	{

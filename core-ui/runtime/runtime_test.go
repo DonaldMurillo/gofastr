@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -69,22 +70,21 @@ func TestRuntimeJS(t *testing.T) {
 		"MutationObserver",
 		"hydrate",
 		"collectParams",
-		"screenCache",             // screen caching for back-navigation
-		"swapAtSlot",              // layer-cell content swapping
-		"data-fui-layout-key",     // layout-chain identity marker
-		"data-fui-layout-slot",    // layer swap-target marker
-		"X-Gofastr-Navigate",      // client-side navigation header
-		"X-Gofastr-Swap",          // subtree-partial swap boundary
-		"X-Gofastr-Partial",       // server partial response header
-		"loadComponentCSS",        // per-component CSS loader
-		"scanAndLoadCSS",          // marker scan post-swap/post-mount
-		"_pendingLinks",           // sync dedup guard
-		"data-fui-style",          // <link> dedup key
-		"scheduleIdleLoads",       // LoadPrewarm idle queue
-		"data-fui-comp",           // marker attr the scanner reads
-		"data-fui-copy-text-from", // marker triggers copy module load
-		"data-fui-os",             // OS detection on <html> for ShortcutHint
-		"data-fui-spa",            // opt-IN form-intercept for non-JSON forms
+		"screenCache",          // screen caching for back-navigation
+		"swapAtSlot",           // layer-cell content swapping
+		"data-fui-layout-key",  // layout-chain identity marker
+		"data-fui-layout-slot", // layer swap-target marker
+		"X-Gofastr-Navigate",   // client-side navigation header
+		"X-Gofastr-Swap",       // subtree-partial swap boundary
+		"X-Gofastr-Partial",    // server partial response header
+		"loadComponentCSS",     // per-component CSS loader
+		"scanAndLoadCSS",       // marker scan post-swap/post-mount
+		"_pendingLinks",        // sync dedup guard
+		"data-fui-style",       // <link> dedup key
+		"scheduleIdleLoads",    // LoadPrewarm idle queue
+		"data-fui-comp",        // marker attr the scanner reads
+		"data-fui-os",          // OS detection on <html> for ShortcutHint
+		"data-fui-spa",         // opt-IN form-intercept for non-JSON forms
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -123,9 +123,8 @@ func TestRuntimeSize(t *testing.T) {
 	// (rpc-reset, disable-when-invalid, submit-on-enter, autogrow,
 	// clear-on-esc, shortcut-focus, shortcut-click, fill-input,
 	// scroll-bottom-on-update, flash-on-update, tick-elapsed,
-	// charcount-source, persist-storage, copy-text-from, data-fui-
 	// comp, rpc-after-text, rpc-after-disable, rpc-scroll-to,
-	// data-fui-disclosure SPA-nav+Escape close, route-announce live
+	// route-announce live
 	// region, overlay timer cleanup, LRU screen cache, full-script
 	// sanitization, inline-JSON catalog/routes hydration, per-signal
 	// RPC abort dedup, aria-busy progress + nav-failure toast,
@@ -137,7 +136,7 @@ func TestRuntimeSize(t *testing.T) {
 	// still well under typical TCP slow-start initial windows after
 	// compression.
 	// Cap stays generous during the code-split transition. As each
-	// runtime module (fileupload, popover, toasts, menu, sse, forms,
+	// runtime module (popover, toasts, menu, sse, forms,
 	// widgets) moves to core-ui/runtime/src/, this cap will tighten.
 	// Final target: core ≤ 36 KB raw, each split module ≤ 8 KB.
 	if size > 112000 {
@@ -192,55 +191,6 @@ func truncate(s string, n int) string {
 // Split-runtime modules under core-ui/runtime/src/ ship as
 // individually-loadable bundles.
 
-func TestRuntimeModule_Fileupload(t *testing.T) {
-	src, ok := Module("fileupload")
-	if !ok {
-		t.Fatal("fileupload module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-fileupload",       // marker the scanner reads
-		"input[type=\"file\"]",      // wires the inner native input
-		"DataTransfer",              // drop path
-		"FileReader",                // image thumbnail
-		"__gofastr.scanFileUploads", // exposed scanner for SPA re-wire
-		"loadedModules",             // self-registers as loaded
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("fileupload module missing %q", want)
-		}
-	}
-	// Per-module size budget. Fileupload is small (drag/drop +
-	// preview only); cap stays generous so a future feature add
-	// still has headroom. Raw bytes, not gzip.
-	if size := ModuleSize("fileupload"); size > 6000 {
-		t.Errorf("fileupload module is %d bytes — budget is 6000", size)
-	}
-}
-
-func TestRuntimeModule_PaneHost(t *testing.T) {
-	src, ok := Module("panehost")
-	if !ok {
-		t.Fatal("panehost module not embedded")
-	}
-	for _, want := range []string{
-		"[data-fui-pane-host]", // marker selector the scanner reads
-		"data-fui-pane-open",   // open trigger attribute
-		"openPane",             // programmatic API on __gofastr
-		"matchMedia",           // responsive overlay-drawer collapse
-		"NS._focusSel",         // reuses the shared focusable selector
-		"loadedModules",        // self-registers as loaded
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("panehost module missing %q", want)
-		}
-	}
-	// Per-module raw size bound (consistent with sibling modules; the
-	// gzip 3 KB budget is enforced separately by TestRuntimeModuleSizeBudgets).
-	if size := ModuleSize("panehost"); size > 9000 {
-		t.Errorf("panehost module is %d bytes — budget is 9000", size)
-	}
-}
-
 func TestRuntimeModule_Widgets(t *testing.T) {
 	src, ok := Module("widgets")
 	if !ok {
@@ -281,7 +231,6 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"widgetfocus":   {"__fuiModalEsc", "__fuiModalTab"},
 		"widgetlinks":   {"G._deepLinkPushUrl", "G._deepLinkStripUrl"},
 		"textarea":      {"data-fui-autogrow"},
-		"shortcut":      {"data-fui-shortcut-click", "data-fui-shortcut-focus"},
 	}
 	for module, markers := range moduleMarkers {
 		moduleSrc, ok := Module(module)
@@ -299,29 +248,6 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 	// mount/open/close orchestration, while optional scanners live elsewhere.
 	if size := ModuleSize("widgets"); size > 20000 {
 		t.Errorf("widgets module is %d bytes — budget is 20000", size)
-	}
-}
-
-func TestRuntimeModule_Copy(t *testing.T) {
-	src, ok := Module("copy")
-	if !ok {
-		t.Fatal("copy module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-copy-text-from", // marker
-		"data-fui-copy-status",    // SR-announce sibling
-		"data-fui-copy-announce",  // override text
-		"data-fui-copy-toast",     // toast-on-copy opt-in
-		"fui-copied",              // visual feedback class
-		"navigator.clipboard",     // primary path
-		"loadedModules",           // self-registers as loaded
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("copy module missing %q", want)
-		}
-	}
-	if size := ModuleSize("copy"); size > 1800 {
-		t.Errorf("copy module is %d bytes — budget is 1800", size)
 	}
 }
 
@@ -413,109 +339,9 @@ func TestRuntimeModule_RTC(t *testing.T) {
 	}
 }
 
-func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
-	src, ok := Module("networkretrybanner")
-	if !ok {
-		t.Fatal("networkretrybanner module not embedded")
-	}
-	for _, want := range []string{
-		`data-fui-comp="ui-network-retry-banner"`, // on-demand marker
-		"data-fui-network-retry-health",           // health probe URL
-		"data-fui-network-retry-sse-silence",      // opt-in silence threshold
-		"networkStatus",                           // public API on __gofastr
-		"checkHealthOn",                           // recovery helper reused on reconnect
-		"reportRecoveryOn",                        // dismiss path
-		"__gofastr.sseStatus",                     // silence poll reads the SSE global
-		"gofastr:sse-status",                      // reconnect-recovery listener
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("networkretrybanner module missing %q", want)
-		}
-	}
-	// Ceiling near the current minified size (same shape as menu/cop),
-	// not a goal, tighten down if the module shrinks.
-	if size := ModuleSize("networkretrybanner"); size > 4000 {
-		t.Errorf("networkretrybanner module is %d bytes — budget is 4000", size)
-	}
-}
-
-func TestRuntimeModule_Sidebar(t *testing.T) {
-	src, ok := Module("sidebar")
-	if !ok {
-		t.Fatal("sidebar module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-sidebar-collapse",
-		"data-fui-sidebar-storage",
-		"data-fui-sidebar-group-toggle",
-		"data-fui-sidebar-collapse-label",
-		"data-fui-sidebar-expand-label",
-		"localStorage.setItem",
-		"aria-expanded",
-		"gofastr:navigate",
-		"MutationObserver",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("sidebar module missing %q", want)
-		}
-	}
-	if size := ModuleSize("sidebar"); size > 3000 {
-		t.Errorf("sidebar module is %d bytes — budget is 3000", size)
-	}
-}
-
-func TestRuntimeModule_Toasts(t *testing.T) {
-	src, ok := Module("toasts")
-	if !ok {
-		t.Fatal("toasts module not embedded")
-	}
-	for _, want := range []string{
-		"NS.toast",
-		"NS._initToasts",
-		"NS._dismissToast",
-		"data-fui-toast-id",
-		"data-fui-toast-stack",
-		"data-fui-toast-dismiss",
-		"data-fui-toast-ttl-ms",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("toasts module missing %q", want)
-		}
-	}
-	if size := ModuleSize("toasts"); size > 8000 {
-		t.Errorf("toasts module is %d bytes — budget is 8000", size)
-	}
-}
-
-func TestRuntimeModule_Menu(t *testing.T) {
-	src, ok := Module("menu")
-	if !ok {
-		t.Fatal("menu module not embedded")
-	}
-	for _, want := range []string{
-		`role="menuitem"`,
-		`role="menu"`,
-		"ArrowDown",
-		"ArrowUp",
-		"_menuTypeBuf",
-		"data-fui-menu-trigger",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("menu module missing %q", want)
-		}
-	}
-	// 4700, up from 4000: the caller-owned trigger-element path
-	// (#369 — wrapper scan/aria wiring, click toggle, Tab close, Space
-	// on anchor triggers, closing the submenu chain with the root) grew
-	// the module ~1.1 KB minified. The gzip budget in budget_test.go
-	// stays the load-bearing gate (~1.4 KB of its 3 KB line); this raw
-	// line is the tripwire and moves with the feature.
-	if size := ModuleSize("menu"); size > 4700 {
-		t.Errorf("menu module is %d bytes — budget is 4700", size)
-	}
-}
+// (TestRuntimeModule_Menu retired with the menu module: the source
+// contract moved to framework/headless's headless-menu, whose
+// registration gates and module-size budget hold it there.)
 
 func TestRuntimeModule_Popover(t *testing.T) {
 	src, ok := Module("popover")
@@ -540,79 +366,9 @@ func TestRuntimeModule_Popover(t *testing.T) {
 	}
 }
 
-func TestRuntimeModule_Combobox(t *testing.T) {
-	src, ok := Module("combobox")
-	if !ok {
-		t.Fatal("combobox module not embedded")
-	}
-	for _, want := range []string{
-		`role="combobox"`,
-		`role="listbox"`,
-		`role="option"`,
-		"aria-activedescendant",
-		"aria-expanded",
-		"ArrowDown",
-		"ArrowUp",
-		"Escape",
-		"pickOption",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("combobox module missing %q", want)
-		}
-	}
-	if size := ModuleSize("combobox"); size > 8000 {
-		t.Errorf("combobox module is %d bytes — budget is 8000", size)
-	}
-}
-
-func TestRuntimeModule_Tree(t *testing.T) {
-	src, ok := Module("tree")
-	if !ok {
-		t.Fatal("tree module not embedded")
-	}
-	for _, want := range []string{
-		`role="treeitem"`,
-		`role="tree"`,
-		`role="group"`,
-		"aria-expanded",
-		"data-fui-tree-toggle",
-		"ArrowRight",
-		"ArrowLeft",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("tree module missing %q", want)
-		}
-	}
-	if size := ModuleSize("tree"); size > 8000 {
-		t.Errorf("tree module is %d bytes — budget is 8000", size)
-	}
-}
-
-func TestRuntimeModule_InfiniteScroll(t *testing.T) {
-	src, ok := Module("infinitescroll")
-	if !ok {
-		t.Fatal("infinitescroll module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-infinite-scroll",
-		"data-fui-infinite-sentinel",
-		"data-fui-infinite-cursor",
-		"X-Gofastr-Infinite-Cursor",
-		"IntersectionObserver",
-		"aria-busy",
-		"_moduleScanners",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("infinitescroll module missing %q", want)
-		}
-	}
-	if size := ModuleSize("infinitescroll"); size > 8000 {
-		t.Errorf("infinitescroll module is %d bytes — budget is 8000", size)
-	}
-}
+// (TestRuntimeModule_Combobox retired with the combobox module: the
+// source contract moved to framework/headless's headless-combobox,
+// whose registration gates and budget hold it there.)
 
 func TestRuntimeModuleNames(t *testing.T) {
 	names := ModuleNames()
@@ -650,23 +406,11 @@ func TestRuntimeModuleRejectsBadName(t *testing.T) {
 //     core-ui/app/TestNestedGroupRendersNestedLayoutShells (SSR side)
 //     plus the existing chromedp screen-group e2e (DOM-stable nav).
 
-// Regression: scrollspy's cssEscape polyfill must handle ids that
-// start with a digit (legal HTML5, illegal as bare CSS selectors).
-// querySelector('#2foo') throws SyntaxError without escaping; the
-// polyfill must emit `\\3<digit><space>` (the CSS spec form) or
-// equivalent so the selector parses.
-func TestScrollspyCSSEscapeHandlesLeadingDigit(t *testing.T) {
-	src, ok := Module("scrollspy")
-	if !ok {
-		t.Fatal("scrollspy module missing")
-	}
-	// The fix uses a charCodeAt branch to emit `\\3<hex><space>` for
-	// the first char when it's a digit (or use CSS.escape natively).
-	// Accept any of the canonical forms.
-	if !contains(src, "charCodeAt(0)") && !contains(src, "/^[0-9]/") && !contains(src, "/^\\d/") {
-		t.Error("cssEscape polyfill must special-case leading-digit ids — querySelector('#42foo') throws otherwise")
-	}
-}
+// (The scrollspy cssEscape regression moved with its module: the
+// polyfill lives in framework/headless's rail.js now, and the
+// selector-escape property over that package's modules is held by
+// core-ui/check's selector-interpolation lint plus the headless
+// package's own gates.)
 
 // TestRuntimeNavigateRejectsUnsafeSchemes: security: when the SPA
 // navigator is handed an attacker-controlled URL (via signal-bound
@@ -756,80 +500,29 @@ func TestRuntimeDocScriptBoundaryShape(t *testing.T) {
 	}
 }
 
-// TestRuntimeDisclosureAndEscapeRunInBothBranches: a11y: the Escape-
-// to-close handler for <details data-fui-disclosure> and the
-// aria-expanded mirror were previously only attached inside the
-// `document.readyState === 'loading'` branch. If runtime.js loaded
-// after DOMContentLoaded (late injection / fast parse), Esc didn't
-// close the mobile drawer and SR users got stale aria-expanded.
-//
-// Source-pattern check: the keydown listener for Escape and the
-// toggle listener for the disclosure mirror must NOT be lexically
-// nested inside the `if (document.readyState === 'loading')` block.
-func TestRuntimeDisclosureAndEscapeRunInBothBranches(t *testing.T) {
-	js, err := RuntimeJS()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Minified form drops the spaces; accept both.
-	loadingIdx := strings.Index(js, "readyState === 'loading'")
-	if loadingIdx == -1 {
-		loadingIdx = strings.Index(js, "readyState==='loading'")
-	}
-	if loadingIdx == -1 {
-		t.Fatal("readyState branch not found")
-	}
-	// Find the matching `} else {` (or minified `}else{`) that
-	// closes the loading branch.
-	elseIdx := strings.Index(js[loadingIdx:], "} else {")
-	if elseIdx == -1 {
-		elseIdx = strings.Index(js[loadingIdx:], "}else{")
-	}
-	if elseIdx == -1 {
-		t.Fatal("else branch terminator not found")
-	}
-	loadingBlock := js[loadingIdx : loadingIdx+elseIdx]
-	// The keydown listener for Escape closing the disclosure must
-	// live OUTSIDE this block. If it's still in here, the fix
-	// hasn't shipped.
-	escEvidence := []string{
-		"e.key !== 'Escape'",
-		"details[data-fui-disclosure][open]",
-	}
-	for _, s := range escEvidence {
-		if strings.Contains(loadingBlock, s) {
-			t.Errorf("Escape-close handler still nested inside "+
-				"readyState==='loading' branch — substring %q "+
-				"must be hoisted to run unconditionally", s)
-		}
-	}
-}
+// (TestRuntimeDisclosureAndEscapeRunInBothBranches and
+// TestRuntimeDisclosureFocusTrapWiring retired with the disclosure
+// module: the Escape/mirror listeners live unconditionally at the top
+// level of framework/headless's disclosure.js, and the trap posture is
+// the Tab containment its own module-level keydown owns — both held by
+// that package's module gates and its browser e2e.)
 
-// TestRuntimeDisclosureFocusTrapWiring: disclosures opting in via
-// data-fui-disclosure-trap (mobile drawers, full-sheet popovers) must
-// gain a focus-trap via `inert` on body siblings, with both the
-// on-open and on-close branches so the trap is symmetric.
-//
-// The wiring moved out of core into the demand-loaded disclosure
-// module; core keeps only the close-on-navigate lines. The module is
-// registered in both marker tables (runtime.js's _moduleMarkers and
-// preload.go's), which TestDemandLoadMarkersMatchRuntimeJS pins.
-func TestRuntimeDisclosureFocusTrapWiring(t *testing.T) {
-	src, ok := Module("disclosure")
-	if !ok {
-		t.Fatal("disclosure module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-disclosure-trap",
-		"inert",
-		"applyTrap",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("disclosure module missing focus-trap wiring %q", want)
-		}
-	}
-}
-
+// TestRuntimeDemandInteractionBridgeIsGeneric pins two halves of the
+// same property: the bridge is metadata-driven, and the kernel names
+// no lightbox. The first half is unchanged in spirit from the original
+// gate (issue #161's fix had to be generic, not a special case): the
+// bridge reads its specs from the descriptor tables — the kernel's own
+// and the registered behaviours' — and a hard-coded replay helper is
+// the regression it refuses. The second half INVERTED with the
+// lightbox's move to a registered behaviour (framework/ui's module):
+// before the move this test required the data-fui-lightbox-prev/-next
+// literals in boot.js, because the kernel table was their only home.
+// Their presence is now the defect — a component's selectors or
+// interactions hard-coded back into the always-loaded runtime are
+// exactly what the seam exists to remove — so the gate fails on any
+// lightbox string in the kernel's shipped bytes or its Go-side tables,
+// and the interaction descriptors are proven to arrive the way every
+// registered behaviour's do: through the behaviours block.
 func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
 	boot, err := os.ReadFile("frag/boot.js")
 	if err != nil {
@@ -839,53 +532,48 @@ func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
 	if strings.Contains(body, "__fuiLightboxDispatch") || strings.Contains(body, "_lightboxReplay") {
 		t.Fatal("boot fragment contains a lightbox-specific interaction bridge")
 	}
-	for _, want := range []string{"interactions", "loadModule(name)", "data-fui-lightbox-prev", "data-fui-lightbox-next"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("generic interaction bridge missing %q", want)
+	// The generic half: the BRIDGE install loop iterates BOTH
+	// descriptor tables and loads through the same loader every path
+	// uses. The concat is anchored to the loop that walks
+	// marker.interactions — the scan loop concats the same pair one
+	// screen later, so a bare Contains on the concat string passes
+	// even when the bridge alone regressed to _moduleMarkers. The
+	// end-to-end proof of the property (a registered behaviour's
+	// interaction replaying with the kernel's table empty of it) is
+	// TestLightboxClickBeforeModuleLoadIsReplayed in
+	// lightbox_bridge_e2e_test.go; this half is defence in depth
+	// around it, not the proof itself.
+	bridgeLoop := regexp.MustCompile(
+		`for \(const marker of _moduleMarkers\.concat\(_registered\)\) \{\s*` +
+			`for \(const spec of marker\.interactions \|\| \[\]\) \{`)
+	if !bridgeLoop.MatchString(body) {
+		t.Errorf("the interaction bridge's install loop must iterate _moduleMarkers.concat(_registered) over marker.interactions — a bridge reading only the kernel's table is the special case this gate exists to refuse")
+	}
+	if !strings.Contains(body, "loadModule(marker.name)") {
+		t.Errorf("generic interaction bridge missing %q — the bridge must load through the same loader every path uses", "loadModule(marker.name)")
+	}
+	// The inverted half: the kernel must not name the lightbox. Its
+	// marker, its interactions and its requirements are the descriptor
+	// framework/ui registers; a literal back in the composed bundle, in
+	// the boot fragment it is composed from, in the preload mirror's
+	// table, or as a moduleAttrs owner is the special case returning.
+	composed, err := RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
+	if got := strings.Count(strings.ToLower(composed), "lightbox"); got != 0 {
+		t.Errorf("the composed runtime names the lightbox %d time(s) — a component's strings belong in its registered descriptor, not the always-loaded kernel", got)
+	}
+	if got := strings.Count(strings.ToLower(body), "lightbox"); got != 0 {
+		t.Errorf("frag/boot.js names the lightbox %d time(s)", got)
+	}
+	for _, name := range DemandLoadModuleNames() {
+		if strings.Contains(name, "lightbox") {
+			t.Errorf("the preload table still maps a marker to %q — the behaviour's own registration drives its preload now", name)
 		}
 	}
-}
-
-// TestComboboxPickOptionHonorsPushState: selecting a combobox option
-// carrying data-fui-push-state must navigate. The previous behavior
-// only set input.value + fired change, which left CommandPalette
-// completely non-functional (user could open + type + select, but
-// the click was a no-op).
-//
-// Additionally guards against the XSS vector: an attacker-controlled
-// push-state value (e.g. "javascript:alert(1)") must not navigate.
-func TestComboboxPickOptionHonorsPushState(t *testing.T) {
-	src, ok := Module("combobox")
-	if !ok {
-		t.Fatal("combobox module not embedded")
-	}
-	// Source-pattern guard: pickOption must read data-fui-push-state.
-	if !strings.Contains(src, "data-fui-push-state") {
-		t.Error("combobox pickOption must read data-fui-push-state on selection")
-	}
-	// And must route through the SPA navigator OR a safety-checked
-	// fallback. Either presence of navigate( in the picked-option
-	// branch or a scheme check counts.
-	if !strings.Contains(src, "navigate") && !strings.Contains(src, "_isUnsafeSignalUrl") {
-		t.Error("combobox pickOption must call navigate or scheme-check before nav")
-	}
-}
-
-// TestComboboxPickOptionHonorsPlainAnchors pins the plain-anchor arm of
-// pickOption: an <a href> option with no data-fui-push-state must derive
-// its destination from href and ride the same gated navigate path —
-// pickOption's preventDefault otherwise swallows server-built link
-// options (filters, sorters) into dead rows.
-func TestComboboxPickOptionHonorsPlainAnchors(t *testing.T) {
-	src, ok := Module("combobox")
-	if !ok {
-		t.Fatal("combobox module not embedded")
-	}
-	// Module() serves the minified source, so the pin uses tokens that
-	// survive minification: the tagName check exists only in the
-	// anchor-fallback arm, and "href" only as its attribute read.
-	if !strings.Contains(src, "tagName") || !strings.Contains(src, "href") {
-		t.Error("combobox pickOption must fall back to a plain anchor option's href when data-fui-push-state is absent")
+	if _, owned := moduleAttrs["lightbox"]; owned {
+		t.Error("fragments.go still lists a lightbox moduleAttrs owner — its attributes are a registered behaviour's")
 	}
 }
 
@@ -1051,54 +739,13 @@ func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
 	}
 }
 
-// TestCarousel_TimerTeardownOnNav guards F16a: the carousel setInterval
-// must be cleared for carousels that leave the document on SPA nav so
-// auto-rotate doesn't leak. The mechanism is a module-level `rotating`
-// registry walked by pruneDetached() — the swap runs BEFORE the
-// gofastr:navigate dispatch, so carousels inside the swapped region are
-// already detached and invisible to document.querySelectorAll; the
-// registry is the only structure that still holds them.
-//
-// Source-shape pin only: the behavioural proof (detached carousel stops
-// ticking, persisted carousel keeps ticking) is
-// TestCarouselAutoRotateTeardownOnNav in carousel_teardown_e2e_test.go.
-func TestCarousel_TimerTeardownOnNav(t *testing.T) {
-	src, ok := Module("carousel")
-	if !ok {
-		t.Fatal("carousel module not embedded")
-	}
-	idx := strings.Index(src, "gofastr:navigate")
-	if idx == -1 {
-		t.Fatal("carousel missing gofastr:navigate handler")
-	}
-	// Extract 600 chars after the navigate listener registration.
-	body := src[idx:min(idx+600, len(src))]
-	teardownEvidence := strings.Contains(body, "pruneDetached()") ||
-		strings.Contains(body, "stop(") ||
-		strings.Contains(body, "clearInterval") ||
-		strings.Contains(body, "_fuiCarouselStop")
-	if !teardownEvidence {
-		t.Error("carousel gofastr:navigate handler must tear down auto-rotate timers for detached carousels — no teardown evidence found near the navigate listener")
-	}
-	// The registry itself: teardown is unreachable without it (the
-	// detached carousel can only be found through the Set).
-	if !strings.Contains(src, "rotating.add(carousel)") || !strings.Contains(src, "isConnected") {
-		t.Error("carousel teardown must track autorotate carousels in the module-level registry and prune by isConnected")
-	}
-}
+// (TestCarousel_TimerTeardownOnNav retired with the carousel module:
+// the teardown registry is the per-carousel timer set in
+// framework/headless's carousel.js, torn down on gofastr:navigate and
+// detach, covered by its e2e.)
 
-// TestTOC_ObserverTeardownOnNav guards F16b: the toc.js IntersectionObserver
-// must be disconnected on gofastr:navigate so it doesn't leak across SPA nav.
-func TestTOC_ObserverTeardownOnNav(t *testing.T) {
-	src, ok := Module("toc")
-	if !ok {
-		t.Fatal("toc module not embedded")
-	}
-	// The observer must be disconnected on navigate. The fix adds a
-	// Set of active observers and disconnects them before re-scanning.
-	hasNav := strings.Contains(src, "gofastr:navigate")
-	hasDisconnect := strings.Contains(src, ".disconnect()")
-	if !hasNav || !hasDisconnect {
-		t.Errorf("toc must disconnect IntersectionObserver on gofastr:navigate — hasNavHandler=%v hasDisconnect=%v", hasNav, hasDisconnect)
-	}
-}
+// (TestTOC_ObserverTeardownOnNav retired with the toc module: the
+// observer registry is a WeakMap in framework/headless's rail.js, so a
+// nav removed from the document takes its observer with it when the
+// tree is collected, and the kernel hands the post-navigation document
+// to the module's registered scanner.)

@@ -77,19 +77,9 @@ func TestPropertyDeclaredInAnotherFileIsClean(t *testing.T) {
 
 func TestUiKnobReferenceIsClean(t *testing.T) {
 	ds := fixture(t, map[string]string{
-		"app.css": ".shell { max-width: var(--ui-layout-container-width); }\n",
+		"app.css": ".shell { max-width: var(--ui-container-pad-start); }\n",
 	})
 	assertNot(t, ds, contracts.RuleUnknownThemeToken, "ui-* knobs are per-component overrides, not theme tokens")
-}
-
-func TestCSSFileDoesNotTripGoRules(t *testing.T) {
-	// A stylesheet is not an app shipping CSS from Go. It must not fire
-	// the bespoke-CSS rule; the file IS a stylesheet, outside the design
-	// system or not, and GOFASTR1806 is the rule that governs it.
-	ds := fixture(t, map[string]string{
-		"app.css": ".card { padding: 16px; border-radius: 8px; color: #fff; }\n",
-	})
-	assertNot(t, ds, contracts.RuleBespokeCSS, "a stylesheet is not Go source carrying CSS in strings")
 }
 
 func TestNestedFallbackIsClean(t *testing.T) {

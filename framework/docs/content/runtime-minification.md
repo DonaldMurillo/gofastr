@@ -48,7 +48,9 @@ Two HTTP routes are affected:
 
 - `GET /__gofastr/runtime.js`: the bundled core runtime
 - `GET /__gofastr/runtime/<name>.js`: each on-demand module
-  (`copy`, `toasts`, `widgets`, `popover`, etc.)
+  (`copy`, `toasts`, `widgets`, `popover`, etc.), and every behaviour a
+  package registered with `registry.RegisterBehavior`, which the same
+  route serves under the same gate
 
 Both return whichever form (raw or minified) the gating contract
 selected at process startup. The minified output is still a valid

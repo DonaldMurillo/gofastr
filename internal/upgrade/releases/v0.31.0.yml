@@ -1,0 +1,18 @@
+version: v0.31.0
+title: Process-isolated modules + cross-replica presence
+notes:
+  - change: mcpclient.Spawn scrubs the child environment
+    breaking: true
+    hits: review
+    guidance: "Spawned MCP-server children no longer inherit the full host environment (JWT_SECRET, DB DSN, OAUTH_* all leaked before). If a child needs a host variable, pass it explicitly via the new SpawnConfig{Env, InheritEnv} — the default is now a minimal allowlist (PATH/HOME/TMPDIR/locale)."
+    find:
+      uses:
+        - gofastr/framework/harness/mcpclient.Spawn
+  - change: Process-isolated third-party modules (#37)
+    breaking: false
+    guidance: "New App.RegisterProcessModule surface: third-party modules run out-of-process behind core/moduleproto, capability-brokered, sandbox-gated. Additive — existing in-process modules (App.RegisterModule) are unaffected. Untrusted-tier modules require a conforming sandbox backend or they fail closed (never run)."
+    nodetect: additive surface new in this release; no app on the prior release carries it
+  - change: Cross-replica presence over fanout (#47)
+    breaking: false
+    guidance: "Presence rosters now aggregate across serve replicas when WithFanout is configured (dedicated gofastr.presence lane). Additive: single-replica behavior is byte-identical with no fanout."
+    nodetect: additive behaviour behind WithFanout; single-replica apps are byte-identical

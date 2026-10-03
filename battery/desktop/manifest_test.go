@@ -57,7 +57,7 @@ func TestRunManifestModePrintsManifestWithoutWindow(t *testing.T) {
 	t.Setenv(ManifestEnv, "1")
 
 	site := appui.NewApp("ManifestApp")
-	layout := appui.NewLayout("public").WithContainer()
+	layout := containerLayout("public")
 	site.Register("/", manifestScreen{}, layout)
 	host := uihost.New(site)
 

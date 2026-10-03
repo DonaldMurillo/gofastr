@@ -20,7 +20,7 @@ func TestFormRepeaterRendersEmpty(t *testing.T) {
 	}))
 	for _, want := range []string{
 		`data-fui-comp="ui-form-repeater"`,
-		"ui-form-repeater",
+		"fui-form-repeater",
 		">Add item<",
 		`name="items_add"`,
 		`value="1"`,
@@ -38,9 +38,9 @@ func TestFormRepeaterRendersItems(t *testing.T) {
 		Items: [][]render.HTML{{in}},
 	}))
 	for _, want := range []string{
-		"ui-form-repeater__item",
-		`data-index="0"`,
-		">Remove<",
+		"fui-form-repeater__item",
+		`data-hui-repeater-index="0"`,
+		`aria-label="Remove item 1"`,
 		`name="items_remove"`,
 		`value="0"`,
 		">Add item<",
@@ -113,10 +113,10 @@ func TestFormRepeaterMultipleItems(t *testing.T) {
 		Name:  "items",
 		Items: [][]render.HTML{{in1}, {in2}},
 	}))
-	if !strings.Contains(h, `data-index="0"`) {
+	if !strings.Contains(h, `data-hui-repeater-index="0"`) {
 		t.Errorf("missing index 0, got: %s", h)
 	}
-	if !strings.Contains(h, `data-index="1"`) {
+	if !strings.Contains(h, `data-hui-repeater-index="1"`) {
 		t.Errorf("missing index 1, got: %s", h)
 	}
 	// Two items, no MinItems, so Remove should not be disabled.
@@ -130,7 +130,7 @@ func TestFormRepeaterCustomClass(t *testing.T) {
 		Name:  "items",
 		Class: "extra",
 	}))
-	if !strings.Contains(h, "ui-form-repeater extra") {
+	if !strings.Contains(h, "fui-form-repeater extra") {
 		t.Errorf("expected custom class, got: %s", h)
 	}
 }
@@ -139,8 +139,8 @@ func TestFormRepeaterHasAriaLive(t *testing.T) {
 	h := string(FormRepeater(FormRepeaterConfig{
 		Name: "items",
 	}))
-	if !strings.Contains(h, `aria-live="polite"`) {
-		t.Errorf("repeater container should have aria-live=polite, got:\n%s", h)
+	if !strings.Contains(h, `data-hui-repeater-status="" role="status"`) {
+		t.Errorf("the live region the module announces through is missing, got:\n%s", h)
 	}
 }
 

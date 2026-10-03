@@ -20,9 +20,7 @@ import (
 // serveOrRender and the screen renders with 200.
 func TestGetScreenSurvivesPostOnlyRoute(t *testing.T) {
 	a := uiapp.NewApp("survival-test")
-	layout := uiapp.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	a.SetDefaultLayout(layout)
 	a.RegisterScreen(uiapp.NewScreen("/shipments", &testHomeComp{}).WithTitle("Shipments"), nil)
 
@@ -56,9 +54,7 @@ func TestGetScreenSurvivesPostOnlyRoute(t *testing.T) {
 // bespoke CSS.
 func TestPost405RendersStyledPage(t *testing.T) {
 	a := uiapp.NewApp("405-test")
-	layout := uiapp.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	a.SetDefaultLayout(layout)
 	a.RegisterScreen(uiapp.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 
@@ -103,9 +99,7 @@ func TestResolvePredicateMatchesServeOrRender(t *testing.T) {
 	}
 
 	a := uiapp.NewApp("pin-test")
-	layout := uiapp.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	a.SetDefaultLayout(layout)
 	a.RegisterScreen(uiapp.NewScreen("/screen", &testHomeComp{}).WithTitle("S"), nil)
 

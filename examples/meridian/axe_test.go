@@ -56,10 +56,10 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 	var href string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+listPath),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const sel = '.ui-data-table a[href^="`+basePath+`/"]';
+			const sel = '.fui-data-table a[href^="`+basePath+`/"]';
 			const links = [...document.querySelectorAll(sel)];
 			// Skip /new and /edit paths — the table only renders View links,
 			// but guard against any toolbar link that slipped inside.
@@ -130,10 +130,10 @@ func axeAdminRowID(t *testing.T, browser context.Context, base, table string) st
 	var id string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+listPath),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const sel = '.ui-data-table a[href^="`+listPath+`/view/"]';
+			const sel = '.fui-data-table a[href^="`+listPath+`/view/"]';
 			const a = document.querySelector(sel);
 			return a ? (a.getAttribute('href') || '').split('/').pop() : '';
 		})()`, &id),

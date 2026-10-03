@@ -1,0 +1,7 @@
+version: v0.59.0
+title: Contracts and semantic analysis (gofastr verify)
+notes:
+  - change: gofastr verify, the build gate, and the dev-loop contracts watcher
+    breaking: false
+    nodetect: "the gate reports findings anywhere in the tree; no one spelling marks an app affected"
+    guidance: "Additive. `gofastr verify` reports on the tree and `gofastr build` gates on error findings — an existing app with findings adopts via `gofastr verify --strict --baseline-write` (accepts current debt, fails on new) or relaxes named rules in gofastr.contracts.yml; every opt-out is reported. `--no-contracts` skips the build gate once. Nothing changes at runtime: the semantic-coverage recorder is off unless GOFASTR_SEMANTIC_COVERAGE=1 or the TestHarness enables it."

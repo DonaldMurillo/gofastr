@@ -1,0 +1,10 @@
+version: v0.57.0
+title: Field defaults are validated at registration
+notes:
+  - change: A malformed EntityConfig field Default now fails registration
+    breaking: true
+    hits: review
+    guidance: "Entity.Validate runs schema.Validate over every field Default, so a declaration that used to boot and fail per-request now refuses at boot with the field named. This surfaces an existing bug rather than creating one: the create path substitutes a Default AFTER ValidateAll, so a bad one reached the driver unchecked — a 500 with nothing actionable in it, or silently wrong data on a looser dialect ({Type: schema.JSON, Default: \"draft\"} 500s on Postgres JSONB and stores fine in SQLite TEXT). Fix the declaration the error names. App.Entity panics as it already does for other declaration errors; TryEntity returns the error. Two Go spellings a JSON body cannot produce are normalized rather than refused, so they keep working: a schema.Decimal default written as a Go number (what gofastr generate emits for `default: 0`) and a Timestamp/Date default written as a time.Time. Auto-generated fields are exempt."
+    find:
+      uses:
+        - gofastr/core/schema.Field.Default

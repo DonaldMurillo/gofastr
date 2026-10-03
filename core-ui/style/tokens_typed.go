@@ -130,6 +130,29 @@ type FontSize struct {
 func (f FontSize) CSS() string    { return varRef("text", f.Name) }
 func (f FontSize) String() string { return f.CSS() }
 
+// Size is a length token: a page column, a bar height, a measure. Value
+// is a CSS length ("66rem", "56px") or a calc()/clamp()/min()/max()
+// expression over lengths, emitted as --size-<name>. Spacing stays the
+// pixel scale for gaps and padding; Size is for the dimensions a layout
+// is built around.
+type Size struct {
+	Name  string
+	Value string
+}
+
+func (s Size) CSS() string    { return varRef("size", s.Name) }
+func (s Size) String() string { return s.CSS() }
+
+// FontWeight is a font-weight token, 1 to 1000, emitted as
+// --font-weight-<name>.
+type FontWeight struct {
+	Name  string
+	Value int
+}
+
+func (w FontWeight) CSS() string    { return varRef("font-weight", w.Name) }
+func (w FontWeight) String() string { return w.CSS() }
+
 // CodeColor is a syntax-highlight palette token. It emits
 // `var(--tk-<name>)`, the --tk-* variables the framework
 // highlighter's .tk-* spans (ui.CodeBlock, markdown code fences)

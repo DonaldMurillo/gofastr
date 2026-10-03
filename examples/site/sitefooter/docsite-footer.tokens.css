@@ -1,0 +1,4 @@
+/* The v2 rhythm's step above --spacing-3xl (48px): the colophon's
+   vertical air — grid top padding, column gap, and the strip above the
+   bottom line. */
+@property --spacing-section { syntax: "<length>"; inherits: true; initial-value: 64px; }

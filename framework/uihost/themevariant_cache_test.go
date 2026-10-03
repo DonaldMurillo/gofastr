@@ -14,6 +14,7 @@ import (
 // or an embed rebranding per request, grew RAM permanently. Variant release
 // is the only point that knows a theme is truly gone, so eviction hooks there.
 func TestReleaseThemeVariantEvictsComponentCSSCaches(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	ds := hostWithTheme(t, style.DefaultTheme())
 	th := brandTheme("#0D9488")
 	key := ds.RegisterThemeVariant(th)
@@ -41,6 +42,7 @@ func TestReleaseThemeVariantEvictsComponentCSSCaches(t *testing.T) {
 // registers a variant equal to its active theme, then releases it, must not
 // evict the hot-path cache every other request still depends on.
 func TestReleaseThemeVariantKeepsAppThemeCache(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	appTheme := brandTheme("#4F46E5")
 	ds := hostWithTheme(t, appTheme)
 

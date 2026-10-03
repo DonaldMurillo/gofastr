@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -21,6 +22,9 @@ type Router struct {
 	exactRedir    map[string]string  // exact from → to (permanent redirect)
 	patternRedir  []patternRedirect  // dynamic from → to (param passthrough)
 	defaultLayout *Layout
+	// layoutsGen counts screen and default-layout registrations, so a
+	// host can notice layouts added after it composed app.css.
+	layoutsGen atomic.Uint64
 }
 
 // dynamicRoute holds a parsed route pattern with parameter extraction.
@@ -48,6 +52,7 @@ func NewRouter() *Router {
 // path segments into a single joined param; it must be the final
 // segment.
 func (r *Router) Screen(screen *Screen, layout *Layout) {
+	r.layoutsGen.Add(1)
 	if layout != nil {
 		screen.Layout = layout
 	}
@@ -129,6 +134,7 @@ func normalizeRoutePath(path string) string {
 
 // DefaultLayout sets the default layout for screens without one.
 func (r *Router) DefaultLayout(layout *Layout) {
+	r.layoutsGen.Add(1)
 	r.defaultLayout = layout
 }
 
@@ -339,16 +345,60 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	}
 
 	ctx := context.Background()
+	// Route areas read the match off the context; RenderRaw builds its
+	// own, so no host middleware is required.
+	ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
+
 	if screen.Type == ScreenPage {
-		if chain := r.layoutChainFor(screen); len(chain) > 0 {
+		chain := resolveChainKeys(r.layoutChainFor(screen), params)
+		validateFills(screen, chain)
+		validateRequires(screen)
+		if len(chain) > 0 {
 			content, renderErr := component.SafeRenderCtx(ctx, comp)
 			if renderErr != nil {
 				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
-			return renderLayoutChain(ctx, chain, wrapArticle(screen, comp, content)), nil
+			wrapped, err := renderLayoutChain(ctx, chain, wrapArticle(screen, comp, content), nil, nil)
+			if err != nil {
+				return "", err
+			}
+			return wrapped, nil
 		}
 	}
 	return renderComponentInScreen(ctx, screen, comp), nil
+}
+
+// ValidateFills checks every registered screen's fill declarations
+// against that screen's resolved layout chain: a fill naming an
+// outlet whose layout is not in the chain (or a handle no layout
+// declared) panics, naming the layout and the outlet. Hosts call it
+// once at mount (uihost.Mount, beside the action-id collision
+// check); the render paths re-check per screen, so a screen
+// registered later is still caught at its first render.
+func (r *Router) ValidateFills() {
+	for _, screen := range r.screens {
+		validateFills(screen, resolveChainKeys(r.layoutChainFor(screen), nil))
+	}
+	for _, dr := range r.dynamic {
+		validateFills(dr.screen, resolveChainKeys(r.layoutChainFor(dr.screen), nil))
+	}
+}
+
+// ValidateRequires checks every registered screen's group-chain
+// Requires names against the resolver declarations visible to that
+// screen: a group requiring a resolver no declaration matches panics,
+// naming the group and the screen — a misspelled Requires is a
+// silently dropped policy check otherwise. Hosts call it once at
+// mount beside ValidateFills (uihost.Mount); the render paths
+// re-check per screen, so a screen registered later is still caught
+// at its first render.
+func (r *Router) ValidateRequires() {
+	for _, screen := range r.screens {
+		validateRequires(screen)
+	}
+	for _, dr := range r.dynamic {
+		validateRequires(dr.screen)
+	}
 }
 
 // Paths returns all registered paths (exact + dynamic patterns).

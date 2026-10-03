@@ -61,6 +61,20 @@ re-renders anything.
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 
+The headless controls ride the rungs rather than adding to them. A
+`headless.Counter`'s value is a client signal (`data-fui-signal` /
+`data-fui-signal-inc`, rung 1); a `headless.Repeater`'s add and
+remove are named submit buttons, and when the result swaps the
+region the same buttons carry the RPC contract (rung 2); a
+`headless.StepWizard`'s submit is a plain form POST that becomes a
+region update under its optional Island; a `headless.Toast` arriving
+at runtime is the RPC response's header (`X-Gofastr-Toast`) read by
+the feedback module, and the stack it lands in is mounted once by the
+layout. The drag-time behaviour of `NumberInput`, `Slider` and
+`RangeSlider` is local presentation: no request fires while a thumb
+moves, and the form the inputs ride submits when the reader submits
+it.
+
 ### 3. Polling
 
 Polling re-fetches on an interval without holding a connection. It gives you
@@ -264,7 +278,10 @@ issued by one replica verifies on every other replica that shares the secret.
   SSE/interaction transport session, not `battery/auth` login state; nobody is
   logged out). Recovery needs no user action: a page re-mints on its next render
   or navigation, and a purely idle tab re-mints from the SSE module itself
-  (`POST /__gofastr/session`) once its stream reconnect starts failing.
+  (`POST /__gofastr/session`) once its stream reconnect starts failing. The
+  idle re-mint only runs while the stream is open (the stream itself is on
+  demand — it exists only while the page holds a push target); a page without
+  one recovers on its next navigation, whose answer carries the fresh id.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:
   - `framework.WithSecret(secret)` in code, or

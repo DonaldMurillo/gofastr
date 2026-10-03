@@ -55,7 +55,7 @@ func wsApp(t *testing.T, cfg desktop.Config, dir string, logger *slog.Logger) (*
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", dir)
 	site := appui.NewApp("Window state")
-	layout := appui.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 	site.SetDefaultLayout(layout)
 	site.Register("/", wsScreen{"Home"}, layout)
 	site.Register("/two", wsScreen{"Two"}, layout)

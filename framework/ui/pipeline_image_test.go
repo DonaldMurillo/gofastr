@@ -97,7 +97,7 @@ func TestPipelineImageRendersPlaceholderDataURL(t *testing.T) {
 	})
 	// The placeholder is a stacked element, not an attribute for someone
 	// else to hydrate. See image_placeholder_test.go for the full contract.
-	mustContain(t, h, `class="ui-image__lqip"`)
+	mustContain(t, h, `class="fui-image__lqip"`)
 	mustContain(t, h, `src="data:image/jpeg;base64,Zm9v"`)
 }
 
@@ -114,7 +114,7 @@ func TestPipelineImageRefusesRawBlurHash(t *testing.T) {
 	if strings.Contains(out, "LEHV6nWB") {
 		t.Errorf("raw BlurHash leaked into the markup: %s", out)
 	}
-	if strings.Contains(out, "ui-image__lqip") {
+	if classTokenPresent(out, "fui-image__lqip") {
 		t.Errorf("raw BlurHash must not render a placeholder: %s", out)
 	}
 }

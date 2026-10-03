@@ -68,20 +68,27 @@ func TestSectionMenuActiveGroupForcedOpen(t *testing.T) {
 	}
 }
 
+// Collapsed is a drawer setting: the drawer starts the group closed,
+// while the desktop rail shows every group open.
 func TestSectionMenuCollapsedGroupClosed(t *testing.T) {
-	h := string(SectionMenu(SectionMenuConfig{
+	cfg := SectionMenuConfig{
 		DrawerName: "x",
 		Groups: []SectionGroup{
 			{Label: "Closed", Collapsed: true, Items: []SectionItem{{Label: "x", Href: "/x"}}},
 		},
-	}))
-	start := strings.Index(h, `class="fui-section-menu__group"`)
-	if start == -1 {
-		t.Fatalf("no group rendered:\n%s", h)
 	}
-	openTag := h[start : strings.Index(h[start:], ">")+start]
-	if strings.Contains(openTag, "open") {
-		t.Errorf("collapsed group without an active item should be closed: %q", openTag)
+	groupTag := func(h string) string {
+		start := strings.Index(h, `class="fui-section-menu__group"`)
+		if start == -1 {
+			t.Fatalf("no group rendered:\n%s", h)
+		}
+		return h[start : strings.Index(h[start:], ">")+start]
+	}
+	if tag := groupTag(string(sectionMenuDrawerSlot{cfg: cfg}.Render())); strings.Contains(tag, "open") {
+		t.Errorf("drawer: a collapsed group without an active item should be closed: %q", tag)
+	}
+	if tag := groupTag(string(SectionMenu(cfg))); !strings.Contains(tag, "open") {
+		t.Errorf("rail: every group should render open: %q", tag)
 	}
 }
 

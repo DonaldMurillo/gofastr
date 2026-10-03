@@ -17,7 +17,7 @@ func TestFormBoolFieldRoundTripsAsTrueFalse(t *testing.T) {
 		cur     string
 		checked bool
 	}{{"true", true}, {"false", false}, {"", false}, {"on", true}} {
-		out := string(c.formInput(context.Background(), Field{Key: "notify_on_save", Type: "bool"}, tc.cur, nil))
+		out := string(c.formField(context.Background(), Field{Key: "notify_on_save", Label: "Notify on save", Type: "bool"}, tc.cur, nil))
 		// Attributes render sorted, so inspect whole tags, not offsets.
 		tags := strings.Split(out, "<input")
 		if len(tags) != 3 {

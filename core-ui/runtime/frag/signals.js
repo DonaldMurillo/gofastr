@@ -89,8 +89,8 @@
           // Awaits the toasts module, when an island-driven update
           // injects a toast for the first time, the module loads,
           // then _initToasts runs against the new content.
-          if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
-            window.__gofastr.loadModule('toasts').then(() => {
+          if (node.querySelector && node.querySelector('[data-hui-toast]')) {
+            window.__gofastr.loadModule('headless-feedback').then(() => {
               window.__gofastr._initToasts(node);
             }).catch(() => {});
           }
@@ -107,7 +107,7 @@
           // URL-bearing attrs (href / src / action / xlink:href /
           // formaction): reject dangerous schemes (javascript:,
           // vbscript:, data: except data:image/*). Stops a signal-
-          // driven anchor (e.g. Lightbox AllowDownload) from
+          // driven anchor (e.g. a media viewer's download) from
           // executing arbitrary JS when an attacker controls the
           // signal value via a query-string deeplink param.
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';

@@ -57,7 +57,7 @@ library usually needs (every zero value keeps the default output
 byte-identical):
 
 - `StateAttrs bool` — adds `data-state="active"/"inactive"` to every
-  tab button. The demand-loaded `tabs` runtime module keeps it in step
+  tab button. The `headless-tabs` module keeps it in step
   with the selection after client-side switches, alongside the
   `aria-selected` mirroring core already does.
 - `ID string` — wires tab↔panel semantics: button
@@ -65,7 +65,7 @@ byte-identical):
   `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
 - `VacateHidden bool` — hidden panels ship empty with their content in
   an adjacent JSON stash, so page-scoped test locators cannot match
-  text inside hidden panels. The `tabs` module restores content on
+  text inside hidden panels. The `headless-tabs` module restores content on
   first show and moves the live nodes out/in on every later switch, so
   island content the runtime swapped in survives re-show. While a
   panel is vacated, document-scoped updates targeting it (SSE pushes,
@@ -73,8 +73,8 @@ byte-identical):
   for replay, re-show resurrects the panel's pre-vacate nodes, and only
   updates that arrive after re-show land.
 
-  Timing caveat for `VacateHidden`: the `tabs` module loads on the
-  strip's first hover/focus, so any signal write that lands before
+  Timing caveat for `VacateHidden`: the `headless-tabs` module is
+  demand-loaded on the strip's `data-hui-tabs` marker, so any signal write that lands before
   that — an SSE, poll, or RPC-driven update, or a hydration-time
   signal value differing from what SSR rendered — moves `data-active`
   on a strip nobody has touched, and the newly-active panel shows
@@ -93,21 +93,34 @@ between `"true"` and `"false"`.
 ### Collapsible
 
 `framework/ui.Collapsible` wraps native `<details>` with
-`data-fui-disclosure` for keyboard support (Escape to close) and
+`data-hui-disclosure` for keyboard support (Escape to close) and
 `aria-expanded` mirroring. The browser handles open/close natively.
+Sections that share a `CollapsibleConfig.Name` form an exclusive
+group (the native `<details name>` accordion): opening one closes
+the others, with no script.
+
+```go
+ui.Collapsible(ui.CollapsibleConfig{Summary: "Billing", Name: "faq"}, billing)
+ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
+```
 
 ### Copy to clipboard
 
 `framework/ui.CopyButton` renders a button that copies text to the
-clipboard via `navigator.clipboard.writeText()`. The runtime module
-(`copy.js`) shows a brief "Copied!" state and announces it to screen
-readers. Works with a `document.execCommand('copy')` fallback.
+clipboard via `navigator.clipboard.writeText()`. The feedback module
+(`headless-feedback`, through the `data-hui-copy*` hooks) shows a
+brief "Copied!" state and announces it to screen readers. Without
+script the page promises nothing about the clipboard.
 
 ### Password visibility toggle
 
-`framework/ui.PasswordInput` renders a password field with an eye icon
-that toggles between `type="password"` and `type="text"`. The runtime
-module (`passwordinput.js`) handles the click and type switch.
+`framework/ui.PasswordInput` renders a password field with a reveal
+button that toggles between `type="password"` and `type="text"`. The
+headless behaviour module (`framework/headless/behavior.js`) binds the
+button's `data-hui-reveal` hook: it retypes the input, swaps the
+button's visible word and accessible name from the four `data-hui-*`
+attributes the component rendered from its `Strings`, and keeps the
+caret where the reader left it.
 
 ### Textarea auto-resize
 
@@ -118,22 +131,28 @@ content. Triggered by the `data-fui-autogrow` attribute.
 ### Toast notifications
 
 `core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack. The runtime module (`toasts.js`) is pure client-side. Toasts
+stack. The feedback module (`headless-feedback`) owns the pure
+client-side toast runtime. Toasts
 auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
 by clicking the close button.
 
 ### Theme toggle
 
 `framework/ui.ThemeToggle` renders a dark/light/auto switch. The
-runtime (`themeswitch.js`) persists the preference in `localStorage`
+navigation module (`headless-navigation`, through the
+`data-hui-theme-*` hooks) persists the preference in `localStorage`
 and toggles the `color-scheme` meta + root attribute.
 
 ### Scroll spy
 
-`core-ui/patterns/scrollspy` uses IntersectionObserver to track which
-section is currently in the upper portion of the viewport and marks
-the corresponding nav link as active. Triggered by
-`data-fui-scrollspy`.
+The scroll-spy rail is `framework/ui.AnchoredRail` over
+`headless.Rail` (`data-hui-rail` on the nav, `data-hui-rail-observe`
+naming the observed region): the `headless-rail` module
+IntersectionObserves which section is currently in the upper portion
+of the viewport and marks the corresponding nav link
+`aria-current="true"` / `.is-active`. The table of contents
+(`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
+The retired scrollspy spelling is gone with its module.
 
 ---
 
@@ -176,7 +195,9 @@ Attributes injected: `data-fui-rpc-trigger="input"`,
 that immediately flips to its success visual on click, then fires the
 RPC in the background. On failure the button shakes and reverts.
 
-Uses the `optimisticaction.js` runtime module.
+Uses the kernel's `action` module through the `data-hui-action*`
+hooks `interactive.OptimisticUpdate` (and `framework/ui.OptimisticAction`)
+render; see [runtime-contract](runtime-contract.md).
 
 ### Toggle Action (three-state commit/untoggle)
 
@@ -203,8 +224,9 @@ ui.ToggleAction(ui.ToggleActionConfig{
 })
 ```
 
-Uses the `toggleaction.js` runtime module (`data-fui-toggle-*`
-attributes; see [runtime-contract](runtime-contract.md)).
+Uses the kernel's `action` module through the `data-hui-action*`
+hooks (`data-hui-action-untoggle`, `data-hui-action-group`) the
+button renders; see [runtime-contract](runtime-contract.md).
 
 ### Inline Edit helpers
 
@@ -379,24 +401,26 @@ collaborative editing, sub-second updates. See
 
 ## Sortable list (single + kanban)
 
-`core-ui/patterns/sortablelist` renders a reorderable `<ol>` with HTML5
-drag-and-drop plus a keyboard fallback (Space to grab, Arrow keys to
-move, Space to drop, Esc to cancel). After a successful reorder the
-runtime POSTs the new key sequence to `RPCPath` as form-encoded
-`order=<comma-sep-keys>`. A non-2xx response reverts the DOM. The
-`Items` slice may be empty. An empty column renders a valid, sortable
-`<ol>` wrapper with no `<li>` children and remains a drop target
-(empty Kanban columns, issue #82). `RenderItems` with no items returns
-an empty fragment, so an authoritative conflict-reconciliation
-endpoint can replace a column with an empty response.
+`framework/ui.SortableList` (on the `headless.SortableList` primitive,
+bound by the registered `headless-sortablelist` module) renders a
+reorderable `<ol>` with HTML5 drag-and-drop plus a keyboard fallback
+(Space to grab, Arrow keys to move, Space to drop, Esc to cancel).
+After a successful reorder the module POSTs the new key sequence to
+`RPCPath` as form-encoded `order=<comma-sep-keys>`. A non-2xx response
+reverts the DOM. The `Items` slice may be empty. An empty column
+renders a valid, sortable `<ol>` wrapper with no `<li>` children and
+remains a drop target (empty Kanban columns, issue #82).
+`ui.SortableListItems` with no items returns an empty fragment, so an
+authoritative conflict-reconciliation endpoint can replace a column
+with an empty response.
 
 ### Single list (back-compat)
 
 ```go
-sortablelist.Render(sortablelist.Config{
+ui.SortableList(ui.SortableListConfig{
     Label:   "Priorities",
     RPCPath: "/api/reorder",
-    Items:   []Item{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
+    Items:   []ui.SortableItem{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
 })
 ```
 
@@ -415,7 +439,7 @@ sortable wrapper and accepts drops.
 
 ```go
 for _, col := range board.Columns {
-    sortablelist.Render(sortablelist.Config{
+    ui.SortableList(ui.SortableListConfig{
         Label:     col.Title,           // aria-label = column name
         Group:     "board-1",           // same for every column
         Container: col.ID,              // unique per column
@@ -675,25 +699,23 @@ own runtime modules for client-side behavior.
 
 | Component | Runtime module | Behavior |
 |---|---|---|
-| Carousel | `carousel.js` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
-| Combobox | `combobox.js` | Debounced search RPC, listbox navigation, type-ahead |
+| Carousel | `headless-carousel` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
+| Combobox | `headless-combobox` | Debounced search RPC, listbox navigation, type-ahead |
 | Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
-| Conditional Field | `conditionalfield.js` | Show/hide form sections based on field values |
-| Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit |
-| File Dropzone | `dropzone.js` | Drag-and-drop file handling with previews |
-| Gallery + Lightbox | `lightbox.js` | Image zoom overlay, prev/next, keyboard |
-| Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
-| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
-| Multi-select | `multiselect.js` | Checkbox group with chip display |
+| Drag Sortable List | `headless-sortablelist` (framework/headless) | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit, per-move announcements through Strings |
+| File Dropzone | `filedropzone.js` (framework/ui) | Image thumbnail strip; the drop, the chosen-files list and the pick announcement are the headless module's `data-hui-drop` hooks |
+| Gallery + Lightbox | `framework/ui/lightbox.js` (registered behaviour) | Image zoom overlay, prev/next, keyboard |
+| Menu | `headless-menu` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
+| Multi-select | `headless-multiselect` (framework/headless) | Checkbox group with chip display; plain-form submit, disclosure via `headless-disclosure` |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |
-| Range Slider | `rangeslider.js` | Dual-thumb with cross-clamp |
-| Slider | `slider.js` | Live value mirror |
-| Tag Input | `taginput.js` | Free-form chips, Enter/comma to commit |
-| Tree | `tree.js` | WAI-ARIA tree pattern, roving tabindex, expand/collapse |
-| Network Retry Banner | `networkretrybanner.js` | Auto-show on RPC failure threshold, retry button |
-| Animated Counter | `animatedcounter.js` | IntersectionObserver-driven number tick animation |
-| Banner | `banner.js` | Dismissible with optional persistence |
+| Range Slider | `headless-controls` | Dual-thumb with cross-clamp, live output sentence |
+| Slider | `headless-controls` | Live value mirror |
+| Tag Input | `headless-collections` | Free-form chips, Enter/comma/blur to commit, removal announcements |
+| Tree | `headless-tree` (framework/headless) | WAI-ARIA tree pattern, roving tabindex, arrows/Home/End/type-ahead, expand/collapse through the toggle (lazy branches keep the kernel rpc wiring) |
+| Network Retry Banner | `headless-feedback` (offline SystemBanner) | Shows on the framework's lost-connection report, retry link probes health |
+| Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
+| Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |
 
 ---
 
@@ -779,10 +801,14 @@ interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),
 
 ### Pane triggers
 
-`OpenPaneOnClick` / `ClosePaneOnClick` drive a `PaneHost` side pane on click.
-Both validate the pane name (`"secondary"` / `"tertiary"`; `ClosePaneOnClick`
-also accepts `""` to close the topmost pane, emitting `data-fui-pane-close=""`).
-Attributes injected: `data-fui-pane-open` / `data-fui-pane-close`.
+`OpenPaneOnClick` / `ClosePaneOnClick` / `SwapPaneOnClick` drive a
+`PaneHost` side pane on click. All validate the pane name
+(`"secondary"` / `"tertiary"`; `ClosePaneOnClick` also accepts `""` to
+close the topmost pane, emitting `data-hui-pane-close=""`, matched by
+presence). Attributes injected: `data-hui-pane-open-control`
+(`OpenPaneOnClick`), `data-hui-pane-close` (`ClosePaneOnClick`),
+`data-hui-pane-swap` (`SwapPaneOnClick`); `PaneKey` adds
+`data-hui-pane-key` for deep-linked hosts.
 
 ### Signal display bindings
 

@@ -388,13 +388,29 @@ func TestBridgeReadsCSRFMetaAtDispatchTime(t *testing.T) {
 // RegisteredTool handle plus the input as a JSON string, and resolves
 // with the execute() return value JSON-stringified (Chromium 151
 // behavior, established empirically).
+// execToolExpr calls executeTool the way the browser at hand expects.
+// The origin-trial API changed its input shape between Chromium
+// releases: through 153 executeTool takes the input as a JSON string
+// and rejects an object with UnknownError "Failed to parse input
+// arguments"; from 156 it takes the object and rejects a string with
+// TypeError "invalid input object". The object is tried first, and
+// only the argument-parsing refusal falls back to the string, so a
+// genuine execution error is never retried or masked.
 func execToolExpr(name, inputLiteral string) string {
 	return fmt.Sprintf(`(async () => {
 		const mc = document.modelContext || navigator.modelContext;
 		const tools = await mc.getTools();
 		const tool = tools.find(t => t.name === %q);
 		if (!tool) return JSON.stringify({missing: true});
-		return mc.executeTool(tool, JSON.stringify(%s));
+		const input = %s;
+		try {
+			return await mc.executeTool(tool, input);
+		} catch (err) {
+			if (err && err.name === 'UnknownError' && /parse input/.test(String(err.message))) {
+				return mc.executeTool(tool, JSON.stringify(input));
+			}
+			throw err;
+		}
 	})()`, name, inputLiteral)
 }
 

@@ -165,10 +165,3 @@ func FontSlug(family string) string {
 	}
 	return b.String()
 }
-
-func orDefault(v, fallback string) string {
-	if v == "" {
-		return fallback
-	}
-	return v
-}

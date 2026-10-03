@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -185,6 +185,26 @@ type Screen struct {
 	// data-fui-screen-group marker so the runtime can preserve the
 	// matching layout shell during sibling-screen navigation.
 	group *ScreenGroup
+
+	// resolvers are this screen's own route resolvers, consulted
+	// before any group's for the same key. See resolver.go.
+	resolvers []resolverDecl
+
+	// ownStyle is the screen's owned style (WithStyle); nil for none.
+	// wrapArticle stamps its name on the screen's wrapper.
+	ownStyle *ownstyle.Sheet
+
+	// fills are this screen's outlet-fill declarations, keyed by
+	// (layout, outlet). Resolved by resolveFills on every render; see
+	// fill.go..
+	fills map[*Outlet]fillDecl
+
+	// Loading declares what the SWAP SLOT shows while a navigation to
+	// this screen is in flight (, rendered
+	// once into the route manifest the client already carries, shown in
+	// the swap slot only. The screen's own declaration wins over any
+	// group's.
+	Loading *Loading
 }
 
 // NewScreen creates a page screen.
@@ -217,6 +237,14 @@ func (s *Screen) WithTitle(title string) *Screen {
 // WithDescription sets the screen's description.
 func (s *Screen) WithDescription(desc string) *Screen {
 	s.Description = desc
+	return s
+}
+
+// WithLoading declares what the swap slot shows while a navigation to
+// this screen is in flight (, . Overrides any
+// group-level WithLoading for this screen.
+func (s *Screen) WithLoading(ld *Loading) *Screen {
+	s.Loading = ld
 	return s
 }
 
@@ -305,13 +333,7 @@ func (s *Screen) newInstance() component.Component {
 	if s.Component == nil {
 		return nil
 	}
-	v := reflect.ValueOf(s.Component)
-	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
-		return s.Component
-	}
-	fresh := reflect.New(v.Elem().Type())
-	fresh.Elem().Set(v.Elem())
-	return fresh.Interface().(component.Component)
+	return newComponentInstance(s.Component)
 }
 
 // Render renders the screen's component with appropriate ARIA landmarks.

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
 // Component is the base interface for all UI components.
@@ -167,16 +169,20 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("component render panic: %v", r)
+			renderdiag.Report(ctx, "component", c, r)
 			if eb, ok := c.(ErrorBoundary); ok {
 				html = eb.RenderError(err)
 			} else {
 				// Build the fallback through the auto-escaper so an
-				// attacker-influenced panic message can't inject markup.
+				// attacker-influenced panic message can't inject markup, and
+				// scrub it the same way a log line is scrubbed: the panic
+				// value can carry request bytes, and this box is served to
+				// the client.
 				html = render.Tag(
 					"div",
 					map[string]string{"class": "fui-render-error", "role": "alert"},
 					render.Tag("strong", nil, render.Text("Error:")),
-					render.Text(" "+err.Error()),
+					render.Text(" "+textsafe.Recovered(r)),
 				)
 			}
 		}

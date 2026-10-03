@@ -1,20 +1,24 @@
 package ui
 
 import (
-	"fmt"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── ConditionalField ───────────────────────────────────────────────
 //
-// Shows/hides content based on another form field's value. SSR-safe:
-// the element renders hidden by default with data-when-name and
-// data-when-value attributes. The runtime JS module
-// (conditionalfield.js) listens for change/input events on the
-// parent form and toggles the hidden attribute + aria-hidden.
+// A region shown or hidden by another field's value, rendered through
+// headless.ConditionalField. The region renders VISIBLE and the
+// headless behaviour module hides it when the watched field does not
+// match: a field only a script can reveal is a field a reader without
+// script never reaches, so the no-script page shows every dependent
+// field and script takes them away, never the other way round. The
+// module also disables the controls inside a hidden region (telling
+// them apart from controls the page disabled itself) so nothing
+// hidden submits.
 
 // ConditionalFieldConfig configures a field conditionally shown based
 // on another field's value.
@@ -32,20 +36,19 @@ type ConditionalFieldConfig struct {
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root element. Keys
-	// the component owns are dropped: class (use Class), id,
-	// data-fui-*, data-when-name / data-when-value (use WhenName /
-	// WhenValue), hidden, and aria-hidden (the runtime toggles
-	// visibility).
+	// analytics markers, ARIA overrides) to the region's root
+	// element. Keys the component owns are dropped: class (use
+	// Class), id, data-fui-*, data-hui-* (the region's hooks are the
+	// runtime's contract, not a caller's to forge), hidden and
+	// aria-hidden (the module owns the region's visibility).
 	ExtraAttrs html.Attrs
 }
 
-// ConditionalField renders a container that is hidden by default and
-// shown via runtime JS when the watched field matches WhenValue.
-//
-// The component renders with `hidden` and `aria-hidden="true"` so it
-// starts invisible. The runtime module listens for change/input events
-// on the ancestor form and toggles visibility.
+// ConditionalField renders a container that is visible on first paint
+// and hidden by the headless runtime module until the watched field
+// matches WhenValue. The watched field is resolved the way the form
+// would submit it: the checked radio's value, a checkbox's value when
+// checked, any other control's value.
 func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	if cfg.WhenName == "" {
 		panic("ui: ConditionalField requires WhenName")
@@ -53,92 +56,31 @@ func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	if cfg.WhenValue == "" {
 		panic("ui: ConditionalField requires WhenValue")
 	}
-
-	cls := "ui-conditional-field"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"data-when-name", "data-when-value", "hidden", "aria-hidden")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["data-fui-comp"] = "ui-conditional-field"
-	attrs["class"] = cls
-	attrs["data-when-name"] = cfg.WhenName
-	attrs["data-when-value"] = cfg.WhenValue
-	attrs["hidden"] = ""
-	attrs["aria-hidden"] = "true"
-
-	return conditionalFieldStyle.WrapHTML(
-		render.Tag("div", attrs, cfg.Children...))
+	return conditionalFieldStyle.WrapHTML(headless.ConditionalField(
+		headless.ConditionalFieldProps{
+			When:  cfg.WhenName,
+			Value: cfg.WhenValue,
+			// hidden and aria-hidden are owned by the runtime module,
+			// which sets and clears them as the watched field changes;
+			// a caller-set value would fight it.
+			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "hidden", "aria-hidden"),
+		},
+		withRootClass(whenClasses, cfg.Class),
+		cfg.Children...))
 }
 
-// EvaluateInitialState returns true if the component should be visible
-// based on the provided current value of the watched field. This is a
-// helper for server-side rendering when the form already has a value
-// that should pre-show the conditional content.
-func (cfg ConditionalFieldConfig) EvaluateInitialState(currentValue string) bool {
-	return currentValue == cfg.WhenValue
-}
-
-// ConditionalFieldVisible renders a ConditionalField that is initially
-// visible (no hidden attribute). Use this when the server knows the
-// watched field already matches (e.g. re-rendering after a POST with
-// validation errors where the trigger field was already selected).
-func ConditionalFieldVisible(cfg ConditionalFieldConfig) render.HTML {
-	if cfg.WhenName == "" {
-		panic("ui: ConditionalFieldVisible requires WhenName")
-	}
-	if cfg.WhenValue == "" {
-		panic("ui: ConditionalFieldVisible requires WhenValue")
-	}
-
-	cls := "ui-conditional-field"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"data-when-name", "data-when-value", "hidden", "aria-hidden")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["data-fui-comp"] = "ui-conditional-field"
-	attrs["class"] = cls
-	attrs["data-when-name"] = cfg.WhenName
-	attrs["data-when-value"] = cfg.WhenValue
-
-	return conditionalFieldStyle.WrapHTML(
-		render.Tag("div", attrs, cfg.Children...))
-}
-
-// conditionalFieldStyle is registered in styles_components.go
+var conditionalFieldStyle = registry.RegisterStyle("ui-conditional-field", conditionalFieldCSS)
 
 func conditionalFieldCSS(_ style.Theme) string {
-	return fmt.Sprintf(`[data-fui-comp="ui-conditional-field"] {
+	return `.fui-when {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-/* The hidden attribute on the element handles display:none.
-   When the runtime JS removes [hidden], the grid layout takes over.
-   This rule ensures the transition is clean. */
-[data-fui-comp="ui-conditional-field"][hidden] {
+/* The platform's hidden attribute already means display:none; this
+   restates it on the class so a sheet that re-displayed the region
+   for layout could not un-hide what the module hid — the hiding is
+   the strongest fact on the element. */
+.fui-when[hidden] {
   display: none;
-}
-/* Smooth reveal when becoming visible (no transition for hiding
-   since display:none can't be transitioned). */
-[data-fui-comp="ui-conditional-field"]:not([hidden]) {
-  animation: ui-conditional-field-reveal 150ms ease-out;
-}
-@keyframes ui-conditional-field-reveal {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-conditional-field"]:not([hidden]) {
-    animation: none;
-  }
-}`)
+}`
 }

@@ -16,6 +16,38 @@ import (
 // runtime opened it after hydration", which is the whole difference,
 // the second is a flash of closed pane on every shared link. So this
 // half runs over plain HTTP with no JavaScript at all.
+// paneHostOpenClass reports whether the workspace's pane host root
+// carries the open modifier as a WHOLE class token, so a doubled
+// prefix (ffui-pane-host--…) cannot satisfy the check by substring.
+func paneHostOpenClass(html string) bool {
+	i := strings.Index(html, `data-hui-panehost`)
+	if i < 0 {
+		return false
+	}
+	// The whole opening tag: attributes render in sorted order, so the
+	// class attribute may sit BEFORE the marker.
+	start := strings.LastIndex(html[:i], "<")
+	end := strings.Index(html[i:], ">")
+	if start < 0 || end < 0 {
+		return false
+	}
+	tag := html[start : i+end]
+	k := strings.Index(tag, `class="`)
+	if k < 0 {
+		return false
+	}
+	val := tag[k+len(`class="`):]
+	if j := strings.Index(val, `"`); j >= 0 {
+		val = val[:j]
+	}
+	for _, tok := range strings.Fields(val) {
+		if tok == "fui-pane-host--secondary-open" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
 	base := siteE2EServer(t)
 
@@ -35,7 +67,7 @@ func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
 
 	t.Run("open and filled", func(t *testing.T) {
 		html := get(t, "/examples/workspace?pane=secondary:4021")
-		if !strings.Contains(html, "ui-pane-host--secondary-open") {
+		if !paneHostOpenClass(html) {
 			t.Error("deep-linked pane did not render open")
 		}
 		// Content, not just the column: the ticket body has to be in the
@@ -43,14 +75,14 @@ func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
 		if !strings.Contains(html, "SSO login") {
 			t.Error("deep-linked pane rendered open but empty")
 		}
-		if !strings.Contains(html, `data-fui-pane-deeplink="pane"`) {
+		if !strings.Contains(html, `data-hui-pane-deeplink="pane"`) {
 			t.Error("host is missing the deep-link marker the runtime keys off")
 		}
 	})
 
 	t.Run("no param renders closed", func(t *testing.T) {
 		html := get(t, "/examples/workspace")
-		if strings.Contains(html, "ui-pane-host--secondary-open") {
+		if paneHostOpenClass(html) {
 			t.Error("pane rendered open without a deep link")
 		}
 		if !strings.Contains(html, "Select a ticket") {
@@ -62,7 +94,7 @@ func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
 	// error and never echo the key back into the document.
 	t.Run("unknown ticket degrades", func(t *testing.T) {
 		html := get(t, "/examples/workspace?pane=secondary:not-a-ticket")
-		if strings.Contains(html, "ui-pane-host--secondary-open") {
+		if paneHostOpenClass(html) {
 			t.Error("unknown key should not open the pane")
 		}
 		if strings.Contains(html, "not-a-ticket") {
@@ -72,7 +104,7 @@ func TestWorkspaceDeepLinkRendersServerSide(t *testing.T) {
 
 	t.Run("bogus slot degrades", func(t *testing.T) {
 		html := get(t, "/examples/workspace?pane=primary:4021")
-		if strings.Contains(html, "ui-pane-host--secondary-open") {
+		if paneHostOpenClass(html) {
 			t.Error("primary is not an openable pane and must not deep-link")
 		}
 	})
@@ -89,9 +121,9 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 	base := siteE2EServer(t)
 	ctx := siteBrowserCtx(t)
 
-	const row = `document.querySelector('button[data-fui-pane-key="4021"]')`
+	const row = `document.querySelector('button[data-hui-pane-key="4021"]')`
 	const paneParam = `new URL(location.href).searchParams.get('pane')`
-	const secOpen = `document.querySelector('[data-fui-pane="secondary"]').hasAttribute('hidden') === false`
+	const secOpen = `document.querySelector('[data-hui-pane="secondary"]').hasAttribute('hidden') === false`
 
 	var afterOpen, afterBack, afterFwd string
 	var openState, backState, fwdState bool
@@ -99,7 +131,7 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/workspace"),
-		chromedp.WaitVisible(`button[data-fui-pane-key="4021"]`),
+		chromedp.WaitVisible(`button[data-hui-pane-key="4021"]`),
 
 		// Open: pane shows and the URL records which one.
 		chromedp.Evaluate(row+`.click()`, nil),
@@ -109,7 +141,7 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 
 		// The customer pane carries no key, so it must not disturb the
 		// ticket's deep link.
-		chromedp.Evaluate(`document.querySelector('[data-fui-pane-open="tertiary"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-hui-pane-open-control="tertiary"]').click()`, nil),
 		chromedp.Sleep(time.Second),
 		chromedp.Evaluate(paneParam, &paramAfterTertiary),
 

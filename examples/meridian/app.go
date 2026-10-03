@@ -20,8 +20,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/examples/meridian/sitefooter"
+	"github.com/DonaldMurillo/gofastr/examples/meridian/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -79,35 +82,43 @@ func guestPolicy(appHome string) app.Policy {
 	})
 }
 
-// marketingHeader / Footer wrap the public marketing layout.
+// marketingHeader / Footer wrap the public marketing layout. Both are
+// Meridian's own packages (siteheader, sitefooter): their Go, their
+// owned style sheets, every dimension a theme token — not framework
+// components. The header is the banner landmark itself and a direct
+// child of the page-tall stack, so it stays pinned for the page.
 func marketingHeader(ctx context.Context) render.HTML {
-	nav := []ui.SiteHeaderLink{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
+	links := []siteheader.Link{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
 	var actions, persistent render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		nav = append(nav, ui.SiteHeaderLink{Label: "Dashboard", Href: "/app"})
+		links = append(links, siteheader.Link{Label: "Dashboard", Href: "/app"})
 		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	} else {
-		// Sign in is the journey-critical CTA: it stays in the bar on
-		// phones instead of collapsing into the drawer.
+		// Sign in is the journey-critical CTA: it rides the header's
+		// persistent slot, so it stays in the bar on phones instead of
+		// folding into the menu.
 		persistent = ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
 		actions = ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})
 	}
-	return ui.SiteHeader(ui.SiteHeaderConfig{
-		Brand:             ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
-		NavItems:          nav,
-		Drawer:            ui.SiteHeaderDrawerSheet,
-		Actions:           actions,
-		PersistentActions: persistent,
+	return siteheader.Render(siteheader.Config{
+		Ctx:        ctx,
+		Name:       appName,
+		Links:      links,
+		Persistent: persistent,
+		Actions:    actions,
 	})
 }
 
+// marketingFooter is the site's colophon: the wordmark over the
+// Product/Company/Legal columns, on the page measure the header and
+// main share.
 func marketingFooter() render.HTML {
-	return ui.SiteFooter(ui.SiteFooterConfig{
-		Lead: ui.Link(ui.LinkConfig{Href: "/", Text: appName}),
-		Columns: []ui.SiteFooterColumn{
-			{Title: "Product", Links: []ui.SiteFooterLink{{Label: "Pricing", Href: "/pricing"}}},
-			{Title: "Company", Links: []ui.SiteFooterLink{{Label: "About", Href: "/about"}}},
-			{Title: "Legal", Links: []ui.SiteFooterLink{{Label: "Terms", Href: "/terms"}, {Label: "Privacy", Href: "/privacy"}}},
+	return sitefooter.Render(sitefooter.Config{
+		Name: appName,
+		Columns: []sitefooter.Column{
+			{Title: "Product", Links: []sitefooter.Link{{Label: "Pricing", Href: "/pricing"}}},
+			{Title: "Company", Links: []sitefooter.Link{{Label: "About", Href: "/about"}}},
+			{Title: "Legal", Links: []sitefooter.Link{{Label: "Terms", Href: "/terms"}, {Label: "Privacy", Href: "/privacy"}}},
 		},
 	})
 }
@@ -154,6 +165,7 @@ func appTheme() style.Theme {
 		"border":        "#322E3D",
 		"border-strong": "#494457",
 		"danger":        "#F87171",
+		"danger-fg":     "#15141B", // 6.61:1 on the dark danger fill; without it the light white ink carries into dark mode (2.77:1)
 		"info":          "#60A5FA",
 		"primary":       "#8B80F2",
 		"primary-fg":    "#15141B",
@@ -182,6 +194,7 @@ func inkTheme() style.Theme {
 		&t.Colors.Border:       "#322E3D",
 		&t.Colors.BorderStrong: "#494457",
 		&t.Colors.Danger:       "#F87171",
+		&t.Colors.DangerFg:     "#15141B",
 		&t.Colors.Info:         "#60A5FA",
 		&t.Colors.Primary:      "#8B80F2",
 		&t.Colors.PrimaryFg:    "#15141B",
@@ -228,9 +241,11 @@ func quickAddCustomerModal() widget.Definition {
 	heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text("New customer"))
 	form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: "Add customer", ExtraAttrs: interactive.Post("/api/customers").
 		OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
-		ui.FormField(ui.FormFieldConfig{Label: "Name", For: "qa-name", Required: true, Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "qa-name", ExtraAttrs: html.Attrs{"required": "required"}})}),
-		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "qa-email", ExtraAttrs: html.Attrs{"required": "required"}})}),
-		ui.FormField(ui.FormFieldConfig{Label: "Company", For: "qa-company", Input: html.Input(html.InputConfig{Type: "text", Name: "company", ID: "qa-company"})}),
+		ui.TextField(ui.TextFieldConfig{Name: "name", Label: "Name", ID: "qa-name", Required: true}),
+		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		}}),
+		ui.TextField(ui.TextFieldConfig{Name: "company", Label: "Company", ID: "qa-company"}),
 	)
 	return preset.Modal("customer-quick-add").
 		Hidden().
@@ -282,7 +297,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("Meridian")
 	}
-	site.WithTheme(appTheme())
+	site.WithTheme(appTheme().Extend(siteheader.Tokens))
 	// MountSidebar only reads Items (drawer + active-route wiring), so it
 	// takes a session-free config; the layout slot gets the ctx-aware one.
 	sbCfg := sidebarConfig(context.Background())
@@ -293,13 +308,21 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		html, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))
 		return html
 	})
-	appLayout = app.NewLayout("app").WithSidebar(sb)
+	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		nav, _ := component.SafeRenderCtx(ctx, sb)
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+	})
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
-	marketingLayout = app.NewLayout("marketing").
-		WithContainer().
-		WithHeader(app.NewContextComponent(marketingHeader)).
-		WithFooter(app.NewStaticComponent(marketingFooter()))
+	marketingLayout = app.NewLayout("marketing", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		header, _ := component.SafeRenderCtx(ctx, app.NewContextComponent(marketingHeader))
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			header,
+			ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),
+			marketingFooter(),
+		)
+	})
 	// mountGenerated populates appResources (per-entity crud files) and mounts
 	// every screen. It runs early so hand-written endpoints below that capture
 	// a resource config (e.g. the customers island at /api/tables/customers)

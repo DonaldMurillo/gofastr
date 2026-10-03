@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ---------------------------------------------------------------------------
@@ -95,17 +96,21 @@ func TestModal_ActionURLXSS(t *testing.T) {
 		confirmLabel: "OK",
 		cancelLabel:  "Cancel",
 	}
-	h := string(slot.Render())
-	// The RPC path goes into data-fui-rpc="..." which is attr-escaped.
-	// It should not appear as href="javascript:".
-	if strings.Contains(h, `href="javascript:`) {
-		t.Errorf("SECURITY: [modal-action-url-xss] javascript: URI leaked into href")
-	} else {
-		t.Logf("NOTE: [modal-action-url-xss] javascript: URI in data-fui-rpc, not href")
-	}
-	if !strings.Contains(h, "javascript:") {
-		t.Errorf("SECURITY: [modal-action-url-xss] expected RPC path value in output, got: %s", h)
-	}
+	// The RPC path is an endpoint, and an endpoint is refused at
+	// render unless it is same-origin and starts with / — the same
+	// rule headless's Action seam enforces. A javascript: URI never
+	// reaches data-fui-rpc (or href) at all; escaping it would still
+	// ship a control whose click posts to a scheme the runtime would
+	// never answer.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("SECURITY: [modal-action-url-xss] a javascript: RPC path must be refused at render, not rendered")
+		} else if msg, ok := r.(string); !ok || !strings.Contains(msg, "same-origin") {
+			t.Errorf("SECURITY: [modal-action-url-xss] the refusal must name the same-origin rule: %v", r)
+		}
+	}()
+	_ = slot.Render()
 }
 
 // TestModal_ClassInjection verifies that body text containing quote and
@@ -157,10 +162,10 @@ func TestModal_IDInjection(t *testing.T) {
 // drawer body) containing <script> tags is escaped via render.Escape().
 func TestDrawer_TitleXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Title: `<script>alert("xss")</script>`,
 		Items: []SidebarItem{{Label: "Home", Href: "/"}},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	mustNotContainRaw(t, h, "<script>", "drawer-title-xss")
 	if !strings.Contains(h, "&lt;script&gt;") {
 		t.Errorf("SECURITY: [drawer-title-xss] expected &lt;script&gt;, got: %s", h)
@@ -171,11 +176,11 @@ func TestDrawer_TitleXSS(t *testing.T) {
 // script tags are escaped. The key protection is < → &lt;.
 func TestDrawer_BodyXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `<img src=x onerror="alert(1)">`, Href: "/safe"},
 		},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	// < is escaped → no <img> element can be parsed
 	mustNotContainRaw(t, h, "<img", "drawer-body-xss")
 	if !strings.Contains(h, "&lt;img") {
@@ -204,15 +209,15 @@ func TestDrawer_PositionInjection(t *testing.T) {
 // class-injection payloads are rendered safely in text node context.
 func TestDrawer_ClassInjection(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `" onclick="alert(1)" data-x="`, Href: "/safe"},
 		},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	// The label is text-escaped via render.Escape (5-char: <>&"').
 	// " and ' become &quot;/&#39; in the text node, inert there, and
-	// the payload cannot leave the <span class="ui-sidebar__label">.
-	if !strings.Contains(h, `ui-sidebar__label`) {
+	// the payload cannot leave the <span class="fui-sidebar__label">.
+	if !classTokenPresent(h, "fui-sidebar__label") {
 		t.Errorf("SECURITY: [drawer-class-injection] expected label span, got: %s", h)
 	}
 	t.Logf("NOTE: [drawer-class-injection] label is in text node of <span> (safe; \\\" not special in text)")
@@ -367,7 +372,7 @@ func TestCommandPalette_ItemsXSS(t *testing.T) {
 	// TriggerLabel which is rendered in the trigger button.
 	trigger := render.Tag("button", map[string]string{
 		"type":       "button",
-		"class":      "ui-visually-hidden",
+		"class":      "fui-visually-hidden",
 		"aria-label": `<script>alert("xss")</script>`,
 	}, render.Text(`<script>alert("xss")</script>`))
 	h := string(trigger)
@@ -443,14 +448,22 @@ func TestNotification_MessageXSS(t *testing.T) {
 // passes through. This is a FINDING: hosts must validate DismissHref.
 func TestNotification_ActionLinkXSS(t *testing.T) {
 	t.Parallel()
+	// The toast primitive REFUSES a javascript: href at render (the
+	// finding this test documented is closed by the move): the render
+	// panics before any markup exists, so nothing unsanitized can
+	// reach the page either way.
+	defer func() {
+		if recover() == nil {
+			t.Errorf("a javascript: DismissHref should be refused at render, not rendered")
+		}
+	}()
 	h := string(Notification(NotificationConfig{
 		Title:       "Dismiss me",
 		DismissHref: `javascript:alert(1)`,
+		Island:      headless.Island{Endpoint: "/island/n", Signal: "n"},
 	}))
 	if strings.Contains(h, `javascript:`) {
 		t.Errorf("SECURITY: [notification-action-link-xss] javascript: URI in DismissHref not sanitized by render.Attr")
-	} else {
-		t.Logf("NOTE: [notification-action-link-xss] dismiss href is attr-escaped")
 	}
 }
 
@@ -519,6 +532,7 @@ func TestNotificationBell_ClassInjection(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name:  "bell",
 		Label: "Notifications",
+		Href:  "/notifications",
 		Class: `" onclick="alert(1)`,
 	})
 	h := string(trigger)
@@ -533,7 +547,7 @@ func TestNotification_VariantHandling(t *testing.T) {
 	variants := []StatusVariant{StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral}
 	for _, v := range variants {
 		h := string(Notification(NotificationConfig{Title: "Test", Variant: v}))
-		expected := "ui-notification--" + string(v)
+		expected := "fui-notification--" + string(v)
 		if !strings.Contains(h, expected) {
 			t.Errorf("SECURITY: [notification-variant-handling] missing class %q for variant %q", expected, v)
 		}

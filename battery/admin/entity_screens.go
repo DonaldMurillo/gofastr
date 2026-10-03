@@ -25,13 +25,12 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -137,6 +136,24 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 			HeadingLevel: 2,
 		})
 	}
+	// Clamp the requested page into the real run: ?p=999 on a two-page
+	// list is a URL anyone can type, and the typed pager refuses a page
+	// outside 1..Pages. The total only arrives with the rows, so an
+	// out-of-range page is re-fetched at the last page — the reader sees
+	// the last page's rows under a pager saying the last page, never a
+	// 500 and never page 999's empty rows. No rows means one page.
+	if totalPages := int(math.Ceil(float64(total) / float64(limit))); page > totalPages {
+		page = max(totalPages, 1)
+		crudQ.Set("page", strconv.Itoa(page))
+		rows, _, err = b.listRows(ctx, ent, crudQ.Encode())
+		if err != nil {
+			return ui.EmptyState(ui.EmptyStateConfig{
+				Title:        "Could not load " + ent.GetName(),
+				Description:  "Check the server logs for details.",
+				HeadingLevel: 2,
+			})
+		}
+	}
 
 	ftypes := fieldTypeMap(ent)
 	relLabels := b.relationLabelMaps(ctx, ent)
@@ -176,7 +193,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	}
 
 	// Sort links carry the active search so sorting doesn't drop the filter;
-	// clicking a header resets to page 1 (no p in the sort pattern).
+	// clicking a header resets to page 1 (no p in the sort query).
 	carrySearch := url.Values{}
 	if search != "" {
 		carrySearch.Set("q", search)
@@ -185,17 +202,18 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	// SPA-navigates and re-renders the whole screen, keeping the toolbar Sort
 	// summary, the active-search chip, and the table all in one consistent
 	// state. (Delete still island-swaps via the signal wrapper around this
-	// table, so removing a row doesn't reload the page.)
+	// table, so removing a row doesn't reload the page.) The typed Table
+	// props own sort and dir; the anchors the primitive renders navigate.
 	cfg := ui.DataTableConfig{
 		Columns: columns,
 		Rows:    uiRows,
 		// No visible caption: the page header already names the collection, and
 		// a repeated "PRODUCTS" band just adds noise. Column headers + the H1
 		// provide the table's accessible context.
-		Responsive:      ui.ResponsiveCards,
-		SortBy:          sortCol,
-		SortDir:         ui.SortDir(sortDir),
-		SortHrefPattern: patternWith(carrySearch, "sort=%s&dir=%s"),
+		Responsive: ui.ResponsiveCards,
+		SortBy:     sortCol,
+		SortDir:    ui.SortDir(sortDir),
+		Query:      carrySearch,
 		Empty: ui.EmptyStateConfig{
 			Title:        "Nothing here yet",
 			Description:  "Create the first " + singular(ent.GetName()) + " with the New button.",
@@ -204,6 +222,9 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	}
 	if totalPages := int(math.Ceil(float64(total) / float64(limit))); totalPages > 1 {
 		// Pagination links carry search + sort so paging preserves both.
+		// The typed pager builds every href through net/url with p
+		// replaced in the carry, so the encoded values that broke the
+		// old "%d" pattern's fmt-safety story cannot be expressed here.
 		carry := url.Values{}
 		if search != "" {
 			carry.Set("q", search)
@@ -212,10 +233,10 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 			carry.Set("sort", sortCol)
 			carry.Set("dir", sortDir)
 		}
-		cfg.Pagination = &pagination.Config{
-			Total:       totalPages,
-			Current:     page,
-			HrefPattern: patternWith(carry, "p=%d"),
+		cfg.Pagination = &ui.PaginationConfig{
+			Pages: totalPages,
+			Page:  page,
+			Query: carry,
 		}
 	}
 	table := ui.DataTable(cfg)
@@ -323,7 +344,7 @@ func (b *Battery) sortControl(ent *entity.Entity, q url.Values) render.HTML {
 		opts = append(opts, render.Tag("a", attrs, render.Text(label)))
 	}
 
-	return render.Tag("details", map[string]string{"class": "admin-sort", "data-fui-disclosure": ""},
+	return render.Tag("details", map[string]string{"class": "admin-sort", "data-hui-disclosure": ""},
 		render.Tag("summary", map[string]string{"class": "admin-sort__summary"}, render.Text(summary)),
 		render.Tag("div", map[string]string{"class": "admin-sort__menu"}, opts...),
 	)
@@ -335,22 +356,6 @@ func SortDirOf(v string) string {
 		return "desc"
 	}
 	return "asc"
-}
-
-// patternWith builds a query-string pattern that preserves the carry params
-// and appends tail (which holds the %s/%d markers DataTable and pagination
-// fill in). Encoding does not make the result fmt-safe -- it is the reason
-// it is not: Encode emits %XX, and fmt would read those escapes as verbs.
-// The pattern is safe because both consumers substitute their markers with
-// strings.Replace and never fmt (see [ui.DataTableConfig.SortHrefPattern]
-// and [pagination.Config.HrefPattern]). A consumer that reaches for
-// Sprintf reintroduces the bug this comment used to invite.
-func patternWith(carry url.Values, tail string) string {
-	enc := carry.Encode()
-	if enc == "" {
-		return "?" + tail
-	}
-	return "?" + enc + "&" + tail
 }
 
 func containsStr(ss []string, want string) bool {
@@ -783,22 +788,36 @@ func (s *entityFormScreen) RenderCtx(ctx context.Context) render.HTML {
 		action = base + "/_update/" + url.PathEscape(s.id)
 		title = "Edit " + singular(s.ent.GetName())
 	}
-
 	errs := ui.FieldErrors(s.fieldErrs)
-	fields := make([]render.HTML, 0, len(editableFields(s.ent)))
-	for _, f := range editableFields(s.ent) {
+	// The summary's field mapping, built beside the fields it maps:
+	// this form's controls carry f_<name> ids, so a summary link must
+	// target those — a link to #<name> would miss. Labels come from
+	// the same pretty rendering the fields use; the order is the
+	// fields' own.
+	editable := editableFields(s.ent)
+	fields := make([]render.HTML, 0, len(editable))
+	fieldIDs := make(map[string]string, len(editable))
+	fieldLabels := make(map[string]string, len(editable))
+	fieldOrder := make([]string, 0, len(editable))
+	for _, f := range editable {
 		fields = append(fields, s.field(f, errs))
+		fieldIDs[f.Name] = "f_" + f.Name
+		fieldLabels[f.Name] = prettyLabel(f.Name)
+		fieldOrder = append(fieldOrder, f.Name)
 	}
 
 	form := ui.Form(ui.FormConfig{
 		Action:      action,
 		Method:      "POST",
+		ID:          "admin-entity-form",
 		Ctx:         ctx, // auto-stamps the hidden _csrf input
 		Errors:      errs,
+		FieldIDs:    fieldIDs,
+		FieldLabels: fieldLabels,
+		FieldOrder:  fieldOrder,
 		Summary:     s.general,
 		SubmitLabel: "Save",
 	}, fields...)
-
 	return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
 		ui.PageHeader(ui.PageHeaderConfig{
 			Title:   title,
@@ -886,10 +905,15 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 		return ui.FormFieldFor(errs, f.Name, ui.FormFieldConfig{
 			Label: prettyLabel(f.Name), For: id, Required: f.Required && !masked,
 			Help: s.maskedPlaceholder(f.Name),
-			Input: html.Input(html.InputConfig{
-				Type: inputType(f.Type), Name: f.Name, ID: id, Value: val,
-				Placeholder: s.maskedPlaceholder(f.Name),
-			}),
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{
+					Field:       c,
+					Type:        inputType(f.Type),
+					Name:        f.Name,
+					Value:       val,
+					Placeholder: s.maskedPlaceholder(f.Name),
+				})
+			},
 		})
 	}
 }

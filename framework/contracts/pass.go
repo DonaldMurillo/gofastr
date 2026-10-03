@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"golang.org/x/mod/modfile"
 )
 
 // skipDirs are trees no analyzer ever wants: dependency caches, VCS
@@ -383,13 +385,11 @@ func ReadModulePath(root string) string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
-		}
-	}
-	return ""
+	// modfile.ModulePath, not a hand-rolled line scan: a module path may
+	// be quoted (`module "example.com/q"`) and the line may trail a
+	// comment; the path is joined into import paths, so a stray quote or
+	// comment must not ride into every one of them.
+	return modfile.ModulePath(body)
 }
 
 // ImportPathFor maps a directory to its Go import path given the module's

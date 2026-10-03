@@ -1,0 +1,111 @@
+/* GoFastr's colophon: the brand line and the link columns over a quiet
+   mono strip. The grid sits at the site's wide cap (--size-wide-width,
+   with --spacing-2xl inside it), the measure the header's padding and
+   the page sections align to, so the three line up at every width. */
+:scope {
+  border-block-start: 1px solid var(--color-border);
+  padding-block-end: var(--spacing-2xl);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
+  gap: var(--spacing-section);
+  max-inline-size: var(--size-wide-width);
+  margin-inline: auto;
+  padding-block-start: var(--spacing-section);
+  padding-inline: var(--spacing-2xl);
+}
+
+/* The lead: mark, name and version on one baseline, tagline below. */
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-block-end: var(--spacing-md);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+.brand-mark {
+  display: inline-block;
+  inline-size: 9px;
+  block-size: 9px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transform: translateY(1px);
+}
+.brand-ver {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--color-text-subtle);
+  font-weight: var(--font-weight-normal);
+}
+.copy {
+  font-size: var(--text-ui);
+  color: var(--color-text-subtle);
+  line-height: 1.6;
+  max-inline-size: 30ch;
+}
+
+/* Columns: a small-caps title over a quiet link list. The anchors keep
+   the design system's 24px AA floor for dense clusters. */
+.title {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.links {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+.links li { padding-block: 3px; }
+.links a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
+  color: var(--color-text-subtle);
+  font-size: var(--text-ui);
+  text-decoration: none;
+}
+.links a:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The quiet bottom strip: mono, space-between, same measure as the
+   grid. */
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  margin: var(--spacing-section) auto 0;
+  padding-block-start: var(--spacing-lg);
+  padding-inline: var(--spacing-2xl);
+  border-block-start: 1px solid var(--color-border);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  max-inline-size: var(--size-wide-width);
+}
+
+/* Tablet: the five columns share two. */
+@media (--below-lg) {
+  .grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Phones: one column, thumb-sized link targets, stacked strip. */
+@media (--below-sm) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-xl);
+  }
+  .bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+  }
+  .links a { min-block-size: var(--spacing-touch-target); }
+}

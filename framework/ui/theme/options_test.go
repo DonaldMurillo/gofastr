@@ -1,0 +1,232 @@
+package theme
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"reflect"
+	"testing"
+)
+
+// The typed component options: merging semantics (zero = unspecified,
+// explicit = reset), completeness of Default, and the round trip
+// through the flattened map style.Theme.Components carries.
+
+func TestDefaultCarriesCompleteOptions(t *testing.T) {
+	th := Default()
+	want := map[string]string{
+		"density":          "comfortable",
+		"button.treatment": "filled",
+		"button.radius":    "round",
+		"field.layout":     "stacked",
+		"field.radius":     "round",
+	}
+	if !reflect.DeepEqual(th.Components, want) {
+		t.Fatalf("Default() Components = %#v, want %#v", th.Components, want)
+	}
+}
+
+func TestComponentOptionsOverrideAndReset(t *testing.T) {
+	dense := Default(Overrides{Components: ComponentOptions{Density: Compact}})
+	if dense.Components["density"] != "compact" {
+		t.Fatalf("compact override lost: %#v", dense.Components)
+	}
+	// A later explicit Comfortable RESETS the earlier override — zero
+	// means unspecified, not "keep the previous override".
+	reset := Default(
+		Overrides{Components: ComponentOptions{Density: Compact, Button: ButtonOptions{Treatment: Outline, Radius: Pill}}},
+		Overrides{Components: ComponentOptions{Density: Comfortable}},
+	)
+	if reset.Components["density"] != "comfortable" {
+		t.Errorf("explicit Comfortable did not reset Compact: %#v", reset.Components)
+	}
+	// Options the second override left unset keep the first override's
+	// values; the result stays complete.
+	if reset.Components["button.treatment"] != "outline" || reset.Components["button.radius"] != "pill" {
+		t.Errorf("unset options dropped the earlier override: %#v", reset.Components)
+	}
+	for _, k := range []string{"density", "button.treatment", "button.radius"} {
+		if _, ok := reset.Components[k]; !ok {
+			t.Errorf("merged Components missing %q: completeness is what makes scopes nest", k)
+		}
+	}
+}
+
+func TestComponentOptionsStringParseRoundTrip(t *testing.T) {
+	for _, d := range []Density{Comfortable, Compact} {
+		back, err := ParseDensity(d.String())
+		if err != nil || back != d {
+			t.Errorf("Density round trip failed: %v → %q → %v (%v)", d, d.String(), back, err)
+		}
+	}
+	for _, tr := range []ButtonTreatment{Filled, Outline, Soft} {
+		back, err := ParseButtonTreatment(tr.String())
+		if err != nil || back != tr {
+			t.Errorf("Treatment round trip failed: %v → %q → %v (%v)", tr, tr.String(), back, err)
+		}
+	}
+	for _, r := range []ButtonRadius{Round, Square, Pill} {
+		back, err := ParseButtonRadius(r.String())
+		if err != nil || back != r {
+			t.Errorf("Radius round trip failed: %v → %q → %v (%v)", r, r.String(), back, err)
+		}
+	}
+	for _, l := range []FieldLayout{Stacked, Inline} {
+		back, err := ParseFieldLayout(l.String())
+		if err != nil || back != l {
+			t.Errorf("FieldLayout round trip failed: %v → %q → %v (%v)", l, l.String(), back, err)
+		}
+	}
+	for _, r := range []FieldRadius{FieldRound, FieldSquare} {
+		back, err := ParseFieldRadius(r.String())
+		if err != nil || back != r {
+			t.Errorf("FieldRadius round trip failed: %v → %q → %v (%v)", r, r.String(), back, err)
+		}
+	}
+	if (DensityUnset).String() != "" || (TreatmentUnset).String() != "" || (RadiusUnset).String() != "" ||
+		(LayoutUnset).String() != "" || (FieldRadiusUnset).String() != "" {
+		t.Error("unset enums must flatten to the empty string (the key is omitted)")
+	}
+}
+
+func TestOptionsFromFlattenedRejectsUnknowns(t *testing.T) {
+	if _, err := OptionsFromFlattened(map[string]string{"density": "cozy"}); err == nil {
+		t.Error("unknown density value accepted")
+	}
+	if _, err := OptionsFromFlattened(map[string]string{"field.density": "compact"}); err == nil {
+		t.Error("unknown option key accepted: the vocabulary grows with its family's change, not by ignoring data")
+	}
+	o, err := OptionsFromFlattened(DefaultOptions.Flattened())
+	if err != nil || o != DefaultOptions {
+		t.Errorf("Flattened/OptionsFromFlattened are not inverses: %#v (%v)", o, err)
+	}
+}
+
+func TestCompleteFillsUnset(t *testing.T) {
+	got := ComponentOptions{Button: ButtonOptions{Radius: Pill}, Field: FieldOptions{Layout: Inline}}.Complete()
+	want := ComponentOptions{
+		Density: Comfortable,
+		Button:  ButtonOptions{Treatment: Filled, Radius: Pill},
+		Field:   FieldOptions{Layout: Inline, Radius: FieldRound},
+	}
+	if got != want {
+		t.Errorf("Complete() = %#v, want %#v", got, want)
+	}
+}
+
+// An unknown VALUE in Components fails style.Theme.Validate: the
+// grammar check is the theme-shape gate every host runs at boot. (A
+// grammatical non-member like "cozy" is refused at Validate where the
+// compiler is registered — this package's tests link no compiler — and
+// at emit everywhere else; both tests live in framework/ui, where the
+// compiler is.)
+func TestUnknownComponentValueFailsValidate(t *testing.T) {
+	th := Default()
+	th.Components["density"] = "Compact" // uppercase: not [a-z][a-z0-9-]*
+	if err := th.Validate(); err == nil {
+		t.Error("uppercase component value passed Theme.Validate")
+	}
+}
+
+// A theme built outside Default, with no Components map at all, still
+// takes options: the nil map is made on first write.
+func TestApplyComponentOptionsMakesTheMapWhenNil(t *testing.T) {
+	var th style.Theme
+	applyComponentOptions(&th, ComponentOptions{Density: Compact})
+	if got := th.Components["density"]; got != "compact" {
+		t.Fatalf("Components[density] = %q after applying to a nil map, want compact", got)
+	}
+}
+
+// The catalogue is the authoring vocabulary: Options() must carry every
+// flattened option key (and nothing else), each with members that all
+// parse back through OptionsFromFlattened and a default that is one of
+// them. DefaultOptions is complete by construction, so its flattened
+// form IS the full key set the option system knows; comparing the
+// catalogue against it is what makes a new option unable to land
+// without the catalogue following — the editor's selects are generated
+// from the catalogue, so a key it misses would fall back to free text
+// with no list of what is allowed.
+func TestOptionsCatalogueCoversTheFlattenedVocabulary(t *testing.T) {
+	catalogue := Options()
+	if len(catalogue) == 0 {
+		t.Fatal("Options() returned an empty catalogue")
+	}
+	seen := map[string]bool{}
+	for _, opt := range catalogue {
+		if seen[opt.Key] {
+			t.Errorf("catalogue lists %q twice", opt.Key)
+			continue
+		}
+		seen[opt.Key] = true
+		if len(opt.Members) == 0 {
+			t.Errorf("catalogue entry %q carries no members — a select needs at least one option", opt.Key)
+			continue
+		}
+		defaultIsMember := false
+		for _, m := range opt.Members {
+			if _, err := OptionsFromFlattened(map[string]string{opt.Key: m}); err != nil {
+				t.Errorf("catalogue member %q for %q does not parse: %v", m, opt.Key, err)
+			}
+			if m == opt.Default {
+				defaultIsMember = true
+			}
+		}
+		if !defaultIsMember {
+			t.Errorf("catalogue default %q for %q is not among its members %v", opt.Default, opt.Key, opt.Members)
+		}
+	}
+	// Exactly the accepted keys, no more and no fewer. A key in the
+	// flattened set the catalogue misses is an option with no select; a
+	// catalogue key outside it is a select whose value can never round
+	// trip.
+	complete := DefaultOptions.Flattened()
+	for k := range complete {
+		if !seen[k] {
+			t.Errorf("flattened option %q is missing from the catalogue — the editor would render it as free text", k)
+		}
+	}
+	for k := range seen {
+		if _, ok := complete[k]; !ok {
+			t.Errorf("catalogue key %q is not an option DefaultOptions carries — it can never round-trip", k)
+		}
+	}
+	// The fixed order is part of the contract (the editor's Component
+	// options group and the docs both read it), so pin it.
+	wantOrder := []string{"density", "button.treatment", "button.radius", "field.layout", "field.radius"}
+	got := make([]string, 0, len(catalogue))
+	for _, opt := range catalogue {
+		got = append(got, opt.Key)
+	}
+	if !reflect.DeepEqual(got, wantOrder) {
+		t.Errorf("catalogue order = %v, want %v", got, wantOrder)
+	}
+}
+
+// The member walk stops at the first "" String returns, so a hole in an
+// option enum (members at 1, 2 and 4) would silently drop every member
+// after it from the editor while Parse still accepts them. Past the
+// walk's end, String must stay "" all the way to the walk's bound.
+func TestOptionEnumsHaveNoHoles(t *testing.T) {
+	check := func(name string, members []string, stringOf func(int) string) {
+		for v := len(members) + 1; v <= maxOptionMembers; v++ {
+			if s := stringOf(v); s != "" {
+				t.Errorf("%s(%d) = %q after the walk stopped at %d members: a hole hides it from the catalogue", name, v, s, len(members))
+			}
+		}
+	}
+	check("Density", optionMembers(Density.String), func(v int) string { return Density(v).String() })
+	check("ButtonTreatment", optionMembers(ButtonTreatment.String), func(v int) string { return ButtonTreatment(v).String() })
+	check("ButtonRadius", optionMembers(ButtonRadius.String), func(v int) string { return ButtonRadius(v).String() })
+	check("FieldLayout", optionMembers(FieldLayout.String), func(v int) string { return FieldLayout(v).String() })
+	check("FieldRadius", optionMembers(FieldRadius.String), func(v int) string { return FieldRadius(v).String() })
+}
+
+// A String whose default arm returns a word would walk forever; the
+// bound turns that into a panic naming the cause.
+func TestOptionMembersRefusesAnUnterminatedEnum(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a String that never returns \"\" should panic, not hang or return")
+		}
+	}()
+	optionMembers(func(int) string { return "unknown" })
+}

@@ -22,7 +22,7 @@ func TestStateHandoffSynchronized(t *testing.T) {
 	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
 
 	site := appui.NewApp("StateHandoff")
-	layout := appui.NewLayout("public").WithContainer()
+	layout := containerLayout("public")
 	site.Register("/", e2eScreen{}, layout)
 
 	shell := newFakeShell()

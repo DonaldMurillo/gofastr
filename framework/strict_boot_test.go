@@ -41,7 +41,7 @@ func (backOfficeBattery) Init(a *App) error {
 func strictBootSite() *coreapp.App {
 	site := coreapp.NewApp("demo")
 	site.Register("/", &bootScreen{}, nil)
-	site.SetDefaultLayout(coreapp.NewLayout("app").WithSidebar(
+	site.SetDefaultLayout(sidebarLayout("app",
 		coreapp.NewStaticComponent(render.HTML(`<nav><a href="/admin">Back office</a></nav>`)),
 	))
 	return site
@@ -103,7 +103,7 @@ func TestStrictLinksAcceptRoutesRegisteredAfterMount(t *testing.T) {
 func TestStrictLinksRefuseBootOnGenuinelyMissingRoute(t *testing.T) {
 	site := coreapp.NewApp("demo")
 	site.Register("/", &bootScreen{}, nil)
-	site.SetDefaultLayout(coreapp.NewLayout("marketing").WithSidebar(
+	site.SetDefaultLayout(sidebarLayout("marketing",
 		coreapp.NewStaticComponent(render.HTML(`<nav><a href="/gone">Gone</a></nav>`)),
 	))
 	host := uihost.New(site,

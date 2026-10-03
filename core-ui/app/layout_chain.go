@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -52,6 +54,43 @@ func (l LayoutLayer) Key() string {
 		return l.Layout.selfKey()
 	}
 	return ""
+}
+
+// resolveChainKeys substitutes the match's param values into every
+// {param} a group prefix declares a group
+// mounted at /projects/{project} serves every project, and its layer
+// key — the identity the DOM, the fill addresses and the shared-depth
+// rule all compare — embeds the RESOLVED value, so one project's layer
+// is kept across its own pages and re-rendered when the project
+// changes. The route manifest keeps the template form; the client
+// substitutes its matched path segments the same way (no constraint
+// evaluation — the server stays the matcher). A chain with no param
+// prefixes is returned unchanged.
+func resolveChainKeys(chain []LayoutLayer, params map[string]string) []LayoutLayer {
+	if len(chain) == 0 || len(params) == 0 {
+		return chain
+	}
+	out := make([]LayoutLayer, len(chain))
+	changed := false
+	// Sorted keys: the substitutions are independent, but the analyzer
+	// rule stands — map iteration never feeds output bytes.
+	for i, l := range chain {
+		if l.GroupPrefix != "" && strings.Contains(l.GroupPrefix, "{") {
+			p := l.GroupPrefix
+			for _, name := range slices.Sorted(maps.Keys(params)) {
+				p = strings.ReplaceAll(p, "{"+name+"}", params[name])
+			}
+			if p != l.GroupPrefix {
+				changed = true
+				l.GroupPrefix = p
+			}
+		}
+		out[i] = l
+	}
+	if !changed {
+		return chain
+	}
+	return out
 }
 
 // layoutChainFor resolves a screen's full layout chain, outermost →
@@ -130,8 +169,11 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 
 // renderLayoutChain wraps content in every layer of the chain. Layer 0 is
 // the outermost shell and owns the page's single <main id="main-content">.
-func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.HTML) render.HTML {
-	return renderLayoutChainFrom(ctx, chain, 0, content)
+// fills carries the resolved outlet fills (resolveFills) for tree layers;
+// nil renders outlets empty and still runs their route areas. The error is
+// a build-inventory violation (checkBuildInventory) naming the layer.
+func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
+	return renderLayoutChainFrom(ctx, chain, 0, content, fills, guards)
 }
 
 // renderLayoutChainFrom wraps content in layers from..len(chain)-1. When
@@ -142,13 +184,30 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 // data-fui-skip-label) from the render context; without a fresh carrier
 // the document language and skip link could never change on an in-chain
 // navigation.
-func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML) render.HTML {
+//
+// Tree layers (NewLayout) at or below `from` render through their
+// build in RENDER mode; KEPT tree layers (0..from-1) run their build in
+// COLLECT mode first: the markup is discarded, but every RouteArea fn
+// runs with the live context and records its fill into `fills`, so the
+// caller can ship the kept layers' fresh areas with the response (see
+// exportFillsFor)..
+func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
+	// Collect mode for the kept layers. Every build runs every render.
+	for i := 0; i < from && i < len(chain); i++ {
+		if chain[i].Layout.isTree() {
+			chain[i].Layout.collectTreeLayer(ctx, chain, i, fills, guards)
+		}
+	}
 	out := content
 	for i := len(chain) - 1; i >= from; i-- {
 		layer := chain[i]
 		key := layer.Key()
 		if layer.Layout != nil {
-			out = layer.Layout.wrapLayer(ctx, out, i == 0, key, i == from)
+			wrapped, err := layer.Layout.wrapTreeLayer(ctx, chain, i, from, out, fills, guards)
+			if err != nil {
+				return "", err
+			}
+			out = wrapped
 		}
 		if layer.GroupPrefix != "" {
 			attrs := map[string]string{"data-fui-screen-group": layer.GroupPrefix}
@@ -174,5 +233,5 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 			}, out)
 		}
 	}
-	return out
+	return out, nil
 }

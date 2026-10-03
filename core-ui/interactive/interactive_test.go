@@ -484,7 +484,7 @@ func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
 	)
 	s := string(result)
 	// Must have the component marker the runtime scans for.
-	if !strings.Contains(s, `data-fui-comp="ui-optimistic-action"`) {
+	if !strings.Contains(s, `data-hui-action=""`) {
 		t.Fatalf("missing data-fui-comp attr: %s", s)
 	}
 	// Must start in idle state.
@@ -492,11 +492,11 @@ func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
 		t.Fatalf("missing data-state=idle: %s", s)
 	}
 	// Must have the endpoint.
-	if !strings.Contains(s, `data-fui-optimistic-endpoint="/api/like/42"`) {
+	if !strings.Contains(s, `data-hui-action-endpoint="/api/like/42"`) {
 		t.Fatalf("missing endpoint attr: %s", s)
 	}
 	// POST is the default, method attr should NOT be emitted.
-	if strings.Contains(s, `data-fui-optimistic-method`) {
+	if strings.Contains(s, `data-hui-action-method`) {
 		t.Fatalf("POST default should not emit method attr: %s", s)
 	}
 }
@@ -508,7 +508,7 @@ func TestOptimisticUpdateNonPostEmitsMethod(t *testing.T) {
 		render.HTML("♥ Liked"),
 	)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-optimistic-method="DELETE"`) {
+	if !strings.Contains(s, `data-hui-action-method="DELETE"`) {
 		t.Fatalf("non-POST should emit method attr: %s", s)
 	}
 }
@@ -521,14 +521,14 @@ func TestOptimisticUpdateContainsBothVisualStates(t *testing.T) {
 	)
 	s := string(result)
 	// Idle state wrapper.
-	if !strings.Contains(s, `data-fui-optimistic-idle`) {
+	if !strings.Contains(s, `data-hui-action-idle`) {
 		t.Fatalf("missing idle wrapper: %s", s)
 	}
 	if !strings.Contains(s, `♡`) {
 		t.Fatalf("missing idle content: %s", s)
 	}
 	// Success state wrapper with hidden attribute.
-	if !strings.Contains(s, `data-fui-optimistic-success`) {
+	if !strings.Contains(s, `data-hui-action-done`) {
 		t.Fatalf("missing success wrapper: %s", s)
 	}
 	if !strings.Contains(s, `hidden`) {
@@ -558,7 +558,7 @@ func TestOptimisticUpdateEndpointFromAction(t *testing.T) {
 	for _, method := range []Action{Get("/a"), Put("/b"), Patch("/c"), Delete("/d")} {
 		result := OptimisticUpdate(method, render.HTML("idle"), render.HTML("done"))
 		s := string(result)
-		if !strings.Contains(s, fmt.Sprintf(`data-fui-optimistic-endpoint="%s"`, method.path)) {
+		if !strings.Contains(s, fmt.Sprintf(`data-hui-action-endpoint="%s"`, method.path)) {
 			t.Fatalf("missing endpoint for %s %s: %s", method.method, method.path, s)
 		}
 	}

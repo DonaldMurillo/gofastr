@@ -146,6 +146,16 @@ func newBoundarySite(t *testing.T) *boundarySite {
 	const navC = `<a id="to-a" href="/a">to a</a>`
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSuffix(r.URL.Path[len("/__gofastr/runtime/"):], ".js")
+		src, ok := runtime.Module(name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, src)
+	})
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write([]byte(js))

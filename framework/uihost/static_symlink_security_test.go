@@ -48,9 +48,7 @@ func TestStaticDirSymlinkEscapeRefused(t *testing.T) {
 	}
 
 	a := uiapp.NewApp("static-symlink-test")
-	layout := uiapp.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	a.SetDefaultLayout(layout)
 	a.RegisterScreen(uiapp.NewScreen("/screen", &testHomeComp{}).WithTitle("S"), nil)
 

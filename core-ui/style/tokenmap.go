@@ -60,6 +60,13 @@ func ThemeToTokens(t Theme) map[string]string {
 	for _, name := range slices.Sorted(maps.Keys(t.DarkCode)) {
 		out["dark.tk-"+name] = t.DarkCode[name]
 	}
+	// Components ride under the reserved "component." prefix: no typed
+	// token key contains a "." and "dark." is taken, so the three
+	// families stay unambiguous in one flat map. Keys are the Components
+	// keys verbatim ("component.button.treatment").
+	for _, k := range slices.Sorted(maps.Keys(t.Components)) {
+		out["component."+k] = t.Components[k]
+	}
 	return out
 }
 
@@ -87,16 +94,22 @@ func ThemeToTokens(t Theme) map[string]string {
 // On any error ApplyTokens returns the zero Theme and a non-nil error
 // naming the offending key and the reason, in the voice of Theme.Validate
 // ("theme: token %q: <reason>"). The supplied base is never mutated: the
-// dark maps are deep-copied so one caller's overrides cannot leak into the
+// reference-typed maps (dark palettes, Components) are deep-copied so
+// one caller's overrides cannot leak into the
 // process-global base theme shared across requests.
 func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 	result := base
-	// Deep-copy the dark maps. Without this, writing result.DarkColors
-	// would mutate base's map (maps are reference types) and leak one
-	// caller's overrides into the base theme, which is process-global and
-	// shared across concurrent requests in the theme-variant host.
+	// Deep-copy the reference-typed fields. Without this, writing
+	// result.DarkColors would mutate base's map (maps are reference
+	// types) and leak one caller's overrides into the base theme,
+	// which is process-global and shared across concurrent requests in
+	// the theme-variant host.
 	result.DarkColors = copyStringMap(base.DarkColors)
 	result.DarkCode = copyStringMap(base.DarkCode)
+	result.Components = copyStringMap(base.Components)
+	// Extensions are pointers: the setters below write through them, so
+	// each one is copied first or an override would reach base too.
+	result.Extensions = cloneExtensions(base.Extensions)
 
 	// One reflection walk over the addressable result builds a validating
 	// setter per typed token, keyed by the same CSS-var name ThemeToTokens
@@ -132,6 +145,20 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 			}
 			continue
 		}
+		// component.<key>: one flattened component option. The grammar is
+		// the whole check — WHICH options exist is the registered
+		// compiler's vocabulary, not something core-ui/style can know
+		// without importing the layer that owns it — so a key that parses
+		// writes through, and a key that does not is refused here, the
+		// same fail-closed posture as every other token family.
+		if rest, ok := strings.CutPrefix(k, "component."); ok {
+			if err := validateComponentEntry(rest, value); err != nil {
+				return Theme{}, fmt.Errorf("theme: token %q: %w", k, err)
+			}
+			result.Components = ensureMap(&result.Components)
+			result.Components[rest] = value
+			continue
+		}
 		return Theme{}, fmt.Errorf("theme: unknown token %q, not a key this theme exposes (see ThemeToTokens)", k)
 	}
 	return result, nil
@@ -154,6 +181,12 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 			return
 		}
 		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			collectSetters(v.Index(i), setters, lightColors, lightCode)
+		}
+		return
 	}
 	if v.Kind() != reflect.Struct {
 		return
@@ -230,6 +263,27 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 		return
 	case FontSize:
 		registerStringSetter(v, "text-", "FontSize", setters)
+		return
+	case Size:
+		registerValidatedSetter(v, "size-", map[string]bool{}, validateSizeValue, setters)
+		return
+	case FontWeight:
+		name, ok := nonEmptyStringField(v, "Name")
+		if !ok {
+			return
+		}
+		val := v.FieldByName("Value")
+		setters["font-weight-"+name] = func(s string) error {
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				return fmt.Errorf("font weight is a unitless integer (got %q)", s)
+			}
+			if err := validateFontWeight(n); err != nil {
+				return err
+			}
+			val.SetInt(int64(n))
+			return nil
+		}
 		return
 	case CodeColor:
 		// CodeColor is optional and only EMITS when Value != "", but a
@@ -414,6 +468,48 @@ func validateFreeFormCSS(v string) error {
 	}
 	if p := findDeclBreaker(v); p != "" {
 		return fmt.Errorf("value contains forbidden sequence %q (declaration-breaking)", p)
+	}
+	return nil
+}
+
+// cssLength matches one CSS length or percentage ("66rem", "56px",
+// "-0.5em", "100%"), or a bare zero.
+var cssLength = regexp.MustCompile(`^(0|-?(\d+(\.\d+)?|\.\d+)(px|rem|em|ch|ex|lh|rlh|vw|vh|vi|vb|vmin|vmax|svw|svh|lvw|lvh|dvw|dvh|cqw|cqh|cqi|cqb|cqmin|cqmax|%))$`)
+
+// sizeFuncs are the functions a Size value may be built from: the math
+// functions over lengths, and var() to chain to another token.
+var sizeFuncs = map[string]bool{"calc": true, "clamp": true, "min": true, "max": true, "var": true}
+
+// validateSizeValue enforces the Size grammar: one length, or ONE call to
+// a math function (or var()) whose nested calls are math functions too.
+// A bare word ("wide") is refused, because a Size reaching
+// max-inline-size as a keyword would silently do nothing.
+func validateSizeValue(v string) error {
+	if err := validateFreeFormCSS(v); err != nil {
+		return err
+	}
+	if cssLength.MatchString(v) {
+		return nil
+	}
+	open := strings.IndexByte(v, '(')
+	if open > 0 && sizeFuncs[strings.ToLower(v[:open])] && closesAtEnd(v, open) {
+		ok := true
+		for _, m := range cssFuncCall.FindAllStringSubmatch(v, -1) {
+			if !sizeFuncs[strings.ToLower(m[1])] {
+				ok = false
+			}
+		}
+		if ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("not a CSS length (expected e.g. %q or %q, got %q)", "66rem", "clamp(20px, 5vw, 32px)", v)
+}
+
+// validateFontWeight enforces CSS's numeric font-weight range.
+func validateFontWeight(n int) error {
+	if n < 1 || n > 1000 {
+		return fmt.Errorf("font weight must be 1 to 1000 (got %d)", n)
 	}
 	return nil
 }

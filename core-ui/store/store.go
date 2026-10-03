@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -137,6 +138,15 @@ func setScope(name string, scope Scope) {
 
 // validateName rejects names that could break out of a data-fui-* HTML
 // attribute or the signal key. Allowed: letters, digits, '.', '_', '-'.
+//
+// The route.* prefix is RESERVED for the router's snapshot (DESIGN
+// "Route signals"): a user-declared slice under it would race the
+// seeded route values — the declaration's default stamping SSR paints
+// while every navigation's seed merge overwrites it — so declaring
+// one panics. The route family declares its own slices through
+// route.go's declareRoute, which owns the prefix and skips the
+// reservation by design.
+//
 // The runtime kernel's prototype-pollution guard (frag/signals.js
 // isReservedSignalKey) refuses __proto__ / constructor / prototype as
 // signal names because those keys re-parent the client signal store;
@@ -150,10 +160,20 @@ func validateName(name string) {
 	if name == "" {
 		panic("store: slice name must not be empty")
 	}
+	if strings.HasPrefix(name, "route.") {
+		panic(fmt.Sprintf("store: slice name %q is reserved — the route.* prefix belongs to the router's snapshot (store.Route declares the family); declare your slice under another name", name))
+	}
 	switch name {
 	case "__proto__", "constructor", "prototype":
 		panic(fmt.Sprintf("store: slice name %q is reserved — the runtime kernel refuses every client write to __proto__/constructor/prototype, so the slice would be a dead binding", name))
 	}
+	validateNameChars(name)
+}
+
+// validateNameChars is the charset half of validateName, shared with
+// the route family's own declarations (route.go's declareRoute owns
+// the reserved prefix).
+func validateNameChars(name string) {
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -170,7 +190,7 @@ func validateName(name string) {
 func GlobalNames() []string {
 	regMu.RLock()
 	defer regMu.RUnlock()
-	out := make([]string, 0)
+	out := make([]string, 0, len(declRegistry))
 	for n, d := range declRegistry {
 		if d.scope == ScopeGlobal {
 			out = append(out, n)
@@ -180,9 +200,17 @@ func GlobalNames() []string {
 	return out
 }
 
-// resetForTest clears the declaration registry. Test-only.
+// resetForTest clears the declaration registry. Test-only. The route.*
+// family is declared at package init and shares this registry: a wipe
+// must restore its declared names, or every later test's seed writers
+// (ResolveSeed skips undeclared names) silently drop the route values
+// — exactly the cross-test breakage TestRouteSeedDueGatesTheWriters
+// catches.
 func resetForTest() {
 	regMu.Lock()
 	declRegistry = map[string]*decl{}
+	for _, n := range RouteNames() {
+		declRegistry[n] = &decl{name: n, scope: ScopePage, def: ""}
+	}
 	regMu.Unlock()
 }

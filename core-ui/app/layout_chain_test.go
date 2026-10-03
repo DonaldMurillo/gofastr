@@ -10,8 +10,8 @@ import (
 
 func TestDirectScreenLayoutReplacesDefault(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site").WithHeader(app.NewStaticComponent("SITE")))
-	own := app.NewLayout("bare").WithHeader(app.NewStaticComponent("OWN"))
+	a.SetDefaultLayout(app.HeaderShell("site", app.NewStaticComponent("SITE")))
+	own := app.HeaderShell("bare", app.NewStaticComponent("OWN"))
 	a.Register("/x", &stubComp{html: "X"}, own)
 
 	res, err := a.RenderPageResult(context.Background(), "/x")
@@ -29,8 +29,8 @@ func TestDirectScreenLayoutReplacesDefault(t *testing.T) {
 
 func TestGroupNestsUnderDefaultWithOneMain(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site").WithHeader(app.NewStaticComponent("SITE")))
-	g := app.NewScreenGroup("/docs", app.NewLayout("docs").WithSidebar(app.NewStaticComponent("DOCS_NAV")))
+	a.SetDefaultLayout(app.HeaderShell("site", app.NewStaticComponent("SITE")))
+	g := app.NewScreenGroup("/docs", app.SidebarShell("docs", app.NewStaticComponent("DOCS_NAV")))
 	g.Screen(app.NewScreen("intro", &stubComp{html: "INTRO"}), nil)
 	a.Router.ScreenGroup(g)
 
@@ -56,8 +56,8 @@ func TestGroupNestsUnderDefaultWithOneMain(t *testing.T) {
 
 func TestStandaloneGroupSkipsDefault(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site").WithHeader(app.NewStaticComponent("SITE")))
-	g := app.NewScreenGroup("/admin", app.NewLayout("admin").WithSidebar(app.NewStaticComponent("ADMIN"))).Standalone()
+	a.SetDefaultLayout(app.HeaderShell("site", app.NewStaticComponent("SITE")))
+	g := app.NewScreenGroup("/admin", app.SidebarShell("admin", app.NewStaticComponent("ADMIN"))).Standalone()
 	g.Screen(app.NewScreen("home", &stubComp{html: "H"}), nil)
 	a.Router.ScreenGroup(g)
 
@@ -79,7 +79,7 @@ func TestStandaloneGroupSkipsDefault(t *testing.T) {
 }
 
 func TestInheritedSubgroupLayerIsMarkerOnly(t *testing.T) {
-	parent := app.NewScreenGroup("/settings", app.NewLayout("settings").WithSidebar(app.NewStaticComponent("NAV")))
+	parent := app.NewScreenGroup("/settings", app.SidebarShell("settings", app.NewStaticComponent("NAV")))
 	child := parent.SubGroup("advanced", nil) // inherits parent's *Layout
 	child.Screen(app.NewScreen("security", &stubComp{html: "SEC"}), nil)
 
@@ -105,9 +105,9 @@ func TestInheritedSubgroupLayerIsMarkerOnly(t *testing.T) {
 }
 
 func TestOverrideScreenKeyDiffersFromSibling(t *testing.T) {
-	g := app.NewScreenGroup("/shop", app.NewLayout("shop").WithSidebar(app.NewStaticComponent("SHOP")))
+	g := app.NewScreenGroup("/shop", app.SidebarShell("shop", app.NewStaticComponent("SHOP")))
 	g.Screen(app.NewScreen("browse", &stubComp{html: "B"}), nil)
-	g.Screen(app.NewScreen("checkout", &stubComp{html: "C"}), app.NewLayout("focus"))
+	g.Screen(app.NewScreen("checkout", &stubComp{html: "C"}), app.BareShell("focus"))
 
 	a := app.NewApp("t")
 	a.Router.ScreenGroup(g)
@@ -131,7 +131,7 @@ func TestOverrideScreenKeyDiffersFromSibling(t *testing.T) {
 
 func TestOverlayScreensHaveNoChain(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site"))
+	a.SetDefaultLayout(app.BareShell("site"))
 	a.RegisterScreen(app.NewDrawer("/cart", &stubComp{html: "CART"}), nil)
 
 	for _, e := range a.Routes() {
@@ -143,7 +143,7 @@ func TestOverlayScreensHaveNoChain(t *testing.T) {
 
 func TestPartialFromSiblingIsBareWithSwapLayer(t *testing.T) {
 	a := app.NewApp("t")
-	g := app.NewScreenGroup("/docs", app.NewLayout("docs").WithSidebar(app.NewStaticComponent("NAV")))
+	g := app.NewScreenGroup("/docs", app.SidebarShell("docs", app.NewStaticComponent("NAV")))
 	g.Screen(app.NewScreen("a", &stubComp{html: "PAGE_A"}), nil)
 	g.Screen(app.NewScreen("b", &stubComp{html: "PAGE_B"}), nil)
 	a.Router.ScreenGroup(g)
@@ -167,8 +167,8 @@ func TestPartialFromSiblingIsBareWithSwapLayer(t *testing.T) {
 
 func TestPartialFromRendersOnlyDivergingLayers(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site").WithHeader(app.NewStaticComponent("SITE")))
-	g := app.NewScreenGroup("/docs", app.NewLayout("docs").WithSidebar(app.NewStaticComponent("DOCS_NAV")))
+	a.SetDefaultLayout(app.HeaderShell("site", app.NewStaticComponent("SITE")))
+	g := app.NewScreenGroup("/docs", app.SidebarShell("docs", app.NewStaticComponent("DOCS_NAV")))
 	g.Screen(app.NewScreen("intro", &stubComp{html: "INTRO"}), nil)
 	a.Router.ScreenGroup(g)
 	a.Register("/about", &stubComp{html: "ABOUT"}, nil) // default layout only
@@ -200,7 +200,7 @@ func TestPartialFromRendersOnlyDivergingLayers(t *testing.T) {
 
 func TestPartialFromUnknownOriginIsBare(t *testing.T) {
 	a := app.NewApp("t")
-	a.SetDefaultLayout(app.NewLayout("site"))
+	a.SetDefaultLayout(app.BareShell("site"))
 	a.Register("/x", &stubComp{html: "X"}, nil)
 
 	res, err := a.RenderPartialFromResult(context.Background(), "/x", "/nope")
@@ -217,8 +217,8 @@ func TestPartialFromUnknownOriginIsBare(t *testing.T) {
 
 func TestPartialFromDisjointChainsIsBare(t *testing.T) {
 	a := app.NewApp("t")
-	a.Register("/m", &stubComp{html: "M"}, app.NewLayout("marketing"))
-	a.Register("/app", &stubComp{html: "A"}, app.NewLayout("app"))
+	a.Register("/m", &stubComp{html: "M"}, app.BareShell("marketing"))
+	a.Register("/app", &stubComp{html: "A"}, app.BareShell("app"))
 
 	res, err := a.RenderPartialFromResult(context.Background(), "/app", "/m")
 	if err != nil {

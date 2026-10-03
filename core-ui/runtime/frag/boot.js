@@ -105,11 +105,11 @@
       // Demand-load split runtime modules whose marker attributes show
       // up in injected subtrees (RPC innerHTML replacement, signal
       // swaps, island updates). Without this, dynamically-inserted
-      // fileupload zones / popover triggers / toast stacks would never
-      // load their module and behave as dead DOM.
+      // popover triggers / toast stacks would never load their
+      // module and behave as dead DOM.
       _scanForModules(node);
       // And re-run scanners of modules that ARE loaded so they wire
-      // any newly-inserted elements (toast TTL, fileupload drop zones).
+      // any newly-inserted elements (toast TTL, drop zones).
       const G = window.__gofastr;
       if (G && G._moduleScanners) {
         for (const name in G._moduleScanners) {
@@ -134,27 +134,30 @@
   }
 
   // SSE Island Support ships in core-ui/runtime/src/sse.js, loaded on
-  // demand when <meta name="gofastr-sse"> is present on the page.
-  // The module self-installs an EventSource and reflects "island"
-  // events into matching [data-island] regions. Reconnect lives in
-  // the module too.
-
-  // FileUpload runtime has moved to its own demand-loaded module at
-  // /__gofastr/runtime/fileupload.js. Core ships the loader + the
-  // page-scan trigger below; the actual drag/drop wiring + filename
-  // preview ships only when the page contains a [data-fui-fileupload]
-  // zone (or when a `data-fui-prefetch="fileupload"` trigger is
-  // hovered, whichever comes first).
-  //
-  // The legacy `window.__fuiWireFileUploads` is preserved by the
-  // module itself for back-compat with external callers.
+  // demand when the page holds a push target (any [data-island] region
+  // or the offline banner). The module self-installs an EventSource and
+  // reflects "island" events into matching [data-island] regions, and
+  // re-evaluates the document's targets after every apply so leaving
+  // the last one closes the stream. Reconnect lives in the module too.
 
   // === MODULE LOADER ===================================================
-  // loadModule(name) returns a cached Promise that resolves once the
-  // named split-runtime module is loaded. Multiple callers for the
-  // same name share one fetch. Modules self-register by setting
-  // window.__gofastr.loadedModules[name] = true; the loader polls that
-  // flag while the <script> downloads.
+  // loadModule(name) returns a cached Promise covering the module AND
+  // its requirements. Multiple callers for the same name share one
+  // fetch. A module that declared requirements (the behaviours block
+  // carries them as r) has every requirement loadModule'd first, in
+  // parallel, and only then is its own script appended, so the
+  // dependent evaluates with its primitive already registered; a
+  // requirement's own requirements load the same way.
+  //
+  // Readiness is registration, not transport. A module announces
+  // itself by setting window.__gofastr.loadedModules[name] to a truthy
+  // value, so the promise resolves only when that flag is an own,
+  // truthy property after the script's load event. A script that ran
+  // and never registered rejects with 'module failed to register' and
+  // drops the cached promise, so a retry fetches again rather than
+  // handing out a fulfilled promise for a module that is not there.
+  // A fetch error rejects the same way, and so does a failed
+  // requirement: the dependent's cached promise is dropped too.
   //
   // Cache-busting: the host SSRs the per-module hash into a JSON
   // manifest under <script id="gofastr-runtime-modules">. The loader
@@ -195,17 +198,40 @@
       if (!/^[\w-]+$/.test(name)) return reject(new Error('module failed'));
       const v = _moduleManifest[name] || '';
       const url = '/__gofastr/runtime/' + name + '.js' + (v ? '?v=' + v : '');
-      const s = document.createElement('script');
-      s.src = url;
-      s.async = false;
-      s.onload = () => resolve();
-      s.onerror = () => {
-        // Drop the cached promise so a retry fires a fresh request.
+      // Requirements live in the registered descriptors only:
+      // embedded modules have no channel to declare one. Looked up
+      // here rather than at scan time so every load path (marker scan,
+      // idle queue, hover prefetch, the interaction bridge) honors
+      // them without each knowing about the block.
+      const reqs = (_registered.find((m) => m.name === name) || {}).requires || [];
+      Promise.all(reqs.map(loadModule)).then(() => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = false;
+        s.onload = () => {
+          const lm2 = window.__gofastr.loadedModules;
+          if (!(lm2 && own(lm2, name) && lm2[name])) {
+            // The script ran and never registered: not loaded. Drop
+            // the cached promise so a retry fetches again.
+            _modulePromises.delete(name);
+            reject(new Error('module failed to register'));
+            return;
+          }
+          resolve();
+        };
+        s.onerror = () => {
+          // Drop the cached promise so a retry fires a fresh request.
+          _modulePromises.delete(name);
+          reject(new Error('module failed'));
+        };
+        document.head.appendChild(s);
+      }, () => {
         _modulePromises.delete(name);
         reject(new Error('module failed'));
-      };
-      document.head.appendChild(s);
+      });
     });
+    // One promise per name covers the requirements and the module, so
+    // every caller of this load shares the single fetch above.
     _modulePromises.set(name, modPromise);
     return modPromise;
   }
@@ -360,11 +386,6 @@
   // and DOM insertion.
   const _moduleMarkers = [
     { name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' },
-    // Copy-to-clipboard delegated handler. Loaded when any
-    // [data-fui-copy-text-from] button is on the page (or arrives via
-    // SPA-nav). The src/copy.js module installs a single document-level
-    // listener that handles every button.
-    { name: 'copy',       selector: '[data-fui-copy-text-from]' },
     // Computed: client-side derived signals (core-ui/store). The module
     // subscribes each [data-fui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.
@@ -372,17 +393,18 @@
     // Compute: registered same-origin Web Worker and WebAssembly assets.
     // The marker only loads the imperative __gofastr.compute API.
     { name: 'compute',    selector: '[data-fui-compute]' },
-    { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
-    { name: 'menu',       selector: '[data-fui-menu]' },
-    // Disclosure: aria-expanded mirroring, Escape-to-close, menu
-    // focus-on-open, and the opt-in inert focus trap for drawers.
-    { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
-    { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
-    // SSE: background event stream. Idle-loaded, never blocks first
-    // interaction; the channel only carries push updates, not user
-    // actions. See ROADMAP §8 Phase 5.
-    { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
+    // SSE: background event stream, opened only for a page that takes
+    // pushes. The markers are the PUSH TARGETS (any island — the
+    // server can PushUpdate any island id — plus the offline banner
+    // that reads the stream's mirrored state), not the availability
+    // meta: <meta name="gofastr-sse"> stays on every session-bearing
+    // page and now means "SSE exists", while the module (and with it
+    // the EventSource, one of the tab's ~6 HTTP/1.1 connections) loads
+    // only when a target is on the page. Idle-loaded, never blocks
+    // first interaction; the channel only carries push updates, not
+    // user actions. See ROADMAP §8 Phase 5.
+    { name: 'sse',        selector: '[data-island],[data-hui-system-offline]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
@@ -390,108 +412,114 @@
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
     { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
-    // Combobox: any WAI-ARIA combobox + listbox pair. The module
-    // handles keyboard nav, click-to-pick, outside-click close, and
-    // updates aria-expanded + aria-activedescendant.
-    { name: 'combobox',   selector: '[role="combobox"]' },
-    // Tree: any WAI-ARIA tree. The module handles roving tabindex,
-    // arrow-key nav, type-ahead, and toggle clicks that flip
-    // aria-expanded + show/hide child <ul role="group">.
-    { name: 'tree',       selector: '[role="tree"]' },
-    // InfiniteScroll: wrappers with the marker attribute. The module
-    // attaches an IntersectionObserver to each
-    // [data-fui-infinite-sentinel] inside and POSTs to
-    // data-fui-infinite-scroll.
-    { name: 'infinitescroll', selector: '[data-fui-infinite-scroll]' },
-    // Banner: dismissible inline-alert support. The module runs the
-    // localStorage-backed hide pass for already-dismissed banners and
-    // wires the delegated click handler for the X button.
-    { name: 'banner',         selector: '[data-fui-banner-dismiss]' },
-    // Slider: mirrors <input type="range"> value into the associated
-    // <output> on input events. Loaded only when ShowValue=true (the
-    // mirror marker is on the input then).
-    { name: 'slider',         selector: '[data-fui-slider-mirror]' },
-    // NumberInput: wires the +/- step buttons of framework/ui.NumberInput
-    // to the associated <input type="number">.
-    { name: 'numberinput',    selector: '[data-fui-number-step]' },
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
-    // MultiSelect: chip rendering for checked options + chip removal.
-    { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
-    // FileDropzone: filename display + optional image preview strip.
-    { name: 'dropzone',       selector: '[data-fui-comp="ui-dropzone"]' },
-    // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
-    { name: 'rangeslider',    selector: 'input[data-fui-range-slider]' },
-    // TagInput: commit on Enter/comma, backspace removes last, chip ×.
-    { name: 'taginput',       selector: '[data-fui-tag-input]' },
-    // AnimatedCounter: IntersectionObserver-driven tick on first view.
-    { name: 'animatedcounter', selector: '[data-fui-animated-counter]' },
-    // TableOfContents: harvest h2/h3 from target region + active-section tracking.
-    { name: 'toc',             selector: '[data-fui-toc]' },
-    // ScrollSpy: generic IntersectionObserver section tracking for any nav with in-page anchors.
-    { name: 'scrollspy',       selector: '[data-fui-scrollspy]' },
-    // OptimisticAction: SSR-declared success state flips on click, RPC fires underneath, rolls back on non-2xx.
-    { name: 'optimisticaction', selector: '[data-fui-comp="ui-optimistic-action"]' },
-    // ToggleAction: three-state mutex toggle (idle ↔ committed with optional untoggle, mutually exclusive within data-fui-toggle-group).
-    { name: 'toggleaction', selector: '[data-fui-comp="ui-toggle-action"]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
-    // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
-    { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
-    // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
-    { name: 'sortablelist',    selector: '[data-fui-sortable]' },
-    { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]', interactions: [
-      { event: 'click', selector: '[data-fui-lightbox-prev],[data-fui-lightbox-next]' },
-      { event: 'keydown', scope: '[data-fui-widget]:not([hidden]) [data-fui-comp="ui-lightbox"][data-fui-lightbox]', keys: ['ArrowLeft', 'ArrowRight'] },
-    ] },
-    { name: 'carousel',        selector: '[data-fui-carousel]' },
-    { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
-    { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },
-    // BackToTop: scroll-past-threshold reveal + smooth scroll.
-    { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
-    // ConditionalField: show/hide content based on another field's value.
-    { name: 'conditionalfield', selector: '[data-fui-comp="ui-conditional-field"]' },
-    // PasswordInput: show/hide toggle for password fields.
-    { name: 'passwordinput',   selector: '[data-fui-comp="ui-password-input"]' },
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
-    // FormRepeater: serializes field values into RPC add/remove clicks.
-    { name: 'formrepeater',    selector: '[data-fui-comp="ui-form-repeater"]' },
-      // Dropdown: click-toggle + click-outside dismiss + Esc close.
+    // Dropdown: click-toggle + click-outside dismiss + Esc close.
     { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.
     { name: 'reveal',           selector: '[data-fui-reveal]' },
     // Animate: signal-driven CSS class toggling.
     { name: 'animate',          selector: '[data-fui-animate-signal]' },
-    // PaneHost: primary pane + openable secondary/tertiary side panes
-    // with a responsive overlay-drawer collapse. Wires open/close/swap
-    // triggers + the focus/scroll-lock lifecycle.
-    { name: 'panehost',         selector: '[data-fui-pane-host]' },
     // Poll: page-level region polling. data-fui-poll="<duration>" +
     // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
     // swaps the response HTML into the element. The module owns
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
     { name: 'poll',         selector: '[data-fui-poll]' },
+    // Envelope (fills, snapshots, scroll anchors): NOT a boot trigger.
+    // The outlet/area marker alone costs nothing until the first
+    // navigation that needs the module: frag/nav.js starts its load
+    // beside that navigation's page fetch (the opt-in decision of
+    // 2026-09-28 — a marketing page whose only layout feature is one
+    // outlet must not pay a module request on first paint). The one
+    // boot exception is the deferred trigger below.
+    // Loading content: the inert server-rendered template beside an
+    // outlet. Before it loads the busy dim alone shows.
+    // View transitions: the document declares a [data-fui-vt] cell or
+    // a data-fui-vt-kinds vocabulary. Before it loads swaps run bare
+    // and the X-Gofastr-Transition pick is not read.
+    { name: 'transition', selector: '[data-fui-vt-kinds],[data-fui-vt]' },
 ];
 
-  // Demand-loaded modules may declare interactions that must survive their
-  // own cold-cache fetch. This bridge is deliberately metadata-driven: core
-  // owns event retention/replay, while feature modules own selectors and
-  // behavior. No optional component's selectors or policy are hard-coded in
-  // the always-loaded runtime.
+  // Registered behaviours (registry.RegisterBehavior): a component's own
+  // package ships its module and declares its markers and interactions;
+  // the host lists them beside the manifest, live pages as
+  // window.__gofastr_behaviors from /__gofastr/manifest.js, exports and
+  // the embed frame as the inline #gofastr-behaviors block. Same scan,
+  // same bridge, same loader, same module contract as the table above:
+  // the bridge's install loop and _scanForModules both iterate this
+  // list after the kernel's own table, so a registered behaviour's
+  // interactions are retained and replayed exactly as a table module's
+  // are. Parsed here, before the bridge, because the bridge installs
+  // its listeners at boot and reads this list in the same pass.
+  const _registered = (() => {
+    try {
+      const o = window.__gofastr_behaviors ||
+        JSON.parse((document.getElementById('gofastr-behaviors') || {}).textContent || '{}');
+      // Own entries only: the block is JSON from the host, but the
+      // kernel never reads a registry through the prototype chain.
+      // requires is the r array: the modules loadModule'd before this
+      // one (see the loader above). interactions is the x array, in
+      // the bridge's own spec shape (event/selector/keys/scope): the
+      // registry validates the shape at registration, and the filter
+      // keeps a malformed block from reaching the install loop below —
+      // a non-array x throws here inside the try, so the kernel drops
+      // the registry and boots on its own table rather than dying in
+      // that loop, and an entry without an event never installs.
+      return Object.entries(o).map(([n, v]) => ({
+        name: n,
+        selector: v.s.join(','),
+        idle: !!v.i,
+        requires: v.r || [],
+        interactions: (v.x || []).filter((y) => y && y.event),
+      }));
+    } catch (_) {
+      // Silent on purpose: the kernel boots on its own module table
+      // either way, and the bytes for a warning here do not clear the
+      // core budget (measured: +34 gz at level 6 for the long wording,
+      // +17 for the shortest). Re-measure the clearance against
+      // budget_test.go's comment history before spending it rather
+      // than trusting a number written here; it moves under the
+      // kernel. The finding is recorded in
+      // docs/spec-behavior-registry.md.
+      return [];
+    }
+  })();
+
+  // Demand-loaded modules — the kernel's table and registered
+  // descriptors alike — may declare interactions that must survive
+  // their own cold-cache fetch. This bridge is deliberately
+  // metadata-driven: core owns event retention/replay, while feature
+  // modules and registered behaviours own selectors and behavior. No
+  // optional component's selectors or policy are hard-coded in the
+  // always-loaded runtime, and the loop body below is the same for
+  // both tables: what it does with a descriptor is already right.
   const _interactionReplay = new WeakSet();
   const _warnModuleUnavailable = (name) => {
     console.warn('[gofastr] ' + name + ' module unavailable — retrying may help');
   };
+  // The selector is guarded, not trusted. The Go registry validates
+  // every descriptor it builds, but the behaviours block is JSON the
+  // host hands the page, and a hand-written or corrupted one can carry
+  // a well-shaped entry whose selector the browser refuses — or a
+  // keydown with no scope, where querySelector('') throws. That throw
+  // lands here, inside an async listener, long after the parser's try:
+  // an unhandled rejection on every such event, retention silently
+  // dead, nothing in the page saying why. Refusing to resolve a node
+  // is the same answer as not matching one.
   const _interactionNode = (e, spec) => {
-    if (spec.event === 'keydown') {
-      if (!spec.keys || !spec.keys.includes(e.key) ||
-          !document.querySelector(spec.scope || '')) return null;
-      return e.target && e.target.dispatchEvent ? e.target : document.body;
-    }
-    return e.target && e.target.closest && e.target.closest(spec.selector);
+    try {
+      if (spec.event === 'keydown') {
+        if (!spec.keys || !spec.keys.includes(e.key) ||
+            !document.querySelector(spec.scope || '')) return null;
+        return e.target && e.target.dispatchEvent ? e.target : document.body;
+      }
+      return e.target && e.target.closest && e.target.closest(spec.selector);
+    } catch (_) { return null; }
   };
   const _replayInteraction = (e, node) => {
     const init = { bubbles: true, cancelable: true, composed: true };
@@ -520,7 +548,7 @@
     }
     node.dispatchEvent(replay);
   };
-  for (const marker of _moduleMarkers) {
+  for (const marker of _moduleMarkers.concat(_registered)) {
     for (const spec of marker.interactions || []) {
       document.addEventListener(spec.event, async (e) => {
         const node = _interactionNode(e, spec);
@@ -538,11 +566,10 @@
       });
     }
   }
-
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];
-    for (const m of _moduleMarkers) {
+    for (const m of _moduleMarkers.concat(_registered)) {
       const { name, selector, idle } = m;
       // rpc-stub owns static-export clicks. The marker table is shared by all
       // compositions, so skip this one entry instead of fetching dead code.
@@ -676,12 +703,11 @@
   // them when runtime.js loaded after DOMContentLoaded (late injection,
   // fast parse, dynamic re-init).
 
-  // Disclosure keyboard/AT behaviour, aria-expanded mirroring,
-  // Escape-to-close, menu focus-on-open, and the opt-in focus trap,
-  // lives in the split-runtime module at core-ui/runtime/src/disclosure.js,
-  // demand-loaded via the details[data-fui-disclosure] scanner below.
-  // Core keeps only the close-on-navigate lines; the `toggle` event they
-  // raise is what the module reacts to.
+  // Disclosure behaviour — the aria-expanded mirror, Escape-to-close,
+  // the focus containment, the close-on-navigate — lives in
+  // framework/headless's headless-disclosure module (a registered
+  // behaviour, loaded on the details[data-hui-disclosure] marker);
+  // the kernel holds none of it.
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
@@ -705,9 +731,9 @@
   // Initial-pass hooks: these scan the CURRENT DOM, so they have
   // to wait until the document is at least parsed.
   // _bootstrapComponentCSS scans existing markers; _scanForModules
-  // dispatches demand-load modules (the disclosure module is one of
-  // them, and does its own aria-expanded sync for server-rendered
-  // <details>).
+  // dispatches demand-load modules (headless behaviours among them —
+  // the disclosure module does its own aria-expanded sync for
+  // server-rendered <details>).
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that
@@ -740,6 +766,12 @@
     // loads the prefetch machinery; a manifest without one costs nothing.
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.preload)) loadModule('preload');
+    // Deferred outlets: any route in the manifest carrying a
+    // `deferred` list loads the parallel-parts machinery. The address
+    // walk that decides whether the ENVELOPE module boot-loads too
+    // lives in src/parts.js (module-side: a plain page never runs it).
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.deferred && r.deferred.length)) loadModule('parts');
     // Compiled server actions: the manifest names each screen's action
     // hash; the loader module fetches per-screen scripts on navigation.
     // Pages without actions load nothing.

@@ -74,7 +74,7 @@ func (s clientToastSlot) Render() render.HTML {
 	// of the attribute. core-ui/widget's escAttr is unexported, so
 	// we use render.Escape (same set of replacements).
 	return render.HTML(
-		`<div class="ui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
+		`<div class="fui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
 			render.Escape(s.name) + `"></div>`,
 	)
 }

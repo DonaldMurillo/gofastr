@@ -55,28 +55,11 @@ func RuntimeHash() string { return runtimeHash() }
 // `Cache-Control: public, max-age=31536000, immutable` so the browser
 // caches it forever and a new build (different hash → different URL)
 // busts cleanly.
-var (
-	moduleHashesOnce sync.Once
-	moduleHashes     = map[string]string{}
-)
-
 // RuntimeModuleHash returns the content-addressed hash for a split
-// runtime module. Used by client-side preload tags + by the loader
-// to construct `?v=<hash>` URLs. Empty string if the module isn't
-// embedded.
-func RuntimeModuleHash(name string) string {
-	moduleHashesOnce.Do(func() {
-		for _, n := range runtime.ModuleNames() {
-			src, ok := runtime.Module(n)
-			if !ok {
-				continue
-			}
-			sum := sha256.Sum256([]byte(src))
-			moduleHashes[n] = hex.EncodeToString(sum[:8])
-		}
-	})
-	return moduleHashes[name]
-}
+// runtime module, embedded or registered. Used by client-side preload
+// tags + by the loader to construct `?v=<hash>` URLs. Empty string if
+// the module is unknown.
+func RuntimeModuleHash(name string) string { return runtime.ModuleHash(name) }
 
 // RuntimeModuleManifestJSON returns the raw JSON manifest mapping every
 // split runtime module to its content-addressed hash, nil when no
@@ -115,7 +98,23 @@ func RuntimeModuleManifestScript() string {
 			escapeJSONForScript(buf) +
 			`</script>`
 	}
-	return script + ComputeManifestScript()
+	return script + BehaviorsManifestScript() + ComputeManifestScript()
+}
+
+// BehaviorsManifestScript emits the inert JSON block the kernel reads
+// to learn registered behaviours' markers (registry.RegisterBehavior):
+// {"<name>": {"s": ["[data-x]"], "i": true}}. Returns "" when nothing
+// is registered. Live pages get the same data as
+// window.__gofastr_behaviors from /__gofastr/manifest.js; this block is
+// for exports and the embed frame, which must be self-contained.
+func BehaviorsManifestScript() string {
+	buf := runtime.BehaviorsJSON()
+	if buf == nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-behaviors">` +
+		escapeJSONForScript(buf) +
+		`</script>`
 }
 
 // ComputeManifestScript emits an inert JSON manifest mapping registered
@@ -772,20 +771,11 @@ func widgetCSS(def Definition) string {
 	// (a plain preset.Modal would open, trap focus, and round-trip
 	// RPCs while showing no dialog).
 	//
-	// Opt-outs: full-bleed bodies that own (or reject) the chrome.
-	// The markers sit on a slot's root element, one level under the
-	// panel:
-	//   - `.fui-slot-bare` on the body's root element: the
-	//     documented escape hatch for chrome-less content;
-	//   - `[data-fui-lightbox]`: Lightbox viewers center bare media
-	//     on the backdrop; a card behind a photo is unwanted and the
-	//     panel's max-inline-size would fight the viewer's 90vw;
-	//   - `[data-fui-comp="ui-cmd-palette"]`: the command palette
-	//     predates this rule and paints its own 36rem panel (incl. a
-	//     full-screen mobile variant the panel caps would break).
-	//     Legacy exclusion: it should adopt .fui-slot-bare so this
-	//     selector can shrink to the two generic cases.
-	ss.Rule(`.fui-pos-center > .fui-panel:not(:has(> .fui-slot > .fui-slot-bare, > .fui-slot > [data-fui-lightbox], > .fui-slot > [data-fui-comp="ui-cmd-palette"]))`).
+	// Opt-out: full-bleed bodies that own (or reject) the chrome put
+	// `.fui-slot-bare` on the slot's root element, one level under the
+	// panel — the documented escape hatch for chrome-less content
+	// (Lightbox viewers and the command palette use it).
+	ss.Rule(`.fui-pos-center > .fui-panel:not(:has(> .fui-slot > .fui-slot-bare))`).
 		Set(
 			"background", "{colors.surface}",
 			"border", "1px solid {colors.border}",

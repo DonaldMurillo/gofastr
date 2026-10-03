@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 )
 
 func TestFileDropzoneRequiresName(t *testing.T) {
@@ -48,10 +50,20 @@ func TestFileDropzoneAriaLabelOnRegion(t *testing.T) {
 	}
 }
 
-func TestFileDropzoneUsesFileUploadDragDropHook(t *testing.T) {
+// The drop behaviour is headless's: the same hooks headless.FileUpload
+// renders — the armed root, the per-event input lookup, the list, the
+// status, and the two sentences — with no second drop implementation
+// anywhere in this package.
+func TestFileDropzoneUsesTheHeadlessDropHooks(t *testing.T) {
 	h := string(FileDropzone(FileDropzoneConfig{Name: "f", Label: "Upload"}))
-	if !strings.Contains(h, "data-fui-fileupload") {
-		t.Errorf("dropzone should reuse data-fui-fileupload runtime hook:\n%s", h)
+	for _, want := range []string{
+		`data-hui-drop`, `data-hui-drop-input="f"`,
+		`data-hui-drop-list`, `data-hui-drop-status`,
+		`data-hui-drop-one="`, `data-hui-drop-many="`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("dropzone should carry the headless drop hook %q:\n%s", want, h)
+		}
 	}
 }
 
@@ -104,5 +116,79 @@ func TestFileDropzoneExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("dropzone root missing data-test:\n%s", root)
+	}
+}
+
+// The drop hooks are the runtime's contract. A caller's ExtraAttrs
+// reach the root, but a forged data-hui-* key would retarget every
+// drop on the zone to another input, or rewrite the sentence the
+// module announces — so the component's own attributes win, the way
+// every headless component resolves the same collision.
+func TestFileDropzoneRefusesForgedRuntimeHooks(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{
+		Name: "docs", ID: "docs", Label: "Drop files",
+		ExtraAttrs: html.Attrs{
+			"data-hui-drop-input": "someone-elses-input",
+			"data-hui-drop-one":   "pwned {name}",
+			"data-testid":         "zone",
+		},
+	}))
+	if strings.Contains(h, "someone-elses-input") {
+		t.Errorf("a forged data-hui-drop-input retargeted the zone:\n%s", h)
+	}
+	if strings.Contains(h, "pwned") {
+		t.Errorf("a forged data-hui-drop-one rewrote the announcement:\n%s", h)
+	}
+	if !strings.Contains(h, `data-hui-drop-input="docs"`) {
+		t.Errorf("the component's own hook did not survive:\n%s", h)
+	}
+	// What the caller is allowed to hang on the root still arrives.
+	if !strings.Contains(h, `data-testid="zone"`) {
+		t.Errorf("a legitimate extra attribute was dropped:\n%s", h)
+	}
+}
+
+// The upload's field wrapper has the milder sibling of the same
+// problem: a forged data-hui-drop there arms a second drop root
+// around the real one.
+func TestFileUploadWrapperRefusesForgedDropHook(t *testing.T) {
+	h := string(FileUpload(FileUploadConfig{
+		Name: "avatar", ID: "avatar", Label: "Avatar",
+		ExtraAttrs: html.Attrs{"data-hui-drop": "", "data-testid": "field"},
+	}))
+	if strings.Count(h, "data-hui-drop=") != 1 {
+		t.Errorf("the wrapper armed a second drop root:\n%s", h)
+	}
+	if !strings.Contains(h, `data-testid="field"`) {
+		t.Errorf("a legitimate extra attribute was dropped:\n%s", h)
+	}
+}
+
+// TestFileDropzonePreviewDoesNotStealDropOwnership: the preview marker
+// (data-fui-dropzone-preview, the widgets module's) and the headless
+// drop hooks (data-hui-drop-list/-status, this package's registered
+// module) must coexist on one zone without either doubling: exactly one
+// list hook, exactly one status hook, and the preview marker on the
+// input where the widgets module reads it — never on the region the
+// headless module binds.
+func TestFileDropzonePreviewDoesNotStealDropOwnership(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{
+		Name: "files", Label: "Files", ShowPreview: true,
+	}))
+	if n := strings.Count(h, `data-hui-drop-list`); n != 1 {
+		t.Errorf("the drop-list hook must ride exactly once, got %d:\n%s", n, h)
+	}
+	if n := strings.Count(h, `data-hui-drop-status`); n != 1 {
+		t.Errorf("the drop-status hook must ride exactly once, got %d:\n%s", n, h)
+	}
+	if n := strings.Count(h, `data-fui-dropzone-preview=""`); n != 1 {
+		t.Errorf("the preview marker must ride exactly once, got %d:\n%s", n, h)
+	}
+	// The preview marker belongs to the file input; the region belongs
+	// to the headless module. A marker on the region would make the
+	// widgets module treat the whole zone as the preview target.
+	region := h[:strings.Index(h, "<input")]
+	if strings.Contains(region, "data-fui-dropzone-preview") {
+		t.Errorf("the preview marker leaked onto the drop region:\n%s", h)
 	}
 }

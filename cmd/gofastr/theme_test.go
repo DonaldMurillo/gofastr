@@ -2,55 +2,116 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// TestThemeStarterPassesValidation guards against the regression where
-// gofastr theme init wrote a Theme literal missing one of the required
-// sub-structs (Layout, Shadows, …). The generated file is what new
-// projects boot with; Validate() panicking on app start is the worst
-// possible first impression.
+// TestThemeStarterBoots writes the starter into a temp Go module and
+// RUNS it: a _test.go beside the scaffolded theme.go calls
+// App.Validate() (the check App.WithTheme panics through at boot) and
+// pins the derived size-scale names.
 //
-// We can't `exec` the binary inside go test cheaply, so we parse the
-// const themeStarter directly: it's the literal that ends up on disk
-// 1:1. Each top-level field of style.Theme that has a value type
-// MUST appear in the literal. Otherwise AutoFillNames will leave it
-// zero-valued and Validate will reject it.
-func TestThemeStarterPassesValidation(t *testing.T) {
-	// Every required top-level Theme field. Keep this list in lockstep
-	// with style.Theme: adding a field to Theme without updating the
-	// scaffold IS the bug this test catches.
-	required := []string{
-		"DarkColors:",
-		"Colors:",
-		"Spacing:",
-		"Radii:",
-		"Fonts:",
-		"Breakpoints:",
-		"Shadows:",
-		"ZIndex:",
-		"Durations:",
-		"Typography:",
-		"Layout:",
+// The previous incarnation grepped eleven field names out of a
+// hand-maintained template and passed while the scaffold panicked at
+// boot (`style.Theme: invalid: Theme.Colors.CodeSurface:
+// Color.Value is empty`): the template omitted Colors.CodeSurface/
+// CodeText/CodeBorder, the five overlay/toast/dropdown durations and
+// the whole easing set. The starter now comes from the same emitter
+// `theme edit` writes back with, and this test proves the file on disk
+// compiles and validates, not that it contains substrings.
+func TestThemeStarterBoots(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles and runs a temp Go module")
 	}
-	for _, f := range required {
-		if !strings.Contains(themeStarter, f) {
-			t.Errorf("themeStarter is missing required Theme field %q — a fresh `gofastr theme init` will boot with a zero-valued sub-struct and Validate() will panic", f)
+	bootThemeModule(t, themeStarterSource())
+}
+
+// TestThemeEditWritebackBoots runs the `theme edit` write-back source
+// through the same boot: emitThemeGoSource is what a user's edited
+// theme/theme.go is rewritten from, so its output must validate too —
+// and its auto-derived names must be the canonical ones, or every
+// token past xl silently falls back to the framework's hard-coded
+// values (the xxl/xxxl rename).
+func TestThemeEditWritebackBoots(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles and runs a temp Go module")
+	}
+	src, err := emitThemeGoSource(uitheme.Default(), "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	bootThemeModule(t, string(src))
+}
+
+// bootThemeModule scaffolds a throwaway Go module whose theme package
+// is src, adds a test that exercises the boot contract, and runs
+// `go test` in it — the repo root is wired in through a replace
+// directive the way the other generated-project tests in this package
+// do, so no network is needed (core-ui/style has no module deps).
+func bootThemeModule(t *testing.T, src string) {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/themeb\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "theme"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theme", "theme.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The boot contract: what App.WithTheme enforces at startup, plus
+	// the size-scale names the xxl/xxxl regression misderived. Written
+	// as a string so it lives in the temp module, not this one.
+	boot := `package theme
+
+import "testing"
+
+func TestThemeBoots(t *testing.T) {
+	if err := App.Validate(); err != nil {
+		t.Fatalf("theme does not validate (a host would panic at boot): %v", err)
+	}
+	for _, tc := range []struct{ got, want, what string }{
+		{App.Spacing.XXL.Name, "2xl", "Spacing.XXL"},
+		{App.Spacing.XXXL.Name, "3xl", "Spacing.XXXL"},
+		{App.Typography.XXL.Name, "2xl", "Typography.XXL"},
+		{App.Typography.XXXL.Name, "3xl", "Typography.XXXL"},
+		{App.Breakpoints.XXL.Name, "2xl", "Breakpoints.XXL"},
+		{App.Colors.CodeSurface.Name, "code-surface", "Colors.CodeSurface"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: auto-derived Name %q, want %q", tc.what, tc.got, tc.want)
 		}
 	}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "theme", "boot_test.go"), []byte(boot), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	// Smoke: types referenced in the starter must actually exist in
-	// the public style package; catches removed-but-still-scaffolded
-	// type drift. We touch the symbols at compile time below; if any
-	// vanish, the file won't compile.
-	_ = style.LayoutSet{}
-	_ = style.Spacing{}
-	_ = style.Theme{}
+	test := exec.Command("go", "test", "./...")
+	test.Dir = dir
+	if out, err := test.CombinedOutput(); err != nil {
+		t.Fatalf("go test in temp module: %v\n%s", err, out)
+	}
 }
 
 // The starter's DarkColors block is generated from the canonical framework
@@ -69,5 +130,18 @@ func TestThemeStarterDarkColorsMatchCanonical(t *testing.T) {
 	}
 	if strings.Count(themeStarter, `"#`) < len(dark) {
 		t.Error("themeStarter lost its color literals")
+	}
+}
+
+// TestThemeStarterIsTheAppsOwn pins the two places the starter departs
+// from uitheme.Default: it names the theme "app", not the framework's
+// "framework-ui", and declares no component options, since the
+// framework's complete default set is compiled into :root anyway.
+func TestThemeStarterIsTheAppsOwn(t *testing.T) {
+	if !strings.Contains(themeStarter, "\tName: \"app\",\n") {
+		t.Error(`theme starter does not name the theme "app"`)
+	}
+	if strings.Contains(themeStarter, "Components:") {
+		t.Error("theme starter declares component options; the framework defaults already apply")
 	}
 }

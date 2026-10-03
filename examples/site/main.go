@@ -24,14 +24,17 @@ import (
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
-	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
+	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
+	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
@@ -133,7 +136,10 @@ var siteIslands *island.Manager
 func setupServer() *framework.App {
 	site := app.NewApp("GoFastr")
 
-	t := createTheme()
+	// The site's chrome packages bring their own tokens (type-ramp
+	// steps, the colophon's 64px, the doc page's 96px, the banner
+	// hairline); Extend adds them to the theme.
+	t := createTheme().Extend(siteheader.Tokens, sitefooter.Tokens, docpage.Tokens)
 	site.WithTheme(t)
 
 	// CommandPalette, the global ⌘K palette. We only need the widget
@@ -147,11 +153,23 @@ func setupServer() *framework.App {
 		// and on the static export (no search endpoint needed). Takes
 		// precedence over RPCPath in the combobox.
 		Commands: paletteCommands(),
+		// The no-script destination: the docs index lists everything the
+		// palette lists (it is the palette's own catalog), so a reader
+		// without script reaches the same set by an ordinary link.
+		FallbackHref: "/docs/",
 	})
 
-	layout := app.NewLayout("main").
-		WithHeader(&HeaderComponent{}).
-		WithFooter(&FooterComponent{})
+	layout := app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		// The page-tall stack with the sticky banner bar directly
+		// inside it: the header pins for the whole page (siteheader
+		// owns the sticky + z-order), the primary slot scrolls under
+		// it, and the colophon closes the page.
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			siteHeader(ctx),
+			l.Primary(),
+			siteFooter(),
+		)
+	})
 	site.SetDefaultLayout(layout)
 
 	registerScreens(site)
@@ -266,6 +284,7 @@ func setupServer() *framework.App {
 	// same router instance. The palette's RPC handler runs an in-memory
 	// fuzzy match over a curated route catalog, no DB roundtrip.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
 
 	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
@@ -283,18 +302,35 @@ func setupServer() *framework.App {
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
 	// is genuine (network panel will show the POST).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/kiln/approve", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	// ToggleAction demo, same deal: the toggle runtime keeps the
 	// committed (or reverted) state only on a real 2xx, so the demo
 	// buttons round-trip through this no-op.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Headless landing demo endpoints (screen_headless_landing.go): the
+	// newsletter round trip (island JSON with the runtime, urlencoded
+	// full page without it) and the cold LoadAuto fragment. Same
+	// caveat as the rest of the /__site/* family: demo-only, no CSRF,
+	// no rate limit, no auth, bodies capped in the handlers.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
+	fwApp.Router().Post("/__site/headless/subscribe", http.HandlerFunc(serveHeadlessSubscribe))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
+	fwApp.Router().Post("/__site/headless/settings", http.HandlerFunc(serveHeadlessSettings))
+	// The dashboard's invoice table island (screen_headless_dashboard.go):
+	// a GET per theme, the re-rendered table back. Theme rides the path
+	// so the no-script sort hrefs stay clean.
+	fwApp.Router().Get("/__site/headless/invoices/{theme}", http.HandlerFunc(serveHeadlessInvoices))
+	fwApp.Router().Get("/__site/headless/late", http.HandlerFunc(serveHeadlessLate))
 	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
 	// and the four /components/optimistic-* demos. Each endpoint is a
 	// demo-only no-op or in-memory mutation; same caveat as the rest of
@@ -304,9 +340,11 @@ func setupServer() *framework.App {
 	// OptimisticAction commits; the other returns 422 so it shakes and
 	// reverts. Neither reads a body, the OptimisticAction runtime is
 	// fire-and-forget.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/edit/ok", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/edit/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "validation failed", http.StatusUnprocessableEntity)
 	}))
@@ -315,6 +353,7 @@ func setupServer() *framework.App {
 	// immediately. The slow endpoint exercises the pending window
 	// (aria-busy + disabled) before commit; the fail endpoint exercises
 	// the shake-and-revert path.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/slow", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Long enough to show the pending window (aria-busy + disabled),
 		// short enough not to be a cheap connection-amplification lever on
@@ -322,6 +361,7 @@ func setupServer() *framework.App {
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "save failed", http.StatusUnprocessableEntity)
 	}))
@@ -333,6 +373,7 @@ func setupServer() *framework.App {
 	// without bound. The create list is independent of the delete list so a
 	// created n4 never reaches /components/optimisticdelete (whose modals are
 	// mounted only for the initial n1–n3).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/create", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := demoStateWrite(w, r)
 		sess.mu.Lock()
@@ -354,6 +395,7 @@ func setupServer() *framework.App {
 	// VISITOR's delete list, then return the fresh authoritative list HTML.
 	// The runtime swaps the list region's innerHTML with the response body.
 	// A missing or unknown id leaves the list unchanged.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		sess := demoStateWrite(w, r)
@@ -379,6 +421,7 @@ func setupServer() *framework.App {
 	// "failed delete leaves the list/row unchanged" invariant. The
 	// runtime broadcasts the auto-built error object into opt-delete-list
 	// and the html-mode region ignores the non-string value (no swap).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/delete/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "delete rejected (demo)", http.StatusUnprocessableEntity)
 	}))
@@ -398,6 +441,7 @@ func setupServer() *framework.App {
 	// interactive examples. They have no CSRF protection, rate limiting,
 	// or input sanitization. Do NOT copy these as a template for
 	// production code.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := demoStateWrite(w, r)
 		sess.mu.Lock()
@@ -407,9 +451,11 @@ func setupServer() *framework.App {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `%d`, n)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Cap the body: this handler buffers the decoded message, so an
 		// uncapped POST is a memory lever on a public origin. 4 KiB is far
@@ -430,6 +476,7 @@ func setupServer() *framework.App {
 		msg := "✓ Received: " + body.Message
 		json.NewEncoder(w).Encode(msg)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -439,6 +486,7 @@ func setupServer() *framework.App {
 	// order/moved/container/version; the conflict endpoint returns fresh <li>
 	// HTML for 409 reconciliation. Each visitor moves their own board, no
 	// shared global to vandalize.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Cap the body, a move carries a handful of short card ids; without
 		// this an attacker could POST a 10 MiB order=k1,k1,k1,… and inflate
@@ -529,12 +577,12 @@ func setupServer() *framework.App {
 			http.Error(w, "unknown container", http.StatusNotFound)
 			return
 		}
-		items := make([]patternsSortablelist.Item, len(col.Cards))
+		items := make([]ui.SortableItem, len(col.Cards))
 		for i, c := range col.Cards {
-			items[i] = patternsSortablelist.Item{Key: c.Key, Label: c.Title}
+			items[i] = ui.SortableItem{Key: c.Key, Label: c.Title}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, string(patternsSortablelist.RenderItems(patternsSortablelist.Config{
+		fmt.Fprint(w, string(ui.SortableListItems(ui.SortableListConfig{
 			Label:       col.Title,
 			Group:       "kanban-demo",
 			Container:   col.ID,
@@ -568,6 +616,7 @@ func setupServer() *framework.App {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(renderCustomerDetail(c)))
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/error", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "something went wrong")
@@ -632,6 +681,7 @@ func setupServer() *framework.App {
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
 	// Server-path toast demo: any data-fui-rpc handler can attach the toast
 	// header on a 2xx and the runtime fires it (no SSE, no extra request).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toast/push", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		ui.AddToastSuccess(w, "Saved", "Pushed from the server via the X-Gofastr-Toast header.", 5000)
 		w.WriteHeader(http.StatusNoContent)
@@ -752,23 +802,39 @@ type paletteRoute struct{ title, path string }
 
 // paletteCatalog seeds the ⌘K palette. Lives in main so add_routes
 // adds an entry here at the same time it adds a Register call below.
-var paletteCatalog = []paletteRoute{
-	{"Home", "/"},
-	{"Get started", "/get-started"},
-	{"Docs index", "/docs/"},
-	{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
-	{"Examples: the reference apps", "/examples"},
-	{"Plugins: the gofastr-plugins registry", "/plugins"},
-	{"Workspace: master-detail pane-host example", "/examples/workspace"},
-	{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
-	{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
-	{"Kiln: agent build mode (experimental)", "/kiln"},
-	{"Philosophy: the convictions essay", "/philosophy"},
-	{"Reader-ready pages: browser Reader Mode", "/reader"},
-	{"Components: gallery index", "/components/"},
-	{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
-	{"Forms wizard: multi-step round-trip", "/forms/wizard"},
-	{"Print: invoice / receipt documents", "/print/invoice/1"},
+// The headless showcase's entries are derived from landingRoutes —
+// the same table the routes come from (screen_headless_landing.go) —
+// so a new theme cannot miss the palette.
+var paletteCatalog = buildPaletteCatalog()
+
+func buildPaletteCatalog() []paletteRoute {
+	catalog := []paletteRoute{
+		{"Home", "/"},
+		{"Get started", "/get-started"},
+		{"Docs index", "/docs/"},
+		{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
+		{"Examples: the reference apps", "/examples"},
+	}
+	for _, r := range landingRoutes {
+		catalog = append(catalog, paletteRoute{
+			"Headless landing: " + r.Name + " theme",
+			landingRoutePath(r.Segment),
+		})
+	}
+	catalog = append(catalog,
+		paletteRoute{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
+		paletteRoute{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
+		paletteRoute{"Plugins: the gofastr-plugins registry", "/plugins"},
+		paletteRoute{"Workspace: master-detail pane-host example", "/examples/workspace"},
+		paletteRoute{"Kiln: agent build mode (experimental)", "/kiln"},
+		paletteRoute{"Philosophy: the convictions essay", "/philosophy"},
+		paletteRoute{"Reader-ready pages: browser Reader Mode", "/reader"},
+		paletteRoute{"Components: gallery index", "/components/"},
+		paletteRoute{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
+		paletteRoute{"Forms wizard: multi-step round-trip", "/forms/wizard"},
+		paletteRoute{"Print: invoice / receipt documents", "/print/invoice/1"},
+	)
+	return catalog
 }
 
 // paletteCommands maps the curated route catalog into static palette
@@ -844,6 +910,15 @@ func registerScreens(site *app.App) {
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
 	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	// ── Headless landing, the theme-layer showcase (additive) ──────
+	// /examples/headless/{theme}/landing: one screen parameterised by
+	// the theme segment, its content scoped by the route's
+	// boot-registered theme (screen_headless_landing.go). Its
+	// /__site/headless/* endpoints are mounted in setupServer.
+	site.Register("/examples/headless/:theme/landing", &HeadlessLandingScreen{}, nil)
+	// The form family's dashboard: same parameterised shape, scoped by
+	// the theme segment (screen_headless_dashboard.go).
+	site.Register("/examples/headless/:theme/dashboard", &HeadlessDashboardScreen{}, nil)
 	// Intercepting route: the detail is a normal page registration, and
 	// InterceptFrom only changes how a soft nav that STARTED on the list
 	// presents it. Hard load, refresh, or an external link still render
@@ -884,12 +959,17 @@ func registerScreens(site *app.App) {
 	// detects sibling-nav inside the group (via data-fui-screen-group on
 	// the layout wrapper) and swaps ONLY the inner content cell, the
 	// sidebar stays in place across navigations, no full reload.
-	componentsLayout := app.NewLayout("components").
-		WithSidebar(&ComponentsSidebar{})
+	componentsLayout := app.NewLayout("components", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
+		// The row (not a second screen-tall stack: this layer nests
+		// inside the default layout's page column) arranges the
+		// multi-level sidebar beside the primary slot.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())
+	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
 		WithTitle("Components").
-		WithDescription("Every framework/ui and core-ui/patterns constructor, one page each."), nil)
+		WithDescription("Every framework/ui constructor, one page each."), nil)
 	for _, c := range componentCatalog {
 		componentsGroup.Screen(app.NewScreen("/components/"+c.Slug, &ComponentShowcaseScreen{Entry: c}).
 			WithTitle(c.Name), nil)

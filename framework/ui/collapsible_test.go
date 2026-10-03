@@ -92,7 +92,7 @@ func TestCollapsibleOpen(t *testing.T) {
 func TestCollapsibleDisclosure(t *testing.T) {
 	h := Collapsible(CollapsibleConfig{Summary: "Section"}, render.Text("content"))
 
-	mustContain(t, h, "data-fui-disclosure")
+	mustContain(t, h, "data-hui-disclosure")
 }
 
 func TestCollapsibleMissingSummary(t *testing.T) {
@@ -135,5 +135,15 @@ func TestCollapsibleExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("details root missing data-test:\n%s", root)
+	}
+}
+
+// Sections sharing a Name form the native exclusive group: the browser
+// opens one <details name> at a time.
+func TestCollapsibleNameGroupsSections(t *testing.T) {
+	h := Collapsible(CollapsibleConfig{Summary: "Billing", Name: "faq"})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `name="faq"`) {
+		t.Errorf("details root missing name=\"faq\":\n%s", root)
 	}
 }

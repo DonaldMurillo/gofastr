@@ -2,15 +2,19 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // TestSiteFooterLinkTargetsAt390 pins #257: at a phone viewport, every
@@ -21,20 +25,39 @@ func TestSiteFooterLinkTargetsAt390(t *testing.T) {
 	if testing.Short() {
 		t.Skip("chromedp")
 	}
-	entry, ok := registry.Lookup("ui-site-footer")
+	entry, ok := registry.Lookup("docsite-footer")
 	if !ok {
-		t.Fatal("ui-site-footer style not registered")
+		t.Fatal("docsite-footer style not registered")
 	}
+	// The site's theme carries the spacing values the sheet reads; the
+	// tokens files complete it with the colophon's own step. Owned
+	// sheets read tokens without fallbacks, so the fixture page must
+	// carry the theme's :root block the way the running app's app.css
+	// does.
+	th := theme.Default().Extend(sitefooter.Tokens)
+	var root strings.Builder
+	root.WriteString(":root{")
+	tokens := style.ThemeToTokens(th)
+	for _, k := range slices.Sorted(maps.Keys(tokens)) {
+		if strings.Contains(k, ".") {
+			continue // dark/component entries are not custom-property names
+		}
+		root.WriteString("--" + k + ":" + tokens[k] + ";")
+	}
+	root.WriteString("}")
 	page := `<!doctype html><html><head><style>` +
-		entry.CSSFor(style.Theme{}) +
+		root.String() +
+		entry.CSSFor(th) +
 		`</style></head><body style="margin:0">` +
-		string(ui.SiteFooter(ui.SiteFooterConfig{
-			Columns: []ui.SiteFooterColumn{
-				{Title: "Product", Links: []ui.SiteFooterLink{
+		string(sitefooter.Render(sitefooter.Config{
+			Version: "dev",
+			Tagline: "hit-area fixture",
+			Columns: []sitefooter.Column{
+				{Title: "Product", Links: []sitefooter.Link{
 					{Label: "Pricing", Href: "/pricing"},
 					{Label: "About", Href: "/about"},
 				}},
-				{Title: "Legal", Links: []ui.SiteFooterLink{
+				{Title: "Legal", Links: []sitefooter.Link{
 					{Label: "Terms", Href: "/terms"},
 					{Label: "Privacy", Href: "/privacy"},
 				}},

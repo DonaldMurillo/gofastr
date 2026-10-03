@@ -24,6 +24,22 @@ func TestReadModulePathAndImportPathFor(t *testing.T) {
 	}
 }
 
+// A go.mod may quote the module path and trail a comment; both forms
+// are legal and must parse to the bare path.
+func TestReadModulePathQuotedAndCommented(t *testing.T) {
+	for _, tc := range []struct{ name, goMod, want string }{
+		{"plain", "module example.com/plain\n\ngo 1.26\n", "example.com/plain"},
+		{"quoted", "module \"example.com/q\"\n\ngo 1.26\n", "example.com/q"},
+		{"trailing comment", "module example.com/c // the app\n\ngo 1.26\n", "example.com/c"},
+	} {
+		dir := t.TempDir()
+		writeTemp(t, dir, "go.mod", tc.goMod)
+		if got := ReadModulePath(dir); got != tc.want {
+			t.Errorf("%s: ReadModulePath = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // The pass discovers stylesheets as well as Go, but the Go analyzers'
 // accessors must stay Go-only: every existing analyzer assumes a file it
 // is handed parses as Go, and quietly feeding it a stylesheet is the

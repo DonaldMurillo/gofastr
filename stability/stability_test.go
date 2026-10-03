@@ -1,10 +1,22 @@
 package stability
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+// goStderr returns what a failed go command wrote to stderr. Output()
+// keeps it on the error, and a failure that says only "exit status 1"
+// is a failure nobody can act on from a CI log.
+func goStderr(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return strings.TrimSpace(string(ee.Stderr))
+	}
+	return ""
+}
 
 // modulePackages returns every package in the module via `go list ./...`.
 //
@@ -17,7 +29,7 @@ func modulePackages(t *testing.T) []string {
 	t.Helper()
 	rootOut, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()
 	if err != nil {
-		t.Fatalf("go list -m: %v", err)
+		t.Fatalf("go list -m: %v\n%s", err, goStderr(err))
 	}
 	root := strings.TrimSpace(string(rootOut))
 	if root == "" {
@@ -27,7 +39,7 @@ func modulePackages(t *testing.T) []string {
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go list ./... in %s: %v", root, err)
+		t.Fatalf("go list ./... in %s: %v\n%s", root, err, goStderr(err))
 	}
 	var pkgs []string
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
@@ -119,5 +131,21 @@ func TestClassifyInternalAlwaysWins(t *testing.T) {
 		if !ok || got != Internal {
 			t.Errorf("%s: got (%s, %v), want (internal, true)", p, got, ok)
 		}
+	}
+}
+
+// goStderr is what turns "exit status 1" into a reason: both branches
+// have a case, so removing either would show here rather than in a CI
+// log that says nothing.
+func TestGoStderrReportsWhatTheCommandWrote(t *testing.T) {
+	_, err := exec.Command("sh", "-c", "echo '  it broke  ' >&2; exit 1").Output()
+	if err == nil {
+		t.Fatal("the command was meant to fail")
+	}
+	if got := goStderr(err); got != "it broke" {
+		t.Fatalf("goStderr(ExitError) = %q, want the trimmed stderr", got)
+	}
+	if got := goStderr(errors.New("not an exit error")); got != "" {
+		t.Fatalf("goStderr(plain error) = %q, want empty", got)
 	}
 }

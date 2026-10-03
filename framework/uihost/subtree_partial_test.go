@@ -13,9 +13,9 @@ import (
 // that exercises every subtree-partial branch.
 func chainTestApp() *app.App {
 	application := app.NewApp("t")
-	application.SetDefaultLayout(app.NewLayout("site").WithHeader(app.NewStaticComponent("SITE_HEADER")))
+	application.SetDefaultLayout(headerLayout("site", app.NewStaticComponent("SITE_HEADER")))
 	application.Register("/about", &testHomeComp{}, nil)
-	g := app.NewScreenGroup("/docs", app.NewLayout("docs").WithSidebar(app.NewStaticComponent("DOCS_NAV")))
+	g := app.NewScreenGroup("/docs", sidebarLayout("docs", app.NewStaticComponent("DOCS_NAV")))
 	g.Screen(app.NewScreen("intro", &testHomeComp{}), nil)
 	g.Screen(app.NewScreen("guide", &testHomeComp{}), nil)
 	application.Router.ScreenGroup(g)

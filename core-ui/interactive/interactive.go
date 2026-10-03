@@ -447,7 +447,8 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 // state immediately on click, fires an RPC in the background, and
 // reverts to idle if the RPC fails (non-2xx or network error).
 //
-// The runtime module optimisticaction.js handles the full lifecycle:
+// The headless action contract (data-hui-action*, bound through the
+// kernel's action primitive) owns the lifecycle:
 // idle → pending (optimistic flip) → committed (RPC 2xx) or error → idle.
 //
 // The caller provides two visual states:
@@ -464,28 +465,27 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 //
 // Produces:
 //
-//	<button data-fui-comp="ui-optimistic-action"
-//	        data-state="idle"
-//	        data-fui-optimistic-endpoint="/api/like/42"
-//	        data-fui-optimistic-method="POST">
-//	  <span data-fui-optimistic-idle><span class="icon">♡</span> Like</span>
-//	  <span hidden data-fui-optimistic-success><span class="icon">♥</span> Liked</span>
+//	<button data-state="idle"
+//	        data-hui-action="" data-hui-action-endpoint="/api/like/42">
+//	  <span data-hui-action-idle><span class="icon">♡</span> Like</span>
+//	  <span hidden data-hui-action-done><span class="icon">♥</span> Liked</span>
 //	</button>
+
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 	attrs := map[string]string{
-		"data-fui-comp":                "ui-optimistic-action",
-		"data-state":                   "idle",
-		"data-fui-optimistic-endpoint": action.path,
+		"data-state":               "idle",
+		"data-hui-action":          "",
+		"data-hui-action-endpoint": action.path,
 	}
 	if action.method != "" && action.method != "POST" {
-		attrs["data-fui-optimistic-method"] = action.method
+		attrs["data-hui-action-method"] = action.method
 	}
 	idleSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-idle": "",
+		"data-hui-action-idle": "",
 	}, idle)
 	successSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-success": "",
-		"hidden":                      "",
+		"data-hui-action-done": "",
+		"hidden":               "",
 	}, success)
 	return render.Tag("button", attrs, idleSpan, successSpan)
 }
@@ -638,8 +638,8 @@ func OpenOnClick(html render.HTML, widget string) render.HTML {
 // Toast is the config for a click-fired toast notification. Zero fields
 // are omitted from the emitted JSON, so a Toast{Variant, Title, Body,
 // TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…},
-// the shape call sites hand-write. The runtime's toast module
-// (core-ui/runtime/src/toasts.js __gofastr.toast) reads these keys:
+// the shape call sites hand-write. The feedback module's toast
+// runtime (`headless-feedback` `__gofastr.toast`) reads these keys:
 // variant, title, body, ttl, stack.
 type Toast struct {
 	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
@@ -681,36 +681,47 @@ func marshalToast(t Toast) string {
 var validPanes = map[string]bool{"secondary": true, "tertiary": true}
 
 // OpenPaneOnClick wraps an HTML element so clicking it opens the named
-// side pane. Maps to data-fui-pane-open="<pane>". Panics unless pane is
+// side pane. Maps to data-hui-pane-open-control="<pane>". Panics unless pane is
 // "secondary" or "tertiary".
 func OpenPaneOnClick(html render.HTML, pane string) render.HTML {
 	if !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: OpenPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
 	}
-	return injectAttr(html, "data-fui-pane-open", pane)
+	return injectAttr(html, "data-hui-pane-open-control", pane)
 }
 
 // ClosePaneOnClick wraps an HTML element so clicking it closes a side
-// pane. Maps to data-fui-pane-close="<pane>". A non-empty pane
+// pane. Maps to data-hui-pane-close="<pane>". A non-empty pane
 // ("secondary" or "tertiary") closes that specific pane; an empty pane
-// emits data-fui-pane-close="" and closes the topmost open pane. Any
+// emits data-hui-pane-close="" and closes the topmost open pane. Any
 // other value panics.
 func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	if pane != "" && !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: ClosePaneOnClick pane must be \"secondary\", \"tertiary\", or \"\" (topmost), got %q", pane))
 	}
-	return injectAttr(html, "data-fui-pane-close", pane)
+	return injectAttr(html, "data-hui-pane-close", pane)
+}
+
+// SwapPaneOnClick wraps an HTML element so clicking it opens the named
+// side pane and closes its sibling (one open pane at a time). Maps to
+// data-hui-pane-swap="<pane>". Panics unless pane is "secondary" or
+// "tertiary".
+func SwapPaneOnClick(html render.HTML, pane string) render.HTML {
+	if !validPanes[pane] {
+		panic(fmt.Sprintf("interactive: SwapPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
+	}
+	return injectAttr(html, "data-hui-pane-swap", pane)
 }
 
 // PaneKey labels a pane trigger with the identity of what it opens,
 // the ticket id, the record slug, whatever the pane will show. Maps to
-// data-fui-pane-key="<key>".
+// data-hui-pane-key="<key>".
 //
 // It is only read on hosts that opted into URL round-tripping with
 // ui.PaneHostConfig.DeepLinkParam: opening through a keyed trigger
 // writes `?<param>=<pane>:<key>`, so refreshing or sharing that URL
 // reproduces the open pane, and Back closes it. Compose it with
-// OpenPaneOnClick (or a manual data-fui-pane-open) on the same element:
+// OpenPaneOnClick (or a manual data-hui-pane-open-control) on the same element:
 //
 //	interactive.PaneKey(
 //	    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
@@ -724,7 +735,7 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 // The server must look it up rather than trusting it. See
 // ui.PaneDeepLink.
 func PaneKey(html render.HTML, key string) render.HTML {
-	return injectAttr(html, "data-fui-pane-key", key)
+	return injectAttr(html, "data-hui-pane-key", key)
 }
 
 // ─── Signal display bindings ───────────────────────────────────────

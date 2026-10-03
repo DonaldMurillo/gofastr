@@ -57,7 +57,7 @@ capture previous projection
 | State | Meaning | Where it lives |
 |---|---|---|
 | `idle` | Resting; no mutation in flight. SSR ships here. | `data-state="idle"` |
-| `pending` | Optimistic projection is painted; the RPC is in flight. Control is `aria-busy="true"` and disabled. | `data-state="pending"` |
+| `pending` | Optimistic projection is painted; the RPC is in flight. Control is `aria-busy="true"` and ignores re-entry; it is not disabled, so keyboard focus stays on it. | `data-state="pending"` |
 | `committed` | The RPC returned 2xx. The projection is now authoritative. | `data-state="committed"` |
 | `conflicted` | A versioned 409. The runtime fetches fresh HTML from the conflict endpoint and replaces the affected region. (Sortable-specific today.) | `data-state` on the list, plus an `aria-live` announcement |
 | `failed` | The RPC returned non-2xx (or the network threw). The runtime rolls the projection back to `idle` and announces. `OptimisticAction` paints a brief `error` shake first. | `data-state="error"` (OptimisticAction) or direct revert to `idle` (ToggleAction) |
@@ -72,10 +72,9 @@ the same attribute name across primitives so a single CSS selector
 The lifecycle is **button-scoped and re-entry-safe**. While a button is in
 `pending`:
 
-- `OptimisticAction` ignores further clicks (`if (state === 'committed' ||
-  state === 'pending') return;` in `optimisticaction.js`).
-- `ToggleAction` does the same (`if (state === 'pending') return;` in
-  `toggleaction.js`).
+- `OptimisticAction` ignores further clicks (the pending/committed
+  re-entry guard in the kernel's `action` module).
+- `ToggleAction` does the same (the same `data-hui-action*` guard).
 - `sortablelist` ignores new grabs until the active commit settles.
 
 For mutations that must be **globally** idempotent across buttons, tabs,
@@ -99,7 +98,7 @@ coherent.
 ### Out-of-order responses
 
 Each primitive keeps at most one in-flight request per trigger element.
-Because the trigger is disabled during `pending`, a second click cannot
+Because the trigger ignores clicks during `pending`, a second click cannot
 start a second fetch and arrive in a different order. The runtime does
 **not** coordinate across triggers: if two different buttons POST to the
 same handler, their responses reconcile independently against whatever
@@ -197,7 +196,7 @@ users. The primitives handle this differently:
   reduce)`; the visible label flip is unchanged because it carries
   information, not decoration.
 - **`aria-live`** regions announce sortable grab/move/rollback/conflict
-  events (the polite region is wired in `sortablelist.js`).
+  events (the polite region is wired into the `headless-sortablelist` module).
 
 The two button primitives (`OptimisticAction`, `ToggleAction`) do **not**
 today emit a spoken "Saved" / "Rolled back" announcement; they rely on
@@ -242,8 +241,9 @@ already complete are linked, not rebuilt.
 following, watch / unwatch, subscribe / unsubscribe, default-plan picker.
 
 **Primitive:** `ui.ToggleAction` (`framework/ui/toggleaction.go`). Runtime:
-`toggleaction.js`. SSR ships the initial state via `Committed`; the
-runtime mirrors it onto `aria-pressed` and flips idle↔committed on click.
+the kernel's `action` module through the `data-hui-action*` hooks. SSR ships
+the initial state via `Committed`; the runtime mirrors it onto `aria-pressed`
+and flips idle↔committed on click.
 A second click reverts when `AllowUntoggle` (or `UntoggleEndpoint`) is
 set; without it the button is sticky once committed, matching
 `OptimisticAction`.
@@ -283,7 +283,8 @@ validates the new one.
 
 **Primitive:** `ui.OptimisticAction` (`framework/ui/optimisticaction.go`)
 as the commit trigger, paired with a text field whose prior value is the
-rollback target. Runtime: `optimisticaction.js`. The button flips to its
+rollback target. Runtime: the kernel's `action` module through the
+`data-hui-action*` hooks. The button flips to its
 success label optimistically, fires its endpoint, and on non-2xx shakes
 and reverts. The `error` shake animation respects `prefers-reduced-motion`.
 
@@ -370,11 +371,13 @@ it was), while a sibling `text`-mode status node renders a
 human-readable "Error: <status> — <text>" line.
 
 **The temp-row pattern (what "optimistic" adds):** a *true* optimistic
-create paints the row before the fetch resolves. That requires either (a)
-an island with a small amount of registered JS that mints a `temp:<id>`
+create paints the row before the fetch resolves. That requires an
+island with a small amount of registered JS that mints a `temp:<id>`
 row, fires the RPC, and swaps the temp row for the authoritative one on
-2xx, or (b) a future runtime attribute in the `data-fui-optimistic-*`
-family. The pattern's invariants, whichever path you take:
+2xx (the retired `data-fui-optimistic-*` family never shipped; the
+headless action contract — `data-hui-action*` — announces the trigger's
+busy/committed/rollback states, and the temp-row swap stays the
+island's). The pattern's invariants:
 
 1. Mint a temp id only the client will see; never let the server persist
    it.
@@ -483,11 +486,12 @@ byte-identical, row still present).
 **Use for:** reordering within a list, or moving cards between columns on
 a board, where two users can move the same item concurrently.
 
-**Primitive:** `core-ui/patterns/sortablelist` with `Config.Version`
-(the concurrency token) and `Config.ConflictRPC` (the reconciliation
-endpoint). Runtime: `sortablelist.js`.
+**Primitive:** `framework/ui.SortableList` with `SortableListConfig.Version`
+(the concurrency token) and `SortableListConfig.ConflictRPC` (the reconciliation
+endpoint; `ui.SortableListItems` renders the fresh rows it returns).
+Runtime: the registered `headless-sortablelist` module.
 
-**Compose:** one `sortablelist.Render` per column, all sharing the same
+**Compose:** one `ui.SortableList` per column, all sharing the same
 `Group` (the board id), each with a unique `Container` (the column id).
 `Version` is appended to every commit POST as `version=<token>`. A 409
 response triggers `ConflictRPC` (a GET), whose response body replaces the
@@ -495,15 +499,15 @@ destination column's `innerHTML`.
 
 <!-- gofastr:compile
 import "fmt"
-import patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
 type w4Col struct{ Title, ID string }
 type w4Board struct{ Version int }
 var col = w4Col{Title: "todo", ID: "col-1"}
 var board = w4Board{Version: 2}
-var items []patternsSortablelist.Item
+var items []ui.SortableItem
 -->
 ```go
-patternsSortablelist.Render(patternsSortablelist.Config{
+ui.SortableList(ui.SortableListConfig{
     Label:       col.Title,
     Group:       "board-1",
     Container:   col.ID,
@@ -553,7 +557,8 @@ a 3-column kanban backed by the package-level `kanbanBoard` store, with
 "which list does this belong to" radio-like control rendered as buttons.
 
 **Primitive:** `ui.ToggleAction` with a shared `Group` key. Runtime:
-`toggleaction.js`. Committing any button in the group optimistically
+the kernel's `action` module through the `data-hui-action*` hooks
+(`data-hui-action-group`). Committing any button in the group optimistically
 reverts the previously-committed sibling (no extra RPC; the server stays
 the source of truth and a later navigation refreshes from server state).
 
@@ -583,15 +588,18 @@ ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
 mutations. If the user clicks Pro then immediately clicks Free before
 either RPC settles, both fire; the server must treat them as the
 independent idempotent writes they are (or apply the version-aware 409
-pattern from Recipe 5 to make the second reject). On a navigation
-refresh, SSR re-reads `currentPlan` from the database and renders exactly
-one button as `Committed`, so client and server reconverge.
+pattern from Recipe 5 to make the second reject). The client still
+converges on one committed button: the revoke runs again when a commit
+settles, so the last completer wins and the other ends idle. On a
+navigation refresh, SSR re-reads `currentPlan` from the database and
+renders exactly one button as `Committed`, so client and server
+reconverge.
 
 **Authorization:** each per-plan endpoint enforces its own authorization.
 A user who can read "Pro" but not select it gets a 4xx on the Pro POST;
-the optimistic flip reverts and the previously-committed sibling stays
-committed (the runtime reverts the failed button to idle; it does not
-re-commit the sibling; that happens on the next navigation).
+the failed button rolls back to idle and the sibling it displaced is
+restored to committed on the spot (the server never accepted the new
+member, so the old one is still the committed one).
 
 **Runnable proof:** the "Free / Pro" cluster on
 [`/components/toggleaction`](../../../examples/site/components.go). E2E:
@@ -604,28 +612,35 @@ network is slow, the server is down, or the response never comes. This
 recipe is not a separate component; it is the failure path every other
 recipe must survive.
 
-**Primitive:** the `error`/`idle` revert path in `optimisticaction.js`,
-the silent revert in `toggleaction.js`, the rollback in `sortablelist.js`,
-and `ui.NetworkRetryBanner` for the global "you appear to be offline"
-surface.
+**Primitive:** the `error`/`idle` revert path in the kernel's
+`action` module (bound through the `data-hui-action*` hooks the
+headless action primitives render), the rollback in
+the registered `headless-sortablelist` module, and `ui.NetworkRetryBanner` for the global "you
+appear to be offline" surface.
 
 **What happens on failure:**
 
 - `OptimisticAction` paints the `error` state (shake animation, disabled
   by `prefers-reduced-motion`), then reverts to `idle` after ~600 ms. It
   dispatches `optimistic-action:rolled-back` so app code can hook in.
-- `ToggleAction` reverts directly to the prior state (`committed` →
-  `idle` on a failed untoggle; `idle` → `idle` on a failed commit). No
-  shake; see [Consistency notes](#consistency-notes).
+- `ToggleAction` fails the same way now that both ride the kernel's
+  `action` primitive: a failed commit paints `error`, dispatches
+  `action:rolled-back`, and reverts to `idle` after ~600 ms. A failed
+  untoggle is the one silent path: the state stays `committed`,
+  because the revert was refused and there is nothing to roll back to.
+  The `ui-toggle-action` stylesheet ships no shake keyframes, so the
+  toggle's `error` window is a pause, not a shake.
 - `sortablelist` restores the destination column from its captured
   snapshot. With `Version` set, a 409 takes the conflict-refresh path
   instead; without it, any non-2xx rolls back.
-- `NetworkRetryBanner` shows after a configurable run of failures
-  (`FailureThreshold`, default 3). It hides when the Retry button's
-  health-check returns 2xx, or when app code calls
-  `window.__gofastr.networkStatus.reportRecovery()`. It does **not** wrap
-  `window.fetch`; apps wire `reportFailure`/`reportRecovery` into their
-  own RPC error handlers.
+- `NetworkRetryBanner` shows when the framework reports the
+  connection lost with a retry scheduled (the headless module follows
+  `window.__gofastr.sseStatus`; the failure-count and SSE-silence
+  triggers retired with the old module). It hides when the Retry
+  button's health-check returns 2xx, or when app code calls
+  `window.__gofastr.networkStatus.reportRecovery()`. It does **not**
+  wrap `window.fetch`; apps wire `reportFailure`/`reportRecovery`
+  into their own RPC error handlers.
 
 **Retry.** The primitives do not auto-retry; they roll back and let the
 user try again. For mutations that should retry transparently (sync,
@@ -671,9 +686,12 @@ know where they agree and where they diverge.
 
 ### Agreed everywhere
 
-- **`pending` disables the trigger.** All three button primitives set
-  `disabled=true` and `aria-busy="true"` during `pending`, and clear both
-  on settlement. Re-entry during `pending` is a no-op.
+- **`pending` marks the trigger busy and ignores re-entry.** The action
+  primitive sets `aria-busy="true"` during `pending` and clears it on
+  settlement; a click while pending is a no-op. It never sets `disabled`:
+  a disabled button drops keyboard focus to the body, and `disabled` has
+  other owners (a hidden conditional region disables its controls) whose
+  decision a settlement must not undo.
 - **CSRF forwarding.** All fetches forward `<meta name="csrf-token">` as
   `X-CSRF-Token`. The handler is responsible for verifying the token; the
   runtime just makes it available without per-call-site plumbing.
@@ -691,26 +709,26 @@ These are real gaps. They are documented here rather than silently
 papered over; each is a medium-sized change (runtime + Go + tests) that
 should be undertaken deliberately, not as a side effect of a docs pass.
 
-1. **`ToggleAction` has no failure indication.** On a non-2xx response,
-   `ToggleAction` silently reverts to the prior state. `OptimisticAction`
-   paints an `error` shake first, then reverts. A user who clicks
-   `ToggleAction`, sees it flip, and then sees it flip back gets no
-   explanation; they have to infer "the RPC failed." A future revision
-   should give `ToggleAction` the same `error` state + shake
-   (`data-state="error"`, the `ui-optimistic-action-shake` keyframes,
-   `prefers-reduced-motion` guard) and announce the rollback.
+1. **`ToggleAction`'s failure indication stops short of a shake.** Both
+   buttons ride the kernel's `action` primitive, so a failed commit on
+   either paints `data-state="error"`, dispatches `action:rolled-back`
+   and reverts after ~600 ms — but only the `ui-optimistic-action`
+   stylesheet ships shake keyframes, so a failed `ToggleAction` pauses
+   where a failed `OptimisticAction` shakes. `framework/headless`'s
+   buttons announce the rollback in a status span either way; the
+   styled pair still rely on the visible flip.
 
-2. **No spoken announcement of commit / rollback.** `sortablelist`
+2. **No spoken announcement of commit in the styled layer.** `sortablelist`
    announces grab/move/rollback/conflict through a polite `aria-live`
-   region. `OptimisticAction` and `ToggleAction` do not; they rely on
-   the visible label flip and `aria-busy` toggling. Sightless users
-   perceive pending state but not "Saved ✓" or "Rolled back." The
-   custom events (`optimistic-action:committed`,
-   `optimistic-action:rolled-back`, `toggle-action:commit`,
-   `toggle-action:untoggle`) are available for app code to write into an
-   `aria-live` span today; a future revision should ship that span
-   inside the component so every optimistic surface is announced
-   consistently.
+   region. `OptimisticAction` and `ToggleAction` do not announce the
+   commit; they rely on the visible label flip and `aria-busy`
+   toggling. The custom events are available for app code to write
+   into an `aria-live` span: the primitive's `action:start`,
+   `action:committed`, `action:rolled-back` and `action:untoggle` on
+   every bound button, plus the component names `optimistic-action:*`
+   and `toggle-action:commit` / `toggle-action:untoggle` the adapters
+   re-dispatch. `framework/headless`'s failure span is the shipped
+   version of that pattern for the headless pair.
 
 3. **`OptimisticAction` is fire-and-forget; `ToggleAction` is too.**
    Neither serializes form data. For mutations that must transmit a

@@ -150,8 +150,13 @@ func TestMatchGuardRendersRecoveryScreen(t *testing.T) {
 	if rec.Code != http.StatusGone {
 		t.Fatalf("status = %d, want 410", rec.Code)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-store" {
-		t.Errorf("Cache-Control = %q, want private, no-store", cc)
+	// RenderScreen's full arm finishes through the shared page tail:
+	// no-store + Vary: Cookie, the document policy every page carries.
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	if v := rec.Header().Get("Vary"); v != "Cookie" {
+		t.Errorf("Vary = %q, want Cookie", v)
 	}
 	if body := rec.Body.String(); !strings.Contains(body, "session is gone") {
 		t.Errorf("recovery body missing: %s", body)

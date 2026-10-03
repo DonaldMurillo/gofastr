@@ -167,7 +167,7 @@ func TestDesignMDContentCapturesCompositionFailureModes(t *testing.T) {
 		"repeated across Banner/summary/header",
 		"actions stay natural-width",
 		"Opening summary is one or two sentences",
-		"SiteHeader.MobileBrand",
+		"Concise mobile header identity (a short wordmark",
 		"next decision/action appears in the first useful viewport",
 		"No narrow desktop detail column leaves an accidental empty half-canvas",
 	} {

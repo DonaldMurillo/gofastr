@@ -2,10 +2,12 @@ package main
 
 import (
 	"database/sql"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type AboutScreen struct{}
@@ -15,11 +17,15 @@ func (s *AboutScreen) ScreenDescription() string  { return "Why we built a calme
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {
-	return html.Div(html.DivConfig{},
-		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("We think billing should feel calm.")),
-		render.Tag("p", nil, render.Text("Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.")),
-		render.Tag("p", nil, render.Text("It exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.")),
-	)
+	// The screen owns its rhythm: a PageHeader for the heading, prose
+	// through ui.Markdown so it keeps a reading measure and its own
+	// paragraph spacing — the page frame supplies only the page measure.
+	// html.Div root: the pack reader (reverseRenderBody) accepts a
+	// tag-primitive root; the stack inside owns the rhythm.
+	return html.Div(html.DivConfig{}, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+		ui.PageHeader(ui.PageHeaderConfig{Title: "We think billing should feel calm."}),
+		ui.Markdown(ui.MarkdownConfig{Source: "Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.\n\nIt exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.", Measure: true}),
+	))
 }
 
 // mountAboutScreen mounts the about screen with site.

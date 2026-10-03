@@ -15,8 +15,10 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 		t.Fatal("formerrors module not embedded")
 	}
 	for _, want := range []string{
-		`[data-fui-comp="ui-form-field"]`, // the component's wrapper, not a private marker
-		"ui-form-field__error",            // the component's own error slot class
+		`[data-fui-comp="ui-form-field"]`, // the field's wrapper, not a private marker
+		`[data-fui-comp="ui-toggle"]`,     // a standalone checkbox's root
+		"fui-field__error",                // FormField's own error class
+		"fui-choice-field__error",         // the errored choice's error class
 		"aria-invalid",
 		"aria-describedby",
 		"role", // role=alert on the message
@@ -46,7 +48,7 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 	if !strings.Contains(rpc, "loadModule('formerrors')") && !strings.Contains(rpc, `loadModule("formerrors")`) {
 		t.Error("rpc.js must demand-load formerrors on a refused form submission")
 	}
-	if strings.Contains(rpc, "ui-form-field__error") {
+	if strings.Contains(rpc, "fui-field__error") {
 		t.Error("rpc.js must not render form errors itself; that is the formerrors module's job")
 	}
 }

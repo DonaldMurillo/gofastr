@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // /components, the showcase screens.
 //
-// The catalog itself (the 141 entries, the code snippets, the note-only
+// The catalog itself (the entries, the code snippets, the note-only
 // set, the demo support code for the three stateful demos) now lives in
 // framework/gallery, so the theme-configuration tool inside cmd/gofastr
 // can render every component without importing examples/. This file keeps
@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -130,7 +131,7 @@ type ComponentsIndexScreen struct{}
 
 func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components" }
 func (s *ComponentsIndexScreen) ScreenDescription() string {
-	return "Every framework/ui and core-ui/patterns constructor, one page each."
+	return "Every framework/ui constructor, one page each."
 }
 func (s *ComponentsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -262,21 +263,60 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(s.Entry.Desc)),
 	)
 
-	// Narrow (no-rail) DocLayout: breadcrumb + head + live demo + usage code.
-	return ui.DocLayout(ui.DocLayoutConfig{
-		Crumbs: []ui.DocCrumb{
-			{Label: "Components", Href: "/components/"},
-			{Label: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
-			{Label: s.Entry.Name},
+	// Narrow (no-rail) docpage: breadcrumb + head + live demo + usage
+	// code, the article centered in the shell the site's docpage
+	// package draws.
+	return docpage.Render(docpage.Config{
+		Crumbs: []ui.Crumb{
+			{Text: "Components", Href: "/components/"},
+			{Text: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
+			{Text: s.Entry.Name, Current: true},
 		},
+		CrumbsLabel: "Components",
 	},
 		head,
 		// Demo panel. Components that render a self-contained live instance
 		// are labeled "Live"; ones that show an explanatory note (need
 		// per-page wiring) are labeled "Note" so the box is honest.
 		s.demoStage(ctx),
+		// The site-local registered behaviour (behavior_ping.go), on the
+		// Button page: proof a host package ships behaviour the same way
+		// it ships a stylesheet.
+		s.registeredBehaviorSection(),
 		// Example code, the Go that produced the live demo above.
 		s.usage(),
+	)
+}
+
+// registeredBehaviorSection renders the "Registered behaviour" section
+// on the Button showcase page only. The button below carries
+// data-site-ping; the site-ping module (behavior_ping.go) is
+// demand-loaded by the runtime when it sees the marker, attaches, and
+// toggles aria-pressed on click. Composed entirely from design-system
+// pieces (hard rule 7): ui.Button + the page's existing doc-usage
+// framing, zero bespoke CSS.
+func (s *ComponentShowcaseScreen) registeredBehaviorSection() render.HTML {
+	if s.Entry.Slug != "button" {
+		return render.HTML("")
+	}
+	return ui.Section(ui.SectionConfig{
+		Class:       "doc-usage",
+		Heading:     "Registered behaviour",
+		Description: "This button's behaviour is registered by the site itself with registry.RegisterBehavior and demand-loaded by the runtime when it sees the data-site-ping marker.",
+	},
+		// A Cluster, so the button keeps its own width inside the
+		// section's stacked body.
+		ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{
+			Label: "Ping",
+			ID:    "site-ping-btn",
+			// data-fui-prefetch warms the module on hover; aria-pressed
+			// is the attribute the behaviour toggles on click.
+			ExtraAttrs: html.Attrs{
+				"data-site-ping":    "1",
+				"data-fui-prefetch": "site-ping",
+				"aria-pressed":      "false",
+			},
+		})),
 	)
 }
 

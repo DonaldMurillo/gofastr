@@ -1,17 +1,29 @@
 package desktopui
 
 import (
+	"context"
 	"strconv"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // LayoutName is the desktop layout's name. It lands in the wrapper's
 // class (layout-desktop) and its data-fui-layout attribute, so it is
 // part of the CSS contract, not a private string.
 const LayoutName = "desktop"
+
+// WindowLayoutName is the sidebar-less desktop layout's name
+// (class layout-desktop-window).
+const WindowLayoutName = "desktop-window"
+
+// WidgetLayoutName is the floating-widget layout's name (class
+// layout-desktop-widget).
+const WidgetLayoutName = "desktop-widget"
 
 // SidebarTopInset is the top padding the sidebar column reserves for
 // the traffic-light zone, in points. MEASURED against the native
@@ -32,36 +44,42 @@ const SidebarTopInset = 52
 // battery's --admin-rail).
 const DefaultSidebarWidth = 220
 
-// Layout returns the desktop layout: the core-ui layout shell with the
-// sidebar zone at the declared width, the measured traffic-light zone
-// reserved at the top of the sidebar, transparent html/body so the
-// native material shows through, and an opaque content column.
+// Layout returns the desktop layout: the sidebar zone at the declared
+// width with the measured traffic-light zone reserved at its top,
+// transparent html/body so the native material shows through, and an
+// opaque content column. The sidebar is usually a SourceList:
 //
-// Chain it the way any layout is chained, the sidebar slot usually
-// holding a SourceList:
-//
-//	layout := desktopui.Layout().WithSidebar(
+//	layout := desktopui.Layout(
 //		app.NewStaticComponent(desktopui.SourceList(cfg)))
 //	site.Register("/", screen, layout)
+//
+// The frame is the desktop's own, not ui.ContentRow: a desktop window
+// never stacks its sidebar above the content (a narrow window keeps
+// the row; a small secondary window uses WindowLayout), and the
+// sidebar column paints nothing so the native sidebar material is its
+// surface.
 //
 // The transparent page is safe in every mode: when the shell leaves
 // the webview background on, the webview's own background paints
 // behind the transparent page (the material-none case); when the shell
 // turns it off, the native material shows. In a plain browser
-// (--serve) the page falls back to the UA background, the same
-// degraded mode core-ui's widget layout accepts.
+// (--serve) the page falls back to the UA background.
 //
 // The traffic-light reservation assumes the sidebar zone holds the
-// lights (ChromeHiddenTitle / hiddenInset): without a sidebar there is
-// no reservation, and a host that runs headerless without a sidebar
-// pads its own first row.
-func Layout() *appui.Layout {
-	return appui.NewLayout(LayoutName)
+// lights (ChromeHiddenTitle / hiddenInset). A nil sidebar renders the
+// content column alone; a host that runs headerless without a sidebar
+// uses WindowLayout, which reserves the zone above the content.
+func Layout(sidebar component.Component) *appui.Layout {
+	return appui.NewLayout(LayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
+		var parts []render.HTML
+		if sidebar != nil {
+			nav, _ := component.SafeRenderCtx(ctx, sidebar)
+			parts = append(parts, html.Nav(html.NavConfig{Label: "Sidebar", Class: "desktopui-frame__sidebar"}, nav))
+		}
+		parts = append(parts, l.Primary())
+		return html.Div(html.DivConfig{Class: "desktopui-frame"}, parts...)
+	})
 }
-
-// WindowLayoutName is the sidebar-less desktop layout's name
-// (class layout-desktop-window).
-const WindowLayoutName = "desktop-window"
 
 // WindowLayout returns the desktop layout for a window with no sidebar:
 // a settings window, an about panel, any small secondary window. html,
@@ -71,23 +89,45 @@ const WindowLayoutName = "desktop-window"
 // for a unified or hidden-title window.
 //
 // A screen shown both in the main window and in a small window needs
-// two registrations (or one window only): Layout() stacks nothing, but
-// a 220-point sidebar in a 480-point window leaves the form a strip.
+// two registrations (or one window only): a 220-point sidebar in a
+// 480-point window leaves the form a strip.
 func WindowLayout() *appui.Layout {
-	return appui.NewLayout(WindowLayoutName)
+	return appui.NewLayout(WindowLayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
+		return html.Div(html.DivConfig{Class: "desktopui-frame desktopui-frame--window"}, l.Primary())
+	})
+}
+
+// WidgetLayout returns the chrome-less, transparent layout a floating
+// desktop widget renders under.
+//
+// A widget is a small borderless window (desktop.Widget): no title
+// bar, a transparent window background, often pinned above other
+// apps. Inside it an app layout is wrong three times over: a header
+// and footer have nowhere to go, a padded content column eats a
+// 320-point window, and the page's own background paints an opaque
+// rectangle behind whatever the screen draws, so the "transparent"
+// window shows a white slab with the theme's corners cut off. Caught
+// in a screenshot of the first widget; invisible to any DOM assertion.
+//
+// So the widget layout has no chrome, only the <main> landmark; the
+// page is transparent behind it and has no viewport-height floor, so
+// the screen's own surface (a ui.Card, say) is the whole visible
+// window. --desktop-widget-padding is the gap between the window edge
+// and that surface (default 8px).
+func WidgetLayout() *appui.Layout {
+	return appui.NewLayout(WidgetLayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
+		return html.Div(html.DivConfig{Class: "desktopui-frame desktopui-frame--widget"}, l.Primary())
+	})
 }
 
 var layoutStyle = registry.RegisterStyle("desktopui-layout", layoutCSS,
 	registry.WithLoad(registry.LoadAlways))
 
 func layoutCSS(_ style.Theme) string {
-	return `/* Desktop layout: the window is the frame. html and body paint
+	return `/* Desktop frames: the window is the frame. html and body paint
    nothing so the native material (vibrancy or glass) placed behind
-   the webview shows through; the content column paints its own opaque
-   background so the document stays legible. Same rule shape as
-   core-ui's widget layout. */
-html:has(.layout-desktop), body:has(.layout-desktop),
-html:has(.layout-desktop-window), body:has(.layout-desktop-window) { background-color: transparent; }
+   the webview shows through. */
+html:has(.desktopui-frame), body:has(.desktopui-frame) { background-color: transparent; }
 
 /* Control density. A desktop window is driven by a pointer, not a
    thumb: the theme drops --spacing-touch-target to the 24-point
@@ -96,7 +136,7 @@ html:has(.layout-desktop-window), body:has(.layout-desktop-window) { background-
    button or a text field lands near the native 24 to 30 points instead
    of the web's 44. Set on html so portaled overlays (a modal's form)
    inherit it too. Measured, unverified. */
-html:has(.layout-desktop), html:has(.layout-desktop-window) {
+html:has(.desktopui-frame) {
   --ui-control-padding-y: 4px;
 }
 
@@ -106,20 +146,21 @@ html:has(.layout-desktop), html:has(.layout-desktop-window) {
    traffic-light zone (see SidebarTopInset); --desktop-sidebar-surface
    is transparent in light mode (the native sidebar material under the
    zone is the surface) and a faint label tint in dark mode. */
-.layout-desktop {
+.desktopui-frame {
   --desktop-sidebar-width: ` + strconv.Itoa(DefaultSidebarWidth) + `px;
   --desktop-sidebar-top-inset: ` + strconv.Itoa(SidebarTopInset) + `px;
   --desktop-sidebar-surface: transparent;
+  display: flex;
+  align-items: stretch;
+  min-block-size: 100vh;
 }
 /* The sidebar zone: at the declared width, with the measured
-   traffic-light zone reserved at the top. */
-.layout-desktop .layout-body > nav {
-  flex-basis: var(--desktop-sidebar-width, 220px);
-  flex-grow: 0;
-  flex-shrink: 0;
-  block-size: auto;
+   traffic-light zone reserved at the top. A desktop window never
+   stacks it above the content: there is no narrow-width rule. */
+.desktopui-frame__sidebar {
+  flex: 0 0 var(--desktop-sidebar-width, 220px);
+  min-inline-size: 0;
   background: var(--desktop-sidebar-surface, transparent);
-  border-right: none;
   padding-top: var(--desktop-sidebar-top-inset, 52px);
 }
 /* Dark mode: the dark vibrancy sidebar material lands on the same
@@ -128,42 +169,51 @@ html:has(.layout-desktop), html:has(.layout-desktop-window) {
    capture: its dark sidebar sits about 3/255 above its content). A 2%
    wash of the label color over the zone lands within a couple of
    points of that lift while the material still shows through. */
-:root[data-color-scheme="dark"] .layout-desktop {
+:root[data-color-scheme="dark"] .desktopui-frame {
   --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-color-scheme="light"]) .layout-desktop {
+  :root:not([data-color-scheme="light"]) .desktopui-frame {
     --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
   }
 }
 /* The content column: the one opaque region, so text sits on a solid
    page even where the window material is translucent. The start
    corners round into the window frame; measured, unverified. */
-.layout-desktop .layout-body > main,
-.layout-desktop .layout-body > .layout-content {
+.desktopui-frame > main,
+.desktopui-frame > .layout-content {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg, 16px);
+  padding: var(--spacing-xl, 24px);
   background-color: var(--color-background, #FFFFFF);
   border-start-start-radius: var(--radii-lg, 12px);
-}
-/* A desktop window never collapses its sidebar into a stacked strip:
-   core-ui's layout stacks the nav above the content under 48rem (the
-   phone shape), which in a narrow window put the whole source list on
-   top of the page. The row holds at every width; a host that wants a
-   narrow window uses WindowLayout. */
-@media (max-width: 47.99rem) {
-  .layout-desktop .layout-body { display: flex; }
-  .layout-desktop .layout-body > nav { border-bottom: none; }
 }
 
 /* The sidebar-less window: no zone, no opaque column. The window
    material is the surface; the content column clears the traffic
    lights with the same measured zone the sidebar reserves. */
-.layout-desktop-window .layout-body > main,
-.layout-desktop-window .layout-body > .layout-content {
+.desktopui-frame--window > main,
+.desktopui-frame--window > .layout-content {
   background-color: transparent;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg, 16px);
+  border-radius: 0;
   padding: ` + strconv.Itoa(SidebarTopInset) + `px var(--spacing-xl, 24px) var(--spacing-xl, 24px);
+}
+
+/* The widget: no viewport-height floor and no column gutter (a
+   320-point window has no room for one), and nothing painted behind
+   the screen's own surface. --desktop-widget-padding is the gap
+   between the window edge and that surface. */
+.desktopui-frame--widget {
+  min-block-size: 0;
+}
+.desktopui-frame--widget > main,
+.desktopui-frame--widget > .layout-content {
+  background-color: transparent;
+  border-radius: 0;
+  padding: var(--desktop-widget-padding, 8px);
 }
 `
 }

@@ -568,7 +568,7 @@ func sidebarNav() component.Component {
 func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-focus")
 	site.WithTheme(desktopui.Theme())
-	layout := desktopui.Layout().WithSidebar(sidebarNav())
+	layout := desktopui.Layout(sidebarNav())
 
 	tasks := tasksResource(app)
 	site.Register("/", &dashboardScreen{app: app, eng: eng}, layout)
@@ -587,7 +587,7 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less widget layout, never the desktop
 	// layout with its sidebar and opaque content column.
-	site.Register("/widget", &widgetScreen{eng: eng}, appui.WidgetLayout())
+	site.Register("/widget", &widgetScreen{eng: eng}, desktopui.WidgetLayout())
 	// The settings screen is the battery's: one form per declared
 	// preference, saved through the battery's own route. It lives in
 	// the settings window only (the macOS shape: the app menu's

@@ -141,8 +141,9 @@ pinned.
   `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
   `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
 - **Browser:** most `core-ui/runtime/src/*.js` (lightbox, sortablelist,
-  panehost, carousel, combobox, tree, toasts, …), `core-ui/patterns/**`
-  beyond the few read, `core-ui/{seo,app,registry,di,compute,interactive}`,
+  panehost, carousel, combobox, tree, toasts, …), the former
+  `core-ui/patterns/**` (deleted; its replacements live in
+  framework/ui + framework/headless), `core-ui/{seo,app,registry,di,compute,interactive}`,
   `framework/ui` (100+ files, only the URL-guard sites were read),
   `core/fuzzy`.
 - **Infra:** `framework/migrate` lock/checksum/dirty + tenant_id

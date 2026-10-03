@@ -7,59 +7,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Changed
-- **One home per helper.** A clone survey over the tree found the same
-  bodies re-implemented across packages; each now has one canonical
-  definition and the copies are gone (164 files, about 2,500 lines
-  removed). The shared homes: `core/textsafe` gains
-  `HasControlBytes`, `SanitizeControlBytes` (removes C0/DEL for
-  header, token, and route values), `ScrubControlBytes` (percent-encodes
-  for log lines), and `Truncate`; `core/query` gains `IsPostgres`,
-  `SafeTableName`, `ReservedIdent`, `ParseDBTime`, `ParseDBTimeString`,
-  and `ProbeSQLiteBindLayout`; `core/migrate.AcquireSQLiteLease` is the
-  one SQLite lease behind both the migrate and seed locks;
-  `core/stream.SpliceSeat` is the one seat-FIFO splice behind the SSE
-  bus, MCP, crud streams, RTC, and the harness; `core/netguard` gains
-  `GuardedTransport` and `IsLoopbackAuthority`; `core/handler` gains
-  `IsJSONContentType` and `IsSafeRelativePath` (the auth "next" field
-  and the partial-redirect header share one grammar); `core/config`
-  gains `EnvBool`; `framework/internal/exif` carries the TIFF
-  orientation parser for both `file` and `image` without linking the
-  codecs into `file`; `framework/contracts` exports `ReadModulePath` and
-  `ImportPathFor`, and the CLI and `cmd/repolint` call its
-  `IsGeneratedSource`; the repo
-  analyzers share `internal/analyzers/internal/astx` and use the
-  standard library's `ast.Unparen`. The hand-rolled base-10 `itoa` loops,
-  `sortStrings`, and every sorted-map-keys helper are now `strconv.Itoa`,
-  `slices.Sort`, or `slices.Sorted(maps.Keys(m))`.
-  Four checks got stricter by sharing the canonical version: the local
-  storage battery's fold-refusal walk now runs even when `os.OpenRoot`
-  fails (its own copy silently returned nil on the first empty path
-  component in that branch, so a folded key was never refused there); the
-  webhook battery's table-name validation now rejects leading digits
-  and SQL reserved words like the idempotency and feature-flag stores
-  already did; `battery/auth`'s JSON gate accepts any `+json`
-  structured suffix and rejects a Content-Type whose parameters fail
-  to parse; and `cmd/repolint` exempts a generated file only on the
-  full `// Code generated ... DO NOT EDIT.` header, no longer on either
-  half alone. Generated example apps and the frozen upgrade fixtures
-  under `evals/` were left as they are.
-- **Generated apps and CLIs carry each body once.** The blueprint
-  generator now emits `entities/events.go`, a fixed seam holding the
-  typed-event subscribe and record-extract bodies; every
-  `On<Entity>Created/Updated/Deleted` and `extract<Entity>Record` is a
-  one-line typed wrapper with its signature unchanged, so an entity file
-  is about 35 lines shorter and a fix lands in one place. `--add` writes
-  the seam only when absent, and an entity named `events` renders as
-  `entity_events.go`. The generated CLI gains `verbs.go` with the list,
-  get, delete, batch, and watch bodies once; the per-entity
-  `run<Entity><Verb>` functions stay as three-line wrappers, so the
-  documented `custom.go` wrap pattern and the `<entity>Commands()` tables
-  are untouched, and `verbs` joins the reserved command names. Usage and
-  error text is byte-identical. The ecommerce example was regenerated;
-  meridian's generated files predate the current templates and carry
-  hand edits, so they were left alone.
-
 ### Added
 - **`battery/desktop` (experimental)**: a desktop host that runs a
   GoFastr app inside the OS WebView from a `CGO_ENABLED=0` binary.
@@ -224,10 +171,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `window_focus`, `window_blur`, and `reduce_transparency` events and
   the `desktop-inactive` / `desktop-reduce-transparency` classes on
   `<html>`. New package `battery/desktop/ui` ships the `desktop` theme
-  (SF fonts, the HIG type scale, system blue, a dark palette), the
-  `desktop` layout, and `SourceList`, `Glass`, `FloatingToolbar`,
-  `Inspector`, `InspectorSplit`, `Sheet`, and `Popover`, plus
-  `WindowLayout()` for a window with no sidebar (a settings window).
+  (SF fonts, the HIG type scale, the system blue accent, a dark
+  palette), three layouts on `app.NewLayout` (`Layout(sidebar)` for
+  the main window, `WindowLayout()` for a window with no sidebar such
+  as a settings window, `WidgetLayout()` for a floating widget), and
+  `SourceList`, `Glass`, `FloatingToolbar`, `Inspector`,
+  `InspectorSplit`, `Sheet`, and `Popover`.
   The desktop layouts size framework controls near native (a 24-point
   touch target and 4px control padding). `examples/desktop-focus` uses
   all of it; its settings live in the settings window only, and its
@@ -238,13 +187,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.DetailList`'s label column. Unset, both render as before.
 
 ### Fixed
-- **A checkbox or radio inside `ui.FormField` renders at its own
-  size.** The field's input rule stretched every `<input>` to the full
-  track width and the touch-target height, so a checkbox painted as a
-  40-point box. The rule now skips checkboxes and radios.
-- `ui.Select` and `ui.TextArea` floor at `--spacing-touch-target`
-  like the other controls instead of a literal `44px`, so a theme that
-  changes `Layout.TouchTarget` changes them too.
+- `ui.TextArea` floors at `--fui-density-control-h` like `ui.Select`
+  and the text inputs instead of a literal `44px`, so density and
+  `Layout.TouchTarget` change it too.
 - **`App.Shutdown` no longer stalls on a connection that never sent a
   request.** A browser's speculative preconnect or an HTTP client's
   spare dial leaves a connection in `net/http`'s StateNew, which
@@ -263,10 +208,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **A refused form submission is no longer silent.** The runtime's
   `data-fui-rpc` form path dropped every non-2xx answer unless a
   response signal was set; a user pressing Save saw nothing move. The
-  server's validation envelope now fills each named field's
-  `ui-form-field` error slot (`is-error`, `aria-invalid`,
-  `aria-describedby`, a `role="alert"` message) and, when no field
-  matched, the error text is toasted.
+  server's validation envelope now marks each named field's control
+  (`aria-invalid`, `aria-describedby`) and places a `role="alert"`
+  message in the kit's own error markup (`fui-field__error` in a
+  `ui.FormField`, `fui-choice-field__error` beside a standalone
+  checkbox) and, when no field matched, the error text is toasted.
 - **Runtime form intercept: the hidden-input-plus-checkbox pair
   serializes as one value.** A `data-fui-rpc` form turned every
   repeated name into an array, so the HTML checkbox idiom (hidden
@@ -276,6 +222,54 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   one checkbox of the same name) now posts the last value as a scalar;
   checkbox groups and multi-selects are still arrays. The resource
   engine's bool field renders that pair.
+
+## [0.86.0] - 2026-09-24
+
+**BREAKING.** v0.86.0 rebuilds the UI layer and deprecates nothing: a
+removed API is gone. [What changed in
+v0.86.0](https://github.com/DonaldMurillo/gofastr/blob/v0.86.0/framework/docs/content/release-0-86.md)
+(`gofastr docs release-0-86`) is the full account, with every breaking
+change, what replaces it, and the fixes this release carries. Run
+`gofastr upgrade --to v0.86.0` before you bump `go.mod`: it points at
+each line of an app that needs an edit.
+
+### Highlights
+- **Headless components.** Every `framework/ui` component renders
+  through `framework/headless`, which owns structure, ARIA and the
+  `data-hui-*` hooks behaviour binds to. `core-ui/patterns` is deleted,
+  and the kernel's per-component runtime modules moved beside their
+  components as registered behaviours.
+- **`fui-*` classes.** Every class the kit emits is renamed from `ui-*`
+  to `fui-*`. Sheet names and `data-fui-comp` markers keep their names.
+- **One layout primitive.** `app.NewLayout(name, spec, build)` replaces
+  the fixed header/sidebar/footer template, with outlets, fills, route
+  areas, screen groups, resolvers, deferred outlets, loading content and
+  transitions. `ui.SiteHeader`, `ui.SiteFooter` and `ui.DocLayout` are
+  deleted: `gofastr generate package` copies owned replacements into the
+  app.
+- **Owned styles.** An app's CSS lives in `<name>.style.css` sheets
+  scoped to a layout, screen, component or the app, generated into typed
+  Go by `gofastr generate styles` and checked against the theme's tokens
+  by GOFASTR1801 to GOFASTR1822. The contract catalog holds 77 rules.
+- **Theme.** Size and font-weight tokens, `Theme.Layout` page
+  dimensions, typed app tokens (`Theme.Extend`, `<name>.tokens.css`),
+  component options, and a contrast check at boot.
+- **Upgrade tooling.** `gofastr upgrade` reads a project through the
+  type checker. Tests fail on retired markup a page renders and on render
+  panics.
+
+### Breaking, in brief
+- Button and form wiring is typed: an unknown `data-fui-*` key panics at
+  render. `FormFieldConfig.Input` is a builder closure.
+- `ui.DataTable` and `ui.Pagination` take typed `Query` props instead of
+  href patterns.
+- The fixed-template layout API and the `--ui-layout-*` and
+  `--ui-container-*` variables are gone. Page dimensions are
+  `Theme.Layout` tokens.
+- Ten legacy colour aliases are gone, auto-named scale tokens spell
+  `2xl`/`3xl`, and `style.ThemeRef.Hash` is a method.
+- A theme with a hex primary or danger pair below 4.5:1 contrast panics
+  at `WithTheme`.
 
 ## [0.85.0] - 2026-09-08
 
@@ -626,6 +620,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   collapsed. The exported links carry the marker and id the runtime would
   have written.
 
+
 ## [0.84.0] - 2026-09-06
 
 ### Fixed
@@ -915,7 +910,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   authenticate requires initialize and a malformed permission answer is
   cancelled. Every JSON-RPC envelope, websocket frame and dev-tool
   endpoint decodes strictly; the GOFASTR1407 waivers are gone.
-
 ### Changed
 - **BREAKING: `auth.NewEntityTwoFAStore(db, table, cfg)`** takes an
   `EntityTwoFAStoreConfig` whose `EncryptionKey` is required and returns
@@ -1245,6 +1239,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   tracking-column DDL quotes its identifiers, and the blueprint's
   resource-mount stub emits only Go-identifier names.
 
+
 ## [0.80.0] - 2026-09-02
 
 ### Fixed
@@ -1545,6 +1540,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   surface documents), with a test pinning the symbol and its answers.
   Found while confirming an old worktree's uncommitted duplicate of the
   original #266 fix was safe to discard.
+
 
 ## [0.78.0] - 2026-09-01
 
@@ -2350,6 +2346,8 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   derived form would duplicate them) and index `expression` (not in the
   blueprint grammar).
 
+
+
 ## [0.76.0] - 2026-08-30
 
 ### Added
@@ -2544,6 +2542,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   makes the manifest the single source of truth, and passes less than the
   old call did (`fsys` comes from the module). `NewAssetServer` stays for
   assets that belong to no module.
+
 
 ### Fixed
 
@@ -3384,6 +3383,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   the process environment they consult first, so a developer with an exported
   `DATABASE_URL` ran them against a different database than CI did.
 
+
 ## [0.67.0] - 2026-08-19
 
 ### Added
@@ -3666,6 +3666,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   not inherit the fix. Its footer now resolves per request, and the role-gated
   "Admin" item is filtered through the context-aware path rather than rendered
   for every visitor.
+
 
 ## [0.66.0] - 2026-08-17
 
@@ -4986,7 +4987,6 @@ failing against the unfixed code first.
   catalog, so a suppression written today cannot collide with a future
   release. A worked example, a project gate command with its own rule,
   is in `gofastr docs contracts` under "Your own rules".
-
 ### Fixed
 
 - The `examples/ecommerce` flagship test no longer regenerates the committed
@@ -6325,7 +6325,6 @@ palette per request without mutating process-global state.
   `~/.gofastr/embed` snapshot directory all move together, as does
   `kiln/agent.NewEmbedContextHook`, now `agent.NewSemanticContextHook`.
   `gofastr upgrade` carries the entry.
-
 ### Documented late: API versioning shipped in 0.48.0
 
 These landed in the 0.48.0 tag with no release note, including a breaking
@@ -6690,7 +6689,6 @@ last one, all in the new embed surface.
 - `TestEmbedExchangeIsIdempotent` compared whole response bodies including a
   wall-clock `expires_in_ms`, so it failed roughly once in a thousand runs with
   the message "one nonce bought two identities", for two byte-identical grants.
-
 ## [0.48.0] - 2026-07-27
 
 `AfterGet` and `AfterList` are documented as the way to mask a field on
@@ -7371,7 +7369,6 @@ those possible.
   client-mounted widget. Back works and is covered by a test; Forward is
   deliberately not asserted. Fixing it means teaching the router which
   query parameters describe in-page state.
-
 ## [0.43.0] - 2026-07-25
 
 Security audit remediation. A dual-model pass (breadth + depth) across
@@ -7784,7 +7781,6 @@ fixes (#120): a two-round multi-model pass (Claude + GLM + Sol) over that
 range found twenty-two confirmed bugs: SQLite engine correctness, queue
 timezone/DST, outbox lease normalization, and one include-filter security
 fix, all landed test-first.
-
 ### Added
 
 - **Stateless session tokens** (#112). The uihost session map is gone;
@@ -7823,7 +7819,6 @@ fix, all landed test-first.
   still anchors in UTC: existing schedules keep their fire times, and
   `time.Local` / fixed-offset zones deliberately collapse to UTC because they
   would resolve differently per replica.
-
 ### Fixed
 
 - **Two tabs sharing one session now BOTH receive every SSE update.**
@@ -7959,7 +7954,6 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
   SDK rendered as `api: 403: [object Object]`. Both now emit the flat
   `{"error","success","code"}` envelope as `application/json`; every
   `battery/auth` error response now carries the `code` field.
-
 ### Changed
 
 - **BREAKING: `WithFanout` now requires an app secret.** Boot fails with

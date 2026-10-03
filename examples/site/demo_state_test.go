@@ -85,7 +85,7 @@ func TestSortableMoveDedupsCards(t *testing.T) {
 
 	// The todo column holds two real cards (k1, k2); dedup must keep it at two
 	// sort keys regardless of the repeated order. Without dedup it would be six.
-	got := strings.Count(confRec.Body.String(), "data-fui-sort-key=")
+	got := strings.Count(confRec.Body.String(), "data-hui-sort-key=")
 	if got != 2 {
 		t.Fatalf("todo column rendered %d sort keys after a duplicated move, want 2 (board inflated)", got)
 	}

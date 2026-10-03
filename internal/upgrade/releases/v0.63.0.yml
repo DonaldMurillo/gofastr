@@ -1,0 +1,19 @@
+version: v0.63.0
+title: Fail-closed dialect detection, poll termination, rotation, erasure
+notes:
+  - change: AutoMigrate errors when the database dialect cannot be determined
+    breaking: false
+    nodetect: "a connection or DSN problem now surfaces as an error; there is no code change to make"
+    guidance: "Behavioral: when the PostgreSQL probe fails repeatedly (unreachable DB, bad DSN, pooler resets), AutoMigrate/MigrateEntity/DiffSchema/RunSeeds now return an error instead of assuming SQLite — the assumption skipped the cross-replica advisory lock and every Postgres-only routine. Fix the connection or DATABASE_URL; there is no code change. DetectDialect keeps its signature for callers that only pick DDL types."
+  - change: Generated seed hooks abort on a failed idempotency count
+    breaking: false
+    guidance: "A blueprint app's seed hook treated a CountAll error as 'not seeded' and inserted again, so a transient read failure could duplicate seed rows. Regenerate the app to pick up the fail-closed hook."
+    find:
+      strings:
+        match: '^seed %s: skipping row'
+  - change: battery/print/chromepdf is a nested module
+    breaking: false
+    guidance: "The import path is unchanged, but the package now lives in its own Go module. Apps that import it add the module explicitly: go get github.com/DonaldMurillo/gofastr/battery/print/chromepdf@latest. Apps that do not import chromepdf need nothing."
+    find:
+      imports:
+        - gofastr/battery/print/chromepdf

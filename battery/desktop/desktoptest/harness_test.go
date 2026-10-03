@@ -37,7 +37,7 @@ func newTestApp(t *testing.T, cfg desktop.Config) testApp {
 	t.Helper()
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	site := appui.NewApp("HarnessTest")
-	layout := appui.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 	site.SetDefaultLayout(layout)
 	site.Register("/", screen{"Harness home"}, layout)
 	site.Register("/two", screen{"Screen two"}, layout)

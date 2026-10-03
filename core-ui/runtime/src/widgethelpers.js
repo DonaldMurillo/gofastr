@@ -11,8 +11,8 @@
   let ticking = false;
 
   const validityWired = new WeakSet();
-  // Persist keys are namespaced and component-encoded (the banner.js
-  // dismissKey shape): "gofastr.persist." + encodeURIComponent(key). An
+  // Persist keys are namespaced and component-encoded (the banner-dismiss
+  // cookie's shape): "gofastr.persist." + encodeURIComponent(key). An
   // attribute-borne data-fui-persist-storage value can therefore only ever
   // name an entry inside this module's own namespace, never another
   // feature's localStorage key; a value stored under the pre-namespace raw

@@ -152,7 +152,9 @@ func main() {
 
 	// ----- UI host with one screen -------------------------------------
 	site := app.NewApp("full-bench")
-	layout := app.NewLayout("main")
+	layout := app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return l.Primary()
+	})
 	site.SetDefaultLayout(layout)
 	site.Register("/", &HomeScreen{}, nil)
 	host := uihost.New(site)

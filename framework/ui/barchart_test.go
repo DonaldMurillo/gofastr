@@ -57,8 +57,8 @@ func TestBarChartShowLabelsEmitsText(t *testing.T) {
 		Bars:       []BarChartBar{{Label: "Q1", Value: 1}},
 		ShowLabels: true,
 	}))
-	if !strings.Contains(on, "ui-bar-chart__label") {
-		t.Errorf("ShowLabels=true should emit .ui-bar-chart__label text:\n%s", on)
+	if !classTokenPresent(on, "fui-bar-chart__label") {
+		t.Errorf("ShowLabels=true should emit .fui-bar-chart__label text:\n%s", on)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestBarChartShowAxisEmitsValueLabels(t *testing.T) {
 		Bars:     []BarChartBar{{Label: "x", Value: 100}},
 		ShowAxis: true,
 	}))
-	if !strings.Contains(h, "ui-bar-chart__axis-label") {
+	if !classTokenPresent(h, "fui-bar-chart__axis-label") {
 		t.Errorf("ShowAxis=true should emit axis labels:\n%s", h)
 	}
 }
@@ -76,7 +76,7 @@ func TestBarChartColorOverridesViaPalette(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{{Label: "x", Value: 1, Color: "danger"}},
 	}))
-	if !strings.Contains(h, "ui-bar-chart__bar--danger") {
+	if !classTokenPresent(h, "fui-bar-chart__bar--danger") {
 		t.Errorf("palette Color should add modifier class:\n%s", h)
 	}
 }
@@ -87,7 +87,7 @@ func TestBarChartValueLabelsOnByDefault(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{{Label: "A", Value: 8}, {Label: "B", Value: 12}},
 	}))
-	if !strings.Contains(h, "ui-bar-chart__value") {
+	if !classTokenPresent(h, "fui-bar-chart__value") {
 		t.Errorf("value labels should render by default:\n%s", h)
 	}
 	// The rendered magnitude text must appear (12 with no separators).
@@ -101,7 +101,7 @@ func TestBarChartHideValuesOptOut(t *testing.T) {
 		Bars:       []BarChartBar{{Label: "A", Value: 8}},
 		HideValues: true,
 	}))
-	if strings.Contains(h, "ui-bar-chart__value") {
+	if classTokenPresent(h, "fui-bar-chart__value") {
 		t.Errorf("HideValues=true must suppress value labels:\n%s", h)
 	}
 }
@@ -115,7 +115,7 @@ func TestBarChartUniformDataHasHeadroom(t *testing.T) {
 		Height: 180,
 	}))
 	// Grab the first bar's height attribute.
-	before, _, ok := strings.Cut(h, `class="ui-bar-chart__bar`)
+	before, _, ok := strings.Cut(h, `class="fui-bar-chart__bar`)
 	if !ok {
 		t.Fatalf("no bar rendered:\n%s", h)
 	}
@@ -137,12 +137,51 @@ func TestBarChartUniformDataHasHeadroom(t *testing.T) {
 	}
 }
 
+// FitHeight hugs the tallest bar: the SVG height becomes the gutters
+// plus exactly the tallest bar's 96px, so the blank band the fixed
+// height pads above the caps is gone — while the bar RATIOS (the
+// nice-maximum headroom) stay identical to the fixed-height chart.
+func TestBarChartFitHeightHugsTallestBar(t *testing.T) {
+	bars := []BarChartBar{
+		{Label: "Open", Value: 4},
+		{Label: "In progress", Value: 2},
+		{Label: "Blocked", Value: 1},
+		{Label: "Done", Value: 6},
+	}
+	fit := string(BarChart(BarChartConfig{Bars: bars, FitHeight: true, ShowLabels: true}))
+	// SVG height: top gutter 15 + labels gutter 16 + plot where the
+	// tallest (6) lands at 96px. dataMax 6 → valueMax niceCeil(6/0.85)=8
+	// → plot = 96*8/6 = 128 → height = 15+128+16 = 159.
+	if !strings.Contains(fit, `height="159"`) {
+		t.Errorf("FitHeight svg height should hug the bars (want 159):\n%s", fit)
+	}
+	// The tallest bar rect itself: (6/8)*128 = 96.
+	if !strings.Contains(fit, ` height="96"`) {
+		t.Errorf("FitHeight tallest bar should be 96px:\n%s", fit)
+	}
+	// Ratios unchanged: the fixed-height chart's tallest/fixed-plot
+	// ratio equals the fitted chart's 96/128.
+	if !strings.Contains(fit, `viewBox="0 0 320 159"`) {
+		t.Errorf("FitHeight must resize the viewBox with the height:\n%s", fit)
+	}
+	// A fixed Height still wins over FitHeight (explicit sizing).
+	fixed := string(BarChart(BarChartConfig{Bars: bars, FitHeight: true, Height: 200}))
+	if !strings.Contains(fixed, `height="200"`) {
+		t.Errorf("explicit Height must beat FitHeight:\n%s", fixed)
+	}
+	// Zero data must not divide by zero.
+	zero := string(BarChart(BarChartConfig{Bars: []BarChartBar{{Label: "x", Value: 0}}, FitHeight: true}))
+	if !strings.Contains(zero, `height="111"`) { // 15 + 96 + 0 (no labels)
+		t.Errorf("all-zero FitHeight should still size sanely (want 111):\n%s", zero)
+	}
+}
+
 // A baseline grounds the bars even without the full axis.
 func TestBarChartAlwaysDrawsBaseline(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{{Label: "A", Value: 3}},
 	}))
-	if !strings.Contains(h, "ui-bar-chart__baseline") {
+	if !classTokenPresent(h, "fui-bar-chart__baseline") {
 		t.Errorf("baseline line should always render:\n%s", h)
 	}
 }
@@ -175,7 +214,7 @@ func TestBarChartInvalidColorFallsBack(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{{Label: "x", Value: 1, Color: "draft"}},
 	}))
-	if !strings.Contains(h, "ui-bar-chart__bar--primary") {
+	if !classTokenPresent(h, "fui-bar-chart__bar--primary") {
 		t.Errorf("unrecognized Color should fall back to primary class:\n%s", h)
 	}
 	if strings.Contains(h, `fill="draft"`) {

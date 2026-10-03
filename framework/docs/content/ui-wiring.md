@@ -18,14 +18,19 @@ This doc covers three objects and the bridge between them:
 This is a complete, runnable `main.go` (it compiles as-is against the
 current module):
 
+<!-- gofastr:compile
+-->
 ```go
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -49,6 +54,20 @@ type routerMounter struct{ r *router.Router }
 
 func (m routerMounter) MountWidget(def *widget.Definition) { widget.Mount(m.r, def) }
 
+// The sidebar config is shared: the shell renders the desktop rail
+// from it, MountSidebar registers the same items' mobile drawer.
+var sbCfg = ui.SidebarConfig{Title: "myapp", Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}}
+
+// buildAppShell is the layout: the sidebar rail as static chrome
+// beside l.Primary(), where each route's screen renders.
+func buildAppShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sbCfg))
+	return html.Div(html.DivConfig{Class: "app-shell"},
+		html.Nav(html.NavConfig{Label: "Main"}, nav),
+		l.Primary(),
+	)
+}
+
 func main() {
 	// The framework app: DB, entities, auto-CRUD, middleware, router.
 	fwApp := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "myapp"}))
@@ -62,11 +81,9 @@ func main() {
 	theme.Colors.Primary.Value = "#0E7C86"
 	site.WithTheme(theme)
 
-	// Layout + screens. The sidebar config is shared: Sidebar(cfg)
-	// renders the desktop rail, MountSidebar registers the mobile
-	// drawer widget for the same items.
-	sbCfg := ui.SidebarConfig{Title: "myapp", Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}}
-	layout := uiapp.NewLayout("app").WithSidebar(ui.Sidebar(sbCfg))
+	// Layout + screens: the app shell — a tree layout whose static
+	// chrome is the sidebar rail around the primary slot.
+	layout := uiapp.NewLayout("app", uiapp.LayoutSpec{}, buildAppShell)
 	site.SetDefaultLayout(layout)
 	site.Register("/", &HomeScreen{}, layout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
@@ -106,15 +123,18 @@ override token values; see [theming](theming.md). `WithTheme`
 validates the theme and panics at startup on a missing token, naming
 the field path.
 
-**`NewLayout`** is the shared chrome. `WithSidebar` gives the
-sidebar-rail app shell; `WithContainer` gives a centered column;
-`WithHeader` / `WithFooter` accept components (use
-`app.NewContextComponent` for auth-aware chrome that needs the
-request context). A layout is passed per `Register` call, and
-`SetDefaultLayout` covers screens registered with a nil layout.
-Layouts nest through `app.NewScreenGroup`: a section keeps its own
-sidebar inside the app shell, and navigation swaps only the layers
-that change. See [layouts](layouts.md) for the chain model.
+**`NewLayout`** is the shared chrome: a build function over the
+layout's placement points — static markup (`ui.Sidebar`, the app's
+own header and footer packages, whatever the shell composes) around
+`l.Primary()`, where each route's screen renders. The build receives
+the live request context, so auth-aware chrome reads it directly (or
+wrap a component with `app.NewContextComponent`). A layout is passed
+per `Register` call, and `SetDefaultLayout` covers screens registered
+with a nil layout. Layouts nest through `app.NewScreenGroup` — a
+section keeps its own layer inside the app shell — and screens and
+groups fill a layout's named outlets with `Screen.Fill` /
+`ScreenGroup.Fill`. See [layouts](layouts.md) for outlets, fills, and
+the chain model.
 
 **`routerMounter`** is the one piece of glue you write yourself.
 `framework/ui` helpers that need to register widget routes

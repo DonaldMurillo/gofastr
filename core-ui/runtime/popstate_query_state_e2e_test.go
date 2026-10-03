@@ -27,9 +27,10 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 		`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
 		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
 		`<h1 id="list-screen">List</h1>` +
-		`<div id="host" data-fui-pane-deeplink="pane"></div>` +
+		`<div id="host" data-hui-pane-deeplink="pane"></div>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write([]byte(js))
@@ -41,7 +42,7 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "List")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="list-screen">List</h1><div id="host" data-fui-pane-deeplink="pane"></div>`)
+			fmt.Fprint(w, `<h1 id="list-screen">List</h1><div id="host" data-hui-pane-deeplink="pane"></div>`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")

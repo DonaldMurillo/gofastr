@@ -1,0 +1,190 @@
+/* The app's top bar. It pins to the top of the page, and its
+   translucent background blurs the content scrolling under it. The bar's
+   content lines up with the page column. Below the md breakpoint the
+   links and the call to action move into a full-width menu under the
+   bar: a native <details>, so it works without JavaScript.
+   Every dimension is a theme token: the bar is --size-header-height
+   tall, and its content sits on the page measure (--size-page-width,
+   with --size-page-gutter outside it), the column ui.Container's page
+   width gives main. */
+:scope {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  border-block-end: 1px solid var(--color-border);
+}
+/* The glass sits on a layer behind the bar, not on the bar itself:
+   backdrop-filter on the bar would make it the containing block of
+   the fixed menu panel below. */
+:scope::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--color-background) 82%, transparent);
+  backdrop-filter: saturate(1.6) blur(12px);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+  max-inline-size: calc(var(--size-page-width) + 2 * var(--size-page-gutter));
+  block-size: var(--size-header-height);
+  margin-inline: auto;
+  padding-inline: var(--size-page-gutter);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-shrink: 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+/* The mark is the app's own logo, passed in as Config.Mark; it draws
+   in the theme's primary colour. */
+.mark { display: flex; color: var(--color-primary); }
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+}
+.links a {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-ease-out);
+}
+.links a:hover,
+.links a[aria-current="page"] { color: var(--color-text); }
+
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-inline-start: auto;
+}
+
+/* The phone menu: hidden on wide screens. */
+.menu { display: none; }
+.toggle {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--spacing-touch-target);
+  block-size: var(--spacing-touch-target);
+  border-radius: var(--radii-md);
+  color: var(--color-text);
+  cursor: pointer;
+  list-style: none;
+}
+.toggle::-webkit-details-marker { display: none; }
+.toggle:hover { background: var(--color-surface-soft); }
+.toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+/* The three bars turn into the cross: both icons share one cell and
+   swap with a quarter turn. */
+.icon-open,
+.icon-close {
+  display: flex;
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--duration-fast) var(--easing-ease-out),
+    rotate var(--duration-normal) var(--easing-ease-out);
+}
+.icon-close { opacity: 0; rotate: -90deg; }
+.menu[open] .icon-open { opacity: 0; rotate: 90deg; }
+.menu[open] .icon-close { opacity: 1; rotate: 0deg; }
+
+/* The open menu covers the page under the bar: everything a phone
+   reader needs, in thumb-sized rows, with the call to action last. */
+.panel {
+  position: fixed;
+  inset: calc(var(--size-header-height) + 1px) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-lg) var(--size-page-gutter) var(--spacing-xl);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-background);
+}
+.panel-links {
+  display: flex;
+  flex-direction: column;
+}
+.panel-links a {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--spacing-touch-target);
+  border-block-end: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+.panel-links a[aria-current="page"] { color: var(--color-text); }
+.panel-cta { display: flex; flex-direction: column; }
+
+/* Opening: the panel unrolls down from the bar while it fades in, then
+   the rows follow one after another. Closing runs it back, where the
+   browser can animate a <details> closing (::details-content keeps the
+   panel shown until the transition ends); elsewhere it closes at once.
+   The open-state values are the resting ones; @starting-style gives
+   the values each opening starts from. */
+.menu::details-content {
+  transition: content-visibility var(--duration-overlay-exit) allow-discrete;
+}
+.panel {
+  /* The resting clip is spelled out: none and inset() do not
+     interpolate, so without it the reveal jumps instead of unrolling. */
+  clip-path: inset(0);
+  transition:
+    clip-path var(--duration-slow) var(--easing-ease-out),
+    opacity var(--duration-normal) var(--easing-ease-out);
+}
+.menu:not([open]) .panel {
+  clip-path: inset(0 0 100% 0);
+  opacity: 0;
+  transition-duration: var(--duration-overlay-exit);
+}
+.panel-links a,
+.panel-cta {
+  transition:
+    opacity var(--duration-normal) var(--easing-ease-out),
+    translate var(--duration-slow) var(--easing-ease-out);
+}
+.menu:not([open]) .panel-links a,
+.menu:not([open]) .panel-cta {
+  opacity: 0;
+  translate: 0 -0.5rem;
+}
+.menu[open] .panel-links a:nth-child(2) { transition-delay: var(--duration-menu-stagger); }
+.menu[open] .panel-links a:nth-child(3) { transition-delay: calc(2 * var(--duration-menu-stagger)); }
+.menu[open] .panel-links a:nth-child(4) { transition-delay: calc(3 * var(--duration-menu-stagger)); }
+.menu[open] .panel-links a:nth-child(n+5) { transition-delay: calc(4 * var(--duration-menu-stagger)); }
+.menu[open] .panel-cta { transition-delay: calc(4.5 * var(--duration-menu-stagger)); }
+@starting-style {
+  .menu[open] .panel { clip-path: inset(0 0 100% 0); opacity: 0; }
+  .menu[open] .panel-links a,
+  .menu[open] .panel-cta { opacity: 0; translate: 0 -0.5rem; }
+}
+@media (--reduced-motion) {
+  .icon-open,
+  .icon-close,
+  .menu::details-content,
+  .panel,
+  .panel-links a,
+  .panel-cta { transition: none; }
+}
+
+@media (--below-md) {
+  .bar { gap: var(--spacing-md); }
+  .links,
+  .bar-cta { display: none; }
+  .menu { display: block; }
+}

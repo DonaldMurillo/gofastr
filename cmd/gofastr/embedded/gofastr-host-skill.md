@@ -25,9 +25,10 @@ the same state in a Banner. Keep its description to one or two sentences and
 its highlight to one decision plus one short condition. Use the compact
 `Aside` for owner/presence context, use `MetricBandItem.Hint` for trends, and
 move the full narrative or roster later. The component keeps `Actions` in its
-lead region so the primary path stays in the first useful phone viewport. Use
-`SiteHeaderConfig.MobileBrand` when the desktop identity is too long for the
-phone header. On wide detail routes, pair related bounded modules such as
+lead region so the primary path stays in the first useful phone viewport.
+The site header is the app's own package (copy it with
+`gofastr generate package siteheader`); when the desktop identity is too long for
+the phone header, give it a shorter phone mark. On wide detail routes, pair related bounded modules such as
 `DetailList`s in `ui.Grid`; do not leave a narrow stacked column beside an
 accidental empty rail. Reflow the pair to one column on phones. `ui.Cluster`
 wraps whole controls by default; use `ClusterConfig.NoWrap` only for compact
@@ -37,9 +38,9 @@ A fresh scaffold already mounts the adaptive `framework/ui/theme.Default()`
 palette, so `ui.ThemeToggle` and OS dark preference have complete light/dark
 tokens. Keep that `WithTheme` call. If you replace it with an app-owned theme,
 define every semantic `DarkColors` value before rendering a toggle. Use
-`ui.Link` for visible text links and `ui.SiteFooter` for linked footer chrome;
-do not rely on browser-default `<a>` colors. A linked `SiteHeader` Brand slot is
-the exception because SiteHeader owns its appearance.
+`ui.Link` for visible text links; do not rely on browser-default `<a>`
+colors. Links in the app's own header and footer take their look from
+those packages' owned sheets.
 
 `AGENTS.md` is a thin TOC of every framework primitive with its
 trigger phrases. When your task matches a row, open the linked file
@@ -73,6 +74,7 @@ generated guidance.
 | PostHog, Statsig, Plausible, product analytics, A/B test, experiment behind a vendor, ad blocker eating the vendor script, first-party proxy | `battery/relay` + a host-authored bootstrap: `gofastr docs analytics-recipes` (relay routes, `uihost.ScriptHandler` + `RegisterExternalScript(uihost.ScriptURL(...))`, one pageview per `gofastr:navigate`, `{"id":...}` endpoint over `handler.GetUser`) |
 | cache key/value, memoize, "remember for N seconds" | `battery/cache` |
 | UI components, page layout, forms, tables, theming, dark mode | `framework/ui` (~100 components): `gofastr docs ui-composition-recipes` for page grammar, `gofastr docs ui-new-components` for the catalog, live demos at `/components/<slug>` on the docs site (`examples/site`) |
+| site header, footer, or help/docs page, "marketing chrome", "colophon", top bar with phone menu | the app's own package, copied from the canonical one: `gofastr generate package siteheader|sitefooter|docpage` (owned `.style.css` + tests, self-import rewritten; `examples/acme-site` keeps customised copies). Extend the theme with the package's own Tokens; `gofastr gen styles` after sheet edits |
 | live/auto-refreshing dashboard, counter, status ("websockets"?) | the reactivity ladder (`gofastr docs reactivity`): passive freshness = `data-fui-poll` / widget `Builder.Poll` (no connection, no infra); SSE bus ONLY for presence/collab/sub-second; never WebSockets, never a bespoke `EventSource` |
 | stale page after mutation, "back button shows old data", bust cached screen | `ui.InvalidateScreens(w, "/orders")` on the mutation handler: evicts that pathname (and its query variants) from the requesting tab's screen cache; pair with `data-fui-rpc-navigate` when the user should land on the fresh screen; `gofastr docs runtime-contract` for selector rules |
 | multi-replica deploy (sessions, live updates across replicas) | `framework.WithSecret` (or `GOFASTR_SECRET` env) + `framework.WithFanout`: fanout without a secret fails at boot by design; `gofastr docs scaling` |
@@ -107,7 +109,7 @@ generated guidance.
 | verify flags my `strings.HasPrefix` on a path, my `X-Forwarded-Proto` read, or `json.NewDecoder(r.Body)` | GOFASTR1006 / GOFASTR1406 / GOFASTR1407: compare `rel == root \|\| strings.HasPrefix(rel, root+"/")`, honour only `"http"`/`"https"`, decode through `handler.Bind` or `handler.DecodeStrict` (envelopes, frames and buffered bodies included); `gofastr verify --explain <rule>` |
 | vet flags a `0644`/`0755`/`os.Create` write, a fixed `/tmp` name, `==` on a token or code, an id minted from `time.Now()`, or `_ = json.Unmarshal` | `worldreadable` / `fixedtmp` / `secretcompare` / `timestampid` / `discardeddecode`: write 0600/0700, use `os.MkdirTemp`, `subtle.ConstantTimeCompare`, `crypto/rand`, check the error; a site that is the shape on purpose carries `//gofastr:allow(<analyzer>) why` on its line |
 | `auth.NewEntityTwoFAStore` no longer compiles after upgrading | it takes `EntityTwoFAStoreConfig{EncryptionKey: <32 random bytes>}` and returns an error; plaintext rows from older builds still verify and re-seal on their next write |
-| bilingual or multilingual site, `<html lang>` per page, "screen reader reads Spanish pages in English", per-language search index, translate the prev/next pager | `app.WithLangFunc(func(path string) string)` resolves the document language per route and a screen overrides its own page with `ScreenLang() string` (`app.ScreenLanger`, read after `Load`); `uihost.WithLangFunc` covers the shells the host builds (404, 405, embed frame); `ui.DocPager{PrevDirLabel, NextDirLabel}` translates the pager; `gofastr docs i18n` |
+| bilingual or multilingual site, `<html lang>` per page, "screen reader reads Spanish pages in English", per-language search index, translate the prev/next pager | `app.WithLangFunc(func(path string) string)` resolves the document language per route and a screen overrides its own page with `ScreenLang() string` (`app.ScreenLanger`, read after `Load`); `uihost.WithLangFunc` covers the shells the host builds (404, 405, embed frame); a docs pager is the app's own package (`gofastr generate package docpage`; `examples/acme-site/helpdocs` is a customised copy), so its prev/next words are the app's strings; `gofastr docs i18n` |
 | upgrading the framework version, migration notes between releases | install the target CLI first, then `gofastr upgrade [--to vX.Y.Z] [--apply]`. It shows every migration-relevant change in range with file:line hits in your app; `gofastr docs upgrading`; finish with `gofastr agents sync` |
 | customer-facing CLI, "ship a terminal client", stripe/gh-style CLI for my API | `gofastr generate cli`: standalone stdlib binary, scoped `gfsk_` token auth, `custom.go` extension seam; `gofastr docs app-cli` |
 | client SDKs, "publish an SDK", downloadable Go/JS/TS client, API docs site for customers | `gofastr generate sdk` (Go module zip + client.js/client.d.ts under `gen/sdk/`) + `sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS("gen/sdk/dist")})` for the hosted docs site + downloads; `gofastr docs sdk` |
@@ -154,9 +156,12 @@ a `featureflag.Store` adapter for server-side boolean gates.
    `auth.UserEntityFields()` are the contract.
 4. **Audit log writes are not best-effort.** Failing audit fails the
    user write; that's the point.
-5. **Strict CSP and one styling surface.** Host apps ship zero bespoke CSS and
-   zero hand-rolled structural markup. Themes mutate tokens; missing visual or
-   layout treatments are framework component gaps to add upstream. The
+5. **Strict CSP and one styling surface.** Host apps ship zero bespoke CSS
+   outside owned style sheets, and zero hand-rolled structural markup. Themes
+   mutate tokens; missing visual or layout treatments are framework component
+   gaps to add upstream. Chrome the kit does not ship (the site header,
+   footer, docs page) is the app's own package with an owned sheet
+   (`<name>.style.css` + `gofastr gen styles`): scoped, tokens only. The
    framework runtime is the only script tag; extra scripts use
    `WithExtraScripts(externalURL)`.
 6. **`gofastr dev` sets `GOFASTR_DEV=1`** on the child process; the

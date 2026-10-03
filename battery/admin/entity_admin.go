@@ -39,6 +39,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // registerEntityAdmin wires the entity CRUD screens + RPC/form routes. Screens
@@ -65,13 +66,18 @@ func (b *Battery) registerEntityAdmin() error {
 		return nil
 	}
 
-	// One ScreenGroup for all entity screens, wrapped in an admin shell (a
-	// sticky nav rail of entity links) and gated by the policy chain so the
-	// host's render pipeline refuses unauthorized callers before Load runs.
-	// Standalone: the admin ships its OWN full shell, so the host App's default
-	// layout (often the app's own sidebar) must NOT wrap it, otherwise the
-	// back-office renders a double sidebar.
-	layout := appui.NewLayout("admin").WithSidebar(b.adminSidebar(ents))
+	// One ScreenGroup for all entity screens, wrapped in an admin frame
+	// (a sticky nav rail of entity links in a content row) and gated by
+	// the policy chain so the host's render pipeline refuses unauthorized
+	// callers before Load runs. Standalone: the admin ships its OWN full
+	// frame, so the host App's default layout (often the app's own
+	// sidebar) must NOT wrap it, otherwise the back-office renders a
+	// double sidebar.
+	layout := appui.NewLayout("admin", appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
+		nav, _ := component.SafeRenderCtx(ctx, b.adminSidebar(ents))
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+	})
 	group := appui.NewScreenGroup(b.cfg.PathPrefix+"/e", layout, b.gatePolicy()).Standalone()
 	for _, ent := range ents {
 		b.registerEntityScreens(group, ent)

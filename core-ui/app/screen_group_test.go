@@ -39,7 +39,7 @@ func TestScreenGroupNormalizesPrefix(t *testing.T) {
 }
 
 func TestScreenGroupRegistersScreens(t *testing.T) {
-	sg := app.NewScreenGroup("/settings", app.NewLayout("settings"))
+	sg := app.NewScreenGroup("/settings", app.BareShell("settings"))
 	sg.Screen(app.NewScreen("profile", &stubComp{html: "profile"}), nil)
 	sg.Screen(app.NewScreen("security", &stubComp{html: "security"}), nil)
 
@@ -58,7 +58,7 @@ func TestScreenGroupRegistersScreens(t *testing.T) {
 }
 
 func TestScreenGroupLayoutInherited(t *testing.T) {
-	layout := app.NewLayout("settings")
+	layout := app.BareShell("settings")
 	sg := app.NewScreenGroup("/settings", layout)
 
 	s := app.NewScreen("profile", &stubComp{html: "profile"})
@@ -70,8 +70,8 @@ func TestScreenGroupLayoutInherited(t *testing.T) {
 }
 
 func TestScreenGroupLayoutExplicit(t *testing.T) {
-	groupLayout := app.NewLayout("group")
-	explicitLayout := app.NewLayout("explicit")
+	groupLayout := app.BareShell("group")
+	explicitLayout := app.BareShell("explicit")
 	sg := app.NewScreenGroup("/settings", groupLayout)
 
 	s := app.NewScreen("profile", &stubComp{html: "profile"})
@@ -83,10 +83,10 @@ func TestScreenGroupLayoutExplicit(t *testing.T) {
 }
 
 func TestSubGroup(t *testing.T) {
-	parentLayout := app.NewLayout("parent")
+	parentLayout := app.BareShell("parent")
 	parent := app.NewScreenGroup("/settings", parentLayout)
 
-	childLayout := app.NewLayout("child")
+	childLayout := app.BareShell("child")
 	child := parent.SubGroup("advanced", childLayout)
 
 	child.Screen(app.NewScreen("security", &stubComp{html: "security"}), nil)
@@ -105,7 +105,7 @@ func TestSubGroup(t *testing.T) {
 }
 
 func TestSubGroupInheritsParentLayout(t *testing.T) {
-	parentLayout := app.NewLayout("parent")
+	parentLayout := app.BareShell("parent")
 	parent := app.NewScreenGroup("/settings", parentLayout)
 
 	// Child with nil layout inherits parent's
@@ -116,10 +116,10 @@ func TestSubGroupInheritsParentLayout(t *testing.T) {
 }
 
 func TestGroupScreenHonorsExplicitLayoutOverride(t *testing.T) {
-	groupLayout := app.NewLayout("group").WithSidebar(app.NewStaticComponent("GROUP_SHELL"))
+	groupLayout := app.SidebarShell("group", app.NewStaticComponent("GROUP_SHELL"))
 	g := app.NewScreenGroup("/shop", groupLayout)
 
-	overrideLayout := app.NewLayout("override").WithSidebar(app.NewStaticComponent("OVERRIDE_SHELL"))
+	overrideLayout := app.SidebarShell("override", app.NewStaticComponent("OVERRIDE_SHELL"))
 	g.Screen(app.NewScreen("checkout", &stubComp{html: "CHECKOUT"}), overrideLayout)
 
 	r := app.NewRouter()
@@ -147,9 +147,9 @@ func TestGroupScreenHonorsExplicitLayoutOverride(t *testing.T) {
 }
 
 func TestNestedGroupRendersNestedLayoutShells(t *testing.T) {
-	parentLayout := app.NewLayout("parent").WithSidebar(app.NewStaticComponent("PARENT_SHELL"))
+	parentLayout := app.SidebarShell("parent", app.NewStaticComponent("PARENT_SHELL"))
 	parent := app.NewScreenGroup("/settings", parentLayout)
-	childLayout := app.NewLayout("child").WithSidebar(app.NewStaticComponent("CHILD_SHELL"))
+	childLayout := app.SidebarShell("child", app.NewStaticComponent("CHILD_SHELL"))
 	child := parent.SubGroup("advanced", childLayout)
 	child.Screen(app.NewScreen("security", &stubComp{html: "SECURITY_CONTENT"}), nil)
 
@@ -197,7 +197,7 @@ func indexOf(s, sub string) int {
 
 func TestRouterScreenGroup(t *testing.T) {
 	r := app.NewRouter()
-	layout := app.NewLayout("admin").WithHeader(&stubComp{html: "admin header"})
+	layout := app.HeaderShell("admin", &stubComp{html: "admin header"})
 
 	sg := app.NewScreenGroup("/admin", layout)
 	sg.Screen(app.NewScreen("dashboard", &stubComp{html: "dashboard content"}), nil)
@@ -215,7 +215,7 @@ func TestRouterScreenGroup(t *testing.T) {
 }
 
 func TestScreenGroupRenderLayout(t *testing.T) {
-	layout := app.NewLayout("test").WithHeader(&stubComp{html: "<h1>Header</h1>"})
+	layout := app.HeaderShell("test", &stubComp{html: "<h1>Header</h1>"})
 	sg := app.NewScreenGroup("/test", layout)
 
 	content := render.HTML("<p>Content</p>")
@@ -250,8 +250,8 @@ func TestScreenGroupRenderLayoutNil(t *testing.T) {
 }
 
 func TestNestedGroupChainEmitsLayerKeys(t *testing.T) {
-	outerLayout := app.NewLayout("outer").WithHeader(&stubComp{html: "<h1>Outer</h1>"})
-	innerLayout := app.NewLayout("inner").WithHeader(&stubComp{html: "<h2>Inner</h2>"})
+	outerLayout := app.HeaderShell("outer", &stubComp{html: "<h1>Outer</h1>"})
+	innerLayout := app.HeaderShell("inner", &stubComp{html: "<h2>Inner</h2>"})
 
 	outer := app.NewScreenGroup("/app", outerLayout)
 	inner := outer.SubGroup("settings", innerLayout)

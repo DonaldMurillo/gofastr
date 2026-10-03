@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -235,11 +236,12 @@ func TestMenuNeutralisesControlByteScheme(t *testing.T) {
 	}
 }
 
-// TestCardHrefDropsUnsafeSchemes pins the URL scheme allow-list on the
-// interactive Card shell: a javascript:/data: (or control-byte-split)
-// Href never reaches the rendered <a>; it is reduced to "#": dropped,
-// not panicked, because Card is a content-level component.
-func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
+// TestCardHrefRefusesUnsafeSchemes pins the URL scheme allow-list on
+// the linked Card: a javascript:/data: (or control-byte-split) Href is
+// refused at render naming the prop — a configured href is the
+// developer's mistake, the same refusal Alert.DismissHref and
+// Form.Action meet — and never reaches the rendered <a>.
+func TestCardHrefRefusesUnsafeSchemes(t *testing.T) {
 	for _, payload := range []string{
 		"javascript:alert(document.cookie)",
 		"data:text/html,<script>alert(1)</script>",
@@ -247,12 +249,18 @@ func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
 		"//evil.example/x",
 	} {
 		t.Run(payload, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("unsafe card href rendered instead of refusing: %s", payload)
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, "Href") {
+					t.Fatalf("panic does not name Href: %v", r)
+				}
+			}()
 			h := ui.Card(ui.CardConfig{Heading: "T", Href: payload}, render.Text("body"))
-			out := strings.ToLower(string(h))
-			if strings.Contains(out, "javascript:") || strings.Contains(out, "data:") || strings.Contains(out, "//evil.example") {
-				t.Fatalf("unsafe scheme reached card href: %s", h)
-			}
-			mustContain(t, h, `href="#"`)
+			t.Fatalf("unsafe card href rendered: %s", h)
 		})
 	}
 	// Happy path: a safe href round-trips.
@@ -284,44 +292,58 @@ func TestTagHrefDropsUnsafeSchemes(t *testing.T) {
 }
 
 // TestNavHrefSinksDropUnsafeSchemes pins the URL scheme allow-list on
-// the remaining content-level Href sinks that render live anchors:
-// ProgressSteps step Href, Sidebar item Href, DocLayout crumb Href,
-// and DocPrevNext pager Hrefs. Each degrades to "#", never a live
-// javascript: link.
+// the Sidebar item Href, which degrades a refused href to the inert
+// "#" anchor, never a live javascript: link. ProgressSteps step Href
+// is not in this set: it rides headless.Steps, which refuses a
+// configured href the anchor policy rejects (see
+// TestProgressStepsHrefIsRefusedNotDegraded).
 func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
-	const payload = "javascript:alert(1)"
-	surfaces := map[string]func() render.HTML{
-		"progress-steps": func() render.HTML {
-			return ui.ProgressSteps(ui.ProgressStepsConfig{
-				Steps: []ui.ProgressStep{{Label: "One", Status: ui.ProgressStepComplete, Href: payload}},
-			})
-		},
-		"sidebar-item": func() render.HTML {
-			return ui.SidebarBody(ui.SidebarConfig{
-				Items: []ui.SidebarItem{{Label: "Home", Href: payload}},
-			})
-		},
-		"doc-crumb": func() render.HTML {
-			return ui.DocLayout(ui.DocLayoutConfig{
-				Crumbs: []ui.DocCrumb{{Label: "Docs", Href: payload}, {Label: "Here"}},
-			}, render.Text("body"))
-		},
-		"doc-pager": func() render.HTML {
-			return ui.DocPrevNext(ui.DocPager{
-				PrevHref: payload, PrevLabel: "p",
-				NextHref: payload, NextLabel: "n",
-			})
-		},
+	h := ui.SidebarBody(ui.SidebarConfig{
+		Items: []ui.SidebarItem{{Label: "Home", Href: "javascript:alert(1)"}},
+	})
+	if strings.Contains(strings.ToLower(string(h)), "javascript:") {
+		t.Fatalf("javascript: href reached output: %s", h)
 	}
-	for name, renderFn := range surfaces {
-		t.Run(name, func(t *testing.T) {
-			h := renderFn()
-			if strings.Contains(strings.ToLower(string(h)), "javascript:") {
-				t.Fatalf("javascript: href reached output: %s", h)
-			}
-			mustContain(t, h, `href="#"`)
-		})
+	if !strings.Contains(string(h), `href="#"`) {
+		t.Fatalf("a refused href still rendered a live anchor: %s", h)
 	}
+}
+
+// A breadcrumb Href the anchor policy refuses degrades the step to
+// plain text: no anchor at all, and not a second current page.
+func TestCrumbUnsafeHrefIsPlainText(t *testing.T) {
+	h := string(ui.Breadcrumbs(ui.BreadcrumbsConfig{},
+		ui.Crumb{Text: "Docs", Href: "javascript:alert(1)"},
+		ui.Crumb{Text: "Here"},
+	))
+	if strings.Contains(strings.ToLower(h), "javascript:") {
+		t.Fatalf("javascript: href reached output: %s", h)
+	}
+	if strings.Contains(h, "<a ") {
+		t.Fatalf("a refused crumb href still rendered an anchor: %s", h)
+	}
+	if n := strings.Count(h, `aria-current="page"`); n != 1 {
+		t.Fatalf("aria-current count = %d, want 1: %s", n, h)
+	}
+}
+
+// A ProgressSteps step Href the anchor policy refuses is refused at
+// render naming the prop: the configured href is the developer's
+// mistake, the posture the primitive shares with Card and Form.
+func TestProgressStepsHrefIsRefusedNotDegraded(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("an unsafe step href rendered instead of refusing")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "Href") {
+			t.Fatalf("panic does not name Href: %v", r)
+		}
+	}()
+	ui.ProgressSteps(ui.ProgressStepsConfig{
+		Steps: []ui.ProgressStep{{Label: "One", Status: ui.ProgressStepComplete, Href: "javascript:alert(1)"}},
+	})
 }
 
 // TestHrefSinksDropProtocolRelative pins that the three sinks that
@@ -353,14 +375,29 @@ func TestHrefSinksDropProtocolRelative(t *testing.T) {
 			}
 			mustContain(t, sidebar, `href="#"`)
 
-			notif := ui.Notification(ui.NotificationConfig{
-				Title:       "T",
-				DismissHref: payload,
-			})
+			// The toast primitive refuses a dismissed toast with no
+			// Island (hard rule 1), so the sink carries one; the href
+			// policy refusal under test fires before it matters.
+			notif := func() (out render.HTML) {
+				defer func() {
+					if recover() == nil {
+						return
+					}
+					out = render.HTML("")
+				}()
+				return ui.Notification(ui.NotificationConfig{
+					Title:       "T",
+					DismissHref: payload,
+					Island:      headless.Island{Endpoint: "/island/n", Signal: "n"},
+				})
+			}()
+			// The primitive REFUSES the rejected href at render (the
+			// empty result is the refusal, recorded by the same
+			// recover pattern the StepWizard sink uses); nothing
+			// unsafe can reach the page.
 			if strings.Contains(string(notif), "evil.example") {
 				t.Fatalf("protocol-relative/unsafe scheme reached notification dismiss href: %s", notif)
 			}
-			mustContain(t, notif, `href="#"`)
 		})
 	}
 }
@@ -389,19 +426,16 @@ func TestForm_ActionPathTraversal(t *testing.T) {
 	t.Logf("NOTE: path traversal in action is attribute-escaped but not path-sanitized")
 }
 
+// An action the anchor policy refuses used to be substituted with
+// "#": a form whose submit went nowhere, which is worse than a no-op.
+// The refusal is the contract now — the panic is the fix, not a bug.
 func TestForm_ActionJavaScriptScheme(t *testing.T) {
 	t.Parallel()
-	h := ui.Form(ui.FormConfig{
-		Action: "javascript:alert(1)",
-	}, render.Text("field"))
-	out := string(h)
-	// HTML forms don't execute javascript: actions, but the value should
-	// still be properly attribute-escaped.
-	action := extractAttr(out, "action")
-	if action == "" {
-		t.Fatal("SECURITY: [form-xss] action attribute missing from output")
-	}
-	t.Logf("NOTE: javascript: action rendered as %q", action)
+	mustPanic(t, "unsafe action must panic at render, not render a dead form", func() {
+		ui.Form(ui.FormConfig{
+			Action: "javascript:alert(1)",
+		}, render.Text("field"))
+	})
 }
 
 func TestForm_MethodInjection(t *testing.T) {
@@ -473,12 +507,15 @@ func TestForm_ErrorMessageXSS(t *testing.T) {
 	errs := ui.FieldErrors{"email": `<script>alert("xss")</script>`}
 	h := ui.Form(ui.FormConfig{
 		Action: "/save",
+		ID:     "xss-form",
 		Errors: errs,
 	},
 		ui.FormFieldFor(errs, "email", ui.FormFieldConfig{
 			Label: "Email",
 			For:   "email",
-			Input: html.Input(html.InputConfig{Type: "email", Name: "email"}),
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+			},
 		}),
 	)
 	mustNotContain(t, h, `<script>alert("xss")</script>`)
@@ -547,7 +584,9 @@ func TestFormInput_LabelXSS(t *testing.T) {
 	h := ui.FormField(ui.FormFieldConfig{
 		Label: `<script>alert("label-xss")</script>`,
 		For:   "field-id",
-		Input: html.Input(html.InputConfig{Type: "text", Name: "field", ID: "field-id"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "field"})
+		},
 	})
 	mustNotContain(t, h, `<script>alert("label-xss")</script>`)
 	mustContain(t, h, "&lt;script&gt;")
@@ -560,7 +599,9 @@ func TestFormInput_HelpTextXSS(t *testing.T) {
 		Label: "Email",
 		For:   "email",
 		Help:  `<img src=x onerror=alert(1)> click here`,
-		Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "email"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		},
 	})
 	mustNotContain(t, h, `<img src=x onerror=alert(1)>`)
 	mustContain(t, h, "&lt;img")
@@ -626,19 +667,30 @@ func TestFormInput_RequiredAttribute(t *testing.T) {
 		Label:    "Email",
 		For:      "email",
 		Required: true,
-		Input: html.Input(html.InputConfig{
-			Type:       "email",
-			Name:       "email",
-			ID:         "email",
-			ExtraAttrs: html.Attrs{"required": ""},
-		}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		},
 	})
 	out := string(h)
-	// The required hint should be visible (asterisk)
-	if !strings.Contains(out, "ui-form-field__required") {
-		t.Errorf("SECURITY: [form-input] required field missing visual indicator\nHTML: %s", out)
+	// The required state rides the label (data-required) and the
+	// control (required); the stylesheet draws the visible mark from
+	// the state.
+	if !strings.Contains(out, `data-required`) {
+		t.Errorf("SECURITY: [form-input] required field missing its state on the label\nHTML: %s", out)
 	}
-	t.Logf("NOTE: required field rendered with asterisk indicator")
+	// The control's own opening tag carries required: a whole-field
+	// search is satisfied by the label's data-required="".
+	i := strings.Index(out, "<input")
+	if i < 0 {
+		t.Fatalf("SECURITY: [form-input] no <input> control in the field\nHTML: %s", out)
+	}
+	open := out[i:]
+	if j := strings.IndexByte(open, '>'); j >= 0 {
+		open = open[:j+1]
+	}
+	if !strings.Contains(open, `required=""`) {
+		t.Errorf("SECURITY: [form-input] required field missing its state on the control\nHTML: %s", open)
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -802,6 +854,11 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 		"data:text/html,<script>alert(1)</script>",
 		"//evil.com/x",
 	}
+	// The StepWizard sink refuses at render; the counter proves every
+	// unsafe action met the refusal rather than an empty render that
+	// would pass the verbatim check while proving nothing. Declared
+	// before the table because the sink closure writes to it.
+	stepWizardRefusals := 0
 	sinks := []struct {
 		name   string
 		render func(action string) render.HTML
@@ -819,8 +876,24 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 			return ui.SignOut(ui.SignOutConfig{Action: a})
 		}},
 		{"StepWizard", func(a string) render.HTML {
-			return ui.StepWizard(ui.StepWizardConfig{Action: a,
-				Steps: []ui.StepWizardStep{{Heading: "H"}}})
+			// The headless primitive refuses a rejected action at
+			// render, the posture every configured href in that
+			// package keeps. The refusal is RECORDED, not swallowed:
+			// stepWizardRefused tells the unsafe loop below that the
+			// panic happened, and a render that somehow came back
+			// without refusing returns its markup for the verbatim
+			// check to see.
+			var out render.HTML
+			func() {
+				defer func() {
+					if recover() != nil {
+						stepWizardRefusals++
+					}
+				}()
+				out = ui.StepWizard(ui.StepWizardConfig{Action: a,
+					Steps: []ui.StepWizardStep{{Heading: "H"}}})
+			}()
+			return out
 		}},
 	}
 	for _, s := range sinks {
@@ -841,6 +914,11 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 				t.Errorf("%s dropped a valid relative action:\n%s", s.name, h)
 			}
 		})
+	}
+	// All four unsafe actions met the render refusal — not an empty
+	// render that would pass the verbatim check while proving nothing.
+	if stepWizardRefusals != len(unsafe) {
+		t.Errorf("StepWizard refused %d of %d unsafe actions at render — a swallowed panic proves nothing", stepWizardRefusals, len(unsafe))
 	}
 }
 
@@ -944,9 +1022,13 @@ func TestRailAnchorsStayFragmentReferences(t *testing.T) {
 	}
 
 	summary := string(ui.ValidationSummary(ui.ValidationSummaryConfig{
+		ID:       "rail-sum",
 		Errors:   ui.FieldErrors{"email": "invalid"},
 		FieldIDs: map[string]string{"email": `javascript:alert(1)`},
 	}))
+	// The anchor policy accepts a bare fragment, so the forged value
+	// rides behind the "#": a same-page fragment, inert by
+	// construction — "#javascript:…" is an id lookup, not a scheme.
 	if !strings.Contains(summary, `href="#javascript:alert(1)"`) {
 		t.Errorf("ValidationSummary: field anchor must stay a fragment reference:\n%s", summary)
 	}

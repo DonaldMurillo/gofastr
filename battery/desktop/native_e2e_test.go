@@ -153,7 +153,7 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 	fwApp := framework.NewApp(append(opts, framework.WithConfig(framework.AppConfig{Name: "shellE2E"}))...)
 
 	site := uiapp.NewApp("shellE2E")
-	layout := uiapp.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 	site.SetDefaultLayout(layout)
 	site.Register("/", e2eHome{}, layout)
 	site.Register("/two", e2eTwo{}, layout)

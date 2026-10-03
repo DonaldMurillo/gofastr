@@ -2,10 +2,64 @@
 
 App-level helpers worth surfacing to AI agents alongside the batteries.
 
-**Use this when** the prompt mentions: audit trail / who did what, hot
+**Use this when** the prompt mentions: page layout, app shell, "a
+sidebar app", header and footer, breadcrumbs, a docs site with a table
+of contents, list on the left / detail on the right, highlight the
+current nav item, outlet, chrome that persists across navigation — or
+audit trail / who did what, hot
 reload, dev server, browser auto-refresh, livereload, run the app while
 developing, `.env` loading, live app introspection, image uploads that need
 thumbnails / responsive sizes / a blur placeholder.
+
+## `core-ui/app`: layouts with outlets — the page-shell primitive
+
+**Use this when** the prompt mentions: page layout, app shell, "a
+sidebar app", header and footer, breadcrumbs, a docs site with a table
+of contents, list on the left / detail on the right, highlight the
+current nav item, outlet, persistent chrome, master-detail with a
+shareable URL.
+
+**Import:** `github.com/DonaldMurillo/gofastr/core-ui/app` (imported
+as `uiapp` in examples); the components a shell composes come from
+`github.com/DonaldMurillo/gofastr/framework/ui`.
+
+**Shape:**
+```go
+toolbar := uiapp.NewOutlet("toolbar") // a named slot of the shell
+shell := uiapp.NewLayout("shell", uiapp.LayoutSpec{
+	Outlets: []*uiapp.Outlet{toolbar},          // filled per route
+	Areas:  []uiapp.AreaSpec{{Name: "crumbs"}}, // re-rendered per route
+}, func(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	return html.Div(html.DivConfig{},
+		siteHeader(ctx),            // static chrome
+		l.RouteArea("crumbs", crumbsArea),
+		l.Place(toolbar),
+		l.Primary(),                // the route's screen
+	)
+})
+site.SetDefaultLayout(shell)
+site.RegisterScreen(uiapp.NewScreen("/inbox", &InboxScreen{}).
+	Fill(toolbar, &InboxToolbar{}), nil) // a screen fills its outlet
+```
+
+Group layers nest under the shell and keep a pane across sibling
+pages: `uiapp.NewScreenGroup("/projects/{project}", layer)` keys the
+layer on the resolved param, so the issue list survives moving between
+one project's issues. A fill whose `Load` returns `uiapp.ErrNoFill`
+declines (an article without headings leaves the TOC column empty).
+
+**Don't reinvent** a hand-rolled shell `<div>` per screen, a per-page
+header copy, or a CSS-only chrome. There is no layout constructor in
+`framework/ui` and no ready-made layout export: declare the layout
+with `uiapp.NewLayout` and compose `ui.Sidebar`, `ui.ContentRow` and
+the app's own header, footer and docs-page packages (copy
+`examples/acme-site/{siteheader,sitefooter,helpdocs}`) in its build
+function. The runtime's
+active-link sweep marks the current nav item — never read the route in
+the static chrome (the `layoutfunc` lint flags it). The four page
+shapes are recipes: `gofastr docs ui-composition-recipes`; the
+primitive: `gofastr docs layouts`; real apps: `examples/tracker`,
+`examples/acme-site`.
 
 ## `app.WithAuditLog(cfg)`: automatic CRUD audit
 
@@ -101,10 +155,10 @@ already done.
 Adds `framework_docs_list`, `framework_docs_get`,
 `framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
 `app_modules`, `app_config`, `app_readiness`, `app_goroutine_leaks`,
-`app_routines` to the app's MCP
-endpoint so a connected agent can answer "what routes exist" / "is the app
-ready" / "is anything leaking goroutines" / "did my routine body change
-land" without leaving the session.
+`app_routines` (the registered cron/routine bodies, so "did my routine
+body change land" is answerable from the session), endpoint so a
+connected agent can answer "what routes exist" / "is the app
+ready" / "is anything leaking goroutines" without leaving the session.
 
 It also adds the contract catalog tools `contracts_list`,
 `contracts_explain`, and `contracts_capabilities`, so an agent can read what
@@ -149,3 +203,6 @@ a running server, or "is this app healthy". See the
 - Hand-rolled markup or CSS: `framework/ui` ships ~100 components;
   see the `ui` row of AGENTS.md (`agents/ui.md`) and
   `gofastr docs ui-new-components`.
+- A hand-rolled page shell or per-screen chrome: `core-ui/app`'s tree
+  layouts own the shell (`NewLayout` + outlets); see the section
+  above and `gofastr docs layouts`.

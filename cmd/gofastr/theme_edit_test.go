@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func newTestServer(t *testing.T) *themeEditServer {
 func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 	srv := newTestServer(t)
 
-	hash, err := srv.applyToken("color-primary", "#FF0000")
+	hash, err := srv.applyToken("color-primary", "#B91C1C")
 	if err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 		t.Fatalf("app.css?t=%s: status %d, want 200", hash, rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "--color-primary: #FF0000") {
+	if !strings.Contains(body, "--color-primary: #B91C1C") {
 		t.Fatalf("variant CSS does not carry the edited value:\n%s", truncate(body, 400))
 	}
 	// The variant must be served immutable: the content-addressed URL is
@@ -138,11 +139,93 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 	}
 }
 
+// A theme carrying dark overrides (the compiled style.Theme.DarkColors
+// the editor works in) must survive the write-back intact: the emitted
+// file re-declares the dark palette key for key, so an app that saves
+// keeps its dark mode. This is the round-trip for a theme built with
+// theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
+func TestThemeEditWritebackRoundTripsDarkPalette(t *testing.T) {
+	th := uitheme.Default(uitheme.Overrides{
+		Primary: "#0F766E",
+		Dark: &uitheme.Overrides{
+			Primary: "#5EEAD4",
+			Surface: "#10201E",
+		},
+	})
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+
+	// Locate `DarkColors: map[string]string{…}` inside var App and read
+	// its pairs back out of the AST.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "theme.go", src, 0)
+	if err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n--- source ---\n%s", err, src)
+	}
+	emitted := map[string]string{}
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := kv.Key.(*ast.Ident); !ok || id.Name != "DarkColors" {
+			return true
+		}
+		cl, ok := kv.Value.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		found = true
+		for _, elt := range cl.Elts {
+			pair, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			k, ok := pair.Key.(*ast.BasicLit)
+			v, ok2 := pair.Value.(*ast.BasicLit)
+			if !ok || !ok2 {
+				continue
+			}
+			key, err := strconv.Unquote(k.Value)
+			if err != nil {
+				t.Errorf("dark key %s does not unquote: %v", k.Value, err)
+				continue
+			}
+			val, err := strconv.Unquote(v.Value)
+			if err != nil {
+				t.Errorf("dark value %s does not unquote: %v", v.Value, err)
+				continue
+			}
+			emitted[key] = val
+		}
+		return false
+	})
+	if !found {
+		t.Fatalf("emitted theme.go carries no DarkColors block:\n%s", src)
+	}
+	if len(emitted) != len(th.DarkColors) {
+		t.Errorf("dark palette shrank in the write-back: emitted %d entries, theme carries %d", len(emitted), len(th.DarkColors))
+	}
+	for k, v := range th.DarkColors {
+		if emitted[k] != v {
+			t.Errorf("dark token %q: emitted %q, theme carries %q", k, emitted[k], v)
+		}
+	}
+	// The typed Dark config specifically: its compiled values are what
+	// the emitted file re-declares.
+	if emitted["primary"] != "#5EEAD4" || emitted["surface"] != "#10201E" {
+		t.Errorf("typed Dark override did not reach the emitted palette: primary=%q surface=%q", emitted["primary"], emitted["surface"])
+	}
+}
+
 // Write-back after an edit reflects the edit: the value lands in the
 // generated file as a %q literal, round-tripping through the emitter.
 func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	srv := newTestServer(t)
-	if _, err := srv.applyToken("color-primary", "#00FF00"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#166534"); err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
 	if err := srv.writeBack(); err != nil {
@@ -152,11 +235,52 @@ func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	// %q renders #00FF00 as "#00FF00", a double-quoted literal. The raw
+	// %q renders #166534 as "#166534", a double-quoted literal. The raw
 	// value must appear; a backtick literal would have been an injection
 	// risk.
-	if !strings.Contains(string(src), `"#00FF00"`) {
+	if !strings.Contains(string(src), `"#166534"`) {
 		t.Errorf("edited value not in written file:\n%s", truncate(string(src), 400))
+	}
+}
+
+// Write-back keeps a theme's component options. The edit server round-
+// trips the whole token map ("component.*" keys ride ThemeToTokens →
+// ApplyTokens), and the emitter writes the map back out as %q
+// literals in sorted order. There is no option editor, so this path is
+// the only one that could silently drop them.
+func TestThemeEditWritebackKeepsComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	if _, err := srv.applyToken("component.density", "compact"); err != nil {
+		t.Fatalf("applyToken(component.density): %v", err)
+	}
+	if _, err := srv.applyToken("component.button.treatment", "outline"); err != nil {
+		t.Fatalf("applyToken(component.button.treatment): %v", err)
+	}
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.outPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "Components: map[string]string{") {
+		t.Errorf("emitted theme.go lost the Components map:\n%s", truncate(s, 400))
+	}
+	// Sorted, quoted, both entries (gofmt aligns values, so the check
+	// tolerates the alignment gap).
+	if !regexp.MustCompile(`"button\.treatment":\s+"outline",`).MatchString(s) ||
+		!regexp.MustCompile(`"density":\s+"compact",`).MatchString(s) {
+		t.Errorf("emitted theme.go lost an option entry:\n%s", truncate(s, 400))
+	}
+	if strings.Index(s, `"button.treatment"`) > strings.Index(s, `"density"`) {
+		t.Error("Components entries not emitted in sorted key order")
+	}
+
+	// The grammar is enforced on the way in: an uppercase value is
+	// refused at apply, exactly like an uppercase color token value.
+	if _, err := srv.applyToken("component.density", "Compact"); err == nil {
+		t.Error("applyToken accepted an uppercase component value")
 	}
 }
 
@@ -246,7 +370,9 @@ func TestTokenControlType(t *testing.T) {
 		{"spacing-md", "number-px"},
 		{"radii-lg", "number-px"},
 		{"breakpoint-md", "number-px"},
-		{"font-body", "text"},
+		{"component.density", "select"},
+		{"component.button.treatment", "select"},
+		{"component.field.radius", "select"},
 		{"shadow-md", "text"},
 		{"duration-fast", "text"},
 		{"easing-spring", "text"},
@@ -281,6 +407,86 @@ func TestThemeEditControlsPageContainsTokenControls(t *testing.T) {
 	}
 	if !strings.Contains(body, `name="theme-edit-token"`) {
 		t.Errorf("controls page missing the bearer-token meta tag (name=\"theme-edit-token\")")
+	}
+}
+
+// The component options render as selects, not free-text inputs: the
+// option key rides data-token on a <select> whose options are the
+// catalogue's members with the current value selected, labelled
+// readably ("Button treatment", not "component.button.treatment"),
+// inside a "Component options" group ordered first after Colors. A
+// select is the one control whose values the operator cannot get wrong;
+// a text input here is the regression this pins.
+func TestThemeEditComponentOptionsRenderAsSelects(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:0"
+	srv.serveControlsPage(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("controls page status %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// A <select> carrying the key, with every member offered and the
+	// current value (filled, the default) selected.
+	iSel := strings.Index(body, `data-token="component.button.treatment"`) // not-a-secret: the editor's data-token control selector
+	if iSel == -1 || !strings.Contains(body[max(0, iSel-40):iSel], "<select") {
+		t.Errorf("button treatment control is not a select carrying data-token:\n%s", truncate(body, 400))
+	}
+	for _, m := range []string{"filled", "outline", "soft"} {
+		if !strings.Contains(body, `value="`+m+`">`+m+`</option>`) {
+			t.Errorf("button treatment select does not offer member %q", m)
+		}
+	}
+	if !strings.Contains(body, `selected="" value="filled">filled</option>`) {
+		t.Error("button treatment select does not preselect the current value (filled)")
+	}
+
+	// The group follows the catalogue's order, not the keys' spelling.
+	last := -1
+	for _, o := range uitheme.Options() {
+		at := strings.Index(body, `data-token="component.`+o.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if at <= last {
+			t.Errorf("component option %q renders out of catalogue order", o.Key)
+		}
+		last = at
+	}
+
+	// The readable label, not the raw key.
+	if !strings.Contains(body, ">Button treatment</label>") {
+		t.Error("button treatment select is not labelled \"Button treatment\"")
+	}
+	// The label names the select: its for is the select's id.
+	labelFor := regexp.MustCompile(`<label[^>]*for="([^"]+)"[^>]*>Button treatment</label>`).FindStringSubmatch(body)
+	if labelFor == nil {
+		t.Fatal("the Button treatment label carries no for")
+	}
+	treatment := regexp.MustCompile(`<select[^>]*data-token="component.button.treatment"[^>]*>`).FindString(body) // not-a-secret: the editor's data-token control selector
+	if !strings.Contains(treatment, ` id="`+labelFor[1]+`"`) {
+		t.Errorf("the Button treatment label's for=%q is not the treatment select's id: %s", labelFor[1], treatment)
+	}
+
+	// The group exists and sits first after Colors (before Colors (dark)).
+	for _, marker := range []string{"Component options (5)", "Colors (", "Colors (dark)"} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("controls page missing group %q", marker)
+		}
+	}
+	iColors := strings.Index(body, "Colors (")
+	iComponent := strings.Index(body, "Component options (5)")
+	iDark := strings.Index(body, "Colors (dark)")
+	if !(iColors < iComponent && iComponent < iDark) {
+		t.Errorf("Component options group is not first after Colors: colors=%d component=%d dark=%d", iColors, iComponent, iDark)
+	}
+
+	// Every option key in the catalogue has a select; nothing falls back
+	// to free text.
+	for _, opt := range uitheme.Options() {
+		i := strings.Index(body, `data-token="component.`+opt.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if i == -1 || !strings.Contains(body[max(0, i-40):i], "<select") {
+			t.Errorf("component option %q renders as something other than a select", opt.Key)
+		}
 	}
 }
 
@@ -362,26 +568,6 @@ func TestDurationLiteral(t *testing.T) {
 		}
 		if got := durationLiteral(d); got != c.want {
 			t.Errorf("durationLiteral(%s) = %q, want %q", c.d, got, c.want)
-		}
-	}
-}
-
-// colorSwatchValue normalises a CSS colour value into #rrggbb for the
-// <input type="color"> picker, falling back to #000000 for values the
-// picker cannot represent (oklch, color-mix, var()).
-func TestColorSwatchValue(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"#4F46E5", "#4F46E5"},
-		{"#FFF", "#FFFFFF"},
-		{"#FFFFFFFF", "#FFFFFF"},
-		{"oklch(0.5 0.2 240)", "#000000"},
-		{"var(--color-primary)", "#000000"},
-	}
-	for _, c := range cases {
-		if got := colorSwatchValue(c.in); got != c.want {
-			t.Errorf("colorSwatchValue(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
@@ -562,7 +748,7 @@ func TestThemeEditApplyHappyPath(t *testing.T) {
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/__theme/apply",
-		strings.NewReader(`{"key":"color-primary","value":"#00CC66"}`))
+		strings.NewReader(`{"key":"color-primary","value":"#0F766E"}`))
 	req.Host = "127.0.0.1:0"
 	req.Header.Set("Authorization", "Bearer "+srv.token)
 	req.Header.Set("Origin", "http://127.0.0.1:0")
@@ -617,6 +803,45 @@ func TestThemeEditApplyInvalidValueJSON(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"error"`) {
 		t.Errorf("invalid apply response missing error field:\n%s", rec.Body.String())
+	}
+}
+
+// The selects can only send members, but the API must not depend on
+// that: a non-member value for a known component key and a value for an
+// unknown component key both POST /__theme/apply, both come back 4xx,
+// and neither moves the working theme. ApplyTokens' grammar accepts
+// both shapes (they are lowercase words); the refusal is
+// applyToken's Validate, which runs the compiler's vocabulary — the
+// same boundary a hand-written theme file crosses.
+func TestThemeEditApplyRefusesBadComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	before := make(map[string]string, len(srv.working.Components))
+	for k, v := range srv.working.Components {
+		before[k] = v
+	}
+
+	apply := func(body string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(body))
+		req.Host = "127.0.0.1:0"
+		req.Header.Set("Authorization", "Bearer "+srv.token)
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := apply(`{"key":"component.button.treatment","value":"sparkly"}`); code < 400 || code > 499 {
+		t.Errorf("non-member component value: status %d, want 4xx", code)
+	}
+	if code := apply(`{"key":"component.button.sparkle","value":"filled"}`); code < 400 || code > 499 {
+		t.Errorf("unknown component key: status %d, want 4xx", code)
+	}
+	if !reflect.DeepEqual(srv.working.Components, before) {
+		t.Errorf("refused component applies mutated the working theme: %v", srv.working.Components)
+	}
+	// The refused keys never landed anywhere: the preview variant is
+	// unchanged too (applyToken only registers on success).
+	if got := srv.working.Components["button.treatment"]; got != before["button.treatment"] {
+		t.Errorf("button.treatment = %q after refusals, want %q", got, before["button.treatment"])
 	}
 }
 
@@ -704,7 +929,7 @@ func TestLoopbackGuardsAcceptAWildcardBind(t *testing.T) {
 // the operator could not see.
 func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 	srv := newTestServer(t)
-	if _, err := srv.applyToken("color-primary", "#FF0000"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#B91C1C"); err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
 
@@ -716,7 +941,7 @@ func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "#FF0000") {
+	if !strings.Contains(body, "#B91C1C") {
 		t.Errorf("the controls page does not show the edited value:\n%s", truncate(body, 400))
 	}
 	if !strings.Contains(body, `name="theme-edit-variant"`) {
@@ -984,11 +1209,17 @@ func TestControlKeyEscapesEveryAttribute(t *testing.T) {
 		Value: "#000000",
 		Type:  "color",
 	}))
-	if strings.Contains(controls, `data-err-for="color-a"b<c"`) {
-		t.Fatalf("error target contains an unescaped token key:\n%s", controls)
+	if strings.Contains(controls, `data-err-for=`) {
+		t.Fatalf("the bespoke data-err-for lookup is back; the reserved node is found by id:\n%s", controls)
 	}
-	if !strings.Contains(controls, `data-err-for="color-a&quot;b&lt;c"`) {
-		t.Fatalf("error target does not contain the escaped token key:\n%s", controls)
+	// The hostile key reaches every attribute it rides escaped, and the
+	// reserved error node is addressed by the control-id-derived id —
+	// the slug of the key, which contains nothing hostile to begin with.
+	if !strings.Contains(controls, `data-field="color-a&quot;b&lt;c"`) {
+		t.Fatalf("the field marker does not carry the escaped token key:\n%s", controls)
+	}
+	if !strings.Contains(controls, `id="te-input-color-a-b-c-error"`) {
+		t.Fatalf("the reserved error node is not addressed by its derived id:\n%s", controls)
 	}
 }
 
@@ -1081,6 +1312,9 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	for _, bad := range []struct{ key, value string }{
 		{"spacing-md", "0px"},
 		{"radii-sm", "0px"},
+		// White ink on pure red is 4.0:1: the pair guard refuses it for
+		// the same reason — the written app panics at WithTheme.
+		{"color-primary", "#FF0000"},
 	} {
 		if _, err := srv.applyToken(bad.key, bad.value); err == nil {
 			t.Errorf("%s=%s was accepted; app.WithTheme calls MustValidate, so this "+
@@ -1088,7 +1322,7 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 		}
 	}
 	// A legitimate edit still applies, or the guard has simply broken the tool.
-	if _, err := srv.applyToken("color-primary", "#0d9488"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#0F766E"); err != nil {
 		t.Errorf("a valid edit was refused: %v", err)
 	}
 }
@@ -1199,5 +1433,44 @@ func TestThemeEditRejectsDeclarationBreaks(t *testing.T) {
 		if _, err := srv.applyToken(tc.key, tc.value); err != nil {
 			t.Errorf("legitimate %s value %q rejected: %v", tc.key, tc.value, err)
 		}
+	}
+}
+
+// A working value no member matches must show as itself, selected; with
+// no selected option the browser would show the first member while the
+// theme holds something else.
+func TestThemeEditSelectShowsAnUnmatchedValue(t *testing.T) {
+	var opt uitheme.Option
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			opt = o
+		}
+	}
+	h := string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "ghostly", Type: "select"}, opt))
+	if !strings.Contains(h, `selected="" value="ghostly">ghostly</option>`) {
+		t.Errorf("an unmatched value is not shown selected:\n%s", h)
+	}
+	if strings.Count(h, `selected=""`) != 1 {
+		t.Errorf("want exactly one selected option:\n%s", h)
+	}
+	h = string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "outline", Type: "select"}, opt))
+	if strings.Contains(h, "ghostly") || !strings.Contains(h, `selected="" value="outline">`) {
+		t.Errorf("a member value should select that member and add nothing:\n%s", h)
+	}
+}
+
+// A select-typed component key the catalogue does not know (a newer
+// theme.go, a typo) falls through to the text control: an unrecognised
+// key is shown, never hidden.
+func TestThemeEditUnknownComponentKeyFallsBackToText(t *testing.T) {
+	out := string(renderOneControl(tokenControl{Key: "component.button.sparkle", Value: "x", Type: "select"}))
+	if !strings.Contains(out, `data-token="component.button.sparkle"`) { // not-a-secret: the editor's data-token control selector
+		t.Fatalf("an unknown component key renders no control:\n%s", out)
+	}
+	if !strings.Contains(out, "<input") || strings.Contains(out, "<select") {
+		t.Errorf("an unknown component key should fall back to a text input, not a select:\n%s", out)
+	}
+	if !strings.Contains(out, `value="x"`) {
+		t.Errorf("the fallback input does not carry the current value:\n%s", out)
 	}
 }

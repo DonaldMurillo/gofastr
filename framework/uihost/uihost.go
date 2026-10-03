@@ -52,6 +52,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
+	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -122,6 +124,8 @@ type UIHost struct {
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
+	errorScreen         component.Component                  // when set, a whole-page resolver failure (app.PageError) renders this through the default layout instead of the bare 500 fallback
+	pageLoading         component.Component                  // WithPageLoading: rendered once into every full page, shown while a navigation is in flight (replaces the default progress strip)
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
@@ -157,6 +161,11 @@ type UIHost struct {
 	appCSSHash       string
 	appCSSContribN   int
 	appCSSFrozenWarn sync.Once
+	// The layouts app.css collected transitions from, and the
+	// registration count they were read at (see appCSSCached).
+	appCSSLayoutsGen        uint64
+	appCSSTransitionLayouts map[*app.Layout]bool
+	appCSSLayoutsWarn       sync.Once
 	// External data manifest (catalog + module hashes + action hashes),
 	// composed + fingerprinted once after Mount. See manifestjs.go.
 	manifestOnce sync.Once
@@ -350,6 +359,11 @@ type routeInfoJSON struct {
 	// innermost (app.LayoutLayer.Key). The runtime compares it against the
 	// DOM's data-fui-layout-key spine to swap at the deepest shared layer.
 	Layouts []string `json:"layouts,omitempty"`
+	// Deferred the route's deferred outlet
+	// addresses — every fill the client must fetch as its own part
+	// request (X-Gofastr-Part) beside the page request. Absent when no
+	// outlet in the chain defers.
+	Deferred []string `json:"deferred,omitempty"`
 	// DocScripts lists the document-lifetime external scripts (src
 	// values, RegisterDocumentScript) in scope for this route. The
 	// client runtime compares the destination's set against the live
@@ -358,6 +372,15 @@ type routeInfoJSON struct {
 	// document-installed capabilities (WebMCP's navigator.modelContext
 	// tools), and a partial swap never runs a body script.
 	DocScripts []string `json:"docScripts,omitempty"`
+	// Loading is the route's swap-slot
+	// loading content as rendered HTML plus its After/Min in whole
+	// milliseconds, from the screen's (or its group's) WithLoading
+	// declaration. Absent when no route declares one. EVERY page pays
+	// these bytes (the manifest travels with every document), which is
+	// why per-outlet loading templates ride beside their cells instead.
+	Loading      string `json:"loading,omitempty"`
+	LoadingAfter int    `json:"loadingAfter,omitempty"`
+	LoadingMin   int    `json:"loadingMin,omitempty"`
 	// Redirect is the target path (or pattern) for a redirect entry.
 	// Empty for screens. The client-side router rewrites a navigation to
 	// this entry's path to Redirect without a server round-trip.
@@ -438,6 +461,39 @@ func WithLangFunc(fn func(path string) string) Option {
 func WithNotFoundScreen(c component.Component) Option {
 	return func(ds *UIHost) {
 		ds.notFoundScreen = c
+	}
+}
+
+// WithErrorScreen overrides the default bare 500 fallback for a
+// whole-page resolver failure (app.PageError, :
+// the component renders through the active layout's root, with the
+// same chrome every page gets and NO error text of its own — the
+// error is logged by the host, the page is a product surface.
+func WithErrorScreen(c component.Component) Option {
+	return func(ds *UIHost) {
+		ds.errorScreen = c
+	}
+}
+
+// WithPageLoading sets the page-wide loading component: rendered once
+// into every full page inside an inert <div data-fui-page-loading>
+// (hidden until a navigation is in flight) and shown through the SAME
+// state carrier the default progress strip keys off, html[aria-busy],
+// in pure CSS. Setting it REPLACES the default strip (the
+// html[aria-busy]::after rules are dropped from app.css so the two
+// never stack).
+//
+// The component is presentational config (rendered once, no Load, no
+// DI): style it in its registered component CSS, including any entry
+// delay (an After equivalent is a transition-delay on the hidden
+// state). An After/Min pair is NOT expressible in pure CSS and is not
+// offered here: the per-outlet Loading declaration owns the anti-flash
+// contract where it matters (the region swap); holding the page-wide
+// flag would also hold aria-busy, which assistive tech should hear
+// for exactly as long as the navigation is really in flight.
+func WithPageLoading(c component.Component) Option {
+	return func(ds *UIHost) {
+		ds.pageLoading = c
 	}
 }
 
@@ -682,15 +738,17 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	// Framework-built-in helpers: visually-hidden for skip links, live
 	// regions, etc. Inlined here (not via WithCustomCSS) so apps don't
 	// have to opt in to have working accessibility primitives.
-	out += frameworkBuiltinCSS
-	// Structural CSS for the layout shells the app package emits (.layout-body,
-	// the sidebar row, the WithContainer centered column). Owned by core-ui/app
-	// next to its markup; injected once here so no app or generator ships it.
-	out += app.LayoutBaseCSS() + "\n"
+	out += ds.frameworkCSS()
 	// Overlay chrome for intercepting routes: only when a route declares
 	// one, so an app that never intercepts ships none of it.
 	if ds.hasInterceptingRoute() {
 		out += app.InterceptOverlayCSS() + "\n"
+	}
+	// Every layout's typed transitions, collected here so an app never
+	// concatenates TransitionCSS by hand (a forgotten layout silently
+	// lost its transition). Before customCSS, which can override them.
+	for _, l := range ds.App.Layouts() {
+		out += l.TransitionCSS()
 	}
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
@@ -710,10 +768,17 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	return out
 }
 
-// frameworkBuiltinCSS ships with every app: minimal helpers the
-// framework's own SSR output relies on (skip link, polite live
-// region). Apps can override these classes; the framework just
-// guarantees the defaults exist.
+// frameworkCSS composes the framework's built-in stylesheet: the base
+// helpers, exactly ONE page-wide navigation indicator (the default
+// progress strip, or the host's page-loading component when
+// WithPageLoading set one), then the per-region dim rules.
+func (ds *UIHost) frameworkCSS() string {
+	if ds.pageLoading != nil {
+		return frameworkBuiltinCSS + frameworkPageLoadingCSS + frameworkDimCSS
+	}
+	return frameworkBuiltinCSS + frameworkProgressStripCSS + frameworkDimCSS
+}
+
 const frameworkBuiltinCSS = `
 /* Border-box everywhere: padding/borders count toward declared widths, so
    padded full-width bars don't overflow the viewport. The single most common
@@ -748,17 +813,24 @@ h1, h2, h3, h4 { font-family: var(--font-heading, var(--font-body, inherit)); }
 [data-fui-comp="ui-data-table"] td,
 [data-fui-comp="ui-stat-card"],
 [data-fui-comp="ui-bar-chart"],
-[data-fui-comp="ui-detail-list"] .ui-detail-list__value,
+[data-fui-comp="ui-detail-list"] .fui-detail-list__value,
 .ui-money,
 td[data-align="end"] {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
-/* The SPA runtime focuses the <main id="main-content"> landmark after a
-   client-side nav so screen readers announce the new page. It's a
-   programmatic (tabindex=-1) focus target, not a tabbable control, so the
-   browser's default focus ring around the whole content region is noise. */
-#main-content:focus, main[tabindex="-1"]:focus { outline: none; }
+/* The SPA runtime focuses the swap target (<main id="main-content"> or
+   a nested .layout-content cell, both tabindex="-1") after a
+   client-side nav so screen readers announce the new content. It is a
+   programmatic focus target, not a tabbable control, so the focus ring
+   is noise there — EXCEPT when focus is keyboard-visible, where the
+   ring is the only signal of where focus went. The runtime also passes
+   focusVisible:false for pointer-initiated navigations; this rule is
+   the cross-browser belt for engines without the FocusOptions member
+   and for any host CSS that keys a ring on bare :focus. */
+#main-content:focus:not(:focus-visible),
+main[tabindex="-1"]:focus:not(:focus-visible),
+.layout-content[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
 /* Visually-hidden helper — exposed under BOTH .fui-* (framework runtime
    uses this for the SPA route-announce region) and .ui-* (framework/ui
    components — CommandPalette's SR-only trigger, CopyButton's status
@@ -766,7 +838,7 @@ td[data-align="end"] {
    the helper is part of the built-in auto-emitted app.css floor. Apps
    that want a custom visually-hidden recipe can override either class
    via their own WithCustomCSS — last rule wins. */
-.fui-visually-hidden, .ui-visually-hidden {
+.fui-visually-hidden, .fui-visually-hidden {
   position: absolute !important;
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
@@ -840,7 +912,14 @@ td[data-align="end"] {
 html[aria-busy="true"] {
   cursor: progress;
 }
-html[aria-busy="true"]::after {
+`
+
+// frameworkProgressStripCSS is the DEFAULT page-wide navigation
+// indicator (the animated top strip on html[aria-busy]). AppCSSFor
+// drops it in favor of frameworkPageLoadingCSS when the host sets a
+// page-wide loading component (WithPageLoading): two simultaneous
+// page-wide indicators is never what an author meant.
+const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   content: '';
   position: fixed;
   inset: 0 0 auto 0;
@@ -854,7 +933,72 @@ html[aria-busy="true"]::after {
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
+}`
+
+// frameworkPageLoadingCSS shows a host's page-wide loading component
+// ([data-fui-page-loading], WithPageLoading) while a navigation is in
+// flight. The state carrier is the same html[aria-busy] the default
+// strip keys off; visibility+opacity (never display:none) so the
+// element can transition BOTH ways in pure CSS, an exit animation
+// without runtime involvement included.
+// .
+const frameworkPageLoadingCSS = `[data-fui-page-loading] {
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .18s ease, visibility .18s;
+  pointer-events: none;
 }
+html[aria-busy="true"] [data-fui-page-loading] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}`
+
+const frameworkDimCSS = `
+/* the navigator also marks every outlet,
+   area and swap slot the in-flight navigation will change with
+   aria-busy="true"; dim those regions so the user sees WHICH parts of
+   the kept layout are about to change. The delay lives here, not in
+   JS: a response that lands before the delay elapses cancels the
+   transition before a single dimmed frame paints, so fast (<100ms)
+   navigations never flicker, while the clear restores opacity with no
+   delay (the busy rule stops matching). 
+   a region holding cloned loading content (data-fui-loadstate) is
+   NOT dimmed — the loading content replaces the old content, dimming
+   it would double the signal. */
+[data-fui-outlet], [data-fui-area], [data-fui-layout-slot] {
+  transition: opacity .12s ease;
+}
+[data-fui-outlet][aria-busy="true"],
+[data-fui-area][aria-busy="true"],
+[data-fui-layout-slot][aria-busy="true"] {
+  opacity: .55;
+  transition-delay: .12s;
+}
+[data-fui-outlet][data-fui-loadstate],
+[data-fui-area][data-fui-loadstate],
+[data-fui-layout-slot][data-fui-loadstate] {
+  opacity: 1;
+  transition-delay: 0s;
+}
+/* the loading content's default enter
+   and exit — a fade. Author CSS overrides either side by keying the
+   same state attributes from a component's registered style; the
+   runtime waits for the region's own animationend (capped at 400ms)
+   before replacing exit content, so a longer exit delays the swap and
+   an absent one costs nothing. */
+[data-fui-outlet][data-fui-loadstate="shown"],
+[data-fui-area][data-fui-loadstate="shown"],
+[data-fui-layout-slot][data-fui-loadstate="shown"] {
+  animation: fui-load-in .18s ease both;
+}
+[data-fui-outlet][data-fui-loadstate="exit"],
+[data-fui-area][data-fui-loadstate="exit"],
+[data-fui-layout-slot][data-fui-loadstate="exit"] {
+  animation: fui-load-out .18s ease both;
+}
+@keyframes fui-load-in { from { opacity: 0; } }
+@keyframes fui-load-out { to { opacity: 0; } }
 `
 
 // ActiveTheme returns the configured theme or the default if unset.
@@ -866,7 +1010,6 @@ func (ds *UIHost) ActiveTheme() style.Theme {
 
 // ComponentCSSFiles returns one asset per registered component:
 // urlPath ("/__gofastr/comp/<name>.css") and the scoped CSS body
-// resolved under the active theme. Used by the static-site builder.
 func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	all := registry.All()
 	if len(all) == 0 {
@@ -896,6 +1039,16 @@ func New(application *app.App, opts ...Option) *UIHost {
 	}
 	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
 	// their relative order doesn't matter.
+	// The app's 404-outlet outcome body (FallbackNotFound renders the
+	// route's own request as the not-found page): give the app the same
+	// not-found body the host serves for an unmatched path — the
+	// configured screen when there is one, else the built-in default —
+	// unless the app already wired its own (app.WithNotFoundBody). The
+	// path-less form: the outlet's route DID resolve, so "no route
+	// matched" copy would be a lie.
+	if ds.App != nil && ds.App.NotFound == nil {
+		ds.App.NotFound = ds.notFoundBodyComponent("")
+	}
 	ds.reconcileAppIcons()
 	// Auto-inject the livereload client script when dev-mode env says so.
 	// The matching SSE/JS routes are auto-registered by framework.NewApp
@@ -1035,6 +1188,7 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 			Description: r.Description,
 			Preload:     r.Preload,
 			Layouts:     r.Layouts,
+			Deferred:    r.Deferred,
 			Redirect:    r.RedirectTo,
 		}
 		// Document-lifetime scripts in scope for this route, sorted so
@@ -1047,6 +1201,13 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 			}
 		}
 		sort.Strings(infos[i].DocScripts)
+		// the route's swap-slot loading
+		// content rides the manifest.
+		if r.Loading != nil {
+			infos[i].Loading = r.Loading.HTML
+			infos[i].LoadingAfter = r.Loading.After
+			infos[i].LoadingMin = r.Loading.Min
+		}
 		if r.Intercept != nil {
 			infos[i].Intercept = &interceptJSON{
 				From: r.Intercept.From,
@@ -1312,6 +1473,10 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// chain (which wires SecurityHeaders), so apply it here so tests
 		// and embedded uses get the same baseline headers as production.
 		ds.standalone.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
+		// framework.App installs the retired-markup scan on its router;
+		// the standalone router does the same, so widget and island
+		// responses mounted here are read like pages.
+		ds.standalone.Use(retired.Middleware(dev.Enabled))
 		ds.Mount(ds.standalone)
 	})
 	ds.standalone.ServeHTTP(w, r)
@@ -1319,8 +1484,16 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
 func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
+	w, r = renderdiag.TestResponse(w, r)
 	path := r.URL.Path
-
+	// A part request (X-Gofastr-Part, is answered
+	// before anything else: it never renders a document, never mints a
+	// session, and every whole-page outcome is its 409 reset — so it
+	// must not fall into any full-render arm by mistake.
+	if addr := r.Header.Get("X-Gofastr-Part"); addr != "" {
+		ds.handlePartRequest(w, r, path, addr)
+		return
+	}
 	// Client-side navigation: return just the screen content (no layout)
 	if r.Header.Get("X-Gofastr-Navigate") == "1" {
 		ds.handlePartialPage(w, r, path)
@@ -1373,8 +1546,18 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
 	// injectSignalSeed resolves below.
 	ctx = store.WithValues(ctx)
+	var res app.RenderResult
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
+		// A whole-page resolver failure the
+		// not-found page for ErrNotFound, the error page through the
+		// root layout for anything else — both logged here, never
+		// with the error text in the body.
+		var pe *app.PageError
+		if errors.As(err, &pe) {
+			ds.serveResolverError(w, r, path, pe)
+			return
+		}
 		ds.serveNotFound(w, r, path)
 		return
 	}
@@ -1390,33 +1573,56 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, res.Status)
 		return
 	}
+	// The status, decided once: a 404-outlet outcome outranks the
+	// component's own ScreenStatusCode (Decided 5 — the route's answer
+	// is the not-found page), which otherwise outranks the implicit 200.
+	status := 0
+	if res.NotFoundOutlet {
+		status = http.StatusNotFound
+	} else if sc, ok := res.Component.(ScreenStatusCode); ok {
+		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+			status = code
+		}
+	}
+	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, status)
+}
+
+// finishPageDocument is the ONE page-finishing tail every document that
+// renders through the app's layout runs: the normal page arm above, the
+// not-found and error documents, the 405 page, and RenderScreen's full
+// arm. The bare fallback documents (no root layout) stay bare.
+//
+// Get or create session. The cookie name + Secure flag depend on the
+// request origin (see setSessionCookie): a plaintext loopback dev
+// server can't round-trip a Secure cookie, so it gets the relaxed
+// form; everything else keeps the hardened __Host- cookie.
+//
+// A cookie whose token fails verification (expired, tampered, minted
+// under a rotated or per-boot key) must be re-minted, not reused;
+// otherwise the embedded SSE id and every island RPC would reference
+// a dead session and 401 until the user manually cleared the cookie.
+// The cookie stores the signed token; only the bare id goes into the
+// page chrome (SSE URL), so the credential never appears in URLs.
+// This is what makes an error document a real page: a 404/500/405
+// loaded directly used to ship chrome with NO session id, so the
+// widget catalog fetch and every island on it 401'd, and the first
+// navigation away raced a part request against a session the page
+// never minted (the 409 X-Gofastr-Part-Reset reload).
+//
+// no-store + Vary: Cookie BEFORE the live/dead split, exactly like
+// handlePartialPage: the document this tail ships is per-user rendered
+// content (caller-context SSR HTML, /__gofastr/sse?session=<id>
+// chrome, gated widget chrome SSR-inlined with request context), and
+// the re-mint arm additionally carries a Set-Cookie token. A shared
+// cache that stores no-freshness responses keyed on URL alone would
+// serve visitor B this session's page.
+func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx context.Context, html render.HTML, path string, comp component.Component, status int) {
 	// The <title> element is user-data-bearing on dynamic routes (the
 	// post-Load ScreenTitle) and escapes markup, not invisibles: strip the
 	// textsafe invisible set before the document ships. See
 	// scrubTitleInvisibles.
-	html := render.HTML(scrubTitleInvisibles(string(res.HTML)))
+	page := render.HTML(scrubTitleInvisibles(string(html)))
 
-	// Get or create session. The cookie name + Secure flag depend on the
-	// request origin (see setSessionCookie): a plaintext loopback dev
-	// server can't round-trip a Secure cookie, so it gets the relaxed
-	// form; everything else keeps the hardened __Host- cookie.
-	//
-	// A cookie whose token fails verification (expired, tampered, minted
-	// under a rotated or per-boot key) must be re-minted, not reused;
-	// otherwise the embedded SSE id and every island RPC would reference
-	// a dead session and 401 until the user manually cleared the cookie.
-	// The cookie stores the signed token; only the bare id goes into the
-	// page chrome (SSE URL), so the credential never appears in URLs.
-	//
-	// no-store + Vary: Cookie BEFORE the live/dead split, exactly like
-	// handlePartialPage: the 200 this arm ships is per-user rendered
-	// content (caller-context SSR HTML, /__gofastr/sse?session=<id>
-	// chrome, gated widget chrome SSR-inlined with request context), and
-	// the re-mint arm additionally carries a Set-Cookie token. A shared
-	// cache that stores no-freshness responses keyed on URL alone would
-	// serve visitor B this session's page. Every sibling arm already
-	// pins this (the partial path, the re-mint block, RenderScreen's
-	// private-screen default, the embed content route).
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Cookie")
 	sessionID, live := ds.verifySessionToken(readSessionCookie(r))
@@ -1430,25 +1636,22 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		// comment stays for the threat model.
 	}
 
-	page := ds.injectChromeFor(string(html), path, sessionID, boundedPresenceParam(r), res.Component)
-	page = injectSignalSeed(ctx, page)
-
+	out := ds.injectChromeFor(string(page), path, sessionID, boundedPresenceParam(r), comp)
+	out = injectSignalSeed(ctx, out)
 	// SSR-inline registered widgets: non-hidden auto-mount widgets
 	// always go in, and a Hidden deep-link widget goes in when the
 	// request URL matches its deep link (open at first paint). The
 	// widget chrome lives just inside </body>; the runtime's
 	// _mountByName checks for an existing root before fetching
 	// cfg.chromePath.
-	page = injectWidgetSSR(page, r)
+	out = injectWidgetSSR(out, r)
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if sc, ok := res.Component.(ScreenStatusCode); ok {
-		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
-			w.WriteHeader(code)
-		}
+	if status != 0 && status != http.StatusOK {
+		w.WriteHeader(status)
 	}
-	fmt.Fprint(w, page)
+	fmt.Fprint(w, out)
 }
 
 // injectWidgetSSR inlines the widgets the page wants open at first
@@ -1798,6 +2001,19 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
+	// the page-wide loading component rides
+	// every full page at BODY level (outside any shell a navigation can
+	// swap, so it survives every soft navigation), hidden until one is
+	// in flight (frameworkCSS keys its visibility off html[aria-busy]).
+	// Injected BEFORE the component-CSS scan below so the component's
+	// stylesheet ships in the head bundle. Presentational config only:
+	// rendered per page with no Load/DI.
+	if ds.pageLoading != nil {
+		if c, _ := component.SafeRenderCtx(context.Background(), ds.pageLoading); c != "" {
+			page = replaceChromeMarker(page, "<body>",
+				"<body>"+`<div data-fui-page-loading>`+string(c)+"</div>", "page loading")
+		}
+	}
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
 	bodyClose := borrowBuilder()
@@ -2052,6 +2268,11 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) appCSSCached() (body, hash string) {
 	ds.appCSSOnce.Do(func() {
 		ds.appCSSContribN = style.ContributedCount()
+		ds.appCSSLayoutsGen = ds.App.LayoutsVersion()
+		ds.appCSSTransitionLayouts = map[*app.Layout]bool{}
+		for _, l := range ds.App.Layouts() {
+			ds.appCSSTransitionLayouts[l] = true
+		}
 		ds.appCSSBody = ds.AppCSS()
 		ds.appCSSHash = style.CSSFingerprint(ds.appCSSBody)
 	})
@@ -2060,7 +2281,22 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 			slog.Warn("uihost: style.Contribute called after the first page render: app.css is frozen per process; contribute at package init, before Mount")
 		})
 	}
+	if ds.App.LayoutsVersion() != ds.appCSSLayoutsGen {
+		ds.appCSSLayoutsWarn.Do(ds.warnLateTransitionLayouts)
+	}
 	return ds.appCSSBody, ds.appCSSHash
+}
+
+// warnLateTransitionLayouts names layouts with typed transitions that
+// were registered after app.css was composed: their transition CSS
+// never ships, matching the style.Contribute freeze.
+func (ds *UIHost) warnLateTransitionLayouts() {
+	for _, l := range ds.App.Layouts() {
+		if !ds.appCSSTransitionLayouts[l] && l.TransitionCSS() != "" {
+			slog.Warn("uihost: layout registered after the first page render: app.css is frozen per process, so its transitions do not run; register routes before Mount",
+				"layout", l.Name)
+		}
+	}
 }
 
 // NotFoundRenderer is an optional interface a custom 404 screen (see
@@ -2072,25 +2308,75 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
-// renderNotFoundBody renders the configured not-found screen behind the
-// same panic containment every other render path applies. A raw Render()/
-// RenderNotFound() call here would let a panicking custom 404 screen kill
-// the request with no response: standalone hosts wire no recovery
-// middleware, so the containment has to live at the render call itself.
-// The plain-Render arm goes through component.SafeRenderCtx; the
-// NotFoundRenderer arm has no SafeRenderCtx equivalent, so the recover
-// here is its guard. Both arms return the error; the caller falls back
-// to the default 404 page.
-func (ds *UIHost) renderNotFoundBody(r *http.Request, path string) (body render.HTML, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			body, err = "", fmt.Errorf("not-found screen panic: %v", rec)
-		}
-	}()
-	if nf, ok := ds.notFoundScreen.(NotFoundRenderer); ok {
-		return nf.RenderNotFound(path), nil
+// notFoundBodyScreen adapts the host's configured 404 screen
+// ([WithNotFoundScreen]) to the app render pipeline's component slot:
+// RenderNotFound(path) when the screen implements it, else Render. A
+// panicking screen stays contained — the pipeline renders the adapter
+// under component.SafeRenderCtx, the guard this path used to hand-roll.
+type notFoundBodyScreen struct {
+	path string
+	comp component.Component
+}
+
+func (s *notFoundBodyScreen) Render() render.HTML {
+	if nf, ok := s.comp.(NotFoundRenderer); ok {
+		return nf.RenderNotFound(s.path)
 	}
-	return component.SafeRenderCtx(r.Context(), ds.notFoundScreen)
+	return s.comp.Render()
+}
+
+// defaultNotFoundScreen is the framework's built-in 404 body, the same
+// shape the 405 page uses: heading, the escaped request path, a home
+// link. Composed from design-system elements, zero bespoke CSS. It
+// renders INSIDE the root layout's <main> slot, so it carries no
+// role="main" wrapper of its own.
+type defaultNotFoundScreen struct{ path string }
+
+// backToHomeLink is the default error pages' primary action: a typed
+// anchor dressed in framework/ui's button-link class vocabulary
+// (fui-button fui-button--primary). uihost sits BELOW the component
+// layer and must not import framework/ui (framework/layering_test.go
+// pins it), so the classes are spelled, not imported — the
+// composition framework/ui's own component-options contract
+// sanctions ("a caller who writes fui-button on their own markup
+// gets the framework's styling whenever this sheet is on the page"):
+// the ui-button sheet is plain class rules and ships eagerly on
+// every host that links the package. On a host that does not, the
+// anchor degrades to the browser's link look — no sheet exists to
+// fetch, so no marker is emitted either.
+func backToHomeLink() render.HTML {
+	return html.Link(html.LinkConfig{
+		Href:  "/",
+		Text:  "Back to home",
+		Class: "fui-button fui-button--primary",
+	})
+}
+
+func (s *defaultNotFoundScreen) Render() render.HTML {
+	if s.path == "" {
+		// A static export's 404.html: rendered once at build time, so
+		// there is no request path to name.
+		return render.Join(
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
+			html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
+			html.Paragraph(html.TextConfig{}, backToHomeLink()),
+		)
+	}
+	return render.Join(
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
+		html.Paragraph(html.TextConfig{}, render.Text("No route matched "),
+			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), render.Text(".")),
+		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+	)
+}
+
+// notFoundBodyComponent picks the 404 body component: the host's
+// configured screen, else the built-in default.
+func (ds *UIHost) notFoundBodyComponent(path string) component.Component {
+	if ds.notFoundScreen != nil {
+		return &notFoundBodyScreen{path: path, comp: ds.notFoundScreen}
+	}
+	return &defaultNotFoundScreen{path: path}
 }
 
 // serveNotFound writes a 404, content-negotiated when the request's
@@ -2100,13 +2386,15 @@ func (ds *UIHost) renderNotFoundBody(r *http.Request, path string) (body render.
 // enabled. The JSON arm is always on — a correct machine-readable error
 // shape is an error-format fix, not an agent feature. Neither machine
 // arm ever reflects the request path; the HTML fallback escapes it.
-// When WithNotFoundScreen is set, the HTML arm renders that component
-// through the same chrome (default layout, runtime.js, theme bootstrap)
-// as every other page; otherwise the framework falls back to a minimal
-// HTML body so something always renders.
-//
-// Every arm carries Vary: Accept: the 404 body for one URL differs by
-// Accept, so a cache keying without it would serve the wrong variant.
+// When the app declares a default (root) layout, the HTML arm renders
+// the not-found body — WithNotFoundScreen's component when set, else
+// the built-in default — through that layout's shell (outlets show
+// their defaults), with the same runtime.js/theme chrome every page
+// carries; a navigation request (X-Gofastr-Navigate + a known
+// X-Gofastr-From) instead gets the partial/envelope shape any route
+// answers with, swapping at layer 0. Without a root layout the
+// framework falls back to the minimal HTML body so something always
+// renders.
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
 	w.Header().Add("Vary", "Accept")
 	if acceptsProblemJSON(r) {
@@ -2140,26 +2428,22 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	if ds.notFoundScreen != nil && ds.App != nil {
-		body, err := ds.renderNotFoundBody(r, path)
-		if err == nil {
-			if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-				body = layout.Wrap(body)
-			}
-			appName := "GoFastr"
-			if ds.App.Name != "" {
-				appName = ds.App.Name
-			}
-			page := ds.injectChrome(ds.documentShell(path, "404: "+appName, string(body)), path, "", "")
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, page)
+	// a navigation fetch that missed every
+	// route gets the answer shape any route gives it — the not-found
+	// body as a partial/envelope swapping at the deepest layer the
+	// origin shares with the root layout (layer 0 for a same-shell
+	// nav), status 404 — so the runtime shows the error page inside
+	// the live shell instead of toasting. A fetch without X-Gofastr-From
+	// (boot, an unknown origin) takes the full-document arm below: the
+	// runtime reads a whole document as an envelope () in one
+	// fetch.
+	if ds.App != nil && r.Header.Get("X-Gofastr-Navigate") == "1" && r.Header.Get("X-Gofastr-From") != "" {
+		if ds.serveNotFoundPartial(w, r, path) {
 			return
 		}
-		// A panicking custom 404 screen falls through to the default page
-		// below: the containment must not change the status semantics, and
-		// a standalone host has no recovery middleware to catch it for us.
-		slog.Warn("uihost: not-found screen render panicked; serving default 404", "err", err)
+	}
+	if ds.renderNotFoundDocument(w, r, path) {
+		return
 	}
 
 	w.WriteHeader(http.StatusNotFound)
@@ -2172,6 +2456,238 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
 		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
+}
+
+// renderNotFoundDocument renders the not-found page as a full document
+// through the app's root layout and finishes it through the same tail
+// every page runs (finishPageDocument): session verify-or-mint with the
+// id in the chrome, no-store + Vary: Cookie, signal seed, widget SSR.
+// The body lands in the layer-0 shell's <main> slot, the shell's
+// outlets show their defaults, route areas read the requested path, and
+// injectChrome adds the same runtime.js/theme chrome every page
+// carries. ok=false keeps the caller on the bare legacy 404 page (no
+// root layout, or the render failed).
+func (ds *UIHost) renderNotFoundDocument(w http.ResponseWriter, r *http.Request, path string) bool {
+	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
+		return false
+	}
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	res, err := ds.App.RenderNotFoundPageResult(ctx, path, ds.notFoundBodyComponent(path))
+	if err != nil {
+		slog.Warn("uihost: not-found page render failed; serving bare 404", "err", err)
+		return false
+	}
+	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, http.StatusNotFound)
+	return true
+}
+
+// serveNotFoundPartial answers a navigation fetch (X-Gofastr-Navigate)
+// that missed every route with the same partial shape any route answers
+// with: the not-found body rendered under the layers the origin route
+// does not share with the root layout — a same-shell navigation swaps at
+// layer 0 — and the kept layers' outlet fills beside it, status 404.
+// Returns false (nothing written) when the app has no root layout or
+// the render fails; the caller falls back to the full-document arm.
+func (ds *UIHost) serveNotFoundPartial(w http.ResponseWriter, r *http.Request, path string) bool {
+	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
+		return false
+	}
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	res, err := ds.App.RenderNotFoundFromResult(ctx, path, r.Header.Get("X-Gofastr-From"), ds.notFoundBodyComponent(path))
+	if err != nil {
+		slog.Warn("uihost: not-found partial render failed; serving document 404", "err", err)
+		return false
+	}
+	switch res.Kind {
+	case app.DecisionAllow, app.DecisionRenderAlt:
+	default:
+		return false
+	}
+	ds.writePartialResult(w, r, ctx, path, res, nil, http.StatusNotFound)
+	return true
+}
+
+// defaultErrorScreen is the framework's built-in 500 body: a heading,
+// one honest sentence, a home link. It deliberately names NO detail of
+// the failure (the resolver's error text is logged, never rendered)
+// and renders inside the root layout's <main> slot.
+type defaultErrorScreen struct{}
+
+func (s *defaultErrorScreen) Render() render.HTML {
+	return render.Join(
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Something went wrong")),
+		html.Paragraph(html.TextConfig{}, render.Text("This page could not be loaded. Try again in a moment.")),
+		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+	)
+}
+
+// errorBodyComponent picks the 500 body component: the host's
+// configured screen ([WithErrorScreen]), else the built-in default.
+func (ds *UIHost) errorBodyComponent() component.Component {
+	if ds.errorScreen != nil {
+		return ds.errorScreen
+	}
+	return &defaultErrorScreen{}
+}
+
+// serveResolverError answers a whole-page resolver failure
+// (app.PageError, ErrNotFound takes the
+// not-found page's whole pipeline (status 404); anything else the
+// error page (status 500). The failure is logged here, scrubbed —
+// the bodies never carry error text.
+func (ds *UIHost) serveResolverError(w http.ResponseWriter, r *http.Request, path string, pe *app.PageError) {
+	slog.Error("uihost: route resolver failed; serving error page",
+		"path", textsafe.StripUnsafe(path),
+		"err", textsafe.Recovered(pe.Err),
+		"not_found", pe.NotFound)
+	if pe.NotFound {
+		ds.serveNotFound(w, r, path)
+		return
+	}
+	ds.serveError(w, r, path)
+}
+
+// serveError is serveNotFound's 500 twin: the error body through the
+// app's root layout when one exists (a navigation fetch carrying
+// X-Gofastr-From gets the partial/envelope shape instead, so the
+// runtime shows the page inside the live shell), else a minimal
+// document. No error text in any body.
+func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string) {
+	if ds.App != nil && r.Header.Get("X-Gofastr-Navigate") == "1" && r.Header.Get("X-Gofastr-From") != "" {
+		if ds.serveErrorPartial(w, r, path) {
+			return
+		}
+	}
+	if ds.renderErrorDocument(w, r, path) {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	fmt.Fprintf(w,
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Something went wrong</title></head>`+
+			`<body><main role="main"><h1>Something went wrong</h1><p>This page could not be loaded. Try again in a moment.</p>`+
+			`<p><a href="/">Back to home</a></p></main></body></html>`,
+		stdhtml.EscapeString(ds.LangForPath(path)))
+}
+
+// renderErrorDocument is renderNotFoundDocument's 500 twin, finished
+// through the same page tail (finishPageDocument).
+func (ds *UIHost) renderErrorDocument(w http.ResponseWriter, r *http.Request, path string) bool {
+	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
+		return false
+	}
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	res, err := ds.App.RenderErrorPageResult(ctx, path, ds.errorBodyComponent())
+	if err != nil {
+		slog.Warn("uihost: error page render failed; serving bare 500", "err", err)
+		return false
+	}
+	ds.finishPageDocument(w, r, ctx, res.HTML, path, res.Component, http.StatusInternalServerError)
+	return true
+}
+
+// serveErrorPartial is serveNotFoundPartial's 500 twin: the error body
+// as a partial/envelope at the deepest layer the origin shares with
+// the root layout, status 500. The runtime's path applies it
+// inside the live shell.
+func (ds *UIHost) serveErrorPartial(w http.ResponseWriter, r *http.Request, path string) bool {
+	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
+		return false
+	}
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	res, err := ds.App.RenderErrorFromResult(ctx, path, r.Header.Get("X-Gofastr-From"), ds.errorBodyComponent())
+	if err != nil {
+		slog.Warn("uihost: error partial render failed; serving document 500", "err", err)
+		return false
+	}
+	switch res.Kind {
+	case app.DecisionAllow, app.DecisionRenderAlt:
+	default:
+		return false
+	}
+	ds.writePartialResult(w, r, ctx, path, res, nil, http.StatusInternalServerError)
+	return true
+}
+
+// handlePartRequest answers one deferred outlet's part request
+// (X-Gofastr-Part, the fill for ONE wire address
+// of the resolved route, read by the client with text() so DevTools
+// shows the request with its body.
+//
+// A part never mints a session (the page request beside it owns the
+// rollover; a mint here would race two Set-Cookies onto one
+// navigation), and always carries no-store. Every whole-page outcome —
+// the route not resolving, the address not being a deferred outlet of
+// it, the policy phase redirecting or blocking, a render error —
+// answers 409 with X-Gofastr-Part-Reset: 1 and a body the client
+// applies nothing from; the runtime then reloads the URL as a whole
+// document, once per navigation. The one exception is a DEAD SESSION:
+// that reset says `session`, and the runtime waits for the page
+// request's commit (its Set-Cookie carries the re-minted token) and
+// re-requests the part once before ever reloading.
+func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path, addr string) {
+	w.Header().Set("Cache-Control", "no-store")
+	// A dead session between the page request and its parts is the
+	// spec's reset case: the fill would render under a different
+	// identity than the page beside it. The reset names the reason
+	// (`session`): the page request beside this part re-mints and its
+	// Set-Cookie has landed by the time the client reads this answer,
+	// so the runtime waits for the page commit and re-requests the part
+	// once instead of reloading the document.
+	if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
+		ds.writePartReset(w, partResetSession)
+		return
+	}
+	ctx := app.WithRequest(r.Context(), r)
+	ctx = store.WithValues(ctx)
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
+	fill, outcome := ds.App.RenderPartResult(ctx, path, addr)
+	if outcome == app.PartReset {
+		ds.writePartReset(w, partResetAny)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	var b strings.Builder
+	// The seed delta carries only values the PAGE answer did not
+	// already send: every page seed includes the full route.* family
+	// (SeedSplit folds RouteNames()), so pre-marking them sent leaves a
+	// delta of just the names this fill's own render seeded.
+	sent := map[string]string{}
+	for _, k := range store.RouteNames() {
+		if v, ok := store.ResolveSeed(ctx, []string{k})[k]; ok {
+			if j, err := json.Marshal(v); err == nil {
+				sent["p:"+k] = string(j)
+			}
+		}
+	}
+	if seed := partialSeedIslandDelta(ctx, string(fill.HTML), sent); seed != "" {
+		b.WriteString(seed)
+	}
+	fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, addr, fill.HTML)
+	fmt.Fprint(w, b.String())
+}
+
+// The two reset reasons, and the wire spelling of each. `1` is the
+// original opaque reset (any whole-page disagreement the client must
+// resolve with a document reload); `session` names the one case the
+// client can repair without a reload: the page request beside the part
+// re-mints the session, so the part can be re-requested once after the
+// page commits.
+const (
+	partResetAny     = "1"
+	partResetSession = "session"
+)
+
+// writePartReset is the part 409: no body the client applies, and the
+// header that tells it why the part cannot land. reason is one of the
+// partReset* constants above.
+func (ds *UIHost) writePartReset(w http.ResponseWriter, reason string) {
+	w.Header().Set("X-Gofastr-Part-Reset", reason)
+	w.WriteHeader(http.StatusConflict)
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -2260,11 +2776,30 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// re-resolved against the route table, and a forged value can
 		// only change how much shared chrome gets re-rendered, never
 		// policy, params, Load, or content.
-		res, err = ds.App.RenderPartialFromResult(ctx, path, from)
+		//
+		// X-Gofastr-Defer the page request of a
+		// navigation whose destination has deferred outlets. The
+		// deferred outlets' loaders are skipped and their loading
+		// content travels in their place; the fills arrive as separate
+		// part requests the client launched beside this one.
+		if r.Header.Get("X-Gofastr-Defer") == "1" {
+			res, err = ds.App.RenderPartialFromResultDefer(ctx, path, from)
+		} else {
+			res, err = ds.App.RenderPartialFromResult(ctx, path, from)
+		}
 	} else {
 		res, err = ds.App.RenderPartialResult(ctx, path)
 	}
 	if err != nil {
+		// Whole-page resolver failure on a navigation: the partial arm
+		// of the same outcome handlePage answers — the error page (or
+		// the not-found page for ErrNotFound) inside the live shell,
+		// status carried, never the error text in the body.
+		var pe *app.PageError
+		if errors.As(err, &pe) {
+			ds.serveResolverError(w, r, path, pe)
+			return
+		}
 		ds.serveNotFound(w, r, path)
 		return
 	}
@@ -2301,6 +2836,29 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
+	ds.writePartialResult(w, r, ctx, path, res, overlay, 0)
+}
+
+// writePartialResult writes a rendered partial-navigation result: the
+// title/swap headers, the envelope or bare body, and status. The
+// success path passes 0 (implicit 200); serveNotFoundPartial passes
+// http.StatusNotFound so a missed navigation answers partial-shaped
+// with the error status.
+func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
+	// The status is decided ONCE, here, before any body byte (DESIGN
+	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
+	// the component's own ScreenStatusCode (the same contract the
+	// full-page path honours — a partial that silently answered 200
+	// for a 410 page would cache a wrong-status entry), else the
+	// implicit 200. A serveNotFoundPartial caller that already chose
+	// 404 keeps it.
+	if status == 0 {
+		if res.NotFoundOutlet {
+			status = http.StatusNotFound
+		} else if sc, ok := res.Component.(ScreenStatusCode); ok {
+			status = sc.ScreenStatusCode()
+		}
+	}
 	// Screen title: prefer the post-Load effective title from the render
 	// (dynamic routes register with an empty/generic title; the loaded
 	// instance knows the real one), falling back to the registration-time
@@ -2319,7 +2877,10 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// so the header is the tab title. Strip before the suffix is appended.
 	title = textsafe.StripInvisible(title)
 	if title != "" {
-		w.Header().Set("X-Gofastr-Title", url.PathEscape(title+" — "+ds.App.Name))
+		if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
+			title += suffix
+		}
+		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -2328,15 +2889,69 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// Names the layout layer the body renders BELOW; the client swaps
 		// the matching data-fui-layout-slot cell. Absent when the body is
 		// bare screen content (whole-main swap / full-fetch fallback).
-		w.Header().Set("X-Gofastr-Swap", res.SwapLayer)
+		//
+		// Version skew (DESIGN "Mixed versions"): a fills-less client
+		// (no X-Gofastr-Fills: 2 — the pre-layout runtime, or a page
+		// whose document holds no outlet/area marker) cannot receive the
+		// kept layers' fills: the bare body answers only the primary,
+		// and the old runtime would keep stale outlets with no repair.
+		// Answer "!reload" instead — a swap key no DOM holds, so every
+		// runtime's missing-slot repair full-loads the destination and
+		// the real page (fills inline, an outlet-404's status included)
+		// arrives whole.
+		swap := res.SwapLayer
+		if r.Header.Get("X-Gofastr-Fills") != "2" && len(res.Fills) > 0 {
+			swap = "!reload"
+		}
+		w.Header().Set("X-Gofastr-Swap", swap)
+	}
+	// The page answer's keyed-transition pick
+	// the runtime adds it to the view-transition types beside the
+	// direction, ignoring names the document's data-fui-vt-kinds does
+	// not declare. Absent when nothing was picked.
+	if res.Transition != "" {
+		w.Header().Set("X-Gofastr-Transition", res.Transition)
 	}
 	if overlay != nil {
 		// The client mounts overlay chrome only when the SERVER says so.
 		w.Header().Set("X-Gofastr-Overlay", overlay.As.String())
 	}
-	// Re-assert no-store (set at the top of the function so every early
-	// exit carries it too; see that comment for the threat model).
+	// Re-assert no-store (handlePartialPage sets it before any branch can
+	// return; see that comment for the threat model — every partial-shaped
+	// body is per-user rendered content, the not-found partial included).
 	w.Header().Set("Cache-Control", "no-store")
+	// Fills envelope a fills-capable client that
+	// kept layout layers with tree-layout outlets gets the partial as an
+	// envelope — the seed island (scanned over the primary payload AND
+	// every fill), then one <template data-fui-fill> per fill, the
+	// primary first (addressed by the bare swap key) and the kept
+	// layers' non-primary fills after. Anything else keeps today's body
+	// shape. Under X-Gofastr-Defer a deferred
+	// outlet's fill here is its LOADING content; the real fill arrives
+	// as the matching part request.
+	if r.Header.Get("X-Gofastr-Fills") == "2" && len(res.Fills) > 0 {
+		w.Header().Set("X-Gofastr-Envelope", "2")
+		scanned := string(res.HTML)
+		for _, f := range res.Fills {
+			scanned += string(f.HTML)
+		}
+		var b strings.Builder
+		if seed := partialSeedIsland(ctx, scanned); seed != "" {
+			b.WriteString(seed)
+		}
+		fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
+		for _, f := range res.Fills {
+			fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, f.Addr, f.HTML)
+		}
+		if status != 0 {
+			w.WriteHeader(status)
+		}
+		fmt.Fprint(w, b.String())
+		return
+	}
+	if status != 0 {
+		w.WriteHeader(status)
+	}
 	fmt.Fprint(w, partialSeedIsland(ctx, string(res.HTML))+string(res.HTML))
 }
 
@@ -2787,6 +3402,18 @@ func (ds *UIHost) Mount(r *router.Router) {
 	ds.coreRouter = r
 	ds.enforceStrict()
 	ds.AutoCompileActions()
+	// Fill validation (DESIGN "Validation at mount"): a fill naming
+	// an outlet whose layout is not in the screen's chain panics at
+	// boot, naming the layout and the outlet — the same
+	// refuse-at-mount posture the action-id collision check above
+	// takes. Screens registered after Mount are caught at render.
+	ds.App.Router.ValidateFills()
+	// Requires validation, the same refuse-at-mount posture: a group
+	// Requires name no resolver declaration matches is a silently
+	// dropped policy check, so it panics here at boot, naming the
+	// group and the screen. Screens registered after Mount are caught
+	// at render (the render paths re-check, like fills).
+	ds.App.Router.ValidateRequires()
 	// Refuse a server action on an embeddable surface at boot, before any
 	// route is served: G.serverAction is dead inside a frame, and finding out
 	// in a customer's page is the failure this exists to prevent. See
@@ -3210,7 +3837,6 @@ func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) 
 // preserved (set by the router before dispatching). Composed entirely
 // from design-system elements, zero bespoke CSS.
 func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 
@@ -3224,22 +3850,25 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 		children = append(children, html.Paragraph(html.TextConfig{},
 			render.Text("Allowed methods: "), html.Code(html.TextConfig{}, render.Text(allow)), render.Text(".")))
 	}
-	children = append(children, html.Paragraph(html.TextConfig{},
-		render.HTML(`<a href="/">Back to home</a>`)))
+	children = append(children, html.Paragraph(html.TextConfig{}, backToHomeLink()))
 	body := html.Div(html.DivConfig{Role: "main"}, children...)
 
 	if ds.App != nil && ds.App.Router != nil {
 		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.Wrap(body)
+			body = layout.WrapCtx(r.Context(), body)
 		}
 	}
 	appName := "GoFastr"
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	page := ds.injectChrome(ds.documentShell(path, "405: "+appName, string(body)), path, "", "")
-	w.WriteHeader(http.StatusMethodNotAllowed)
-	fmt.Fprint(w, page)
+	// The same page-finishing tail every document through the layout
+	// runs (finishPageDocument): session verify-or-mint, no-store +
+	// Vary: Cookie, chrome with the session id, seed, widget SSR.
+	ctx := store.WithValues(app.WithRequest(r.Context(), r))
+	ds.finishPageDocument(w, r, ctx,
+		//gofastr:allow(GOFASTR1403) documentShell HTML-escapes the concatenated title; body is already rendered HTML.
+		render.HTML(ds.documentShell(path, "405: "+appName, string(body))), path, nil, http.StatusMethodNotAllowed)
 }
 
 // devStaticNoStore marks a project static response uncacheable while the
@@ -3404,6 +4033,21 @@ func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 	}
 }
 
+// NotFoundOutletError is the static-render form of the 404-outlet
+// outcome (FallbackNotFound, Decided 5): the route registered, but its
+// render is the not-found page — status 404, the app's not-found body
+// in the primary. A static export skips such a route (the builder
+// logs this error beside it) exactly like a dynamic route without
+// StaticPaths: baking a 404 page in at the route's URL would be
+// wrong for every visitor, and the live server keeps answering it.
+type NotFoundOutletError struct {
+	Path string
+}
+
+func (e *NotFoundOutletError) Error() string {
+	return fmt.Sprintf("uihost: static render %q: a FallbackNotFound outlet had no fill, the route's answer is 404", e.Path)
+}
+
 // PolicyBlockedError reports a static render refused by the screen's
 // policy: a redirect or a block, never a render failure. The static
 // builder skips such routes (with a warning) instead of aborting the
@@ -3423,6 +4067,18 @@ func (e *PolicyBlockedError) Error() string {
 // graph, but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
+	page, _, err := ds.RenderStaticPageResult(ctx, path)
+	return page, err
+}
+
+// RenderStaticPageResult is RenderStaticPage with the contained fill
+// failures of the render beside the page (,
+// a fill that fails and is contained ( variant
+// B) degrades just its outlet on a live server, but a static export
+// must not bake the degraded bytes into the page — the builder reads
+// this record and refuses. Same rendering semantics as
+// RenderStaticPage.
+func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (string, []app.FillFailure, error) {
 	// The chrome renders with the same context a live request gets. A
 	// layout component that reads the path from the request, such as a
 	// sidebar for the section being read or a header whose language follows
@@ -3448,20 +4104,54 @@ func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, er
 	// description only exists on the loaded instance.
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	switch res.Kind {
 	case app.DecisionAllow, app.DecisionRenderAlt:
 	case app.DecisionRedirect:
-		return "", &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("redirect to %q", res.URL)}
+		return "", nil, &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("redirect to %q", res.URL)}
 	default:
-		return "", &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("block status %d", res.Status)}
+		return "", nil, &PolicyBlockedError{Path: path, Decision: fmt.Sprintf("block status %d", res.Status)}
+	}
+	// The 404-outlet outcome: the route's own answer is the not-found
+	// page, so there is no page to bake in. The builder skips the route
+	// with a warning (NotFoundOutletError) the way it skips a gated or
+	// unexpandable one.
+	if res.NotFoundOutlet {
+		return "", nil, &NotFoundOutletError{Path: path}
 	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
 	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
-	return injectSignalSeed(ctx, page), nil
+	return injectSignalSeed(ctx, page), res.FillFailures, nil
+}
+
+// RenderStaticNotFoundPage renders the not-found page as a full static
+// document — the same page serveNotFound's HTML arm serves live (the
+// root layout's shell with its outlets' defaults, WithNotFoundScreen's
+// body or the built-in one) with static-mode chrome and no session —
+// for a static export's 404.html. ok=false when the app declares no
+// root layout or the render fails; the builder then emits no 404.html.
+func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (string, bool) {
+	if ds.App == nil || ds.App.Router.GetDefaultLayout() == nil {
+		return "", false
+	}
+	if app.RequestFromContext(ctx) == nil {
+		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil); err == nil {
+			ctx = app.WithRequest(ctx, req)
+		}
+	}
+	ctx = store.WithValues(ctx)
+	// The body gets no path: the file answers every missing URL, and a
+	// custom NotFoundRenderer sees "" for the same reason.
+	res, err := ds.App.RenderNotFoundPageResult(ctx, path, ds.notFoundBodyComponent(""))
+	if err != nil {
+		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)
+		return "", false
+	}
+	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
+	return injectSignalSeed(ctx, page), true
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
@@ -3527,7 +4217,8 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 
 // componentCSSTags returns the <link> tags to inject into <head> for
 // the components rendered on this page. It scans page for
-// data-fui-comp markers, adds every LoadAlways entry, and emits one
+// data-fui-comp and data-fui-scope markers (kit component roots and
+// owned-style roots), adds every LoadAlways entry, and emits one
 // bundled link when ≥2 names are involved (single direct link
 // otherwise). Inline emission is forbidden: the bundle endpoint is
 // content-addressed so the browser caches it across pages with the
@@ -3660,6 +4351,9 @@ func catalogJSONScriptFor(ds *UIHost, theme style.Theme, variantKey string) stri
 // the inline script form (export mode, theme variants) and the external
 // manifest.js (live pages).
 func catalogJSON(ds *UIHost, theme style.Theme, variantKey string) []byte {
+	// The runtime loads sheets only through this catalog, and hosts cache
+	// it: a style registered after this point would never reach a page.
+	registry.Freeze()
 	all := registry.All()
 	if len(all) == 0 {
 		return nil
@@ -3724,8 +4418,38 @@ func injectSignalSeed(ctx context.Context, page string) string {
 // partial. It is embedded inside the swapped content; the runtime reads
 // #gofastr-signals-partial after the swap and merges it (page-scoped
 // applied always, globals only when first seen). Returns "" when empty.
+// SeedSplit includes every DECLARED route.*
+// name (see core-ui/store), so the merge below rewrites route state on
+// every navigation — kept-layer bindings repaint, and a previous
+// route's params (seeded ”) cannot survive.
 func partialSeedIsland(ctx context.Context, html string) string {
+	return partialSeedIslandDelta(ctx, html, nil)
+}
+
+// partialSeedIslandDelta is partialSeedIsland for one unit of a streamed
+// response. sent (nil: no filtering) records "p:"/"g:" + name → the JSON
+// of every value an earlier unit of the same response carried; a name
+// whose value is unchanged is dropped, and the island is omitted when
+// nothing is left. The client merges each unit's island into the same
+// state, so a repeat changes nothing but the byte count.
+func partialSeedIslandDelta(ctx context.Context, html string, sent map[string]string) string {
 	page, global := store.SeedSplit(ctx, html)
+	if sent != nil {
+		for scope, m := range map[string]map[string]any{"p": page, "g": global} {
+			for k, v := range m {
+				j, err := json.Marshal(v)
+				if err != nil {
+					continue
+				}
+				key := scope + ":" + k
+				if prev, ok := sent[key]; ok && prev == string(j) {
+					delete(m, k)
+					continue
+				}
+				sent[key] = string(j)
+			}
+		}
+	}
 	if len(page) == 0 && len(global) == 0 {
 		return ""
 	}

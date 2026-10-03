@@ -219,9 +219,8 @@ func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 			t.Fatalf("/settings missing %q: %.300s", want, screen.Body())
 		}
 	}
-	// The default renders the box checked (the renderer emits the
-	// attributes in sorted order, checked before id).
-	if !strings.Contains(screen.Body(), `<input checked="checked" id="f-notify_on_save"`) {
+	// The default renders the box checked.
+	if !strings.Contains(inputTag(screen.Body(), "f-notify_on_save"), `checked=""`) {
 		t.Fatal("the default notify_on_save does not render checked")
 	}
 	// The typed read answers the default before any store exists.

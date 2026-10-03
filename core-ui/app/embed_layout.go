@@ -1,5 +1,11 @@
 package app
 
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
 // EmbedLayoutName is the layout name embedded surfaces render under. It lands
 // in the wrapper's class and in data-fui-layout, so it is part of the CSS
 // contract rather than a private string.
@@ -20,9 +26,11 @@ const EmbedLayoutName = "embed"
 // chrome would have produced either no landmark or a second one, and a nested
 // <main> is an accessibility violation the site's own axe gate catches.)
 //
-// It contributes no CSS of its own: the generic layout shape in LayoutBaseCSS
-// already covers a header-less, sidebar-less shell, and everything inside comes
-// from the components the screen renders.
+// It contributes no CSS of its own: the layout's body is the primary slot
+// alone (no wrapper styling, no viewport-tall shell), and everything inside
+// comes from the components the screen renders.
 func EmbedLayout() *Layout {
-	return NewLayout(EmbedLayoutName)
+	return NewLayout(EmbedLayoutName, LayoutSpec{}, func(ctx context.Context, l *LayoutTree) render.HTML {
+		return l.Primary()
+	})
 }

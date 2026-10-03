@@ -125,7 +125,7 @@ func TestUIHost_PageResponsesCarrySecurityHeaders(t *testing.T) {
 
 func TestWithHeadHTML_StripsInlineScriptTags(t *testing.T) {
 	application := app.NewApp("HeadHTMLSecurity")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	host := New(application, WithHeadHTML(`<script>alert("xss")</script><meta name="safe" content="ok">`))
 
@@ -140,7 +140,7 @@ func TestWithHeadHTML_StripsInlineScriptTags(t *testing.T) {
 
 func TestSEOScreen_HeadHTMLStripsInlineScriptTags(t *testing.T) {
 	application := app.NewApp("SEOHeadSecurity")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/about", &seoTestComp{
 		headHTML: `<script>alert("xss")</script><meta name="safe" content="ok">`,
 	}).WithTitle("About"), nil)

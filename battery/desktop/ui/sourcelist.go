@@ -76,7 +76,7 @@ type SourceListConfig struct {
 //
 // Compose it with the desktop layout:
 //
-//	layout := desktopui.Layout().WithSidebar(
+//	layout := desktopui.Layout(
 //		app.NewStaticComponent(desktopui.SourceList(cfg)))
 func SourceList(cfg SourceListConfig) render.HTML {
 	var b strings.Builder
@@ -169,7 +169,7 @@ func sourceListCSS(_ style.Theme) string {
   /* HIG caption size (Caption 1/2 are 10pt), uppercase is not the Mac
      idiom; the size and the muted color carry the hierarchy. */
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-subtle, #71717A);
   margin: 0;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);

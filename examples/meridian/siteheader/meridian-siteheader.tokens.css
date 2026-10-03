@@ -1,0 +1,3 @@
+/* The phone menu's rows land one after another, each this much after
+   the one above; the bar's actions follow the last row. */
+@property --duration-menu-stagger { syntax: "<time>"; inherits: true; initial-value: 40ms; }

@@ -25,12 +25,12 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 		chromedp.Navigate(base+"/components/sortablelist"),
 		pageReady(),
 		// Wait for the demand-loaded sortablelist module.
-		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sortablelist)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-sortablelist'])`),
 		// Verify k1 starts in the "todo" column.
-		chromedp.Evaluate(`document.querySelector('[data-fui-sort-key="k1"]').closest('[data-fui-sortable-container]').getAttribute('data-fui-sortable-container')`, &containerBefore),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="k1"]').closest('[data-hui-sortable-container]').getAttribute('data-hui-sortable-container')`, &containerBefore),
 		// Keyboard cross-column move: grab k1, ArrowRight, drop.
 		chromedp.Evaluate(`(function(){
-			var item = document.querySelector('[data-fui-sort-key="k1"]');
+			var item = document.querySelector('[data-hui-sort-key="k1"]');
 			item.focus();
 			item.dispatchEvent(new KeyboardEvent('keydown', {key:' ', bubbles:true, cancelable:true}));
 			item.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true, cancelable:true}));
@@ -39,7 +39,7 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 		// Wait for the async commit POST to complete.
 		chromedp.Sleep(500*time.Millisecond),
 		// Verify k1 is now in the "doing" column.
-		chromedp.Evaluate(`document.querySelector('[data-fui-sort-key="k1"]').closest('[data-fui-sortable-container]').getAttribute('data-fui-sortable-container')`, &containerAfter),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="k1"]').closest('[data-hui-sortable-container]').getAttribute('data-hui-sortable-container')`, &containerAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -57,7 +57,7 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sortablelist"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sort-key="k1"]').closest('[data-fui-sortable-container]').getAttribute('data-fui-sortable-container')`, &containerAfterReload),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="k1"]').closest('[data-hui-sortable-container]').getAttribute('data-hui-sortable-container')`, &containerAfterReload),
 	)
 	if err != nil {
 		t.Fatalf("chromedp reload: %v", err)

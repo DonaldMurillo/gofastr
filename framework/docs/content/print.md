@@ -39,7 +39,7 @@ linked; a print document is inert.
 A print document has no runtime to lazy-load component CSS, but the battery
 still renders styled components faithfully: it scans the rendered body for
 `data-fui-comp` markers and **inlines the scoped CSS** for every registered
-`framework/ui` / `core-ui/patterns` component it finds. So a `Build` that
+`framework/ui` component it finds. So a `Build` that
 returns, say, a `DataTable` prints with its real styling: you get tokens
 from `AppCSSURL` plus the component's own rules. What you don't get is
 interactivity (sort/expand/RPC): a print page is static by design.

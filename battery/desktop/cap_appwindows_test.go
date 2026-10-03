@@ -237,7 +237,7 @@ func TestTraySetTitleThroughBattery(t *testing.T) {
 func TestRunWiresSettingsAndTray(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	site := appui.NewApp("SettingsE2E")
-	layout := appui.NewLayout("public").WithContainer()
+	layout := containerLayout("public")
 	site.Register("/", e2eScreen{}, layout)
 	host := uihost.New(site)
 

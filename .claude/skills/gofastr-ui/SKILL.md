@@ -72,7 +72,7 @@ and always via the shared bus.
 | Need | Use |
 |---|---|
 | Static HTML primitive (`<button>`, `<h1>`, `<table>`) | `core-ui/html` |
-| A composed UI pattern (accordion, tabs, pagination, breadcrumbs) | `core-ui/patterns/<name>` |
+| A composed UI pattern (accordion, tabs, pagination, breadcrumbs) | `framework/ui/<Name>` (on its `framework/headless` primitive) |
 | A semantic component (PageHeader, FormField, DataTable) | `framework/ui/` |
 | An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
 | A theme token | `framework/ui/theme` (canonical typed `style.Theme`; mutate fields directly) |
@@ -141,19 +141,17 @@ func MyThing(cfg MyThingConfig) render.HTML {
 - `LoadPrewarm`: same as Auto + throttled `requestIdleCallback` prefetch.
 - `LoadAlways`: emit link on every page (use for chrome on essentially every screen).
 
-**The contract applies to `core-ui/patterns/*` too.** Patterns
-(accordion, breadcrumbs, nestedlist, pagination, progress, skeleton,
-tabs, …) register via `registry.RegisterStyle("<name>", styleFn)` and
-wrap their top-level `Render()` element in `Style.WrapHTML(...)`. The
-legacy `func BaseCSS() string` export pattern is **forbidden**: the
-2026-05-19 nestedlist incident shipped without styling because the
-host's theme.go was never updated to concatenate it. The lint
-`core-ui/check.LintNoPatternBaseCSS` fails CI on any new pattern that
-re-exports `BaseCSS`. The pattern-CSS unification landed 2026-05-19.
+**`core-ui/patterns/` is deleted.** Every pattern moved to
+`framework/ui` on its `framework/headless` primitive (accordion and
+nestedlist are `ui.Collapsible`; infinitescroll is gone) — compose
+those; do not recreate a pattern package. A
+`func BaseCSS() string` export is **forbidden**: the 2026-05-19
+nestedlist incident shipped without styling because the host's
+theme.go was never updated to concatenate it.
 
 **Hard rules:**
-- ❌ Never export `func BaseCSS() string` from a `core-ui/patterns/*`
-  package. Register via `RegisterStyle` and wrap via `WrapHTML`.
+- ❌ Never export `func BaseCSS() string` from a component package.
+  Register via `RegisterStyle` and wrap via `WrapHTML`.
 - ❌ Never write inline `<style>` blocks for component CSS; always go through the registry.
 - ❌ Never write selectors that try to escape the scope (`body`, `html`, `:root`, `*`, `::backdrop`); `ComponentSheet` rejects them at process startup.
 - ✅ Use `&` in `ComponentSheet` to reference the marker element itself.

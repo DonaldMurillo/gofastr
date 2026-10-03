@@ -588,6 +588,7 @@ func rtcSetup(t *testing.T, query ...string) *rtcEnv {
 	room := newRTCRoom()
 	t.Cleanup(room.stop)
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", room.serveWS)
 	// /resnap?peer=X queues a second snapshot on X's live socket: the
 	// same sequence again, which the reducer must refuse and the

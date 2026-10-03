@@ -1,0 +1,11 @@
+version: v0.79.0
+title: A2A task exchange, per-agent rate limits, fallback-drift rule
+notes:
+  - change: "new opt-in surfaces - framework.WithA2A (A2A v1.0 task exchange at /a2a, entity-derived skills, SQL task store), uihost.AgentCardConfig.A2AEndpoint, App.A2ASkills, framework.AgentRateLimitKey / webbotauth.RateLimitKey"
+    breaking: false
+    guidance: "All additive; nothing changes for an app that does not call them. WithA2A requires an authenticated caller for every method (401 otherwise) and stores tasks per owner - there is no anonymous posture to opt into."
+    nodetect: "all additive; nothing changes for an app that does not call them"
+  - change: "gofastr verify gained GOFASTR1808 rendering/fallback-drift - a var(--token, fallback) in a design-system tree whose fallback is not the token's declared value"
+    breaking: false
+    nodetect: "fires only under vendored design-system paths and reports each site with its fix"
+    guidance: "Fires only under paths containing core-ui/, framework/ui/, framework/uihost/, framework/sdkdocs/, framework/pluginhost/, framework/dev/, or battery/, so an app is unaffected unless it vendors those trees. Fix by writing the declared value (style.TokenNames lists them); rem and px are compared by size."

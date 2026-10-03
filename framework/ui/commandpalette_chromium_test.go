@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func paletteTestServer(t *testing.T) *httptest.Server {
 			Meta:  fmt.Sprintf("/cmd/%03d", i+1),
 		}
 	}
-	_, pal := CommandPalette(CommandPaletteConfig{Commands: commands})
+	_, pal := CommandPalette(CommandPaletteConfig{Commands: commands, FallbackHref: "/cmds"})
 
 	r := router.New()
 	widget.MountBuilder(r, pal)
@@ -71,11 +72,10 @@ func paletteTestServer(t *testing.T) *httptest.Server {
 <meta name=viewport content="width=device-width, initial-scale=1">
 <style>`+th.CSSCustomProperties()+`
 body{margin:0}
-.ui-visually-hidden{position:absolute !important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.fui-visually-hidden{position:absolute !important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 </style>
 <script type="application/json" id="gofastr-catalog">
-{"ui-cmd-palette":{"stylePath":"/__gofastr/comp/ui-cmd-palette.css","version":"test","loadMode":"auto"},
- "combobox":{"stylePath":"/__gofastr/comp/combobox.css","version":"test","loadMode":"auto"}}
+{"ui-cmd-palette":{"stylePath":"/__gofastr/comp/ui-cmd-palette.css","version":"test","loadMode":"auto"}}
 </script>
 <button id="open" type="button" data-fui-open="command-palette">Open palette</button>
 `+widget.RuntimeTag())
@@ -128,7 +128,7 @@ func openPalette(t *testing.T, ctx context.Context, url string, vw, vh int64) {
 	// freshly inserted widget; wait for it before driving the input.
 	var comboLoaded bool
 	if err := chromedp.Run(ctx,
-		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.combobox)`, &comboLoaded,
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-combobox'])`, &comboLoaded,
 			chromedp.WithPollingTimeout(15*time.Second), chromedp.WithPollingInterval(100*1e6)),
 	); err != nil {
 		var loaded string
@@ -188,7 +188,7 @@ func TestCommandPaletteBoundedDialogChromium(t *testing.T) {
 				const pal = document.querySelector('[data-fui-comp="ui-cmd-palette"]');
 				const r = pal.getBoundingClientRect();
 				const input = document.getElementById('command-palette-input').getBoundingClientRect();
-				const footer = pal.querySelector('.ui-cmd-palette__footer').getBoundingClientRect();
+				const footer = pal.querySelector('.fui-cmd-palette__footer').getBoundingClientRect();
 				const list = document.getElementById('command-palette-input-listbox');
 				return {innerHeight: window.innerHeight,
 					paletteTop: r.top, paletteBottom: r.bottom, paletteHeight: r.height,
@@ -293,7 +293,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 		InputFocused bool   `json:"inputFocused"`
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const btn = document.querySelector('.ui-cmd-palette__close');
+		const btn = document.querySelector('.fui-cmd-palette__close');
 		return {label: btn.getAttribute('aria-label') || '',
 			type: btn.getAttribute('type') || '',
 			visible: btn.offsetParent !== null,
@@ -331,7 +331,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(afterTab1, "ui-cmd-palette__close") {
+	if !slices.Contains(strings.Fields(afterTab1), "fui-cmd-palette__close") {
 		t.Errorf("Tab from input landed on %q, want the close button — the control is not in the focus order", afterTab1)
 	}
 	if afterTab2 != "command-palette-input" {
@@ -341,7 +341,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	// Dismiss via the close control, then check focus restore + reopen.
 	var closed, focusBack bool
 	if err := chromedp.Run(ctx,
-		chromedp.Click(`.ui-cmd-palette__close`),
+		chromedp.Click(`.fui-cmd-palette__close`),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
 			const w = document.querySelector('[data-fui-widget="command-palette"]');
@@ -407,20 +407,21 @@ func TestCommandPaletteStaticFilteringPaintsOnlyMatchesChromium(t *testing.T) {
 	ctx := paletteChromeCtx(t, 390, 844)
 	openPalette(t, ctx, srv.URL, 390, 844)
 
-	// Harness guard: the combobox stylesheet named by the catalog must
-	// actually load. It 404'd for this harness's whole life while the
-	// catalog named /__gofastr/combobox.css (only /__gofastr/comp/<n>.css
-	// is served), and every palette test ran with zero combobox CSS —
-	// invisible to every existing assertion.
+	// Harness guard: the palette's own stylesheet must actually load.
+	// Since the palette renders through headless.Combobox it carries no
+	// combobox sheet; ui-cmd-palette styles the list and its options, so
+	// that is the author sheet whose display rules could beat [hidden].
+	// A catalog pointing at an unserved URL once left every palette test
+	// running with no CSS at all, invisible to every other assertion.
 	var sheetRules int64
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const link = document.querySelector('link[data-fui-style="combobox"]');
+		const link = document.querySelector('link[data-fui-style="ui-cmd-palette"]');
 		return (link && link.sheet) ? link.sheet.cssRules.length : -1;
 	})()`, &sheetRules)); err != nil {
 		t.Fatal(err)
 	}
 	if sheetRules <= 0 {
-		t.Fatalf("combobox stylesheet not applied (cssRules=%d) — the harness catalog points at an unserved URL; combobox-style assertions are meaningless without it", sheetRules)
+		t.Fatalf("palette stylesheet not applied (cssRules=%d) — the harness catalog points at an unserved URL; the painted-row assertions are meaningless without it", sheetRules)
 	}
 
 	// "command 05" matches Command 050–059: 10 of 80 options.

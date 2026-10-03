@@ -13,7 +13,10 @@ import (
 // brings hoisting and function-scoped surprises that `let` / `const`
 // don't. The check is intentionally narrow:
 //
-//   - Scans `core-ui/runtime/*.js` and `core-ui/runtime/src/*.js`.
+//   - Scans `core-ui/runtime/*.js` and `core-ui/runtime/src/*.js`, and
+//     through LintNoVarJSFiles every registered behaviour's module
+//     (RegisteredBehaviorSources): a module beside its Go package is a
+//     runtime module too.
 //   - Flags any line containing the `var ` keyword that isn't inside
 //     a string literal, a // line comment, or a /* */ block comment.
 //

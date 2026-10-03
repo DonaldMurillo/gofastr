@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── OptimizedImage ─────────────────────────────────────────────────
@@ -123,9 +124,10 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// surrounding layout is preserved. Preferable to silently shipping
 	// a `javascript:` URL into <img src>.
 	//
-	// safeImageURL, not safeResourceURL: an inline raster data: URI is a
-	// legitimate image source, and rejecting it here produced an image that
-	// looked broken rather than one that looked blocked.
+	// safeImageURL, not the stricter subresource policy: an inline raster
+	// data: URI is a legitimate image source, and rejecting it here
+	// produced an image that looked broken rather than one that looked
+	// blocked.
 	if safe := safeImageURL(cfg.Src); safe != "" {
 		cfg.Src = safe
 	} else {
@@ -140,29 +142,36 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		}
 		cfg.Sources = filtered
 	}
-	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
+	if cfg.Alt == "" && !strings.Contains(cfg.Class, "fui-image--decorative") {
 		// Decorative images must opt in explicitly to skip alt: Alt=""
 		// is otherwise treated as missing, not "intentionally empty".
-		panic("ui: OptimizedImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
+		panic("ui: OptimizedImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		panic("ui: OptimizedImage requires Width and Height > 0 to prevent CLS")
 	}
 
 	lqip := placeholderImage(cfg.Placeholder)
+	if lqip != "" {
+		// Placeholder is a data: URI string, never a caller's markup,
+		// so the placeholder image is always this component's own;
+		// its root becomes a sibling here rather than one an owner
+		// could place, so its own marks collapse into a single one.
+		lqip = headless.Own(lqip)
+	}
 
-	cls := "ui-image"
+	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
-		cls += " ui-image--fit-" + string(cfg.Fit)
+		cls += " fui-image--fit-" + string(cfg.Fit)
 	}
 	if cfg.Aspect != ImageAspectAuto {
-		cls += " ui-image--aspect-" + string(cfg.Aspect)
+		cls += " fui-image--aspect-" + string(cfg.Aspect)
 	}
 	if cfg.Rounded {
-		cls += " ui-image--rounded"
+		cls += " fui-image--rounded"
 	}
 	if lqip != "" {
-		cls += " ui-image--placeheld"
+		cls += " fui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -186,16 +195,20 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	imgCfg := html.ImageConfig{
 		Src:        cfg.Src,
 		Alt:        cfg.Alt,
-		Class:      "ui-image__img",
+		Class:      "fui-image__img",
 		ExtraAttrs: imgAttrs,
 	}
 
-	// Single-source path: just <img>.
+	// Single-source path: just <img>. With no picture wrapper, the img
+	// itself — built entirely from this component's own fields — is
+	// the topmost internal element.
 	if len(cfg.Sources) == 0 {
+		single := imgCfg
+		single.ExtraAttrs = html.MergeAttrs(imgAttrs, html.Attrs{"data-fui-internal": ""})
 		return imageStyle.WrapHTML(html.Span(html.TextConfig{
 			Class: cls, ID: cfg.ID,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-		}, lqip, html.Image(imgCfg)))
+		}, lqip, html.Image(single)))
 	}
 
 	// Multi-source <picture> wrapper.
@@ -208,7 +221,11 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		"srcset": srcset,
 		"sizes":  sizes,
 	})
-	picture := render.Tag("picture", nil, source, html.Image(imgCfg))
+	// The source set and the img are both built from this component's
+	// own fields (Sources, a struct slice, carries no render.HTML), so
+	// picture — with no picture wrapper an owner could reach around —
+	// is the topmost internal element here.
+	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),

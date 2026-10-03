@@ -178,3 +178,32 @@ func TestAppCSS_VariantIsIsolatedFromCallerMutation(t *testing.T) {
 		t.Error("post-registration mutation leaked into the served variant")
 	}
 }
+
+// The Components map is cloned at registration for the same reason as
+// DarkColors above: a caller-side write after the key was issued must
+// not change the bytes served under it. The options reach app.css as
+// --fui-* variables (the test binary links framework/ui, so the
+// compiler is registered), which is what makes the mutation observable.
+func TestAppCSS_VariantComponentsIsolatedFromCallerMutation(t *testing.T) {
+	ds := hostWithTheme(t, style.DefaultTheme())
+
+	th := brandTheme("#0D9488")
+	th.Components = map[string]string{"density": "compact"}
+
+	key := ds.RegisterThemeVariant(th)
+	before := getAppCSS(t, ds, "t="+key).Body.String()
+	if !strings.Contains(before, "--fui-density-control-h: 36px;") {
+		t.Fatalf("precondition: the compact option must reach the served CSS:\n%s", before)
+	}
+
+	th.Components["density"] = "comfortable" // caller mutates AFTER registering
+
+	// Byte equality is the guard (app.css is recomputed per request, not
+	// cached per key): a shared map would recompute to 44px and differ.
+	// The 36px/44px strings themselves cannot be asserted globally —
+	// app.css also carries every override the test binary registered,
+	// some of them Comfortable.
+	if after := getAppCSS(t, ds, "t="+key).Body.String(); after != before {
+		t.Error("caller mutation of Components changed the bytes served under an already-issued key")
+	}
+}

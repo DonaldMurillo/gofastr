@@ -95,8 +95,8 @@ type shellInput struct {
 // componentCSS collects the scoped stylesheets for every registered styled
 // component referenced in the body. A print document has no runtime to
 // lazy-load component CSS and doesn't run the uihost SSR collector, so
-// without this a Build component built from framework/ui or
-// core-ui/patterns (which ship their CSS as [data-fui-comp] scoped sheets)
+// without this a Build component built from framework/ui (which
+// ships its CSS as [data-fui-comp] scoped sheets)
 // would render unstyled. Component CSS is var(--*)-based, so DefaultTheme
 // is fine here, the concrete token values come from the linked app.css
 // :root, not from these rules.

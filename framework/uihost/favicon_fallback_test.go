@@ -13,7 +13,7 @@ import (
 // hammering and the dev console stays quiet.
 func TestWithFaviconServesNoContentWhenFileMissing(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	ds := New(application, WithFavicon("/static/favicon.ico"))
 
@@ -31,7 +31,7 @@ func TestWithFaviconServesNoContentWhenFileMissing(t *testing.T) {
 // real routing bugs.
 func TestWithFaviconDoesNotMaskOtherMissingPaths(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	ds := New(application, WithFavicon("/static/favicon.ico"))
 

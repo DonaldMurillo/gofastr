@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // HeroConfig configures a Hero.
@@ -43,22 +44,42 @@ type HeroConfig struct {
 
 // Hero renders a single-column (or copy+media split) hero section.
 func Hero(cfg HeroConfig) render.HTML {
+	// Eyebrow/Title/Subtitle draw from strings alone, so the pill,
+	// title and lede never hold a caller's markup — but Actions does.
+	// With Actions present, copy holds a slot beside them, so each is
+	// marked on its own; with no Actions, copy holds nothing but its
+	// own parts, so copy itself is marked instead and they are left
+	// unmarked to avoid marking twice inside the same subtree.
+	var copyOwn, partsOwn html.Attrs
+	if len(cfg.Actions) > 0 {
+		partsOwn = html.Attrs{"data-fui-internal": ""}
+	} else {
+		copyOwn = html.Attrs{"data-fui-internal": ""}
+	}
 	copyParts := make([]render.HTML, 0, 4)
 	if cfg.Eyebrow != "" {
-		copyParts = append(copyParts, StatusPill(StatusPillConfig{Label: cfg.Eyebrow, Tone: StatusPillAccent}))
+		pill := StatusPill(StatusPillConfig{Label: cfg.Eyebrow, Tone: StatusPillAccent})
+		if partsOwn != nil {
+			// StatusPillConfig carries no render.HTML field, so its
+			// whole output is this component's own; its root becomes
+			// a nested tag here, so its marks collapse into one, as
+			// combobox/fileupload do for their own nested calls.
+			pill = headless.Own(pill)
+		}
+		copyParts = append(copyParts, pill)
 	}
-	copyParts = append(copyParts, html.Heading(html.HeadingConfig{Level: 1, Class: "ui-hero__title"}, render.Text(cfg.Title)))
+	copyParts = append(copyParts, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-hero__title", ExtraAttrs: partsOwn}, render.Text(cfg.Title)))
 	if cfg.Subtitle != "" {
-		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "ui-hero__lede"}, render.Text(cfg.Subtitle)))
+		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "fui-hero__lede", ExtraAttrs: partsOwn}, render.Text(cfg.Subtitle)))
 	}
 	if len(cfg.Actions) > 0 {
-		copyParts = append(copyParts, html.Div(html.DivConfig{Class: "ui-hero__actions"}, cfg.Actions...))
+		copyParts = append(copyParts, html.Div(html.DivConfig{Class: "fui-hero__actions"}, cfg.Actions...))
 	}
-	copy := html.Div(html.DivConfig{Class: "ui-hero__copy"}, copyParts...)
+	copy := html.Div(html.DivConfig{Class: "fui-hero__copy", ExtraAttrs: copyOwn}, copyParts...)
 
-	cls := "ui-hero"
+	cls := "fui-hero"
 	if cfg.Media != "" {
-		cls += " ui-hero--split"
+		cls += " fui-hero--split"
 	}
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
@@ -77,7 +98,7 @@ func Hero(cfg HeroConfig) render.HTML {
 	}
 	children := []render.HTML{copy}
 	if cfg.Media != "" {
-		children = append(children, html.Div(html.DivConfig{Class: "ui-hero__media"}, cfg.Media))
+		children = append(children, html.Div(html.DivConfig{Class: "fui-hero__media"}, cfg.Media))
 	}
 	return heroStyle.WrapHTML(render.Tag("section", attrs, children...))
 }
@@ -86,48 +107,48 @@ var heroStyle = registry.RegisterStyle("ui-hero", heroCSS)
 
 func heroCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-hero"] { display: flex; }
-[data-fui-comp="ui-hero"].ui-hero--split {
+:where([data-fui-comp="ui-hero"]).fui-hero--split {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: var(--spacing-2xl, 32px);
   align-items: center;
 }
-[data-fui-comp="ui-hero"] .ui-hero__copy {
+[data-fui-comp="ui-hero"] .fui-hero__copy {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-lg, 16px);
   max-width: 42rem;
 }
-[data-fui-comp="ui-hero"] .ui-hero__title {
+[data-fui-comp="ui-hero"] .fui-hero__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
   font-size: clamp(2.5rem, 6vw, 4rem);
   line-height: 1.04;
   letter-spacing: -0.03em;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text, inherit);
 }
-[data-fui-comp="ui-hero"] .ui-hero__lede {
+[data-fui-comp="ui-hero"] .fui-hero__lede {
   margin: 0;
   font-size: clamp(1.125rem, 2.2vw, 1.375rem);
   line-height: 1.5;
   color: var(--color-text-muted, inherit);
   max-width: 46ch;
 }
-[data-fui-comp="ui-hero"] .ui-hero__actions {
+[data-fui-comp="ui-hero"] .fui-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-sm, 4px);
+  gap: var(--spacing-md, 8px);
   margin-top: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-hero"] .ui-hero__media img {
+[data-fui-comp="ui-hero"] .fui-hero__media img {
   inline-size: 100%;
   height: auto;
   border-radius: var(--radii-lg, 12px);
 }
 @media (max-width: 980px) {
-  [data-fui-comp="ui-hero"].ui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
+  :where([data-fui-comp="ui-hero"]).fui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
 }
 `
 }

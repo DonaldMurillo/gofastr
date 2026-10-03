@@ -68,9 +68,9 @@ func TestHardcodedTokenValueInSetPairIsReported(t *testing.T) {
 
 func TestPairFiresOncePerValueNotPerLine(t *testing.T) {
 	// Several prop/value pairs share one Set call line; each value is
-	// judged on its own, and font-weight (no token category) stays quiet.
+	// judged on its own, and a font-weight no token holds (650) stays quiet.
 	ds := designFixture(t, "core-ui/widget/page.go",
-		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".h2\").Set(\"font-size\", \"1.5rem\", \"font-weight\", \"700\").End()\n}\n")
+		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".h2\").Set(\"font-size\", \"1.5rem\", \"font-weight\", \"650\").End()\n}\n")
 	found := countRule(t, ds, contracts.RuleHardcodedTokenValue)
 	if len(found) != 1 {
 		t.Fatalf("want exactly 1 GOFASTR1807, got %d: %v", len(found), found)

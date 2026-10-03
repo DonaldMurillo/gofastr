@@ -47,6 +47,7 @@ func TestManifestJSContent(t *testing.T) {
 	for _, want := range []string{
 		"window.__gofastr_catalog=",
 		"window.__gofastr_runtime_modules=",
+		"window.__gofastr_behaviors=",
 		"window.__gofastr_actions=",
 		`"act":"`, // the compiled screen's action hash
 	} {

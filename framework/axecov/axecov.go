@@ -25,8 +25,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-
-	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // FileName is the manifest location relative to the app/test working
@@ -40,11 +38,14 @@ type Manifest struct {
 	Pages   map[string][]string `json:"pages"`
 }
 
-// mu serializes read-merge-write cycles within one process. Axe suites
-// run their scans from a single test binary, so in-process serialization
-// is the contract; two separate suites writing the same directory
-// concurrently is not supported.
+// mu serializes read-merge-write cycles within one process. `go test
+// ./...` runs every package's axe suite as its own binary against the
+// same module-root manifest, so Record also holds an advisory lock on
+// .gofastr/axe-coverage.lock across the cycle.
 var mu sync.Mutex
+
+// lockName is the cross-process lock file beside the manifest.
+const lockName = ".gofastr/axe-coverage.lock"
 
 // Record merges one scanned page into dir's manifest, creating the
 // manifest (and .gofastr/) on first use. path may be a full URL or a
@@ -55,6 +56,20 @@ func Record(dir, path, scheme string) error {
 
 	mu.Lock()
 	defer mu.Unlock()
+
+	file := filepath.Join(dir, FileName)
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		return fmt.Errorf("axecov: create %s: %w", filepath.Dir(file), err)
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("axecov: open lock: %w", err)
+	}
+	defer lock.Close()
+	if err := lockFile(lock); err != nil {
+		return fmt.Errorf("axecov: lock manifest: %w", err)
+	}
+	defer unlockFile(lock)
 
 	m, err := readLocked(dir)
 	if err != nil {
@@ -68,20 +83,27 @@ func Record(dir, path, scheme string) error {
 		slices.Sort(m.Pages[p])
 	}
 
-	file := filepath.Join(dir, FileName)
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return fmt.Errorf("axecov: create %s: %w", filepath.Dir(file), err)
-	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("axecov: encode manifest: %w", err)
 	}
-	// Write-then-rename so a reader never sees a torn manifest.
-	tmp := file + ".tmp"
-	if err := fileperm.WriteOwnerOnly(tmp, append(data, '\n')); err != nil {
+	// Write-then-rename so a reader never sees a torn manifest. The temp
+	// name is unique: a shared one let a second writer truncate the file
+	// the first was about to rename into place.
+	tmp, err := os.CreateTemp(filepath.Dir(file), "axe-coverage-*.tmp")
+	if err != nil {
 		return fmt.Errorf("axecov: write manifest: %w", err)
 	}
-	if err := os.Rename(tmp, file); err != nil {
+	_, werr := tmp.Write(append(data, '\n'))
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		os.Remove(tmp.Name())
+		return fmt.Errorf("axecov: write manifest: %w", werr)
+	}
+	if err := os.Rename(tmp.Name(), file); err != nil {
+		os.Remove(tmp.Name())
 		return fmt.Errorf("axecov: replace manifest: %w", err)
 	}
 	return nil

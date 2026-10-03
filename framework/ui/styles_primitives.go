@@ -22,7 +22,6 @@ var (
 	tagStyle         = registry.RegisterStyle("ui-tag", tagCSS)
 	spinnerStyle     = registry.RegisterStyle("ui-spinner", spinnerCSS)
 	dividerStyle     = registry.RegisterStyle("ui-divider", dividerCSS)
-	fileUploadStyle  = registry.RegisterStyle("ui-fileupload", fileUploadCSS)
 )
 
 // ─── Layout ─────────────────────────────────────────────────────────
@@ -36,73 +35,80 @@ func layoutCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-layout"] {
   box-sizing: border-box;
 }
-[data-fui-comp="ui-layout"].ui-stack {
+[data-fui-comp="ui-layout"].fui-stack--trim-margins > * { margin-block: 0; }
+/* Screen: the page column — at least one viewport tall, last child
+   pushed to the bottom, so a short page keeps its footer at the
+   bottom of the screen. margin-block-start:auto (not justify-content)
+   so earlier children and their gaps keep their rhythm. */
+:where([data-fui-comp="ui-layout"]).fui-stack--screen { min-block-size: 100dvh; }
+[data-fui-comp="ui-layout"].fui-stack--screen > :last-child { margin-block-start: auto; }
+:where([data-fui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-layout"].ui-cluster {
+:where([data-fui-comp="ui-layout"]).fui-cluster {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   gap: var(--spacing-md, 8px);
   align-items: center;
 }
-[data-fui-comp="ui-layout"].ui-cluster--nowrap { flex-wrap: nowrap; }
+[data-fui-comp="ui-layout"].fui-cluster--nowrap { flex-wrap: nowrap; }
 
-[data-fui-comp="ui-layout"].ui-grid {
+:where([data-fui-comp="ui-layout"]).fui-grid {
   display: grid;
   gap: var(--spacing-md, 8px);
   grid-template-columns: repeat(auto-fit, minmax(var(--ui-grid-min, 16rem), 1fr));
 }
 
-[data-fui-comp="ui-layout"].ui-center {
+:where([data-fui-comp="ui-layout"]).fui-center {
   display: flex;
   align-items: center;
   justify-content: center;
 }
-[data-fui-comp="ui-layout"].ui-center--viewport { min-block-size: 100vh; }
-[data-fui-comp="ui-layout"].ui-center--screen   { min-block-size: 100dvh; }
+:where([data-fui-comp="ui-layout"]).fui-center--viewport { min-block-size: 100vh; }
+:where([data-fui-comp="ui-layout"]).fui-center--screen   { min-block-size: 100dvh; }
 
-[data-fui-comp="ui-layout"].ui-spacer {
+:where([data-fui-comp="ui-layout"]).fui-spacer {
   flex: 1 1 auto;
   align-self: stretch;
 }
 
-[data-fui-comp="ui-layout"].ui-box { background: transparent; }
-[data-fui-comp="ui-layout"].ui-box--surface {
+[data-fui-comp="ui-layout"].fui-box { background: transparent; }
+[data-fui-comp="ui-layout"].fui-box--surface {
   background: var(--color-surface, #FFFFFF);
   border-radius: var(--radii-md, 8px);
 }
-[data-fui-comp="ui-layout"].ui-box--outlined {
+[data-fui-comp="ui-layout"].fui-box--outlined {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
 }
-[data-fui-comp="ui-layout"].ui-box--pad-sm { padding: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-layout"].ui-box--pad-md { padding: var(--spacing-md, 8px); }
-[data-fui-comp="ui-layout"].ui-box--pad-lg { padding: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-layout"].ui-box--pad-xl { padding: var(--spacing-xl, 24px); }
+[data-fui-comp="ui-layout"].fui-box--pad-sm { padding: var(--spacing-sm, 4px); }
+[data-fui-comp="ui-layout"].fui-box--pad-md { padding: var(--spacing-md, 8px); }
+[data-fui-comp="ui-layout"].fui-box--pad-lg { padding: var(--spacing-lg, 16px); }
+[data-fui-comp="ui-layout"].fui-box--pad-xl { padding: var(--spacing-xl, 24px); }
 
 /* gap modifiers — apply to ui-stack/ui-cluster/ui-grid. */
-[data-fui-comp="ui-layout"].ui-layout--gap-none { gap: 0; }
-[data-fui-comp="ui-layout"].ui-layout--gap-xs   { gap: var(--spacing-xs, 2px); }
-[data-fui-comp="ui-layout"].ui-layout--gap-sm   { gap: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-layout"].ui-layout--gap-lg   { gap: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-layout"].ui-layout--gap-xl   { gap: var(--spacing-xl, 24px); }
-[data-fui-comp="ui-layout"].ui-layout--gap-2xl  { gap: var(--spacing-2xl, 32px); }
+[data-fui-comp="ui-layout"].fui-layout--gap-none { gap: 0; }
+[data-fui-comp="ui-layout"].fui-layout--gap-xs   { gap: var(--spacing-xs, 2px); }
+[data-fui-comp="ui-layout"].fui-layout--gap-sm   { gap: var(--spacing-sm, 4px); }
+[data-fui-comp="ui-layout"].fui-layout--gap-lg   { gap: var(--spacing-lg, 16px); }
+[data-fui-comp="ui-layout"].fui-layout--gap-xl   { gap: var(--spacing-xl, 24px); }
+[data-fui-comp="ui-layout"].fui-layout--gap-2xl  { gap: var(--spacing-2xl, 32px); }
 
 /* alignment modifiers. */
-[data-fui-comp="ui-layout"].ui-layout--align-start    { align-items: flex-start; }
-[data-fui-comp="ui-layout"].ui-layout--align-center   { align-items: center; }
-[data-fui-comp="ui-layout"].ui-layout--align-end      { align-items: flex-end; }
-[data-fui-comp="ui-layout"].ui-layout--align-baseline { align-items: baseline; }
-[data-fui-comp="ui-layout"].ui-layout--align-stretch  { align-items: stretch; }
+[data-fui-comp="ui-layout"].fui-layout--align-start    { align-items: flex-start; }
+[data-fui-comp="ui-layout"].fui-layout--align-center   { align-items: center; }
+[data-fui-comp="ui-layout"].fui-layout--align-end      { align-items: flex-end; }
+[data-fui-comp="ui-layout"].fui-layout--align-baseline { align-items: baseline; }
+[data-fui-comp="ui-layout"].fui-layout--align-stretch  { align-items: stretch; }
 
-[data-fui-comp="ui-layout"].ui-layout--justify-start   { justify-content: flex-start; }
-[data-fui-comp="ui-layout"].ui-layout--justify-center  { justify-content: center; }
-[data-fui-comp="ui-layout"].ui-layout--justify-end     { justify-content: flex-end; }
-[data-fui-comp="ui-layout"].ui-layout--justify-between { justify-content: space-between; }
-[data-fui-comp="ui-layout"].ui-layout--justify-around  { justify-content: space-around; }`
+[data-fui-comp="ui-layout"].fui-layout--justify-start   { justify-content: flex-start; }
+[data-fui-comp="ui-layout"].fui-layout--justify-center  { justify-content: center; }
+[data-fui-comp="ui-layout"].fui-layout--justify-end     { justify-content: flex-end; }
+[data-fui-comp="ui-layout"].fui-layout--justify-between { justify-content: space-between; }
+[data-fui-comp="ui-layout"].fui-layout--justify-around  { justify-content: space-around; }`
 }
 
 // ─── Card ───────────────────────────────────────────────────────────
@@ -118,58 +124,67 @@ func cardCSS(t style.Theme) string {
   overflow: hidden;
   text-decoration: none;
 }
-[data-fui-comp="ui-card"].ui-card--outlined {
+[data-fui-comp="ui-card"].fui-card--outlined {
   box-shadow: none;
   border: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-card"].ui-card--flat {
+[data-fui-comp="ui-card"].fui-card--flat {
   box-shadow: none;
   background: transparent;
 }
-[data-fui-comp="ui-card"].ui-card--interactive {
+[data-fui-comp="ui-card"].fui-card--interactive {
   transition: transform var(--duration-fast, 150ms) ease,
               box-shadow var(--duration-fast, 150ms) ease;
   cursor: pointer;
 }
-[data-fui-comp="ui-card"].ui-card--interactive:hover {
+[data-fui-comp="ui-card"].fui-card--interactive:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadows-md, 0 4px 6px -1px rgba(0,0,0,0.10));
 }
-[data-fui-comp="ui-card"].ui-card--interactive:focus-visible {
+[data-fui-comp="ui-card"].fui-card--interactive[aria-current="page"] {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+[data-fui-comp="ui-card"].fui-card--interactive:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-card"] .ui-card__inner {
+[data-fui-comp="ui-card"] .fui-card__inner {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
 }
-[data-fui-comp="ui-card"] .ui-card__header {
+[data-fui-comp="ui-card"] .fui-card__header {
   padding: var(--spacing-lg, 16px) var(--spacing-lg, 16px) var(--spacing-md, 8px);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-card"] .ui-card__heading {
+[data-fui-comp="ui-card"] .fui-card__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-card"] .ui-card__description {
+[data-fui-comp="ui-card"] .fui-card__description {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-card"] .ui-card__body {
+[data-fui-comp="ui-card"] .fui-card__body {
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   color: var(--color-text, #18181B);
   flex: 1 1 auto;
 }
-[data-fui-comp="ui-card"] .ui-card__header + .ui-card__body {
+/* The primitive always draws the body node — it is where an island
+   swap lands — so the sheet collapses it when empty: a card with no
+   body content gains no space. */
+[data-fui-comp="ui-card"] .fui-card__body:empty { display: none; }
+[data-fui-comp="ui-card"] .fui-card__header + .fui-card__body {
   padding-top: 0;
 }
-[data-fui-comp="ui-card"] .ui-card__footer {
+[data-fui-comp="ui-card"] .fui-card__footer {
   margin-top: auto;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border-top: 1px solid var(--color-border, #E4E4E7);
@@ -178,8 +193,16 @@ func cardCSS(t style.Theme) string {
   gap: var(--spacing-sm, 4px);
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-card"].ui-card--flat .ui-card__footer { background: transparent; }` +
-		customModsCSS(cardMods, "ui-card", "ui-card", t)
+[data-fui-comp="ui-card"].fui-card--flat .fui-card__footer { background: transparent; }
+[data-fui-comp="ui-card"].fui-card--row { box-shadow: none; border-radius: var(--radii-sm); background: transparent; overflow: visible; }
+[data-fui-comp="ui-card"].fui-card--row.fui-card--interactive:hover { transform: none; box-shadow: none; background: var(--color-surface-soft); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__header { display: contents; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__heading { grid-column: 1; grid-row: 1; font-size: var(--text-xs); font-weight: var(--font-weight-normal); color: var(--color-text-muted); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__description { grid-column: 1 / -1; grid-row: 2; color: var(--color-text); line-height: 1.3; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__body { grid-column: 2; grid-row: 1; padding: 0; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__footer { grid-column: 1 / -1; }` +
+		customModsCSS(cardMods, "ui-card", "fui-card", t)
 }
 
 // ─── OptimizedImage ─────────────────────────────────────────────────
@@ -192,22 +215,22 @@ func imageCSS(_ style.Theme) string {
   /* contain ensures the aspect-ratio rules below don't bleed out. */
   contain: layout style;
 }
-[data-fui-comp="ui-image"] .ui-image__img {
+[data-fui-comp="ui-image"] .fui-image__img {
   display: block;
   max-inline-size: 100%;
   block-size: auto;
   object-fit: cover;
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__img { object-fit: contain; }
-[data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__img { object-fit: fill;    }
+[data-fui-comp="ui-image"].fui-image--fit-contain .fui-image__img { object-fit: contain; }
+[data-fui-comp="ui-image"].fui-image--fit-fill    .fui-image__img { object-fit: fill;    }
 /* The root is included so its own background (which --placeheld sets, to
    back the letterbox bars) is rounded too — otherwise its square corners
    peek out around the rounded image. */
-[data-fui-comp="ui-image"].ui-image--rounded,
-[data-fui-comp="ui-image"].ui-image--rounded     .ui-image__img,
-[data-fui-comp="ui-image"].ui-image--rounded     .ui-image__lqip,
-[data-fui-comp="ui-image"].ui-image--rounded     picture {
+[data-fui-comp="ui-image"].fui-image--rounded,
+[data-fui-comp="ui-image"].fui-image--rounded     .fui-image__img,
+[data-fui-comp="ui-image"].fui-image--rounded     .fui-image__lqip,
+[data-fui-comp="ui-image"].fui-image--rounded     picture {
   border-radius: var(--radii-md, 8px);
 }
 
@@ -222,14 +245,14 @@ func imageCSS(_ style.Theme) string {
    placeholder is emitted first and the real image covers it. No z-index and
    no JavaScript are involved, and the placeholder is simply left in place
    once the image has loaded. */
-[data-fui-comp="ui-image"] .ui-image__lqip {
+[data-fui-comp="ui-image"] .fui-image__lqip {
   position: absolute;
   inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
 }
-[data-fui-comp="ui-image"] .ui-image__img,
+[data-fui-comp="ui-image"] .fui-image__img,
 [data-fui-comp="ui-image"] picture {
   position: relative;
 }
@@ -237,25 +260,25 @@ func imageCSS(_ style.Theme) string {
    Without this, a fit-contain image (which does not fill its box) would show
    a cover-cropped blur through the empty bars — permanently, since the
    placeholder is never removed. */
-[data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__lqip { object-fit: contain; }
-[data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__lqip { object-fit: fill;    }
+[data-fui-comp="ui-image"].fui-image--fit-contain .fui-image__lqip { object-fit: contain; }
+[data-fui-comp="ui-image"].fui-image--fit-fill    .fui-image__lqip { object-fit: fill;    }
 /* With a placeholder present the grey resting fill moves to the root, so it
    still backs the letterbox bars while the blur — not the grey — is what
    shows through the image itself. */
-[data-fui-comp="ui-image"].ui-image--placeheld {
+[data-fui-comp="ui-image"].fui-image--placeheld {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-image"].ui-image--placeheld .ui-image__img {
+[data-fui-comp="ui-image"].fui-image--placeheld .fui-image__img {
   background: transparent;
 }
-[data-fui-comp="ui-image"].ui-image--aspect-1-1  .ui-image__img { aspect-ratio: 1 / 1;  inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-4-3  .ui-image__img { aspect-ratio: 4 / 3;  inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-16-9 .ui-image__img { aspect-ratio: 16 / 9; inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-21-9 .ui-image__img { aspect-ratio: 21 / 9; inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-3-4  .ui-image__img { aspect-ratio: 3 / 4;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-1-1  .fui-image__img { aspect-ratio: 1 / 1;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-4-3  .fui-image__img { aspect-ratio: 4 / 3;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-16-9 .fui-image__img { aspect-ratio: 16 / 9; inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-21-9 .fui-image__img { aspect-ratio: 21 / 9; inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-3-4  .fui-image__img { aspect-ratio: 3 / 4;  inline-size: 100%; block-size: auto; }
 
 /* Decorative class — allows alt="" without alt-text warnings. */
-[data-fui-comp="ui-image"].ui-image--decorative .ui-image__img {
+[data-fui-comp="ui-image"].fui-image--decorative .fui-image__img {
   /* visual same as default; the marker exists for the linter / a11y
      audit to know empty alt is intentional. */
 }`
@@ -264,176 +287,189 @@ func imageCSS(_ style.Theme) string {
 // ─── Toggle (Checkbox / Radio / Switch) ─────────────────────────────
 
 func toggleCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-toggle"] {
+	return `/* Choice rows are drawn from the native input itself
+   (appearance: none): headless.Choice's anatomy has no indicator
+   span, and an input cannot host a pseudo-element — so the box, the
+   dot and the switch's thumb are background layers keyed to :checked.
+   The row keeps its own wrapping-label structure and deliberately
+   ignores the field sheet's --fui-field-columns: a choice row is one
+   inline run, not a label track above a control track. */
+.fui-choice {
   display: inline-flex;
-  /* flex-wrap so the help/error pseudo-line below wraps to a new
-     line instead of forcing itself between the control and the
-     label text. */
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-sm, 4px);
   cursor: pointer;
-  /* Token-scaled touch target. */
+  /* Token-scaled touch target; the label wrap is the accessible
+     target (WCAG 2.5.8), the row keeps the comfortable height. */
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].is-disabled { opacity: 0.55; cursor: not-allowed; }
-
-[data-fui-comp="ui-toggle"] .ui-toggle__control {
-  position: relative;
+.fui-choice__input {
+  appearance: none;
+  -webkit-appearance: none;
   flex-shrink: 0;
+  box-sizing: border-box;
   inline-size: 1.25rem;
-  block-size:  1.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-[data-fui-comp="ui-toggle"] .ui-toggle__input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
+  block-size: 1.25rem;
   margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-[data-fui-comp="ui-toggle"] .ui-toggle__indicator {
-  /* inline-flex so the ::after marker (checkmark / radio dot) is
-     centered both axes regardless of variant. inline-block lets the
-     pseudo-element drift to top-left in some browsers — visible
-     bug. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.1rem;
-  block-size:  1.1rem;
   border: 1.5px solid var(--color-border-strong, #A1A1AA);
   background: var(--color-surface, #FFFFFF);
-  transition: background var(--duration-fast, 150ms) ease,
+  cursor: inherit;
+  transition: background-color var(--duration-fast, 150ms) ease,
               border-color var(--duration-fast, 150ms) ease;
 }
+.fui-choice__text {
+  flex: 1 1 auto;
+  font-size: var(--text-base, 1rem);
+  color: var(--color-text, #18181B);
+  line-height: 1.4;
+  min-inline-size: 0;
+}
+.fui-choice__hint {
+  display: block;
+  flex-basis: 100%;
+  margin-block-start: var(--spacing-xs, 2px);
+  /* Logical inline-start, like the rest of this sheet: the indent
+     follows the control in RTL, staying under the label, instead of
+     detaching to the physical left of the row. */
+  margin-inline-start: calc(1.25rem + var(--spacing-sm, 4px));
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #52525B);
+}
 
-/* ─── Checkbox ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__indicator {
+/* ─── Checkbox: the check is two gradient strokes, so its ink is a
+   token (--color-primary-fg) rather than a hex baked into an SVG. ─── */
+.fui-choice--checkbox .fui-choice__input {
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__input:checked + .ui-toggle__indicator {
-  background: var(--color-primary, #4F46E5);
+.fui-choice--checkbox .fui-choice__input:checked {
+  background-color: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  content: "";
-  display: block;
-  inline-size: 0.35rem;
-  block-size:  0.65rem;
-  border: solid var(--color-primary-fg, #FFFFFF);
-  border-width: 0 2px 2px 0;
-  transform: translateY(-1px) rotate(45deg);
+  background-image:
+    linear-gradient(45deg, transparent 52%, var(--color-primary-fg, #FFFFFF) 52%, var(--color-primary-fg, #FFFFFF) 68%, transparent 68%),
+    linear-gradient(135deg, transparent 34%, var(--color-primary-fg, #FFFFFF) 34%, var(--color-primary-fg, #FFFFFF) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 9px 9px, 12px 9px;
+  background-position: 3px 7px, 5px 3px;
 }
 
-/* ─── Radio ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__indicator {
+/* ─── Radio: the dot is a hard-stop radial gradient. ─── */
+.fui-choice--radio .fui-choice__input {
   border-radius: 50%;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__input:checked + .ui-toggle__indicator {
+.fui-choice--radio .fui-choice__input:checked {
   border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  content: "";
-  inline-size: 0.55rem;
-  block-size: 0.55rem;
-  border-radius: 50%;
-  background: var(--color-primary, #4F46E5);
+  background-image: radial-gradient(circle at center, var(--color-primary, #4F46E5) 0 5px, transparent 5.5px);
 }
 
-/* ─── Switch ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__control {
-  inline-size: 2.25rem;
-  block-size:  1.25rem;
+/* ─── Switch: the track IS the input; the thumb is a positioned
+   gradient that slides with background-position. ─── */
+.fui-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+  cursor: pointer;
+  min-block-size: var(--spacing-touch-target, 44px);
+  padding-block: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__indicator {
+.fui-switch__input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
   inline-size: 2.25rem;
-  block-size:  1.25rem;
+  block-size: 1.25rem;
+  margin: 0;
+  border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface-soft, #F4F4F5);
-  border-color: var(--color-border, #E4E4E7);
-  position: relative;
+  background-color: var(--color-surface-soft, #F4F4F5);
+  background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, rgba(0, 0, 0, 0.18) 7.5px 8.5px, transparent 9px);
+  background-repeat: no-repeat;
+  background-size: 1.125rem 1.125rem;
+  background-position: left 0.0625rem center;
+  cursor: inherit;
+  transition: background-color var(--duration-fast, 150ms) ease,
+              background-position var(--duration-fast, 150ms) ease;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__indicator::after {
-  content: "";
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-start: 2px;
-  inline-size: 1rem;
-  block-size: 1rem;
-  border-radius: 50%;
-  background: var(--color-primary-fg, #FFFFFF);
-  transform: translateY(-50%);
-  transition: inset-inline-start var(--duration-fast, 150ms) ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__input:checked + .ui-toggle__indicator {
-  background: var(--color-primary, #4F46E5);
+.fui-switch__input:checked {
+  background-color: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
+  background-position: right 0.0625rem center;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  inset-inline-start: calc(100% - 1.125rem);
-}
-
-/* ─── Focus ring shared across all variants ─── */
-[data-fui-comp="ui-toggle"] .ui-toggle__input:focus-visible + .ui-toggle__indicator {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
-}
-[data-fui-comp="ui-toggle"].is-error .ui-toggle__indicator {
-  border-color: var(--color-danger, #DC2626);
-}
-
-[data-fui-comp="ui-toggle"] .ui-toggle__label {
+.fui-switch__text {
   flex: 1 1 auto;
   font-size: var(--text-base, 1rem);
   color: var(--color-text, #18181B);
   line-height: 1.4;
 }
-[data-fui-comp="ui-toggle"] .ui-toggle__help,
-[data-fui-comp="ui-toggle"] .ui-toggle__error {
-  display: block;
-  flex-basis: 100%;
-  margin: var(--spacing-xs, 2px) 0 0 calc(1.25rem + var(--spacing-md, 8px));
+
+/* ─── Shared state styling, from the state attributes themselves. ─── */
+.fui-choice__input:focus-visible,
+.fui-switch__input:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+.fui-choice__input[aria-invalid="true"],
+.fui-switch__input[aria-invalid="true"] {
+  border-color: var(--color-danger, #DC2626);
+}
+.fui-choice__input:disabled,
+.fui-switch__input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.fui-choice:has(.fui-choice__input:disabled),
+.fui-switch:has(.fui-switch__input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── The errored-run shell: a standalone choice with a message. ─── */
+.fui-choice-field {
+  display: grid;
+  gap: var(--spacing-xs, 2px);
+  justify-items: start;
+}
+.fui-choice-field__error,
+.fui-choice-field__hint {
+  margin: 0;
   font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-toggle"] .ui-toggle__help  { color: var(--color-text-muted, #52525B); }
-[data-fui-comp="ui-toggle"] .ui-toggle__error { color: var(--color-danger, #DC2626); }
+.fui-choice-field__error { color: var(--color-danger, #DC2626); }
+.fui-choice-field__hint { color: var(--color-text-muted, #52525B); }
 
-/* ─── Toggle Group (fieldset wrapper for RadioGroup / CheckboxGroup) ─── */
-.ui-toggle-group {
+/* ─── Choice groups: a real fieldset, laid out as a stack of rows. ─── */
+.fui-choice-group {
   border: none;
   padding: 0;
   margin: 0;
   display: grid;
   gap: var(--spacing-sm, 4px);
 }
-.ui-toggle-group .ui-toggle-group__legend {
-  font-weight: 500;
+.fui-choice-group__legend {
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
   padding: 0;
   margin-bottom: var(--spacing-xs, 2px);
 }
-.ui-toggle-group .ui-form-field__required {
+/* The same required mark a field's label carries, drawn from the same
+   state attribute: an asterisk with empty alternative text, so the
+   legend's accessible name stays clean. The rule itself is on the
+   leaves' required attributes; this is the cue beside it. */
+.fui-choice-group__legend[data-required]::after {
+  content: " *" / "";
   color: var(--color-danger, #DC2626);
-  margin-inline-start: var(--spacing-xs, 2px);
 }
-.ui-toggle-group .ui-toggle-group__help {
+.fui-choice-group__hint,
+.fui-choice-group__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
 }
-.ui-toggle-group .ui-toggle-group__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
-}`
+.fui-choice-group__hint  { color: var(--color-text-muted, #52525B); }
+.fui-choice-group__error { color: var(--color-danger, #DC2626); }`
 }
 
 // ─── Tooltip ────────────────────────────────────────────────────────
@@ -446,7 +482,7 @@ func tooltipCSS(_ style.Theme) string {
      the pop without requiring focus on a particular descendant
      element. */
 }
-[data-fui-comp="ui-tooltip"] .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"] .fui-tooltip__pop {
   position: absolute;
   inset-block-end: calc(100% + 6px);
   inset-inline-start: 50%;
@@ -467,45 +503,45 @@ func tooltipCSS(_ style.Theme) string {
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);
 }
-[data-fui-comp="ui-tooltip"]:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"]:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"]:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"]:focus-within .fui-tooltip__pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
   transition-delay: 0s;
 }
 
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom .fui-tooltip__pop {
   inset-block-end: auto;
   inset-block-start: calc(100% + 6px);
   transform: translateX(-50%) translateY(-4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom:focus-within .fui-tooltip__pop {
   transform: translateX(-50%) translateY(0);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--left .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--left .fui-tooltip__pop {
   inset-block-end: 50%;
   inset-inline-start: auto;
   inset-inline-end: calc(100% + 6px);
   transform: translateY(50%) translateX(4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--left:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--left:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--left:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--left:focus-within .fui-tooltip__pop {
   transform: translateY(50%) translateX(0);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--right .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--right .fui-tooltip__pop {
   inset-block-end: 50%;
   inset-inline-start: calc(100% + 6px);
   transform: translateY(50%) translateX(-4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--right:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--right:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--right:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--right:focus-within .fui-tooltip__pop {
   transform: translateY(50%) translateX(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-tooltip"] .ui-tooltip__pop { transition: none; transform: translateX(-50%) translateY(0); }
+  [data-fui-comp="ui-tooltip"] .fui-tooltip__pop { transition: none; transform: translateX(-50%) translateY(0); }
 }`
 }
 
@@ -520,45 +556,45 @@ func tagCSS(t style.Theme) string {
   border: 1px solid transparent;
   border-radius: var(--radii-full, 9999px);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   line-height: 1.3;
   text-decoration: none;
 }
-[data-fui-comp="ui-tag"].ui-tag--neutral {
+[data-fui-comp="ui-tag"].fui-tag--neutral {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   border-color: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-tag"].ui-tag--success {
+[data-fui-comp="ui-tag"].fui-tag--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-success, #16A34A);
   border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--warning {
+[data-fui-comp="ui-tag"].fui-tag--warning {
   background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-warning, #CA8A04);
   border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--danger {
+[data-fui-comp="ui-tag"].fui-tag--danger {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-danger, #DC2626);
   border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--info {
+[data-fui-comp="ui-tag"].fui-tag--info {
   background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-info, #2563EB);
   border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--interactive {
+[data-fui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
   transition: filter var(--duration-fast, 150ms) ease;
 }
-[data-fui-comp="ui-tag"].ui-tag--interactive:hover { filter: brightness(0.96); }
+[data-fui-comp="ui-tag"].fui-tag--interactive:hover { filter: brightness(0.96); }
 [data-fui-comp="ui-tag"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss {
+[data-fui-comp="ui-tag"] .fui-tag__dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -574,11 +610,11 @@ func tagCSS(t style.Theme) string {
   line-height: 1;
   padding: 0;
 }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss:hover { background: rgba(0,0,0,0.08); }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss:focus-visible {
+[data-fui-comp="ui-tag"] .fui-tag__dismiss:hover { background: rgba(0,0,0,0.08); }
+[data-fui-comp="ui-tag"] .fui-tag__dismiss:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
-}` + customStatusCSS("ui-tag", t)
+}` + customStatusCSS("ui-tag", "fui-tag", t)
 }
 
 // ─── Spinner ────────────────────────────────────────────────────────
@@ -591,79 +627,80 @@ func spinnerCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   --ui-spinner-size: 1.5rem;
 }
-[data-fui-comp="ui-spinner"].ui-spinner--sm { --ui-spinner-size: 1rem; }
-[data-fui-comp="ui-spinner"].ui-spinner--lg { --ui-spinner-size: 2.5rem; }
-[data-fui-comp="ui-spinner"].ui-spinner--inline { display: inline-flex; }
-[data-fui-comp="ui-spinner"] .ui-spinner__ring {
+[data-fui-comp="ui-spinner"].fui-spinner--sm { --ui-spinner-size: 1rem; }
+[data-fui-comp="ui-spinner"].fui-spinner--lg { --ui-spinner-size: 2.5rem; }
+:where([data-fui-comp="ui-spinner"]).fui-spinner--inline { display: inline-flex; }
+[data-fui-comp="ui-spinner"] .fui-spinner__ring {
   display: inline-block;
   inline-size: var(--ui-spinner-size);
   block-size:  var(--ui-spinner-size);
   border-radius: 50%;
   border: 2px solid var(--color-border, #E4E4E7);
   border-top-color: var(--color-primary, #4F46E5);
-  animation: ui-spinner-rotate var(--duration-slow, 400ms) linear infinite;
+  animation: fui-spinner-rotate var(--duration-slow, 400ms) linear infinite;
 }
-[data-fui-comp="ui-spinner"] .ui-spinner__dots {
+[data-fui-comp="ui-spinner"] .fui-spinner__dots {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-spinner"] .ui-spinner__dot {
+[data-fui-comp="ui-spinner"] .fui-spinner__dot {
   display: inline-block;
   inline-size: calc(var(--ui-spinner-size) * 0.28);
   block-size:  calc(var(--ui-spinner-size) * 0.28);
   border-radius: 50%;
   background: var(--color-primary, #4F46E5);
-  animation: ui-spinner-pulse 1.2s ease-in-out infinite both;
+  animation: fui-spinner-pulse 1.2s ease-in-out infinite both;
 }
-[data-fui-comp="ui-spinner"] .ui-spinner__dot:nth-child(1) { animation-delay: -0.32s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__dot:nth-child(2) { animation-delay: -0.16s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__dot:nth-child(1) { animation-delay: -0.32s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__dot:nth-child(2) { animation-delay: -0.16s; }
 
 /* SpinnerGrid — 3×3 cells with a diagonal-ripple delay schedule. */
-[data-fui-comp="ui-spinner"] .ui-spinner__grid {
+[data-fui-comp="ui-spinner"] .fui-spinner__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: calc(var(--ui-spinner-size) * 0.08);
   inline-size: var(--ui-spinner-size);
   block-size:  var(--ui-spinner-size);
 }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell {
+[data-fui-comp="ui-spinner"] .fui-spinner__cell {
   display: block;
   background: var(--color-primary, #4F46E5);
   border-radius: 2px;
-  animation: ui-spinner-grid 1.3s ease-in-out infinite both;
+  animation: fui-spinner-grid 1.3s ease-in-out infinite both;
 }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(1) { animation-delay: 0.0s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(2) { animation-delay: 0.1s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(3) { animation-delay: 0.2s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(4) { animation-delay: 0.1s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(5) { animation-delay: 0.2s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(6) { animation-delay: 0.3s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(7) { animation-delay: 0.2s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(8) { animation-delay: 0.3s; }
-[data-fui-comp="ui-spinner"] .ui-spinner__cell:nth-child(9) { animation-delay: 0.4s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(1) { animation-delay: 0.0s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(2) { animation-delay: 0.1s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(3) { animation-delay: 0.2s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(4) { animation-delay: 0.1s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(5) { animation-delay: 0.2s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(6) { animation-delay: 0.3s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(7) { animation-delay: 0.2s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(8) { animation-delay: 0.3s; }
+[data-fui-comp="ui-spinner"] .fui-spinner__cell:nth-child(9) { animation-delay: 0.4s; }
 
-@keyframes ui-spinner-rotate {
+@keyframes fui-spinner-rotate {
   to { transform: rotate(360deg); }
 }
-@keyframes ui-spinner-pulse {
+@keyframes fui-spinner-pulse {
   0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
   40%           { opacity: 1;   transform: scale(1); }
 }
-@keyframes ui-spinner-grid {
+@keyframes fui-spinner-grid {
   0%, 70%, 100% { opacity: 0.2; transform: scale(0.7); }
   35%           { opacity: 1;   transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-spinner"] .ui-spinner__ring,
-  [data-fui-comp="ui-spinner"] .ui-spinner__dot,
-  [data-fui-comp="ui-spinner"] .ui-spinner__cell {
+  [data-fui-comp="ui-spinner"] .fui-spinner__ring,
+  [data-fui-comp="ui-spinner"] .fui-spinner__dot,
+  [data-fui-comp="ui-spinner"] .fui-spinner__cell {
     animation-duration: 2.4s;
   }
 }
 
-.ui-visually-hidden {
+.fui-visually-hidden,
+.fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -683,19 +720,19 @@ func dividerCSS(_ style.Theme) string {
   border: 0;
   background: var(--color-border, #E4E4E7);
 }
-hr[data-fui-comp="ui-divider"] {
+:where(hr)[data-fui-comp="ui-divider"] {
   block-size: 1px;
   inline-size: 100%;
   margin: var(--spacing-md, 8px) 0;
 }
-[data-fui-comp="ui-divider"].ui-divider--vertical {
+:where([data-fui-comp="ui-divider"]).fui-divider--vertical {
   display: inline-block;
   inline-size: 1px;
   block-size: 1em;
   margin: 0 var(--spacing-sm, 4px);
   vertical-align: middle;
 }
-[data-fui-comp="ui-divider"].ui-divider--labelled {
+:where([data-fui-comp="ui-divider"]).fui-divider--labelled {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
@@ -703,113 +740,13 @@ hr[data-fui-comp="ui-divider"] {
   background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
-[data-fui-comp="ui-divider"].ui-divider--labelled::before,
-[data-fui-comp="ui-divider"].ui-divider--labelled::after {
-  content: "";
+[data-fui-comp="ui-divider"] .fui-divider__line {
   flex: 1 1 0;
   block-size: 1px;
   background: var(--color-border, #E4E4E7);
 }`
-}
-
-// ─── FileUpload ─────────────────────────────────────────────────────
-
-func fileUploadCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-fileupload"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs, 2px);
-  cursor: pointer;
-}
-[data-fui-comp="ui-fileupload"].is-disabled { opacity: 0.6; cursor: not-allowed; }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__label {
-  font-weight: 500;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__zone {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-xl, 24px);
-  border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text-muted, #52525B);
-  text-align: center;
-  transition: border-color var(--duration-fast, 150ms) ease,
-              background var(--duration-fast, 150ms) ease;
-  min-block-size: calc(var(--spacing-touch-target, 44px) * 2);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__zone:hover {
-  border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-fileupload"].is-dragover .ui-fileupload__zone {
-  border-color: var(--color-primary, #4F46E5);
-  background: color-mix(in oklab, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF) 90%);
-}
-[data-fui-comp="ui-fileupload"].is-error .ui-fileupload__zone {
-  border-color: var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  opacity: 0;
-  cursor: inherit;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__input:focus-visible + .ui-fileupload__prompt {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 4px;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__prompt {
-  margin: 0;
-  font-size: var(--text-base, 1rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
-  font-weight: 600;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-sm, 4px);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename:empty { display: none; }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  text-align: center;
-  color: var(--color-text, #18181B);
-  font-weight: 500;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__list li {
-  padding: 1px 0;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__thumb {
-  inline-size: 96px;
-  block-size: 96px;
-  object-fit: cover;
-  border-radius: var(--radii-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  background: var(--color-surface-soft, #F4F4F5);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__help,
-[data-fui-comp="ui-fileupload"] .ui-fileupload__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__help  { color: var(--color-text-muted, #52525B); }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__error { color: var(--color-danger, #DC2626); }`
 }
 
 func stickyCSS(_ style.Theme) string {
@@ -822,10 +759,10 @@ func stickyCSS(_ style.Theme) string {
   position: sticky;
   z-index: var(--z-sticky, 200);
 }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="dropdown"] { z-index: var(--z-dropdown, 100); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="modal"]    { z-index: var(--z-modal, 300); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="popover"]  { z-index: var(--z-popover, 400); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="toast"]    { z-index: var(--z-toast, 500); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="dropdown"] { z-index: var(--z-dropdown, 100); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="modal"]    { z-index: var(--z-modal, 300); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="popover"]  { z-index: var(--z-popover, 400); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="toast"]    { z-index: var(--z-toast, 500); }
 [data-fui-comp="ui-sticky"]::after {
   content: "";
   position: absolute;
@@ -838,15 +775,15 @@ func stickyCSS(_ style.Theme) string {
   transition: opacity 0.15s;
 }
 /* Edge offsets */
-[data-fui-comp="ui-sticky"].ui-sticky--top { top: 0; }
-[data-fui-comp="ui-sticky"].ui-sticky--bottom { bottom: 0; }
-[data-fui-comp="ui-sticky"].ui-sticky--offset-sm { top: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-sticky"].ui-sticky--offset-md { top: var(--spacing-md, 8px); }
-[data-fui-comp="ui-sticky"].ui-sticky--offset-lg { top: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-sticky"].ui-sticky--offset-xl { top: var(--spacing-xl, 24px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--top { top: 0; }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--bottom { bottom: 0; }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-sm { top: var(--spacing-sm, 4px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-md { top: var(--spacing-md, 8px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-lg { top: var(--spacing-lg, 16px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-xl { top: var(--spacing-xl, 24px); }
 /* Show a subtle bottom border when the element is stuck (only top-sticky) */
 @supports ((position: -webkit-sticky) or (position: sticky)) {
-  [data-fui-comp="ui-sticky"].ui-sticky--top:not(:is(:first-child))::after {
+  [data-fui-comp="ui-sticky"].fui-sticky--top:not(:is(:first-child))::after {
     opacity: 1;
   }
 }`
@@ -863,15 +800,15 @@ func aspectRatioCSS(_ style.Theme) string {
   width: 100%;
   height: 100%;
 }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--1-1  { aspect-ratio: 1 / 1; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--4-3  { aspect-ratio: 4 / 3; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--16-9 { aspect-ratio: 16 / 9; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--21-9 { aspect-ratio: 21 / 9; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--3-4  { aspect-ratio: 3 / 4; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--3-2  { aspect-ratio: 3 / 2; }
-[data-fui-comp="ui-aspect-ratio"].ui-ar--2-3  { aspect-ratio: 2 / 3; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--1-1  { aspect-ratio: 1 / 1; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--4-3  { aspect-ratio: 4 / 3; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--16-9 { aspect-ratio: 16 / 9; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--21-9 { aspect-ratio: 21 / 9; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--3-4  { aspect-ratio: 3 / 4; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--3-2  { aspect-ratio: 3 / 2; }
+[data-fui-comp="ui-aspect-ratio"].fui-ar--2-3  { aspect-ratio: 2 / 3; }
 /* auto: no aspect-ratio, child sizes naturally */
-[data-fui-comp="ui-aspect-ratio"].ui-ar--auto > * {
+[data-fui-comp="ui-aspect-ratio"].fui-ar--auto > * {
   position: static;
   width: auto;
   height: auto;

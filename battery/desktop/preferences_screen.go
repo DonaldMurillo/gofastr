@@ -137,19 +137,12 @@ func boolField(d Preference, v bool) render.HTML {
 	// A bare checkbox cannot round-trip a bool through the form
 	// intercept, so the hidden "false" comes first and the checked
 	// box follows with "true"; the runtime's serializer collapses
-	// exactly this pair to one scalar (resource.go's formInput,
+	// exactly this pair to one scalar (resource.go's formField,
 	// core-ui/runtime/src/rpc.js).
-	attrs := html.Attrs{}
-	if v {
-		attrs["checked"] = "checked"
-	}
-	return ui.FormField(ui.FormFieldConfig{
-		Label: d.Label, For: id, Help: d.Help,
-		Input: render.Join(
-			html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-			html.Input(html.InputConfig{Type: "checkbox", Name: d.Key, ID: id, Value: "true", ExtraAttrs: attrs}),
-		),
-	})
+	return render.Join(
+		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
+		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label, ID: id, Value: "true", Checked: v, Help: d.Help}),
+	)
 }
 
 // intField builds an int preference's number input from v, the

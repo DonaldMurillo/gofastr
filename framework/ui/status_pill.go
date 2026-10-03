@@ -54,9 +54,9 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 		panic("ui: StatusPill unknown Tone " + string(cfg.Tone) +
 			`. Pick "" (neutral) or "accent"`)
 	}
-	cls := "ui-status-pill"
+	cls := "fui-status-pill"
 	if cfg.Tone != StatusPillNeutral {
-		cls += " ui-status-pill--" + string(cfg.Tone)
+		cls += " fui-status-pill--" + string(cfg.Tone)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -64,7 +64,7 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 	children := []render.HTML{}
 	if cfg.Dot {
 		children = append(children, html.Span(html.TextConfig{
-			Class:      "ui-status-pill__dot",
+			Class:      "fui-status-pill__dot",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}))
 	}
@@ -96,18 +96,18 @@ func statusPillCSS(_ style.Theme) string {
 [data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
   display: none;
 }
-[data-fui-comp="ui-status-pill"] .ui-status-pill__dot {
+[data-fui-comp="ui-status-pill"] .fui-status-pill__dot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-text-subtle, currentColor);
 }
-[data-fui-comp="ui-status-pill"].ui-status-pill--accent {
+[data-fui-comp="ui-status-pill"].fui-status-pill--accent {
   color: var(--color-primary, currentColor);
   border-color: var(--ui-status-pill-accent-border, var(--color-primary, currentColor));
   background: var(--ui-status-pill-accent-bg, color-mix(in oklch, var(--color-primary, currentColor) 8%, var(--color-surface, transparent)));
 }
-[data-fui-comp="ui-status-pill"].ui-status-pill--accent .ui-status-pill__dot {
+[data-fui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {
   background: var(--color-primary, currentColor);
 }`
 }

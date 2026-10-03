@@ -6,12 +6,14 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
@@ -210,12 +212,14 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 	}, ui.FormField(ui.FormFieldConfig{
 		Label: "Note",
 		For:   "widget-note-title",
-		Input: html.Input(html.InputConfig{
-			Type:        "text",
-			Name:        "title",
-			ID:          "widget-note-title",
-			Placeholder: "What is on your mind?",
-		}),
+		Input: func(fc headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{
+				Field:       fc,
+				Type:        "text",
+				Name:        "title",
+				Placeholder: "What is on your mind?",
+			})
+		},
 	}))
 	return ui.Card(ui.CardConfig{Header: header}, form)
 }
@@ -227,7 +231,7 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 // desktop local identity (or a harness user) satisfies.
 func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-notes")
-	layout := appui.NewLayout("app").WithContainer()
+	layout := containerLayout("app")
 
 	list := notesListResource(app)
 	editorSrc := list.Crud
@@ -240,7 +244,7 @@ func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less, transparent widget layout, never in
 	// the app layout with its header and padded column.
-	site.Register("/widget", &quickNoteScreen{}, appui.WidgetLayout())
+	site.Register("/widget", &quickNoteScreen{}, desktopui.WidgetLayout())
 	// The settings screen is the battery's: one form per declared
 	// preference, saved through the battery's own route. There is no
 	// /settings/{id}; the post-save landing is /settings itself.
@@ -250,4 +254,12 @@ func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 		list.TableHandler()(w, r)
 	})
 	return site, nil
+}
+
+// containerLayout is the plain page-column layout: the content in a
+// centered ui.Container.
+func containerLayout(name string) *appui.Layout {
+	return appui.NewLayout(name, appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())
+	})
 }

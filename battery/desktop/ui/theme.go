@@ -82,12 +82,15 @@ func Theme() style.Theme {
 	// fallback for the same grammar reason.
 	t.Colors.Background = style.Color{Name: "background", Value: "#FFFFFF"}
 	t.Colors.Text = style.Color{Name: "text", Value: "#000000"}
-	// The macOS system blue. Measured contrast on the light value:
-	// #007AFF with #FFFFFF text is 4.0:1 (Apple's own selection rows
-	// and buttons ship this pair); black text on it is 5.2:1 and passes
-	// AA, a host that needs strict AA can override primary-fg.
+	// The macOS system blue is the accent (focus rings, selection,
+	// links). Filled buttons cannot wear it: #FFFFFF on #007AFF is
+	// 4.02:1, under the 4.5:1 AA floor style.Theme.Validate enforces
+	// for primary × primary-fg. Primary is #0071E3, the darker blue
+	// Apple's own web buttons use under white text (4.7:1), in both
+	// schemes, so a filled button reads as the system blue and clears
+	// AA.
 	t.Colors.Accent = style.Color{Name: "accent", Value: "#007AFF"}
-	t.Colors.Primary = style.Color{Name: "primary", Value: "#007AFF"}
+	t.Colors.Primary = style.Color{Name: "primary", Value: "#0071E3"}
 	t.Colors.PrimaryFg = style.Color{Name: "primary-fg", Value: "#FFFFFF"}
 	// Apple systemGray6, the light control/material tint. measured, unverified
 	t.Colors.SurfaceSoft = style.Color{Name: "surface-soft", Value: "#F2F2F7"}
@@ -104,7 +107,7 @@ func Theme() style.Theme {
 		"text-muted":   "#98989D", // Apple secondary label on dark
 		"text-subtle":  "#8E8E93", // Apple tertiary label on dark
 		"accent":       "#0A84FF", // system blue, dark variant
-		"primary":      "#0A84FF",
+		"primary":      "#0071E3", // AA under white; see Primary above
 		"primary-fg":   "#FFFFFF",
 	} {
 		t.DarkColors[k] = v

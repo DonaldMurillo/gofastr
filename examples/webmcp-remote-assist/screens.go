@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -111,10 +112,12 @@ func (s *SupportLoginScreen) RenderCtx(ctx context.Context) render.HTML {
 				Ctx:         ctx,
 			}, ui.FormField(ui.FormFieldConfig{
 				Label: "Sign-in key", For: "assist-support-key", Required: true,
-				Input: ui.PasswordInput(ui.PasswordInputConfig{
-					Name: "key", ID: "assist-support-key", Required: true,
-					Autocomplete: "current-password", Ctx: ctx,
-				}),
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.PasswordInput(ui.PasswordInputConfig{
+						Name: "key", ID: "assist-support-key",
+						Autocomplete: "current-password", Ctx: ctx, Field: c,
+					})
+				},
 			})),
 			html.Paragraph(html.TextConfig{},
 				render.Text("Demo sign-in: the key is ASSIST_SUPPORT_KEY, or the value printed in the server log at start. A real app puts its own login here.")),

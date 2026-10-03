@@ -3,6 +3,7 @@ package uihost
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func (s statusComp) ScreenStatusCode() int {
 
 func newRecoverApp() *app.App {
 	a := app.NewApp("recoverapp")
-	a.SetDefaultLayout(app.NewLayout("main"))
+	a.SetDefaultLayout(bareLayout("main"))
 	return a
 }
 
@@ -40,8 +41,14 @@ func TestRenderScreenStatusAndCache(t *testing.T) {
 	if rec.Code != http.StatusGone {
 		t.Fatalf("status = %d, want 410", rec.Code)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-store" {
-		t.Errorf("Cache-Control = %q, want private, no-store", cc)
+	// The full arm finishes through the shared page tail: no-store +
+	// Vary: Cookie (the doc carries session chrome), not the caller's
+	// private default.
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	if rec.Header().Get("Vary") != "Cookie" {
+		t.Errorf("Vary = %q, want Cookie", rec.Header().Get("Vary"))
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "Session over") {
@@ -81,8 +88,8 @@ func TestRenderScreenPartialKeepsStatusAndCache(t *testing.T) {
 	}
 }
 
-// The zero ScreenResponse renders a normal 200 page (still private:
-// a screen rendered by hand is per-caller by construction).
+// The zero ScreenResponse renders a normal 200 page through the shared
+// page tail (no-store + Vary: Cookie).
 func TestRenderScreenZeroResponseIs200(t *testing.T) {
 	ds := New(newRecoverApp())
 	rec := httptest.NewRecorder()
@@ -91,24 +98,38 @@ func TestRenderScreenZeroResponseIs200(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-store" {
-		t.Errorf("Cache-Control = %q, want private, no-store", cc)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	if rec.Header().Get("Vary") != "Cookie" {
+		t.Errorf("Vary = %q, want Cookie", rec.Header().Get("Vary"))
 	}
 }
 
-// An explicit CacheControl replaces the default; the caller owns the
-// reason.
+// An explicit CacheControl still governs the BARE arms (partial body,
+// nil component); the full document goes through the shared page tail,
+// whose no-store + Vary: Cookie is not overridable — a document
+// carrying session chrome and a Set-Cookie token must never enter a
+// shared cache.
 func TestRenderScreenCacheControlOverride(t *testing.T) {
 	ds := New(newRecoverApp())
-	rec := httptest.NewRecorder()
-	ds.RenderScreen(rec, httptest.NewRequest(http.MethodGet, "/x", nil),
-		recoverComp{}, ScreenResponse{Status: http.StatusNotFound, CacheControl: "no-cache"})
 
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	rec := httptest.NewRecorder()
+	ds.RenderScreen(rec, req, recoverComp{}, ScreenResponse{Status: http.StatusNotFound, CacheControl: "no-cache"})
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
-		t.Errorf("Cache-Control = %q, want no-cache", cc)
+		t.Errorf("partial Cache-Control = %q, want no-cache (the bare arm keeps the caller's policy)", cc)
 	}
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
+
+	rec2 := httptest.NewRecorder()
+	ds.RenderScreen(rec2, httptest.NewRequest(http.MethodGet, "/x", nil),
+		recoverComp{}, ScreenResponse{Status: http.StatusNotFound, CacheControl: "no-cache"})
+	if rec2.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec2.Code)
+	}
+	if cc := rec2.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("full-arm Cache-Control = %q, want no-store (the page tail owns the document policy)", cc)
 	}
 }
 
@@ -160,23 +181,43 @@ func TestRenderScreenNilComponent(t *testing.T) {
 	}
 }
 
-// The recovery arm mints nothing: no session cookie on either arm, so
-// an auth-failure response can never hand out (or chain off) a grant.
-func TestRenderScreenDoesNotMintSession(t *testing.T) {
+// The full arm finishes like every page: it verify-or-mints the
+// session (a direct load of a recovery screen is a real page — its
+// widget catalog fetch and islands need the live id), while the
+// PARTIAL arm still mints nothing: a bare auth-failure body must never
+// hand out (or chain off) a grant.
+func TestRenderScreenFullArmMintsPartialDoesNot(t *testing.T) {
 	ds := New(newRecoverApp())
 
 	rec := httptest.NewRecorder()
 	ds.RenderScreen(rec, httptest.NewRequest(http.MethodGet, "/session/dead", nil),
 		recoverComp{}, ScreenResponse{Status: http.StatusGone})
-	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
-		t.Errorf("full arm set cookies: %v", got)
+	if got := rec.Header().Values("Set-Cookie"); len(got) == 0 {
+		t.Error("full arm must mint a session on a cookie-less request (finishPageDocument)")
+	}
+	if !strings.Contains(rec.Body.String(), "session=") {
+		t.Error("full arm must embed the session id in the SSE chrome")
 	}
 
+	// A live cookie is reused: no re-mint churn.
+	sess := ds.CreateSession()
 	req := httptest.NewRequest(http.MethodGet, "/session/dead", nil)
-	req.Header.Set("X-Gofastr-Navigate", "1")
-	rec = httptest.NewRecorder()
-	ds.RenderScreen(rec, req, recoverComp{}, ScreenResponse{Status: http.StatusGone})
-	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+	req.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: sess.Token})
+	req.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: sess.Token})
+	rec2 := httptest.NewRecorder()
+	ds.RenderScreen(rec2, req, recoverComp{}, ScreenResponse{Status: http.StatusGone})
+	if got := rec2.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("full arm re-minted a live session: %v", got)
+	}
+	if !strings.Contains(rec2.Body.String(), "session="+url.QueryEscape(sess.ID)) {
+		t.Errorf("full arm must embed the LIVE session id %q in the chrome", sess.ID)
+	}
+
+	preq := httptest.NewRequest(http.MethodGet, "/session/dead", nil)
+	preq.Header.Set("X-Gofastr-Navigate", "1")
+	rec3 := httptest.NewRecorder()
+	ds.RenderScreen(rec3, preq, recoverComp{}, ScreenResponse{Status: http.StatusGone})
+	if got := rec3.Header().Values("Set-Cookie"); len(got) != 0 {
 		t.Errorf("partial arm set cookies: %v", got)
 	}
 }

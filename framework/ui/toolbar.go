@@ -40,6 +40,8 @@ type ToolbarConfig struct {
 	Align string
 	ID    string
 	Class string
+	// Plain removes the frame and padding when placed in existing chrome.
+	Plain bool
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
 	// ID), data-fui-*, role, and aria-label (use Label).
@@ -60,9 +62,12 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 		panic("ui: Toolbar unknown Align " + cfg.Align +
 			`. Pick one of: "" (start), start, center, end, between`)
 	}
-	cls := "ui-toolbar"
+	cls := "fui-toolbar"
+	if cfg.Plain {
+		cls += " fui-toolbar--plain"
+	}
 	if cfg.Align != "" && cfg.Align != "start" {
-		cls += " ui-toolbar--" + cfg.Align
+		cls += " fui-toolbar--" + cfg.Align
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -82,7 +87,7 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 		if len(g.Children) == 0 {
 			continue
 		}
-		groupAttrs := map[string]string{"class": "ui-toolbar__group"}
+		groupAttrs := map[string]string{"class": "fui-toolbar__group"}
 		if g.Label != "" {
 			groupAttrs["role"] = "group"
 			groupAttrs["aria-label"] = g.Label
@@ -106,18 +111,19 @@ func toolbarCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   flex-wrap: wrap;
 }
-[data-fui-comp="ui-toolbar"].ui-toolbar--center { justify-content: center; }
-[data-fui-comp="ui-toolbar"].ui-toolbar--end    { justify-content: flex-end; }
-[data-fui-comp="ui-toolbar"].ui-toolbar--between { justify-content: space-between; }
+[data-fui-comp="ui-toolbar"].fui-toolbar--plain { padding: 0; border: 0; border-radius: 0; background: transparent; }
+[data-fui-comp="ui-toolbar"].fui-toolbar--center { justify-content: center; }
+[data-fui-comp="ui-toolbar"].fui-toolbar--end    { justify-content: flex-end; }
+[data-fui-comp="ui-toolbar"].fui-toolbar--between { justify-content: space-between; }
 
-[data-fui-comp="ui-toolbar"] .ui-toolbar__group {
+[data-fui-comp="ui-toolbar"] .fui-toolbar__group {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
 }
 /* Visual separator between groups — a thin line. Drawn via
    :not(:last-child)::after so the LAST group has no trailing line. */
-[data-fui-comp="ui-toolbar"] .ui-toolbar__group:not(:last-child)::after {
+[data-fui-comp="ui-toolbar"] .fui-toolbar__group:not(:last-child)::after {
   content: "";
   display: inline-block;
   width: 1px;

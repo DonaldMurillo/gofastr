@@ -1,3 +1,4 @@
+/* gofastr:allow(GOFASTR1809) This Vue SPA is the user's own frontend served by core/static, not framework UI. */
 :root {
   --bg: #0a0a0a;
   --surface: #141414;

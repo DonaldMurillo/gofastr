@@ -22,10 +22,15 @@ import (
 // Next MUST step B (openWidget called with B's widget name + the second
 // image), not A.
 func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
+	// The behaviour is a registered module now (framework/ui's); the
+	// kernel learns its marker from the behaviours block, so the page
+	// carries the block built from the real registration.
+	registerFrameworkLightbox(t)
+	block := inlineBehaviorsBlock(t)
 	// A is CLOSED (hidden) and first in DOM order, exactly the case
 	// where the old first-match findViewer() picked the wrong viewer.
 	// B is OPEN and carries the Prev/Next buttons.
-	page := fmt.Sprintf(`<!doctype html><html><head></head><body>
+	page := fmt.Sprintf(`<!doctype html><html><head>%s</head><body>
 <div id="lbA" data-fui-widget="lbA" hidden>
   <div data-fui-comp="ui-lightbox" data-fui-lightbox="lbA" data-fui-lightbox-nav="true">
     <button data-fui-lightbox-prev>A-prev</button><button data-fui-lightbox-next>A-next</button>
@@ -40,7 +45,7 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 <a data-fui-lightbox-group="grpB" data-fui-deeplink="src=img2.jpg&group=grpB">2</a>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
-</body></html>`)
+</body></html>`, block)
 	base := startPollServer(t, page, nil)
 
 	ctx := chromedptest.Context(t)

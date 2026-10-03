@@ -161,7 +161,7 @@ func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 		`id="f-work_minutes"`, `value="25"`, `min="1"`, `max="180"`,
 		`id="f-break_minutes"`, `value="5"`,
 		`id="f-notify_on_done"`, `id="f-tray_countdown"`,
-		`id="f-sound"`, `<option selected="selected" value="chime"`,
+		`id="f-sound"`, `selected="" value="chime"`,
 		`data-fui-rpc="/__gofastr/desktop/preferences"`,
 		"Work minutes", "Notify when a session ends", "Session sound",
 	} {

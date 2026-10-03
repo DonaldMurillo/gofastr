@@ -128,21 +128,21 @@ func PageCSS(t style.Theme) string {
 			"text-transform", "uppercase",
 			"letter-spacing", "0.08em",
 			"font-size", "{text.xs}",
-			"font-weight", "700",
+			"font-weight", "{font-weight.bold}",
 			"color", "{colors.text}",
 			"margin", "0 0 {spacing.sm}",
 		).
 		End()
-	ss.Rule(".kiln-display").Set("font-size", "3rem", "font-weight", "700").End()
-	ss.Rule(".kiln-title").Set("font-size", "2.25rem", "font-weight", "700").End()
-	ss.Rule(".kiln-h2").Set("font-size", "{text.2xl}", "font-weight", "700").End()
+	ss.Rule(".kiln-display").Set("font-size", "3rem", "font-weight", "{font-weight.bold}").End()
+	ss.Rule(".kiln-title").Set("font-size", "2.25rem", "font-weight", "{font-weight.bold}").End()
+	ss.Rule(".kiln-h2").Set("font-size", "{text.2xl}", "font-weight", "{font-weight.bold}").End()
 
 	// Hero.
 	ss.Rule(".kiln-hero").
 		Set("text-align", "center", "padding", "calc({spacing.3xl} * 1.5) {spacing.lg} {spacing.3xl}").
 		End()
 	ss.Rule(".kiln-hero h1").
-		Set("font-size", "3rem", "font-weight", "700", "max-width", "24ch", "margin", "0 auto {spacing.md}").
+		Set("font-size", "3rem", "font-weight", "{font-weight.bold}", "max-width", "24ch", "margin", "0 auto {spacing.md}").
 		End()
 	ss.Rule(".kiln-hero p").
 		Set("font-size", "{text.lg}", "color", "{colors.text-muted}", "max-width", "60ch", "margin", "0 auto {spacing.lg}").
@@ -178,7 +178,7 @@ func PageCSS(t style.Theme) string {
 			"border", "1px solid {colors.primary}",
 			"padding", "10px 18px",
 			"border-radius", "{radii.md}",
-			"font-weight", "600",
+			"font-weight", "{font-weight.semibold}",
 			"cursor", "pointer",
 			"text-decoration", "none",
 		).
@@ -225,13 +225,13 @@ func PageCSS(t style.Theme) string {
 			"border-radius", "999px",
 			"padding", "4px 10px",
 			"font-size", "{text.xs}",
-			"font-weight", "600",
+			"font-weight", "{font-weight.semibold}",
 			"color", "{colors.text-muted}",
 		).
 		End()
-	ss.Rule(".kiln-badge-success").Set("color", "{colors.success}", "font-weight", "600").End()
-	ss.Rule(".kiln-badge-warning").Set("color", "{colors.warning}", "font-weight", "600").End()
-	ss.Rule(".kiln-badge-danger").Set("color", "{colors.danger}", "font-weight", "600").End()
+	ss.Rule(".kiln-badge-success").Set("color", "{colors.success}", "font-weight", "{font-weight.semibold}").End()
+	ss.Rule(".kiln-badge-warning").Set("color", "{colors.warning}", "font-weight", "{font-weight.semibold}").End()
+	ss.Rule(".kiln-badge-danger").Set("color", "{colors.danger}", "font-weight", "{font-weight.semibold}").End()
 
 	// Quote.
 	ss.Rule(".kiln-quote").
@@ -239,7 +239,7 @@ func PageCSS(t style.Theme) string {
 			"font-size", "{text.2xl}",
 			"line-height", "1.5",
 			"color", "{colors.text}",
-			"font-weight", "500",
+			"font-weight", "{font-weight.medium}",
 			"max-width", "60ch",
 			"margin", "0 auto {spacing.lg}",
 			"text-align", "center",
@@ -277,7 +277,7 @@ func PageCSS(t style.Theme) string {
 		).
 		End()
 	ss.Rule("body.kiln-app th").
-		Set("font-weight", "600", "color", "{colors.text-muted}", "background", "{colors.surface-soft}").
+		Set("font-weight", "{font-weight.semibold}", "color", "{colors.text-muted}", "background", "{colors.surface-soft}").
 		End()
 
 	return t.CSSCustomProperties() + "\n" + ss.CSS()

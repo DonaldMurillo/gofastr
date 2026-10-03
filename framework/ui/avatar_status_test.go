@@ -7,20 +7,20 @@ import (
 
 func TestAvatarNoStatusByDefault(t *testing.T) {
 	out := string(Avatar(AvatarConfig{Name: "Ada Lovelace"}))
-	if strings.Contains(out, "ui-avatar__status") {
+	if classTokenPresent(out, "fui-avatar__status") {
 		t.Errorf("expected no status dot by default, got: %s", out)
 	}
-	if strings.Contains(out, "ui-avatar--has-status") {
+	if classTokenPresent(out, "fui-avatar--has-status") {
 		t.Errorf("did not expect has-status modifier, got: %s", out)
 	}
 }
 
 func TestAvatarStatusRendersDot(t *testing.T) {
 	out := string(Avatar(AvatarConfig{Name: "Ada Lovelace", Status: AvatarOnline}))
-	if !strings.Contains(out, "ui-avatar__status ui-avatar__status--online") {
+	if !strings.Contains(out, "fui-avatar__status fui-avatar__status--online") {
 		t.Errorf("expected online status dot, got: %s", out)
 	}
-	if !strings.Contains(out, "ui-avatar--has-status") {
+	if !classTokenPresent(out, "fui-avatar--has-status") {
 		t.Errorf("expected has-status modifier, got: %s", out)
 	}
 	// Bare aria-label on a span is axe-rejected; the dot uses role=img.
@@ -32,7 +32,7 @@ func TestAvatarStatusRendersDot(t *testing.T) {
 func TestAvatarStatusVariants(t *testing.T) {
 	for _, s := range []AvatarStatus{AvatarOnline, AvatarAway, AvatarBusy, AvatarOffline} {
 		out := string(Avatar(AvatarConfig{Name: "X", Status: s}))
-		want := "ui-avatar__status--" + string(s)
+		want := "fui-avatar__status--" + string(s)
 		if !strings.Contains(out, want) {
 			t.Errorf("status %q: expected %q, got: %s", s, want, out)
 		}
@@ -52,10 +52,10 @@ func TestAvatarStatusWithImage(t *testing.T) {
 	out := string(Avatar(AvatarConfig{
 		Name: "Ada", Src: "/a.png", Status: AvatarAway,
 	}))
-	if !strings.Contains(out, "ui-avatar__img") {
+	if !classTokenPresent(out, "fui-avatar__img") {
 		t.Errorf("expected image, got: %s", out)
 	}
-	if !strings.Contains(out, "ui-avatar__status--away") {
+	if !classTokenPresent(out, "fui-avatar__status--away") {
 		t.Errorf("expected status dot alongside image, got: %s", out)
 	}
 }

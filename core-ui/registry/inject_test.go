@@ -3,6 +3,8 @@ package registry
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestInjectIntoSimpleDiv(t *testing.T) {
@@ -227,5 +229,158 @@ func TestInjectSkipsWhenWrappedByDifferentName(t *testing.T) {
 	out, _ := injectMarker(in, "outer")
 	if strings.Count(string(out), `data-fui-comp=`) != 1 {
 		t.Errorf("double-wrap should leave 1 marker; got %s", out)
+	}
+}
+
+func TestInjectAttribute(t *testing.T) {
+	cases := []struct {
+		name    string
+		html    string
+		attr    string
+		value   string
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "basic",
+			html:  `<div class="x">body</div>`,
+			attr:  "data-fui-scope",
+			value: "board",
+			want:  `<div class="x" data-fui-scope="board">body</div>`,
+		},
+		{
+			name:  "no attributes yet",
+			html:  `<main></main>`,
+			attr:  "data-fui-comp",
+			value: "issuecard",
+			want:  `<main data-fui-comp="issuecard"></main>`,
+		},
+		{
+			name:  "self-closing keeps spacing",
+			html:  `<br />`,
+			attr:  "data-fui-comp",
+			value: "i",
+			want:  `<br data-fui-comp="i" />`,
+		},
+		{
+			name:  "self-closing tight",
+			html:  `<br/>`,
+			attr:  "data-fui-comp",
+			value: "i",
+			want:  `<br data-fui-comp="i"/>`,
+		},
+		{
+			name:  "leading comment skipped",
+			html:  `<!-- c --><div>x</div>`,
+			attr:  "data-fui-scope",
+			value: "b",
+			want:  `<!-- c --><div data-fui-scope="b">x</div>`,
+		},
+		{
+			name:  "value escaped",
+			html:  `<div></div>`,
+			attr:  "title",
+			value: `a"b<c>&`,
+			want:  `<div title="a&#34;b&lt;c&gt;&amp;"></div>`,
+		},
+		{
+			name:  "idempotent",
+			html:  `<div data-fui-scope="b" class="x"></div>`,
+			attr:  "data-fui-scope",
+			value: "other",
+			want:  `<div data-fui-scope="b" class="x"></div>`,
+		},
+		{
+			name:  "quoted mentions do not count as present",
+			html:  `<div class="x data-fui-scope x"></div>`,
+			attr:  "data-fui-scope",
+			value: "b",
+			want:  `<div class="x data-fui-scope x" data-fui-scope="b"></div>`,
+		},
+		{
+			name:    "fragment",
+			html:    `hello`,
+			attr:    "data-fui-scope",
+			value:   "b",
+			wantErr: "must begin with an element open tag",
+		},
+		{
+			name:    "closing tag",
+			html:    `</div>`,
+			attr:    "data-fui-scope",
+			value:   "b",
+			wantErr: "must begin with an element open tag",
+		},
+		{
+			name:    "unterminated",
+			html:    `<div class="x`,
+			attr:    "data-fui-scope",
+			value:   "b",
+			wantErr: "unterminated open tag",
+		},
+		{
+			name:    "bad attribute name",
+			html:    `<div></div>`,
+			attr:    `a"b`,
+			value:   "x",
+			wantErr: "not a valid attribute name",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := InjectAttribute(render.HTML(tc.html), tc.attr, tc.value)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want error %q, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("got  %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAttribute(t *testing.T) {
+	cases := []struct {
+		name    string
+		html    string
+		attr    string
+		wantVal string
+		wantOK  bool
+		wantErr string
+	}{
+		{"double quoted", `<div data-fui-scope="board" class="x"></div>`, "data-fui-scope", "board", true, ""},
+		{"single quoted", `<div data-fui-scope='board'></div>`, "data-fui-scope", "board", true, ""},
+		{"unquoted", `<div data-fui-scope=board></div>`, "data-fui-scope", "board", true, ""},
+		{"absent", `<div class="x"></div>`, "data-fui-scope", "", false, ""},
+		{"mention in value only", `<div class="data-fui-scope" data-x="1"></div>`, "data-fui-scope", "", false, ""},
+		{"prefix collision", `<div data-fui-scopey="1"></div>`, "data-fui-scope", "", false, ""},
+		{"valueless", `<div data-fui-scope></div>`, "data-fui-scope", "", true, ""},
+		{"after leading comment", `<!-- c --><div data-fui-scope="b"></div>`, "data-fui-scope", "b", true, ""},
+		{"fragment", `hello`, "data-fui-scope", "", false, "must begin with an element open tag"},
+		{"unterminated", `<div class="x`, "data-fui-scope", "", false, "unterminated open tag"},
+		{"bad name", `<div></div>`, `a"b`, "", false, "not a valid attribute name"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, ok, err := Attribute(render.HTML(tc.html), tc.attr)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want error %q, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if ok != tc.wantOK || v != tc.wantVal {
+				t.Fatalf("got (%q, %t), want (%q, %t)", v, ok, tc.wantVal, tc.wantOK)
+			}
+		})
 	}
 }

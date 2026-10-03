@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // Custom variants register at package init, before any component sheet
@@ -52,28 +53,28 @@ func wantPanic(t *testing.T, msg string, fn func()) {
 
 func TestRegisteredButtonVariantRenders(t *testing.T) {
 	h := Button(ButtonConfig{Label: "Buy", Variant: testBrandVariant})
-	mustContain(t, h, "ui-button--brand")
+	mustContain(t, h, "fui-button--brand")
 }
 
 func TestLinkButtonHonorsButtonVariant(t *testing.T) {
 	h := LinkButton(LinkButtonConfig{Label: "Docs", Href: "/docs", Variant: testBrandVariant})
-	mustContain(t, h, "ui-button--brand")
+	mustContain(t, h, "fui-button--brand")
 	mustContain(t, h, `href="/docs"`)
 }
 
 func TestRegisteredButtonSizeRenders(t *testing.T) {
 	h := Button(ButtonConfig{Label: "Go", Size: testHeroSize})
-	mustContain(t, h, "ui-button--hero")
+	mustContain(t, h, "fui-button--hero")
 }
 
 func TestButtonVariantCSSInSheet(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
 	for _, want := range []string{
-		`[data-fui-comp="ui-button"].ui-button--brand`,
+		`.fui-button--brand`,
 		"var(--color-primary)",
-		".ui-button--brand:hover",
-		".ui-button--brand:focus-visible",
-		`[data-fui-comp="ui-button"].ui-button--hero`,
+		".fui-button--brand:hover",
+		".fui-button--brand:focus-visible",
+		`.fui-button--hero`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("ui-button sheet missing %q", want)
@@ -82,27 +83,30 @@ func TestButtonVariantCSSInSheet(t *testing.T) {
 }
 
 func TestCustomVariantStylesToggleAction(t *testing.T) {
-	// ToggleAction's root is data-fui-comp="ui-toggle-action" with
-	// class="ui-button ui-button--<variant>". The custom-variant rules
-	// routed into the ui-button sheet must therefore be dual-scoped:
-	// a registered variant that only matches [data-fui-comp="ui-button"]
-	// can never style a ToggleAction.
+	// ToggleAction's root is data-fui-comp="ui-toggle-action" wearing
+	// the button's own classes. Registered variant rules are plain
+	// class rules emitted once, so they must match under that marker
+	// exactly as they do under ui-button's.
 	css := buttonCSS(style.DefaultTheme())
 	h := string(ToggleAction(ToggleActionConfig{
 		Endpoint: "/x", IdleLabel: "A", CommittedLabel: "B",
 		Variant: testBrandVariant, Size: testHeroSize,
 	}))
 	if !strings.Contains(h, `data-fui-comp="ui-toggle-action"`) ||
-		!strings.Contains(h, "ui-button--brand") {
+		!strings.Contains(h, "fui-button--brand") {
 		t.Fatalf("ToggleAction markup missing marker/variant class:\n%s", h)
 	}
 	for _, want := range []string{
-		`[data-fui-comp="ui-toggle-action"].ui-button--brand`,
-		`[data-fui-comp="ui-toggle-action"].ui-button--hero`,
+		`.fui-button--brand {`,
+		`.fui-button--hero {`,
 	} {
 		if !strings.Contains(css, want) {
-			t.Errorf("ui-button sheet missing toggle-action scope %q", want)
+			t.Errorf("ui-button sheet missing the registered class rule %q (and it must match under ANY marker, toggle-action included)", want)
 		}
+	}
+	// The marker-scoped dual copies are gone: one rule, one spelling.
+	if strings.Contains(css, `[data-fui-comp="ui-toggle-action"].fui-button--brand`) {
+		t.Error("the toggle-action dual scope still ships; the plain class rule already matches it")
 	}
 }
 
@@ -112,8 +116,27 @@ func TestButtonSheetServesVariantCSS(t *testing.T) {
 		t.Fatal("ui-button style not registered")
 	}
 	css := e.CSSFor(style.DefaultTheme())
-	if !strings.Contains(css, ".ui-button--brand") {
-		t.Fatalf("registry-served ui-button sheet missing .ui-button--brand:\n%s", css)
+	if !strings.Contains(css, ".fui-button--brand") {
+		t.Fatalf("registry-served ui-button sheet missing .fui-button--brand:\n%s", css)
+	}
+}
+
+// A registration lands in the class map as well as the sheet: the
+// variant's class is drawn from the same map the built-ins use, so a
+// Button rendered with it wears the class a ToggleAction would wear
+// too.
+func TestRegisteredVariantLandsInTheClassMap(t *testing.T) {
+	if got := buttonClasses.Variant(headless.PartRoot, "brand"); got != "fui-button--brand" {
+		t.Errorf("root--brand lookup = %q, want fui-button--brand", got)
+	}
+	if got := buttonClasses.Variant(headless.PartRoot, "hero"); got != "fui-button--hero" {
+		t.Errorf("root--hero lookup = %q, want fui-button--hero", got)
+	}
+	if got := buttonClasses.Class(headless.PartRoot); got != "fui-button" {
+		t.Errorf("root class = %q, want fui-button", got)
+	}
+	if got := buttonClasses.Class(headless.PartIcon); got != "fui-button__icon" {
+		t.Errorf("icon class = %q, want fui-button__icon", got)
 	}
 }
 
@@ -203,11 +226,11 @@ func TestSidebarBadVariantPanics(t *testing.T) {
 
 func TestCardRegisteredVariantRenders(t *testing.T) {
 	h := Card(CardConfig{Variant: testPromoCard, Heading: "Deal"}, render.Text("body"))
-	mustContain(t, h, "ui-card--promo")
+	mustContain(t, h, "fui-card--promo")
 	css := cardCSS(style.DefaultTheme())
 	for _, want := range []string{
-		`[data-fui-comp="ui-card"].ui-card--promo`,
-		".ui-card--promo:hover",
+		`[data-fui-comp="ui-card"].fui-card--promo`,
+		".fui-card--promo:hover",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("ui-card sheet missing %q", want)
@@ -218,16 +241,16 @@ func TestCardRegisteredVariantRenders(t *testing.T) {
 func TestStatusVariantSpansComponents(t *testing.T) {
 	mustContain(t,
 		StatusBadge(StatusBadgeConfig{Label: "Beta", Variant: testBetaStatus}),
-		"ui-badge--beta")
+		"fui-badge--beta")
 	mustContain(t,
 		Callout(CalloutConfig{Title: "Beta", Variant: testBetaStatus}, render.Text("b")),
-		"ui-callout--beta")
+		"fui-callout--beta")
 	mustContain(t,
 		Tag(TagConfig{Label: "Beta", Variant: testBetaStatus}),
-		"ui-tag--beta")
+		"fui-tag--beta")
 	mustContain(t,
 		Notification(NotificationConfig{Title: "Beta", Variant: testBetaStatus}),
-		"ui-notification--beta")
+		"fui-notification--beta")
 }
 
 func TestStatusVariantCSSInAllSheets(t *testing.T) {
@@ -237,11 +260,11 @@ func TestStatusVariantCSSInAllSheets(t *testing.T) {
 		css   string
 		want  string
 	}{
-		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].ui-badge--beta`},
+		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].fui-badge--beta`},
 		{"ui-badge", statusBadgeCSS(th), "color-mix(in oklab, var(--color-primary) 15%"},
-		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].ui-tag--beta`},
+		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].fui-tag--beta`},
 		{"ui-callout", calloutCSS(th), "--ui-callout-accent: var(--color-primary)"},
-		{"ui-notification", notificationCSS(th), `[data-fui-comp="ui-notification"].ui-notification--beta`},
+		{"ui-notification", notificationCSS(th), `[data-fui-comp="ui-notification"].fui-notification--beta`},
 	}
 	for _, c := range cases {
 		if !strings.Contains(c.css, c.want) {

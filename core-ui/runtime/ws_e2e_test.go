@@ -125,6 +125,7 @@ const wsConsoleTap = `
 // the delayed snapshot 41 again, a duplicated event 42.
 func TestWSReducerRejectsStaleSnapshot(t *testing.T) {
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	script := wsConsoleTap + `
     __gofastr.loadModule('ws').then(() => {
       const reduce = __gofastr.createSequencedReducer(
@@ -213,6 +214,7 @@ func TestWSReconnectFreshEventNotDiscarded(t *testing.T) {
 	t.Cleanup(func() { close(hold) })
 
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := wsHandshake(w, r)
 		if err != nil {
@@ -359,6 +361,7 @@ func TestWSReconnectFreshEventNotDiscarded(t *testing.T) {
 func TestWSCloseReasonNeverLogged(t *testing.T) {
 	const secret = "hunter2-close-secret"
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := wsHandshake(w, r)
 		if err != nil {
@@ -443,6 +446,7 @@ func TestWSCloseReasonNeverLogged(t *testing.T) {
 // after event 1 is still rejected.
 func TestWSReducerAppliesSequenceZeroSnapshot(t *testing.T) {
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	script := wsConsoleTap + `
     __gofastr.loadModule('ws').then(() => {
       const reduce = __gofastr.createSequencedReducer({ n: -1 }, (s, env) => ({ n: env.payload.n }));
@@ -477,6 +481,7 @@ func TestWSReducerAppliesSequenceZeroSnapshot(t *testing.T) {
 // is refused instead of advancing the current generation.
 func TestWSLifecycleBoundToGeneration(t *testing.T) {
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := wsHandshake(w, r)
 		if err != nil {
@@ -533,6 +538,7 @@ func TestWSLifecycleBoundToGeneration(t *testing.T) {
 func TestWSRefusedStopsReconnect(t *testing.T) {
 	var dials atomic.Int32
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		dials.Add(1)
 		conn, err := wsHandshake(w, r)
@@ -578,6 +584,7 @@ func TestWSRefusedStopsReconnect(t *testing.T) {
 func TestWS5xxRefusalRetries(t *testing.T) {
 	var dials atomic.Int32
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		dials.Add(1)
 		conn, err := wsHandshake(w, r)

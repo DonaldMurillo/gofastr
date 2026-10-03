@@ -82,7 +82,7 @@
 //	             Background, Surface, SurfaceSoft,
 //	             Text, TextMuted, TextSubtle,
 //	             Border, BorderStrong,
-//	             Danger, Success, Warning, Info, Accent
+//	             Danger, DangerFg, Success, Warning, Info, Accent
 //	Spacing:     XS, SM, MD, LG, XL, XXL, XXXL  (pixels)
 //	Radii:       None, SM, MD, LG, XL, Full     (pixels)
 //	Fonts:       Body, Heading, Mono            (font-family stacks)
@@ -91,7 +91,10 @@
 //	ZIndex:      Dropdown, Sticky, Modal, Popover, Toast
 //	Durations:   Fast, Normal, Slow             (time.Duration)
 //	Typography:  XS, SM, Base, LG, XL, XXL, XXXL  (font-size strings)
+//	FontWeights: Normal, Medium, Semibold, Bold (FontWeight, 1-1000)
 //	Layout:      TouchTarget                    (Spacing, WCAG 2.5.5)
+//	             PageWidth, PageGutter, HeaderHeight,
+//	             NarrowWidth, ContentWidth, WideWidth (Size, CSS lengths)
 //
 // E.g. Colors.PrimaryFg → CSS variable --color-primary-fg →
 // theme.App.Colors.PrimaryFg.CSS() → "var(--color-primary-fg)".

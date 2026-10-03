@@ -52,7 +52,7 @@ func demoApp(t *testing.T) *framework.TestApp {
 			Items: []desktopui.SourceItem{{Label: "Demo", Href: "/"}},
 		}},
 	}))
-	site.Register("/", &demoScreen{}, desktopui.Layout().WithSidebar(sidebar))
+	site.Register("/", &demoScreen{}, desktopui.Layout(sidebar))
 	host := uihost.New(site)
 	return framework.TestHarness(t, framework.NewUIHostApp(host,
 		framework.WithConfig(framework.AppConfig{Name: "desktop-ui-demo"})))

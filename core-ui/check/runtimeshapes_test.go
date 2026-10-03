@@ -173,7 +173,7 @@ func TestLintSelectorInterpolation_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintSelectorInterpolation(runtimeDir)
+	res, err := LintSelectorInterpolation(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestLintRegistryOwnProps_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintRegistryOwnProps(runtimeDir)
+	res, err := LintRegistryOwnProps(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestLintResponseMountedAfterOK_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintResponseMountedAfterOK(runtimeDir)
+	res, err := LintResponseMountedAfterOK(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +517,7 @@ func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintAttributePathSegments(runtimeDir)
+	res, err := LintAttributePathSegments(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2041,7 +2041,7 @@ func TestLintDecodeURIRaw_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintDecodeURIRaw(runtimeDir)
+	res, err := LintDecodeURIRaw(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2210,11 +2210,76 @@ func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	res, err := LintProtoKeyWrite(runtimeDir)
+	res, err := LintProtoKeyWrite(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.HasErrors() {
 		t.Errorf("runtime JS writes attribute-borne keys into shared stores with no reserved-key guard:\n%s", res.Error())
+	}
+}
+
+// The four shape lints below had fixture tests only: nothing ran them
+// over the tree, so a finding in a real module was a finding nobody
+// saw. Each now walks what every clean-tree lint walks, the runtime
+// package and every registered behaviour.
+
+func TestLintSelectorBareArgGuarded_RepoIsClean(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	res, err := LintSelectorBareArgGuarded(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS builds a selector from an unguarded bare argument:\n%s", res.Error())
+	}
+}
+
+func TestLintCookieConcat_RepoIsClean(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	res, err := LintCookieConcat(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS writes a cookie by concatenation:\n%s", res.Error())
+	}
+}
+
+func TestLintModuleURLShape_RepoIsClean(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	res, err := LintModuleURLShape(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS builds a module URL in a shape the loader does not own:\n%s", res.Error())
+	}
+}
+
+func TestLintStorageKeyRaw_RepoIsClean(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	res, err := LintStorageKeyRaw(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS builds a storage key from a raw value:\n%s", res.Error())
 	}
 }

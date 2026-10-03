@@ -1,6 +1,6 @@
 // kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
-// data-fui-comp CSS scanner, window.__gofastr namespace CREATION (other
+// data-fui-comp / data-fui-scope CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
 // component-action dispatch helpers.
 // Composed FIRST; every other fragment depends on it.
@@ -22,11 +22,11 @@
   //     (FOUC). It is enumerated here as documentation only.
   //   - data-fui-static is written by the static exporter (Go), never
   //     by the runtime. Enumerated as documentation only.
-  //   - Transient DOM (e.g. the copy.js textarea) and pure reads
-  //     (#fui-route-announce) stay unwrapped.
+  //   - Transient DOM (e.g. the feedback module's copy textarea) and
+  //     pure reads (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
-  // concurrent lockers, a modal over a lightbox, a drawer over a
+  // concurrent lockers, a modal over an image overlay, a drawer over a
   // modal, can't fight over documentElement.style.overflow: the lock
   // releases only when the LAST owner unlocks. (Lock lives on <html>,
   // not <body>: overflow:hidden on <body> breaks position:sticky
@@ -226,8 +226,9 @@
         payloads.
 
         This is the runtime-side guard against signal-bound `href` on
-        Lightbox AllowDownload + any other widget that mirrors an
-        attacker-controllable signal into a click-triggered attribute.
+        a media viewer's download control + any other widget that
+        mirrors an attacker-controllable signal into a click-triggered
+        attribute.
     */
     _isUnsafeSignalUrl(attr, value) {
       if (!attr) return false;
@@ -405,6 +406,11 @@
     // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
+    // Page-lifetime conjunction of every component stylesheet load, awaited
+    // by _settleScroll before hash/history scroll writes. Initialized
+    // resolved so the first loadComponentCSS chains onto a real promise
+    // instead of relying on Promise.all tolerating undefined.
+    _stylesReady: Promise.resolve(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
       if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
@@ -422,15 +428,28 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
       link.id = 'fui-css-' + name;
+      // Each link's promise is BOUNDED: a stalled fetch (connection
+      // accepted, response never arriving) fires neither onload nor
+      // onerror and <link> has no network timeout of its own, so an
+      // unbounded promise would poison this conjunction — and every
+      // later one chained onto it — freezing scroll settling for the
+      // rest of the session. resolve is idempotent, so a timer left
+      // running after the link settled fires harmlessly into it.
+      this._stylesReady = Promise.all([this._stylesReady, new Promise((resolve) => {
+        link.onload = link.onerror = () => resolve();
+        setTimeout(resolve, 3000);
+      })]).then(() => {});
       document.head.appendChild(link);
     },
+    // Loads the sheet each kit root (data-fui-comp) and owned-style
+    // root (data-fui-scope) under root names. Descendants only: a
+    // caller whose swapped element may itself be a root scans its
+    // parent (swapShell).
     scanAndLoadCSS(root) {
-      if (!root) return;
-      const html = root.outerHTML || root.innerHTML;
-      if (typeof html === 'string' && html.indexOf('data-fui-comp') < 0) return;
-      if (!root.querySelectorAll) return;
-      root.querySelectorAll('[data-fui-comp]').forEach((el) => {
-        this.loadComponentCSS(el.getAttribute('data-fui-comp'));
+      if (!root?.querySelectorAll) return;
+      root.querySelectorAll('[data-fui-comp],[data-fui-scope]').forEach((el) => {
+        this.loadComponentCSS(el.dataset.fuiComp);
+        this.loadComponentCSS(el.dataset.fuiScope);
       });
     },
     _idleQueue: [],
@@ -484,7 +503,7 @@
         entry to true on load. */
     loadedModules: {},
 
-    /** Load a split runtime module by name (e.g. "fileupload",
+    /** Load a split runtime module by name (e.g. "popover",
         "popover"). Returns a cached Promise that resolves once the
         module's IIFE has executed. Safe to call concurrently, the
         first call wins, all callers await the same fetch. */
@@ -494,14 +513,28 @@
         initial-focus pass and the Tab focus trap. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 
+    /** The layout demand modules' seam table (src/envelope.js,
+        src/loading.js, src/parts.js, src/transition.js). The navigator
+        calls into it defensively: an absent hook is the module not
+        having loaded, which means the page declared none of that
+        machinery. Modules assign their entry (NS._navHooks.envelope =
+        {…}) at evaluation. */
+    _navHooks: {},
+    // The navigation epoch: a plain counter both navigators (core's
+    // plain one and the envelope module's) bump and read through the
+    // supersede rule (NS._navLive). A writable slot, not a closure,
+    // because the module's navigator owns its own navigations.
+    _navEpoch: 0,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
-    // _toastTimers, _toastSeq) lives in the split-runtime toasts module
-    // at core-ui/runtime/src/toasts.js. The module self-registers
-    // those on window.__gofastr when it loads. Core code that calls
-    // them (the click delegator for data-fui-toast, the X-Gofastr-Toast
-    // header dispatch in dispatchRPC) awaits loadModule('toasts')
-    // first so the very first toast on a cold cache still fires.
+    // _toastTimers, _toastSeq) lives in the registered behaviour module
+    // headless-feedback (framework/headless/feedback.js), which
+    // replaced the retired core-ui/runtime src/toasts.js. The module
+    // self-registers those on window.__gofastr when it loads. Core
+    // code that calls them (the click delegator for data-fui-toast,
+    // the X-Gofastr-Toast header dispatch in dispatchRPC) awaits
+    // loadModule('headless-feedback') first so the very first toast on
+    // a cold cache still fires.
 
     // Widget runtime (mountWidget, openWidget, closeWidget,
     // _mountByName, _chromeCache, _deepLink{Push,Strip,Sync}, Modal
@@ -538,7 +571,7 @@
     // _toastOrFallback dispatches a single toast cfg, falling back to
     // the inline renderer if the toasts module isn't available.
     _toastOrFallback(cfg) {
-      this.loadModule('toasts')
+      this.loadModule('headless-feedback')
         .then(() => { try { this.toast(cfg); } catch (_) {} })
         .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
     },

@@ -11,6 +11,417 @@ product.
 
 ---
 
+## Page shapes: layouts from the primitive
+
+The four page shapes below are whole-page grammars: which layout owns
+which chrome, and what each navigation swaps. They are built from the
+layout primitive (`app.NewLayout`, outlets, fills, route areas —
+see [layouts](layouts.md)), composed out of `framework/ui` components.
+**There is no layout constructor in `framework/ui`** and the framework
+ships no ready-made layouts: a page shape is your layout declared with
+the primitive, not an export. Real apps, not fixtures, carry each
+shape.
+
+### App shell
+
+**Use for:** signed-in product surfaces — "a sidebar app", the admin
+back-office, any screen set sharing a top bar, a nav column, a content
+region, and per-page tool regions.
+
+One tree layout owns the shell: the top bar, sidebar, and toolbar row
+are static chrome; a crumbs area follows the route server-side; a
+toolbar outlet and an aside outlet are the page's own regions; the
+primary slot is the route's screen.
+
+From `examples/tracker` (`main.go`, `buildSite` + `buildShell`):
+
+<!-- gofastr:compile
+import "context"
+import "time"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core/render"
+type InboxScreen struct{}
+func (i *InboxScreen) Render() render.HTML { return render.Text("Inbox") }
+type InboxToolbar struct{}
+func (t *InboxToolbar) Render() render.HTML { return render.Text("Toolbar") }
+func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML { return l.Primary() }
+var site *uiapp.App
+-->
+```go
+toolbar := uiapp.NewOutlet("toolbar", uiapp.OutletOptions{
+	Transition: uiapp.FadeThrough(150 * time.Millisecond),
+})
+aside := uiapp.NewOutlet("aside", uiapp.OutletOptions{Deferred: true})
+shell := uiapp.NewLayout("shell", uiapp.LayoutSpec{
+	Outlets: []*uiapp.Outlet{toolbar, aside},
+	Areas:   []uiapp.AreaSpec{{Name: "crumbs"}},
+}, buildShell)
+site.SetDefaultLayout(shell)
+site.RegisterScreen(uiapp.NewScreen("/inbox", &InboxScreen{}).
+	Fill(toolbar, &InboxToolbar{}), nil)
+```
+
+The build function composes the shell rather than recreating its columns:
+
+<!-- gofastr:compile
+import "context"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+var toolbar = uiapp.NewOutlet("toolbar")
+var aside = uiapp.NewOutlet("aside")
+var appBar = render.Text("the app's own bar package renders the banner header")
+var nav = render.Text("Project navigation")
+func crumbsArea(_ context.Context, m uiapp.Match) render.HTML { return render.Text(m.Path()) }
+-->
+```go
+func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		appBar,
+		ui.ContentRow(ui.ContentRowConfig{
+			Viewport: true,
+			Sidebar:  nav,
+			Toolbar: ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween},
+				l.RouteArea("crumbs", crumbsArea), l.Place(toolbar)),
+			Aside: l.Place(aside), AsideLabel: "Context",
+		}, l.Primary()))
+}
+```
+
+`nav` is the rendered `ui.Sidebar`. `appBar` is the app's own package,
+not a framework component: `examples/tracker/appbar` is one Go file
+that renders the `html.Header` banner landmark (brand, search,
+notifications, theme toggle, the sidebar's drawer trigger) and an
+owned style sheet that holds the bar at `--size-header-height`, the
+token the row's viewport mode subtracts. `Aside` releases
+its column when the outlet is empty. `Viewport` keeps desktop scroll
+inside the row's regions and returns to document flow on phones.
+
+**Avoid:** a per-screen header copy, a nav column rebuilt per page
+(it loses scroll and open groups), and page-action buttons hardcoded
+into the shell. The runtime's active-link sweep marks the current nav
+item; nothing in the shell reads the route.
+
+### List / detail
+
+**Use for:** "list on the left, detail on the right" — mail, issues,
+orders, any master-detail where the URL addresses the detail and the
+list (with its filter and scroll) survives moving between details.
+
+A group layer at a param prefix owns the list; each detail is the
+layer's primary. The layer key embeds the resolved value, so one
+project's list is kept across its pages and re-rendered when the
+entity changes.
+
+From `examples/tracker` (`screens.go`, `newProjectLayout` +
+`buildProject`):
+
+<!-- gofastr:compile
+import "context"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core/render"
+type Project struct{ Slug string }
+func projectBySlug(ctx context.Context) (Project, error) { return Project{}, nil }
+type IssueScreen struct{}
+func (i *IssueScreen) Render() render.HTML { return render.Text("Issue") }
+func buildProject(ctx context.Context, l *uiapp.LayoutTree) render.HTML { return l.Primary() }
+var site *uiapp.App
+var resolvedProject *uiapp.Key[Project]
+-->
+```go
+project := uiapp.NewLayout("project", uiapp.LayoutSpec{}, buildProject)
+group := uiapp.NewScreenGroup("/projects/{project}", project)
+group.Resolve(resolvedProject.From(
+	func(ctx context.Context) (Project, error) { return projectBySlug(ctx) }))
+group.Screen(uiapp.NewScreen("/projects/{project}/issues/{n}", &IssueScreen{}), nil)
+site.Router.ScreenGroup(group)
+```
+
+The group build puts the list outside the replaceable primary slot:
+
+<!-- gofastr:compile
+import "context"
+import "fmt"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+type Issue struct { Number int; Title string }
+type Project struct { Slug string; Issues []Issue }
+var resolvedProject *uiapp.Key[Project]
+-->
+```go
+func buildProject(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	p, err := resolvedProject.Get(ctx)
+	if err != nil {
+		return render.Text("Project unavailable")
+	}
+	links := make([]render.HTML, 0, len(p.Issues))
+	for _, issue := range p.Issues {
+		links = append(links, ui.LinkButton(ui.LinkButtonConfig{
+			Href: fmt.Sprintf("/projects/%s/issues/%d", p.Slug, issue.Number),
+			Label: issue.Title,
+		}))
+	}
+	return ui.ListDetail(ui.ListDetailConfig{
+		List: ui.Stack(ui.StackConfig{Gap: ui.GapSM}, links...),
+		ListLabel: "Issues", Detail: l.Primary(),
+	})
+}
+```
+
+The list scrolls independently and keeps its DOM across detail navigation.
+On phones the detail stacks above the list. Tracker adds a `FilterToolbar`
+GET form: Apply filters on the server; issue links retain the filter query.
+Tracker opts into `MobileSinglePane: true` and wraps its unselected index
+in `ui.ListDetailPlaceholder`. That gives the phone journey: list on the
+project index, detail on an issue. `BackHref: "/projects/" + slug` and
+`BackLabel: "Back to issues"` add the way back: ListDetail renders the
+link at the top of the detail pane, outside the detail content, and shows
+it only on a phone with a selected detail. Setting `BackHref` without
+`MobileSinglePane` panics.
+
+`ui.ListDetail` fills the column the content row gives it, so the
+frame sets the panes' width. Tracker's row uses `Viewport: true` and
+leaves the aside outlet unfilled on screens without a context panel
+(an empty aside releases its column). With a sidebar, an aside, and no
+width opt-in the detail pane gets roughly 300px at 1280px. A
+marketing-measure page that needs the panes wide drops the reading
+container and lets the row span the page:
+
+```go
+return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Viewport: true}, l.Primary())
+```
+
+**Avoid:** `ui.PaneHost` for routed detail (panes are in-page state;
+a shareable URL is a route — hard rule 1) and putting the list pane in
+an outlet (outlet content is re-applied per navigation; persistent
+panes live in a group layer).
+
+For dense record lists, use `ui.Card` with `Variant: ui.CardRow`: `Heading`
+is the short record key, `Description` is its title, and the body holds
+status and assignee metadata. It remains one keyboard-focusable link.
+Use `DetailListConfig.Inline` for short label/value pairs in a narrow
+detail pane; long values wrap in their column. The default still stacks
+fields in narrow containers, which suits avatar groups and long values.
+`FilterToolbarConfig.Compact` keeps its search and actions on one row down
+to an 18rem container, retaining the 44px controls and server-side GET
+submission; narrower containers still stack.
+`StackConfig.TrimMargins` removes direct-child block margins so `Gap`
+alone sets the spacing between description paragraphs.
+
+`PageHeaderConfig.Compact` removes the header's outer padding and divider;
+level-two compact headings use the smaller pane title size.
+`PageHeaderConfig.Badge` puts status beside the title, wrapping below when
+space runs out; keep page-level controls in `Actions`.
+`ToolbarConfig.Plain` removes the action group's frame when the shell
+already supplies chrome. The shell toolbar owns its gutter and never
+grows vertically to fill unused space.
+
+In a sidebar app, the app bar renders `ui.SidebarDrawerTrigger(cfg)`.
+Set `cfg.SuppressDrawerTrigger` so the sidebar does not render its own,
+and keep `cfg.NativeMobile` for the no-script fallback. The page then has
+one phone menu control rather than two, and the sidebar's stylesheet
+hides the trigger at widths where the column shows.
+
+### Marketing site
+
+**Use for:** "header and footer" — landing, pricing, changelog: static
+chrome around page content, no machinery.
+
+The build places the header, `l.Primary()` and the footer in a
+page-tall stack. The header and the footer are the site's own packages,
+not framework components. Each is a Go file that composes `core-ui/html`
+elements and framework parts, plus an owned style sheet
+(`siteheader.style.css`) that `gofastr gen styles` turns into typed
+class methods. Every dimension is a theme token: the page measure
+(`--size-page-width`, with `--size-page-gutter` outside it) and the bar
+height (`--size-header-height`) are built-ins, and a value only the
+header needs is the package's own token in `siteheader.tokens.css`,
+which the site adds with `Theme.Extend`. The phone menu is
+`headless.Disclosure`: it traps focus while open and closes on Escape,
+on a link tap and on navigation. [Theming](theming.md) covers owned
+sheets and app tokens.
+
+`gofastr generate package siteheader` and `gofastr generate package
+sitefooter` copy the canonical packages into the app as owned code
+(Go, owned sheet, generated class methods, tests); `examples/acme-site`
+keeps customised copies of the same packages as a worked example. The
+header has the brand, a nav whose Help link stays lit on every page
+under `/help` (`data-fui-match-prefix`), a call to action, a theme
+toggle, and a phone menu that works without JavaScript. Its chromium
+test checks that the brand and the call to action sit on the page
+column at 1440 and 390 px.
+
+Main sits on the same measure with `ui.Container{Width:
+ContainerPage}`. The container's `Pad` gives the page its block rhythm:
+`ContainerPadPage` pads under the header and above the footer,
+`ContainerPadEnd` only above the footer (for a page whose first block
+sits right under the header). Without it the first block touches the
+header's rule. Acme's screens each bring their own container with
+`Pad: ContainerPadEnd`. Acme also places an announcement outlet above
+the header; only the changelog fills it, and navigation clears it when
+the visitor leaves the changelog.
+
+From `examples/acme-site` (`main.go`, `buildSite` + `buildSiteShell`):
+
+<!-- gofastr:compile
+import "context"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+import "github.com/DonaldMurillo/gofastr/core/render"
+func siteHeader(ctx context.Context) render.HTML { return render.Text("header") }
+func siteFooter() render.HTML { return render.Text("footer") }
+var announce = uiapp.NewOutlet("announce")
+-->
+```go
+func buildSiteShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	// The header is the banner landmark and a direct child of the
+	// page-tall stack, so it stays pinned for the whole page.
+	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		l.Place(announce),
+		siteHeader(ctx), // siteheader.Render(siteheader.Config{...})
+		l.Primary(),
+		siteFooter(), // sitefooter.Render(sitefooter.Config{...})
+	)
+}
+```
+
+The theme picks up the packages' tokens once, where the site is built:
+
+```go
+site.WithTheme(theme.Default(theme.Overrides{Primary: "#0F766E"}).
+	Extend(siteheader.Tokens, helpdocs.Tokens))
+```
+
+**Avoid:** a page-owned header or footer wrapper, overriding a framework
+component's internals from the site's sheet, and literal sizes in the
+sheet where a token belongs (the checker refuses them in owned sheets).
+Compose the screen's own rhythm from `ui.Stack` gaps, `ui.Section`, and
+`ui.PageHeader` inside main.
+
+### Docs site with a table of contents
+
+A group layout under the section prefix draws the docs page, and the
+page is again the site's own package: `gofastr generate package
+docpage` copies the canonical one into the app (`examples/acme-site/
+helpdocs` is a customised copy of it). Its sheet lays out the nav
+rail, the article and the contents rail on the page measure, keeps
+the rails sticky under the header, sets the article's reading rhythm,
+and draws the previous/next cards. The nav
+rail is a route area (the current-article mark is re-derived
+server-side on every navigation). Crumbs, toc and pager are outlets each
+article fills; the crumbs are `ui.Breadcrumbs`. An article without
+headings declines the TOC fill (`ErrNoFill`), and the sheet collapses
+the empty column with `:has(> :empty)`, including after client
+navigation.
+
+From `examples/acme-site` (`main.go`, `buildSite` + `buildHelpDocs`):
+
+<!-- gofastr:compile
+import "context"
+import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core/render"
+type ArticleScreen struct{}
+func (a *ArticleScreen) Render() render.HTML { return render.Text("Article") }
+type ArticleCrumbs struct{}
+func (c *ArticleCrumbs) Render() render.HTML { return render.Text("Crumbs") }
+type ArticleToc struct{}
+func (t *ArticleToc) Render() render.HTML { return render.Text("TOC") }
+type ArticlePager struct{}
+func (p *ArticlePager) Render() render.HTML { return render.Text("Pager") }
+var crumbs = uiapp.NewOutlet("crumbs")
+var toc = uiapp.NewOutlet("toc")
+var pager = uiapp.NewOutlet("pager")
+func buildHelpDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML { return l.Primary() }
+var site *uiapp.App
+-->
+```go
+docs := uiapp.NewLayout("docs", uiapp.LayoutSpec{
+	Outlets: []*uiapp.Outlet{crumbs, toc, pager},
+}, buildHelpDocs)
+group := uiapp.NewScreenGroup("/help", docs)
+group.Screen(uiapp.NewScreen("/help/{slug}", &ArticleScreen{}).
+	Fill(crumbs, &ArticleCrumbs{}).
+	Fill(toc, &ArticleToc{}).
+	Fill(pager, &ArticlePager{}), nil)
+site.Router.ScreenGroup(group)
+```
+
+`buildHelpDocs` hands the layout's parts to the package:
+
+```go
+func buildHelpDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	return helpdocs.Render(helpdocs.Config{
+		Nav: l.RouteArea("helpnav", func(ctx context.Context, m uiapp.Match) render.HTML {
+			return helpNav(ctx, m.Path())
+		}),
+		Crumbs: l.Place(docsCrumbs),
+		Body:   l.Primary(),
+		Pager:  l.Place(docsPager),
+		Toc:    l.Place(docsToc),
+	})
+}
+```
+
+Use `SidebarConfig.Compact` for article navigation: short rows and a thin
+current-item marker instead of the application sidebar's filled item.
+Groups remain optional; use them only when the articles need categories.
+On phones the compact rail shows `NavLabel` on a full-width drawer trigger;
+the drawer links retain 44px touch targets.
+
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core-ui/component"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+-->
+```go
+func helpNav(path string) render.HTML {
+	nav, err := component.SafeRenderCtx(context.Background(),
+		ui.Sidebar(ui.SidebarConfig{
+			NavLabel: "Browse the help", CurrentPath: path,
+			DrawerName: "help-nav", DrawerTitle: "Browse the help",
+			NativeMobile: true, Compact: true,
+			Items: []ui.SidebarItem{
+				{Label: "Help center", Href: "/help"},
+				{Label: "Articles", Open: true, Children: []ui.SidebarItem{
+					{Label: "Projects", Href: "/help/projects"},
+					{Label: "Issues", Href: "/help/issues"},
+				}},
+			},
+		}))
+	if err != nil {
+		return render.Text("Navigation unavailable")
+	}
+	return nav
+}
+```
+
+The article's rhythm (heading margins, a reading measure for paragraphs
+from the package's own `--size-prose-measure` token) lives in
+`helpdocs.style.css` under `.article`, so screens render article blocks
+directly instead of adding a `Stack` gap on top.
+`PageHeaderConfig.Compact` removes the article title's divider. The
+docs page owns the full rail-and-article width: give it a plain main,
+not a reading container, so the rails span the page.
+
+Use `SectionConfig.Compact` inside a `Stack` when the stack, not the
+sections' margins, should set the release-to-release gap. An
+announcement above the site header uses `BannerConfig.Strip`:
+full-width, square corners, and wrapping inline copy. Ordinary banners
+remain bordered status boxes.
+
+Mount the same Sidebar config with `ui.MountSidebar` once at boot.
+`NativeMobile` supplies a native disclosure when scripting is disabled;
+scripted browsers use the drawer. The route area refreshes `CurrentPath`.
+
+**Avoid:** marking the current article in static nav chrome (stale
+after the first click — the nav is a route area or the sweep's, never
+a first-render mark), and a TOC that renders for articles without
+headings (decline the fill; collapse the column).
+
+---
+
 ## 1. Command center
 
 **Use for:** incident response, monitoring, operations, fulfillment, or any
@@ -71,8 +482,8 @@ keep `Highlight` to one decision plus one short condition, and move the full
 narrative later. `MetricBand` stays one compact row on wide viewports and
 becomes a two-column signal band on phones; an odd final signal spans the row
 instead of stranding an empty quadrant. Use `Hint` for a trend or qualifier
-rather than repeating the value. If the SiteHeader identity is long, set
-`SiteHeaderConfig.MobileBrand` to a concise product mark/name.
+rather than repeating the value. If the site header's identity is long,
+give the header package a shorter phone mark.
 
 Let the status and primary path lead. The mobile opening should preserve status
 → concise impact → action → compact live context → next decision → signals
@@ -196,7 +607,7 @@ active controls.
 2. Pick the closest recipe by task, not by visual fashion.
 3. Name the dominant element and the content that can remain secondary.
 4. Decide desktop regions and the mobile priority order before implementation.
-5. Survey `framework/ui`, `core-ui/app`, and `core-ui/patterns` for the named
+5. Survey `framework/ui` and `core-ui/app` for the named
    primitives.
 6. Render at about 390px and 1440px in light and dark schemes.
 7. Identify the three weakest visible decisions and revise them.
@@ -208,6 +619,7 @@ missing.
 
 ## See also
 
+- [Layouts](layouts.md) — the primitive these page shapes are built from.
 - [UI capability map](ui-capability-map.md) chooses the state, mutation, delivery, and scaling boundaries before a page recipe.
 - [UI components index](ui-new-components.md) lists every constructor and live gallery route.
 - [Runtime contract](runtime-contract.md) defines SSR, RPC islands, and SSE.

@@ -42,8 +42,8 @@ func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 
 	// Selectors: the demo renders two OptimisticAction buttons. The
 	// first hits the ok endpoint, the second hits the fail endpoint.
-	const okBtn = `document.querySelector('[data-fui-optimistic-endpoint="/__site/optimistic/edit/ok"]')`
-	const failBtn = `document.querySelector('[data-fui-optimistic-endpoint="/__site/optimistic/edit/fail"]')`
+	const okBtn = `document.querySelector('[data-hui-action-endpoint="/__site/optimistic/edit/ok"]')`
+	const failBtn = `document.querySelector('[data-hui-action-endpoint="/__site/optimistic/edit/fail"]')`
 
 	var okInitial, okAfterCommit string
 	var failAfterClick, failAfterRollback string
@@ -52,8 +52,9 @@ func TestE2E_Optimistic_InlineEdit_SuccessAndRollback(t *testing.T) {
 		cdplog.Enable(),
 		chromedp.Navigate(base+"/components/optimisticinlineedit"),
 		pageReady(),
-		// Wait for the demand-loaded optimisticaction runtime module.
-		waitModule(`!!(window.__gofastr && window.__gofastr.optimisticaction)`),
+		// Wait for the headless action module (the retired
+		// optimisticaction adapter's binder).
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
 		chromedp.Evaluate(okBtn+`.getAttribute('data-state')`, &okInitial),
 		// Click Save → flips to pending → committed (2xx).
 		chromedp.Evaluate(okBtn+`.click()`, nil),
@@ -214,7 +215,7 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-n1"] .ui-confirm-action__actions button.ui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-widget="opt-delete-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(n1Present, &n1After),
@@ -255,7 +256,7 @@ func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 	sink := &consoleErrSink{}
 	sink.listen(ctx)
 
-	const slowBtn = `document.querySelector('[data-fui-optimistic-endpoint="/__site/optimistic/slow"]')`
+	const slowBtn = `document.querySelector('[data-hui-action-endpoint="/__site/optimistic/slow"]')`
 
 	var pendingState, pendingBusy string
 	var pendingDisabled bool
@@ -265,7 +266,7 @@ func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 		cdplog.Enable(),
 		chromedp.Navigate(base+"/components/optimisticslow"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.optimisticaction)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
 		// Click Save (slow). The endpoint sleeps 500ms before 2xx, so a
 		// 400ms sample lands inside the pending window.
 		chromedp.Evaluate(slowBtn+`.click()`, nil),
@@ -287,8 +288,12 @@ func TestE2E_Optimistic_Slow_PendingThenCommit(t *testing.T) {
 	if pendingBusy != "true" {
 		t.Errorf("aria-busy during pending = %q, want \"true\"", pendingBusy)
 	}
-	if !pendingDisabled {
-		t.Errorf("disabled during pending = false, want true")
+	// Pending never disables the trigger: the action primitive guards
+	// re-entry by ignoring clicks, so keyboard focus stays on the button
+	// and disabled keeps its other owners (optimistic-ui.md, "pending
+	// marks the trigger busy").
+	if pendingDisabled {
+		t.Errorf("disabled during pending = true, want false: pending is aria-busy and a click guard, never disabled")
 	}
 	if committedState != "committed" {
 		t.Errorf("state after slow RPC resolves = %q, want committed", committedState)
@@ -318,7 +323,7 @@ func TestE2E_Optimistic_Fail_RollsBack(t *testing.T) {
 	sink := &consoleErrSink{}
 	sink.listen(ctx)
 
-	const failBtn = `document.querySelector('[data-fui-optimistic-endpoint="/__site/optimistic/fail"]')`
+	const failBtn = `document.querySelector('[data-hui-action-endpoint="/__site/optimistic/fail"]')`
 
 	var afterClick, afterRollback string
 	err := chromedp.Run(ctx,
@@ -326,7 +331,7 @@ func TestE2E_Optimistic_Fail_RollsBack(t *testing.T) {
 		cdplog.Enable(),
 		chromedp.Navigate(base+"/components/optimisticslow"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.optimisticaction)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`),
 		chromedp.Evaluate(failBtn+`.click()`, nil),
 		settle(),
 		chromedp.Evaluate(failBtn+`.getAttribute('data-state')`, &afterClick),
@@ -397,7 +402,7 @@ func TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged(t *testing.T) {
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-fail-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-fail-n1"] .ui-confirm-action__actions button.ui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-widget="opt-delete-fail-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + (no) swap
 		chromedp.Evaluate(listHTML, &afterHTML),
 		chromedp.Evaluate(listItemCount, &afterCount),

@@ -162,9 +162,9 @@ curl -sS -X POST "$KILN_URL/kiln/tool/add_hook" \
 
 `set_theme` accepts semantic light color tokens such as `primary`,
 `primary-fg`, `background`, `surface`, `surface-soft`, `text`, `text-muted`,
-`border`, `accent`, `success`, `warning`, `danger`, and `info`. Prefer the
-default adaptive theme unless the user requested a brand palette. Dark tokens
-are part of `set_app_config.config.theme_dark`.
+`border`, `accent`, `success`, `warning`, `danger`, `danger-fg`, and `info`.
+Prefer the default adaptive theme unless the user requested a brand
+palette. Dark tokens are part of `set_app_config.config.theme_dark`.
 
 ## Freeze boundary
 

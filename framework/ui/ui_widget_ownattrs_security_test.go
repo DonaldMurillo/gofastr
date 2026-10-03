@@ -32,8 +32,9 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 				Tabs: []ui.TabItem{{Label: "A", Content: render.Text("a")}}}))
 		}, `data-active`, `data-active="0"`},
 		{"toc-target", func(ex map[string]string) string {
-			return string(ui.TableOfContents(ui.TOCConfig{Target: "main", ExtraAttrs: ex}))
-		}, `data-fui-toc`, `data-fui-toc="main"`},
+			return string(ui.TableOfContents(ui.TOCConfig{Target: "main", ExtraAttrs: ex,
+				Items: []ui.TOCItem{{ID: "a", Label: "A"}}}))
+		}, `data-hui-toc`, `data-hui-toc="" data-hui-toc-target="main"`},
 		{"carousel-arialabel", func(ex map[string]string) string {
 			return string(ui.Carousel(ui.CarouselConfig{Label: "Slideshow", ExtraAttrs: ex,
 				Slides: []ui.CarouselSlide{{Content: render.Text("s")}}}))
@@ -43,7 +44,7 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 		}, `role`, `role="status"`},
 		{"formrepeater-arialive", func(ex map[string]string) string {
 			return string(ui.FormRepeater(ui.FormRepeaterConfig{Name: "rows", ExtraAttrs: ex}))
-		}, `aria-live`, `aria-live="polite"`},
+		}, `role`, `data-hui-repeater-status="" role="status"`},
 		{"stepwizard-action", func(ex map[string]string) string {
 			return string(ui.StepWizard(ui.StepWizardConfig{Action: "/wiz", ExtraAttrs: ex,
 				Steps: []ui.StepWizardStep{{Heading: "H"}}}))
@@ -57,10 +58,10 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 		}, `value`, `value="7"`},
 		{"taginput-wiring", func(ex map[string]string) string {
 			return string(ui.TagInput(ui.TagInputConfig{Name: "tags", Label: "Tags", ExtraAttrs: ex}))
-		}, `data-fui-tag-input`, `data-fui-tag-input="tags"`},
+		}, `data-hui-tag-input`, `data-hui-tag-input="tags"`},
 		{"panehost-marker", func(ex map[string]string) string {
 			return string(ui.PaneHost(ui.PaneHostConfig{Primary: render.Text("p"), ExtraAttrs: ex}))
-		}, `data-fui-pane-host`, `data-fui-pane-host=""`},
+		}, `data-hui-panehost`, `data-hui-panehost=""`},
 	}
 
 	for _, s := range surfaces {

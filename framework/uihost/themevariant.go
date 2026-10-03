@@ -70,12 +70,14 @@ type themeVariants struct {
 // variant.
 func (ds *UIHost) RegisterThemeVariant(t style.Theme) string {
 	// Deep-copy the reference-typed fields BEFORE hashing or storing. Theme is
-	// passed by value, but DarkColors/DarkCode are maps, so a plain copy shares
-	// the caller's backing store: a later caller-side write would change what we
-	// serve without changing the key, and could race a request reading the same
-	// map (a fatal concurrent map read/write, not a recoverable panic).
+	// passed by value, but DarkColors/DarkCode/Components are maps, so a plain
+	// copy shares the caller's backing store: a later caller-side write would
+	// change what we serve without changing the key, and could race a request
+	// reading the same map (a fatal concurrent map read/write, not a
+	// recoverable panic).
 	t.DarkColors = copyStringMap(t.DarkColors)
 	t.DarkCode = copyStringMap(t.DarkCode)
+	t.Components = copyStringMap(t.Components)
 
 	key := style.CSSFingerprint(ds.AppCSSFor(t))
 

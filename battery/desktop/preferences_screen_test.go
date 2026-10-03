@@ -30,7 +30,7 @@ func TestPreferencesScreenRendersEveryDeclaredField(t *testing.T) {
 		`id="f-notify_on_done"`,          // bool
 		`type="hidden"`, `value="false"`, // the pair's hidden half
 		`type="checkbox"`, `checked`, // default true renders checked
-		`<option selected="selected" value="chime"`,
+		`selected="" value="chime"`,
 		`id="f-export_folder"`, // string
 		"Work minutes", "Session sound", "Export folder",
 	} {

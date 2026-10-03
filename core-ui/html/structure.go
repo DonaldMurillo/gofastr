@@ -101,13 +101,7 @@ type DetailsConfig struct {
 	Class      string
 	ID         string
 	ExtraAttrs Attrs
-	// Disclosure marks this details element as a dismissible disclosure
-	// (mobile hamburger nav, popover, etc.). The runtime will close it
-	// automatically on SPA navigation and on Escape. See ARCHITECTURE.md
-	// data-fui-disclosure.
-	Disclosure bool
-	// Open opens the details element on initial render.
-	Open bool
+	Open       bool
 }
 
 // SummaryConfig configures a <summary> element. No required fields.
@@ -267,9 +261,6 @@ func FigCaption(cfg FigCaptionConfig, children ...render.HTML) render.HTML {
 // Details produces a <details> element for a disclosure widget.
 func Details(cfg DetailsConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	if cfg.Disclosure {
-		attrs["data-fui-disclosure"] = ""
-	}
 	if cfg.Open {
 		attrs["open"] = ""
 	}

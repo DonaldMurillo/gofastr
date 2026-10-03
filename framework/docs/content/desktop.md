@@ -630,9 +630,9 @@ which the battery fills.
 ### The desktop theme
 
 `battery/desktop/ui` (package `desktopui`) is the page half: one theme,
-one layout, and a few components, registered through the design
-system's own machinery (`style.Theme`, `registry.RegisterStyle`, a
-core-ui layout). Its token values are per platform; Windows and Linux
+three layouts, and a few components, registered through the design
+system's own machinery (`style.Theme`, `registry.RegisterStyle`,
+`app.NewLayout`). Its token values are per platform; Windows and Linux
 will swap values, never fields.
 
 ```go
@@ -643,7 +643,7 @@ import (
 
 site := appui.NewApp("focus")
 site.WithTheme(desktopui.Theme())
-layout := desktopui.Layout().WithSidebar(
+layout := desktopui.Layout(
     appui.NewStaticComponent(desktopui.SourceList(desktopui.SourceListConfig{
         Label: "Focus",
         Sections: []desktopui.SourceSection{{
@@ -666,7 +666,8 @@ What the theme changes from the framework theme, and nothing else:
 | Type scale | 10, 11, 13 (base), 15, 17, 22, 26 px, from the HIG type table (one CSS px is one point in WKWebView) |
 | Radii | 0, 4, 8, 12, 16, capsule |
 | Light background / text | `#FFFFFF` / `#000000` |
-| Accent / primary | `#007AFF`, white foreground (4.0:1, what native ships) |
+| Accent | `#007AFF`, the system blue (focus rings, selection, links) |
+| Primary | `#0071E3` under white (4.7:1) in both schemes: `#FFFFFF` on `#007AFF` is 4.0:1, below the AA floor `Theme.Validate` enforces for filled buttons |
 | Dark palette | background `#1E1E1E`, surface `#2A2A2A`, text `#F5F5F7`, accent `#0A84FF` |
 | Touch target | 24 (the WCAG 2.5.8 floor; the web default is 44) |
 
@@ -676,12 +677,15 @@ user's settings, but the design system's color grammar refuses them
 in. Values marked `// measured, unverified` in `theme.go` came from
 captures, not from Apple sources.
 
-`desktopui.Layout()` is the core-ui layout named `desktop`:
+`desktopui.Layout(sidebar)` is an `app.NewLayout` layout named
+`desktop`. Its build renders the desktop frame (`.desktopui-frame`):
+the sidebar component inside a `<nav aria-label="Sidebar">`, then the
+primary. A nil sidebar renders the content column alone.
 
 - `html` and `body` paint nothing, so the material shows. Under
   `--serve` in a browser the page falls back to the browser's
   background.
-- The `<nav>` sidebar zone is `--desktop-sidebar-width` wide (default
+- The sidebar zone (`.desktopui-frame__sidebar`) is `--desktop-sidebar-width` wide (default
   `desktopui.DefaultSidebarWidth`, 220) and reserves
   `--desktop-sidebar-top-inset` (default `desktopui.SidebarTopInset`,
   52) above its first row for the traffic lights. The zone is
@@ -690,8 +694,9 @@ captures, not from Apple sources.
   otherwise land on the same near-black.
 - `<main>` is the one opaque region, on `--color-background`, with its
   leading top corner rounded into the window frame.
-- The sidebar stays beside the content at every window width; the
-  core-ui layout's narrow-screen stacking does not apply.
+- The sidebar stays beside the content at every window width. The
+  frame is the desktop's own rather than `ui.ContentRow`, whose
+  narrow-screen stacking would put the source list above the page.
 
 `desktopui.WindowLayout()` (named `desktop-window`) is for a window
 with no sidebar: a settings window, an about panel. The page and the
@@ -702,10 +707,17 @@ window on this layout; `examples/desktop-focus` mounts `/settings` on
 it and keeps Settings out of its sidebar, the macOS shape (the app
 menu's Settings… item opens the window).
 
-Both layouts set `--ui-control-padding-y` to `4px` on the page. With
-the theme's 24-point touch target, buttons and text fields come out
-about 28 points tall instead of 44 (see `gofastr docs theming` for the
-`--ui-*` knobs).
+`desktopui.WidgetLayout()` (named `desktop-widget`) is for a floating
+widget window (`desktop.Widget`): no chrome, a transparent page behind
+the screen's own surface, no viewport-height floor, and
+`--desktop-widget-padding` (default 8px) between the window edge and
+that surface.
+
+Every desktop frame sets `--ui-control-padding-y` to `4px` on the
+page. With the theme's 24-point touch target (which comfortable
+density turns into the controls' minimum height), buttons and text
+fields come out about 28 points tall instead of 44 (see `gofastr docs
+theming` for the `--ui-*` knobs).
 
 Components:
 

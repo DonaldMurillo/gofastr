@@ -60,7 +60,7 @@ func Icon(name string, cfg IconConfig) render.HTML {
 	if size == "" {
 		size = "20"
 	}
-	cls := "ui-icon"
+	cls := "fui-icon"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -124,6 +124,8 @@ var (
 		"chevron-right": `<polyline points="9 18 15 12 9 6"/>`,
 		// Close (×): used in Banner dismiss, Toast, Modal.
 		"close": `<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>`,
+		// Menu (three bars): the trigger of a phone navigation menu.
+		"menu": `<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>`,
 		// Check: confirmations, completed steps.
 		"check": `<polyline points="20 6 9 17 4 12"/>`,
 		// Status family: Banner variants.

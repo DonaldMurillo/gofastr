@@ -1,6 +1,7 @@
 package desktopui_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -10,11 +11,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Layout returns the core-ui layout named "desktop": the same Layout
+// Layout returns a core-ui layout named "desktop": the same Layout
 // every screen registers with, so SPA navigation, layer keys, and the
-// one-<main> rule all hold. The host chains WithSidebar.
+// one-<main> rule all hold.
 func TestLayoutIsCoreUILayout(t *testing.T) {
-	l := desktopui.Layout()
+	l := desktopui.Layout(sidebarComp{})
 	if l == nil {
 		t.Fatal("Layout returned nil")
 	}
@@ -24,51 +25,65 @@ func TestLayoutIsCoreUILayout(t *testing.T) {
 	var _ *appui.Layout = l
 }
 
-// Wrapping a screen through the layout emits the three regions: the
-// sidebar <nav> (from WithSidebar), the content <main>, and the
-// .layout-body row that carries both. The desktop sheet keys off
-// .layout-desktop on the wrapper.
-func TestLayoutRendersThreeRegions(t *testing.T) {
-	l := desktopui.Layout().WithSidebar(sidebarComp{})
-	out := string(l.Wrap(plain("<p>content</p>")))
+// Wrapping a screen through the layout emits the frame: the sidebar
+// <nav> landmark around the sidebar component, then the content
+// <main>, both inside .desktopui-frame.
+func TestLayoutRendersFrame(t *testing.T) {
+	out := string(desktopui.Layout(sidebarComp{}).WrapCtx(context.Background(), plain("<p>content</p>")))
 	for _, w := range []string{
 		"layout-desktop",
 		`data-fui-layout="desktop"`,
+		`class="desktopui-frame"`,
 		`aria-label="Sidebar"`,
+		"desktopui-frame__sidebar",
+		`desktopui-sourcelist">nav`,
 		`id="main-content"`,
-		`class="layout-body"`,
 		"<p>content</p>",
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("desktop layout missing %q:\n%s", w, out)
 		}
 	}
+	if strings.Index(out, "desktopui-frame__sidebar") > strings.Index(out, "<main") {
+		t.Errorf("sidebar must precede main:\n%s", out)
+	}
 	if strings.Contains(out, "style=") {
 		t.Errorf("layout must not emit an inline style:\n%s", out)
 	}
 }
 
-// The layout stylesheet places the three zones: transparent html/body
-// so the native material shows through, the sidebar nav at the
-// declared width with the measured traffic-light zone reserved at its
-// top, and an opaque content column.
+// A nil sidebar renders the content column alone: no empty nav
+// landmark.
+func TestLayoutNilSidebarHasNoNav(t *testing.T) {
+	out := string(desktopui.Layout(nil).WrapCtx(context.Background(), plain("<p>x</p>")))
+	if strings.Contains(out, "<nav") {
+		t.Errorf("nil sidebar emitted a nav:\n%s", out)
+	}
+	if strings.Count(out, "<main") != 1 {
+		t.Errorf("want one <main>:\n%s", out)
+	}
+}
+
+// The layout stylesheet places the zones: transparent html/body so
+// the native material shows through, the sidebar at the declared
+// width with the measured traffic-light zone reserved at its top, and
+// an opaque content column.
 func TestLayoutCSS(t *testing.T) {
 	css := componentCSS(t, "desktopui-layout")
 	for _, w := range []string{
-		"html:has(.layout-desktop), body:has(.layout-desktop),",
+		"html:has(.desktopui-frame), body:has(.desktopui-frame) { background-color: transparent; }",
 		"--desktop-sidebar-width: 220px;",
 		"--desktop-sidebar-top-inset: 52px;",
-		"flex-basis: var(--desktop-sidebar-width",
+		"flex: 0 0 var(--desktop-sidebar-width",
 		"padding-top: var(--desktop-sidebar-top-inset",
 		"background: var(--desktop-sidebar-surface, transparent)",
-		"background-color: var(--color-background",
 	} {
 		if !strings.Contains(css, w) {
 			t.Errorf("layout CSS missing %q:\n%s", w, css)
 		}
 	}
-	if strings.Contains(css, "traffic-inset") {
-		t.Errorf("layout CSS still carries the traffic-inset knob:\n%s", css)
+	if got := cssProperty(t, css, ".desktopui-frame > .layout-content", "background-color"); !strings.HasPrefix(got, "var(--color-background") {
+		t.Errorf("content column background = %q, want the theme background", got)
 	}
 }
 
@@ -107,11 +122,11 @@ func TestSidebarTopInsetMeasured(t *testing.T) {
 // transparent.
 func TestDarkSidebarSurfaceDiffersFromContent(t *testing.T) {
 	css := componentCSS(t, "desktopui-layout")
-	decl := cssProperty(t, css, ":root[data-color-scheme=\"dark\"] .layout-desktop", "--desktop-sidebar-surface")
+	decl := cssProperty(t, css, ":root[data-color-scheme=\"dark\"] .desktopui-frame", "--desktop-sidebar-surface")
 	if decl == "" || decl == "transparent" {
 		t.Fatalf("dark block does not re-declare a distinct --desktop-sidebar-surface (got %q):\n%s", decl, css)
 	}
-	content := cssProperty(t, css, ".layout-desktop .layout-body > main", "background-color")
+	content := cssProperty(t, css, ".desktopui-frame > main", "background-color")
 	if decl == content {
 		t.Fatalf("dark sidebar surface equals the content surface %q:\n%s", content, css)
 	}
@@ -166,32 +181,34 @@ func lookup(t *testing.T, name string) (*registry.Entry, bool) {
 	return registry.Lookup(name)
 }
 
-// A narrow window keeps the sidebar beside the content: core-ui's
-// layout stacks the nav above the page under 48rem, which in the
+// A narrow window keeps the sidebar beside the content: the web
+// content row stacks the nav above the page under 48rem, which in the
 // 480-point settings window put the whole source list on top of the
-// form (the 2026-09-22 capture).
+// form (the 2026-09-22 capture). The desktop frame has no narrow-width
+// rule at all.
 func TestLayoutHoldsRowWhenNarrow(t *testing.T) {
 	css := componentCSS(t, "desktopui-layout")
-	i := strings.Index(css, "@media (max-width: 47.99rem)")
-	if i < 0 {
-		t.Fatalf("layout CSS has no narrow-window rule:\n%s", css)
+	if strings.Contains(css, "max-width") {
+		t.Errorf("desktop frame carries a narrow-width rule:\n%s", css)
 	}
-	if !strings.Contains(css[i:], ".layout-desktop .layout-body { display: flex; }") {
-		t.Errorf("narrow-window rule does not keep the row:\n%s", css[i:])
+	if got := cssProperty(t, css, ".desktopui-frame {", "display"); got != "flex" {
+		t.Errorf("frame display = %q, want flex", got)
 	}
 }
 
 // WindowLayout is the sidebar-less window: transparent page and
 // content column, and the traffic-light zone reserved at the top.
 func TestWindowLayoutCSS(t *testing.T) {
-	if got := desktopui.WindowLayout().Name; got != desktopui.WindowLayoutName {
-		t.Fatalf("WindowLayout name = %q, want %q", got, desktopui.WindowLayoutName)
+	l := desktopui.WindowLayout()
+	if l.Name != desktopui.WindowLayoutName {
+		t.Fatalf("WindowLayout name = %q, want %q", l.Name, desktopui.WindowLayoutName)
+	}
+	out := string(l.WrapCtx(context.Background(), plain("<p>x</p>")))
+	if !strings.Contains(out, "desktopui-frame--window") || strings.Contains(out, "<nav") {
+		t.Errorf("window layout markup wrong:\n%s", out)
 	}
 	css := componentCSS(t, "desktopui-layout")
-	if !strings.Contains(css, "html:has(.layout-desktop-window), body:has(.layout-desktop-window) { background-color: transparent; }") {
-		t.Error("window layout does not clear the page background")
-	}
-	col := ".layout-desktop-window .layout-body > .layout-content"
+	col := ".desktopui-frame--window > .layout-content"
 	if got := cssProperty(t, css, col, "background-color"); got != "transparent" {
 		t.Errorf("window layout content background = %q, want transparent", got)
 	}
@@ -200,12 +217,43 @@ func TestWindowLayoutCSS(t *testing.T) {
 	}
 }
 
-// Both desktop layouts tighten the framework controls' shared block
+// A floating widget window is transparent and small: the page behind
+// the screen's surface must paint nothing, and the frame must not
+// force a viewport-tall body or a padded column. The first widget
+// rendered a white slab with its button cut off; a screenshot caught
+// it, no DOM assertion could.
+func TestWidgetLayoutIsTransparentAndCompact(t *testing.T) {
+	l := desktopui.WidgetLayout()
+	if l.Name != desktopui.WidgetLayoutName {
+		t.Fatalf("WidgetLayout name = %q, want %q", l.Name, desktopui.WidgetLayoutName)
+	}
+	out := string(l.WrapCtx(context.Background(), plain("<p>body</p>")))
+	if strings.Count(out, "<main") != 1 {
+		t.Fatalf("WidgetLayout must emit exactly one <main> landmark:\n%s", out)
+	}
+	for _, tag := range []string{"<header", "<footer", "<nav"} {
+		if strings.Contains(out, tag) {
+			t.Errorf("WidgetLayout emitted %s:\n%s", tag, out)
+		}
+	}
+	css := componentCSS(t, "desktopui-layout")
+	if got := cssProperty(t, css, ".desktopui-frame--widget {", "min-block-size"); got != "0" {
+		t.Errorf("widget frame min-block-size = %q, want 0", got)
+	}
+	col := ".desktopui-frame--widget > .layout-content"
+	if got := cssProperty(t, css, col, "background-color"); got != "transparent" {
+		t.Errorf("widget content background = %q, want transparent", got)
+	}
+	if got := cssProperty(t, css, col, "padding"); got != "var(--desktop-widget-padding, 8px)" {
+		t.Errorf("widget content padding = %q, want the widget padding knob", got)
+	}
+}
+
+// The desktop frames tighten the framework controls' shared block
 // padding; the web default (10px) stays everywhere else.
 func TestLayoutsSetControlDensity(t *testing.T) {
 	css := componentCSS(t, "desktopui-layout")
-	decl := cssProperty(t, css, "html:has(.layout-desktop), html:has(.layout-desktop-window)", "--ui-control-padding-y")
-	if decl != "4px" {
+	if decl := cssProperty(t, css, "html:has(.desktopui-frame) {", "--ui-control-padding-y"); decl != "4px" {
 		t.Errorf("--ui-control-padding-y = %q, want 4px", decl)
 	}
 }

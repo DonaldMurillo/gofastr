@@ -31,6 +31,7 @@ func TestRouteScriptMarshaledOnce(t *testing.T) {
 
 // TestCatalogScriptMarshaledOnce: the default-theme catalog is marshaled once.
 func TestCatalogScriptMarshaledOnce(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	// Ensure the process-global registry has at least one entry so the catalog
 	// is non-empty (the marshal is what we're counting).
 	registry.RegisterStyle("uihost-hotpath-pin", func(style.Theme) string {

@@ -102,7 +102,7 @@ func TestFilterToolbarPills(t *testing.T) {
 		`name="state"`,
 		`value="waiting"`,
 		`Waiting On Customer`,
-		`ui-filter-toolbar__pill`,
+		`fui-filter-toolbar__pill`,
 		`>All<`, // auto-prepended clear pill
 	}
 	for _, w := range wants {

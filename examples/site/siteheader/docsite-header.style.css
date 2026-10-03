@@ -1,0 +1,302 @@
+/* GoFastr's top bar. It pins to the top of the page (the banner
+   landmark is a direct child of the page-tall ui.Stack, so sticky
+   travels the whole page) and its content sits on the site's full-bleed
+   rhythm: --spacing-2xl of side padding, the same inset the page
+   sections use. Below the xl breakpoint the seven section links give
+   way to a phone menu, a native <details> that works without
+   JavaScript; below md the search and toggle cluster collapses into it
+   too, leaving brand + toggle in the bar. Every dimension is a theme
+   token: the bar is --size-header-height tall, the type ramp steps the
+   built-ins don't have (11/13/15px) and the faint hairline under the
+   bar are this package's tokens. */
+:scope {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  background: var(--color-background);
+  border-block-end: 1px solid var(--color-line-faint);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xl);
+  block-size: var(--size-header-height);
+  padding-inline: var(--spacing-2xl);
+  font-size: var(--text-ui);
+}
+
+/* Brand: the λ mark, the lowercase wordmark, and the live version
+   capsule with its pulse. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--text-ui-lg);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radii-sm);
+  background: color-mix(in oklch, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1;
+  font-weight: var(--font-weight-medium);
+}
+.brand-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  letter-spacing: -0.012em;
+}
+.brand-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--spacing-sm) 2px 6px;
+  margin-inline-start: var(--spacing-xs);
+  border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent);
+  border-radius: var(--radii-full);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1;
+  text-transform: lowercase;
+  font-weight: var(--font-weight-normal);
+}
+.brand-ver { color: var(--color-text-subtle); }
+.brand-pulse {
+  display: inline-block;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radii-full);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 60%, transparent);
+  animation: brand-pulse 2.4s ease-out infinite;
+}
+@keyframes brand-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 50%, transparent); }
+  70% { box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-primary) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 0%, transparent); }
+}
+@media (--reduced-motion) {
+  .brand-ver { color: var(--color-text-subtle); }
+.brand-pulse { animation: none; box-shadow: none; }
+}
+
+/* The section links: full-height hit targets with a left-to-right
+   underline reveal on hover / focus / the current section, so the
+   relationship between hover and active reads for keyboard users too. */
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin-inline-start: var(--spacing-xl);
+}
+.links a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  block-size: var(--size-header-height);
+  color: var(--color-text);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--text-sm);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-ease-out);
+}
+.links a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 100%;
+  bottom: 14px;
+  height: 1px;
+  background: var(--color-primary);
+  transition: right 200ms var(--easing-ease-out);
+}
+.links a:hover::after,
+.links a:focus-visible::after,
+.links a[aria-current="page"]::after { right: 0; }
+@media (--reduced-motion) {
+  .links a,
+  .links a::after { transition: none; }
+}
+
+/* The right-hand cluster. */
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
+}
+/* Layout-transparent so the cluster's children sit in the bar's flex
+   row directly; the phone menu hides it below md and carries its
+   contents in the drawer. */
+.bar-actions { display: contents; }
+
+/* The search pill: mono placeholder on the left, the ⌘K keycaps on the
+   right. Inside the phone menu it collapses to its 44px icon shape. */
+.cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 200px;
+  padding: 6px var(--spacing-sm) 6px var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-md);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  font-family: var(--font-body);
+  background: var(--color-surface);
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+.cmd-glyph { display: none; }
+.cmd:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 35%, var(--color-border));
+  color: var(--color-text);
+  background: color-mix(in oklch, var(--color-primary) 4%, var(--color-surface));
+}
+.cmd-placeholder {
+  flex: 1;
+  text-align: left;
+  color: var(--color-text);
+  letter-spacing: -0.005em;
+}
+.cmd kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-sm);
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+/* The GitHub mark: a 44px icon anchor matching the theme toggle's
+   ghost-button treatment. */
+.icon {
+  inline-size: var(--spacing-touch-target);
+  block-size: var(--spacing-touch-target);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radii-md);
+  color: var(--color-text-subtle);
+}
+.icon:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+
+/* The phone menu: hidden on wide screens. */
+.menu { display: none; position: relative; }
+.toggle {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--spacing-touch-target);
+  block-size: var(--spacing-touch-target);
+  border: 1px solid transparent;
+  border-radius: var(--radii-md);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+.toggle::-webkit-details-marker { display: none; }
+.toggle:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+/* Open state: the color brightens so the × reads cleanly; the glyph
+   swap IS the state cue, a tinted border reads like a leftover focus
+   ring. */
+.menu[open] .toggle { color: var(--color-text); }
+/* Menu / close glyphs swap by display; the icons are ui.Icon's own. */
+.glyph-open { display: flex; }
+.glyph-close { display: none; }
+.menu[open] .glyph-open { display: none; }
+.menu[open] .glyph-close { display: flex; }
+
+/* The open menu is a fixed sheet under the bar, spanning between the
+   md gutters so the right edge can't clip on narrow viewports. */
+.panel {
+  position: fixed;
+  inset-block-start: calc(var(--size-header-height) + var(--spacing-sm));
+  inset-inline: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: calc(var(--z-sticky) - 1);
+}
+.panel-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.panel-links a {
+  display: block;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--color-text);
+  font-size: var(--text-ui);
+  text-decoration: none;
+  border-radius: var(--radii-sm);
+}
+.panel-links a:hover,
+.panel-links a:focus-visible { background: var(--color-surface-soft); }
+.panel-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-block-start: var(--spacing-md);
+  padding-block-start: var(--spacing-md);
+  border-block-start: 1px solid var(--color-border);
+}
+/* The drawer's search control is the icon shape: a 44px square button
+   with the glyph only, the same treatment the GitHub mark gets. */
+.cmd-icon {
+  display: grid;
+  place-items: center;
+  inline-size: var(--spacing-touch-target);
+  block-size: var(--spacing-touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-md);
+  color: var(--color-text-subtle);
+}
+.cmd-icon:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+
+/* Tablet: the dense seven-link nav gives way to the menu below xl. */
+@media (--below-xl) {
+  .links { display: none; }
+  .menu { display: block; }
+}
+
+/* Phones: the bar tightens, the version capsule goes, and the search +
+   toggle cluster collapses into the drawer, leaving brand + toggle. */
+@media (--below-md) {
+  .bar { padding-inline: var(--spacing-sm); gap: var(--spacing-sm); }
+  .brand-status { display: none; }
+  .bar-actions { display: none; }
+  .end { gap: var(--spacing-xs); }
+}

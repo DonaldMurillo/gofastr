@@ -186,6 +186,12 @@ func axePages(t *testing.T) []string {
 		"/", "/get-started", "/docs/", "/examples", "/examples/workspace", "/kiln",
 		"/philosophy", "/seo", "/seo-bundle", "/components/",
 	)
+	// The headless showcase pages, derived from the routes the screens
+	// themselves enumerate (landingRoutes): both pages under every
+	// registered theme, so a new theme is scanned, not remembered.
+	for _, r := range landingRoutes {
+		out = append(out, landingRoutePath(r.Segment), dashboardRoutePath(r.Segment))
+	}
 	sort.Strings(out)
 	return out
 }
@@ -225,6 +231,12 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 		"/components/filtertoolbar", "/components/multiselect",
 		"/components/recordsummary", "/components/metricband",
 		"/components/toggleaction", "/components/pagination",
+	}
+	// The headless showcase joins the mobile pass from the same route
+	// table (both pages under every theme): it is exactly the family
+	// whose per-theme density options move tap targets.
+	for _, r := range landingRoutes {
+		mobileSubset = append(mobileSubset, landingRoutePath(r.Segment), dashboardRoutePath(r.Segment))
 	}
 	for _, p := range mobileSubset {
 		for _, scheme := range axetest.Schemes {

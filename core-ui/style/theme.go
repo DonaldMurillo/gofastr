@@ -47,6 +47,21 @@ type Theme struct {
 	// so the reflection token-walk ignores it.
 	DarkCode map[string]string
 
+	// Components is the canonical flattened component-option set, keyed
+	// like "density" or "button.treatment" with one lowercase word as the
+	// value. It is the theme's answer to questions a component family
+	// asks about its own drawing (how dense, which treatment, which
+	// radius), not a token: it never appears on the reflection token
+	// walk and cannot be read as a --color/--spacing var. A map (not a
+	// typed struct) so the walk ignores it, exactly like DarkColors.
+	//
+	// core-ui/style stores, validates, hashes and copies this map but
+	// cannot turn it into CSS; the compiler that can is registered once
+	// per process via RegisterComponentOptionsCompiler (framework/ui
+	// registers it from its init), and its declarations join the :root
+	// block and every theme-override scope block. Empty by default.
+	Components map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
@@ -57,8 +72,17 @@ type Theme struct {
 	Durations   DurationSet
 	Easings     EasingSet
 	Typography  FontSizeSet
+	FontWeights FontWeightSet
 	Layout      LayoutSet
 	Code        CodeSet
+
+	// Extensions holds the app's own token sets, added with Extend:
+	// pointers to structs of typed tokens, each token emitting under its
+	// type's prefix like a built-in (a style.Size field is a --size-*
+	// variable). Set it through Extend, which copies its inputs, fills
+	// in names and refuses a key another token already emits; Validate
+	// refuses a duplicate key however the slice was built.
+	Extensions []any
 }
 
 // ColorSet is the canonical palette. Every theme must declare every
@@ -69,8 +93,14 @@ type ColorSet struct {
 	Background, Surface, SurfaceSoft Color
 	Text, TextMuted, TextSubtle      Color
 	Border, BorderStrong             Color
-	Danger, Success, Warning, Info   Color
-	Accent                           Color
+	// Danger is the one status tone whose filled-control ink is its own
+	// token (danger-fg) rather than primary-fg: a host whose primary is
+	// light with dark ink (amber, pastel) would otherwise paint an
+	// unreadable filled danger button. Validate refuses a pair below
+	// 4.5:1 when both values are plain hex.
+	Danger, DangerFg       Color
+	Success, Warning, Info Color
+	Accent                 Color
 
 	// Code surface, the background + foreground used by code-display
 	// components (ui.CodeBlock, demo source panels). Intentionally a
@@ -157,16 +187,35 @@ type CodeSet struct {
 	KW, FN, Str, Num, Com, Type, PN CodeColor
 }
 
-// LayoutSet: interaction-affordance dimensions. TouchTarget is
-// the WCAG 2.5.5 minimum tap target (default 44px); buttons and
-// form inputs reference var(--spacing-touch-target) to land on it.
+// FontWeightSet: the weights a design uses, by role.
+type FontWeightSet struct {
+	Normal, Medium, Semibold, Bold FontWeight
+}
+
+// LayoutSet: the dimensions a page is built around.
+//
+// TouchTarget is the WCAG 2.5.5 minimum tap target (default 44px);
+// pagination, inputs and the mobile hamburger summary reference
+// var(--spacing-touch-target) directly, while comfortable-density
+// controls reach it through the --fui-density-control-h option
+// variable (which the framework/ui compiler draws from this token).
+//
+// PageWidth is the page column a site's header, main and footer share
+// (ui.Container's page width); PageGutter is the side space outside it.
+// HeaderHeight is the top bar's height, which a viewport-filling row
+// subtracts. NarrowWidth, ContentWidth and WideWidth are ui.Container's
+// narrow, default and wide caps.
 type LayoutSet struct {
 	TouchTarget Spacing
+
+	PageWidth, PageGutter, HeaderHeight Size
+
+	NarrowWidth, ContentWidth, WideWidth Size
 }
 
 // AutoFillNames walks every typed token field of t and, for any
-// token whose Name is empty, assigns it from the Go struct-field
-// path in kebab-case. Authors can write
+// token whose Name is empty, assigns the canonical token name derived
+// from the Go struct-field path. Authors can write
 //
 //	t.Colors.Primary = style.Color{Value: "#FF0000"}
 //
@@ -182,12 +231,27 @@ func AutoFillNames(t *Theme) {
 
 // autofillTokens walks the struct, recursing into named sub-structs
 // (Colors, Spacing, …). When it reaches a typed-token leaf (Color,
-// Spacing, …) with an empty Name, it assigns a kebab-case name
-// derived from the most-recent struct field name visited.
+// Spacing, …) with an empty Name, it assigns the name derived from
+// the most-recent struct field name visited.
 //
-// path[len-1] is the immediate field name (e.g. "Primary"); the
-// kebab-case of that is the canonical CSS variable suffix.
+// path[len-1] is the immediate field name (e.g. "Primary");
+// derivedTokenName maps it to the canonical CSS variable suffix
+// (kebab-case, with the size-scale steps XXL/XXXL spelled 2xl/3xl).
 func autofillTokens(v reflect.Value, path []string) {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice {
+		// Extensions: each entry is its own token set, named from its
+		// own fields, so the slice's field name is not passed down.
+		for i := range v.Len() {
+			autofillTokens(v.Index(i), nil)
+		}
+		return
+	}
 	if v.Kind() != reflect.Struct {
 		return
 	}
@@ -198,7 +262,7 @@ func autofillTokens(v reflect.Value, path []string) {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
 			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(camelToKebab(path[len(path)-1]))
+			nameField.SetString(derivedTokenName(path[len(path)-1]))
 		}
 		return
 	}
@@ -208,7 +272,8 @@ func autofillTokens(v reflect.Value, path []string) {
 		reflect.TypeFor[Radius](), reflect.TypeFor[Font](),
 		reflect.TypeFor[Breakpoint](), reflect.TypeFor[Shadow](),
 		reflect.TypeFor[ZIndexValue](), reflect.TypeFor[Duration](),
-		reflect.TypeFor[Easing](), reflect.TypeFor[FontSize]():
+		reflect.TypeFor[Easing](), reflect.TypeFor[FontSize](),
+		reflect.TypeFor[Size](), reflect.TypeFor[FontWeight]():
 		nameField := v.FieldByName("Name")
 		if !nameField.IsValid() || nameField.String() != "" {
 			return
@@ -216,7 +281,7 @@ func autofillTokens(v reflect.Value, path []string) {
 		if len(path) == 0 || !nameField.CanSet() {
 			return
 		}
-		nameField.SetString(camelToKebab(path[len(path)-1]))
+		nameField.SetString(derivedTokenName(path[len(path)-1]))
 		return
 	}
 	for i := 0; i < v.NumField(); i++ {
@@ -230,6 +295,24 @@ func autofillTokens(v reflect.Value, path []string) {
 			continue
 		}
 		autofillTokens(f, append(path, fieldName))
+	}
+}
+
+// derivedTokenName maps a Go struct-field name to its canonical token
+// name. The size-scale steps spell their ALL-CAPS runs numerically the
+// way DefaultTheme, the framework's own CSS and the docs already read
+// them (XXL → "2xl", XXXL → "3xl"); everything else is camelToKebab.
+// One table at the single derivation site keeps auto-named themes and
+// DefaultTheme from emitting two different spellings of one token
+// (TestAutoFillNamesDeriveCanonicalNames pins them equal).
+func derivedTokenName(field string) string {
+	switch field {
+	case "XXL":
+		return "2xl"
+	case "XXXL":
+		return "3xl"
+	default:
+		return camelToKebab(field)
 	}
 }
 
@@ -264,10 +347,93 @@ func camelToKebab(s string) string {
 //
 //	theme.Colors.Primary: Color.Name is empty
 //
+// The Components map is checked with the same intent: a key that is
+// not lowercase dot-separated words, or a value that is not one
+// lowercase word, is a theme-shape mistake and fails here, at boot.
+//
+// Finally the filled-control ink pairs (primary × primary-fg, danger ×
+// danger-fg) must clear 4.5:1 when both values are plain hex, in the
+// light palette and, key by key with light fallback, in a non-empty
+// DarkColors map — see validatePairContrast.
+//
 // MustValidate is the panicking variant used by App.WithTheme so a
 // bad theme fails at boot, not at first request.
 func (t Theme) Validate() error {
-	return validateTokens(reflect.ValueOf(t), "Theme")
+	if err := validateTokens(reflect.ValueOf(t), "Theme"); err != nil {
+		return err
+	}
+	if err := duplicateTokenKey(t); err != nil {
+		return err
+	}
+	if err := validateComponents(t.Components); err != nil {
+		return err
+	}
+	return t.validatePairContrast()
+}
+
+// validatePairContrast refuses a theme whose filled-control ink pairs —
+// primary × primary-fg and danger × danger-fg — sit below the 4.5:1 WCAG
+// AA floor. Those are the pairs the token system actually guarantees and
+// the filled button paints; borrowing another variant's ink was exactly
+// how the amber-primary sites shipped unreadable danger buttons (an axe
+// failure out of the box). The check only runs when BOTH values parse as
+// plain hex (#RGB / #RRGGBB): oklch(), var() references, rgb()/hsl() and
+// named colours are skipped rather than approximated, so a theme whose
+// colours Go cannot resolve exactly is never refused on a guess.
+//
+// A non-empty DarkColors map re-declares the same variables, so each pair
+// is resolved from it and judged by the same floor: an absent key falls
+// back to the light token, the value that actually paints when the map
+// does not override it. The partial-map case this catches (a dark colour
+// whose light ink cannot wear it) is the filled-control half of what the
+// DarkPaletteGaps boot warning names.
+func (t Theme) validatePairContrast() error {
+	for _, p := range []struct {
+		name   string
+		bg, fg Color
+	}{
+		{"primary", t.Colors.Primary, t.Colors.PrimaryFg},
+		{"danger", t.Colors.Danger, t.Colors.DangerFg},
+	} {
+		if err := inkPairError("Theme.Colors", p.name, p.bg.Value, p.fg.Value); err != nil {
+			return err
+		}
+	}
+	if len(t.DarkColors) == 0 {
+		return nil
+	}
+	for _, p := range []struct {
+		name   string
+		bg, fg string // the light values: the fallback per key
+	}{
+		{"primary", t.Colors.Primary.Value, t.Colors.PrimaryFg.Value},
+		{"danger", t.Colors.Danger.Value, t.Colors.DangerFg.Value},
+	} {
+		bg, fg := p.bg, p.fg
+		if v, ok := t.DarkColors[p.name]; ok {
+			bg = v
+		}
+		if v, ok := t.DarkColors[p.name+"-fg"]; ok {
+			fg = v
+		}
+		if err := inkPairError("Theme.DarkColors", p.name, bg, fg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// inkPairError is the one pair check both schemes share: nil when the
+// pair clears the floor or cannot be computed exactly, the refusal
+// otherwise. where names the palette the values came from.
+func inkPairError(where, name, bg, fg string) error {
+	ratio, ok := contrastRatio(fg, bg)
+	if !ok || ratio >= 4.5 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s: %s × %s-fg contrast is %.2f:1 (%s on %s), below the 4.5:1 WCAG AA floor the filled %s button paints; give %s-fg an ink that clears AA over %s",
+		where, name, name, ratio, fg, bg, name, name, name)
 }
 
 // MustValidate panics if validation fails. Wraps Validate.
@@ -283,6 +449,14 @@ func validateTokens(v reflect.Value, path string) error {
 			return nil
 		}
 		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			if err := validateTokens(v.Index(i), extensionPath(v.Index(i))); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if v.Kind() != reflect.Struct {
 		return nil
@@ -376,6 +550,22 @@ func validateTokens(v reflect.Value, path string) error {
 			return fmt.Errorf("%s: FontSize.Value is empty (Name=%q)", path, tk.Name)
 		}
 		return nil
+	case Size:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Size.Name is empty", path)
+		}
+		if err := validateSizeValue(tk.Value); err != nil {
+			return fmt.Errorf("%s: Size.Value (Name=%q): %w", path, tk.Name, err)
+		}
+		return nil
+	case FontWeight:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: FontWeight.Name is empty", path)
+		}
+		if err := validateFontWeight(tk.Value); err != nil {
+			return fmt.Errorf("%s: FontWeight.Value (Name=%q): %w", path, tk.Name, err)
+		}
+		return nil
 	case CodeColor:
 		// Optional group: an entirely-unset token is fine (component
 		// CSS keeps its built-in fallback palette). Only a half-set
@@ -432,12 +622,16 @@ func DefaultTheme() Theme {
 			// the previous values (#DC2626 / #15803D / #A16207 / #2563EB)
 			// hit 4.5:1 on white but only 3.7–4.2:1 on the tinted chips,
 			// which axe flags on any light scheme. These shades clear
-			// 4.6:1 on the chips and ≥6.4:1 with white fills.
-			Danger:  Color{Name: "danger", Value: "#B91C1C"},  // 5.2:1 on its 15% chip, was #DC2626 (3.96:1)
-			Success: Color{Name: "success", Value: "#166534"}, // 5.6:1 on its 15% chip, was #15803D (4.10:1)
-			Warning: Color{Name: "warning", Value: "#854D0E"}, // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
-			Info:    Color{Name: "info", Value: "#1D4ED8"},    // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
-			Accent:  Color{Name: "accent", Value: "#7C3AED"},
+			// 4.6:1 on the chips and ≥6.4:1 with white fills. Danger's
+			// fill ink is its own token: danger-fg pairs with danger the
+			// way primary-fg pairs with primary, so a light primary with
+			// dark ink cannot leak that ink onto a filled danger button.
+			Danger:   Color{Name: "danger", Value: "#B91C1C"},    // 5.2:1 on its 15% chip, was #DC2626 (3.96:1)
+			DangerFg: Color{Name: "danger-fg", Value: "#FFFFFF"}, // 6.47:1 on danger, the filled danger button's ink
+			Success:  Color{Name: "success", Value: "#166534"},   // 5.6:1 on its 15% chip, was #15803D (4.10:1)
+			Warning:  Color{Name: "warning", Value: "#854D0E"},   // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
+			Info:     Color{Name: "info", Value: "#1D4ED8"},      // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
+			Accent:   Color{Name: "accent", Value: "#7C3AED"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
 			// inkwell look (classic IDE feel); dark mode shifts it a
@@ -517,8 +711,20 @@ func DefaultTheme() Theme {
 			XXL:  FontSize{Name: "2xl", Value: "1.5rem"},
 			XXXL: FontSize{Name: "3xl", Value: "1.875rem"},
 		},
+		FontWeights: FontWeightSet{
+			Normal:   FontWeight{Name: "normal", Value: 400},
+			Medium:   FontWeight{Name: "medium", Value: 500},
+			Semibold: FontWeight{Name: "semibold", Value: 600},
+			Bold:     FontWeight{Name: "bold", Value: 700},
+		},
 		Layout: LayoutSet{
-			TouchTarget: Spacing{Name: "touch-target", Value: 44},
+			TouchTarget:  Spacing{Name: "touch-target", Value: 44},
+			PageWidth:    Size{Name: "page-width", Value: "66rem"},
+			PageGutter:   Size{Name: "page-gutter", Value: "clamp(20px, 5vw, 32px)"},
+			HeaderHeight: Size{Name: "header-height", Value: "56px"},
+			NarrowWidth:  Size{Name: "narrow-width", Value: "640px"},
+			ContentWidth: Size{Name: "content-width", Value: "1080px"},
+			WideWidth:    Size{Name: "wide-width", Value: "1280px"},
 		},
 		// Syntax-highlight palette (--tk-*). These are the values the
 		// ui.CodeBlock CSS previously carried only as var() fallbacks,

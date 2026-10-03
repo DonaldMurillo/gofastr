@@ -265,7 +265,16 @@ func ValidateProcessModuleDescriptor(d ProcessModuleDescriptor, approved Approve
 			return nil, descErr(prefix+".method", "pattern", fmt.Sprintf("descriptor: route %q method %q must be an upper-case HTTP verb", r.ID, r.Method))
 		}
 		if r.Path == "" || !strings.HasPrefix(r.Path, "/") {
-			return nil, descErr(prefix+".path", "pattern", fmt.Sprintf("descriptor: route %q path %q must begin with '/'", r.ID, r.Path))
+			return nil, descErr(prefix+".path", "pattern", fmt.Sprintf("descriptor: module %q route %q path %q must begin with '/'", d.Name, r.ID, r.Path))
+		}
+		// An origin-absolute path ("//host/x", or the backslash twin
+		// a URL parser reads the same way) is not a path the host can
+		// mount, and a ui.node button wired to the route would panic
+		// headless's same-origin check mid-render — taking the whole
+		// page down instead of deadening one control. Refuse it at
+		// registration, naming the module and the route.
+		if len(r.Path) >= 2 && r.Path[0] == '/' && (r.Path[1] == '/' || r.Path[1] == '\\') {
+			return nil, descErr(prefix+".path", "origin", fmt.Sprintf("descriptor: module %q route %q path %q is protocol-relative — name a root-relative path (/prefix/route), not an origin", d.Name, r.ID, r.Path))
 		}
 	}
 

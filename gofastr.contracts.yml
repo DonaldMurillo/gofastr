@@ -43,6 +43,9 @@ contracts:
         # someone else's site. That page is not a GoFastr app and has no
         # design system to compose; the rules stop at the frame boundary.
         - examples/embed-demo/main.go
+        # Diagnostic region overlay for the layout runtime's test lab,
+        # not app UI. Shell structure stays in framework/ui components.
+        - examples/layoutlab/labskin.go
 
     GOFASTR1802: # rendering/hard-navigation
       exempt:

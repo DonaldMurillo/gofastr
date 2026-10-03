@@ -78,7 +78,7 @@ func TestThemeEmitsSourcedTokens(t *testing.T) {
 		// Canvas/CanvasText stand-ins (grammar refuses the keywords).
 		"--color-background: #FFFFFF;", "--color-text: #000000;",
 		// AccentColor stand-in: the macOS system blue.
-		"--color-accent: #007AFF;", "--color-primary: #007AFF;",
+		"--color-accent: #007AFF;", "--color-primary: #0071E3;",
 		"--color-primary-fg: #FFFFFF;",
 	}
 	for _, w := range wants {
@@ -102,7 +102,7 @@ func TestThemeDarkPalette(t *testing.T) {
 	wants := []string{
 		"--color-background: #1E1E1E;",
 		"--color-accent: #0A84FF;",
-		"--color-primary: #0A84FF;",
+		"--color-primary: #0071E3;",
 	}
 	for _, w := range wants {
 		if !strings.Contains(css, w) {

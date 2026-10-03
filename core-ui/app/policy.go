@@ -36,6 +36,51 @@ type RenderResult struct {
 	// data-fui-layout-slot=SwapLayer. Empty for full pages and bare
 	// partials.
 	SwapLayer string
+	// Fills are the resolved non-primary fills of the KEPT layout layers
+	// (0..shared-1) of a subtree partial whose chain holds tree layouts
+	// (NewLayout): each outlet and route area of a layer the client
+	// keeps. The host answers such a partial as an envelope
+	// (X-Gofastr-Envelope) carrying them beside the primary payload.
+	// Empty for full pages and bare partials.
+	//.
+	Fills []Fill
+	// FillFailures lists the outlet fills that failed and were
+	// contained during this render (variant B): the HTML degraded each
+	// outlet to its fallback and the page marched on. Empty when every
+	// fill resolved or the page failed outright. See FillFailure.
+	FillFailures []FillFailure
+	// Transition is the page's picked keyed-transition name
+	// the INNERMOST tree layer whose primary
+	// declares a TransitionFor decides it. The partial answer carries
+	// it as X-Gofastr-Transition; the runtime adds it to the
+	// view-transition types beside the direction, ignoring names the
+	// document's vocabulary (data-fui-vt-kinds) does not declare.
+	// Empty when nothing was picked or a full page is the answer (a
+	// whole-document load gets the default).
+	Transition string
+	// NotFoundOutlet is the 404-outlet outcome (FallbackNotFound,
+	// Decided 5): an outlet of the route's chain that no candidate
+	// fills made this render the not-found page — the primary is the
+	// app's not-found body, every other outlet renders its Default or
+	// nothing, and Title is the not-found body's. The host decides the
+	// status ONCE from this flag — before any header, on every path
+	// (full page, partial, envelope) — and it outranks the component's
+	// own ScreenStatusCode. A part request answers its whole-page
+	// reset instead. False for every other render.
+	NotFoundOutlet bool
+}
+
+// FillFailure records one outlet fill that FAILED and was contained
+// during the render ( variant B: the outlet degraded to its fallback
+// and the page served). Addr is the fill's wire address
+// ("<layer key>#<outlet>"); Err is the contained failure. A live
+// host keeps containing; a static export reads the record to REFUSE
+// baking the degraded outlet into the page (framework/static). Not
+// populated for fills that stream in after the payload flushes —
+// those only ever exist on a live stream, never in an export render.
+type FillFailure struct {
+	Addr string
+	Err  error
 }
 
 // DecisionKind classifies the outcome of evaluating a Policy.

@@ -73,6 +73,7 @@ app:
       success: "#4ADE80"
       warning: "#FBBF24"
       danger: "#F87171"
+      danger-fg: "#15141B"
       info: "#60A5FA"
 
 # =============================================================================
@@ -261,7 +262,7 @@ entities:
 
 # =============================================================================
 # SCREENS in three layers and two layouts:
-#   layout: marketing  → public site (SiteHeader + SiteFooter)
+#   layout: marketing  → public site (own siteheader + sitefooter packages)
 #   layout: app        → authenticated console (sidebar shell), access-gated
 # =============================================================================
 
@@ -274,32 +275,36 @@ screens:
     title: "Meridian: billing that runs itself"
     description: The revenue console for modern SaaS.
     body:
-      - kind: hero
+      - kind: stack
         props:
-          eyebrow: Billing & revenue
-          title: See your revenue the moment it moves.
-          subtitle: Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices, with the metrics that matter, live.
-          cta_text: Start free
-          cta_href: /signup
-          secondary_text: See pricing
-          secondary_href: /pricing
-      - kind: section
-        props:
-          heading: Everything you need to run revenue
-          eyebrow: Why Meridian
+          gap: 2xl
         children:
-          - kind: card
+          - kind: hero
             props:
-              heading: Live MRR & churn
-              text: Watch monthly recurring revenue, growth, and churn update as customers sign up and pay.
-          - kind: card
+              eyebrow: Billing & revenue
+              title: See your revenue the moment it moves.
+              subtitle: Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices, with the metrics that matter, live.
+              cta_text: Start free
+              cta_href: /signup
+              secondary_text: See pricing
+              secondary_href: /pricing
+          - kind: section
             props:
-              heading: Subscriptions that flow
-              text: "Trialing, active, past-due, canceled: drive the whole lifecycle from one screen."
-          - kind: card
-            props:
-              heading: Invoices, handled
-              text: "Open, paid, void: track every invoice and mark them paid in a click."
+              heading: Everything you need to run revenue
+              eyebrow: Why Meridian
+            children:
+              - kind: card
+                props:
+                  heading: Live MRR & churn
+                  text: Watch monthly recurring revenue, growth, and churn update as customers sign up and pay.
+              - kind: card
+                props:
+                  heading: Subscriptions that flow
+                  text: "Trialing, active, past-due, canceled: drive the whole lifecycle from one screen."
+              - kind: card
+                props:
+                  heading: Invoices, handled
+                  text: "Open, paid, void: track every invoice and mark them paid in a click."
       # The app's closing CTA (an ink-band ui.Themed card in screens.go) is
       # hand-authored past the blueprint vocabulary: generate once, then own
       # the Go. pack skips it, so it has no block here.
@@ -310,35 +315,39 @@ screens:
     title: Pricing
     description: Plans for teams of every size.
     body:
-      - kind: page_header
+      - kind: stack
         props:
-          title: Pricing
-          subtitle: Start free. Upgrade when revenue does.
-      - kind: pricing
-        props:
-          plans:
-            - name: Starter
-              price: "$29"
-              period: /mo
-              description: For solo founders finding their first customers.
-              features: ["Up to 100 customers", "Core billing & invoices", "Email support"]
-              cta_text: Start free
-              cta_href: /signup
-            - name: Pro
-              price: "$99"
-              period: /mo
-              description: For growing teams that live in their revenue.
-              featured: true
-              features: ["Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"]
-              cta_text: Start free
-              cta_href: /signup
-            - name: Scale
-              price: "$299"
-              period: /mo
-              description: For high-volume revenue and finance teams.
-              features: ["Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"]
-              cta_text: Contact sales
-              cta_href: /signup
+          gap: 2xl
+        children:
+          - kind: page_header
+            props:
+              title: Pricing
+              subtitle: Start free. Upgrade when revenue does.
+          - kind: pricing
+            props:
+              plans:
+                - name: Starter
+                  price: "$29"
+                  period: /mo
+                  description: For solo founders finding their first customers.
+                  features: ["Up to 100 customers", "Core billing & invoices", "Email support"]
+                  cta_text: Start free
+                  cta_href: /signup
+                - name: Pro
+                  price: "$99"
+                  period: /mo
+                  description: For growing teams that live in their revenue.
+                  featured: true
+                  features: ["Unlimited customers", "MRR & churn analytics", "Subscription workflows", "Priority support"]
+                  cta_text: Start free
+                  cta_href: /signup
+                - name: Scale
+                  price: "$299"
+                  period: /mo
+                  description: For high-volume revenue and finance teams.
+                  features: ["Everything in Pro", "SSO & audit log", "Dedicated success manager", "99.9% uptime SLA"]
+                  cta_text: Contact sales
+                  cta_href: /signup
 
   # ---- About: the plain heading/paragraph content path (readable measure) ----
   - name: about
@@ -347,13 +356,15 @@ screens:
     title: About Meridian
     description: Why we built a calmer billing console.
     body:
-      - type: heading
-        level: 1
-        text: We think billing should feel calm.
-      - type: paragraph
-        text: Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.
-      - type: paragraph
-        text: It exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.
+      - kind: stack
+        props:
+          gap: 2xl
+        children:
+          - kind: page_header
+            props:
+              title: We think billing should feel calm.
+          - kind: markdown
+            text: "Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.\n\nIt exists to show that a framework can generate a real, polished web application, not a CRUD scaffold."
 
   # ---- Terms + Privacy: the markdown content path (rich long-form prose) ------
   - name: terms

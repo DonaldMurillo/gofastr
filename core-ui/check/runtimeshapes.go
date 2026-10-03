@@ -103,16 +103,26 @@ func newlineOffsets(s string) []int {
 // subdirectories (the runtime package dir) is expanded to those
 // subdirectories ONLY — the generated runtime.js bundle at the package
 // root is never linted. A root without them (a fixture dir) is walked
-// itself. Vendor, node_modules, testdata, and hidden directories are
-// skipped, mirroring the novarjs walker's contract.
+// itself. A root that is a .js file is linted as itself: that is how a
+// registered behaviour, which lives beside its Go package rather than
+// under the runtime, is held to the same rules (see
+// RegisteredBehaviorSources). Vendor, node_modules, testdata, and
+// hidden directories are skipped, mirroring the novarjs walker's
+// contract.
 func loadJSSources(roots ...string) ([]jsSource, error) {
 	var dirs []string
+	var files []string
+	seen := map[string]bool{}
 	for _, root := range roots {
 		st, err := os.Stat(root)
 		if err != nil {
 			return nil, fmt.Errorf("runtime-shape lint: %w", err)
 		}
 		if !st.IsDir() {
+			if strings.HasSuffix(root, ".js") && !seen[root] {
+				files = append(files, root)
+				seen[root] = true
+			}
 			continue
 		}
 		var subs []string
@@ -128,8 +138,6 @@ func loadJSSources(roots ...string) ([]jsSource, error) {
 			dirs = append(dirs, root)
 		}
 	}
-	var files []string
-	seen := map[string]bool{}
 	for _, dir := range dirs {
 		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {

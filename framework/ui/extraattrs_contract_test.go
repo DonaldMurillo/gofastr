@@ -141,10 +141,11 @@ var extraAttrsRawLegacy = map[string]bool{
 // never be one — a caller could spoof its wiring, the exact class the
 // SafeExtraAttrs contract closes. Adding an entry is a design
 // decision: the component must emit no wiring of its own and be a
-// documented attachment point for interactive.Action.Attrs().
+// documented attachment point for runtime attributes.
 var safeCarrierAllowed = map[string]bool{
-	"components.go": true, // ui.Button (interactive-patterns.md)
-	"link.go":       true, // ui.Link (uinoderender ActionRef links)
+	"components.go":  true, // ui.Button (interactive-patterns.md)
+	"link.go":        true, // ui.Link (uinoderender ActionRef links)
+	"list_detail.go": true, // LayoutTree.VTRegion only; other wiring is dropped.
 }
 
 // TestExtraAttrsForwardingIsSanitized fails when a file outside the
@@ -178,7 +179,16 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 					// owned keys still drop, data-fui-* passes through
 					// by documented contract — allowed only in the
 					// pinned carrier files.
-					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" {
+					// headless.Safe is the render-through components'
+					// sanitiser (the same refusal vocabulary, plus the
+					// ownership each caller names): a component that
+					// hands its extras to a headless primitive
+					// sanitises there, before the primitive's own Safe.
+					// Only that package's Safe counts: another Safe
+					// with the same name would mark the subtree clean.
+					pkg, _ := fun.X.(*ast.Ident)
+					headlessSafe := fun.Sel.Name == "Safe" && pkg != nil && pkg.Name == "headless"
+					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" || headlessSafe {
 						sanitized = append(sanitized, d)
 					}
 					if fun.Sel.Name == "SafeCarrierAttrs" && !safeCarrierAllowed[name] {
@@ -188,6 +198,19 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 				case *ast.Ident:
 					// chartEmpty sanitizes its extra argument internally.
 					if fun.Name == "scrubAttrs" || fun.Name == "chartEmpty" {
+						sanitized = append(sanitized, d)
+					}
+					// splitButtonAttrs / splitLinkAttrs are Button's
+					// and LinkButton's own sanitizers: every data-fui-*
+					// key is routed into headless's typed Action seam,
+					// which admits exactly the wiring vocabulary and
+					// panics on any other key (refusal pinned by
+					// TestButtonPanicsOnAWiringKeyOutsideTheVocabulary
+					// and TestLinkButtonWiringVocabulary), and the rest
+					// lands in headless's Safe — stronger than the
+					// carrier it replaced, which passed data-fui-*
+					// through unchecked.
+					if fun.Name == "splitButtonAttrs" || fun.Name == "splitLinkAttrs" {
 						sanitized = append(sanitized, d)
 					}
 				}

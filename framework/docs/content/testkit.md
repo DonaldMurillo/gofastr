@@ -10,6 +10,79 @@ database on `t.Cleanup`.
 > and are not exported. `testkit` is the stable public API for
 > host-app test code.
 
+## Render failures
+
+`framework.TestHarness(t, app)` fails `t` when a component or layout
+panics while rendering a harness request, even if an error boundary
+returns normal-looking HTML and the response is 200. The failure names
+the component type and panic message. `AsUser` and the request builder
+keep this check.
+
+Plain UI host requests in Go test binaries also return HTTP 500 after a
+recovered render panic, preserving the fallback body. This covers full
+pages, navigation partials, intercepted screens, fills envelopes, and
+deferred parts. Production binaries keep the screen's recovery status.
+
+For a test that panics on purpose to check production recovery, wrap its
+handler with `testkit.AllowRenderPanics(t, handler)`:
+
+```go
+srv := httptest.NewServer(testkit.AllowRenderPanics(t, app.Router()))
+t.Cleanup(srv.Close)
+```
+
+`AllowRenderPanics(t testing.TB, next http.Handler) http.Handler` changes
+only requests through the returned handler. `t.Cleanup` revokes the
+exemption: later requests again get the test-only 500. Requests already
+admitted may finish with production status. Register server cleanup
+after creating the wrapper so the server closes before revocation.
+Parallel tests are safe when each owns its wrapper and server; do not
+share them with tests that did not opt out. There is no process-wide
+switch, header, or query parameter. Calling the helper outside a Go test
+binary panics. Error logs and TestHarness failure reporting remain active;
+use plain HTTP requests to assert intentional recovery.
+
+Generated app end-to-end tests capture the child server's logs and fail
+on recovered render panics, including those reached by browser requests.
+Recovered render panics log at error level with the component type,
+scrubbed panic message, and stack. Logging also runs in production;
+the existing fallback HTML and HTTP status behavior do not change.
+
+## Retired markup
+
+`TestHarness` also fails `t` when a rendered response carries markup
+the upgrade registry has retired: a class name or `data-fui-*`
+attribute no longer emitted by the kit. This is what catches the names
+a source scan cannot see — a class built at run time
+(`fmt.Sprintf("ui-%s", kind)`), one read from the database, a template
+value. The failure reads:
+
+```text
+GET /orders: retired markup: class "ui-button" (v0.86.0: the button classes
+are fui-button*; the ui-button class no longer exists in any emitted markup
+or stylesheet); run gofastr upgrade
+```
+
+Attribute values never match — `data-fui-comp="ui-sidebar"` is a kept
+component marker, not the retired `ui-sidebar` class — and a migrated
+spelling reports nothing.
+
+Every response on the app router is read by its `Content-Type`: full
+pages, navigation partials, deferred parts, 404/405/error documents,
+island RPC answers, and widget chrome are scanned as markup (`text/html`
+and `text/plain`, which the runtime applies to an html-mode signal as
+markup). JSON answers and widget `/state` snapshots are walked string
+by string, and each string holding a tag is scanned, so an island that
+renders a retired class only after a click still fails the test.
+Stylesheets, scripts, event streams, and downloads are not read, and a
+hijacked connection is dropped from the scan.
+
+The scan runs only in test binaries and under `gofastr dev` (which
+warns once per path and name, so a livereload loop cannot flood the
+console). Production never scans and never loads the registry. Apps
+that build their own `httptest.Server` instead of the harness get the
+same check: findings log at warn level in the test binary.
+
 ## Isolated databases
 
 ```go

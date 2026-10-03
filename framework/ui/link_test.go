@@ -25,25 +25,26 @@ func TestLinkRequiresText(t *testing.T) {
 
 func TestLinkInlineEmitsBaseClassOnly(t *testing.T) {
 	h := string(Link(LinkConfig{Href: "/x", Text: "Edit"}))
-	if !strings.Contains(h, "ui-link") {
-		t.Errorf("Link should emit .ui-link:\n%s", h)
+	if !strings.Contains(h, `class="fui-link"`) {
+		t.Errorf("Link should emit .fui-link:\n%s", h)
 	}
-	if strings.Contains(h, "ui-link--action") || strings.Contains(h, "ui-link--muted") {
+	if strings.Contains(h, `class="fui-link fui-link--action"`) ||
+		strings.Contains(h, `class="fui-link fui-link--muted"`) {
 		t.Errorf("inline variant should not emit modifier class:\n%s", h)
 	}
 }
 
 func TestLinkActionEmitsActionModifier(t *testing.T) {
 	h := string(Link(LinkConfig{Href: "/x", Text: "Edit", Variant: LinkAction}))
-	if !strings.Contains(h, "ui-link--action") {
-		t.Errorf("Variant: LinkAction should emit .ui-link--action:\n%s", h)
+	if !strings.Contains(h, `class="fui-link fui-link--action"`) {
+		t.Errorf("Variant: LinkAction should emit .fui-link--action:\n%s", h)
 	}
 }
 
 func TestLinkMutedEmitsMutedModifier(t *testing.T) {
-	h := string(Link(LinkConfig{Href: "/x", Text: "see all", Variant: LinkMuted}))
-	if !strings.Contains(h, "ui-link--muted") {
-		t.Errorf("Variant: LinkMuted should emit .ui-link--muted:\n%s", h)
+	h := string(Link(LinkConfig{Href: "/x", Text: "Edit", Variant: LinkMuted}))
+	if !strings.Contains(h, `class="fui-link fui-link--muted"`) {
+		t.Errorf("Variant: LinkMuted should emit .fui-link--muted:\n%s", h)
 	}
 }
 

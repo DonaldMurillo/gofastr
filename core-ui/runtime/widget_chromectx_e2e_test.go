@@ -483,7 +483,7 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 	step("open-ok", chromedp.Click(`#open-ok`, chromedp.ByID),
 		chromedp.WaitVisible(`#ctxmark`, chromedp.ByQuery),
 		chromedp.Text(`#ctxmark`, &okMark, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &happyToasts))
+		chromedp.Evaluate(`document.querySelectorAll('[data-hui-toast-id]').length`, &happyToasts))
 	step("close-ok", closeWidget())
 	// Failure: the SSR node is gone (open-ok dropped it), so this open is
 	// a pure chrome fetch — the gated one, released into a 500.
@@ -495,10 +495,14 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 	// catch gave two toasts for one failed request.
 	step("open-slow-again", chromedp.Click(`#open-slow`, chromedp.ByID))
 	c.releaseSlow()
-	step("toast-visible", chromedp.WaitVisible(`[data-fui-toast-id]`, chromedp.ByQuery),
+	// The styled toast module (headless-feedback) is linked into this
+	// binary's registry and served by the test server's module route,
+	// so the failed open surfaces through the module's own stack —
+	// the same path production pages take.
+	step("toast-visible", chromedp.WaitVisible(`[data-hui-toast-id]`, chromedp.ByQuery),
 		chromedp.Sleep(400*time.Millisecond),
-		chromedp.Text(`.ui-notification__title`, &toastTitle, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &failToasts),
+		chromedp.Text(`.fui-notification__title`, &toastTitle, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('[data-hui-toast-id]').length`, &failToasts),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-widget="dlg"]').length`, &dlgNodes))
 
 	if okMark != "ctx=okctx|user=alice" {

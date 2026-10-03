@@ -11,10 +11,15 @@ import (
 )
 
 // ThemeHash is the canonical content address of a theme: a short digest of
-// the :root custom properties it emits. Two themes that produce identical
-// CSS hash identically, which is exactly the equivalence callers want,
-// a theme differing only in its Name changes no pixel and should not bust
-// a cache.
+// the :root custom properties it emits plus a canonical serialization of
+// its Components map, so two themes that produce identical CSS hash
+// identically — exactly the equivalence callers want: a theme differing
+// only in its Name changes no pixel and should not bust a cache — while
+// two themes that differ only in options hash apart EVEN where no
+// component-options compiler is registered (a binary built on
+// framework/uihost alone links none; without the canonical block its
+// option-different themes would collide and the second registration
+// would be dropped as a duplicate).
 //
 // This is the single implementation. Anything keying a cache, a URL, or an
 // asset version on "which theme is this" must call it rather than hashing
@@ -24,7 +29,23 @@ import (
 // Six bytes is 48 bits, ample for distinguishing the handful of themes a
 // process serves, and short enough to sit in a query string.
 func ThemeHash(t Theme) string {
-	return CSSFingerprint(t.CSSCustomProperties())
+	// The options join the fingerprint in their FLAT form, over the
+	// compiler-independent token CSS (tokenCSS, not CSSCustomProperties):
+	// the compiled block only exists once a compiler is registered, and a
+	// theme's identity must be the same in every binary, whichever layers
+	// it links. Hashing therefore never touches the compiler hook, so a
+	// hash computed during init cannot freeze it. sortedMapKeys is the
+	// mapwriter discipline.
+	var b strings.Builder
+	b.WriteString(t.tokenCSS())
+	b.WriteString("\n/* components */\n")
+	for _, k := range sortedMapKeys(t.Components) {
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(t.Components[k])
+		b.WriteString("\n")
+	}
+	return CSSFingerprint(b.String())
 }
 
 // CSSFingerprint is the content address of an arbitrary block of CSS, in the
@@ -93,8 +114,41 @@ func categoryPrefix(category string) string {
 		return "text"
 	case "code", "tk":
 		return "tk"
+	case "size", "sizes":
+		return "size"
+	case "font-weight", "fontweights", "weight":
+		return "font-weight"
 	}
 	return ""
+}
+
+// tokenCategories is every custom-property prefix a typed token emits,
+// one per token type. TokenCategory matches against it longest first.
+var tokenCategories = []string{
+	"color", "spacing", "radii", "font", "breakpoint", "shadow", "z",
+	"duration", "easing", "text", "tk", "size", "font-weight",
+}
+
+// TokenCategory returns the category of a token key, the prefix its
+// type emits: "font-weight" for "font-weight-bold", "font" for
+// "font-body", "size" for "size-page-width". The longest known prefix
+// wins, so a weight is never read as a font family. A key with no
+// known prefix falls back to the text before its first dash, or the
+// whole key when it has none.
+func TokenCategory(key string) string {
+	best := ""
+	for _, c := range tokenCategories {
+		if len(c) > len(best) && strings.HasPrefix(key, c+"-") {
+			best = c
+		}
+	}
+	if best != "" {
+		return best
+	}
+	if i := strings.Index(key, "-"); i >= 0 {
+		return key[:i]
+	}
+	return key
 }
 
 // ResolveColor returns `var(--color-<name>)` for a named color.
@@ -123,54 +177,95 @@ func (t Theme) ResolveRadius(name string) string {
 // fields, callers can use CSSCustomPropertiesOf(any) on the outer
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
-	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	css := CSSCustomPropertiesOf(t)
+	if compiled := t.compiledOptionsCSS(); compiled != "" {
+		css += "\n" + compiled
+	}
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
 	return css
 }
 
-// aliasTokenCSS emits derived aliases for token names that framework/ui
-// components reference but ColorSet never declared (--color-muted,
-// --color-warn, --color-surface-hover, …). Before this block existed those
-// references silently used their hardcoded fallbacks, constants tuned for
-// light themes, so dark themes got light-on-light hover states and similar
-// contrast failures. Each alias resolves through var(), so it tracks the
-// dark-scheme re-declarations automatically; emit once in :root and both
-// schemes are covered. New components should use the canonical ColorSet
-// names; this block exists so every theme keeps the legacy names live.
-func aliasTokenCSS() string {
-	return `:root {
-  --color-muted: var(--color-surface-soft);
-  --color-surface-hover: var(--color-surface-soft);
-  --color-border-subtle: var(--color-border);
-  --color-border-hover: var(--color-border-strong);
-  --color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
-  --color-primary-foreground: var(--color-primary-fg);
-  --color-ring: var(--color-primary);
-  --color-warn: var(--color-warning);
-  --color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  --color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
-}`
+// tokenCSS is CSSCustomProperties without the compiled component
+// options: the tokens and the dark blocks, which depend on the theme
+// alone. ThemeHash fingerprints this plus the options in their flat
+// form, so a theme has the same identity in every binary, whether
+// or not a compiler is linked; the compiled block is a function of
+// the options and the linked layer, not part of what the theme is.
+func (t Theme) tokenCSS() string {
+	css := CSSCustomPropertiesOf(t)
+	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
+		css += "\n" + dark
+	}
+	return css
 }
 
-// DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors
-// map (token name → CSS value), or "" when empty. Two selectors cover both ways
-// the scheme is chosen: an explicit `data-color-scheme="dark"` on <html> (set by
-// a ui.ThemeToggle / the color-scheme bootstrap) and the OS preference (unless
-// the user has explicitly forced light). Both re-declare the same tokens, so any
-// surface emitting the theme CSS recolors via the CSS-variable cascade. `color`
-// + `background-color` are set on the scope so bare text/elements without their
-// own token rule still flip.
-func DarkSchemeCSS(dark map[string]string) string {
-	return darkSchemeCSS(dark, nil)
+// compiledOptionsCSS is the :root block of compiled component options.
+// A theme with options of its own emits those; a theme with NONE emits
+// the styled layer's registered default set instead — the :root floor.
+// Without it, every host whose theme carries no Components (a bare
+// style.DefaultTheme, the `gofastr theme init` scaffold, a host with no
+// App.Theme) would emit no option variables at all and the component
+// rules consuming them (`.fui-button--primary { background:
+// var(--fui-button-primary-bg) }`) would resolve to nothing: an
+// uncoloured, unshaped button. The floor is deliberately ROOT-only:
+// scope blocks (ThemeOverrideCSS) emit a theme's own options or
+// nothing, because a scoped theme with no options inherits its
+// parent's variables — that is the nesting contract. With no compiler
+// registered, or no defaults, the block is "" as before.
+//
+// The floor does not change a theme's identity: ThemeHash fingerprints
+// the flattened options directly, so an optionless theme still hashes
+// as optionless in every binary — the compiled block (floor included)
+// is a function of the linked layer, not part of what the theme is.
+func (t Theme) compiledOptionsCSS() string {
+	// The compiled component options join the root block AFTER the
+	// tokens they reference: a declaration like
+	// --fui-button-bg: var(--color-primary) computes its var() at the
+	// element it is declared on, so it must be re-declared at every
+	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
+	// each scope's palette instead of carrying the root's colours into
+	// it. Sorted by name for the byte-stable output ThemeHash needs.
+	opts := componentOptionDecls(t.Components)
+	if len(opts) == 0 {
+		opts = componentOptionDecls(componentCompilerDefaults())
+	}
+	if len(opts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range opts {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
 }
 
-// darkSchemeCSS is DarkSchemeCSS plus the optional dark syntax
-// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in
-// the same two dark-scheme blocks. The `color` + `background-color`
-// scope lines only accompany a color re-declaration, a code-only
-// dark palette shouldn't imply the page itself flips.
+// componentCompilerDefaults snapshots the registered default option
+// set under the lock; nil when no compiler (or no defaults) is
+// registered.
+func componentCompilerDefaults() map[string]string {
+	componentCompiler.mu.Lock()
+	defer componentCompiler.mu.Unlock()
+	return componentCompiler.defaults
+}
+
+// darkSchemeCSS emits the dark-scheme token overrides for a theme's
+// DarkColors map (token name → CSS value) plus the optional dark syntax
+// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in the
+// same two dark-scheme blocks. Two selectors cover both ways the scheme
+// is chosen: an explicit `data-color-scheme="dark"` on <html> (set by a
+// ui.ThemeToggle / the color-scheme bootstrap) and the OS preference
+// (unless the user has explicitly forced light). Both re-declare the same
+// tokens, so any surface emitting the theme CSS recolors via the
+// CSS-variable cascade. `color` + `background-color` are set on the scope
+// so bare text/elements without their own token rule still flip; the
+// scope lines only accompany a color re-declaration — a code-only dark
+// palette shouldn't imply the page itself flips.
 func darkSchemeCSS(dark, code map[string]string) string {
 	if len(dark) == 0 && len(code) == 0 {
 		return ""
@@ -255,6 +350,12 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 		}
 		v = v.Elem()
 	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			walkTokens(v.Index(i), out)
+		}
+		return
+	}
 	if v.Kind() != reflect.Struct {
 		return
 	}
@@ -331,6 +432,16 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 			return "", "", false
 		}
 		return "text-" + t.Name, t.Value, true
+	case Size:
+		if t.Name == "" {
+			return "", "", false
+		}
+		return "size-" + t.Name, t.Value, true
+	case FontWeight:
+		if t.Name == "" {
+			return "", "", false
+		}
+		return "font-weight-" + t.Name, fmt.Sprintf("%d", t.Value), true
 	case CodeColor:
 		// Optional token: emitted only when fully set (an unset slot
 		// leaves the component-CSS fallback palette in charge).

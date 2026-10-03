@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 func mustContain(t *testing.T, h render.HTML, sub string) {
@@ -31,15 +32,32 @@ func TestPageHeaderRendersTitleAndOptionalParts(t *testing.T) {
 		Actions:  render.Text("ACTIONS_SLOT"),
 	})
 	for _, want := range []string{"Customers", "1,283 active", "Admin", "ACTIONS_SLOT",
-		"ui-page-header", "ui-page-header__eyebrow", "ui-page-header__actions"} {
+		`"fui-page-header`, `"fui-page-header__eyebrow`, `"fui-page-header__actions`} {
 		mustContain(t, h, want)
 	}
 }
 
 func TestPageHeaderOmitsActionsWhenEmpty(t *testing.T) {
 	h := PageHeader(PageHeaderConfig{Title: "x"})
-	if strings.Contains(string(h), "ui-page-header__actions") {
+	if strings.Contains(string(h), `"fui-page-header__actions"`) {
 		t.Fatal("expected no actions div when Actions is empty")
+	}
+}
+
+func TestPageHeaderBadgeKeepsHeadingNameAndActionsSeparate(t *testing.T) {
+	h := string(PageHeader(PageHeaderConfig{
+		Title: "Billing", Badge: StatusBadge(StatusBadgeConfig{Label: "On track"}),
+		Subtitle: "Eight issues", Actions: Button(ButtonConfig{Label: "New issue"}),
+	}))
+	titleEnd := strings.Index(h, "</h1>")
+	badge := strings.Index(h, "On track")
+	subtitle := strings.Index(h, "Eight issues")
+	actions := strings.Index(h, "New issue")
+	if titleEnd < 0 || badge < titleEnd || subtitle < badge || actions < subtitle {
+		t.Fatalf("badge must follow the heading, before supporting text and page actions: %s", h)
+	}
+	if !strings.Contains(h[:titleEnd], ">Billing") {
+		t.Fatal("heading lost its page name")
 	}
 }
 
@@ -47,7 +65,7 @@ func TestPageHeaderOmitsActionsWhenEmpty(t *testing.T) {
 func TestSectionRendersHeadingDescriptionBody(t *testing.T) {
 	h := Section(SectionConfig{Heading: "Settings", Description: "Account-wide"},
 		render.Text("BODY"))
-	for _, want := range []string{"Settings", "Account-wide", "BODY", "ui-section__body"} {
+	for _, want := range []string{"Settings", "Account-wide", "BODY", `"fui-section__body`} {
 		mustContain(t, h, want)
 	}
 }
@@ -58,13 +76,13 @@ func TestSectionEyebrowRendersBeforeHeadingAndIsDecorative(t *testing.T) {
 		Heading: "One entity call",
 	}, render.Text("BODY"))
 	s := string(h)
-	mustContain(t, h, "ui-section__eyebrow")
+	mustContain(t, h, `"fui-section__eyebrow`)
 	mustContain(t, h, "01 / what it generates")
 	// Decorative numeric eyebrow, hidden from the a11y tree so SR users
 	// don't hear "01 slash what it generates" then the heading.
 	mustContain(t, h, `aria-hidden="true"`)
-	eyebrowIdx := strings.Index(s, "ui-section__eyebrow")
-	headingIdx := strings.Index(s, "ui-section__heading")
+	eyebrowIdx := strings.Index(s, `"fui-section__eyebrow`)
+	headingIdx := strings.Index(s, `"fui-section__heading`)
 	if eyebrowIdx == -1 || headingIdx == -1 || eyebrowIdx > headingIdx {
 		t.Errorf("eyebrow must render before heading in source order:\n%s", s)
 	}
@@ -97,61 +115,95 @@ func TestFormFieldRequiresLabelForInput(t *testing.T) {
 	t.Fatal("expected panic on empty config")
 }
 
+// A nil Input is the one misuse the type cannot prevent: the builder
+// is the point, and a missing one is a migration half-done.
+func TestFormFieldRequiresInputBuilder(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on nil Input")
+		}
+		if !strings.Contains(r.(string), "builder") {
+			t.Fatalf("the panic should say what Input now is, got: %v", r)
+		}
+	}()
+	FormField(FormFieldConfig{Label: "n", For: "n"})
+}
+
 func TestFormFieldRequired(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "name"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "name", Required: true, Input: in,
+		Label: "Name", For: "name", Required: true,
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	mustContain(t, h, `for="name"`)
 	mustContain(t, h, "Name")
-	mustContain(t, h, "ui-form-field__required")
+	// The required mark is drawn from the state the label carries.
+	mustContain(t, h, `data-required`)
 }
 
 func TestFormFieldErrorSwitchesStyling(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Error: "Required field", Input: in,
+		Label: "Name", For: "n", Error: "Required field",
 		Help: "Your legal name",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
-	mustContain(t, h, "is-error")
 	mustContain(t, h, `role="alert"`)
 	mustContain(t, h, "Required field")
-	// Help text should also be present alongside error (S-3).
-	mustContain(t, h, "ui-form-field__help")
+	// Help text is present alongside the error, after it.
+	mustContain(t, h, "fui-field__hint")
 	mustContain(t, h, "Your legal name")
 }
 
 func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint", Input: in})
+	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		}})
 	mustContain(t, h, "Hint")
-	mustContain(t, h, "ui-form-field__help")
+	mustContain(t, h, "fui-field__hint")
 }
 
+// The both-visible contract, order included: the error paragraph
+// precedes the hint, and the control's described-by lists the error's
 func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Input: in,
+		Label: "Name", For: "n",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 		Help:  "Enter your full name",
 		Error: "Required",
 	})
 	s := string(h)
-	if !strings.Contains(s, "Enter your full name") {
-		t.Errorf("help text should still render when error is present, got: %s", s)
+	errAt := strings.Index(s, `id="n-error"`)
+	hintAt := strings.Index(s, `id="n-hint"`)
+	// A missing node indexes at -1 and -1 compares as "in order", so
+	// absence fails first, before the order comparison runs.
+	if errAt == -1 || hintAt == -1 {
+		t.Fatalf("the error node or the hint node is missing (error at %d, hint at %d):\n%s", errAt, hintAt, s)
 	}
-	if !strings.Contains(s, "ui-form-field__help") {
-		t.Errorf("help class should still be present, got: %s", s)
+	if errAt > hintAt {
+		t.Errorf("the error must be drawn before the hint:\n%s", s)
 	}
-	if !strings.Contains(s, "Required") {
-		t.Errorf("error text should render, got: %s", s)
+	if !strings.Contains(s, `aria-describedby="n-error n-hint"`) {
+		t.Errorf("the control must carry both ids, error first:\n%s", s)
+	}
+	if !strings.Contains(s, "Required") || !strings.Contains(s, "Enter your full name") {
+		t.Errorf("both messages must render:\n%s", s)
 	}
 }
 
 // ─── FormField a11y ───
 func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Error: "Required", Input: in,
+		Label: "Name", For: "n", Error: "Required",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	s := string(h)
 	if !strings.Contains(s, `aria-invalid="true"`) {
@@ -162,35 +214,41 @@ func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
 	}
 }
 
-func TestInjectAttrsHandlesLeadingComment(t *testing.T) {
-	// Input wrapped in an HTML comment must not splice into the
-	// comment terminator. The attrs land on the real <input>.
-	in := render.HTML(`<!-- preset --><input type="text" name="n" id="n">`)
-	out := string(injectAttrs(in, ` aria-invalid="true"`))
-	if !strings.Contains(out, `<input type="text" name="n" id="n" aria-invalid="true">`) {
-		t.Errorf("injectAttrs should splice into the real <input> tag, not the comment:\n%s", out)
-	}
-	if strings.Contains(out, `comment --aria-invalid`) {
-		t.Errorf("injectAttrs corrupted the comment:\n%s", out)
-	}
-}
-
-func TestInjectAttrsHandlesLeadingWhitespace(t *testing.T) {
-	in := render.HTML("\n  <input type=\"text\" name=\"n\">")
-	out := string(injectAttrs(in, ` aria-invalid="true"`))
-	if !strings.Contains(out, `aria-invalid="true"`) {
-		t.Errorf("injectAttrs missed the input after whitespace:\n%s", out)
-	}
-}
-
 func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Help: "Use your full name.", Input: in,
+		Label: "Name", For: "n", Help: "Use your full name.",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	s := string(h)
-	if !strings.Contains(s, `aria-describedby="n-help"`) {
+	if !strings.Contains(s, `aria-describedby="n-hint"`) {
 		t.Errorf("help-state FormField must link to help text via aria-describedby:\n%s", s)
+	}
+}
+
+// The reserved error node: rendered empty and wired into the control's
+// description, found by the id that rides aria-describedby.
+func TestFormFieldReserveErrorRendersAnEmptyWiredNode(t *testing.T) {
+	h := FormField(FormFieldConfig{
+		Label: "Token", For: "tok", ReserveError: true,
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "tok"})
+		},
+	})
+	s := string(h)
+	if !strings.Contains(s, `id="tok-error" role="alert"></p>`) &&
+		!strings.Contains(s, `role="alert" id="tok-error"></p>`) {
+		t.Errorf("the reserved node must render empty, so the stylesheet can take it out of the grid until a script fills it:\n%s", s)
+	}
+	if strings.Contains(s, "data-hui-") {
+		t.Errorf("the reserved node carries a data-hui-* hook, which belongs to a runtime module that binds it; nothing binds this one:\n%s", s)
+	}
+	if !strings.Contains(s, `aria-describedby="tok-error"`) {
+		t.Errorf("the reserved node's id must ride the control's description:\n%s", s)
+	}
+	if !strings.Contains(s, `id="tok-error"`) {
+		t.Errorf("the reserved node must carry the stable id:\n%s", s)
 	}
 }
 
@@ -198,7 +256,7 @@ func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
 func TestButtonVariantsRenderClass(t *testing.T) {
 	for _, v := range []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost} {
 		h := Button(ButtonConfig{Label: "Action", Variant: v})
-		want := "ui-button--" + string(v)
+		want := "fui-button--" + string(v)
 		mustContain(t, h, want)
 		mustContain(t, h, "Action")
 	}
@@ -206,7 +264,7 @@ func TestButtonVariantsRenderClass(t *testing.T) {
 
 func TestButtonDefaultsToPrimary(t *testing.T) {
 	h := Button(ButtonConfig{Label: "x"})
-	mustContain(t, h, "ui-button--primary")
+	mustContain(t, h, "fui-button--primary")
 }
 
 func TestButtonRejectsUnknownVariant(t *testing.T) {
@@ -248,22 +306,22 @@ func TestButtonDangerEmitsSingleMarker(t *testing.T) {
 
 func TestButtonSizeDefaultEmitsNoSizeClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x"}))
-	if strings.Contains(h, "ui-button--small") || strings.Contains(h, "ui-button--large") {
+	if strings.Contains(h, "fui-button--small") || strings.Contains(h, "fui-button--large") {
 		t.Errorf("default Size should not emit a size modifier:\n%s", h)
 	}
 }
 
 func TestButtonSizeSmallEmitsSmallClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeSmall}))
-	if !strings.Contains(h, "ui-button--small") {
-		t.Errorf("Size: ButtonSizeSmall should emit .ui-button--small:\n%s", h)
+	if !strings.Contains(h, "fui-button--small") {
+		t.Errorf("Size: ButtonSizeSmall should emit .fui-button--small:\n%s", h)
 	}
 }
 
 func TestButtonSizeLargeEmitsLargeClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeLarge}))
-	if !strings.Contains(h, "ui-button--large") {
-		t.Errorf("Size: ButtonSizeLarge should emit .ui-button--large:\n%s", h)
+	if !strings.Contains(h, "fui-button--large") {
+		t.Errorf("Size: ButtonSizeLarge should emit .fui-button--large:\n%s", h)
 	}
 }
 
@@ -275,7 +333,7 @@ func TestLinkButtonRendersAnchorWithButtonClass(t *testing.T) {
 	if !strings.Contains(h, `href="/get-started"`) {
 		t.Errorf("LinkButton should preserve Href:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-button ui-button--primary") {
+	if !strings.Contains(h, "fui-button fui-button--primary") {
 		t.Errorf("LinkButton should default to primary variant:\n%s", h)
 	}
 	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
@@ -288,6 +346,22 @@ func TestLinkButtonExternalAddsTargetAndRel(t *testing.T) {
 	if !strings.Contains(h, `target="_blank"`) || !strings.Contains(h, `rel="noopener noreferrer"`) {
 		t.Errorf("LinkButton{External:true} missing target/rel:\n%s", h)
 	}
+	// External owns the pair: a caller's spelling must not clobber
+	// the noopener contract, whichever case it arrives in.
+	smuggled := string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://github.com/x", External: true,
+		ExtraAttrs: html.Attrs{"TARGET": "_self", "REL": "opener"}}))
+	if strings.Contains(smuggled, "_self") || strings.Contains(smuggled, "opener\"") {
+		t.Errorf("a case-variant target/rel survived External ownership:\n%s", smuggled)
+	}
+	// Without External the caller keeps the keys.
+	caller := string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://example.com/x",
+		ExtraAttrs: html.Attrs{"target": "framename"}}))
+	if !strings.Contains(caller, `target="framename"`) {
+		t.Errorf("without External a caller may set target:\n%s", caller)
+	}
+	if strings.Contains(string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://example.com"})), "target=") {
+		t.Error("target must not appear without External or a caller setting it")
+	}
 }
 
 func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
@@ -297,7 +371,14 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 		"JaVaScRiPt:alert(1)",
 		"vbscript:msg",
 		"data:text/html,<script>alert(1)</script>",
+		"data:image/png;base64,xx",
 		"data:application/javascript,alert(1)",
+		// Origin-absolute spellings: a foreign origin without a
+		// scheme. headless's anchor policy drops both to a dead link;
+		// the panic names the mistake where it is made (finding 5).
+		"//evil.example/x",
+		`/\evil.example/x`,
+		"/\t/evil.example/x",
 	}
 	for _, href := range bad {
 		func() {
@@ -309,8 +390,10 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 			LinkButton(LinkButtonConfig{Label: "x", Href: href})
 		}()
 	}
-	// Allowed: http(s), relative paths, mailto, tel, data:image/*.
-	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1", "data:image/png;base64,xx"}
+	// Allowed: http(s), relative paths, mailto, tel. Every data: URL is
+	// refused, images included, matching the anchor policy headless
+	// applies: admitting one would render a dead link, not a panic.
+	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1"}
 	for _, href := range ok {
 		func() {
 			defer func() {
@@ -350,14 +433,14 @@ func TestButtonRejectsUnknownSize(t *testing.T) {
 func TestStatusBadgeVariantsRenderClass(t *testing.T) {
 	for _, v := range []StatusVariant{StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral} {
 		h := StatusBadge(StatusBadgeConfig{Label: "x", Variant: v})
-		want := "ui-badge--" + string(v)
+		want := ` fui-badge--` + string(v) + `"` // boundary: follows the base class
 		mustContain(t, h, want)
 	}
 }
 
 func TestStatusBadgeDefaultsToNeutral(t *testing.T) {
 	h := StatusBadge(StatusBadgeConfig{Label: "x"})
-	mustContain(t, h, "ui-badge--neutral")
+	mustContain(t, h, ` fui-badge--neutral"`)
 }
 
 // TestStatusBadgeRejectsUnknownVariant mirrors Button. A typo like
@@ -378,7 +461,7 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 		Action: render.Text("INVITE_BUTTON"),
 	})
 	for _, want := range []string{"No customers yet", "Invite your first.", "INVITE_BUTTON",
-		"ui-empty-state__action"} {
+		`"fui-empty-state__action`} {
 		mustContain(t, h, want)
 	}
 }
@@ -438,42 +521,27 @@ func TestCalloutRejectsUnknownVariant(t *testing.T) {
 }
 
 func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
-	// Danger/warning callouts must announce assertively → role=alert
-	// (rendered as a <div role="alert">).
+	// Danger/warning callouts must announce assertively → role=alert.
 	for _, v := range []StatusVariant{StatusDanger, StatusWarning} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
 		mustContain(t, h, `role="alert"`)
 	}
-	// Info/success/neutral callouts are non-urgent → rendered as
-	// <aside role="complementary"> (via html.Aside) so screen
-	// readers treat them as side notes.
+	// Info/success/neutral callouts are standing messages the page
+	// rendered: no live role at all, so nothing interrupts on load.
 	for _, v := range []StatusVariant{StatusInfo, StatusSuccess, StatusNeutral} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
-		mustContain(t, h, `<aside`)
-		mustContain(t, h, `role="complementary"`)
+		if strings.Contains(string(h), "role=") {
+			t.Errorf("%s: a standing callout claimed a role:\n%s", v, h)
+		}
 	}
+	// The complementary-<aside> shape is gone: an inline tip is
+	// emphasis, not a tangential region.
+	h := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo}, render.Text("body"))
+	if strings.Contains(string(h), "<aside") || strings.Contains(string(h), "complementary") {
+		t.Errorf("the aside shape survived the move to headless.Alert:\n%s", h)
+	}
+	mustContain(t, h, "fui-callout--info")
 }
-
-// TestCalloutLandmarkOptOut verifies the Landmark=false config renders an
-// inline callout as a plain <div> (not a complementary <aside>), so it can
-// nest inside <main> without tripping landmark-complementary-is-top-level.
-// Default (nil) keeps the <aside> landmark.
-func TestCalloutLandmarkOptOut(t *testing.T) {
-	noLandmark := false
-	h := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo, Landmark: &noLandmark}, render.Text("body"))
-	if strings.Contains(string(h), `<aside`) || strings.Contains(string(h), `role="complementary"`) {
-		t.Errorf("Landmark=false should render a <div>, not a complementary <aside>:\n%s", h)
-	}
-	if !strings.Contains(string(h), `ui-callout--info`) {
-		t.Errorf("Landmark=false should keep the variant styling:\n%s", h)
-	}
-	// Default still renders the complementary landmark.
-	def := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo}, render.Text("body"))
-	mustContain(t, def, `<aside`)
-	mustContain(t, def, `role="complementary"`)
-}
-
-// ─── StatCard ───
 func TestStatCardRequiresLabelAndValue(t *testing.T) {
 	defer func() { recover() }()
 	StatCard(StatCardConfig{Label: "x"})
@@ -482,14 +550,16 @@ func TestStatCardRequiresLabelAndValue(t *testing.T) {
 
 func TestStatCardTrendDirection(t *testing.T) {
 	h := StatCard(StatCardConfig{Label: "Revenue", Value: "$12.4k", Trend: "+8%", Direction: TrendUp})
-	mustContain(t, h, "ui-stat-card__trend--up")
+	// Boundary form: the variant token follows the base trend class.
+	mustContain(t, h, ` fui-stat-card__trend--up"`)
+	mustContain(t, h, `data-direction="up"`)
 }
 
 // ─── Avatar ───
 func TestAvatarFallsBackToInitials(t *testing.T) {
 	h := Avatar(AvatarConfig{Name: "Donald Murillo"})
 	mustContain(t, h, "DM")
-	mustContain(t, h, "ui-avatar__initials")
+	mustContain(t, h, "fui-avatar__initials")
 }
 
 func TestAvatarUsesImageWhenSrcSet(t *testing.T) {
@@ -500,9 +570,9 @@ func TestAvatarUsesImageWhenSrcSet(t *testing.T) {
 
 func TestAvatarSizeVariantClass(t *testing.T) {
 	cases := map[AvatarSize]string{
-		AvatarSm: "ui-avatar--sm",
-		AvatarLg: "ui-avatar--lg",
-		AvatarXl: "ui-avatar--xl",
+		AvatarSm: "fui-avatar--sm",
+		AvatarLg: "fui-avatar--lg",
+		AvatarXl: "fui-avatar--xl",
 	}
 	for size, want := range cases {
 		h := Avatar(AvatarConfig{Name: "x", Size: size})
@@ -510,7 +580,7 @@ func TestAvatarSizeVariantClass(t *testing.T) {
 	}
 	// Default size: no variant class, but the base class is there.
 	h := Avatar(AvatarConfig{Name: "x"})
-	mustContain(t, h, "class=\"ui-avatar\"")
+	mustContain(t, h, "class=\"fui-avatar\"")
 }
 
 func TestInitialsHelper(t *testing.T) {
@@ -528,29 +598,11 @@ func TestInitialsHelper(t *testing.T) {
 	}
 }
 
-// injectAriaInvalid must escape the errID to prevent attribute injection
-// when cfg.For contains special characters (quotes, angle brackets).
-func TestInjectAriaInvalidEscapesID(t *testing.T) {
-	input := render.HTML(`<input id="test" name="test">`)
-	result := string(injectAriaInvalid(input, `foo"bar`))
-	// The raw quote must be escaped, not break the attribute boundary.
-	if strings.Contains(result, `aria-describedby="foo"bar"`) {
-		t.Errorf("unescaped ID in aria-describedby — attribute injection:\n%s", result)
-	}
-	if !strings.Contains(result, `aria-invalid="true"`) {
-		t.Errorf("missing aria-invalid:\n%s", result)
-	}
-}
-
-// injectAttrs must inject aria-describedby even when aria-invalid is
-// already present on the element. Idempotence check must cover all attrs.
-func TestInjectAttrsDoesNotSkipDescribedByWhenInvalidPresent(t *testing.T) {
-	input := render.HTML(`<input id="test" aria-invalid="true">`)
-	result := string(injectAttrs(input, ` aria-invalid="true" aria-describedby="test-error"`))
-	if !strings.Contains(result, `aria-describedby="test-error"`) {
-		t.Errorf("aria-describedby was skipped because aria-invalid already present:\n%s", result)
-	}
-}
+// injectAttrs and its ARIA wrappers were deleted with FormField's
+// post-hoc string surgery: the builder hands the wiring down by
+// construction, so there is nothing left to splice. The escaping
+// those tests pinned now lives in headless's attribute renderer,
+// pinned by the headless package's own tests.
 
 // ─── ExtraAttrs pass-through (#251) ───
 
@@ -574,11 +626,12 @@ func TestSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 		}
 	}
 }
-
 func TestFormFieldExtraAttrsOnRoot(t *testing.T) {
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "f",
-		Input:      html.Input(html.InputConfig{Type: "text", Name: "f", ID: "f"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "f"})
+		},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -600,6 +653,20 @@ func TestFormSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 	}
 }
 
+// The legend maps to the exact token the sheet styles — a heading
+// class the old markup emitted, so a headed section keeps its legend
+// typography, and a rule for that token exists in the sheet.
+func TestFormSectionLegendCarriesTheSheetHeadingClass(t *testing.T) {
+	h := FormSection(FormSectionConfig{Heading: "Access"}, render.Text("f"))
+	if !strings.Contains(string(h), `<legend class="fui-form-section__heading" data-fui-internal="">`) {
+		t.Errorf("the legend does not carry the heading class the sheet styles:\n%s", h)
+	}
+	css := formSectionCSS(style.Theme{})
+	if !strings.Contains(css, ".fui-form-section__heading {") {
+		t.Errorf("the sheet has no rule for the legend's class:\n%s", css)
+	}
+}
+
 func TestStatusBadgeExtraAttrsOnRoot(t *testing.T) {
 	h := StatusBadge(StatusBadgeConfig{Label: "ok", ExtraAttrs: map[string]string{"data-test": "hook"}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -616,21 +683,6 @@ func TestEmptyStateExtraAttrsOnRoot(t *testing.T) {
 	}
 }
 
-func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
-	extra := map[string]string{"data-test": "hook"}
-	inline := false
-	for name, h := range map[string]render.HTML{
-		"aside": Callout(CalloutConfig{Title: "t", ExtraAttrs: extra}, render.Text("b")),
-		"alert": Callout(CalloutConfig{Variant: StatusDanger, ExtraAttrs: extra}, render.Text("b")),
-		"div":   Callout(CalloutConfig{Landmark: &inline, ExtraAttrs: extra}, render.Text("b")),
-	} {
-		root := string(h)[:strings.Index(string(h), ">")+1]
-		if !strings.Contains(root, `data-test="hook"`) {
-			t.Errorf("%s root missing data-test:\n%s", name, root)
-		}
-	}
-}
-
 func TestStatCardExtraAttrsOnRoot(t *testing.T) {
 	h := StatCard(StatCardConfig{Label: "l", Value: "1", ExtraAttrs: map[string]string{"data-test": "hook"}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -638,20 +690,12 @@ func TestStatCardExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("StatCard root missing data-test:\n%s", root)
 	}
 }
-
-func TestAvatarExtraAttrsOnRoot(t *testing.T) {
-	h := Avatar(AvatarConfig{Name: "Ada Lovelace", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Avatar root missing data-test:\n%s", root)
-	}
-}
-
-func TestCodeBlockExtraAttrsOnEveryRootShape(t *testing.T) {
+func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
 	extra := map[string]string{"data-test": "hook"}
 	for name, h := range map[string]render.HTML{
-		"pre":    CodeBlock(CodeBlockConfig{Code: "x = 1", ExtraAttrs: extra}),
-		"framed": CodeBlock(CodeBlockConfig{Code: "x = 1", Filename: "a.go", ExtraAttrs: extra}),
+		"titled":   Callout(CalloutConfig{Title: "t", ExtraAttrs: extra}, render.Text("b")),
+		"alert":    Callout(CalloutConfig{Variant: StatusDanger, ExtraAttrs: extra}, render.Text("b")),
+		"untitled": Callout(CalloutConfig{ExtraAttrs: extra}, render.Text("b")),
 	} {
 		root := string(h)[:strings.Index(string(h), ">")+1]
 		if !strings.Contains(root, `data-test="hook"`) {
@@ -688,7 +732,7 @@ func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
 func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := Button(ButtonConfig{Label: "Save", ExtraAttrs: map[string]string{
 		"data-test": "hook", "type": "evil", "Class": "evil",
-		"aria-label": "evil", "data-fui-comp": "evil",
+		"aria-label": "evil",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
@@ -699,6 +743,117 @@ func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	if strings.Contains(root, "evil") {
 		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+	if !strings.Contains(string(h), "Save") {
+		t.Errorf("label lost:\n%s", h)
+	}
+}
+
+// Disabled renders the real disabled state; a disabled key in
+// ExtraAttrs is the mistake the field exists to make impossible, so
+// it panics naming the field rather than silently racing the state.
+func TestButtonDisabled(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "Save", Disabled: true}))
+	if !strings.Contains(h, "disabled") {
+		t.Errorf("Disabled must render the disabled attribute:\n%s", h)
+	}
+	plain := string(Button(ButtonConfig{Label: "Save"}))
+	if strings.Contains(plain, "disabled") {
+		t.Errorf("Disabled must be absent when unset:\n%s", plain)
+	}
+	for _, k := range []string{"disabled", "DISABLED"} {
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("ExtraAttrs carrying %q must panic", k)
+				} else if msg, ok := r.(string); !ok || !strings.Contains(msg, "Disabled") {
+					t.Errorf("the panic for %q must point at the field: %v", k, r)
+				}
+			}()
+			Button(ButtonConfig{Label: "Save", ExtraAttrs: html.Attrs{k: ""}})
+		}()
+	}
+}
+
+// The runtime-wiring keys the framework emits ride the typed Action
+// seam; everything else a caller passes is still decoration.
+func TestButtonRoutesWiringThroughTheActionSeam(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "Edit", ExtraAttrs: html.Attrs{
+		"data-fui-open":              "user-edit",
+		"data-fui-deeplink":          "user_id=42",
+		"data-fui-prefetch":          "menu",
+		"data-fui-signal-inc":        "count:1",
+		"data-hui-pane-open-control": "secondary",
+		"data-fui-confirm":           "Sure?",
+		"data-site-ping":             "1",
+		"aria-pressed":               "false",
+		"data-fui-rpc":               "/__site/x",
+		"data-fui-rpc-method":        "POST",
+		"data-fui-rpc-signal":        "xsig",
+		"data-fui-push-state":        "/after",
+		"data-fui-toast":             `{"variant":"info","title":"Hi"}`,
+		"data-hui-pane-close":        "",
+		"data-fui-rpc-close":         "true",
+		"data-fui-rpc-body":          `{"a":1}`,
+		"data-fui-rpc-navigate":      "/next",
+	}}))
+	for _, want := range []string{
+		`data-fui-open="user-edit"`, `data-fui-deeplink="user_id=42"`,
+		`data-fui-prefetch="menu"`, `data-fui-signal-inc="count:1"`,
+		`data-hui-pane-open-control="secondary"`, `data-fui-confirm="Sure?"`,
+		`data-site-ping="1"`, `aria-pressed="false"`,
+		`data-fui-rpc="/__site/x"`, `data-fui-rpc-method="POST"`,
+		`data-fui-rpc-signal="xsig"`, `data-fui-push-state="/after"`,
+		`data-fui-toast="{&quot;variant&quot;`, `data-hui-pane-close=""`,
+		`data-fui-rpc-close="true"`, `data-fui-rpc-body="{&quot;a&quot;`, `data-fui-rpc-navigate="/next"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in:\n%s", want, h)
+		}
+	}
+}
+
+// A data-fui-* key outside the wiring vocabulary used to render as a
+// dead attribute under the old carrier contract; now it panics naming
+// the key and the seam it should have used.
+func TestButtonPanicsOnAWiringKeyOutsideTheVocabulary(t *testing.T) {
+	for _, k := range []string{"data-fui-comp", "data-fui-optimistic-endpoint", "data-fui-toggle-group", "data-fui-anything-else"} {
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("%q outside the vocabulary must panic, not render dead", k)
+				} else if msg, ok := r.(string); !ok || !strings.Contains(msg, k) {
+					t.Errorf("the panic must name the key %q: %v", k, r)
+				}
+			}()
+			Button(ButtonConfig{Label: "x", ExtraAttrs: html.Attrs{k: "y"}})
+		}()
+	}
+}
+
+// A link carries exactly the four data-fui-* keys that make sense on
+// an anchor; the rest are refused as they always were, because a link
+// navigates and a button acts.
+func TestLinkButtonWiringVocabulary(t *testing.T) {
+	h := string(LinkButton(LinkButtonConfig{Label: "Docs", Href: "/docs", ExtraAttrs: html.Attrs{
+		"data-fui-push-state": "/docs", "data-fui-prefetch": "menu",
+		"data-fui-open": "help", "data-fui-deeplink": "topic=ssh",
+		"data-fui-rpc": "/x", "data-fui-signal-inc": "count", "data-fui-toast": `{"a":1}`,
+	}}))
+	for _, want := range []string{
+		`data-fui-push-state="/docs"`, `data-fui-prefetch="menu"`,
+		`data-fui-open="help"`, `data-fui-deeplink="topic=ssh"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("a link-legal wiring key was refused:\n%s", h)
+		}
+	}
+	for _, banned := range []string{"data-fui-rpc", "data-fui-signal-inc", "data-fui-toast"} {
+		if strings.Contains(h, banned) {
+			t.Errorf("%s rode an anchor — a link navigates, a button acts:\n%s", banned, h)
+		}
 	}
 }
 
@@ -797,5 +952,45 @@ func TestLinkButtonExternalOwnsTargetAndRel(t *testing.T) {
 	}
 	if strings.Contains(root, "evil") {
 		t.Errorf("ExtraAttrs target/rel overrode External:\n%s", root)
+	}
+}
+
+// One attribute, one spelling: a key given twice under different
+// casings is refused rather than resolved by map order.
+func TestButtonExtraAttrsRefuseTwoSpellings(t *testing.T) {
+	for _, attrs := range []html.Attrs{
+		{"data-fui-open": "a", "DATA-FUI-OPEN": "b"},
+		{"data-test": "a", "Data-Test": "b"},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("ExtraAttrs %v rendered instead of panicking on two spellings", attrs)
+				}
+			}()
+			Button(ButtonConfig{Label: "x", ExtraAttrs: attrs})
+		}()
+	}
+}
+
+// Two headed sections with one heading and a description would share
+// the derived description id; an ID roots the second's ids instead.
+func TestFormSectionIDRootsTheDescriptionID(t *testing.T) {
+	a := string(FormSection(FormSectionConfig{Heading: "Access", Description: "Who may sign in."}))
+	b := string(FormSection(FormSectionConfig{Heading: "Access", Description: "Who may sign in.", ID: "access-2"}))
+	if !strings.Contains(a, `id="fieldset-access-desc"`) || !strings.Contains(a, `aria-describedby="fieldset-access-desc"`) {
+		t.Errorf("the derived description id is not wired:\n%s", a)
+	}
+	if !strings.Contains(b, `id="access-2-desc"`) || !strings.Contains(b, `aria-describedby="access-2-desc"`) || strings.Contains(b, "fieldset-access-desc") {
+		t.Errorf("an explicit ID did not root the description id:\n%s", b)
+	}
+}
+
+// cfg.Class lands on the empty state's root beside the class map's
+// own class, the way every adapter in this file routes it.
+func TestEmptyStateAppliesClassOnTheRoot(t *testing.T) {
+	h := string(EmptyState(EmptyStateConfig{Title: "No apps", Class: "hero"}))
+	if !strings.Contains(h, `class="fui-empty-state hero"`) {
+		t.Errorf("the caller's Class did not land after the base class:\n%s", h)
 	}
 }

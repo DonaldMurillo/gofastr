@@ -81,10 +81,17 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
    accreting rules; an invented `.mrd-*`/`.gofastr-*` class; setting a CSS
    property where a `var(--*)` token belongs; overriding a component's
    internals from outside instead of giving the component a config/variant.
+   The one app-side surface is the owned style sheet (`<name>.style.css`
+   + `gofastr gen styles`): scoped to its own markup, tokens only, and
+   barred from kit internals. It is how an app draws what the kit
+   deliberately does not ship: its site header, footer and docs page
+   (`examples/acme-site/{siteheader,sitefooter,helpdocs}`; the blueprint
+   writes the same packages into generated apps). It is never a patch
+   for a component that should have a variant.
 8. **Survey before you build.** Before hand-rolling any UI markup or CSS,
    `grep` `framework/ui` + `core-ui` for an existing primitive. The
    catalog is large (Hero, Grid, Stack, Cluster, DetailList, Form,
-   FormField, AuthCard, SiteHeader, Sidebar, ThemeToggle, Card, Section,
+   FormField, AuthCard, Sidebar, ThemeToggle, Card, Section,
    DataTable, StatCard, charts, PageHeader, …). Reinventing or
    CSS-overriding an existing component is the #1 failure mode here. If
    it's genuinely missing, add it to the design system, not locally.
@@ -399,9 +406,11 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 - New UI / any styling decision? It goes in the design system, full stop
   (Hard rules 7–8). Start in `framework/ui/` if it composes intent
   (PageHeader, FormField, DataTable, Hero, AuthCard). Use `core-ui/html`
-  if it maps 1:1 to an HTML tag, `core-ui/patterns/` for a composed
-  pattern (accordion, tabs, pagination…), `core-ui/app` for layout shells
-  (the centered container, sidebar row: see `LayoutBaseCSS`), and
+  if it maps 1:1 to an HTML tag, `framework/headless` for the unstyled
+  structure + accessibility contract a styled component renders
+  through, `framework/ui` for page frames
+  (`ui.Stack{Screen: true}`, `ui.ContentRow`, `ui.Container`: the
+  page column, the sidebar row, the centered container), and
   `core-ui/style` for tokens (incl. `DarkColors`).
 - Using a general design skill (`/impeccable`, `/shape`)? Its "implement
   working code with aesthetic detail" means **extend `framework/ui` +

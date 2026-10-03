@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 )
 
@@ -16,7 +17,9 @@ import (
 // they are fetched once per deploy and revalidate with a 304 after.
 //
 // It is a classic script injected immediately BEFORE runtime.js, so its
-// globals are assigned by the time the kernel boots. The kernel and the
+// globals are assigned by the time the kernel boots. The behaviours
+// global carries registered behaviours' markers (registry.RegisterBehavior)
+// so the kernel's scanner learns them the way the loader learns hashes. The kernel and the
 // module loader already prefer the window globals over the inline blocks.
 // Export mode (static sites, the PWA offline shell) and theme-variant
 // pages keep the inline blocks: exports must be self-contained files,
@@ -36,6 +39,12 @@ func (ds *UIHost) manifestJS() (body, hash string) {
 		b = append(b, ";\nwindow.__gofastr_runtime_modules="...)
 		if mods := widget.RuntimeModuleManifestJSON(); mods != nil {
 			b = append(b, mods...)
+		} else {
+			b = append(b, "{}"...)
+		}
+		b = append(b, ";\nwindow.__gofastr_behaviors="...)
+		if beh := runtime.BehaviorsJSON(); beh != nil {
+			b = append(b, beh...)
 		} else {
 			b = append(b, "{}"...)
 		}

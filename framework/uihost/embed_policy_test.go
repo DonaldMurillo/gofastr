@@ -17,7 +17,7 @@ import (
 func policyEmbedFixture(t *testing.T, policy app.Policy) embedFixture {
 	t.Helper()
 	application := app.NewApp("Embed Policy Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	scr := app.NewScreen("/reports", &embedSubjectComp{}).WithTitle("Reports")
 	if policy != nil {
 		scr = scr.WithPolicy(policy)

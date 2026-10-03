@@ -10,29 +10,33 @@
   const G = window.__gofastr;
 
   // Links with an exact-href match get aria-current=page. A link can
-  // opt in to prefix matching via data-fui-match-prefix, useful for
-  // primary nav entries like "Components" (href="/components/") that
-  // should light up on /components/accordion, /components/card, etc.
-  // Prefix matching is OFF by default so breadcrumbs and sidebars (where
-  // multiple links share a path prefix) keep their server-rendered
-  // single aria-current. Non-matching links get aria-current cleared.
+  // opt in to prefix matching via data-fui-match-prefix: the VALUE,
+  // when non-empty, names the section prefix (ui.Sidebar emits its
+  // MatchPath there, and it can differ from the href); an empty value
+  // falls back to the href itself, useful for primary nav entries like
+  // "Components" (href="/components/") that should light up on
+  // /components/card, /components/modal, etc.
   // Links whose current-state another party owns are left untouched,
   // the same hands-off rule as href-less links: links with NO href
   // (server-rendered MatchPath items in a sidebar where the active
   // determination is prefix-based, only the server has the prefix-match
-  // context), links inside a [data-fui-scrollspy] wrap (the scrollspy
-  // module tracks scroll position and writes aria-current="true"), and
-  // links carrying data-fui-activelink-skip (an author-side escape
-  // hatch for a highlight owned by app code or a hand-set attribute).
+  // context) and links carrying data-fui-activelink-skip (an
+  // author-side escape hatch for a highlight owned by app code or a
+  // hand-set attribute).
   const update = (path) => {
     for (const link of document.querySelectorAll('nav a')) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-fui-activelink-skip')) continue;
-      if (link.closest('[data-fui-scrollspy]')) continue;
       let active = href === path;
       if (!active && link.hasAttribute('data-fui-match-prefix')) {
-        const hrefPath = href.split('?')[0].split('#')[0];
+        // The attribute's VALUE is the prefix when non-empty — the
+        // sidebar emits its MatchPath there, and the owned section can
+        // differ from the href (an overview link deep in a section that
+        // still owns the section root). Empty value keeps the href as
+        // the prefix, the original opt-in spelling.
+        const attrPrefix = (link.getAttribute('data-fui-match-prefix') || '').trim();
+        const hrefPath = (attrPrefix !== '' ? attrPrefix : href).split('?')[0].split('#')[0];
         const pathOnly = (path || '').split('?')[0].split('#')[0];
         // Match on SEGMENT boundaries, and accept the canonical
         // no-trailing-slash href (/docs) as well as the trailing-slash
@@ -49,11 +53,30 @@
       if (active) {
         link.setAttribute('aria-current', 'page');
         link.classList.add('active');
-      } else if (link.classList.contains('active')) {
-        // Only clear what this module stamped (class is our marker).
-        // Host-rendered navs (pagination's aria-current="page" on the
-        // current page link, server-side breadcrumbs) own their
-        // attributes; a runtime sweep must not strip them.
+        // A collapsed group opens for its current child (DESIGN
+        // "Reactive areas": a sidebar is a static area, no request).
+        // The closest [data-hui-sidebar-group] or <details> ancestor,
+        // either spelling a host may render; a details opens through
+        // its reflected property, anything else through the attribute
+        // the host's CSS keys on. Only a group INSIDE the link's own
+        // <nav> is one: a <details> that wraps the whole nav (the site
+        // header's phone drawer) is a menu, and opening it on load put
+        // the drawer over every page.
+        const grp = link.closest('[data-hui-sidebar-group], details');
+        const nav = link.closest('nav');
+        if (grp && nav && nav.contains(grp)) {
+          if (grp.tagName === 'DETAILS') grp.open = true;
+          else grp.setAttribute('open', '');
+        }
+      } else if (link.classList.contains('active') || link.hasAttribute('data-fui-match-prefix')) {
+        // Clear what this module stamped (the class is our marker) and
+        // what was HANDED to it: a data-fui-match-prefix link (the
+        // sidebar emits its MatchPath there precisely so the sweep can
+        // re-derive the item) is activelink-owned, so the SSR
+        // first-paint mark on it must not survive a navigation that
+        // moved elsewhere — two lit entries was the bug. Host-rendered
+        // navs with neither (pagination, server breadcrumbs) keep
+        // owning their attributes; a runtime sweep must not strip them.
         link.removeAttribute('aria-current');
         link.classList.remove('active');
       }

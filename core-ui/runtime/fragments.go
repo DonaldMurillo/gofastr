@@ -57,16 +57,23 @@ type fragmentDef struct {
 // These are the names the attribute map and the composition table (full /
 // static / embed) may use, nothing else.
 //
-// sse owns zero data-fui-* attributes: it is triggered by the privileged
-// <meta name="gofastr-sse"> marker rather than by a DOM attribute. boot-embed
-// is triggered by <meta name="gofastr-embed"> and owns one attribute,
-// data-fui-embed-state, which reports the frame's lifecycle.
+// sse owns zero data-fui-* attributes: it is triggered by push-target
+// markers (any [data-island] region, the offline banner's
+// [data-hui-system-offline]) rather than by a data-fui-* attribute; the
+// privileged <meta name="gofastr-sse"> is availability, never "open".
+// boot-embed is triggered by <meta name="gofastr-embed"> and owns one
+// attribute, data-fui-embed-state, which reports the frame's lifecycle.
+//
+// The action module is the same shape reached the other way: no
+// marker, no data-fui-* attribute (the adapters that bind through it
+// read their own), loaded because a registered behaviour declared
+// Requires("action") and the loader honours the declaration on every
+// path. It is also a public API, window.__gofastr.action.
 //
 // The ws module also owns zero data-fui-* attributes and has no marker
 // at all: it is a pure API module an application loads explicitly with
 // __gofastr.loadModule('ws') (connectWebSocket /
 // createSequencedReducer). Nothing scans the DOM for it.
-//
 // boot-embed depends on kernel. RPC requests inside an embed route through
 // boot's delegation bridge and load src/rpc.js at interaction time. It also
 // relies on boot's mutation observer to hydrate injected content, but boot is
@@ -108,7 +115,7 @@ var fragments = map[string]fragmentDef{
 //     inside setSignal's attr-mode branch (aria-selected mirroring).
 //   - The <a>-click hijack owns the nav markers; data-fui-layout /
 //     data-fui-screen-group decide shell-vs-<main> swaps on navigation.
-//   - kernel owns the CSS scanner (data-fui-comp / data-fui-style), the
+//   - kernel owns the CSS scanner (data-fui-comp / data-fui-scope / data-fui-style), the
 //     boot-mode read (data-fui-static), the module-prefetch bridge
 //     (data-fui-prefetch), and the module-load-failure safety net
 //     (data-fui-toast-fallback, created by window.__gofastr._fallbackToast).
@@ -128,6 +135,7 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-bundle",
 		"data-fui-trusted",
 		"data-fui-comp",
+		"data-fui-scope",
 		"data-fui-style",
 		"data-fui-static",
 		"data-fui-prefetch",
@@ -169,6 +177,10 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-lang",
 		"data-fui-skip-label",
 		"data-fui-screen-group",
+		// The fills-envelope, view-transition and loading-content
+		// families moved to their demand modules with the opt-in split
+		// (see moduleAttrs: envelope, transition, loading). nav keeps
+		// only the layout-chain spine the plain navigator needs.
 	},
 	"widgets-boot": {
 		"data-fui-open",
@@ -193,17 +205,14 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. The one exception is `tabs`, which has
-// no marker entry by design: it loads only via the data-fui-prefetch
-// bridge its component arms, so _scanForModules never demand-loads it.
-// A module not listed here still loads, this is the attribute-ownership
-// map, not the module registry.
+// companion attributes ride along. A module not listed here still loads,
+// this is the attribute-ownership map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); formrepeater, passwordinput, and
-// searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
-// kernel owns, and otherwise driven by rpc/signals); widgetfocus and
+// fragment. See fragments note); searchinput (triggered by its
+// data-fui-comp CSS marker, which kernel owns, and otherwise driven
+// by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);
@@ -236,59 +245,20 @@ var moduleAttrs = map[string][]string{
 		"data-fui-animate-signal",
 		"data-fui-animate-class",
 	},
-	"animatedcounter": {
-		"data-fui-animated-counter",
-		"data-fui-animated-counter-from",
-		"data-fui-animated-counter-ms",
-	},
-	"backtotop": {
-		"data-fui-back-to-top",
-		"data-fui-btt-scroll",
-		"data-fui-btt-target",
-		"data-fui-btt-threshold",
-		"data-fui-btt-visible",
-	},
-	"banner": {
-		"data-fui-banner-dismiss",
-		"data-fui-banner-dismiss-id",
-	},
-	"carousel": {
-		"data-fui-carousel",
-		"data-fui-carousel-autorotate",
-		"data-fui-carousel-defer",
-		"data-fui-carousel-deferred-for",
-		"data-fui-carousel-dot",
-		"data-fui-carousel-loop",
-		"data-fui-carousel-next",
-		"data-fui-carousel-prev",
-		"data-fui-carousel-slide",
-		"data-fui-carousel-track",
-	},
-	"combobox": {
-		"data-fui-static-options",
-	},
+	// carousel is retired: the carousel is headless.Carousel's (bound
+	// by the headless-carousel registered module through data-hui-*
+	// hooks; the deferred-slide virtual scroll went with its reader).
+	// combobox is retired: the combobox anatomy is headless.Combobox's
+	// (framework/headless, bound by headless-combobox through
+	// data-hui-* hooks). data-fui-static-options went with it.
 	"computed": {
 		"data-fui-computed",
 		"data-fui-computed-deps",
 	},
-	"conditionalfield": {
-		"data-fui-cond-disabled",
-	},
-	"copy": {
-		"data-fui-copy-text-from",
-		"data-fui-copy-announce",
-		"data-fui-copy-status",
-		"data-fui-copy-toast",
-	},
-	"disclosure": {
-		"data-fui-disclosure",
-		"data-fui-disclosure-trap",
-		"data-fui-disclosure-persist",
-		// Lazy menu panel inflation (framework/ui MenuConfig.LazyPanel)
-		// lives in this module's toggle listener and scan pass, ahead of
-		// the menu focus-on-open it already owns.
-		"data-fui-menu-lazy",
-	},
+	// disclosure and menu are retired: the disclosure anatomy is
+	// headless.Disclosure's (framework/headless, bound by the
+	// headless-disclosure and headless-menu modules through
+	// data-hui-* hooks).
 	"dragdismiss": {
 		"data-fui-drag-dismiss",
 		"data-fui-drag-handle",
@@ -300,84 +270,75 @@ var moduleAttrs = map[string][]string{
 		"data-fui-dropdown-open",
 		"data-fui-dropdown-panel",
 	},
-	"dropzone": {
-		"data-fui-dropzone-preview",
-		"data-fui-dropzone-preview-for",
-	},
-	"fileupload": {
-		"data-fui-fileupload",
-	},
-	"infinitescroll": {
-		"data-fui-infinite-scroll",
-		"data-fui-infinite-sentinel",
-		"data-fui-infinite-cursor",
-		"data-fui-infinite-items",
-		"data-fui-infinite-root-margin",
-	},
 	"intercept": {
 		"data-fui-intercept-overlay",
 		"data-fui-intercept-as",
 		"data-fui-intercept-close",
 	},
-	"lightbox": {
-		"data-fui-lightbox",
-		"data-fui-lightbox-group",
-		"data-fui-lightbox-nav",
-		"data-fui-lightbox-next",
-		"data-fui-lightbox-prev",
-		"data-fui-zoomed",
-	},
-	"menu": {
-		"data-fui-menu",
-		"data-fui-menu-radio",
-		"data-fui-menu-trigger",
-	},
-	"multiselect": {
-		"data-fui-multiselect",
-		"data-fui-multiselect-chips",
-		"data-fui-multiselect-remove",
-	},
-	"networkretrybanner": {
-		"data-fui-network-retry-threshold",
-		"data-fui-network-retry-health",
-		"data-fui-network-retry-button",
-		"data-fui-network-retry-sse-silence",
-		"data-fui-network-retry-demo-trigger",
-		"data-fui-network-retry-demo-recover",
-	},
-	"numberinput": {
-		"data-fui-number-step",
-		"data-fui-number-for",
-	},
-	"optimisticaction": {
-		"data-fui-optimistic-idle",
-		"data-fui-optimistic-success",
-		"data-fui-optimistic-endpoint",
-		"data-fui-optimistic-method",
-	},
-	"panehost": {
-		"data-fui-pane-host",
-		"data-fui-pane",
-		"data-fui-pane-open",
-		"data-fui-pane-close",
-		"data-fui-pane-swap",
-		"data-fui-pane-host-target",
-		"data-fui-pane-mode",
-		"data-fui-pane-deeplink",
-		"data-fui-pane-key",
-	},
+	// Lightbox's wiring (data-fui-lightbox*, data-fui-zoomed) moved to
+	// framework/ui/lightbox.js, a registered behaviour: its attributes
+	// are read by a registered source, not by anything in this package,
+	// so they left this table.
+	// multiselect is retired: the multiselect is headless.MultiSelect
+	// (bound by the headless-multiselect registered module through
+	// data-hui-* hooks).
+	// OptimisticAction's wiring is the kernel's action primitive
+	// (data-hui-action*, bound by the headless module): nothing in
+	// this package reads it, so it has no row here. The
+	// data-fui-optimistic-* hooks and framework/ui/optimisticaction.js
+	// are retired.
+	// panehost is retired: the pane host is headless.PaneHost's (bound
+	// by the headless-panehost registered module through data-hui-*
+	// hooks; the trigger controls are core-ui/interactive's
+	// data-hui-pane-open-control/-close/-swap/-key).
 	"poll": {
 		"data-fui-poll",
 		"data-fui-poll-src",
+	},
+	// The layout demand modules (docs/DESIGN-layout-outlets.md "Opt-in"
+	// table): each loads on its marker and owns its family.
+	"envelope": {
+		// The fills-envelope family the envelope module
+		// parses the <template data-fui-fill> envelope, resolves the targets by
+		// data-fui-outlet / data-fui-area address, and applies every fill. It
+		// also owns the scroll-anchor records (keyed off whatever identity the
+		// content carries) and, once loaded, the navigator itself.
+		"data-fui-fill",
+		"data-fui-outlet",
+		"data-fui-area",
+	},
+	"loading": {
+		// The loading-content family the module
+		// clones the inert <template data-fui-loading="<addr>"> the server
+		// renders beside an outlet, area, or slot cell into the region after
+		// data-fui-after ms of in-flight wait, parks the old nodes, restores
+		// them on failure, and marks the region data-fui-loadstate="shown"
+		// (data-fui-min is the no-flash hold the apply honors).
+		"data-fui-loading",
+		"data-fui-after",
+		"data-fui-min",
+		"data-fui-loadstate",
+	},
+	"transition": {
+		// a view-transition name marker the server
+		// renders on a placed cell; the transition module mirrors it onto the
+		// CSSOM view-transition-name before a navigation's snapshots.
+		// data-fui-vt-when gates the name on a media condition.
+		// data-fui-vt-kinds is the document's declared keyed-transition
+		// vocabulary, on <html> at first paint and on the doc shell every
+		// swapped payload's root layer carries; the module copies it onto the
+		// documentElement and gates the X-Gofastr-Transition pick against it.
+		"data-fui-vt",
+		"data-fui-vt-when",
+		"data-fui-vt-kinds",
 	},
 	"popover": {
 		"data-fui-popover-anchor",
 		"data-fui-popover-side",
 		"data-fui-popover-trigger",
 	},
-	"rangeslider": {
-		"data-fui-range-slider",
-		"data-fui-range-slider-value",
+	"headless-feedback": {
+		"data-fui-toast-stack",
 	},
 	"rpc": {
 		"data-fui-rpc",
@@ -400,76 +361,28 @@ var moduleAttrs = map[string][]string{
 	"reveal": {
 		"data-fui-reveal",
 	},
-	"scrollspy": {
-		"data-fui-scrollspy",
-		"data-fui-scrollspy-target",
-	},
-	"shortcut": {
-		"data-fui-shortcut-focus",
-		"data-fui-shortcut-click",
-		"data-fui-shortcut-target",
-	},
-	"sidebar": {
-		"data-fui-sidebar-collapse",
-		"data-fui-sidebar-collapse-label",
-		"data-fui-sidebar-expand-label",
-		"data-fui-sidebar-group-toggle",
-		"data-fui-sidebar",
-		"data-fui-sidebar-storage",
-	},
-	"slider": {
-		"data-fui-slider-mirror",
-	},
-	"sortablelist": {
-		"data-fui-sortable",
-		"data-fui-sort-key",
-		"data-fui-sortable-item",
-		"data-fui-sortable-rpc",
-		"data-fui-sortable-group",
-		"data-fui-sortable-container",
-		"data-fui-sortable-version",
-		"data-fui-sortable-conflict",
-	},
-	"taginput": {
-		"data-fui-tag-input",
-		"data-fui-tag-input-id",
-		"data-fui-tag-input-zone",
-	},
+	// scrollspy is retired: the rail is headless.Rail and the observer
+	// that marks the active entry is headless-rail's (data-hui-*,
+	// owned by that package's modules).
+	// shortcut is retired: the chord bindings are headless-navigation's
+	// (data-hui-shortcut-*, owned by that registered module's markers).
+	// sidebar is retired: the sidebar is bound by the headless-sidebar
+	// registered module (framework/headless) through data-hui-* hooks.
+	// sortablelist is retired: the sortable list is headless.SortableList
+	// (bound by the headless-sortablelist registered module through
+	// data-hui-* hooks).
 	"textarea": {
 		"data-fui-autogrow",
 	},
-	"themeswitch": {
-		"data-fui-theme-toggle",
-		"data-fui-theme-toggle-opt",
-	},
-	"toasts": {
-		"data-fui-toast-stack",
-		"data-fui-toast-id",
-		"data-fui-toast-dismiss",
-		"data-fui-toast-ttl-ms",
-	},
-	"toc": {
-		"data-fui-toc",
-		"data-fui-toc-levels",
-		"data-fui-toc-for",
-	},
-	"toggleaction": {
-		"data-fui-toggle-endpoint",
-		"data-fui-toggle-method",
-		"data-fui-toggle-allow-untoggle",
-		"data-fui-toggle-untoggle-endpoint",
-		"data-fui-toggle-idle",
-		"data-fui-toggle-committed",
-		"data-fui-toggle-group",
-	},
-	"tabs": {
-		"data-fui-tabs-state",
-		"data-fui-tabs-vacate",
-		"data-fui-tabs-stash",
-	},
-	"tree": {
-		"data-fui-tree-toggle",
-	},
+	// toc is retired: the table of contents is headless.TableOfContents
+	// (server-rendered items) and its active state is headless-toc's.
+	// ToggleAction's wiring is the same action primitive
+	// (data-hui-action*): no row here. The data-fui-toggle-* hooks
+	// and framework/ui/toggleaction.js are retired.
+	// tabs is retired: the tab strip is headless.Tabs's (bound by the
+	// headless-tabs registered module through data-hui-* hooks).
+	// tree is retired: the tree is headless.Tree (bound by the
+	// headless-tree registered module through data-hui-* hooks).
 	"widgethelpers": {
 		"data-fui-persist-storage",
 		"data-fui-charcount-source",

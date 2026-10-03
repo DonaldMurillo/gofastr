@@ -10,8 +10,8 @@ package main
 //   §03         explore grid, 6 route cards into the main areas of the site
 //   §04         built with gofastr, production app + the Meridian flagship
 //
-// Sections live inside <main> only, .nav and .foot are owned by the
-// HeaderComponent / FooterComponent. Built with core-ui/html primitives
+// Sections live inside <main> only; the top bar and colophon are the
+// site's own siteheader / sitefooter packages. Built with core-ui/html
 // (Heading, Link, UnorderedList, ListItem, DescriptionList…) so attribute
 // escaping and landmark roles come from typed builders. Page-local layout
 // classes (.hero__grid, .arch-card, .agents__split, etc.) are styled in
@@ -61,8 +61,8 @@ func (s *HomeScreen) Render() render.HTML {
 }
 
 // container is the site's max-width wrapper. Delegates to
-// ui.Container(ContainerWide), the wide cap is overridden to 1240px
-// via the --ui-container-wide token in styles.go's tokens block.
+// ui.Container(ContainerWide), the wide cap is set to 1240px on the
+// theme (createTheme: t.Layout.WideWidth).
 func container(children ...render.HTML) render.HTML {
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide}, children...)
 }

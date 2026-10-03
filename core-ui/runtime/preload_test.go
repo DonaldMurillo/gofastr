@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
 
 func TestNeededModules_EmptyPage(t *testing.T) {
@@ -38,35 +40,36 @@ func TestNeededModules_RPCMarkers(t *testing.T) {
 	}
 }
 
-func TestNeededModules_SidebarCollapse(t *testing.T) {
-	html := `<button data-fui-sidebar-collapse>Collapse</button>`
-	got := NeededModules(html)
-	want := []string{"sidebar"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
-	}
-	// Button-dialect groups load the same module even when the sidebar
-	// has no collapse button (e.g. a persistent variant).
-	html = `<button data-fui-sidebar-group-toggle aria-expanded="false">Group</button>`
-	got = NeededModules(html)
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
-	}
-}
-
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
-	// popover, widgets (twice), toasts, lightbox
+	// popover, widgets (twice), rpc (the retired toasts marker no
+	// longer exists; rpc carries the toast-button dialect instead)
 	html := `
 		<button data-fui-open="m1">open</button>
 		<div data-fui-widget="m1"></div>
-		<button data-fui-toast='{"title":"hi"}'>toast</button>
+		<button data-fui-rpc="/x" data-fui-rpc-signal="t">toast</button>
 		<button data-fui-popover-anchor="auto">pop</button>
-		<div data-fui-comp="ui-lightbox" data-fui-lightbox="lb"></div>
 	`
 	got := NeededModules(html)
-	want := []string{"lightbox", "popover", "toasts", "widgets"}
+	want := []string{"popover", "rpc", "widgets"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestNeededModules_SSEOpensOnPushTargets pins the on-demand preload
+// rule: a push target (an island region, the offline banner that reads
+// the stream's mirrored state) preloads the sse module, while the
+// availability meta — which every session-bearing page carries — must
+// preload nothing.
+func TestNeededModules_SSEOpensOnPushTargets(t *testing.T) {
+	if got, want := NeededModules(`<div data-island="live"></div>`), []string{"sse"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("island page: NeededModules = %v, want %v", got, want)
+	}
+	if got, want := NeededModules(`<div data-hui-system-offline="" hidden=""></div>`), []string{"sse"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("offline banner: NeededModules = %v, want %v", got, want)
+	}
+	if got := NeededModules(`<meta name="gofastr-sse" content="/__gofastr/sse?session=x">`); len(got) != 0 {
+		t.Errorf("the availability meta must not preload the sse module: %v", got)
 	}
 }
 
@@ -135,7 +138,9 @@ func TestDemandLoadMarkersMatchRuntimeJS(t *testing.T) {
 
 func TestNeededModules_StableSort(t *testing.T) {
 	// Same input → same output ordering, regardless of map iteration.
-	html := `<div data-fui-carousel><div data-fui-toast></div><div data-fui-widget></div></div>`
+	// (The retired data-fui-carousel marker loaded nothing; live
+	// markers from three different modules keep the sort observable.)
+	html := `<div data-fui-widget="x"></div><button data-fui-popover-anchor="auto">p</button><button data-fui-rpc="/x">r</button>`
 	for range 50 {
 		got := NeededModules(html)
 		if !sort.StringsAreSorted(got) {
@@ -150,5 +155,30 @@ func TestComputedDoesNotPreloadCompute(t *testing.T) {
 		if m == "compute" {
 			t.Fatalf("computed-only page preloaded compute: %v", got)
 		}
+	}
+}
+
+// A needed behaviour's requirements are preloaded with it,
+// transitively: the primitive arrives with the adapters that bind
+// through it, and a requirement of a requirement arrives too.
+func TestNeededModulesIncludesRequirements(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("grandparent", probeJS, registry.Markers("[data-gp]"))
+	registry.RegisterBehavior("parent", probeJS, registry.Markers("[data-parent]"), registry.Requires("grandparent"))
+	registry.RegisterBehavior("child", probeJS, registry.Markers("[data-child]"), registry.Requires("parent"))
+
+	got := NeededModules(`<button data-child></button>`)
+	if strings.Join(got, ",") != "child,grandparent,parent" {
+		t.Fatalf("NeededModules = %v, want child,grandparent,parent", got)
+	}
+	// A page with only the parent's marker pulls the parent and its
+	// requirement, not the dependent that needs the parent.
+	got = NeededModules(`<div data-parent></div>`)
+	if strings.Join(got, ",") != "grandparent,parent" {
+		t.Fatalf("NeededModules = %v, want grandparent,parent", got)
+	}
+	// A page with neither marker preloads neither.
+	if got = NeededModules(`<p>nothing</p>`); len(got) != 0 {
+		t.Fatalf("NeededModules = %v, want none", got)
 	}
 }

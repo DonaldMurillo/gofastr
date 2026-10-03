@@ -18,7 +18,7 @@
 // framework/ARCHITECTURE.md, so it introduces no cycle and is safely
 // importable from cmd/gofastr, examples/site, and host apps alike.
 //
-// Three of the 141 entries (sortablelist, optimisticcreate, optimisticdelete)
+// Three entries (sortablelist, optimisticcreate, optimisticdelete)
 // have a live demo that is normally backed by per-visitor session state on
 // the docs site. The gallery catalog ships self-contained seed-rendering
 // Demo closures for them so a theme previewer or static export gets a
@@ -65,17 +65,6 @@ func Lookup(slug string) (Entry, bool) {
 		}
 	}
 	return Entry{}, false
-}
-
-// MustLookup returns the entry for slug, panicking if it is unknown. Use
-// only for slugs that are guaranteed by construction (e.g. the slug came
-// from ranging over Catalog itself).
-func MustLookup(slug string) Entry {
-	e, ok := Lookup(slug)
-	if !ok {
-		panic("gallery: unknown slug " + slug)
-	}
-	return e
 }
 
 // ByCategory returns every entry whose Category matches, in catalog order.

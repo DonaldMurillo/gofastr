@@ -126,7 +126,7 @@
   let lastSidebarWidth = -1;
   const reportSidebar = () => {
     const d = desktopNS();
-    const nav = document.querySelector('.layout-body > nav');
+    const nav = document.querySelector('.desktopui-frame__sidebar');
     if (!d || !d.window || typeof d.window.setChrome !== 'function' || !nav) return;
     const w = Math.round(nav.getBoundingClientRect().width);
     if (w <= 0 || w === lastSidebarWidth) return;
@@ -134,7 +134,7 @@
     d.window.setChrome({ sidebarWidth: w }).catch(() => {});
   };
   const observeSidebar = () => {
-    const nav = document.querySelector('.layout-body > nav');
+    const nav = document.querySelector('.desktopui-frame__sidebar');
     if (!nav || typeof ResizeObserver === 'undefined') return;
     // The initial observe fires the callback once, which sends the
     // first report; every later resize (the window, the layout)

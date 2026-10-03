@@ -88,9 +88,11 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 		"role", "aria-checked", "aria-label"))
 
 	// Build inner children as a single HTML string, static structure.
+	// SignalToggleConfig carries no render.HTML field, so the track
+	// and the label both hold none of a caller's markup.
 	inner := fmt.Sprintf(
-		`<span class="fui-toggle__track"><span class="fui-toggle__thumb"></span></span>`+
-			`<span class="fui-toggle__label" data-fui-signal="%s">%s</span>`,
+		`<span class="fui-toggle__track" data-fui-internal=""><span class="fui-toggle__thumb"></span></span>`+
+			`<span class="fui-toggle__label" data-fui-internal="" data-fui-signal="%s">%s</span>`,
 		escName, initStr,
 	)
 

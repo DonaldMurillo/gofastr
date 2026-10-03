@@ -102,7 +102,7 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "off")
 
 	site := appui.NewApp("DesktopE2E")
-	layout := appui.NewLayout("public").WithContainer()
+	layout := containerLayout("public")
 	site.Register("/", e2eScreen{}, layout)
 	host := uihost.New(site)
 

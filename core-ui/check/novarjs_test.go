@@ -115,6 +115,35 @@ func TestLintNoVarJS_RepoIsClean(t *testing.T) {
 	if res.HasErrors() {
 		t.Errorf("runtime JS contains `var` declarations:\n%s", res.Error())
 	}
+	// The registered behaviours live beside their Go packages, outside
+	// the walk above; they are runtime modules and keep the same rule.
+	res, err = LintNoVarJSFiles(runtimeLintRoots(t, runtimeDir)[1:]...)
+	if err != nil {
+		t.Fatalf("lint: %v", err)
+	}
+	if res.HasErrors() {
+		t.Errorf("a registered behaviour contains `var` declarations:\n%s", res.Error())
+	}
+}
+
+// runtimeLintRoots is what every clean-tree lint walks: the runtime
+// package and every JavaScript file a registry.RegisterBehavior call in
+// the tree embeds. A registered behaviour is a runtime module the host
+// serves and the kernel loads, so the rules that hold the kernel's own
+// modules hold it; before this helper existed the lints walked
+// core-ui/runtime alone and a module beside its Go package was held to
+// nothing.
+func runtimeLintRoots(t *testing.T, runtimeDir string) []string {
+	t.Helper()
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	files, err := RegisteredBehaviorSources(repoRoot)
+	if err != nil {
+		t.Fatalf("enumerating registered behaviours: %v", err)
+	}
+	return append([]string{runtimeDir}, files...)
 }
 
 func writeJS(t *testing.T, dir, name, body string) {

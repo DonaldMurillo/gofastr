@@ -1,0 +1,5 @@
+/* gofastr:allow-file(GOFASTR1809, GOFASTR1806) upgrade fixture: an app written for an old release, read by the upgrade scanner and never served */
+.ui\2d button { color: red; } /* zoo:hit button-class */
+.card { color: VAR(--color-muted); } /* zoo:hit tokens */
+.card { --color\2d muted: red; } /* zoo:hit tokens */
+.ui-button-group { color: blue; }

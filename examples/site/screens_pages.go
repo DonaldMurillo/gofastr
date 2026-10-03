@@ -139,12 +139,12 @@ func gsBody() render.HTML {
 	o := ui.TerminalOut
 	ok := ui.TerminalOK
 
-	// Inline tips inside the main content flow: render as a styled <div>, not
-	// a complementary <aside> landmark, so they don't trip
-	// landmark-complementary-is-top-level (a nested complementary landmark).
+	// Inline tips inside the main content flow: ui.Callout renders a
+	// plain div through headless.Alert (the complementary-aside shape
+	// is gone), so nesting them under <main> trips nothing.
 	callout := func(title, body string) render.HTML {
 		return ui.Callout(
-			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo, Landmark: new(false)},
+			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo},
 			html.Paragraph(html.TextConfig{}, render.Text(body)),
 		)
 	}
@@ -395,6 +395,27 @@ func exHero() render.HTML {
 			html.Paragraph(html.TextConfig{Class: "lede"},
 				render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under examples/ in the repo. Run it with gofastr dev for rebuild-on-save, livereload, and the dev MCP tools; plain go run . works too."),
 			),
+			// The theme-layer showcase lives on this site rather than
+			// under examples/<slug>, so it links from the hub hero
+			// instead of joining exRowItems (whose row set the source-
+			// link gate pins). One link per registered route — the first
+			// primary, the rest secondary — derived from landingRoutes so
+			// a new theme cannot miss the hub.
+			func() render.HTML {
+				buttons := make([]render.HTML, 0, len(landingRoutes))
+				for i, r := range landingRoutes {
+					variant := ui.ButtonSecondary
+					if i == 0 {
+						variant = ui.ButtonPrimary
+					}
+					buttons = append(buttons, ui.LinkButton(ui.LinkButtonConfig{
+						Label:   "Headless landing · " + r.Name + " theme",
+						Href:    landingRoutePath(r.Segment),
+						Variant: variant,
+					}))
+				}
+				return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, buttons...)
+			}(),
 		),
 	)
 }
@@ -406,7 +427,7 @@ func exHero() render.HTML {
 // remembered.
 var exampleLoC = map[string]int{
 	"blog":                 190,
-	"site":                 9300,
+	"site":                 12000,
 	"api-tour":             160,
 	"semantic-demo":        120,
 	"spa":                  110,
@@ -414,8 +435,8 @@ var exampleLoC = map[string]int{
 	"static-site":          60,
 	"backoffice":           310,
 	"processmodule-demo":   330,
-	"webmcp-remote-assist": 1600,
-	"rtc-call":             540,
+	"webmcp-remote-assist": 2000,
+	"rtc-call":             700,
 }
 
 // locBadge renders the "~N LoC" badge for one example row; suffix adds a

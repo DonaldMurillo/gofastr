@@ -27,6 +27,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/config"
 )
@@ -371,16 +372,19 @@ func ColorSchemeJS() (string, error) {
 }
 
 // Module returns the source of a single split runtime module by name
-// (e.g. "fileupload"). Used by the HTTP server to serve
+// (e.g. "popover"). Used by the HTTP server to serve
 // /__gofastr/runtime/<name>.js. Returns "", false when the module is
 // not embedded. Minified on first read (cached).
 func Module(name string) (string, bool) {
 	if !compute.ValidName(name) {
 		return "", false
 	}
-	modulesOnce.Do(loadModules)
-	src, ok := modulesData[name]
-	return src, ok
+	if src, ok := embeddedModule(name); ok {
+		return src, true
+	}
+	// A registered behaviour (registry.RegisterBehavior) is a module
+	// from here down: same URL, same manifest, same cache headers.
+	return registeredModule(name)
 }
 
 func loadModules() {
@@ -420,13 +424,24 @@ func ModuleSize(name string) int {
 	return len(src)
 }
 
-// ModuleNames returns the sorted list of split modules currently
-// embedded. Each name maps 1:1 to a /__gofastr/runtime/<name>.js URL.
+// ModuleNames returns the sorted list of split modules: the embedded
+// ones and every registered behaviour. Each name maps 1:1 to a
+// /__gofastr/runtime/<name>.js URL. A behaviour registered under an
+// embedded module's name is refused at registration; if one slipped
+// past (registered before this package's init reserved the names) it
+// panics here, where the two sets meet, rather than serving one of the
+// two in silence.
 func ModuleNames() []string {
-	modulesOnce.Do(loadModules)
-	out := make([]string, 0, len(modulesData))
-	for name := range modulesData {
-		out = append(out, name)
+	out := embeddedModuleNames()
+	seen := make(map[string]bool, len(out))
+	for _, n := range out {
+		seen[n] = true
+	}
+	for _, e := range registry.Behaviors() {
+		if seen[e.Name] {
+			panic("runtime: behaviour " + e.Name + " shadows an embedded runtime module of the same name")
+		}
+		out = append(out, e.Name)
 	}
 	sort.Strings(out)
 	return out

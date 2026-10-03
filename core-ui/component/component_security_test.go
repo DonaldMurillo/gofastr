@@ -63,6 +63,37 @@ func TestSafeRenderEscapesPanicMessage(t *testing.T) {
 	}
 }
 
+// TestSafeRenderFallbackScrubsPanicValue asserts the generic fallback
+// box routes the panic value through textsafe.Recovered: the value can
+// carry request bytes (control characters that rewrite an operator's
+// terminal, megabyte bodies), and the box is served to the client.
+func TestSafeRenderFallbackScrubsPanicValue(t *testing.T) {
+	// C0 control bytes must not ship in the 200/test-500 body.
+	html, err := SafeRender(panicComponent{msg: "boom\x00\x1b]0;pwned\x07"})
+	if err == nil {
+		t.Fatal("expected an error from the panic")
+	}
+	out := string(html)
+	if strings.Contains(out, "\x00") || strings.Contains(out, "\x1b") || strings.Contains(out, "\x07") {
+		t.Errorf("fallback UI carries raw control bytes:\n%q", out)
+	}
+	if !strings.Contains(out, "boom]0;pwned") {
+		t.Errorf("fallback UI lost the scrubbed message:\n%s", out)
+	}
+	// A panic value past the 4 KiB cap arrives truncated, not whole.
+	big := strings.Repeat("A", 8<<10)
+	html, err = SafeRender(panicComponent{msg: big})
+	if err == nil {
+		t.Fatal("expected an error from the panic")
+	}
+	if n := len(string(html)); n > (4<<10)+512 {
+		t.Errorf("fallback UI did not truncate the panic value: %d bytes", n)
+	}
+	if !strings.Contains(string(html), "…(truncated)") {
+		t.Errorf("fallback UI missing the truncation marker:\n%.200s", string(html))
+	}
+}
+
 // interactiveWidget is a component with one registered action so
 // NewWidget extracts a non-empty ActionRegistry and Render emits the
 // data-behavior hydration URL.

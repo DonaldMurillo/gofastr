@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+// firstGrepTopic returns the first topic header line ("─ name") of a
+// --grep output, "" when none.
+func firstGrepTopic(out string) string {
+	for _, ln := range strings.Split(out, "\n") {
+		if after, ok := strings.CutPrefix(ln, "─ "); ok {
+			return strings.TrimSpace(after)
+		}
+	}
+	return ""
+}
+
 func TestDocsCommandListsGrepsAndReads(t *testing.T) {
 	list := captureStdout(t, func() {
 		runDocs([]string{"--list"})
@@ -22,10 +33,23 @@ func TestDocsCommandListsGrepsAndReads(t *testing.T) {
 		t.Fatalf("docs grep did not find owner scoping:\n%s", grep)
 	}
 
-	for _, term := range []string{"optimistic", "realtime", "live dashboard", "reactive state", "rollback", "reconciliation"} {
+	// Relevance routing (ranked by title, lede, headings, then body
+	// count): each term leads with the topic that owns it — the one
+	// NAMED after the concept when there is one, the capability map for
+	// the capability questions.
+	for term, want := range map[string]string{
+		"optimistic":     "optimistic-ui",     // titled "Optimistic UI"
+		"realtime":       "ui-capability-map", // the capability ladder
+		"live dashboard": "live-dashboards",   // titled "Live dashboards"
+		"reactive state": "ui-capability-map",
+		"rollback":       "optimistic-ui", // the rollback section
+		"reconciliation": "optimistic-ui",
+		"owner scoping":  "a2a", // the "Auth and owner scoping" section
+	} {
 		result := captureStdout(t, func() { runDocs([]string{"--grep", term}) })
-		if !strings.Contains(result, "ui-capability-map") {
-			t.Fatalf("docs grep %q did not route to ui-capability-map:\n%s", term, result)
+		first := firstGrepTopic(result)
+		if first != want {
+			t.Fatalf("docs grep %q routed to %q, want %q:\n%s", term, first, want, result)
 		}
 	}
 

@@ -31,8 +31,7 @@ func TestSettingsFormShapedSaveRoundTrips(t *testing.T) {
 		t.Fatalf("export_folder = %q, want /tmp/exports", got)
 	}
 	form := h.Get("/settings").AssertStatus(t, http.StatusOK).Body
-	box := form[strings.Index(form, `id="f-notify_on_save"`):]
-	if strings.Contains(box[:strings.Index(box, ">")], "checked") {
+	if strings.Contains(inputTag(form, "f-notify_on_save"), "checked") {
 		t.Fatal("form still renders the box checked after saving false")
 	}
 
@@ -51,7 +50,7 @@ func TestSettingsFormShapedSaveRoundTrips(t *testing.T) {
 		t.Fatalf("export_folder = %q, want empty", got)
 	}
 	form = h.Get("/settings").AssertStatus(t, http.StatusOK).Body
-	if !strings.Contains(form, `<input checked="checked" id="f-notify_on_save"`) {
+	if !strings.Contains(inputTag(form, "f-notify_on_save"), `checked=""`) {
 		t.Fatal("form does not render the box checked after saving true")
 	}
 
@@ -70,4 +69,20 @@ func TestSettingsFormShapedSaveRoundTrips(t *testing.T) {
 	if _, ok := env.Fields["notify_on_save"]; !ok {
 		t.Fatalf("envelope fields = %v, want notify_on_save", env.Fields)
 	}
+}
+
+// inputTag returns the whole <input ...> tag carrying id, so an
+// attribute check sees every attribute: they render sorted, and
+// "checked" comes before "id".
+func inputTag(body, id string) string {
+	i := strings.Index(body, `id="`+id+`"`)
+	if i < 0 {
+		return ""
+	}
+	start := strings.LastIndex(body[:i], "<")
+	end := strings.Index(body[i:], ">")
+	if start < 0 || end < 0 {
+		return ""
+	}
+	return body[start : i+end+1]
 }

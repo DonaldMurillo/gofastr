@@ -15,7 +15,7 @@ func TestCodeBlockDefaultStaysBarePre(t *testing.T) {
 	if !strings.HasPrefix(strings.TrimSpace(h), "<pre") {
 		t.Errorf("default CodeBlock should still be a bare <pre>:\n%s", h)
 	}
-	if strings.Contains(h, "ui-code-block__head") {
+	if classTokenPresent(h, "fui-code-block__head") {
 		t.Errorf("default CodeBlock should not render chrome:\n%s", h)
 	}
 }
@@ -24,11 +24,11 @@ func TestCodeBlockFilenameRendersHead(t *testing.T) {
 	h := string(CodeBlock(CodeBlockConfig{Filename: "main.go", Code: "x"}))
 	for _, want := range []string{
 		`data-fui-comp="ui-code-block"`,
-		"ui-code-block--framed",
-		"ui-code-block__head",
-		"ui-code-block__file",
+		"fui-code-block--framed",
+		"fui-code-block__head",
+		"fui-code-block__file",
 		"main.go",
-		"ui-code-block__body",
+		"fui-code-block__body",
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("framed CodeBlock missing %q\n%s", want, h)
@@ -39,10 +39,10 @@ func TestCodeBlockFilenameRendersHead(t *testing.T) {
 func TestCodeBlockShowCopyTargetsItsOwnBody(t *testing.T) {
 	h := string(CodeBlock(CodeBlockConfig{Filename: "main.go", Code: "x", ShowCopy: true}))
 	// The copy button (composed ui.CopyButton) must point at the body pre's id.
-	if !strings.Contains(h, "data-fui-copy-text-from") {
+	if !strings.Contains(h, "data-hui-copy-target") {
 		t.Fatalf("ShowCopy should emit a copy button:\n%s", h)
 	}
-	target := regexp.MustCompile(`data-fui-copy-text-from="#([^"]+)"`).FindStringSubmatch(h)
+	target := regexp.MustCompile(`data-hui-copy-target="([^"]+)"`).FindStringSubmatch(h)
 	if target == nil {
 		t.Fatalf("could not find copy target:\n%s", h)
 	}
@@ -60,10 +60,10 @@ func TestCodeBlockLineNumbersWrapLines(t *testing.T) {
 			render.Text("line two"),
 		},
 	}))
-	if !strings.Contains(h, "ui-code-block--numbered") {
+	if !classTokenPresent(h, "fui-code-block--numbered") {
 		t.Errorf("LineNumbers should add the numbered modifier:\n%s", h)
 	}
-	if n := strings.Count(h, "ui-code-block__line"); n < 2 {
+	if n := classTokenCount(h, "fui-code-block__line"); n < 2 {
 		t.Errorf("each line should be wrapped (want >=2, got %d):\n%s", n, h)
 	}
 	for _, want := range []string{"line one", "line two"} {
@@ -93,10 +93,10 @@ func TestCodeBlockLinesOverrideCode(t *testing.T) {
 // applies to the framed variant).
 func TestCodeBlockScrollAddsModifierAndFrames(t *testing.T) {
 	h := string(CodeBlock(CodeBlockConfig{Filename: "big.yml", Code: "x", Scroll: true}))
-	if !strings.Contains(h, "ui-code-block--scroll") {
+	if !classTokenPresent(h, "fui-code-block--scroll") {
 		t.Errorf("Scroll should add the scroll modifier:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-code-block--framed") {
+	if !classTokenPresent(h, "fui-code-block--framed") {
 		t.Errorf("Scroll should force the framed container:\n%s", h)
 	}
 }

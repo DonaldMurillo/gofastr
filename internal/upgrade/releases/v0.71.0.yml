@@ -1,0 +1,11 @@
+version: v0.71.0
+title: First-party analytics mechanisms
+notes:
+  - change: battery/relay serves fixed third-party routes same-origin
+    breaking: false
+    guidance: "New battery; nothing changes until you mount it. The route table is fixed at New with per-route method allow-lists and body caps, credentials are stripped in both directions, inbound X-Forwarded-* is never trusted, and upstream redirects are refused rather than followed or leaked — so an upstream that answers with a redirect needs its final host in the route table."
+    nodetect: "new battery; nothing changes until it is mounted"
+  - change: uihost registers external host-page scripts before serving
+    breaking: false
+    nodetect: "new opt-in surface; nothing registers unless a plugin or battery calls it"
+    guidance: "New surface for plugins and batteries wiring in Init, after construction-time options froze. RegisterExternalScript adds a same-origin <script src> to every full-page render and refuses registration once a page has been served, so register during Init, never lazily. ScriptHandler serves the bytes under the versioned-script policy (strong ETag, immutable on a matching ?v=) and ScriptURL produces that URL."
