@@ -258,6 +258,22 @@ func bannerCSS(_ style.Theme) string {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
+/* A phone has no room for four columns: the copy ends up the
+   narrowest of them. Below 30rem the action drops under the body and
+   the dismiss spans the whole stack. */
+@media (max-width: 30rem) {
+  [data-fui-comp="ui-banner"] {
+    grid-template-columns: auto 1fr auto;
+  }
+  [data-fui-comp="ui-banner"] .fui-banner__action {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  [data-fui-comp="ui-banner"] .fui-banner__dismiss {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+  }
+}
 
 /* Variants — use the full outline + icon, avoiding a decorative side stripe. */
 .fui-banner--success { --ui-banner-accent: var(--color-success, #16A34A); }

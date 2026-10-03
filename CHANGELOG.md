@@ -242,6 +242,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   one checkbox of the same name) now posts the last value as a scalar;
   checkbox groups and multi-selects are still arrays. The resource
   engine's bool field renders that pair.
+- **`headless.NumberInput` / `ui.NumberInput` and `headless.Slider`: a
+  configured `ID` landed on both the group wrapper and the `<input>`**
+  (#460). The page then had two elements with one id, the label's `for`
+  resolved to the wrapper, and so did the stepper module's own
+  `getElementById` — a `NumberInput` with an `ID` stepped nothing. The
+  id is now the control's alone.
+- **`ui.Button` can close its widget without a request** (#461).
+  `data-fui-action="close"` — what the widget runtime's scoped click
+  handler reads — is admitted into `headless.ButtonProps.Action` (and so
+  into `ui.Button`'s `ExtraAttrs`), the one wiring key that fires no
+  request. `close` is the only value the runtime reads, so any other
+  value is refused at render, and so is a link carrying it or a close
+  beside a `data-fui-rpc` (after a request, `data-fui-rpc-close`).
+- **`ui.Banner` stacks below 30rem** (#462). The four-column grid gave a
+  390px-wide banner a 94px title column beside a 149px action; the
+  action now drops under the body and the dismiss spans the stack.
 
 ### Security
 - **Entity MCP tools list only for callers who may use them.** Each
