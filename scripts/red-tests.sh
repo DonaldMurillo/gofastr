@@ -33,6 +33,18 @@ if [ -z "$PKGS" ]; then
     exit 0
 fi
 
+# Then only the AFFECTED ones: the import-graph closure of what differs
+# from origin/main, computed under the red tag so a probe's own imports
+# count. GOFASTR_TEST_ALL=1 keeps every red package.
+if [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
+    AFFECTED="$(go run ./cmd/affected -tags red -format dir)"
+    PKGS="$(echo "$PKGS" | grep -Fxf <(echo "$AFFECTED") || true)"
+    if [ -z "$PKGS" ]; then
+        echo "no red-tagged package is affected by this change — nothing to run (GOFASTR_TEST_ALL=1 runs them all)."
+        exit 0
+    fi
+fi
+
 RUNFLAG=()
 if [ -n "$RUN" ]; then RUNFLAG=(-run "$RUN"); fi
 echo "==> go test -tags $TAG -count=1 ${RUNFLAG[@]+"${RUNFLAG[@]}"} in:"
@@ -45,6 +57,9 @@ echo "    (raw output kept at $OUT)"
 # appending to the same log; their failures fold into the suite verdict.
 RPKGS="$(grep -rl --exclude-dir=.claude --exclude-dir=node_modules --exclude-dir=dist "^//go:build red && race\|^//go:build race && red" --include='*_red_test.go' . 2>/dev/null \
     | xargs -n1 dirname | sort -u | sed 's|^\.$|.|; s|^[^.]|./&|')"
+if [ "${GOFASTR_TEST_ALL:-}" != "1" ] && [ -n "$RPKGS" ]; then
+    RPKGS="$(echo "$RPKGS" | grep -Fxf <(echo "$AFFECTED") || true)"
+fi
 if [ -n "$RPKGS" ]; then
     echo "==> go test -race -tags 'red race' -count=1 in:"
     echo "$RPKGS" | sed 's/^/      /'
