@@ -180,11 +180,12 @@ func (b *Battery) handleCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A cross-origin form or simple request cannot carry this content
-	// type without a preflight this handler never approves; the header
-	// check closes the remaining window (sandboxed pages, redirects).
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "", "same-origin", "none":
-	default:
+	// type without a preflight this handler never approves; the
+	// cross-site check closes the remaining window (sandboxed pages,
+	// redirects). The bridge is only ever called by fetch(), so the
+	// strict predicate applies: an opaque Origin: null with no Fetch
+	// Metadata is refused too.
+	if handler.IsCrossSiteRequestStrict(r) {
 		writeBridgeError(w, CodeDenied, "cross-site requests are not allowed")
 		return
 	}

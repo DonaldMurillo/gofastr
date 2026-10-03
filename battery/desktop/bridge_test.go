@@ -173,6 +173,38 @@ func TestChokepointSecFetchSiteRefused(t *testing.T) {
 	}
 }
 
+// The bridge shares handler.IsCrossSiteRequestStrict: a sibling
+// subdomain's "same-site" call and a sandboxed frame's opaque origin
+// are refused, and a same-origin call naming its own host passes.
+func TestChokepointCrossSiteByOrigin(t *testing.T) {
+	b, _, _ := newChokepointBattery(t)
+	srv := serveBridge(t, b)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	for _, c := range []struct {
+		site, origin string
+		want         int
+	}{
+		{"same-site", "http://evil.localhost:1", http.StatusForbidden},
+		{"", "null", http.StatusForbidden},
+		{"", "http://" + host, http.StatusOK},
+	} {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/__gofastr/desktop/call/testcap/ungated", strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		if c.site != "" {
+			req.Header.Set("Sec-Fetch-Site", c.site)
+		}
+		req.Header.Set("Origin", c.origin)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != c.want {
+			t.Errorf("Sec-Fetch-Site %q Origin %q: %d, want %d", c.site, c.origin, resp.StatusCode, c.want)
+		}
+	}
+}
+
 func TestChokepointOversizeBody(t *testing.T) {
 	b, _, _ := newChokepointBattery(t)
 	srv := serveBridge(t, b)

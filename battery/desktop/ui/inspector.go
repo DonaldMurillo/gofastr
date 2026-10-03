@@ -122,7 +122,7 @@ func inspectorCSS(_ style.Theme) string {
 }
 [data-fui-comp="desktopui-inspector"] .desktopui-inspector__title {
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   margin: 0;
 }

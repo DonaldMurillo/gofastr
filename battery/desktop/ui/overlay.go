@@ -128,7 +128,7 @@ func sheetCSS(_ style.Theme) string {
 }
 [data-fui-comp="desktopui-sheet"] .desktopui-sheet__title {
   font-size: var(--text-lg, 1.125rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   margin: 0;
 }
@@ -155,7 +155,7 @@ func popoverCSS(_ style.Theme) string {
 }
 [data-fui-comp="desktopui-popover"] .desktopui-popover__title {
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
   margin: 0;
 }
