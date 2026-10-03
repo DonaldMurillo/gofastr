@@ -81,7 +81,7 @@ func newUpdateFeedServer(t *testing.T, version string) *updateFeedServer {
 		Version: version,
 		Notes:   "What changed",
 		Platforms: map[string]update.PlatformEntry{
-			"darwin-arm64": {URL: "https://example.com/Notes.zip", SHA256: strings.Repeat("0", 64), Size: 1},
+			update.PlatformKey(): {URL: "https://example.com/Notes.zip", SHA256: strings.Repeat("0", 64), Size: 1},
 		},
 	}
 	manifest, sig, err := update.SignFeed(f, priv)

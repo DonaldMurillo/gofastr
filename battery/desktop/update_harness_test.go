@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -119,7 +120,7 @@ func TestUpdatesCheckAndInstallThroughThePage(t *testing.T) {
 	// 127.0.0.1).
 	archiveURL := srv.URL + "/Notes-1.2.0.zip"
 	if err := desktop.SignUpdateFeed(feedDir, keyPath, "1.2.0", "What changed",
-		"darwin-arm64", archivePath, archiveURL); err != nil {
+		runtime.GOOS+"-"+runtime.GOARCH, archivePath, archiveURL); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err = os.ReadFile(filepath.Join(feedDir, "manifest.json"))
