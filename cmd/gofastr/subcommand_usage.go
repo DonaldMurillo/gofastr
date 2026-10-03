@@ -80,3 +80,54 @@ Generate or refresh AGENTS.md and the per-battery detail files.
   sync    regenerate the battery inventory section in an existing AGENTS.md
   skill   emit a host-skill snippet for an agent that edits this project`)
 }
+
+func printDesktopUsage() {
+	fmt.Println(`Usage: gofastr desktop run|build|types|keygen|feed [flags]
+
+Build and run a GoFastr app as a desktop application (battery/desktop,
+experimental: darwin/arm64 only today).
+
+  run [--dir=<path>] [--pkg=<path>] [--watch]
+        CGO_ENABLED=0 build of the package, then exec it with
+        GOFASTR_DEV=1 so the dev MCP and livereload work inside the
+        window. The app picks its own loopback port; there is no
+        --addr. --watch rebuilds and relaunches on source changes.
+  build --id=<reverse.dns> [--name=<App Name>] [--icon=<png>]
+        [--pkg=<path>] [--version=<x.y.z>]
+        [--sign=<identity>|--no-sign] [-o=<dir>]
+        [--notarize] [--notary-profile=<name>] [--entitlements=<plist>]
+        [--scheme=<scheme>]
+        Cross-compiles (darwin/arm64, -trimpath, -s -w) and writes
+        <o>/<Name>.app with Info.plist, the binary, PkgInfo, and an
+        icon.icns built in pure Go from the PNG (no iconutil). Default
+        -o is dist/, the repo's sanctioned build output dir. The icon
+        defaults to a generated flat square. Signing: ad-hoc
+        (codesign --force --deep --sign -) by default when codesign
+        is on PATH -- enough for notifications --, --sign for a real
+        identity, --no-sign to skip; a signing error is printed, never
+        fatal. --notarize (needs --sign <Developer ID Application
+        identity>; ad-hoc cannot be notarized) signs under the
+        hardened runtime with a secure timestamp and an entitlements
+        plist (generated empty <dict/> by default: a Go binary hosting
+        a WKWebView needs no JIT entitlement), zips <Name>.zip in pure
+        Go next to the .app, runs xcrun notarytool submit --wait with
+        the keychain profile from --notary-profile (default gofastr,
+        stored via xcrun notarytool store-credentials), staples the
+        ticket with xcrun stapler staple, re-zips so the archive
+        carries the staple, and FAILS the build if any step fails.
+        --scheme writes CFBundleURLTypes so the OS hands gofastr-notes://...
+        links to the app (desktop.Config.DeepLink handles them).
+  keygen -o=<path>
+        Mints the auto-update signing pair: <path> (private, 0600) and
+        <path>.pub (the hex public key for desktop.UpdateConfig).
+  feed --key=<path> --version=<x.y.z> --platform=<goos-goarch>
+        --archive=<zip> --url=<https://...> [--notes=<text>] [-o=<dir>]
+        Writes manifest.json and manifest.json.sig (ed25519 over the
+        manifest bytes) with the archive's sha256 and size, the feed
+        the battery's updater verifies.
+  types [--pkg=<path>] [--out=desktop.d.ts]
+        Builds the package, runs it once with
+        GOFASTR_DESKTOP_MANIFEST=1 (the app prints its frozen manifest
+        and exits before opening a window), and writes the generated
+        desktop.d.ts from that manifest.`)
+}

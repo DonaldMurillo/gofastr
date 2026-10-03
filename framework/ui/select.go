@@ -114,7 +114,7 @@ func selectCSS(_ style.Theme) string {
 	return `.fui-select {
   font: inherit;
   font-size: var(--text-base, 1rem);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   /* Same field surface as the text inputs (.fui-input): without an
      explicit background the UA paints its own base colour, which in

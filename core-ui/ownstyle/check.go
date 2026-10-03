@@ -31,7 +31,7 @@ const (
 	// RuleUnknownThemeToken is GOFASTR1806: var(--name) the theme does
 	// not emit. An invalid var() resolves to nothing and the
 	// declaration is silently dropped.
-	RuleUnknownThemeToken = "GOFASTR1806"
+	RuleUnknownThemeToken = "GOFASTR1806" // not-a-secret: a contract rule ID
 	// RuleHardcodedTokenValue is GOFASTR1807: a value that is exactly a
 	// theme token's value.
 	RuleHardcodedTokenValue = "GOFASTR1807"

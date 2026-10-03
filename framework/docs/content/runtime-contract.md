@@ -87,7 +87,7 @@ server side and the runtime does the work.
 
 | Attribute | Purpose |
 |---|---|
-| `data-fui-rpc="<path>"` | Click / form-submit fires a request to `<path>` |
+| `data-fui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` message in the kit's own error markup (`fui-field__error` in a `ui.FormField`, `fui-choice-field__error` after a standalone checkbox), and when no field matched, the `error` text is toasted. |
 | `data-fui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-fui-rpc-close` | Containing widget closes on 2xx |
@@ -260,6 +260,7 @@ server side and the runtime does the work.
 | `data-hui-sidebar-collapse-label="<text>"` / `data-hui-sidebar-expand-label="<text>"` | On the collapse button, always (the component resolved the words — `SidebarConfig.CollapseLabel`/`ExpandLabel`, else the i18nui defaults). The module uses the matching attribute when flipping the button's `aria-label` on a client-side toggle, so a host's custom wording survives interaction. |
 | `data-hui-sidebar-group-toggle` | On a button-dialect group header (`SidebarConfig.GroupMarkup: SidebarGroupButton`). The sidebar module toggles `aria-expanded` on the button plus the `hidden` attribute on the element named by `aria-controls`. The default `<details>` dialect instead carries the disclosure hooks (`data-hui-disclosure` + `data-hui-disclosure-persist` with a per-group key). |
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
+| `data-fui-window-drag` | On any element inside a desktop-host window: marks the drag surface of a borderless (ChromeNone) window, the widget drag-handle pattern. The demand-loaded `desktop` module's delegated `mousedown` listener matches the click target (or an ancestor) against this attribute and calls `__gofastr.desktop.window.startDrag()`, which posts `{"type":"drag"}` through the WebView's `window.webkit.messageHandlers.gofastr` message channel rather than the HTTP bridge, because the native `performWindowDragWithEvent:` needs the still-current mouse-down event. In a plain browser (no message handler) the call is a no-op, so screens carrying the attribute render unchanged in `--serve` mode. |
 
 
 For the authoritative list, grep `data-fui-` in

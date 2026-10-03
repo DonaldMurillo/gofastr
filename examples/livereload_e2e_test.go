@@ -57,6 +57,8 @@ func TestExamplesAreHMRReady(t *testing.T) {
 		{name: "backoffice", pkg: "./examples/backoffice", page: "/"},
 		{name: "spa", pkg: "./examples/spa", fixedAddr: "127.0.0.1:3090", page: "/"},
 		{name: "static-site", pkg: "./examples/static-site", fixedAddr: "127.0.0.1:3070", page: "/"},
+		{name: "desktop-notes", pkg: "./examples/desktop-notes", page: "/"},
+		{name: "desktop-focus", pkg: "./examples/desktop-focus", page: "/"},
 		{name: "ecommerce", pkg: "./examples/ecommerce/app", page: "/",
 			// The storefront's blueprint seeds an admin, and a generated app
 			// refuses to boot on a fresh database when the seed password is

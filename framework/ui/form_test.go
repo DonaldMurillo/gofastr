@@ -524,3 +524,37 @@ func TestFormWithNoErrorsAndNoSummaryRendersNoSummary(t *testing.T) {
 		t.Errorf("a form with nothing wrong rendered a summary:\n%s", h)
 	}
 }
+
+// Every text control shares the --ui-control-padding-y knob (default
+// 10px) so a dense surface (a desktop window) tightens them together.
+func TestControlsShareControlPaddingKnob(t *testing.T) {
+	for name, css := range map[string]string{
+		"button":         buttonCSS(style.Theme{}),
+		"form-field":     formFieldCSS(style.Theme{}),
+		"input-group":    inputGroupCSS(style.Theme{}),
+		"password-input": passwordInputCSS(style.Theme{}),
+		"search-input":   searchInputCSS(style.Theme{}),
+		"select":         selectCSS(style.Theme{}),
+		"textarea":       textAreaCSS(style.Theme{}),
+		"color-field":    colorFieldCSS(style.Theme{}),
+	} {
+		if !strings.Contains(css, "padding: var(--ui-control-padding-y, 10px)") {
+			t.Errorf("%s CSS does not read --ui-control-padding-y", name)
+		}
+	}
+}
+
+// A textarea floors at the density control height like the select
+// and the text inputs, so a theme that lowers the touch target (the
+// desktop theme's 24) lowers it too; a literal 44px left it taller
+// than every control beside it.
+func TestTextareaFloorsAtDensityHeight(t *testing.T) {
+	for name, css := range map[string]string{
+		"select":   selectCSS(style.Theme{}),
+		"textarea": textAreaCSS(style.Theme{}),
+	} {
+		if !strings.Contains(css, "min-block-size: var(--fui-density-control-h);") {
+			t.Errorf("%s does not floor at --fui-density-control-h", name)
+		}
+	}
+}

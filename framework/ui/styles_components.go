@@ -66,9 +66,12 @@ func buttonCSS(t style.Theme) string {
      theme's control height — the --spacing-touch-target token
      (44px by default, the WCAG 2.5.5 floor) at comfortable density,
      36px at compact. An explicit Size wins over it — see the size
-     rules below, which is why they come after this one. */
+     rules below, which is why they come after this one. The block
+     padding is the --ui-control-padding-y knob (default 10px), shared
+     with the text inputs, so a dense surface (a desktop window)
+     tightens every control at once. */
   min-height: var(--fui-density-control-h);
-  padding: 10px var(--spacing-lg);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-lg);
   border: 1px solid transparent;
   border-radius: var(--fui-button-radius);
   font: inherit;
@@ -466,7 +469,7 @@ func formFieldCSS(_ style.Theme) string {
   /* Density owns the touch target: --fui-density-control-h is the
      theme's control height (44px comfortable, 36px compact). */
   min-height: var(--fui-density-control-h);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);

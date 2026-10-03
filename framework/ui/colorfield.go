@@ -166,7 +166,7 @@ func colorFieldCSS(_ style.Theme) string {
   box-sizing: border-box;
   min-block-size: var(--fui-density-control-h);
   font-family: var(--font-mono, ui-monospace, monospace);
-  padding: 10px var(--spacing-md, 8px);
+  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #e4e4e7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #fff);
