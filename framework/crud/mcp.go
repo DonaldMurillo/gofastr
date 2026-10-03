@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -63,16 +65,22 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		description string
 		schema      map[string]any
 		handler     mcp.ToolHandler
+		op          crudOp
 		write       bool // dev-implied entities mark their write tools
 	}{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), false},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), false},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), true},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), true},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), true},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), opRead, false},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, true},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), opUpdate, true},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true},
 	}
 	for _, def := range defs {
-		var opts []mcp.ToolOption
+		// Every tool carries the Access permission its route enforces
+		// for this operation. The call was already refused through the
+		// router; the gate also drops the tool from tools/list, so a
+		// caller without posts:delete does not see posts_delete or its
+		// input schema.
+		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op))}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
 		}
@@ -81,6 +89,41 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		}
 	}
 	return nil
+}
+
+// errMCPToolForbidden is the gate's refusal. It names no permission: the
+// listing already hides the tool, and a caller probing by name learns only
+// that it may not call it.
+var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
+
+// mcpToolGate returns the per-caller precondition for one entity tool:
+// the entity's Access permission for op, the check requirePermission runs
+// on the route. It is collection-level: a resource-aware Decider is asked
+// about the entity, not a row, and the per-id check still runs on the
+// route.
+//
+// It judges only a caller the MCP request already resolved. When no user
+// is on the context, the credentials may still be resolved on the
+// redispatch (the API key and cookies are copied onto the in-process
+// request and the router's auth middleware runs there), so the gate
+// cannot know the answer and leaves the tool listed; the route refuses
+// the call as it always did. Owner and tenant scoping are left to the
+// route too: they narrow rows rather than refuse the entity, and their
+// context may only exist after the router's middleware.
+func (ch *CrudHandler) mcpToolGate(op crudOp) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		if _, ok := handler.GetUser(ctx); !ok {
+			return nil
+		}
+		perm := ch.permissionForOp(op)
+		if perm == "" {
+			return nil
+		}
+		if access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()}) {
+			return nil
+		}
+		return errMCPToolForbidden
+	}
 }
 
 // mcpBase is the URL path the entity's HTTP routes are mounted at. BasePath
