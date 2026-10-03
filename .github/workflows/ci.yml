@@ -415,7 +415,7 @@ jobs:
       CGO_ENABLED: "1"
       # Same affected scope as the test job: on a pull request each shard
       # first asks cmd/affected whether its package (matrix.pkg, an import
-      # path regexp, under matrix.tags) is in the change's import-graph
+      # path regexp, under matrix.buildtags) is in the change's import-graph
       # closure and skips the suite when it is not. The check run still
       # reports success, so the release gate's "(blocking)" count is
       # unchanged. Every other trigger runs every shard.
@@ -481,7 +481,9 @@ jobs:
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
             pkg: (framework/ui|framework/pluginhost|core/mcp|cmd/gofastr/packages(/.*)?)$
-            tags: chromium
+            # Go build tags for cmd/affected's go list; named apart from a
+            # git tag trigger on purpose.
+            buildtags: chromium
             # framework/ui + framework/pluginhost ship render guards
             # behind `-tags chromium` (card footer pinning, image
             # placeholder paint, srcset data-URI parsing, WASM tier
@@ -552,7 +554,7 @@ jobs:
         id: scope
         env:
           PKG: ${{ matrix.pkg }}
-          TAGS: ${{ matrix.tags }}
+          TAGS: ${{ matrix.buildtags }}
         run: |
           if [ -n "$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
