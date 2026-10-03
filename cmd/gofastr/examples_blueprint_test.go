@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
+	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 )
 
 // TestExampleBlueprintsLoad validates every examples/<name>/gofastr.yml parses
@@ -55,6 +56,12 @@ func TestExampleBlueprintsLoad(t *testing.T) {
 // rewritten module line below needs. Verified both halves before
 // relying on either.
 const buildGateScratchPkg = "_blueprintbuildgen"
+
+// TestBuildScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
+// exists, or a parallel `go build ./...` sees a half-written package.
+func TestBuildScratchHiddenFromGoList(t *testing.T) {
+	scratchdir.AssertHiddenFromGoList(t, "../../examples/ecommerce", buildGateScratchPkg)
+}
 
 // exampleBlueprints returns every examples/<name>/gofastr.yml in the repo.
 func exampleBlueprints(t *testing.T) []string {

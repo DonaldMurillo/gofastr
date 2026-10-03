@@ -1,6 +1,7 @@
 package ecommerce_test
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,12 @@ import (
 // when expanding `./...`, at every moment, while still resolving an
 // explicit import path through it.
 const scratchPkg = "_blueprintgen"
+
+// TestScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
+// exists, or a parallel `go build ./...` sees a half-written package.
+func TestScratchHiddenFromGoList(t *testing.T) {
+	scratchdir.AssertHiddenFromGoList(t, ".", scratchPkg)
+}
 
 // realModule is the module path the committed app/ is generated under. The
 // scratch copy appends scratchPkg to it, and normalizeModule below undoes that

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +50,12 @@ import (
 // rewritten module line below needs. Verified both halves before
 // relying on either.
 const blueprintVetScratch = "_blueprintvetgen"
+
+// TestVetScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
+// exists, or a parallel `go build ./...` sees a half-written package.
+func TestVetScratchHiddenFromGoList(t *testing.T) {
+	scratchdir.AssertHiddenFromGoList(t, "../../examples/ecommerce", blueprintVetScratch)
+}
 
 func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 	if testing.Short() {

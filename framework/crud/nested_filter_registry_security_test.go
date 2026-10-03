@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // A relation may legitimately point at a real table that is not a registered
@@ -183,4 +184,64 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildExistsSubquery_UnsafeHopChain: the same fail-closed guards hold on
+// a populated hop chain, where the target primary key and each later hop's
+// scopes and keys feed the SQL too. A second-hop failure closes only that
+// hop's EXISTS, so the outer one carries "AND 1 = 0" and matches nothing.
+func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
+	toAuthor := relationHop{
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id"},
+		Target:   &entity.Entity{PrimaryKey: "id"},
+		Table:    "authors",
+	}
+	toTeam := relationHop{
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "teams", ForeignKey: "team_id"},
+		Target:   &entity.Entity{PrimaryKey: "id"},
+		Table:    "teams",
+	}
+	nf := func(hops ...relationHop) nestedFilter {
+		return nestedFilter{Hops: hops, Field: "name", Op: filter.OpEq, Value: "core"}
+	}
+	noInjection := func(t *testing.T, sql string) {
+		t.Helper()
+		if strings.Contains(sql, ";") || strings.Contains(sql, "DROP") || strings.Contains(sql, "OR 1=1") {
+			t.Fatalf("SECURITY: unsafe SQL generated: %s", sql)
+		}
+	}
+
+	if sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, toTeam)); !strings.Contains(sql, "EXISTS (SELECT 1 FROM teams") {
+		t.Fatalf("the safe chain did not render both hops: %s", sql)
+	}
+
+	t.Run("unsafe target primary key", func(t *testing.T) {
+		hop := toAuthor
+		hop.Target = &entity.Entity{PrimaryKey: "id; DROP TABLE users"}
+		sql, _ := buildExistsSubquery("posts", "id", nf(hop, toTeam))
+		noInjection(t, sql)
+		if sql != "1 = 0" {
+			t.Fatalf("want 1 = 0, got %s", sql)
+		}
+	})
+
+	t.Run("unsafe scope on a later hop", func(t *testing.T) {
+		hop := toTeam
+		hop.Scopes = []filter.ParsedFilter{{Field: "org_id OR 1=1", Op: filter.OpEq, Value: "o1"}}
+		sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, hop))
+		noInjection(t, sql)
+		if sql != "1 = 0" {
+			t.Fatalf("want 1 = 0, got %s", sql)
+		}
+	})
+
+	t.Run("unsafe key on the second hop", func(t *testing.T) {
+		hop := toTeam
+		hop.Relation.ForeignKey = "team_id; DROP TABLE users"
+		sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, hop))
+		noInjection(t, sql)
+		if !strings.HasPrefix(sql, "EXISTS (SELECT 1 FROM authors") || !strings.HasSuffix(sql, "AND 1 = 0)") {
+			t.Fatalf("want the outer EXISTS closed with AND 1 = 0, got %s", sql)
+		}
+	})
 }
