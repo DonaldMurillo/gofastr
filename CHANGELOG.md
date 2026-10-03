@@ -259,6 +259,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   one checkbox of the same name) now posts the last value as a scalar;
   checkbox groups and multi-selects are still arrays. The resource
   engine's bool field renders that pair.
+- **`headless.NumberInput` / `ui.NumberInput` and `headless.Slider`: a
+  configured `ID` landed on both the group wrapper and the `<input>`**
+  (#460). The page then had two elements with one id, the label's `for`
+  resolved to the wrapper, and so did the stepper module's own
+  `getElementById` — a `NumberInput` with an `ID` stepped nothing. The
+  id is now the control's alone.
+- **`ui.Button` can close its widget without a request** (#461).
+  `data-fui-action="close"` — what the widget runtime's scoped click
+  handler reads — is admitted into `headless.ButtonProps.Action` (and so
+  into `ui.Button`'s `ExtraAttrs`), the one wiring key that fires no
+  request. `close` is the only value the runtime reads, so any other
+  value is refused at render, and so is a link carrying it or a close
+  beside a `data-fui-rpc` (after a request, `data-fui-rpc-close`).
+- **`ui.Banner` stacks below 30rem** (#462). The four-column grid gave a
+  390px-wide banner a 94px title column beside a 149px action; the
+  action now drops under the body and the dismiss spans the stack.
+
+### Security
+- **Entity MCP tools list only for callers who may use them.** Each
+  generated `<entity>_list/get/create/update/delete` tool carries its
+  operation's `Exposure.Access` permission as a `WithToolGate` gate. A
+  signed-in caller without `posts:write` no longer sees `posts_create`
+  or its input schema in `tools/list`, and calling it by name is refused
+  before the router runs (`-32602 entity mcp: not permitted` instead of
+  the route's 403). The gate judges only what the `/mcp` request's
+  context shows: with no user, or no role policy and no Decider on it
+  (a policy mounted on a route group), the tool stays listed and the
+  route decides. With a Decider on it, `get`, `update` and `delete`
+  stay listed too, since the route asks the Decider per record. Tools
+  of an `app.GroupEntity` entity are never gated: the group's own
+  middleware may install another policy. So no call the route allows is
+  refused. Mount `framework.AccessMiddleware` with `app.Use` to get the
+  hiding. `crud.CrudHandler` gains `MCPRouteScoped`, which marks such an
+  entity.
 
 ## [0.86.0] - 2026-09-24
 

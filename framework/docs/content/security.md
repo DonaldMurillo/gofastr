@@ -618,8 +618,12 @@ not filtered by it. See
 [entity-declarations](entity-declarations.md) → "Row-level read scoping".
 
 Because entity MCP tools dispatch through the router, this gate governs
-them automatically; no separate `mcp.WithToolGate`/`auth.MCPUser` wiring
-is needed for generated CRUD tools (that machinery remains for *custom*
+their calls automatically, and the framework attaches the entity's
+`Access` permission to each generated tool as its `WithToolGate`, so a
+caller who visibly lacks it does not see the tool in `tools/list` (see
+[entity-declarations](entity-declarations.md) → "MCP Tools"). No
+`mcp.WithToolGate`/`auth.MCPUser` wiring of your own is needed for
+generated CRUD tools (that machinery remains for *custom*
 tools registered directly via `app.MCP.RegisterTool`; `Endpoint.MCPHandler`
 twins default to requiring an authenticated caller; see
 [agent-ready](agent-ready.md)).

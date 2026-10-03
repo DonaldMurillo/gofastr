@@ -134,3 +134,18 @@ func TestNumberInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 		t.Errorf("wrapper class should stay framework+caller:\n%s", root)
 	}
 }
+
+// A configured ID lands on the <input> once. The wrapper used to carry
+// it too, so getElementById — the stepper module's own lookup, and any
+// page script's — answered the wrapper (#460).
+func TestNumberInputIDIsOnTheInputOnly(t *testing.T) {
+	h := string(NumberInput(NumberInputConfig{ID: "size", Name: "size", Label: "Size (px)", Value: 300}))
+	if n := strings.Count(h, `id="size"`); n != 1 {
+		t.Errorf("id=\"size\" appears %d times, want once:\n%s", n, h)
+	}
+	input := h[strings.Index(h, "<input "):]
+	input = input[:strings.Index(input, ">")+1]
+	if !strings.Contains(input, `id="size"`) {
+		t.Errorf("the id should be on the input, got %s", input)
+	}
+}
