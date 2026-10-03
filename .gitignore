@@ -163,6 +163,7 @@ kiln-*
 # names — a new cmd/ lands without touching this file.
 /bench-resources
 /check-csp
+/affected
 /check-embed
 /mutate
 /repolint

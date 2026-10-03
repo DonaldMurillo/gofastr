@@ -45,9 +45,27 @@ func TestMainPushCICoversReleaseTags(t *testing.T) {
 	if !strings.Contains(ci, "branches: [main]") {
 		t.Fatal("ci.yml does not run on main pushes — the merge commit a release tag points at gets no check runs and the release gate has nothing to consult")
 	}
-	if strings.Contains(ci, "tags:") {
+	if strings.Contains(workflowTriggers(t, ci), "tags:") {
 		t.Fatal("ci.yml triggers on tag pushes — that duplicates the main-push run on the same SHA; the release gate already consults those checks")
 	}
+}
+
+// workflowTriggers returns the workflow's top-level `on:` block: from the
+// `on:` line to the next unindented key. A `tags:` elsewhere in the file (a
+// matrix shard's build-tag key, a comment) is not a trigger, so the tag-push
+// check reads only this block.
+func workflowTriggers(t *testing.T, src string) string {
+	t.Helper()
+	start := strings.Index(src, "\non:")
+	if start < 0 {
+		t.Fatal("ci.yml has no top-level on: block")
+	}
+	rest := src[start+1:]
+	end := regexp.MustCompile(`(?m)^[a-z]`).FindStringIndex(rest[3:])
+	if end == nil {
+		return rest
+	}
+	return rest[:3+end[0]]
 }
 
 // The required-check manifest (scripts/release-required-checks.txt) is the
