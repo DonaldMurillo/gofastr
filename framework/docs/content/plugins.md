@@ -55,7 +55,8 @@ older `mcp.Gated(gate, handler)` wrapper still works but only reaches
 `tools/call`, so the schema stayed visible to everyone; prefer the option.
 
 (Entity CRUD tools don't need this; they re-dispatch through the
-router and inherit HTTP auth, owner scoping, and RBAC wholesale.)
+router and inherit HTTP auth, owner scoping, and RBAC wholesale, and the
+framework gates their listing on the entity's `Access` permission.)
 
 ## Init lifecycle
 

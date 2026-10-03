@@ -259,6 +259,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   390px-wide banner a 94px title column beside a 149px action; the
   action now drops under the body and the dismiss spans the stack.
 
+### Security
+- **Entity MCP tools list only for callers who may use them.** Each
+  generated `<entity>_list/get/create/update/delete` tool carries its
+  operation's `Exposure.Access` permission as a `WithToolGate` gate. A
+  signed-in caller without `posts:write` no longer sees `posts_create`
+  or its input schema in `tools/list`, and calling it by name is refused
+  before the router runs (`-32602 entity mcp: not permitted` instead of
+  the route's 403). The gate judges only what the `/mcp` request's
+  context shows: with no user, or no role policy and no Decider on it
+  (a policy mounted on a route group), the tool stays listed and the
+  route decides. With a Decider on it, `get`, `update` and `delete`
+  stay listed too, since the route asks the Decider per record. Tools
+  of an `app.GroupEntity` entity are never gated: the group's own
+  middleware may install another policy. So no call the route allows is
+  refused. Mount `framework.AccessMiddleware` with `app.Use` to get the
+  hiding. `crud.CrudHandler` gains `MCPRouteScoped`, which marks such an
+  entity.
+
 ## [0.86.0] - 2026-09-24
 
 **BREAKING.** v0.86.0 rebuilds the UI layer and deprecates nothing: a

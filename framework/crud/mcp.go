@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -63,16 +65,23 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		description string
 		schema      map[string]any
 		handler     mcp.ToolHandler
+		op          crudOp
+		item        bool // the route judges one record: Ref{Type, ID}
 		write       bool // dev-implied entities mark their write tools
 	}{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), false},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), false},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), true},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), true},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), true},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), opRead, true, false},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), opUpdate, true, true},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true, true},
 	}
 	for _, def := range defs {
-		var opts []mcp.ToolOption
+		// Every tool carries the Access permission its route enforces
+		// for this operation. The call was already refused through the
+		// router; the gate also drops the tool from tools/list, so a
+		// caller without posts:delete does not see posts_delete or its
+		// input schema.
+		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item))}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
 		}
@@ -81,6 +90,57 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		}
 	}
 	return nil
+}
+
+// errMCPToolForbidden is the gate's refusal. It names no permission: the
+// listing already hides the tool, and a caller probing by name learns only
+// that it may not call it.
+var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
+
+// mcpToolGate returns the per-caller precondition for one entity tool:
+// the entity's Access permission for op, the check requirePermission runs
+// on the route, at the same Ref{Type} the route uses for list and create.
+// get, update and delete (item) are judged on the route at Ref{Type, ID},
+// and a Decider may answer per record, so with a Decider on the context
+// an item tool is left to the route; a role policy is record-blind and
+// still judges it.
+//
+// It judges only what the MCP request's own context can show. With no
+// user on it, the credentials may still be resolved on the redispatch (the
+// API key and cookies are copied onto the in-process request and the
+// router's auth middleware runs there). With no role policy and no
+// Decider on it, the policy may be mounted on a route group, which only
+// the redispatch passes through. Either way the gate cannot know the
+// answer, so it leaves the tool listed and the route refuses the call as
+// it always did. Owner and tenant scoping are left to the route too: they
+// narrow rows rather than refuse the entity, and their context may only
+// exist after the router's middleware. An entity mounted on a route group
+// (MCPRouteScoped) is left to the route entirely: the group's own
+// middleware may replace the policy the /mcp context carries.
+func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		if ch.MCPRouteScoped {
+			return nil
+		}
+		if _, ok := handler.GetUser(ctx); !ok {
+			return nil
+		}
+		decider := access.GetDecider(ctx)
+		if access.PolicyFromContext(ctx) == nil && decider == nil {
+			return nil
+		}
+		if item && decider != nil {
+			return nil
+		}
+		perm := ch.permissionForOp(op)
+		if perm == "" {
+			return nil
+		}
+		if access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()}) {
+			return nil
+		}
+		return errMCPToolForbidden
+	}
 }
 
 // mcpBase is the URL path the entity's HTTP routes are mounted at. BasePath
