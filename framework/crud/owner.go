@@ -137,11 +137,26 @@ func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool 
 	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
 }
 
-// CanWriteRecordScoped reports whether ctx may write this entity's record: enforces
-// declared RBAC write permissions (Access.Write/Create/Update), honoring WithServerWrites.
-func (ch *CrudHandler) CanWriteRecordScoped(ctx context.Context, op crudOp, id string) bool {
+// canCascadeWrite reports whether a cascade write from a parent may create or
+// update this entity's record. It is the context-only twin of requireScope,
+// for a write that reaches this entity without passing its own route: owner,
+// tenant, the baseline session gate, then RBAC. WithServerWrites skips all of
+// them. The session gate is skipped for the in-process API (r built by
+// syntheticRequest), which never applies it to a parent either; every route,
+// MCP included, arrives with a real request. Checking RBAC alone let an
+// anonymous write to a Public parent create rows in a child whose own route
+// answers 401.
+func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op crudOp, id string) bool {
 	if serverWrites(ctx) {
 		return true
+	}
+	if ch.requireOwnerContext(ctx) != nil || ch.requireTenantContext(ctx) != nil {
+		return false
+	}
+	if ch.sessionGated() && (r == nil || !inProcess(r)) {
+		if _, ok := handler.GetUser(ctx); !ok {
+			return false
+		}
 	}
 	perm := ch.permissionForOp(op)
 	if perm == "" {
@@ -170,8 +185,7 @@ func (ch *CrudHandler) CanWriteRecordScoped(ctx context.Context, op crudOp, id s
 // predicate, first find the code that applies owner and tenant for your path;
 // if you cannot point at it, you want CanReadScoped.
 func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
-	cfg := ch.Entity.Config
-	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
+	if ch.sessionGated() {
 		if _, ok := handler.GetUser(ctx); !ok {
 			return false
 		}
@@ -402,8 +416,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // signal, generalized to every CRUD entrypoint instead of just the SSE
 // feed.
 func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
-	cfg := ch.Entity.Config
-	if cfg.Scope.OwnerField != "" || cfg.Exposure.Access.Declared() || cfg.Exposure.Public {
+	if !ch.sessionGated() {
 		return true // an explicit mechanism already governs this entity
 	}
 	if _, ok := handler.GetUser(r.Context()); !ok {
@@ -411,6 +424,13 @@ func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Reque
 		return false
 	}
 	return true
+}
+
+// sessionGated reports whether the entity falls back to the baseline session
+// requirement: it declares no owner field, no Access block, and is not Public.
+func (ch *CrudHandler) sessionGated() bool {
+	cfg := ch.Entity.Config
+	return cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public
 }
 
 // requireScope runs every secure-by-default access gate for an HTTP request in

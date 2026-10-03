@@ -165,10 +165,6 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		result[k] = v
 	}
 
-	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
-		return nil, err
-	}
-
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
@@ -268,7 +264,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, errNoFieldsToUpdate
 		}
 		var selErr error
-		result, selErr = ch.selectPreImage(ctx, r, id)
+		result, selErr = ch.selectWriteTarget(ctx, r, id)
 		if selErr != nil {
 			if errors.Is(selErr, sql.ErrNoRows) {
 				return nil, errNotFound
@@ -328,10 +324,6 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		result[k] = v
 	}
 
-	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
-		return nil, err
-	}
-
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
@@ -370,6 +362,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 	if len(rels) == 0 || ch.Registry == nil {
 		return nil
 	}
+	var registered map[string]*entity.Entity
 	for _, rel := range rels {
 		if rel.Type != entity.RelManyToOne {
 			continue
@@ -380,6 +373,14 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		}
 		fk := fmt.Sprint(raw)
 		if fk == "" {
+			continue
+		}
+		// An unknown name is skipped (see above); only a name the registry
+		// holds but cannot resolve (several versions) is refused.
+		if registered == nil {
+			registered = ch.Registry.All()
+		}
+		if _, known := registered[rel.Entity]; !known {
 			continue
 		}
 		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
@@ -524,4 +525,23 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 		return nil, err
 	}
 	return result, nil
+}
+
+// selectWriteTarget reads the row an update without scalar fields cascades
+// into, under the WHERE the scalar UPDATE applies: tenant, the owner WRITE
+// scope (no CrossOwnerRead lift) and deleted_at IS NULL. The read-scoped
+// selectPreImage let a caller who may read another owner's row attach
+// children or pivot links to it.
+func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
+	cols := ch.visibleFields()
+	qb := query.Select(cols...).
+		From(ch.Entity.GetTable()).
+		Where(ch.PrimaryKey+" = $1", id)
+	ch.ApplyTenantScope(qb, r)
+	applyOwnerScope(ch, qb, r, false)
+	if ch.Entity.Config.Scope.SoftDelete {
+		qb.Where("deleted_at IS NULL")
+	}
+	sqlStr, args := qb.Build()
+	return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
 }

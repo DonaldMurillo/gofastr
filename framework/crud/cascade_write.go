@@ -376,7 +376,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
 		}
 		if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-			if r != nil && !childHandler.CanWriteRecordScoped(ctx, opUpdate, fmt.Sprint(childIDVal)) {
+			if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
 				return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
 			}
 			childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
@@ -384,7 +384,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 				childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 			}
 		} else {
-			if r != nil && !childHandler.CanWriteRecordScoped(ctx, opCreate, "") {
+			if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 				return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 			}
 			childResult, err = childHandler.doCreate(ctx, r, childMap)
@@ -458,7 +458,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
 						return nil, err
 					}
-					if r != nil && !childHandler.CanWriteRecordScoped(ctx, opUpdate, fmt.Sprint(childIDVal)) {
+					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
 						return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
 					}
 					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
@@ -471,7 +471,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						return nil, scanErr
 					}
 					if existingID != nil {
-						if r != nil && !childHandler.CanWriteRecordScoped(ctx, opUpdate, fmt.Sprint(existingID)) {
+						if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(existingID)) {
 							return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
 						}
 						childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(existingID), childMap)
@@ -479,7 +479,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 						}
 					} else {
-						if r != nil && !childHandler.CanWriteRecordScoped(ctx, opCreate, "") {
+						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 							return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 						}
 						childResult, err = childHandler.doCreate(ctx, r, childMap)
@@ -489,7 +489,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 				}
 			} else {
-				if r != nil && !childHandler.CanWriteRecordScoped(ctx, opCreate, "") {
+				if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 					return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 				}
 				childResult, err = childHandler.doCreate(ctx, r, childMap)
@@ -529,7 +529,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
 						return nil, err
 					}
-					if r != nil && !childHandler.CanWriteRecordScoped(ctx, opUpdate, fmt.Sprint(childIDVal)) {
+					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
 						return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
 					}
 					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
@@ -537,7 +537,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
-					if r != nil && !childHandler.CanWriteRecordScoped(ctx, opCreate, "") {
+					if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 						return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 					}
 					childResult, err = childHandler.doCreate(ctx, r, childMap)
@@ -598,7 +598,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						if len(childMap) == 1 {
 							childResult = childMap
 						} else {
-							if r != nil && !childHandler.CanWriteRecordScoped(ctx, opUpdate, fmt.Sprint(childID)) {
+							if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childID)) {
 								return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
 							}
 							var err error
@@ -613,7 +613,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 						}
 					} else {
-						if r != nil && !childHandler.CanWriteRecordScoped(ctx, opCreate, "") {
+						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
 							return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
 						}
 						var err error

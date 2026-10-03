@@ -445,6 +445,8 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
 - **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated.
+- **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
+- **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing.
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column

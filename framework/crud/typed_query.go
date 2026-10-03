@@ -394,14 +394,16 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		anySet = true
 	}
 	// Restamp updated_at on the bulk update, mirroring the single-row
-	// doUpdate path. Skip it when the caller already supplied updated_at
-	// explicitly (e.g. a backfill) and when the entity has no auto-timestamp
-	// updated_at column.
+	// doUpdate path. A caller-supplied updated_at (a backfill) is written
+	// as given instead: the field loop above skips every AutoGenerate
+	// column, so it is set here or not at all.
 	if col := autoUpdatedAtColumn(q.handler.Entity); col != "" {
-		if _, supplied := body[col]; !supplied {
+		if val, supplied := body[col]; supplied {
+			ub.Set(col, q.handler.bindJSONValue(col, val))
+		} else {
 			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
-			anySet = true
 		}
+		anySet = true
 	}
 	if !anySet {
 		return 0, errNoFieldsToUpdate

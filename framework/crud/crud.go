@@ -1005,7 +1005,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 
 		var result map[string]any
-		err = ch.inTx(WithReadHooks(WithAuditRequest(r.Context(), r)), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
 				return err
@@ -1086,7 +1086,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		var result map[string]any
-		err = ch.inTx(WithReadHooks(WithAuditRequest(r.Context(), r)), func(ctx context.Context, ch *CrudHandler) error {
+		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
 				return err
