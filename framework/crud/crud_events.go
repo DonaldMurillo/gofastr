@@ -101,10 +101,11 @@ func (ch *CrudHandler) eventData(ctx context.Context, record any) map[string]any
 
 // withoutCascadeChildren returns record minus the cascade-written relations a
 // create or update attached for its response. Each child already publishes
-// its own event under its own entity, where the child's read gate and
-// redaction apply; a copy inside the parent's payload reached any parent
-// subscriber with neither. The caller's map is left intact: the response
-// still carries the children.
+// its own event under its own entity. On SSE that event passes the child's
+// read gate and AfterGet redaction; a copy inside the parent's payload
+// reached any parent subscriber with neither. Durable outbox consumers get
+// the child's raw row either way (see the EventOutbox contract). The caller's
+// map is left intact: the response still carries the children.
 func (ch *CrudHandler) withoutCascadeChildren(record any) any {
 	row, ok := record.(map[string]any)
 	if !ok || ch.Entity == nil {
