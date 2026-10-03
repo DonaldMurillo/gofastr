@@ -157,6 +157,17 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// (fragments.go owns it), carried the same way a page
 			// carries pane-close.
 			out[k] = v
+		case "data-fui-action":
+			// The enclosing widget's own close, read by its scoped
+			// click handler (widgets.js): the one wiring key that
+			// fires no request and opens nothing, which is why a
+			// modal's Cancel needs it. "close" is the only value the
+			// runtime reads; anything else is a button that does
+			// nothing, so it is refused here instead.
+			if v != "close" {
+				panic("headless: Action carries data-fui-action " + strconv.Quote(v) + ", and close is the only action the widget runtime reads")
+			}
+			out[k] = v
 		case "data-fui-signal-set", "data-fui-signal-inc", "data-fui-signal-toggle":
 			// The value is "signal" or "signal:argument".
 			checkSignalName(strings.SplitN(v, ":", 2)[0])
