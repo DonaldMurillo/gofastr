@@ -14,7 +14,13 @@ import (
 // resolves without a go.mod, a replace directive, or a network fetch.
 // Gitignored; removed before and after the test so a killed run cannot
 // leave a package behind that later trips `go build ./...`.
-const scratchPkg = "blueprintgen"
+// The leading underscore is what keeps the window shut: the directory
+// is created mid-test and filled a moment later, so a `go list ./...`
+// in another package's test binary at that instant used to fail hard
+// with "no Go files in". Go's tooling ignores a "_"-prefixed directory
+// when expanding `./...`, at every moment, while still resolving an
+// explicit import path through it.
+const scratchPkg = "_blueprintgen"
 
 // TestBlueprintStillGenerates compiles gofastr.yml.
 //

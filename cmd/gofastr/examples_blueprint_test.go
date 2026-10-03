@@ -42,7 +42,19 @@ func TestExampleBlueprintsLoad(t *testing.T) {
 // examples/{ecommerce,meridian}/blueprint_gate_test.go: those packages run as
 // their own test binaries, so a shared directory name would collide when the
 // suites run beside each other under `go test -p 2`.
-const buildGateScratchPkg = "blueprintbuildgen"
+//
+// The leading underscore is what keeps the window shut. The directory
+// is created inside the repo module mid-test and filled a moment
+// later, so a `go list ./...` or `go build ./...` running in another
+// package's test binary at that instant used to fail hard with "no Go
+// files in examples/<name>/<scratch>". Removing the directory before
+// and after the run covers a leaked one, not the window while the run
+// is live. Go's tooling ignores a directory whose name begins with
+// "_" when it expands a `./...` pattern, at every moment, while still
+// resolving an explicit import path through it — which is what the
+// rewritten module line below needs. Verified both halves before
+// relying on either.
+const buildGateScratchPkg = "_blueprintbuildgen"
 
 // exampleBlueprints returns every examples/<name>/gofastr.yml in the repo.
 func exampleBlueprints(t *testing.T) []string {
