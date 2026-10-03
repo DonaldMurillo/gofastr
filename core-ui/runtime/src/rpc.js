@@ -156,6 +156,9 @@
     // An explicit data-fui-rpc-body (read above) still wins; a control with
     // no enclosing form and no explicit body keeps the legacy empty body.
     const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    // A retry starts clean (the formerrors module placed the previous
+    // attempt's messages; nothing to clear until it has loaded).
+    if (formSource && NS._formErrors) NS._formErrors.clear(formSource);
     // A non-form carrier can still own form controls: the combobox
     // renders a <div> carrier so an embedding host <form> survives HTML
     // parsing. Serialize its named, enabled controls exactly like a
@@ -191,10 +194,14 @@
       } else {
         // Repeated keys become arrays; one value stays scalar. getAll avoids
         // inherited names such as constructor and toString on the plain object.
+        // The one repeated shape that is NOT a list is the HTML checkbox
+        // idiom, a hidden input followed by a checkbox of the same name
+        // (hidden "false", checkbox "true"): the checkbox overrides the
+        // hidden when checked, so the pair is one value, the last one.
         const obj = {};
         for (const k of fd.keys()) {
           const v = fd.getAll(k);
-          obj[k] = v.length > 1 ? v : v[0];
+          obj[k] = v.length > 1 && !_hiddenCheckboxPair(formSource, k) ? v : v[v.length - 1];
         }
         body = JSON.stringify(obj);
       }
@@ -227,6 +234,14 @@
       if (!r.ok) {
         const txt = await r.text();
         if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
+        // A refused form submission is never silent: the formerrors
+        // module renders the server's validation envelope into the
+        // fields (demand-loaded; the happy path never pays for it).
+        if (formSource) {
+          NS.loadModule('formerrors')
+            .then(() => NS._formErrors.report(formSource, r.status, txt))
+            .catch(() => {});
+        }
         return;
       }
 
@@ -319,6 +334,15 @@
       node.classList.remove('fui-loading');
       node.removeAttribute('aria-busy');
     }
+  }
+
+  // _hiddenCheckboxPair reports whether name's controls in form are
+  // exactly one hidden input followed by one checkbox: the pair a bool
+  // field renders so an unchecked box still submits its value.
+  function _hiddenCheckboxPair(form, name) {
+    const els = form && form.elements ? form.elements.namedItem(name) : null;
+    if (!els || els.length !== 2) return false;
+    return els[0].type === 'hidden' && els[1].type === 'checkbox';
   }
 
   async function dispatchRPC(node, source, opts) {

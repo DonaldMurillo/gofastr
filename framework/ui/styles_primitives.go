@@ -339,7 +339,13 @@ func toggleCSS(_ style.Theme) string {
 }
 
 /* ─── Checkbox: the check is two gradient strokes, so its ink is a
-   token (--color-primary-fg) rather than a hex baked into an SVG. ─── */
+   token (--color-primary-fg) rather than a hex baked into an SVG.
+   Each stroke is the 50% line of a corner-keyword gradient, which
+   runs exactly corner to corner of its tile whatever the tile's
+   aspect: "to top right" draws the short leg (\) and "to bottom
+   right" the long leg (/), and the two tiles share the corner where
+   the legs meet. Angle gradients (45deg, 135deg) only hit the corners
+   of a square tile, which drew a broken, crossed mark. ─── */
 .fui-choice--checkbox .fui-choice__input {
   border-radius: var(--radii-sm, 4px);
 }
@@ -347,11 +353,11 @@ func toggleCSS(_ style.Theme) string {
   background-color: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   background-image:
-    linear-gradient(45deg, transparent 52%, var(--color-primary-fg, #FFFFFF) 52%, var(--color-primary-fg, #FFFFFF) 68%, transparent 68%),
-    linear-gradient(135deg, transparent 34%, var(--color-primary-fg, #FFFFFF) 34%, var(--color-primary-fg, #FFFFFF) 50%, transparent 50%);
+    linear-gradient(to top right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(to bottom right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px));
   background-repeat: no-repeat;
-  background-size: 9px 9px, 12px 9px;
-  background-position: 3px 7px, 5px 3px;
+  background-size: 5px 5px, 8px 9px;
+  background-position: 3px 8px, 7px 4px;
 }
 
 /* ─── Radio: the dot is a hard-stop radial gradient. ─── */

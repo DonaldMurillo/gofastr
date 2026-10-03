@@ -44,6 +44,22 @@ a token to override that. In component CSS written with
 resolves to the variable: `{colors.primary}` → `var(--color-primary)`,
 `{spacing.lg}` → `var(--spacing-lg)`.
 
+A few components also read a `--ui-*` custom property with a built-in
+default. These are not theme tokens: a layout or a wrapping component
+sets them for its own subtree.
+
+| Property | Default | Read by |
+|---|---|---|
+| `--ui-control-padding-y` | `10px` | the block padding of buttons, text fields, selects, textareas, and the search, password, color, and grouped inputs |
+| `--ui-detail-list-label-track` | `minmax(7rem, 13rem)` | `ui.DetailList`'s label column; a narrow panel caps it so values keep their line |
+| `--ui-grid-min` | set by `GridConfig.Min` | `ui.Grid`'s minimum column width |
+
+The desktop layouts in `battery/desktop/ui` set
+`--ui-control-padding-y` to `4px` and the desktop theme lowers
+`Layout.TouchTarget` to 24 (the comfortable density's control height),
+which is how the same framework controls come out near native size in
+a desktop window.
+
 ## Setting the theme
 
 Three entry points produce a `style.Theme` you pass to
