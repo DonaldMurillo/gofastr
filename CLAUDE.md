@@ -140,7 +140,20 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 
 - **Build / run the example website**: `./scripts/dev-watch.sh` (auto-rebuild + livereload, port `:8082`). Dev-watch writes to `/tmp/` because the watched tree must stay clean.
 - **Build canonical binaries**: `make build` (→ `dist/gofastr`, `dist/kiln`) or `make build-all` (also builds every example into `dist/examples/`). The `dist/` directory is the **only** sanctioned build output location and is gitignored.
-- **Test all packages**: `go test ./...`.
+- **Test what you changed**: `make test`. Every local gate (`make test`,
+  `make analyze`, `make test-race`, `make test-pg`, the pre-commit and
+  pre-push hooks, `make red-tests`, `scripts/coverage-floors.sh`) and CI's
+  pull-request run scope to the AFFECTED packages: `go run ./cmd/affected`
+  walks the import graph from what differs between the working tree and
+  `origin/main` (staged, unstaged, untracked and deleted files; a file
+  under testdata or an embedded asset marks its owning package) and
+  prints the closure, or runs the command after `--` with it appended.
+  Changing go.mod, go.sum or cmd/affected widens to everything, as does
+  a base ref that cannot be resolved: the tool degrades to the full run,
+  never to a skipped one.
+- **Test everything**: `./scripts/test-all.sh` (or `make test-all`), or
+  `GOFASTR_TEST_ALL=1` in front of any of the gates above. Pushes to main
+  and the merge queue always run everything in CI.
 - **Repo analyzers (type-aware invariants as vet checks)**: `make
   analyze` builds `cmd/vettool` and runs it over the tree; it also runs
   in the pre-commit hook and CI's vet step. Registered: `mapwriter`
