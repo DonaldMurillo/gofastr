@@ -355,7 +355,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 		if len(chain) > 0 {
 			content, renderErr := renderScreen(ctx, comp)
 			if renderErr != nil {
-				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+				return "", screenRenderPanicError(path, renderErr)
 			}
 			wrapped, err := renderLayoutChain(ctx, chain, wrapArticle(screen, comp, content), nil, nil)
 			if err != nil {

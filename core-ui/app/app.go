@@ -1295,9 +1295,16 @@ var ErrScreenPanicked = errors.New("screen panicked")
 // its own render failure: its RenderError markup is the answer and no
 // error is returned (the panic is still logged with its stack by the
 // component recovery). Any other screen's contained panic comes back as
-// the error the caller wraps with screenRenderPanicError.
-func renderScreen(ctx context.Context, comp component.Component) (render.HTML, error) {
-	out, err := component.SafeRenderCtx(ctx, comp)
+// the error the caller wraps with screenRenderPanicError. A RenderError
+// that panics too escapes SafeRenderCtx's recovery; it is contained here
+// and returned as that same error.
+func renderScreen(ctx context.Context, comp component.Component) (out render.HTML, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = "", errors.New("component render panic: ErrorBoundary.RenderError: "+textsafe.Recovered(r))
+		}
+	}()
+	out, err = component.SafeRenderCtx(ctx, comp)
 	if err != nil {
 		if _, ok := comp.(component.ErrorBoundary); ok {
 			return out, nil
