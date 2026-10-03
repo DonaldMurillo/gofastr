@@ -55,7 +55,7 @@ func TestLayoutRendersThreeRegions(t *testing.T) {
 func TestLayoutCSS(t *testing.T) {
 	css := componentCSS(t, "desktopui-layout")
 	for _, w := range []string{
-		"html:has(.layout-desktop), body:has(.layout-desktop) { background-color: transparent; }",
+		"html:has(.layout-desktop), body:has(.layout-desktop),",
 		"--desktop-sidebar-width: 220px;",
 		"--desktop-sidebar-top-inset: 52px;",
 		"flex-basis: var(--desktop-sidebar-width",
@@ -164,4 +164,48 @@ func (sidebarComp) Render() render.HTML {
 func lookup(t *testing.T, name string) (*registry.Entry, bool) {
 	t.Helper()
 	return registry.Lookup(name)
+}
+
+// A narrow window keeps the sidebar beside the content: core-ui's
+// layout stacks the nav above the page under 48rem, which in the
+// 480-point settings window put the whole source list on top of the
+// form (the 2026-09-22 capture).
+func TestLayoutHoldsRowWhenNarrow(t *testing.T) {
+	css := componentCSS(t, "desktopui-layout")
+	i := strings.Index(css, "@media (max-width: 47.99rem)")
+	if i < 0 {
+		t.Fatalf("layout CSS has no narrow-window rule:\n%s", css)
+	}
+	if !strings.Contains(css[i:], ".layout-desktop .layout-body { display: flex; }") {
+		t.Errorf("narrow-window rule does not keep the row:\n%s", css[i:])
+	}
+}
+
+// WindowLayout is the sidebar-less window: transparent page and
+// content column, and the traffic-light zone reserved at the top.
+func TestWindowLayoutCSS(t *testing.T) {
+	if got := desktopui.WindowLayout().Name; got != desktopui.WindowLayoutName {
+		t.Fatalf("WindowLayout name = %q, want %q", got, desktopui.WindowLayoutName)
+	}
+	css := componentCSS(t, "desktopui-layout")
+	if !strings.Contains(css, "html:has(.layout-desktop-window), body:has(.layout-desktop-window) { background-color: transparent; }") {
+		t.Error("window layout does not clear the page background")
+	}
+	col := ".layout-desktop-window .layout-body > .layout-content"
+	if got := cssProperty(t, css, col, "background-color"); got != "transparent" {
+		t.Errorf("window layout content background = %q, want transparent", got)
+	}
+	if got := cssProperty(t, css, col, "padding"); !strings.HasPrefix(got, "52px var(--spacing-xl") {
+		t.Errorf("window layout content padding = %q, want the 52px traffic-light zone over xl gutters", got)
+	}
+}
+
+// Both desktop layouts tighten the framework controls' shared block
+// padding; the web default (10px) stays everywhere else.
+func TestLayoutsSetControlDensity(t *testing.T) {
+	css := componentCSS(t, "desktopui-layout")
+	decl := cssProperty(t, css, "html:has(.layout-desktop), html:has(.layout-desktop-window)", "--ui-control-padding-y")
+	if decl != "4px" {
+		t.Errorf("--ui-control-padding-y = %q, want 4px", decl)
+	}
 }

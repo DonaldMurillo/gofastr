@@ -53,6 +53,11 @@ sets them for its own subtree.
 | `--ui-detail-list-label-track` | `minmax(7rem, 13rem)` | `ui.DetailList`'s label column; a narrow panel caps it so values keep their line |
 | `--ui-grid-min` | set by `GridConfig.Min` | `ui.Grid`'s minimum column width |
 
+The desktop layouts in `battery/desktop/ui` set
+`--ui-control-padding-y` to `4px` and the desktop theme lowers
+`Layout.TouchTarget` to 24, which is how the same framework controls
+come out near native size in a desktop window.
+
 ## Setting the theme
 
 Three entry points produce a `style.Theme` you pass to

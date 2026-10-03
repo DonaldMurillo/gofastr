@@ -125,3 +125,12 @@ func TestStyleSheetResolvesThemeTokens(t *testing.T) {
 		}
 	}
 }
+
+// A desktop window is pointer-driven: the theme sizes controls to the
+// WCAG 2.5.8 target floor (24), not the 44-point touch floor that made
+// every button and field about 40 points tall.
+func TestThemeTouchTargetIsPointerSized(t *testing.T) {
+	if got := desktopui.Theme().Layout.TouchTarget.Value; got != 24 {
+		t.Errorf("TouchTarget = %d, want 24", got)
+	}
+}

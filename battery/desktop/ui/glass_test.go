@@ -86,3 +86,18 @@ func componentCSS(t *testing.T, name string) string {
 }
 
 func plain(s string) render.HTML { return render.HTML(s) }
+
+// Glass carries a hairline edge and a drop shadow on both weights:
+// over a flat page the blur has nothing to show, and without them the
+// floating toolbar read as a bare button and the inspector as loose
+// rows (the 2026-09-22 captures).
+func TestGlassHasEdgeOverFlatContent(t *testing.T) {
+	css := componentCSS(t, "desktopui-glass")
+	edge := "0 0 0 0.5px color-mix(in srgb, var(--color-text, #000000) 14%, transparent)"
+	if n := strings.Count(css, edge); n != 2 {
+		t.Errorf("glass hairline edge appears %d times, want 2 (regular and thick):\n%s", n, css)
+	}
+	if !strings.Contains(css, "var(--shadow-md") {
+		t.Errorf("regular glass has no drop shadow:\n%s", css)
+	}
+}

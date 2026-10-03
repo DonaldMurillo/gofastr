@@ -149,13 +149,22 @@ func (s *taskDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 
 	facts := desktopui.Inspector(desktopui.InspectorConfig{
 		Label: "Task facts",
+		Title: "Details",
 		Items: []ui.DetailItem{
-			{Label: "Estimate", Value: render.Text(strconv.Itoa(asInt(s.row["estimate"])) + " pomodoros")},
-			{Label: "Completed", Value: render.Text(strconv.Itoa(asInt(s.row["completedPomodoros"])) + " pomodoros")},
+			{Label: "Estimate", Value: render.Text(pomodoros(asInt(s.row["estimate"])))},
+			{Label: "Completed", Value: render.Text(pomodoros(asInt(s.row["completedPomodoros"])))},
 			{Label: "Done", Value: render.Text(boolField(s.row, "done"))},
 		},
 	})
-	return render.Join(header, ui.Grid(ui.GridConfig{Min: "18rem"}, content, facts))
+	return render.Join(header, desktopui.InspectorSplit(content, facts))
+}
+
+// pomodoros is n with its unit, singular for one.
+func pomodoros(n int) string {
+	if n == 1 {
+		return "1 pomodoro"
+	}
+	return strconv.Itoa(n) + " pomodoros"
 }
 
 type taskEditorScreen struct {
@@ -402,9 +411,22 @@ func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 		{Key: "started_at", Header: "Started"},
 		{Key: "status", Header: "Status"},
 	}
+	// A session stores its task's id; the log shows the task's title.
+	// A task deleted since, or a session started from the toolbar with
+	// no task, reads as untracked.
+	titles := map[string]string{}
+	if tasks, err := s.app.MustCrudHandler("tasks").ListAll(ctx, crud.ListOptions{Limit: 1000}); err == nil {
+		for _, t := range tasks {
+			titles[stringField(t, "id")] = stringField(t, "title")
+		}
+	}
 	uiRows := make([]ui.Row, 0, len(rows))
 	for _, row := range rows {
 		id, _ := row["id"].(string)
+		task := titles[stringField(row, "taskId")]
+		if task == "" {
+			task = "Untracked"
+		}
 		kind, _ := row["kind"].(string)
 		if kind == "" {
 			kind = "work"
@@ -417,7 +439,7 @@ func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 		started := asTime(row["startedAt"])
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: map[string]render.HTML{
 			"kind":       render.Text(kind),
-			"task":       render.Text(stringField(row, "taskId")),
+			"task":       render.Text(task),
 			"minutes":    render.Text(strconv.Itoa(asInt(row["minutes"]))),
 			"started_at": render.Text(started.Local().Format("15:04:05")),
 			"status":     render.Text(status),
@@ -531,7 +553,6 @@ func sidebarNav() component.Component {
 					{Label: "Dashboard", Href: "/"},
 					{Label: "Tasks", Href: "/tasks"},
 					{Label: "History", Href: "/history"},
-					{Label: "Settings", Href: "/settings"},
 				},
 			}},
 			CurrentPath: path,
@@ -568,12 +589,12 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 	// layout with its sidebar and opaque content column.
 	site.Register("/widget", &widgetScreen{eng: eng}, appui.WidgetLayout())
 	// The settings screen is the battery's: one form per declared
-	// preference, saved through the battery's own route. It shares the
-	// desktop layout, so the settings window (a small window over the
-	// whole-window material) and the main window's Settings row land on
-	// the same page. There is no /settings/{id}; the post-save landing
-	// is /settings itself.
-	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), layout)
+	// preference, saved through the battery's own route. It lives in
+	// the settings window only (the macOS shape: the app menu's
+	// Settings… item, never a sidebar row), so it mounts on the
+	// sidebar-less window layout over the whole-window material. There
+	// is no /settings/{id}; the post-save landing is /settings itself.
+	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), desktopui.WindowLayout())
 	return site, nil
 }
 

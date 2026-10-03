@@ -120,7 +120,7 @@ func sheetCSS(_ style.Theme) string {
   inline-size: 100%;
   max-inline-size: var(--desktop-sheet-width, 420px);
 }
-[data-fui-comp="desktopui-sheet"] .desktopui-sheet {
+[data-fui-comp="desktopui-sheet"].desktopui-sheet {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 8px);
@@ -147,7 +147,7 @@ func popoverCSS(_ style.Theme) string {
   inline-size: 100%;
   max-inline-size: var(--desktop-popover-width, 320px);
 }
-[data-fui-comp="desktopui-popover"] .desktopui-popover {
+[data-fui-comp="desktopui-popover"].desktopui-popover {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm, 4px);

@@ -63,6 +63,13 @@ func Theme() style.Theme {
 		Full: style.Radius{Name: "full", Value: 9999},
 	}
 
+	// A desktop window is driven by a pointer: controls size to the
+	// WCAG 2.5.8 minimum target (24 CSS px) instead of the 44 px
+	// touch floor, near macOS's regular control heights. The desktop
+	// layouts set the matching --ui-control-padding-y. Measured,
+	// unverified.
+	t.Layout.TouchTarget = style.Spacing{Name: "touch-target", Value: 24}
+
 	// Plan, "The web side in WebKit": Canvas/CanvasText and AccentColor
 	// ARE in WebKit (Safari 16.5+), but the design system's color-token
 	// grammar refuses them (canvas/canvastext/accentcolor are not CSS

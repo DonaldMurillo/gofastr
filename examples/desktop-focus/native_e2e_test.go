@@ -555,7 +555,6 @@ func TestSidebarNavigatesAndMarksActive(t *testing.T) {
 	for _, row := range []struct{ label, href string }{
 		{"Tasks", "/tasks"},
 		{"History", "/history"},
-		{"Settings", "/settings"},
 		{"Dashboard", "/"},
 	} {
 		h.Click(`.desktopui-sourcelist__item[href="` + row.href + `"]`)

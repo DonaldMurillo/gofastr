@@ -59,6 +59,24 @@ func Layout() *appui.Layout {
 	return appui.NewLayout(LayoutName)
 }
 
+// WindowLayoutName is the sidebar-less desktop layout's name
+// (class layout-desktop-window).
+const WindowLayoutName = "desktop-window"
+
+// WindowLayout returns the desktop layout for a window with no sidebar:
+// a settings window, an about panel, any small secondary window. html,
+// body, and the content column all paint nothing, so a whole-window
+// material (MaterialWindow, MaterialGlass) is the surface, and the
+// content column reserves the measured traffic-light zone at its top
+// for a unified or hidden-title window.
+//
+// A screen shown both in the main window and in a small window needs
+// two registrations (or one window only): Layout() stacks nothing, but
+// a 220-point sidebar in a 480-point window leaves the form a strip.
+func WindowLayout() *appui.Layout {
+	return appui.NewLayout(WindowLayoutName)
+}
+
 var layoutStyle = registry.RegisterStyle("desktopui-layout", layoutCSS,
 	registry.WithLoad(registry.LoadAlways))
 
@@ -68,7 +86,19 @@ func layoutCSS(_ style.Theme) string {
    the webview shows through; the content column paints its own opaque
    background so the document stays legible. Same rule shape as
    core-ui's widget layout. */
-html:has(.layout-desktop), body:has(.layout-desktop) { background-color: transparent; }
+html:has(.layout-desktop), body:has(.layout-desktop),
+html:has(.layout-desktop-window), body:has(.layout-desktop-window) { background-color: transparent; }
+
+/* Control density. A desktop window is driven by a pointer, not a
+   thumb: the theme drops --spacing-touch-target to the 24-point
+   WCAG 2.5.8 floor, and this knob drops the block padding every
+   framework control shares (buttons, text fields, selects), so a push
+   button or a text field lands near the native 24 to 30 points instead
+   of the web's 44. Set on html so portaled overlays (a modal's form)
+   inherit it too. Measured, unverified. */
+html:has(.layout-desktop), html:has(.layout-desktop-window) {
+  --ui-control-padding-y: 4px;
+}
 
 /* The zone knobs. --desktop-sidebar-width mirrors the shell Config's
    declared sidebar width (default measured against native sidebars,
@@ -113,6 +143,27 @@ html:has(.layout-desktop), body:has(.layout-desktop) { background-color: transpa
 .layout-desktop .layout-body > .layout-content {
   background-color: var(--color-background, #FFFFFF);
   border-start-start-radius: var(--radii-lg, 12px);
+}
+/* A desktop window never collapses its sidebar into a stacked strip:
+   core-ui's layout stacks the nav above the content under 48rem (the
+   phone shape), which in a narrow window put the whole source list on
+   top of the page. The row holds at every width; a host that wants a
+   narrow window uses WindowLayout. */
+@media (max-width: 47.99rem) {
+  .layout-desktop .layout-body { display: flex; }
+  .layout-desktop .layout-body > nav { border-bottom: none; }
+}
+
+/* The sidebar-less window: no zone, no opaque column. The window
+   material is the surface; the content column clears the traffic
+   lights with the same measured zone the sidebar reserves. */
+.layout-desktop-window .layout-body > main,
+.layout-desktop-window .layout-body > .layout-content {
+  background-color: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg, 16px);
+  padding: ` + strconv.Itoa(SidebarTopInset) + `px var(--spacing-xl, 24px) var(--spacing-xl, 24px);
 }
 `
 }

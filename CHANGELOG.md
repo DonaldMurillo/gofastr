@@ -215,6 +215,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   updater) and runs unchanged over HTTP behind `--serve`. The timer's
   state lives in the `sessions` table, so restarts resume and the
   interactive layer stays stateless.
+- `battery/desktop`: a macOS look. `WindowStyle.Material`
+  (`MaterialSidebar`, `MaterialWindow`, `MaterialGlass`) puts the
+  native material under the page, `ChromeUnified` is the Notes and
+  Finder title bar, `Config.SidebarWidth` and
+  `window.setChrome({sidebarWidth})` size the sidebar zone, and
+  `WindowStyle.TrafficLightInset` moves the window buttons. Pages get
+  `window_focus`, `window_blur`, and `reduce_transparency` events and
+  the `desktop-inactive` / `desktop-reduce-transparency` classes on
+  `<html>`. New package `battery/desktop/ui` ships the `desktop` theme
+  (SF fonts, the HIG type scale, system blue, a dark palette), the
+  `desktop` layout, and `SourceList`, `Glass`, `FloatingToolbar`,
+  `Inspector`, `InspectorSplit`, `Sheet`, and `Popover`, plus
+  `WindowLayout()` for a window with no sidebar (a settings window).
+  The desktop layouts size framework controls near native (a 24-point
+  touch target and 4px control padding). `examples/desktop-focus` uses
+  all of it; its settings live in the settings window only, and its
+  history shows task titles.
 - `framework/ui`: two `--ui-*` knobs. `--ui-control-padding-y` (default
   `10px`) is the block padding every text control and button shares,
   and `--ui-detail-list-label-track` (default `minmax(7rem, 13rem)`) is

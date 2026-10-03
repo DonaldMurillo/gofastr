@@ -543,6 +543,236 @@ panel never becoming key, and the page learning its own window id
 `BootstrapJS(id)` user script while sharing the main window's
 `WKWebsiteDataStore`, so the cookie still crosses).
 
+## The macOS look: native chrome and the desktop theme
+
+A web page in a default window looks like a website in a window. Two
+layers together make it read as a Mac app: the window chrome is
+native (materials, a unified title bar, focus state), and the page
+wears a theme sized to the platform. Both are opt-in; an app that
+never mentions them keeps the standard window and its own theme.
+
+### Native chrome
+
+```go
+d := native.New(desktop.Config{
+    ID:    "dev.gofastr.focus",
+    Title: "Focus",
+    Style: desktop.WindowStyle{
+        Chrome:   desktop.ChromeUnified,
+        Material: desktop.MaterialSidebar,
+    },
+    SidebarWidth: desktopui.DefaultSidebarWidth,
+})
+```
+
+- `ChromeUnified` is the Notes and Finder shape: a transparent title
+  bar, a hidden title, an empty toolbar attached so the unified
+  toolbar style takes effect, and full-size content. The traffic
+  lights sit over the page.
+- `WindowStyle.Material` picks the native effect under the page:
+  `MaterialNone` (the zero value, an opaque window),
+  `MaterialSidebar` (the sidebar material under the sidebar zone
+  only), `MaterialWindow` (under the whole window: `NSGlassEffectView`
+  on macOS 26, `NSVisualEffectView` below it), and `MaterialGlass`
+  (macOS 26 glass; below 26 it degrades to `MaterialWindow` with one
+  Info log line per window). The macOS 26 check reads
+  `NSAppKitVersionNumber` from the AppKit actually loaded.
+- `Config.SidebarWidth` (and `WindowSpec.SidebarWidth` for another
+  window) is the initial sidebar zone in points, `0..MaxSidebarWidth`
+  (4096); 0 means no zone. The page reports later widths through
+  `__gofastr.desktop.window.setChrome({sidebarWidth})`, which applies
+  to the calling window only; a ResizeObserver on the sidebar element
+  is the intended caller. Go code calls `Window.SetSidebarWidth`.
+- `WindowStyle.TrafficLightInset` (`*desktop.Inset`, points from the
+  system position, both values `>= 0`) moves the three window buttons.
+  nil keeps the system position.
+- Every titled chrome carries the miniaturizable mask bit, so the
+  yellow button renders enabled. `ChromeNone` stays borderless.
+
+`New` panics on an unknown material, a negative inset, or a sidebar
+width out of range; `windows.open` refuses the same values with
+`invalid_input`.
+
+A material only shows where the page paints transparent. The desktop
+layout below paints `html` and `body` transparent; a page that paints
+its own background gets an ordinary opaque window over the effect.
+
+Turning the web view's own background off goes through the KVC form of
+the private `drawsBackground` setting, the same path
+`WindowStyle.Transparent` uses and the one Tauri gates behind its
+`macOSPrivateApi` flag. There is no public switch. App Review
+tolerance of the KVC form is observed, not promised.
+
+### Focus and Reduce Transparency reach the page
+
+WebKit has no CSS signal for window activity and implements no
+`prefers-reduced-transparency` query, so the shell pushes both states:
+
+- `window_focus {"id"}` and `window_blur {"id"}` go to every window
+  when any window becomes or stops being key
+  (`windowDidBecomeKey:` / `windowDidResignKey:`).
+- `reduce_transparency {"on": bool}` goes to every window on each
+  change of the system setting. When it is on, the shell hides the
+  effect views and restores an opaque window background, the same
+  window `MaterialNone` gives. `Shell.Appearance()` answers the
+  current state at any time, including before `Run`.
+- `desktop.BootstrapJS(windowID, reduceTransparency)` carries the
+  state at load, so the first paint is right.
+
+The `desktop` runtime module turns those into two classes on
+`<html>`: `desktop-inactive` while this window is not key (only for
+events whose `id` is this window's), and `desktop-reduce-transparency`
+while the setting is on. CSS reads the classes; no component ships
+JavaScript for them. Go hosts get the same signals through
+`WindowConfig.OnWindowFocus`, `OnWindowBlur`, and `OnAppearance`,
+which the battery fills.
+
+### The desktop theme
+
+`battery/desktop/ui` (package `desktopui`) is the page half: one theme,
+one layout, and a few components, registered through the design
+system's own machinery (`style.Theme`, `registry.RegisterStyle`, a
+core-ui layout). Its token values are per platform; Windows and Linux
+will swap values, never fields.
+
+```go
+import (
+    appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+    desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
+)
+
+site := appui.NewApp("focus")
+site.WithTheme(desktopui.Theme())
+layout := desktopui.Layout().WithSidebar(
+    appui.NewStaticComponent(desktopui.SourceList(desktopui.SourceListConfig{
+        Label: "Focus",
+        Sections: []desktopui.SourceSection{{
+            Title: "Views",
+            Items: []desktopui.SourceItem{
+                {Label: "Today", Href: "/"},
+                {Label: "History", Href: "/history"},
+            },
+        }},
+        CurrentPath: "/",
+    })))
+site.Register("/", screen, layout)
+```
+
+What the theme changes from the framework theme, and nothing else:
+
+| Token | Value |
+|---|---|
+| Fonts | `-apple-system, system-ui, ui-sans-serif, sans-serif`; mono `ui-monospace, 'SF Mono', Menlo, monospace` |
+| Type scale | 10, 11, 13 (base), 15, 17, 22, 26 px, from the HIG type table (one CSS px is one point in WKWebView) |
+| Radii | 0, 4, 8, 12, 16, capsule |
+| Light background / text | `#FFFFFF` / `#000000` |
+| Accent / primary | `#007AFF`, white foreground (4.0:1, what native ships) |
+| Dark palette | background `#1E1E1E`, surface `#2A2A2A`, text `#F5F5F7`, accent `#0A84FF` |
+| Touch target | 24 (the WCAG 2.5.8 floor; the web default is 44) |
+
+The system color keywords (`Canvas`, `AccentColor`) would track the
+user's settings, but the design system's color grammar refuses them
+(`TestColorGrammarRefusesSystemKeywords`), so the nearest values stand
+in. Values marked `// measured, unverified` in `theme.go` came from
+captures, not from Apple sources.
+
+`desktopui.Layout()` is the core-ui layout named `desktop`:
+
+- `html` and `body` paint nothing, so the material shows. Under
+  `--serve` in a browser the page falls back to the browser's
+  background.
+- The `<nav>` sidebar zone is `--desktop-sidebar-width` wide (default
+  `desktopui.DefaultSidebarWidth`, 220) and reserves
+  `--desktop-sidebar-top-inset` (default `desktopui.SidebarTopInset`,
+  52) above its first row for the traffic lights. The zone is
+  transparent in light mode and a 2% wash of the text color in dark
+  mode, where the dark sidebar material and the content background
+  otherwise land on the same near-black.
+- `<main>` is the one opaque region, on `--color-background`, with its
+  leading top corner rounded into the window frame.
+- The sidebar stays beside the content at every window width; the
+  core-ui layout's narrow-screen stacking does not apply.
+
+`desktopui.WindowLayout()` (named `desktop-window`) is for a window
+with no sidebar: a settings window, an about panel. The page and the
+content column paint nothing, so a whole-window material is the
+surface, and the content column reserves the same 52-point
+traffic-light zone at its top. Register a screen that lives in a small
+window on this layout; `examples/desktop-focus` mounts `/settings` on
+it and keeps Settings out of its sidebar, the macOS shape (the app
+menu's Settings… item opens the window).
+
+Both layouts set `--ui-control-padding-y` to `4px` on the page. With
+the theme's 24-point touch target, buttons and text fields come out
+about 28 points tall instead of 44 (see `gofastr docs theming` for the
+`--ui-*` knobs).
+
+Components:
+
+- `SourceList`: the source-list sidebar. 28 px rows, gray section
+  headers, optional leading icon and trailing count, and a selection
+  fill that is a 5% mix of the text color; the accent is kept for the
+  keyboard focus ring. The current row carries `aria-current="page"`
+  and the runtime's `active` class in the server-rendered markup, so
+  the runtime's active-link module can clear it on client-side
+  navigation. `ui.Sidebar` stays the web sidebar; its look is fixed in
+  its stylesheet and a desktop window never needs its drawer.
+- `Glass`: a translucent surface (`backdrop-filter` blur and
+  saturation, a translucent fill, a 1 px inset rim, a hairline edge,
+  and a drop shadow; over a flat page the blur has nothing to show,
+  and the edge and shadow are what keep the surface visible).
+  `GlassConfig{Thick: true}` is the sheet and popover weight. It uses
+  no SVG reference filters (WebKit bug 245510).
+- `FloatingToolbar`: `ui.Toolbar` in a glass capsule, sticky over the
+  content. The toolbar's roles and behavior are unchanged.
+- `Inspector`: a labelled side panel on glass whose rows are
+  `ui.DetailList`, with the label column capped so values keep their
+  line. `InspectorSplit(content, inspector)` puts it in the trailing
+  column at `--desktop-inspector-width` (260px) and wraps it below the
+  content when the content would drop under 20rem.
+- `Sheet` and `Popover`: the modal and non-modal overlay surfaces on
+  thick glass. A preset widget paints its own opaque panel, so a glass
+  sheet goes in as the widget's skeleton:
+  `preset.Modal("confirm").Skeleton(desktopui.SheetSkeleton(desktopui.SheetConfig{Title: "Discard draft?"}))`.
+- For segmented controls, use `ui.SegmentedControl`; the theme's
+  tokens restyle it.
+
+Under `desktop-inactive`, glass fills flatten, `--color-accent` dims
+to the muted text color inside glass, and the selected source-list row
+grays. Under `desktop-reduce-transparency`, glass goes to the opaque
+surface color with no filter.
+
+### Known gaps
+
+Captured in `examples/desktop-focus` on macOS 26.5, light and dark,
+active and inactive:
+
+- Web idioms the framework components carry are unchanged: uppercase
+  letter-spaced table and stat labels, a rule under the page header,
+  filled destructive buttons.
+- In light mode the whole-window material under a settings window
+  renders as a flat mid-gray on macOS 26.5.
+- Styled buttons keep the accent in an inactive window, where native
+  default buttons go gray. WebKit's own form controls (checkboxes,
+  selects) do follow the window's active state.
+
+### Testing the chrome
+
+- The fake shell (`battery/desktop/desktoptest`) records each window's
+  sidebar width (`SidebarWidthOf(id)`), fires the appearance callback
+  from `SetReduceTransparency`, and fires the focus callbacks from
+  `FocusWindow` and `BlurWindow` on a goroutine, the way the native
+  delegates do.
+- `desktop.WindowState` reads the applied chrome back off the live
+  window: `Material`, `TitlebarTransparent`, `TitleVisibility`,
+  `ToolbarStyle`, `SidebarWidth`, the style mask, and `CGWindowID`
+  (what `screencapture -l` takes).
+- `NativeDriver.MakeKey(id)` makes one of the app's windows key, which
+  fires the focus callbacks. Activating the app does not: a test
+  process that is not frontmost never gets a key window back.
+- The `desktop_e2e` step `ChromeContractOnTheOS`
+  (`battery/desktop/native_e2e_test.go`) walks the real shell.
+
 ## Native events
 
 `Battery.Emit(name, payload)` delivers an event to page listeners

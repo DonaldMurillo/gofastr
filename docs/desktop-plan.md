@@ -1,7 +1,8 @@
 # Desktop host: proof-of-concept plan
 
-Status: the macOS PoC (phases 0 to 4) is BUILT on branch
-`feat/desktop-host` as of 2026-09-04, uncommitted. Two decisions
+Status: the macOS PoC (phases 0 to 4) and phases 8, 11, 12, and 13
+are BUILT and committed on branch `feat/desktop-host` (no PR yet as of
+2026-09-22). Two decisions
 shaped it after the first draft: no cgo anywhere (pure Go bindings to
 every OS WebView), and the host ships as an experimental battery. The
 sections below are the design as built, with the deviations recorded
@@ -1073,7 +1074,18 @@ bug fixes only; anything new lives under `battery/desktop`.
     `framework/docs/content/desktop.md` ("App state", "Preferences",
     "Single-user mode").
 
-## Phase 13 candidate: a macOS look (researched 2026-09-07, not decided)
+## Phase 13: a macOS look (researched 2026-09-07, built 2026-09-09)
+
+Built as researched: the native chrome fields, the focus and
+Reduce Transparency events, and `battery/desktop/ui` (the desktop
+theme, layout, and components). A 2026-09-22 capture pass of
+`examples/desktop-focus` found web-sized controls, the layout stacking
+the sidebar over a narrow settings window, and glass invisible over a
+flat page; all three are fixed (`WindowLayout`, the control-density
+knob and 24-point touch target, the glass edge and shadow,
+`InspectorSplit`). The contract as implemented and the gaps still open
+live in `framework/docs/content/desktop.md`, "The macOS look". The
+research below is kept as the record of why each choice was made.
 
 The base app looks like a website in a window. Research into how
 Electron, Tauri, and hand-rolled WKWebView apps get a native feel, and

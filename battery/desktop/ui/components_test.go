@@ -165,3 +165,64 @@ func TestOverlayCSSAddsStructure(t *testing.T) {
 		t.Errorf("popover CSS missing its width knob:\n%s", popoverCSS)
 	}
 }
+
+// InspectorSplit puts the inspector in the trailing column at its own
+// width beside a content column that takes the rest, wrapping below
+// only when the content would drop under 20rem.
+func TestInspectorSplitTrailingColumn(t *testing.T) {
+	out := string(desktopui.InspectorSplit(plain(`<p>body</p>`), plain(`<aside>facts</aside>`)))
+	body := strings.Index(out, "<p>body</p>")
+	facts := strings.Index(out, "<aside>facts</aside>")
+	if !strings.Contains(out, `data-fui-comp="desktopui-inspector-split"`) || body < 0 || facts < body {
+		t.Fatalf("split must render content then inspector under its marker:\n%s", out)
+	}
+	if strings.Contains(out, "style=") {
+		t.Errorf("split must not emit an inline style:\n%s", out)
+	}
+	css := componentCSS(t, "desktopui-inspector-split")
+	for _, w := range []string{
+		"flex: 1 1 20rem;",
+		"flex: 0 0 var(--desktop-inspector-width, 260px);",
+		"flex-wrap: wrap;",
+	} {
+		if !strings.Contains(css, w) {
+			t.Errorf("split CSS missing %q:\n%s", w, css)
+		}
+	}
+}
+
+// Each glass panel's rule must match the element WrapHTML marks: the
+// marker lands on the panel itself, so a descendant selector left the
+// inspector (and the sheet and popover) unpadded, its rows running
+// into the glass edge.
+func TestPanelRulesMatchMarkedElement(t *testing.T) {
+	cases := []struct{ name, out string }{
+		{"inspector", string(desktopui.Inspector(desktopui.InspectorConfig{Label: "Facts"}))},
+		{"sheet", string(desktopui.Sheet(desktopui.SheetConfig{Title: "Discard?"}))},
+		{"popover", string(desktopui.Popover(desktopui.PopoverConfig{Title: "More"}))},
+	}
+	for _, c := range cases {
+		marker := `data-fui-comp="desktopui-` + c.name + `"`
+		i := strings.Index(c.out, marker)
+		if i < 0 {
+			t.Fatalf("%s: no marker:\n%s", c.name, c.out)
+		}
+		tag := c.out[strings.LastIndex(c.out[:i], "<"):i]
+		if !strings.Contains(tag, `class="desktopui-`+c.name+`"`) {
+			t.Fatalf("%s: marker is not on the panel element:\n%s", c.name, c.out)
+		}
+		css := componentCSS(t, "desktopui-"+c.name)
+		if !strings.Contains(css, `[data-fui-comp="desktopui-`+c.name+`"].desktopui-`+c.name+` {`) {
+			t.Errorf("%s: panel rule does not target the marked element:\n%s", c.name, css)
+		}
+	}
+}
+
+// The inspector caps the DetailList label column: the page default
+// grows it to 13rem, which wrapped every value in a 260px panel.
+func TestInspectorCapsDetailLabelColumn(t *testing.T) {
+	css := componentCSS(t, "desktopui-inspector")
+	if !strings.Contains(css, "--ui-detail-list-label-track: minmax(4rem, 6rem);") {
+		t.Errorf("inspector does not cap the detail label column:\n%s", css)
+	}
+}
