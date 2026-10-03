@@ -37,15 +37,16 @@ func nextE2EPort(t *testing.T) string {
 	return strconv.Itoa(port)
 }
 
-// removeDevServerBinary deletes the temp server binary a SIGKILLed
-// `gofastr dev` left behind. Mirrors devServerBinaryPath for the
-// no-isolation case (the harnesses set GOFASTR_ISOLATION=off).
-func removeDevServerBinary(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	name := fmt.Sprintf("gofastr-dev-server-%d", cmd.Process.Pid)
-	_ = os.Remove(testExecutablePath(filepath.Join(os.TempDir(), name)))
+// devTempEnv points a spawned `gofastr dev` at a temp root the test
+// owns. The dev server builds its binary under os.MkdirTemp and removes
+// that dir only on a clean shutdown; the harnesses SIGKILL it, so the
+// dir would outlive every run. Under t.TempDir it goes with the test.
+// Call it before registering the kill cleanup: cleanups run last-in
+// first-out, so the process is dead before its dir is removed.
+func devTempEnv(t *testing.T) []string {
+	t.Helper()
+	dir := t.TempDir()
+	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir}
 }
 
 func buildGofastrBinary(t *testing.T) string {
@@ -112,7 +113,7 @@ func (h *devHarness) start() {
 	// GOFASTR_ISOLATION=off: the child app resolves worktree isolation from
 	// its cwd, so running this suite from a linked git worktree would
 	// silently remap the port the test polls.
-	cmd.Env = append(os.Environ(), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
+	cmd.Env = append(append(os.Environ(), devTempEnv(h.t)...), "PORT=localhost:"+h.port, "GOFASTR_ISOLATION=off")
 	cmd.Stdout = &h.output
 	cmd.Stderr = &h.output
 	// Set process group so we can kill the entire tree (gofastr dev + child server).
@@ -128,9 +129,6 @@ func (h *devHarness) start() {
 		_ = killTestProcessTree(cmd)
 		cancel()
 		_ = cmd.Wait()
-		// SIGKILL means dev's own shutdown cleanup never ran; remove its
-		// pid-suffixed temp binary from out here instead.
-		removeDevServerBinary(cmd)
 	})
 
 	h.waitForServer(60 * time.Second)
