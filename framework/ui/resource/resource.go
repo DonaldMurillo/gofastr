@@ -17,6 +17,7 @@ import (
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -906,7 +907,21 @@ func (c Config) formField(ctx context.Context, f Field, cur string, rel map[stri
 	case "text":
 		return ui.TextArea(ui.TextAreaConfig{Name: f.Key, Label: f.Label, ID: id, Value: cur, Rows: 4})
 	case "bool", "boolean":
-		return ui.Checkbox(ui.ToggleConfig{Name: f.Key, Label: f.Label, ID: id, Value: "on", Checked: truthy(cur)})
+		// A bare checkbox cannot round-trip a bool through the form
+		// intercept: the browser submits the string "on" for a checked
+		// box (which core/schema's validator refuses) and nothing at all
+		// for an unchecked one (so false can never be saved). The hidden
+		// "false" comes first in document order and the checkbox, when
+		// checked, follows it with "true". The runtime's form serializer
+		// recognizes exactly this pair (one hidden input then one
+		// checkbox of the same name) and submits the LAST value as a
+		// scalar; any other repeated name is still an array, which is
+		// what turned a checked box into ["false","true"] and a 400
+		// before the pair rule existed (core-ui/runtime/src/rpc.js).
+		return render.Join(
+			html.Input(html.InputConfig{Type: "hidden", Name: f.Key, Value: "false"}),
+			ui.Checkbox(ui.ToggleConfig{Name: f.Key, Label: f.Label, ID: id, Value: "true", Checked: truthy(cur)}),
+		)
 	default:
 		return ui.FormField(ui.FormFieldConfig{
 			Label: f.Label, For: id,

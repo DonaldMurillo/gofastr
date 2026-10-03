@@ -40,10 +40,12 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if err := ch.validateMediaURLs(body); err != nil {
 		return nil, err
 	}
+	// Blank form values go first: a "" for a number must read as "not
+	// provided" before the integer coercion sees it.
+	dropEmptyFormValues(ch.entitySchema(), body)
 	if err := ch.coerceIntColumnValues(body); err != nil {
 		return nil, err
 	}
-
 	vr := schema.ValidateAll(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &ValidationError{fields: vr.Errors}
@@ -161,6 +163,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// Missing fields aren't treated as "required" violations because the
 	// existing row already satisfies them; the UPDATE only touches the
 	// columns present in the body.
+	// Blank form values go first: a "" for a number must read as "not
+	// provided" before the integer coercion sees it.
+	dropEmptyFormValues(ch.entitySchema(), body)
 	if err := ch.coerceIntColumnValues(body); err != nil {
 		return nil, err
 	}
@@ -428,4 +433,41 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 		return nil, err
 	}
 	return result, nil
+}
+
+// dropEmptyFormValues treats an empty string as "not provided" for every
+// field whose type is not free text. An HTML form posts every control it
+// has, so a number, date, or relation the user left blank arrives as ""
+// (the framework's own resource-engine forms included); the validator
+// read that as "must be an integer" and the form failed on a field the
+// user never touched, with the default it declared going unused. A
+// blank optional field is removed from the body (a create takes the
+// declared default, an update leaves the column alone); a blank required
+// field becomes nil, so the error names the real problem ("is required").
+// String and Text keep "" as a value: empty text is a thing a user says.
+func dropEmptyFormValues(s schema.Schema, body map[string]any) {
+	for _, f := range s.Fields {
+		v, ok := body[f.Name]
+		if !ok {
+			continue
+		}
+		str, isString := v.(string)
+		if !isString || str != "" {
+			continue
+		}
+		switch f.Type {
+		case schema.String, schema.Text:
+			// Empty text is a value the user can mean.
+			continue
+		default:
+			// Int, Float, Decimal, Bool, Enum, UUID, Timestamp, Date,
+			// JSON, Relation, Image, File: "" is not a value of the
+			// type, only a blank control.
+		}
+		if f.Required {
+			body[f.Name] = nil
+			continue
+		}
+		delete(body, f.Name)
+	}
 }
