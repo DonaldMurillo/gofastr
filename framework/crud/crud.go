@@ -94,6 +94,12 @@ type CrudHandler struct {
 	ChildHooks   func(entityName string) *hook.HookRegistry
 	BasePath     string // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
 	MCPNamespace string // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
+	// MCPRouteScoped marks an entity whose routes sit behind middleware the
+	// /mcp request does not pass through: a route group's WithAccess or Use,
+	// which may install a different policy, roles or Decider. The MCP tool
+	// gate cannot see what the route will apply, so it leaves these tools
+	// listed and the route decides. framework.App sets it for GroupEntity.
+	MCPRouteScoped bool
 	// MaxOffset caps the row skip a list request may ask for, via ?offset=
 	// or a deep ?page=. Zero (the default) resolves to the page cap × 1000
 	// — 100,000 at the default Pagination.MaxListLimit, scaling with the

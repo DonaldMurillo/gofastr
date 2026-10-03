@@ -1435,6 +1435,9 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
 	// gives the local agent the data tools without per-entity opt-in).
 	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+		// The group's middleware runs only on the redispatch, so the /mcp
+		// context cannot show the policy the route applies.
+		crudHandler.MCPRouteScoped = true
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}

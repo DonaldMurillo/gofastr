@@ -114,9 +114,14 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 // answer, so it leaves the tool listed and the route refuses the call as
 // it always did. Owner and tenant scoping are left to the route too: they
 // narrow rows rather than refuse the entity, and their context may only
-// exist after the router's middleware.
+// exist after the router's middleware. An entity mounted on a route group
+// (MCPRouteScoped) is left to the route entirely: the group's own
+// middleware may replace the policy the /mcp context carries.
 func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		if ch.MCPRouteScoped {
+			return nil
+		}
 		if _, ok := handler.GetUser(ctx); !ok {
 			return nil
 		}

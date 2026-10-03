@@ -1316,7 +1316,10 @@ The gate judges only what the `/mcp` request's own context shows. When it
 carries no user (the credentials may still be resolved on the
 redispatch), or no role policy and no Decider (a policy mounted on a
 route group runs only on the redispatch), the tool stays listed and the
-route decides, as before. To get the hiding, mount
+route decides, as before. The same holds for an entity declared with
+`app.GroupEntity`: the group's `WithAccess` and `Use` middleware run only
+on the redispatch and may install another policy, so its tools are never
+gated. To get the hiding, declare the entity with `app.Entity` and mount
 `framework.AccessMiddleware` with `app.Use` so `/mcp` passes through it.
 Owner and tenant scoping stay on the route.
 

@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
 // An entity's MCP tools used to list for every caller: the route refused a
@@ -81,4 +82,32 @@ func entityToolNames(t *testing.T, app *App, ctx context.Context, prefix string)
 	}
 	slices.Sort(out)
 	return out
+}
+
+// A grouped entity's route runs the group's own middleware, which may
+// install a policy the /mcp request never sees. Judging on the /mcp
+// context's policy would hide a tool the group's policy allows, so the
+// grouped entity's tools are left to the route.
+func TestGroupedEntityMCPToolsAreLeftToTheRoute(t *testing.T) {
+	app := NewApp(WithDB(sqliteDB(t)))
+	groupPolicy := NewRolePolicy()
+	groupPolicy.Grant("viewer", "notes:read", "notes:write")
+	g := app.Group("/team", routegroup.WithAccess(AccessMiddleware(groupPolicy, func(context.Context) []string {
+		return []string{"viewer"}
+	})))
+	app.GroupEntity(g, "notes", entity.EntityConfig{
+		Table:  "notes",
+		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
+		Exposure: &entity.ExposureConfig{
+			MCP:    true,
+			Access: entity.AccessControl{Read: "notes:read", Create: "notes:write"},
+		},
+	})
+	rootPolicy := NewRolePolicy()
+	rootPolicy.Grant("viewer", "notes:read")
+	ctx := WithRoles(WithPolicy(handler.SetUser(context.Background(), struct{ ID string }{ID: "v"}), rootPolicy), []string{"viewer"})
+
+	if got := entityToolNames(t, app, ctx, "notes_"); !slices.Contains(got, "notes_create") {
+		t.Errorf("SECURITY: [authz] grouped notes_create hidden on the root policy the route does not apply: tools/list = %v", got)
+	}
 }

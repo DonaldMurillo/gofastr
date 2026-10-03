@@ -60,6 +60,14 @@ func TestMCPToolGateBranches(t *testing.T) {
 			t.Errorf("%s: err = %v, want errMCPToolForbidden", tc.name, err)
 		}
 	}
+
+	// A grouped entity's route runs the group's middleware, which may
+	// install another policy: the same refused caller is left to the route.
+	grouped := NewCrudHandler(ent, nil)
+	grouped.MCPRouteScoped = true
+	if err := grouped.mcpToolGate(opCreate, false)(as("viewer")); err != nil {
+		t.Errorf("SECURITY: [authz] a route-scoped entity was judged on the /mcp policy: %v", err)
+	}
 }
 
 func denyAll(context.Context, []string, access.Permission, access.Ref) access.Decision {

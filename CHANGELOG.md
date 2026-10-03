@@ -239,9 +239,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   context shows: with no user, or no role policy and no Decider on it
   (a policy mounted on a route group), the tool stays listed and the
   route decides. With a Decider on it, `get`, `update` and `delete`
-  stay listed too, since the route asks the Decider per record. So no
-  call the route allows is refused. Mount
-  `framework.AccessMiddleware` with `app.Use` to get the hiding.
+  stay listed too, since the route asks the Decider per record. Tools
+  of an `app.GroupEntity` entity are never gated: the group's own
+  middleware may install another policy. So no call the route allows is
+  refused. Mount `framework.AccessMiddleware` with `app.Use` to get the
+  hiding. `crud.CrudHandler` gains `MCPRouteScoped`, which marks such an
+  entity.
 
 ## [0.86.0] - 2026-09-24
 
