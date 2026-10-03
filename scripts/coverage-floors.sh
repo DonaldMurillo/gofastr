@@ -208,6 +208,21 @@ FLOORS="
 profdir=$(mktemp -d)
 trap 'rm -rf "$profdir"' EXIT
 
+# Affected packages only: a floor can move only when the package or
+# something it imports changed, so unaffected rows are skipped. cmd/affected
+# computes the closure against origin/main; GOFASTR_TEST_ALL=1 checks every
+# floor. A row whose package is not in the set prints nothing, the summary
+# line below says how many were skipped.
+affected=""
+if [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
+  affected=$(go run ./cmd/affected -format dir)
+fi
+skipped=0
+is_affected() {
+  [ "${GOFASTR_TEST_ALL:-}" = "1" ] && return 0
+  printf '%s\n' "$affected" | grep -Fxq -- "${1%/}"
+}
+
 # profile_for PKG → path to a cached coverprofile for PKG (runs the suite
 # once per package, reused across that package's buckets).
 profile_for() {
@@ -259,6 +274,10 @@ bucket_cov() {
 fail=0
 while read -r pkg floor filter; do
   [ -z "$pkg" ] && continue
+  if ! is_affected "$pkg"; then
+    skipped=$((skipped + 1))
+    continue
+  fi
   label="$pkg"
   [ -n "$filter" ] && label="$pkg [$filter]"
 
@@ -294,4 +313,8 @@ if [ "$fail" -ne 0 ]; then
   echo "drop is intentional, re-measure and update the floor here."
   exit 1
 fi
-echo "All coverage floors hold."
+if [ "$skipped" -gt 0 ]; then
+  echo "All affected coverage floors hold ($skipped unaffected floor(s) skipped; GOFASTR_TEST_ALL=1 checks every floor)."
+else
+  echo "All coverage floors hold."
+fi
