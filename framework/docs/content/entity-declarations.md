@@ -1289,6 +1289,22 @@ When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
 
 The tools use the same validation and CRUD handler behavior as HTTP routes.
 
+Each tool carries its operation's `Exposure.Access` permission as a
+`WithToolGate` gate: `list` and `get` need `Access.Read`, `create`,
+`update` and `delete` need theirs. A signed-in caller without
+`posts:write` does not see `posts_create` in `tools/list`, and calling it
+by name is refused before the router runs. The check is the route's
+collection-level one, so a resource-aware Decider is asked about the
+entity (`Ref{Type}`), not a row.
+
+The gate judges only what the `/mcp` request's own context shows. When it
+carries no user (the credentials may still be resolved on the
+redispatch), or no role policy and no Decider (a policy mounted on a
+route group runs only on the redispatch), the tool stays listed and the
+route decides, as before. To get the hiding, mount
+`framework.AccessMiddleware` with `app.Use` so `/mcp` passes through it.
+Owner and tenant scoping stay on the route.
+
 In the dev loop (`gofastr dev`; opt-out `GOFASTR_DEV_MCP=0`) these tools
 register for **every CRUD-enabled entity**, with no per-entity `mcp: true`
 needed, so the local agent can read and write app data. Production
