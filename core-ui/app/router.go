@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -354,7 +353,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 		validateFills(screen, chain)
 		validateRequires(screen)
 		if len(chain) > 0 {
-			content, renderErr := component.SafeRenderCtx(ctx, comp)
+			content, renderErr := renderScreen(ctx, comp)
 			if renderErr != nil {
 				return "", fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
@@ -365,7 +364,11 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 			return wrapped, nil
 		}
 	}
-	return renderComponentInScreen(ctx, screen, comp), nil
+	out, err := renderComponentInScreen(ctx, screen, comp)
+	if err != nil {
+		return "", screenRenderPanicError(path, err)
+	}
+	return out, nil
 }
 
 // ValidateFills checks every registered screen's fill declarations
