@@ -218,3 +218,32 @@ func TestButtonPartsAppendTheRootClass(t *testing.T) {
 		t.Error("the class map itself was mutated")
 	}
 }
+
+// A widget's own close rides the seam too. data-fui-action="close" is
+// what the widget runtime's scoped click handler reads (widgets.js),
+// the one wiring key that fires no request and opens nothing, and
+// "close" is the only value it reads — so any other value is refused,
+// and so is a link: a link navigates, a cancel acts (#461).
+func TestButtonActionAdmitsTheWidgetClose(t *testing.T) {
+	got := Button(ButtonProps{Label: "Cancel", Action: html.Attrs{"data-fui-action": "close"}}, nil)
+	has(t, got, `data-fui-action="close"`, "the widget close did not land on the button")
+
+	for _, v := range []string{"", "open", "Close", "submit"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("data-fui-action=%q was accepted; close is the only action the runtime reads", v)
+				}
+			}()
+			Button(ButtonProps{Label: "x", Action: html.Attrs{"data-fui-action": v}}, nil)
+		}()
+	}
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("a link carrying the widget close was rendered; a link navigates, a cancel acts")
+			}
+		}()
+		Button(ButtonProps{Label: "x", Href: "/x", Action: html.Attrs{"data-fui-action": "close"}}, nil)
+	}()
+}
