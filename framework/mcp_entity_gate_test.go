@@ -64,6 +64,11 @@ func TestEntityMCPToolsListOnlyWhatTheCallerMayDo(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("SECURITY: [authz] a viewer's notes_create call was not refused")
 	}
+	// The refusal is the gate's invalid-params error, not the route's 403
+	// relayed as an internal error, and it names no permission.
+	if resp.Error.Code != mcp.ErrInvalidParams || resp.Error.Message != "entity mcp: not permitted" {
+		t.Errorf("refused call error = %d %q, want %d %q", resp.Error.Code, resp.Error.Message, mcp.ErrInvalidParams, "entity mcp: not permitted")
+	}
 }
 
 func entityToolNames(t *testing.T, app *App, ctx context.Context, prefix string) []string {

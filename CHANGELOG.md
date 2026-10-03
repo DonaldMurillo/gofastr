@@ -7,14 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Fixed
+### Security
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
   operation's `Exposure.Access` permission as a `WithToolGate` gate. A
   signed-in caller without `posts:write` no longer sees `posts_create`
-  or its input schema in `tools/list`, and the call is refused before it
-  reaches the router. A caller the MCP request has not resolved keeps
-  the old listing, since the redispatch may still authenticate them.
+  or its input schema in `tools/list`, and calling it by name is refused
+  before the router runs (`-32602 entity mcp: not permitted` instead of
+  the route's 403). The gate judges only what the `/mcp` request's
+  context shows: with no user, or no role policy and no Decider on it
+  (a policy mounted on a route group), the tool stays listed and the
+  route decides, so no call the route allows is refused. Mount
+  `framework.AccessMiddleware` with `app.Use` to get the hiding.
 
 ## [0.86.0] - 2026-09-24
 

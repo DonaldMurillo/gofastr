@@ -102,17 +102,22 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 // about the entity, not a row, and the per-id check still runs on the
 // route.
 //
-// It judges only a caller the MCP request already resolved. When no user
-// is on the context, the credentials may still be resolved on the
-// redispatch (the API key and cookies are copied onto the in-process
-// request and the router's auth middleware runs there), so the gate
-// cannot know the answer and leaves the tool listed; the route refuses
-// the call as it always did. Owner and tenant scoping are left to the
-// route too: they narrow rows rather than refuse the entity, and their
-// context may only exist after the router's middleware.
+// It judges only what the MCP request's own context can show. With no
+// user on it, the credentials may still be resolved on the redispatch (the
+// API key and cookies are copied onto the in-process request and the
+// router's auth middleware runs there). With no role policy and no
+// Decider on it, the policy may be mounted on a route group, which only
+// the redispatch passes through. Either way the gate cannot know the
+// answer, so it leaves the tool listed and the route refuses the call as
+// it always did. Owner and tenant scoping are left to the route too: they
+// narrow rows rather than refuse the entity, and their context may only
+// exist after the router's middleware.
 func (ch *CrudHandler) mcpToolGate(op crudOp) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if _, ok := handler.GetUser(ctx); !ok {
+			return nil
+		}
+		if access.PolicyFromContext(ctx) == nil && access.GetDecider(ctx) == nil {
 			return nil
 		}
 		perm := ch.permissionForOp(op)

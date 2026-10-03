@@ -12,9 +12,10 @@ import (
 )
 
 // mcpToolGate answers each entity tool's listing and call precondition. It
-// must leave an unresolved caller to the route, let any caller through an
-// operation the entity does not gate, and refuse a resolved caller without
-// the operation's permission.
+// must leave to the route a caller it cannot judge (no user, or no policy
+// and no Decider on the context: a group-scoped policy runs only on the
+// redispatch), let any caller through an operation the entity does not
+// gate, and refuse a judged caller without the operation's permission.
 func TestMCPToolGateBranches(t *testing.T) {
 	ent := entity.Define("notes", entity.EntityConfig{
 		Name: "notes", Table: "notes",
@@ -42,7 +43,10 @@ func TestMCPToolGateBranches(t *testing.T) {
 		{"ungated operation", as("viewer"), opRead, false},
 		{"granted", as("editor"), opCreate, false},
 		{"missing permission", as("viewer"), opCreate, true},
-		{"no policy on the context", user, opCreate, true},
+		{"no policy on the context is left to the route", user, opCreate, false},
+		{"a Decider alone is enough to judge", access.WithDecider(user, func(context.Context, []string, access.Permission, access.Ref) access.Decision {
+			return access.DecisionDeny
+		}), opCreate, true},
 	}
 	for _, tc := range cases {
 		err := ch.mcpToolGate(tc.op)(tc.ctx)
