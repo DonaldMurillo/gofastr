@@ -35,6 +35,8 @@ func gofastrTestBinary() (string, error) {
 		build := exec.Command("go", "build", "-o", bin, ".")
 		if out, err := build.CombinedOutput(); err != nil {
 			sharedGofastrBin.err = fmt.Errorf("go build ./cmd/gofastr: %w\n%s", err, out)
+			os.RemoveAll(dir)
+			sharedGofastrBin.dir = ""
 			return
 		}
 		sharedGofastrBin.path = bin

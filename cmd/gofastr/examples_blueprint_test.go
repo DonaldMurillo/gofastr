@@ -87,6 +87,11 @@ func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
+			// Each example renders into its own scratch dir under its own
+			// example, so the seven compiles can overlap. The parent stays
+			// sequential: TestExampleBlueprintsBoot renders into the SAME
+			// scratch dirs and must not run alongside this test.
+			t.Parallel()
 			generateAndCompileBlueprint(t, path, name)
 		})
 	}
@@ -114,6 +119,9 @@ func TestExampleBlueprintsBoot(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
+			// Per-example scratch dir and a fresh port each; see the
+			// parallelism note on TestExampleBlueprintsGenerateAndCompile.
+			t.Parallel()
 			bin, appDir := generateAndCompileBlueprint(t, path, name)
 			baseURL, output := bootGeneratedApp(t, name, bin, appDir)
 			exerciseGeneratedApp(t, name, baseURL, output)
@@ -665,9 +673,14 @@ func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (stri
 	}
 
 	// Generate with the in-tree CLI source, so a generator regression fails
-	// here rather than at the next release.
-	gen := exec.Command("go", "run", "github.com/DonaldMurillo/gofastr/cmd/gofastr",
-		"generate", "--from=gofastr.yml")
+	// here rather than at the next release. The shared test binary IS that
+	// source, built once per package run (testbin_test.go); `go run` here
+	// re-linked the whole CLI per example.
+	cli, err := gofastrTestBinary()
+	if err != nil {
+		t.Fatalf("build gofastr: %v", err)
+	}
+	gen := exec.Command(cli, "generate", "--from=gofastr.yml")
 	gen.Dir = dir
 	if out, err := gen.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr generate --from=gofastr.yml: %v\n%s", err, out)
