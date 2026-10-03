@@ -187,6 +187,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.DetailList`'s label column. Unset, both render as before.
 
 ### Fixed
+- **A checked `ui.Checkbox` draws a check mark.** The two strokes were
+  angle gradients (45deg, 135deg), which only run corner to corner in
+  a square tile; in the long leg's 12x9 tile they missed each other
+  and every checked box showed a crossed mark. They are now
+  corner-keyword gradients, which meet in any tile.
 - `ui.TextArea` floors at `--fui-density-control-h` like `ui.Select`
   and the text inputs instead of a literal `44px`, so density and
   `Layout.TouchTarget` change it too.
