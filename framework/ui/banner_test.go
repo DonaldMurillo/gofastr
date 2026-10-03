@@ -128,3 +128,24 @@ func TestBannerExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 }
+
+// On a narrow viewport the four-column row leaves the copy a sliver
+// (390px wide: a 94px title column beside a 149px action). Below 30rem
+// the action drops under the body and the dismiss spans the stack (#462).
+func TestBannerCSSStacksTheActionOnNarrowViewports(t *testing.T) {
+	css := bannerCSS(style.Theme{})
+	i := strings.Index(css, "@media (max-width: 30rem)")
+	if i < 0 {
+		t.Fatalf("bannerCSS has no narrow-viewport rule:\n%s", css)
+	}
+	narrow := css[i:]
+	for _, want := range []string{
+		"grid-template-columns: auto 1fr auto;",
+		".fui-banner__action {\n    grid-column: 2;\n    grid-row: 3;",
+		".fui-banner__dismiss {\n    grid-column: 3;\n    grid-row: 1 / span 3;",
+	} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("narrow-viewport rule missing %q:\n%s", want, narrow)
+		}
+	}
+}
