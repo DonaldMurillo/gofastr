@@ -228,6 +228,15 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Action carries " + k + ", which is not a request or wiring attribute")
 		}
 	}
+	// The widget close is request-free by definition: the runtime's
+	// click handler dispatches a data-fui-rpc first and returns, so a
+	// button carrying both would fire the request and never close. A
+	// close that follows a request is data-fui-rpc-close.
+	if _, close := out["data-fui-action"]; close {
+		if _, rpc := out["data-fui-rpc"]; rpc {
+			panic("headless: Action carries data-fui-action=\"close\" beside data-fui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-fui-rpc-close")
+		}
+	}
 	return out
 }
 

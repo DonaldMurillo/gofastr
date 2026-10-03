@@ -238,7 +238,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   handler reads — is admitted into `headless.ButtonProps.Action` (and so
   into `ui.Button`'s `ExtraAttrs`), the one wiring key that fires no
   request. `close` is the only value the runtime reads, so any other
-  value is refused at render, and so is a link carrying it.
+  value is refused at render, and so is a link carrying it or a close
+  beside a `data-fui-rpc` (after a request, `data-fui-rpc-close`).
 - **`ui.Banner` stacks below 30rem** (#462). The four-column grid gave a
   390px-wide banner a 94px title column beside a 149px action; the
   action now drops under the body and the dismiss spans the stack.

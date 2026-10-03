@@ -247,3 +247,21 @@ func TestButtonActionAdmitsTheWidgetClose(t *testing.T) {
 		Button(ButtonProps{Label: "x", Href: "/x", Action: html.Attrs{"data-fui-action": "close"}}, nil)
 	}()
 }
+
+// The widget close is request-free by definition: the runtime's click
+// handler dispatches a data-fui-rpc first and returns, so a button
+// carrying both would fire the request and never close. That is a
+// contradiction the caller cannot see in the tag, so it is refused; a
+// close that follows a request is data-fui-rpc-close.
+func TestButtonActionRefusesTheWidgetCloseBesideARequest(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a close beside a request was accepted; the runtime fires the request and never reaches the close")
+		}
+		if !strings.Contains(r.(string), "data-fui-rpc-close") {
+			t.Errorf("the refusal does not name the spelling that works: %v", r)
+		}
+	}()
+	Button(ButtonProps{Label: "x", Action: html.Attrs{"data-fui-action": "close", "data-fui-rpc": "/x"}}, nil)
+}
