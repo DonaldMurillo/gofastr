@@ -586,6 +586,28 @@ func TestS3PresignedKeyValidation(t *testing.T) {
 	}
 }
 
+func TestS3PresignNoPresignerErrors(t *testing.T) {
+	s := NewS3Storage("bucket", "us-east-1")
+	ctx := context.Background()
+	calls := map[string]func() (*url.URL, error){
+		"PresignedGetURL": func() (*url.URL, error) { return s.PresignedGetURL(ctx, "a.txt", time.Hour) },
+		"PresignedPutURL": func() (*url.URL, error) { return s.PresignedPutURL(ctx, "a.txt", time.Hour) },
+	}
+	for _, name := range []string{"PresignedGetURL", "PresignedPutURL"} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if v := recover(); v != nil {
+					t.Fatalf("%s with no presigner panicked: %v", name, v)
+				}
+			}()
+			_, err := calls[name]()
+			if err == nil || !strings.Contains(err.Error(), "presigner not configured") {
+				t.Fatalf("%s with no presigner: err = %v, want presigner not configured", name, err)
+			}
+		})
+	}
+}
+
 // mockPresigner is a minimal mock for testing presigned URL key validation.
 type mockPresigner struct{}
 
