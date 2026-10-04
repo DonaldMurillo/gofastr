@@ -19,8 +19,8 @@ notes:
         - gofastr/framework/static.Builder
   - change: Live pages externalize the catalog/module manifest and split actions per screen
     breaking: true
-    hits: edit
-    guidance: "Anything scraping the inline #gofastr-catalog or #gofastr-runtime-modules blocks on live pages should read window.__gofastr_catalog / window.__gofastr_runtime_modules (set by /__gofastr/manifest.js). /__gofastr/widget/{id}.js now requires a session or embed grant, matching the actions.js concat it replaces."
+    hits: review
+    guidance: "Anything scraping the inline #gofastr-catalog or #gofastr-runtime-modules blocks on live pages should read window.__gofastr_catalog / window.__gofastr_runtime_modules (set by /__gofastr/manifest.js); static export and theme-variant pages keep the inline blocks and the /__gofastr/actions.js concat endpoint remains for them, so a hit on those surfaces may still be right. /__gofastr/widget/{id}.js now requires a session or embed grant, matching the actions.js concat it replaces."
     find:
       strings:
         match: 'gofastr-catalog|gofastr-runtime-modules|/__gofastr/actions\.js'

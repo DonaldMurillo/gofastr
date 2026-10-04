@@ -7,3 +7,14 @@ notes:
     find:
       strings:
         match: '^(Migration warning|seed %s: skipping row)'
+  - change: "Entity-level multi_tenant and soft_delete and app.auth.enabled reject YAML 1.1 truthy strings, exactly like the scope.* twins"
+    breaking: false
+    guidance: "The flat entity-level spellings and app.auth.enabled now demand a real true/false, closing the same silent fail-open the v0.61.0 scope.* keys closed: multi_tenant: yes read as false and dropped tenant scoping, enabled: on left the whole app public with no login. Write true or false; do not revert, because the old spelling was never applying the guard."
+    find:
+      config:
+        - key: entities.*.multi_tenant
+          value: '(?i)^(y|yes|on|1|n|no|off|0)$'
+        - key: entities.*.soft_delete
+          value: '(?i)^(y|yes|on|1|n|no|off|0)$'
+        - key: app.auth.enabled
+          value: '(?i)^(y|yes|on|1|n|no|off|0)$'

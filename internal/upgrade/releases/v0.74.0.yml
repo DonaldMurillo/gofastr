@@ -28,3 +28,15 @@ notes:
     nodetect: "all additive and opt-in; nothing renders or runs unless configured"
     breaking: false
     guidance: "All additive and opt-in; nothing renders or runs unless you configure it."
+  - change: "openapi.EntityOpenAPI and crud.RegistryLLMMD/RegistryLLMMDHandler gained a crudMounted func(*entity.Entity) bool parameter (pass nil for the previous Exposure-only behaviour)"
+    breaking: true
+    hits: edit
+    guidance: "Direct callers add the argument: nil keeps the previous Exposure-only behaviour, and a predicate over the mounted routes stops the document advertising routes that answer 404 (the framework's own registration passes its route predicate; it is exported as App.EntityCRUDMounted from v0.77.0). The framework.EntityOpenAPI re-export is unchanged and already passes nil."
+    find:
+      shapes:
+        - symbol: gofastr/framework/openapi.EntityOpenAPI
+          type: '^func\(registry entity\.Registry, title string, version string, basePath \.\.\.string\) \*openapi\.Spec$'
+        - symbol: gofastr/framework/crud.RegistryLLMMD
+          type: '^func\(registry entity\.Registry, appName string\) string$'
+        - symbol: gofastr/framework/crud.RegistryLLMMDHandler
+          type: '^func\(registry entity\.Registry, appName string\) http\.Handler$'

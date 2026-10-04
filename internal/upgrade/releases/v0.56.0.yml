@@ -10,8 +10,8 @@ notes:
         - github.com/mattn/go-sqlite3
   - change: "sql.Open with the sqlite driver name no longer reaches the in-repo engine"
     breaking: true
-    guidance: "github.com/DonaldMurillo/gofastr/sqlite now registers itself as gofastr-sqlite; the sqlite name belongs to modernc. Open gofastr-sqlite if you specifically want the in-repo engine, otherwise use sqlite3."
-    nodetect: "the sqlite name still opens a working driver (modernc, which gofastr/sqlite imports); only the engine behind it changed, so code that keeps the name is as likely right as wrong and no spelling tells them apart"
+    guidance: "github.com/DonaldMurillo/gofastr/sqlite now registers itself as gofastr-sqlite; the sqlite name belongs to modernc. Open gofastr-sqlite if you specifically want the in-repo engine, otherwise use sqlite3: a caller that keeps the bare name has silently swapped engines."
+    nodetect: "the sqlite name still opens a working driver (modernc, which gofastr/sqlite imports); only the engine behind it changed, and the string is also an app's own driver alias (a DB_DRIVER default, a switch case) far more often than a sql.Open argument, so no spelling tells a swapped engine from a correct one"
   - change: Boolean columns serialize as true/false in CRUD JSON
     breaking: true
     hits: review

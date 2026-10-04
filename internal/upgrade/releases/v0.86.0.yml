@@ -5,8 +5,9 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/core-ui/style.ThemeRef.Hash
+      shapes:
+        - symbol: gofastr/core-ui/style.ThemeRef.Hash
+          type: '^string$'
     guidance: "Move ref.Hash field reads to ref.Hash(); registering during init no longer hashes, freezes the component-options compiler hook, or panics framework/ui's later init."
   - change: "disabled belongs to ButtonConfig.Disabled; a disabled key in ui.Button's ExtraAttrs panics pointing at the field"
     breaking: true
@@ -54,18 +55,19 @@ notes:
         classes: [ui-button]
       css:
         classes: [ui-button]
-    guidance: "Call ui.Button / ui.LinkButton instead of hand-rolled class=\"ui-button\" markup, and rename .ui-button selectors (Form's block-actions, FilterToolbar, admin row actions) to .fui-button."
+    guidance: "Call ui.Button / ui.LinkButton instead of hand-rolled class=\"ui-button\" markup; an app stylesheet's .ui-button selector now selects nothing, and renaming it to .fui-button lands on a kit class an owned sheet may not select (GOFASTR1810), so restyle through the component's config, a variant or a theme option."
   - change: "the form family's Input is a builder and its classes are fui-form*/fui-field*/fui-select*; hand-rolled ui-form/ui-form-field/ui-select class markup renders unstyled"
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/framework/ui.FormFieldConfig.Input
+      shapes:
+        - symbol: gofastr/framework/ui.FormFieldConfig.Input
+          type: '^render\.HTML$'
       strings:
         classes: [ui-form, ui-form-field, ui-form-section, ui-select, ui-input-group, ui-validation-summary]
       css:
         classes: [ui-form, ui-form-field, ui-form-section, ui-select, ui-input-group, ui-validation-summary]
-    guidance: "FormFieldConfig.Input now takes func(headless.FieldControl) render.HTML — build the control with ui.Control, a typed field, or ui.PasswordInput's Field — and rename ui-form/ui-form-field/ui-select markup to the fui-* names."
+    guidance: "FormFieldConfig.Input now takes func(headless.FieldControl) render.HTML: build the control with ui.Control, a typed field, or ui.PasswordInput's Field. Call the form components instead of hand-rolled ui-form/ui-form-field/ui-select markup, which renders unstyled; restyle through config, a variant or a theme option, never a fui-* selector an owned sheet may not hold (GOFASTR1810)."
   - change: "ui.ValidationSummary requires ID, and a ui.Form rendering Errors requires FormConfig.ID"
     breaking: true
     nodetect: "no line-level spelling: ValidationSummaryConfig gained a required ID and FormConfig.ID became required when Errors is set, but every identifier survives — old and new call sites read identically per line."
@@ -135,7 +137,7 @@ notes:
         classes: [ui-lightbox]
       css:
         classes: [ui-lightbox]
-    guidance: "Rename ui-lightbox__* selectors and markup to fui-lightbox__* and read the image via data-fui-lightbox-image; a core-ui-only page hand-rolling the markup must import framework/ui so the module links in."
+    guidance: "Rename hand-rolled ui-lightbox__* markup to fui-lightbox__* and read the image via data-fui-lightbox-image; the stylesheet comes with framework/ui's registration, so a core-ui-only page hand-rolling the markup must import it for the module to link in (an owned sheet may not select the kit's fui-lightbox classes, GOFASTR1810)."
   - change: "display classes are fui-* (charts, images incl. the gallery DOM move, code incl. fui-code-tabs, markdown, terminal, avatar, icon, color picker, diff viewer, metric band, record summary, pricing card, auth card, sign out, optimistic/toggle action)"
     breaking: true
     hits: edit
@@ -144,7 +146,7 @@ notes:
         classes: [ui-bar-chart, ui-line-chart, ui-pie-chart, ui-sparkline, ui-optimized-image, ui-pipeline-image, ui-image, ui-gallery, ui-code-block, ui-code-tabs, ui-markdown, ui-terminal-block, ui-terminal-ok, ui-terminal-out, ui-avatar, ui-avatar-group, ui-icon, ui-color-picker, ui-diff-viewer, ui-metric-band, ui-record-summary, ui-pricing-card, ui-auth-card, ui-sign-out, ui-optimistic-action, ui-toggle-action]
       css:
         classes: [ui-bar-chart, ui-line-chart, ui-pie-chart, ui-sparkline, ui-optimized-image, ui-pipeline-image, ui-image, ui-gallery, ui-code-block, ui-code-tabs, ui-markdown, ui-terminal-block, ui-terminal-ok, ui-terminal-out, ui-avatar, ui-avatar-group, ui-icon, ui-color-picker, ui-diff-viewer, ui-metric-band, ui-record-summary, ui-pricing-card, ui-auth-card, ui-sign-out, ui-optimistic-action, ui-toggle-action]
-    guidance: "Rename ui-* selectors to fui-* for the display family; registered sheet names and data-fui-comp markers stay."
+    guidance: "Call the display-family components instead of hand-rolled ui-* markup, which renders unstyled, and restyle through a config, a variant or a theme option; an owned sheet may not select the fui-* kit classes (GOFASTR1810). Registered sheet names and data-fui-comp markers stay."
   - change: "shell classes are fui-* (hero, hero split, site header, site footer, doc layout, workbench, toolbar, filter toolbar, sidebar, responsive, themed)"
     breaking: true
     hits: edit
@@ -153,7 +155,7 @@ notes:
         classes: [ui-hero, ui-site-header, ui-site-footer, ui-doc-layout, ui-doc-prev-next, ui-workbench, ui-toolbar, ui-filter-toolbar, ui-sidebar, ui-responsive, ui-themed]
       css:
         classes: [ui-hero, ui-site-header, ui-site-footer, ui-doc-layout, ui-doc-prev-next, ui-workbench, ui-toolbar, ui-filter-toolbar, ui-sidebar, ui-responsive, ui-themed]
-    guidance: "Rename ui-* selectors to fui-* for the shell family; ui.Sidebar renders through headless.Sidebar (byte pins re-read: sorted attribute order, hidden=\"\" spelling), and an item with both Href and Children, a blank Label, or control bytes in DrawerName/CollapseStorageKey now panics — fix the config."
+    guidance: "Call the shell-family components instead of hand-rolled ui-* markup, which renders unstyled, and restyle through a config, a variant or a theme option; an owned sheet may not select the fui-* kit classes (GOFASTR1810). ui.Sidebar renders through headless.Sidebar (byte pins re-read: sorted attribute order, hidden=\"\" spelling), and an item with both Href and Children, a blank Label, or control bytes in DrawerName/CollapseStorageKey now panics: fix the config."
   - change: "the residue is fui-* (data table, segmented, palette parts, JSONViewer parts, polling indicator, shortcut hint, confirm action, tooltip, search input, visually hidden)"
     breaking: true
     hits: edit
@@ -162,7 +164,7 @@ notes:
         classes: [ui-data-table, ui-segmented, ui-cmd-palette, ui-json-viewer, ui-polling-indicator, ui-shortcut-hint, ui-confirm-action, ui-tooltip, ui-visually-hidden]
       css:
         classes: [ui-data-table, ui-segmented, ui-cmd-palette, ui-json-viewer, ui-polling-indicator, ui-shortcut-hint, ui-confirm-action, ui-tooltip, ui-visually-hidden]
-    guidance: "Rename ui-* selectors to fui-* for the residue family; the framework/gallery prefix gate refuses any ui-* class token in a rendered catalog entry from here on."
+    guidance: "Call the residue-family components instead of hand-rolled ui-* markup, which renders unstyled, and restyle through a config, a variant or a theme option; an owned sheet may not select the fui-* kit classes (GOFASTR1810). The framework/gallery prefix gate refuses any ui-* class token in a rendered catalog entry from here on."
   - change: "html.DetailsConfig.Disclosure is gone; html.Details renders a plain <details>"
     breaking: true
     hits: edit
@@ -264,8 +266,9 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/core-ui/app.NewLayout
+      shapes:
+        - symbol: gofastr/core-ui/app.NewLayout
+          type: '^func\(name string\) \*app\.Layout$'
     guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and `gofastr docs release-0-86` for the port spelled end to end."
   - change: "Layout.WithHeader is removed; the header renders in the layout build"
     breaking: true
@@ -382,3 +385,76 @@ notes:
         - gofastr/framework/ui.DataTableConfig.IslandSignal
         - gofastr/framework/ui.DataTableConfig.IslandEndpoint
     guidance: "SortHrefPattern becomes Query url.Values (the request state a sort carries) with optional Path, SortParam and DirParam; IslandSignal + IslandEndpoint become Island: headless.Island{Endpoint, Signal}. The island sort control is an <a> in both postures (th a.fui-data-table__sort), and the stylesheet draws the direction glyph from aria-sort."
+  - change: "ui.PasswordInput's Error is gone; the enclosing field owns the message, and ID is optional when Field carries one"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.PasswordInputConfig.Error
+    guidance: "Put the message on the enclosing field (the typed field's error, or the FormFieldConfig around it): the field's wiring owns aria-invalid and the described-by chain now, and ui.PasswordInput's Field carries what an enclosing FormField handed its builder."
+  - change: "ui.ColorField's SwatchValue is gone and Name is required; a Value that is not #rgb or #rrggbb marks the shell data-invalid with the swatch fallen back to black"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.ColorFieldConfig.SwatchValue
+    guidance: "Drop SwatchValue and set Name (the hex text input is the control that submits): Value places verbatim, and a non-hex Value marks the shell data-invalid instead of the caller resolving a display colour itself."
+  - change: "ui.Callout renders headless.Alert; Landmark is gone, and only danger and warning interrupt with role=alert"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.CalloutConfig.Landmark
+    guidance: "Drop CalloutConfig.Landmark: an info, success or neutral callout is a plain div (no complementary aside to opt out of), and the callout interrupts only as danger or warning."
+  - change: "SectionConfig.Ctx is gone; a ui.Section with no Heading and no Label renders a div, and heading ids are <slug>-title"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.SectionConfig.Ctx
+    guidance: "Drop SectionConfig.Ctx (the default Section label it resolved went with it): give the section a Heading or a Label when it must stay a named region, and read a heading's id as <slug>-title."
+  - change: "ui.Banner and ui.NetworkRetryBanner are polite announcements; NetworkRetryBannerConfig's FailureThreshold and SSESilenceMs are gone"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.NetworkRetryBannerConfig.FailureThreshold
+        - field: gofastr/framework/ui.NetworkRetryBannerConfig.SSESilenceMs
+    guidance: "Drop FailureThreshold and SSESilenceMs: the banner follows the connection the framework reports (the failure-count and SSE-silence triggers retired with the old runtime module), and window.__gofastr.networkStatus.reportFailure / reportRecovery still show and hide it by hand."
+  - change: "ui.Carousel's deferred window is gone: VirtualScroll, VirtualWindow and VirtualPlaceholderHeight are deleted"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.CarouselConfig.VirtualScroll
+        - field: gofastr/framework/ui.CarouselConfig.VirtualWindow
+        - field: gofastr/framework/ui.CarouselConfig.VirtualPlaceholderHeight
+    guidance: "Render the slides: the server-rendered window, its placeholder divs and the JSON manifest the runtime hydrated on scroll are gone, so an image-heavy archive paginates or islands the appending region instead."
+  - change: "SkeletonAvatarConfig.Size is removed; it wrote an inline style a strict CSP drops"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.SkeletonAvatarConfig.Size
+    guidance: "Size the circle from CSS you own: pass your own Class and size it in your owned sheet (the preset sheet's diameter is 2.5rem), never the kit's fui-* classes (GOFASTR1810)."
+  - change: "the checkbox/radio/switch family's classes are fui-choice*/fui-switch*; the label wraps the control, groups are plain fieldsets, and hand-rolled ui-toggle* markup renders unstyled"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        classes: [ui-toggle, ui-toggle-group]
+      css:
+        classes: [ui-toggle, ui-toggle-group]
+    guidance: "Call ui.Checkbox / ui.Radio / ui.Switch / ui.CheckboxGroup / ui.RadioGroup instead of hand-rolled ui-toggle* markup: the label wraps the control (a for= pair no longer exists), a group is a fieldset with a legend, and a required group marks every input required. The registered sheet name stays ui-toggle; restyle through a config, a variant or a theme option, never a fui-* selector an owned sheet may not hold (GOFASTR1810)."
+  - change: "ui.NotificationBell requires Href, ui.GlobalSearch requires NoScriptAction and ui.CommandPalette requires FallbackHref, each a same-origin destination a reader without script can follow"
+    breaking: true
+    nodetect: "no line-level spelling: the fields were added, not renamed or removed, so an app that omits them reads identically per line and meets the panic at render."
+    guidance: "Give NotificationBellConfig an Href (the notifications page), GlobalSearchConfig a NoScriptAction and CommandPaletteConfig a FallbackHref, all same-origin GET destinations; ui.BackToTop renders its own #top anchor and needs nothing."
+  - change: "ui.StepWizard takes Errors, Summary and ID like ui.Form, and focuses the summary on a failed step"
+    breaking: true
+    nodetect: "no line-level spelling: StepWizardConfig gained Errors, Summary and ID (ID required when Errors is set) and every identifier survives, so old and new call sites read identically per line."
+    guidance: "Give the wizard a StepWizardConfig.ID and pass the failed step's FieldErrors as Errors (Summary for the sentence that belongs to no field): the summary renders between the rail and the step's fields, and focus moves to it after a failed submit."
+  - change: "a theme whose hex primary or danger pair sits below 4.5:1 contrast panics at WithTheme, in the light palette and in DarkColors"
+    breaking: true
+    nodetect: "no line-level spelling: the refusal is a ratio computed over two hex values (primary x primary-fg, danger x danger-fg, light and dark), and a contrast ratio is not a spelling any line carries."
+    guidance: "Boot the app once against the theme: Theme.Validate names the pair, the ratio and the palette it refused, and ColorSet.DangerFg gives the danger pair its own ink; oklch(), var() and rgb()/hsl() values are skipped rather than approximated."

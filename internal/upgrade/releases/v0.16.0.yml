@@ -4,7 +4,7 @@ notes:
   - change: Transactional outbox delivers per-consumer
     breaking: true
     hits: review
-    guidance: "Outbox rows are tracked per consumer instead of globally; existing single-consumer apps are unaffected, multi-consumer handlers each get their own cursor. Review handlers that assumed at-most-once fan-out."
+    guidance: "Outbox rows are tracked per consumer instead of globally; existing single-consumer apps are unaffected, multi-consumer handlers each get their own cursor. Drain in-flight outbox rows before upgrading: the new relay ignores the old single-delivery row state and does not backfill. Review handlers that assumed at-most-once fan-out, and declare consumers with WithOutboxConsumer (which now panics without WithOutbox)."
     find:
       uses:
         - gofastr/framework.WithOutbox
