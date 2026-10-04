@@ -110,8 +110,8 @@ type Notifier interface {
 
 // WindowMaterial selects the native effect under a window's page. The
 // zero value is the opaque default; the shell picks the mechanism per
-// platform (glass on macOS 26, an NSVisualEffectView below it, Mica on
-// Windows 11, none on Linux). A material only shows where the page
+// platform (glass on macOS 26, an NSVisualEffectView below it, DWM Mica
+// on Windows 11, none on Linux). A material only shows where the page
 // paints transparent (html and body); the doc section spells the page
 // contract.
 type WindowMaterial string
@@ -119,12 +119,13 @@ type WindowMaterial string
 const (
 	// MaterialNone is the opaque window (default).
 	MaterialNone WindowMaterial = ""
-	// MaterialSidebar puts the effect under the sidebar zone only.
+	// MaterialSidebar puts the effect under the sidebar zone where the
+	// platform supports it; Windows uses whole-window Mica Alt.
 	MaterialSidebar WindowMaterial = "sidebar"
 	// MaterialWindow puts the effect under the whole window.
 	MaterialWindow WindowMaterial = "window"
-	// MaterialGlass asks for macOS 26 glass; below 26 it degrades to
-	// MaterialWindow (the shell logs the degradation).
+	// MaterialGlass asks for macOS 26 glass or Windows Desktop Acrylic.
+	// On older macOS it degrades to MaterialWindow (logged by the shell).
 	MaterialGlass WindowMaterial = "glass"
 )
 
@@ -135,19 +136,19 @@ type Inset struct{ X, Y int }
 type WindowChrome int
 
 const (
-	// ChromeDefault is the titled window with traffic lights.
+	// ChromeDefault keeps the host's standard titled window and controls.
 	ChromeDefault WindowChrome = iota
-	// ChromeHiddenTitle keeps the traffic lights and lets the page
-	// paint under the title bar (fullSizeContentView plus a
-	// transparent, title-hidden title bar on darwin).
+	// ChromeHiddenTitle keeps the host's caption controls and lets the
+	// page paint under the title bar where the platform supports it.
 	ChromeHiddenTitle
 	// ChromeNone is borderless: no title bar, no traffic lights, no
 	// resize box. The page drags the window through
 	// data-cui-window-drag.
 	ChromeNone
 	// ChromeUnified is the Notes and Finder shape: a transparent title
-	// bar with a hidden title and a unified toolbar style (an empty
-	// NSToolbar attached on darwin so toolbarStyle takes effect).
+	// bar with a hidden title and unified page content. macOS attaches an
+	// empty NSToolbar so toolbarStyle takes effect; Windows extends the
+	// WebView under DWM's native caption controls.
 	ChromeUnified
 )
 
@@ -245,6 +246,9 @@ type Tray struct {
 
 // the shell-level extras that hang off it.
 type WindowConfig struct {
+	// AppID is the stable application identity used for per-app embedded
+	// browser data. Empty preserves the shell's title-based fallback.
+	AppID  string
 	Title  string
 	Width  int
 	Height int
@@ -469,11 +473,11 @@ type WindowState struct {
 	X, Y   int
 	Width  int
 	Height int
-	// Material is what the shell actually applied under the page, read
-	// from the live view tree: "none", "vibrancy-sidebar",
-	// "vibrancy-window", or "glass" (macOS 26 only). The configured
-	// Material may degrade (glass below macOS 26 answers
-	// "vibrancy-window").
+	// Material is the effect the shell applied under the page. macOS
+	// reports "vibrancy-sidebar", "vibrancy-window", or "glass";
+	// Windows reports "mica", "mica-alt", or "acrylic" when DWM accepts
+	// the request. Other cases report "none". Effects may degrade on
+	// older OS versions, such as glass to vibrancy-window on macOS.
 	Material string
 	// TitlebarTransparent reports the titlebarAppearsTransparent fact.
 	TitlebarTransparent bool
@@ -482,9 +486,9 @@ type WindowState struct {
 	ToolbarStyle string
 	// TitleVisibility reports the effective title visibility
 	// ("visible" or "hidden"; "" when the platform does not expose
-	// it). ChromeUnified and ChromeHiddenTitle ask for hidden; the
-	// assertion reads it back off the live window so a setter order
-	// that re-shows the title cannot pass silently.
+	// it). ChromeUnified and ChromeHiddenTitle ask for hidden; Windows
+	// may retain the title when a native menu needs the standard caption
+	// band.
 	TitleVisibility string
 	// SidebarWidth is the sidebar zone's width in screen points as the
 	// live zone view is sized; 0 when the window has no zone.
