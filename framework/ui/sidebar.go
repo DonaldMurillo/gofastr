@@ -209,7 +209,9 @@ type SidebarConfig struct {
 	// Set a distinct label when more than one navigation landmark appears.
 	NavLabel string
 
-	// Items is the navigation tree.
+	// Items is the navigation tree. With no items, or none left after
+	// the role filter, the sidebar, SidebarBody and the drawer body
+	// render nothing rather than an empty navigation landmark.
 	Items []SidebarItem
 
 	// CurrentPath is the screen's current path, used for active-state
@@ -502,6 +504,14 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	checkSidebarCollapse(cfg.Collapse)
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
 	checkStackBreakpoint(cfg.DrawerBreakpoint)
+	if len(cfg.Items) == 0 {
+		// No entries at all renders nothing, the same answer as a role
+		// filter that leaves nothing (RenderCtx): the headless primitive
+		// refuses an empty navigation landmark, and an app whose nav is
+		// built from data may have none yet. Config mistakes above still
+		// panic.
+		return ""
+	}
 	if cfg.DrawerBreakpoint == StackBelowLG {
 		classes[headless.PartRoot] += " fui-sidebar--drawer-below-lg"
 		classes[headless.PartSidebarDrawer] += " fui-sidebar__hamburger--drawer-below-lg"
@@ -675,6 +685,10 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 // class spelling and the given group-id prefix.
 func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootClass string) render.HTML {
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
+	if len(cfg.Items) == 0 {
+		// Same answer as the inline sidebar: no entries, no region.
+		return ""
+	}
 	classes := sidebarClasses(cfg.Variant)
 	classes[headless.PartRoot] = rootClass
 	if cfg.Compact {

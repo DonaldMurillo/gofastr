@@ -122,3 +122,24 @@ func TestSidebarPrependRendersWithRequestCtx(t *testing.T) {
 		}
 	}
 }
+
+func TestSidebarNoItemsRendersEmpty(t *testing.T) {
+	cfg := SidebarConfig{Title: "Sections"}
+	for name, fn := range map[string]func() render.HTML{
+		"Sidebar.Render":    func() render.HTML { return Sidebar(cfg).Render() },
+		"Sidebar.RenderCtx": func() render.HTML { return Sidebar(cfg).(component.ContextComponent).RenderCtx(context.Background()) },
+		"SidebarBody":       func() render.HTML { return SidebarBody(cfg) },
+		"drawer slot":       func() render.HTML { return sidebarDrawerSlot{cfg: cfg}.Render() },
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%s with no Items panicked: %v", name, r)
+				}
+			}()
+			if out := fn(); out != "" {
+				t.Errorf("%s with no Items rendered %q, want \"\"", name, out)
+			}
+		}()
+	}
+}
