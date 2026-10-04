@@ -61,8 +61,11 @@ type TagConfig struct {
 	// Defaults to "Remove <Label>".
 	DismissLabel string
 
-	// DismissAttrs lets callers attach extra data-cui-* attributes to
-	// the × button (e.g. data-cui-rpc-signal).
+	// DismissAttrs forwards extra attributes (data-* test hooks,
+	// analytics markers) to the × link. Keys the component owns are
+	// dropped: class, id, href, aria-label and data-cui-*. The
+	// dismissal's RPC wiring comes from Island, DismissMethod and
+	// DismissBody, never from here.
 	DismissAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve the
@@ -111,9 +114,12 @@ func Tag(cfg TagConfig) render.HTML {
 	if cfg.Class != "" {
 		mods = append(mods, cfg.Class)
 	}
-	parts := headless.Parts{}
+	parts := headless.Parts{Attrs: headless.PartAttrs{}}
 	if len(mods) > 0 {
-		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
+		parts.Attrs[headless.PartRoot] = html.Attrs{"class": strings.Join(mods, " ")}
+	}
+	if dismissAttrs := headless.Safe(cfg.DismissAttrs, "href", "aria-label"); len(dismissAttrs) > 0 {
+		parts.Attrs[headless.PartBadgeDismiss] = dismissAttrs
 	}
 	dismissLabel := cfg.DismissLabel
 	if dismissLabel == "" && cfg.Dismiss != "" {
