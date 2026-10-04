@@ -35,7 +35,10 @@
   const LIST = '[' + P + 'list]';
   const COUNT = '[' + P + 'count]';
   const ITEM = '[' + P + 'item]';
-  const HOOKS = '[' + P + 'delete],[' + P + 'edit]';
+  const DELETE = '[' + P + 'delete]';
+  const EDIT = '[' + P + 'edit]';
+  const HOOKS = DELETE + ',' + EDIT;
+  const TEMPLATES = { row: ':scope > template[' + P + 'row]', empty: ':scope > template[' + P + 'empty]' };
 
   // target splits "<db>/<store>"; both halves are Go-validated names.
   const target = (el, attr) => {
@@ -104,11 +107,11 @@
     const oldItem = active && active.closest && active.closest(ITEM);
     const hook = oldItem && oldItem.parentElement === el && active.closest(HOOKS);
     const focusAt = hook ? Array.prototype.indexOf.call(items(), oldItem) : -1;
-    const focusHook = hook && (hook.hasAttribute(P + 'delete') ? P + 'delete' : P + 'edit');
+    const focusHook = hook && (hook.matches(DELETE) ? DELETE : EDIT);
     items().forEach((n) => n.remove());
 
     const clone = (kind) => {
-      const tpl = el.querySelector(':scope > template[' + P + kind + ']');
+      const tpl = el.querySelector(TEMPLATES[kind]);
       const root = tpl && tpl.content.firstElementChild;
       return root ? root.cloneNode(true) : null;
     };
@@ -133,7 +136,7 @@
     if (focusAt >= 0) {
       const now = items();
       const item = now[Math.min(focusAt, now.length - 1)];
-      const wrap = item && item.querySelector('[' + focusHook + ']');
+      const wrap = item && item.querySelector(focusHook);
       const control = wrap && wrap.querySelector('button, a[href], input, select, textarea, [tabindex]');
       if (control) control.focus();
     }
@@ -160,7 +163,7 @@
     if (!t || !key) return;
     e.preventDefault();
     const db = open(t.db);
-    if (hook.hasAttribute(P + 'delete')) {
+    if (hook.matches(DELETE)) {
       db.then((h) => h.delete(t.store, key)).catch(() => {
         if (typeof NS._toastOrFallback === 'function') {
           NS._toastOrFallback({ variant: 'error', title: list.getAttribute(P + 'fail'), ttl: 6000 });

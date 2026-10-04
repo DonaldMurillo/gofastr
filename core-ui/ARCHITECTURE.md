@@ -853,15 +853,19 @@ friends); those resynchronize through these hooks.
 
 ### Browser-local databases (`__gofastr.localdb`)
 
-The `localdb` demand module (`runtime/src/localdb.js`) is the browser
-half of `core-ui/localdb`: IndexedDB databases declared in Go, stored in
-the visitor's browser, never on the server. Like `ws` it has no DOM
-marker; a caller loads it with `__gofastr.loadModule('localdb')`
+The `localdb` module (`core-ui/localdb/localdb.js`) is the browser half
+of `core-ui/localdb`: IndexedDB databases declared in Go, stored in the
+visitor's browser, never on the server. It is not part of
+`core-ui/runtime`: the package registers it as an on-request behaviour
+(`registry.OnRequest()`), so only a binary that imports
+`core-ui/localdb` carries it, and only a page that loads it with
+`__gofastr.loadModule('localdb')` downloads it
 (`framework/localentity`'s two behaviours declare `Requires("localdb")`).
 
 The schema rides an inert `<script type="application/json"
-id="gofastr-localdb">` block that `framework/uihost` puts in every page
-head (live and export mode) when any database is declared. Only
+id="gofastr-localdb">` data block (`registry.RegisterDataBlock`) that
+the host puts in every page head (live and export mode) when any
+database is declared. Only
 declared databases, stores and indexes are reachable; anything else
 rejects with a coded error. The browser-side IndexedDB name is
 `gofastr.<name>`.
@@ -1777,10 +1781,32 @@ The marker is the one trigger; when it appears, at boot, on DOM
 insertion or after a client navigation, the module loads once and
 attaches. `registry.LoadIdle()` defers the load to idle time.
 
+An optional API module that page code calls, rather than one that
+binds markup, registers with `registry.OnRequest()` instead of
+markers. It is served, versioned and listed in the module manifest like
+any module, but it is left out of the marker block (the kernel's scan
+never sees it), and it loads only through
+`__gofastr.loadModule(<name>)` or another behaviour's `Requires`. It
+takes no markers, `LoadIdle`, interactions or requirements. This is
+where an optional API belongs instead of `runtime/src/`: a binary that
+never imports the registering package never contains it, and a page
+that never asks for it never downloads it. `core-ui/localdb` is the
+first one.
+
+Server-declared data such a module reads rides a registered data block:
+`registry.RegisterDataBlock("gofastr-<name>", fn)` makes the host emit
+`<script type="application/json" id="gofastr-<name>">` with `fn()`'s
+JSON in every page head (live and export mode, sorted by id, `</`
+escaped, nothing when `fn` returns nil). The host emits it without
+importing the package that registered it. Ids are `gofastr-` plus
+lowercase letters, digits and `-`, and the kernel's own block ids are
+refused.
+
 The rules, each a panic at registration: the name is a URL segment
 (`^[a-z][a-z0-9-]{0,63}$`) and not an embedded module's; every marker
 is an attribute selector on a `data-` attribute (`[data-x]` or
-`[data-x="v"]`); at least one marker; an identical re-registration is
+`[data-x="v"]`); at least one marker unless `OnRequest`, and none
+with it; an identical re-registration is
 a no-op and a different one panics. A `data-cui-*` marker is admitted
 only when the attribute is already in the table above (hard rule 5
 through the seam, `TestRegisteredBehaviorDataFuiMarkersAreDocumented`).

@@ -8,9 +8,11 @@
 //	    localdb.Index("by_created", "createdAt"))
 //
 // The declarations become an inert JSON manifest the host puts in every
-// page head (<script type="application/json" id="gofastr-localdb">).
-// The `localdb` runtime module reads it and exposes
-// window.__gofastr.localdb: open a declared database, read and write
+// page head (<script type="application/json" id="gofastr-localdb">),
+// through registry.RegisterDataBlock: the host never imports this
+// package, so an app that does not use it links none of it.
+// The `localdb` module (localdb.js, registered below as an on-request
+// behaviour) reads it and exposes window.__gofastr.localdb: open a declared database, read and write
 // its declared stores, watch them for changes from this tab and every
 // other tab of the origin. Nothing here touches the server: the data
 // lives in the visitor's browser.
@@ -27,12 +29,28 @@
 package localdb
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
+
+//go:embed localdb.js
+var moduleJS string
+
+// The browser half ships with this package, not with core-ui/runtime:
+// a binary that never imports localdb never carries the module, and a
+// page that never calls __gofastr.loadModule('localdb') (directly or
+// through a behaviour's Requires) never downloads it.
+var _ = registry.RegisterBehavior("localdb", moduleJS, registry.OnRequest())
+
+// The schema reaches the page as a registered data block, so the host
+// emits it without importing this package.
+func init() { registry.RegisterDataBlock("gofastr-localdb", ManifestJSON) }
 
 // DefaultKeyPath is the key path a store uses when KeyPath is not given.
 const DefaultKeyPath = "id"

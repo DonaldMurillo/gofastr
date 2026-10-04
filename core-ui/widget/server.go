@@ -17,7 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
-	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
+	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -99,7 +99,7 @@ func RuntimeModuleManifestScript() string {
 			escapeJSONForScript(buf) +
 			`</script>`
 	}
-	return script + BehaviorsManifestScript() + ComputeManifestScript() + LocalDBManifestScript()
+	return script + BehaviorsManifestScript() + ComputeManifestScript() + uiregistry.DataBlocksHTML()
 }
 
 // BehaviorsManifestScript emits the inert JSON block the kernel reads
@@ -133,19 +133,6 @@ func computeManifestScript(manifest map[string]compute.Versions) string {
 		return ""
 	}
 	return `<script type="application/json" id="gofastr-compute-assets">` +
-		escapeJSONForScript(buf) +
-		`</script>`
-}
-
-// LocalDBManifestScript emits the inert JSON manifest of the IndexedDB
-// databases declared with core-ui/localdb, read by the localdb runtime
-// module. Returns "" when none is declared.
-func LocalDBManifestScript() string {
-	buf := localdb.ManifestJSON()
-	if buf == nil {
-		return ""
-	}
-	return `<script type="application/json" id="gofastr-localdb">` +
 		escapeJSONForScript(buf) +
 		`</script>`
 }

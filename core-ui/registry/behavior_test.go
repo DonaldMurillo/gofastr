@@ -286,3 +286,28 @@ func TestRegisterBehaviorInteractions(t *testing.T) {
 		t.Fatal("identical re-registration with the same interactions did not return the existing entry")
 	}
 }
+
+// OnRequest registers an API module: no markers, loaded only by page
+// code or a Requires. Every reason-to-load option is refused beside
+// it, a marker-less registration without it still panics, and the
+// flag is part of the definition a re-registration must match.
+func TestRegisterBehaviorOnRequest(t *testing.T) {
+	IsolateForTest(t)
+	b := RegisterBehavior("api", "x", OnRequest())
+	if !b.Entry().OnRequest || len(b.Entry().Markers) != 0 {
+		t.Fatalf("entry = %+v, want an on-request module with no markers", b.Entry())
+	}
+	for name, opt := range map[string]BehaviorOption{
+		"markers":      Markers("[data-x]"),
+		"idle":         LoadIdle(),
+		"requires":     Requires("action"),
+		"interactions": func(e *BehaviorEntry) { e.Interactions = []Interaction{{Event: "click", Selector: "[data-x]"}} },
+	} {
+		mustPanic(t, "OnRequest takes no", func() { RegisterBehavior("api-"+name, "x", OnRequest(), opt) })
+	}
+	mustPanic(t, "OnRequest", func() { RegisterBehavior("no-way-in", "x") })
+	mustPanic(t, "duplicate name", func() { RegisterBehavior("api", "x", Markers("[data-x]")) })
+	if again := RegisterBehavior("api", "x", OnRequest()); again.Entry() != b.Entry() {
+		t.Fatal("an identical OnRequest registration must be a no-op")
+	}
+}

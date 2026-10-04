@@ -161,6 +161,13 @@ func BehaviorsJSON() []byte {
 		if _, shadowed := embeddedModule(e.Name); shadowed {
 			panic("runtime: behaviour " + e.Name + " shadows an embedded runtime module of the same name")
 		}
+		// An on-request module has nothing to scan for: the module
+		// manifest already carries its URL hash for loadModule, and an
+		// entry here would hand the kernel an empty selector, which
+		// querySelector throws on mid-scan.
+		if e.OnRequest {
+			continue
+		}
 		out[e.Name] = behaviorManifest{Selectors: append([]string(nil), e.Markers...), Idle: e.Idle, Requires: append([]string(nil), e.Requires...), Interactions: append([]registry.Interaction(nil), e.Interactions...)}
 	}
 	validateRequirements(all)

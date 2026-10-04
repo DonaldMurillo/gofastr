@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1068,20 +1069,6 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// plus the core-side hint channel. Before that: 1183 measured
 		// after the re-delivery's pointer-modality hint.
 		"transition": 1395,
-		// localdb 3420 measured at its first landing (2 clearance).
-		// It is an API module, not a marker module: only a page that
-		// calls __gofastr.loadModule('localdb') (an app script, or
-		// framework/localentity's behaviours) downloads it. It carries
-		// the whole IndexedDB adapter in one unit because every caller
-		// needs all of it on first open: the additive schema
-		// reconciler (drift + upgrade + the version race), the
-		// transaction wrapper that resolves on COMMIT, the cursor
-		// reader, and the cross-tab channel with its forged-message
-		// guard, and the monotonic UUIDv7 minter. Shrunk from 4211
-		// by folding the single-op methods into one loop and dropping
-		// the error class; the next cut would remove a guard or a
-		// query option.
-		"localdb": 3422,
 	}
 	const coreOverride = 0
 
@@ -1102,6 +1089,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	}
 
 	for _, name := range ModuleNames() {
+		// Registered behaviours linked into this test binary are held
+		// below, by source file, with their own override rows.
+		if _, registered := registry.LookupBehavior(name); registered {
+			continue
+		}
 		src, ok := Module(name)
 		if !ok {
 			t.Errorf("module %q not embedded", name)
@@ -1132,6 +1124,26 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// TestRegisteredBehaviorSources_FindsTheTreesModules pins the
 	// tree's registrations by path, so a new module cannot land without
 	// the walk seeing it.
+	// A registered behaviour over the goal carries its own row, keyed
+	// by its repo path, with the reason it is one unit. Only a module
+	// outside core qualifies: it ships in a binary only when its
+	// package is imported, and on a page only when asked for.
+	behaviorOverrides := map[string]int{
+		// core-ui/localdb's on-request API module, 3420 measured at
+		// landing (2 clearance). Not in core-ui/runtime and never
+		// marker-loaded: only an app that imports core-ui/localdb
+		// carries it, and only a page that calls
+		// __gofastr.loadModule('localdb') (an app script, or
+		// framework/localentity's behaviours through Requires)
+		// downloads it. It is one unit because every caller needs all
+		// of it on first open: the additive schema reconciler (drift +
+		// upgrade + the version race), the transaction wrapper that
+		// resolves on COMMIT, the cursor reader, the cross-tab channel
+		// with its forged-message guard, and the monotonic UUIDv7
+		// minter. Shrunk from 4211 by folding the single-op methods
+		// into one loop and dropping the error class.
+		"core-ui/localdb/localdb.js": 3422,
+	}
 	sources, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("registered behaviours: %v", err)
@@ -1148,8 +1160,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		if !nominify() {
 			src = minify.Minify(src)
 		}
-		if got := gzipSize(t, src); got > moduleGoalGZ {
-			t.Errorf("registered behaviour %s gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", filepath.Base(f), got, moduleGoalGZ, moduleGoalGZ)
+		budget := moduleGoalGZ
+		rel, _ := filepath.Rel(filepath.Join("..", ".."), f)
+		if o, ok := behaviorOverrides[filepath.ToSlash(rel)]; ok {
+			budget = o
+		}
+		if got := gzipSize(t, src); got > budget {
+			t.Errorf("registered behaviour %s gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", filepath.Base(f), got, budget, moduleGoalGZ)
 		}
 	}
 }

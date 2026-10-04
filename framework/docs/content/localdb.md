@@ -59,6 +59,11 @@ declaration panics at startup. The browser stores the database as
 `<script type="application/json" id="gofastr-localdb">` block, on live
 pages and in static export. There is nothing to mount.
 
+The browser module ships with this package, not with the core runtime.
+An app that never imports `core-ui/localdb` contains none of it, and a
+page downloads it only when something calls
+`__gofastr.loadModule('localdb')`.
+
 ## Use it from a page script
 
 Load the module, open the database, call it. Every call returns a

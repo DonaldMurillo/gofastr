@@ -2132,10 +2132,13 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			headClose.WriteString(compute)
 			headClose.WriteByte('\n')
 		}
-		// The localdb manifest is the declared IndexedDB schema, small
-		// and static per deploy, inline like compute's.
-		if ldb := widget.LocalDBManifestScript(); ldb != "" {
-			headClose.WriteString(ldb)
+		// Registered data blocks (registry.RegisterDataBlock): an
+		// optional package's server-declared data for its module,
+		// core-ui/localdb's schema among them. Small and static per
+		// deploy, inline like compute's; a host that links no such
+		// package emits nothing.
+		if blocks := registry.DataBlocksHTML(); blocks != "" {
+			headClose.WriteString(blocks)
 			headClose.WriteByte('\n')
 		}
 	} else {

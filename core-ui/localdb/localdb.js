@@ -1,9 +1,10 @@
-// GoFastr runtime module, IndexedDB adapter (localdb)
+// GoFastr IndexedDB adapter (localdb)
 //
-// The browser half of core-ui/localdb. Loaded on demand via
-// __gofastr.loadModule('localdb'); like ws it has no DOM marker, its
-// callers (an application script, framework/localentity's module)
-// load it and call the API:
+// The browser half of core-ui/localdb, registered there as an
+// on-request behaviour (registry.OnRequest): it has no DOM marker and
+// is not part of core-ui/runtime. Its callers (an application script,
+// framework/localentity's behaviours through Requires) load it with
+// __gofastr.loadModule('localdb') and call the API:
 //
 //   const db = await __gofastr.localdb.open('pokedex')
 //   const id = await db.put('members', { name: 'Pikachu' })
