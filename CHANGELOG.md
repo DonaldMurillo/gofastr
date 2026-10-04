@@ -397,8 +397,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   tampered.** The supervisor filed every handshake-stage error as an
   integrity fault (terminal Failed), so a child that crashed or closed
   its pipe before answering never charged the restart circuit. A
-  handshake call that got no answer is now a crash; a mismatch, a
-  negotiation failure or an RPC error reply stays an integrity fault.
+  handshake call that got no answer now carries the new
+  `moduleproto.ErrHandshakeUnanswered` and counts as a crash; a
+  mismatch, a negotiation failure or an RPC error reply stays an
+  integrity fault.
 - **Static export shipped pages that load a missing script.** The docs
   site loads `/__site/livedash-reducers.js` on every page from an app
   route; the export skipped it, so every exported page (GitHub Pages

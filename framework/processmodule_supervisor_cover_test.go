@@ -286,8 +286,8 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 	if !isIntegrityFault(reply) {
 		t.Error("an RPC error reply to the handshake is an integrity fault")
 	}
-	died := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w",
-		fmt.Errorf("moduleproto: write: %w", syscall.EPIPE)))
+	died := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w: %w",
+		moduleproto.ErrHandshakeUnanswered, fmt.Errorf("moduleproto: write: %w", syscall.EPIPE)))
 	if isIntegrityFault(died) {
 		t.Error("a broken pipe mid-handshake is a crash, not an integrity fault")
 	}
