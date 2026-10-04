@@ -184,3 +184,43 @@ func main() {}
 		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
 	}
 }
+
+// An app alias of a kit type spells the kit type's shape: the regex is
+// written against the kit's own names, and an implementation that reads
+// its parameter through `type J = queue.Job` still matches.
+func TestShapesDefAliasedParamHits(t *testing.T) {
+	kit := map[string]string{"queue/queue.go": `package queue
+
+import "context"
+
+type Job struct{ ID string }
+
+type Queue interface {
+	Ack(ctx context.Context, job *Job) error
+}
+`}
+	src := `package main
+
+import (
+	"context"
+
+	"example.com/kit/queue"
+)
+
+type J = queue.Job
+
+type mem struct{}
+
+func (m *mem) Ack(ctx context.Context, job *J) error { return nil }
+
+var _ queue.Queue = (*mem)(nil)
+
+func main() {}
+`
+	n := &upgrade.Note{Find: upgrade.Find{Shapes: []upgrade.ShapeMatch{
+		{Symbol: shapeAckSym, Type: regexp.MustCompile(`^func\(ctx context\.Context, job \*queue\.Job\) error$`)},
+	}}}
+	res := mustRun(t, newWorkspace(t, kit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "Ack(ctx", "main.go",
+		shapeAckSym.String()+" shape func(ctx context.Context, job *queue.Job) error"))
+}

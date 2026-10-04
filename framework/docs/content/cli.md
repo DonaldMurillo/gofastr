@@ -242,9 +242,12 @@ Each matcher reads the code the way its language means it:
   clean on it. When the app no longer compiles against the version it
   is moving to, a compile error on a line where the symbol resolved to
   another shape is reported under the note with the error attached, so
-  the pre-port scan still finds the call. A member of an interface also
-  matches every method an app type declares to implement it, read
-  against that method's own signature.
+  the pre-port scan still finds the call, and so is an error anywhere
+  that names the symbol, such as an interface assertion failing on the
+  method that changed. A member of an interface also matches every
+  method an app type declares to implement it, read against that
+  method's own signature. An app alias of a kit type reads as the type
+  it names, so the regex is written against the kit's own spelling.
   ```yaml
   shapes:
     - symbol: gofastr/core-ui/app.NewLayout

@@ -130,3 +130,42 @@ func main() {
 		t.Fatalf("Unexplained = %v, want the undefined helper", hitStrs(res.Unexplained))
 	}
 }
+
+// The implementation kept the old shape while the kit's interface moved
+// on, so the compile error lands on an interface assertion: a line with
+// no shapes site that spells neither the method nor its parameter types.
+// The error names the interface and the method, which mints the hit the
+// way an error naming a uses symbol does. The implementation's own
+// declaration is not a hit here: against the new kit the type no longer
+// implements the interface, so the defs walk does not reach it.
+func TestFallbackShapeAssertionExplained(t *testing.T) {
+	src := `package main
+
+import (
+	"context"
+
+	"example.com/kit/queue"
+)
+
+type mem struct{}
+
+func (m *mem) Ack(ctx context.Context, jobID string) error { return nil }
+
+var _ queue.Queue = (*mem)(nil)
+
+func main() {}
+`
+	root := newWorkspace(t, shapeQueueNewKit, map[string]string{"main.go": src})
+	testEnv(t)
+	res, err := Run(root, []*upgrade.Note{shapeAckNote}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, shapeAckNote, hitAt(src, "(*mem)(nil)", "main.go", shapeAckSym.String()+" shape"))
+	if got := res.Hits[shapeAckNote][0].Err; !strings.Contains(got, "wrong type for method Ack") {
+		t.Fatalf("Err = %q, want the assertion error", got)
+	}
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
+	}
+}

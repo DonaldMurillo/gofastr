@@ -167,7 +167,7 @@ func (e *engine) usesPackage(p *packages.Package) {
 				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: sym.String()})
 			}
 			for _, w := range shapes {
-				ts := types.TypeString(obj.Type(), shapeTypeQual)
+				ts := shapeString(obj.Type())
 				if !w.re.MatchString(ts) {
 					// The symbol resolved to another shape. Against a kit
 					// already past the release that is the migrated
@@ -184,10 +184,59 @@ func (e *engine) usesPackage(p *packages.Package) {
 	}
 }
 
+// shapeString spells a type for a shapes regex: packages by name, and
+// every alias replaced by the type it names, so an app's
+// `type Resp = middleware.IdempotentResponse` reads as the kit type the
+// note's regex was written against.
+func shapeString(t types.Type) string {
+	return types.TypeString(unaliasDeep(t), shapeTypeQual)
+}
+
 // shapeTypeQual prints a package by its name, the way a declaration
 // spells its own types: "func(name string) *app.Layout", with the
 // package the type came from named app, not its import path.
 func shapeTypeQual(p *types.Package) string { return p.Name() }
+
+// unaliasDeep rebuilds t with every alias resolved, through pointers,
+// slices, arrays, maps, channels, tuples and signatures. A generic
+// signature is returned as is: rebuilding it would drop its type
+// parameters, and a method cannot carry any.
+func unaliasDeep(t types.Type) types.Type {
+	switch t := t.(type) {
+	case *types.Alias:
+		return unaliasDeep(types.Unalias(t))
+	case *types.Pointer:
+		return types.NewPointer(unaliasDeep(t.Elem()))
+	case *types.Slice:
+		return types.NewSlice(unaliasDeep(t.Elem()))
+	case *types.Array:
+		return types.NewArray(unaliasDeep(t.Elem()), t.Len())
+	case *types.Map:
+		return types.NewMap(unaliasDeep(t.Key()), unaliasDeep(t.Elem()))
+	case *types.Chan:
+		return types.NewChan(t.Dir(), unaliasDeep(t.Elem()))
+	case *types.Tuple:
+		return unaliasTuple(t)
+	case *types.Signature:
+		if t.TypeParams().Len() > 0 || t.RecvTypeParams().Len() > 0 {
+			return t
+		}
+		return types.NewSignatureType(nil, nil, nil, unaliasTuple(t.Params()), unaliasTuple(t.Results()), t.Variadic())
+	}
+	return t
+}
+
+func unaliasTuple(tp *types.Tuple) *types.Tuple {
+	if tp == nil || tp.Len() == 0 {
+		return tp
+	}
+	vars := make([]*types.Var, tp.Len())
+	for i := range vars {
+		v := tp.At(i)
+		vars[i] = types.NewVar(v.Pos(), v.Pkg(), v.Name(), unaliasDeep(v.Type()))
+	}
+	return types.NewTuple(vars...)
+}
 
 // defsPackage reports app-declared methods that implement a listed
 // interface method: a uses symbol naming an interface's method matches
@@ -252,7 +301,7 @@ func (e *engine) defsPackage(p *packages.Package) {
 			// app method still spelling the old shape is the hit, one
 			// already ported is not.
 			if sws := e.shapeIndex[w.sym]; len(sws) > 0 {
-				ts := types.TypeString(sig, shapeTypeQual)
+				ts := shapeString(sig)
 				for _, sw := range sws {
 					if sw.re.MatchString(ts) {
 						e.addGo(sw.n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String() + " shape " + ts})

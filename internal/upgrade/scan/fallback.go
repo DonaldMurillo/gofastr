@@ -14,8 +14,8 @@ import (
 )
 
 // fallbackPackage maps a broken package's compile errors to hits: a
-// message naming a uses symbol (pkgname.Name, plus the member as a whole
-// word) or an imports path lands at the error's position. Whether an
+// message naming a uses or shapes symbol (pkgname.Name, plus the member
+// as a whole word) or an imports path lands at the error's position. Whether an
 // unmatched error is unexplained is decided once every matcher has run
 // (see result): a hit on the error's line explains it when the error
 // names what the hit matched, and so does a shapes symbol on that line
@@ -259,8 +259,8 @@ func typeAliasesOf(p *packages.Package) map[typeName][]typeName {
 	return out
 }
 
-// matchErrAt runs every note's uses and imports entries against one
-// compile error; false means no note explains it. aliases are the local
+// matchErrAt runs every note's uses, shapes and imports entries against
+// one compile error; false means no note explains it. aliases are the local
 // import names of the error's file, by import path; typeAliases the
 // alias spellings of each imported type.
 func (e *engine) matchErrAt(pos token.Position, rel, msg string, aliases map[string][]string, typeAliases map[typeName][]typeName) bool {
@@ -277,6 +277,18 @@ func (e *engine) matchErrAt(pos token.Position, rel, msg string, aliases map[str
 		// An unconditioned fields entry is a use of the field. A key or
 		// value condition cannot be read off an error, so that error
 		// stays for the unexplained list.
+		// A shapes symbol named by an error is the old shape meeting the
+		// new kit somewhere the typed walk could not see it: an interface
+		// assertion failing on a method that changed shape names the
+		// interface and the method, never the implementation's line.
+		for _, sm := range n.Find.Shapes {
+			spellings := e.spellings(typeName{sm.Symbol.Pkg, sm.Symbol.Name}, aliases, typeAliases)
+			if !errNamesSymbol(msg, spellings, sm.Symbol.Member) {
+				continue
+			}
+			e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: sm.Symbol.String() + " shape", Err: msg})
+			matched = true
+		}
 		for _, fm := range n.Find.Fields {
 			if fm.Conditioned() {
 				continue

@@ -515,7 +515,10 @@ type ColorFieldConfig struct {
 
 func ColorField(cfg ColorFieldConfig) string { return "" }
 
-type CalloutConfig struct{ Landmark *bool }
+type CalloutConfig struct {
+	Title    string
+	Landmark *bool
+}
 
 func Callout(cfg CalloutConfig) string { return "" }
 
@@ -752,11 +755,14 @@ type PasswordInputConfig struct{ Name string }
 
 func PasswordInput(cfg PasswordInputConfig) string { return "" }
 
-type ColorFieldConfig struct{ Value string }
+type ColorFieldConfig struct {
+	Name  string
+	Value string
+}
 
 func ColorField(cfg ColorFieldConfig) string { return "" }
 
-type CalloutConfig struct{}
+type CalloutConfig struct{ Title string }
 
 func Callout(cfg CalloutConfig) string { return "" }
 
@@ -1303,6 +1309,15 @@ func TestV086GoAPIOldVsNew(t *testing.T) {
 	reg, rel := v086Loaded(t)
 	oldRes := scantest.Run(t, scantest.App(t, v086GoOldFiles, scantest.Options{Kit: v086Kit}), rel.Notes, reg.MarkerSinks)
 	newRes := scantest.Run(t, scantest.App(t, v086GoNewFiles, scantest.Options{Kit: v086NewKit}), rel.Notes, reg.MarkerSinks)
+	// Both apps must type-check against their kit: a fixture that does
+	// not compile is scanned through the compile-error fallback, whose
+	// looser struct-literal rule can hand a hit to the wrong note, and
+	// silence on a broken migrated app proves nothing.
+	for name, res := range map[string]*scan.Result{"old": oldRes, "new": newRes} {
+		if !res.TypeChecked {
+			t.Fatalf("the %s fixture app does not type-check (broken: %v; unexplained: %v)", name, res.Broken, res.Unexplained)
+		}
+	}
 	for i, n := range rel.Notes {
 		goAPI := len(n.Find.Uses) > 0 || len(n.Find.Shapes) > 0 || len(n.Find.Imports) > 0 || len(n.Find.Fields) > 0
 		marks, ok := v086GoOldMarks[i]
