@@ -126,7 +126,7 @@ filesystem error) answers the caller with a generic "internal error"
 (`Kind: internal`) while the real error is logged server-side — a
 gate refusal still names `invalid_params` — and journaled tool args
 mask credentialed values (`db_url`, `jwt_secret`, `seed_password`)
-the same way `redactedWorld` does (`freeze.DSNHasSecret` decides
+the same way `redactedWorld` does (`dsnredact.HasSecret` decides
 what counts), so the journal file never gains a secret the world
 itself would not carry.
 
