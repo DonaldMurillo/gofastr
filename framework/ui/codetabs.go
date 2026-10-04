@@ -31,7 +31,8 @@ type CodeTabsConfig struct {
 	// Name groups the tabs as one exclusive set (native <details name=>
 	// exclusivity). Required and must be unique within the page.
 	Name string
-	// Label is an optional aria-label for the group.
+	// Label is an optional accessible name for the tab strip: it
+	// renders as the aria-label of the role="tablist" element.
 	Label string
 	// LineNumbers turns on the CodeBlock line-number gutter for every tab.
 	LineNumbers bool
@@ -98,7 +99,11 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 		headless.PartTabPanel:  "fui-code-tabs__panel",
 		headless.PartTabsPanel: "fui-code-tabs__panels",
 	}
-	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items}, classes)
+	var parts headless.Parts
+	if cfg.Label != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartTabsNav: {"aria-label": cfg.Label}}
+	}
+	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items, Parts: parts}, classes)
 	// Every panel here is a CodeBlock built from CodeSample's strings —
 	// CodeSample carries no render.HTML field, so nothing a caller
 	// handed CodeTabs ever reaches into this subtree. headless.Tabs'

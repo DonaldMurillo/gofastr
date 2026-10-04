@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -94,5 +95,30 @@ func TestTagLabelOccursExactlyOnce(t *testing.T) {
 	linked := string(Tag(TagConfig{Label: "filter", Href: "/f"}))
 	if n := count(linked, "filter"); n != 1 {
 		t.Errorf("the linked render says the label %d times, want exactly 1:\n%s", n, linked)
+	}
+}
+
+func TestTagDismissAttrsOnDismiss(t *testing.T) {
+	out := string(Tag(TagConfig{Label: "x", Dismiss: "/x",
+		Island:       headless.Island{Endpoint: "/x", Signal: "tags"},
+		DismissAttrs: html.Attrs{"data-test": "keep", "href": "/evil", "data-cui-rpc": "/evil"}}))
+	i := strings.Index(out, "fui-tag__dismiss")
+	if i < 0 {
+		t.Fatalf("no dismiss control:\n%s", out)
+	}
+	start := strings.LastIndex(out[:i], "<")
+	dismiss := out[start : i+strings.Index(out[i:], ">")+1]
+	if !strings.Contains(dismiss, `data-test="keep"`) {
+		t.Errorf("DismissAttrs data-test missing from the dismiss control: %s", dismiss)
+	}
+	if strings.Contains(out, "/evil") {
+		t.Errorf("DismissAttrs beat an owned key:\n%s", out)
+	}
+}
+
+func TestTagDismissAttrsNoDismissInert(t *testing.T) {
+	out := string(Tag(TagConfig{Label: "x", DismissAttrs: html.Attrs{"data-test": "keep"}}))
+	if strings.Contains(out, "data-test") || strings.Contains(out, "fui-tag__dismiss") {
+		t.Errorf("DismissAttrs with no Dismiss rendered something:\n%s", out)
 	}
 }

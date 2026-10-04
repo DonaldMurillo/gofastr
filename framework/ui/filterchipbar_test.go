@@ -156,3 +156,28 @@ func TestFilterChipBarIslandSwapContract(t *testing.T) {
 		}
 	}
 }
+
+// A chip's dismissal is a mutation: the × POSTs DismissBody to
+// DismissPath and writes no URL of its own.
+func TestFilterChipDismissPostsBody(t *testing.T) {
+	h := string(FilterChipBar(FilterChipBarConfig{
+		Filters: []FilterChip{{Label: "Tag: urgent", DismissPath: "/filters/remove", DismissBody: `{"tag":"urgent"}`}},
+	}))
+	start := strings.Index(h, `data-cui-rpc="/filters/remove"`)
+	if start < 0 {
+		t.Fatalf("no dismiss control for the chip:\n%s", h)
+	}
+	open := strings.LastIndex(h[:start], "<a")
+	el := h[open : start+strings.Index(h[start:], ">")+1]
+	for _, want := range []string{
+		`data-cui-rpc-method="POST"`,
+		`data-cui-rpc-body="{&quot;tag&quot;:&quot;urgent&quot;}"`,
+	} {
+		if !strings.Contains(el, want) {
+			t.Errorf("chip dismiss missing %s:\n%s", want, el)
+		}
+	}
+	if strings.Contains(el, "data-cui-push-state") {
+		t.Errorf("a POST dismissal must not push its endpoint as the URL:\n%s", el)
+	}
+}
