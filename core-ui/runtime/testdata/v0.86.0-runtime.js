@@ -8,7 +8,7 @@
 
 // kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
-// data-cui-comp / data-cui-scope CSS scanner, window.__gofastr namespace CREATION (other
+// data-fui-comp / data-fui-scope CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
 // component-action dispatch helpers.
 // Composed FIRST; every other fragment depends on it.
@@ -28,10 +28,10 @@
   //   - data-color-scheme is WRITTEN by colorscheme.js, the separate
   //     synchronous <head> bootstrap that must run before first paint
   //     (FOUC). It is enumerated here as documentation only.
-  //   - data-cui-static is written by the static exporter (Go), never
+  //   - data-fui-static is written by the static exporter (Go), never
   //     by the runtime. Enumerated as documentation only.
   //   - Transient DOM (e.g. the feedback module's copy textarea) and
-  //     pure reads (#cui-route-announce) stay unwrapped.
+  //     pure reads (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
   // concurrent lockers, a modal over an image overlay, a drawer over a
@@ -43,7 +43,7 @@
   // singleton(id, factory) returns the existing body child with that id
   // (SSR-provided or previously created) or creates+appends it once.
   // reattach() re-appends any created singleton that lost its parent,
-  // the SPA full-shell swap calls it after replacing [data-cui-layout],
+  // the SPA full-shell swap calls it after replacing [data-fui-layout],
   // covering layouts that (incorrectly but survivably) nest chrome the
   // runtime hung on <body>.
   // docEl is the shared <html> handle for the whole core runtime,
@@ -54,9 +54,9 @@
   // name still writes (never break the page) but warns so the drift is
   // caught in review / e2e console audits.
   const M = Object.freeze({
-    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-cui-os data-cui-static lang'.split(' ')),
-    bodyClasses: Object.freeze('cui-sse-down cui-sse-up'.split(' ')),
-    singletons: Object.freeze('cui-backtotop-sentinel cui-nav-toast cui-toast-fallback'.split(' ')),
+    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static lang'.split(' ')),
+    bodyClasses: Object.freeze('fui-sse-down fui-sse-up'.split(' ')),
+    singletons: Object.freeze('fui-backtotop-sentinel fui-nav-toast fui-toast-fallback fui-toast-stack-auto'.split(' ')),
   });
   const _dc = (list, n) => {
     if (!list.includes(n)) console.warn('[gofastr] not in doc.MANIFEST: ' + n);
@@ -91,7 +91,7 @@
     },
   };
 
-  // OS hint on <html data-cui-os="mac|other"> so SSR-rendered
+  // OS hint on <html data-fui-os="mac|other"> so SSR-rendered
   // shortcut hints (framework/ui.ShortcutHint) can display
   // platform-correct mod-key glyphs (⌘ on Mac, Ctrl elsewhere)
   // without per-component JS. Detection is best-effort; functional
@@ -100,10 +100,10 @@
   try {
     const ua = (navigator.userAgentData && navigator.userAgentData.platform) ||
                navigator.platform || '';
-    doc.setHtmlAttr('data-cui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
+    doc.setHtmlAttr('data-fui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
   } catch (_) { /* SSR / non-browser */ }
 
-  // data-cui-static on <html> is still written by the static exporter
+  // data-fui-static on <html> is still written by the static exporter
   // (framework/static.Builder) and read by the widgets demand module
   // (src/widgets.js) for its missing-widget fallback toast. The runtime
   // itself no longer branches on it, composition selects the `static`
@@ -136,7 +136,7 @@
         redirect: r.redirect ?? r.Redirect ?? '',
         // Document-lifetime scripts in scope for this route (src
         // values). Nav compares the destination's set against the live
-        // document's data-cui-doc scripts; a difference is a document
+        // document's data-fui-doc scripts; a difference is a document
         // boundary, never a partial swap.
         docScripts: r.docScripts ?? r.DocScripts ?? [],
       });
@@ -207,15 +207,6 @@
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
-    /** The markup generation this kernel reads (2 = the data-cui-*
-        spelling). Every navigation fetch names it in X-Gofastr-Markup;
-        a server whose markup differs answers with a body that reloads
-        the document instead of a partial this kernel cannot read (see
-        core-ui/runtime.MarkupVersion). Modules read it from here, so a
-        module loaded into an older kernel sends none; nav.js spells the
-        same value as a literal. */
-    _markup: '2',
-
     /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
@@ -420,7 +411,7 @@
      * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
     loadCSS(_screenPath) { /* no-op */ },
 
-    // Component CSS: three modes share _pendingLinks + data-cui-style dedup.
+    // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
     // Page-lifetime conjunction of every component stylesheet load, awaited
@@ -430,7 +421,7 @@
     _stylesReady: Promise.resolve(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-cui-style="' + CSS.escape(name) + '"]')) return;
+      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);
@@ -443,8 +434,8 @@
       // unknown theme key AND an absent version, silently serving the app
       // palette with no immutable caching.
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
-      link.setAttribute('data-cui-style', name);
-      link.id = 'cui-css-' + name;
+      link.setAttribute('data-fui-style', name);
+      link.id = 'fui-css-' + name;
       // Each link's promise is BOUNDED: a stalled fetch (connection
       // accepted, response never arriving) fires neither onload nor
       // onerror and <link> has no network timeout of its own, so an
@@ -458,15 +449,15 @@
       })]).then(() => {});
       document.head.appendChild(link);
     },
-    // Loads the sheet each kit root (data-cui-comp) and owned-style
-    // root (data-cui-scope) under root names. Descendants only: a
+    // Loads the sheet each kit root (data-fui-comp) and owned-style
+    // root (data-fui-scope) under root names. Descendants only: a
     // caller whose swapped element may itself be a root scans its
     // parent (swapShell).
     scanAndLoadCSS(root) {
       if (!root?.querySelectorAll) return;
-      root.querySelectorAll('[data-cui-comp],[data-cui-scope]').forEach((el) => {
-        this.loadComponentCSS(el.dataset.cuiComp);
-        this.loadComponentCSS(el.dataset.cuiScope);
+      root.querySelectorAll('[data-fui-comp],[data-fui-scope]').forEach((el) => {
+        this.loadComponentCSS(el.dataset.fuiComp);
+        this.loadComponentCSS(el.dataset.fuiScope);
       });
     },
     _idleQueue: [],
@@ -548,7 +539,7 @@
     // headless-feedback (framework/headless/feedback.js), which
     // replaced the retired core-ui/runtime src/toasts.js. The module
     // self-registers those on window.__gofastr when it loads. Core
-    // code that calls them (the click delegator for data-cui-toast,
+    // code that calls them (the click delegator for data-fui-toast,
     // the X-Gofastr-Toast header dispatch in dispatchRPC) awaits
     // loadModule('headless-feedback') first so the very first toast on
     // a cold cache still fires.
@@ -586,18 +577,10 @@
     },
 
     // _toastOrFallback dispatches a single toast cfg, falling back to
-    // the inline renderer when the toasts module cannot load or has no
-    // stack on the page to render into (NS.toast answers null then:
-    // the module builds no container of its own; uihost renders a
-    // default stack into every shell, so the fallback is for a page
-    // that lost it).
+    // the inline renderer if the toasts module isn't available.
     _toastOrFallback(cfg) {
       this.loadModule('headless-feedback')
-        .then(() => {
-          let shown = null;
-          try { shown = this.toast(cfg); } catch (_) { shown = null; }
-          if (shown == null) { try { this._fallbackToast(cfg); } catch (_) {} }
-        })
+        .then(() => { try { this.toast(cfg); } catch (_) {} })
         .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
     },
 
@@ -609,11 +592,11 @@
     _fallbackToast(cfg) {
       if (!cfg || !cfg.title) return null;
       // Body singleton (doc.MANIFEST), distinct from the styled
-      // [data-cui-toast-stack] container the toasts module owns; the
+      // [data-fui-toast-stack] container the toasts module owns; the
       // fallback stays deliberately unstyled + module-free.
-      const container = doc.singleton('cui-toast-fallback', () => {
+      const container = doc.singleton('fui-toast-fallback', () => {
         const c = document.createElement('div');
-        c.setAttribute('data-cui-toast-fallback', '');
+        c.setAttribute('data-fui-toast-fallback', '');
         c.setAttribute('role', 'region');
         c.setAttribute('aria-label', 'Notifications');
         c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
@@ -676,20 +659,20 @@
     _signals: {},
 
     /** Read the current value of a named signal. Returns undefined for
-        unset signals. Used by data-cui-signal-inc and data-cui-signal-toggle
+        unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
         to read-modify-write without an RPC round-trip. */
     getSignal(name) {
       const s = own(this._signals, name) ? this._signals[name] : undefined;
       return s ? s.value : undefined;
     },
     /** Push a value into a named signal and reflect it into all
-        [data-cui-signal="<name>"] DOM nodes. Mode is read from the
-        node's data-cui-signal-mode attr ("text" default, "html",
-        "attr"+data-cui-signal-attr). */
+        [data-fui-signal="<name>"] DOM nodes. Mode is read from the
+        node's data-fui-signal-mode attr ("text" default, "html",
+        "attr"+data-fui-signal-attr). */
     setSignal(name, value, opts) {
       // Prototype pollution: the reserved-key guard used to live only in
       // the three seed-merge loops, but attribute-controlled keys enter
-      // HERE, data-cui-signal-set/-inc/-toggle, and fetched-JSON keys
+      // HERE, data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
       // from poll.js and widgets.js. `__proto__:POLLUTED` re-parents the
       // store, and because getSignal is `s ? s.value : undefined` EVERY
       // unset signal then reads back the attacker's value. Pure data
@@ -714,8 +697,8 @@
       // produce an invalid selector and querySelectorAll would THROW,
       // taking setSignal (and every listener it drives) down with it.
       // Same shape as sse.js:76.
-      document.querySelectorAll('[data-cui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
-        const mode = node.getAttribute('data-cui-signal-mode') || 'text';
+      document.querySelectorAll('[data-fui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
+        const mode = node.getAttribute('data-fui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.
           // On a non-2xx response dispatchRPC broadcasts the auto-built
@@ -746,7 +729,7 @@
             }).catch(() => {});
           }
         } else if (mode === 'attr') {
-          const attr = node.getAttribute('data-cui-signal-attr') || 'value';
+          const attr = node.getAttribute('data-fui-signal-attr') || 'value';
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
@@ -768,8 +751,8 @@
           // role=tab buttons, CSS keys the visual highlight off
           // data-active, but assistive tech reads aria-selected.
           if (attr === 'data-active') {
-            node.querySelectorAll('[role="tab"][data-cui-tab-index]').forEach((b) => {
-              b.setAttribute('aria-selected', String(b.getAttribute('data-cui-tab-index') === v));
+            node.querySelectorAll('[role="tab"][data-fui-tab-index]').forEach((b) => {
+              b.setAttribute('aria-selected', String(b.getAttribute('data-fui-tab-index') === v));
             });
           }
         } else {
@@ -792,26 +775,26 @@
         // After-update hook: brief flash to signal the value changed.
         // Useful for headers/badges where the user might miss an
         // update otherwise. Duration overridable via
-        // data-cui-flash-duration-ms; default 600ms.
+        // data-fui-flash-duration-ms; default 600ms.
         // Task D: skip the flash when the user prefers reduced motion.
-        if (node.hasAttribute('data-cui-flash-on-update')) {
+        if (node.hasAttribute('data-fui-flash-on-update')) {
           const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
           if (!prefersReduced) {
-            const dur = parseInt(node.getAttribute('data-cui-flash-duration-ms') || '600', 10);
-            node.classList.remove('cui-flash');
+            const dur = parseInt(node.getAttribute('data-fui-flash-duration-ms') || '600', 10);
+            node.classList.remove('fui-flash');
             // Force reflow so the next add re-runs the animation.
             // eslint-disable-next-line no-unused-expressions
             node.offsetWidth;
-            node.classList.add('cui-flash');
-            setTimeout(() => node.classList.remove('cui-flash'), dur);
+            node.classList.add('fui-flash');
+            setTimeout(() => node.classList.remove('fui-flash'), dur);
           }
         }
         // After-update hook: scroll a container to bottom so streaming
         // chat logs / live tails surface new content without manual
-        // scrolling. Opt-in via data-cui-scroll-bottom-on-update on
+        // scrolling. Opt-in via data-fui-scroll-bottom-on-update on
         // the signal node itself or the resolved selector target.
-        if (node.hasAttribute('data-cui-scroll-bottom-on-update')) {
-          const sel = node.getAttribute('data-cui-scroll-bottom-on-update');
+        if (node.hasAttribute('data-fui-scroll-bottom-on-update')) {
+          const sel = node.getAttribute('data-fui-scroll-bottom-on-update');
           // The attribute value is a selector by design; a malformed one
           // degrades to the node itself instead of throwing out of the
           // signal fanout pass.
@@ -833,19 +816,19 @@
   // outside RPC so tabs, counters, and toggles work before any network module
   // loads. Widget roots retain their own event ownership.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-cui-widget]')) return;
-    const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
+    if (e.target.closest('[data-fui-widget]')) return;
+    const node = e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]');
     if (!node) return;
     e.preventDefault();
     const G = window.__gofastr;
 
-    const set = node.getAttribute('data-cui-signal-set');
+    const set = node.getAttribute('data-fui-signal-set');
     if (set) {
       const sep = set.indexOf(':');
       if (sep > 0) G.setSignal(set.substring(0, sep), set.substring(sep + 1));
     }
 
-    const inc = node.getAttribute('data-cui-signal-inc');
+    const inc = node.getAttribute('data-fui-signal-inc');
     if (inc) {
       const sep = inc.indexOf(':');
       const name = sep > 0 ? inc.substring(0, sep) : inc;
@@ -853,7 +836,7 @@
       G.setSignal(name, (Number(G.getSignal(name)) || 0) + delta);
     }
 
-    const toggle = node.getAttribute('data-cui-signal-toggle');
+    const toggle = node.getAttribute('data-fui-signal-toggle');
     if (toggle) {
       const current = G.getSignal(toggle);
       G.setSignal(toggle, !current || current === 'false' || current === '0');
@@ -882,14 +865,14 @@
 // nav.js: SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
 // layout-chain-aware swaps (deepest shared layer), document-lifetime
-// script boundaries (hard document load at a data-cui-doc scope edge),
+// script boundaries (hard document load at a data-fui-doc scope edge),
 // updateActiveLink, document.title writes, the navigate() namespace
 // member.
 //
 // This is the PLAIN navigator: byte-for-byte the pre-layout source
 // plus the itemised fixes every page needs (error pages through the
 // swap path, pointer-modality focus, the atomic seed merge, the
-// data-cui-open anchor guard) and two seams the demand modules own —
+// data-fui-open anchor guard) and two seams the demand modules own —
 // the commit seam (_swapCommit delegates to the transition module so a
 // plain page declaring a transition gets one) and the opt-in
 // stand-down (a document holding an outlet or area marker hands its
@@ -929,15 +912,15 @@
   };
 
   // --- Layout chain primitives ---
-  // The server marks every layout layer with data-cui-layout-key (its
-  // identity) and the layer's content cell with data-cui-layout-slot (the
+  // The server marks every layout layer with data-fui-layout-key (its
+  // identity) and the layer's content cell with data-fui-layout-slot (the
   // swap target). The route manifest carries each route's chain in
   // `layouts` (outermost → innermost). Document order of the key-marked
   // elements IS the chain order, a wrapper precedes its descendants.
   const domChainKeys = () => {
     const out = [];
-    for (const el of document.querySelectorAll('[data-cui-layout-key]')) {
-      out.push(el.getAttribute('data-cui-layout-key'));
+    for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
+      out.push(el.getAttribute('data-fui-layout-key'));
     }
     return out;
   };
@@ -945,15 +928,15 @@
   // contain '/' and ':', and getAttribute needs no escaping.
   const findSlot = (key) => {
     if (!key) return null;
-    for (const el of document.querySelectorAll('[data-cui-layout-slot]')) {
-      if (el.getAttribute('data-cui-layout-slot') === key) return el;
+    for (const el of document.querySelectorAll('[data-fui-layout-slot]')) {
+      if (el.getAttribute('data-fui-layout-slot') === key) return el;
     }
     return null;
   };
   const mainEl = () => document.querySelector('[role="main"]') ?? document.querySelector('main');
   const mainSlotKey = () => {
     const m = mainEl();
-    return (m && m.getAttribute('data-cui-layout-slot')) || '';
+    return (m && m.getAttribute('data-fui-layout-slot')) || '';
   };
   // routeEntry: manifest lookup with trailing-slash tolerance and dynamic
   // patterns. Pattern awareness matters for chains, a concrete URL of a
@@ -998,7 +981,7 @@
 
   // --- Document-lifetime scripts (capability boundary) ---
   // A script the host registers with a page scope rides the rail as
-  // <script src data-cui-doc>, and the route manifest carries each
+  // <script src data-fui-doc>, and the route manifest carries each
   // route's set as docScripts. Such a script installs capabilities
   // INTO the document (WebMCP's navigator.modelContext tools are the
   // driving case), and two browser facts make its scope edge a
@@ -1018,7 +1001,7 @@
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
-    for (const s of document.querySelectorAll('script[data-cui-doc]')) {
+    for (const s of document.querySelectorAll('script[data-fui-doc]')) {
       const v = s.getAttribute('src');
       if (v) srcs.push(v);
     }
@@ -1093,12 +1076,12 @@
   const _navLive = (epoch) => epoch === window.__gofastr._navEpoch;
 
   // Mini toast used by loadPage failures, strict-CSP-clean (no
-  // inline styles since the .cui-nav-toast class is shipped via
+  // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
   const _showNavToast = (msg) => {
-    const t = doc.singleton('cui-nav-toast', () => {
+    const t = doc.singleton('fui-nav-toast', () => {
       const d = document.createElement('div');
-      d.className = 'cui-nav-toast';
+      d.className = 'fui-nav-toast';
       d.setAttribute('role', 'alert');
       return d;
     });
@@ -1251,7 +1234,7 @@
   // chain for a plain page drops the old chrome instead of keeping it.
   // Delegated chrome handlers survive the swap; no hard reload (hard
   // rule 4).
-  const shellEl = (d) => (d || document).querySelector('[data-cui-layout-key], [data-cui-screen-group]');
+  const shellEl = (d) => (d || document).querySelector('[data-fui-layout-key], [data-fui-screen-group]');
   const swapShell = (newRoot) => {
     const cur = shellEl() || mainEl();
     if (!cur || !newRoot) return null;
@@ -1263,7 +1246,7 @@
     doc.reattach();
     mergeSeedFromDOM(el);
     // The parent: the new shell root itself carries its layout's
-    // data-cui-scope, and the scan reads descendants only.
+    // data-fui-scope, and the scan reads descendants only.
     window.__gofastr.scanAndLoadCSS(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
     if (m) _focusSwapTarget(m);
@@ -1272,19 +1255,19 @@
   // applyDocShell syncs the document-level markers that ride the swapped
   // payload onto the document itself. <html lang> and the skip link live
   // OUTSIDE the shell the runtime swaps, so the server carries the
-  // destination's values (data-cui-lang / data-cui-skip-label, from
+  // destination's values (data-fui-lang / data-fui-skip-label, from
   // App.LangForPath + SkipLabelForPath) on the outermost layer it
   // renders; after any swap this copies them onto documentElement.lang
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
   const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
-      ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
+    const c = root && (root.matches('[data-fui-lang],[data-fui-skip-label]')
+      ? root : root.querySelector('[data-fui-lang],[data-fui-skip-label]'));
     if (!c) return;
-    const lang = c.getAttribute('data-cui-lang');
+    const lang = c.getAttribute('data-fui-lang');
     if (lang) doc.setHtmlAttr('lang', lang);
-    const skip = c.getAttribute('data-cui-skip-label');
+    const skip = c.getAttribute('data-fui-skip-label');
     const link = skip && document.querySelector('[data-skip-link]');
     if (link) link.textContent = skip;
   };
@@ -1324,7 +1307,7 @@
       own origin (and X-Gofastr-From would stop naming the real one). */
   // The commit seam: one navigation's commit routes through the
   // transition module's wrapper when the document declared a
-  // transition (a plain page declaring data-cui-vt runs this — its
+  // transition (a plain page declaring data-fui-vt runs this — its
   // swaps animate); without the module the commit applies directly,
   // the pre-layout behaviour, behind the supersede rule's check.
   const _swapCommit = (epoch, from, to, apply, pickSrc) => {
@@ -1347,7 +1330,7 @@
     // to a whole-document load of the destination.
     const G0 = window.__gofastr;
     const N = G0._navHooks.envelope?.nav;
-    if (N || document.querySelector('[data-cui-outlet],[data-cui-area]')) {
+    if (N || document.querySelector('[data-fui-outlet],[data-fui-area]')) {
       // The pointer modality core recorded for THIS navigation rides
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
@@ -1363,7 +1346,7 @@
   };
   const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
-    // comes from an href / a data-cui-* attribute / a server header,
+    // comes from an href / a data-fui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
     // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
@@ -1395,7 +1378,7 @@
 
     try {
       const layouts = routeLayouts(path);
-      // bypassCache: post-mutation navigation (data-cui-rpc-navigate,
+      // bypassCache: post-mutation navigation (data-fui-rpc-navigate,
       // navigate({force:true})) must show fresh server state, never the
       // cached copy captured before the mutation.
       const cached = (bypassCache || forceFull) ? null : getCachedScreen(path);
@@ -1478,7 +1461,7 @@
             const m = mainEl();
             if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
           }
-          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
+          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
         }, null);
         return;
@@ -1486,11 +1469,8 @@
 
       // Partial fetch. X-Gofastr-From names the origin route so the
       // server renders only the layers the two routes do NOT share and
-      // echoes the swap boundary in X-Gofastr-Swap. X-Gofastr-Markup is
-      // the kernel's _markup, spelled as a literal here (it costs fewer
-      // gzip bytes than the property read; TestKernelMarkupMatchesGo
-      // holds both spellings to runtime.MarkupVersion).
-      const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2' };
+      // echoes the swap boundary in X-Gofastr-Swap.
+      const hdrs = { 'X-Gofastr-Navigate': '1' };
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       const resp = await fetch(path, { headers: hdrs });
@@ -1547,7 +1527,7 @@
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
         body = nm?.innerHTML ?? '';
-        swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
+        swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
       // manifest and server disagree (deploy skew), recover with a
@@ -1588,7 +1568,7 @@
   // aren't reported on most screen readers).
   let _announceTimer = 0;
   const announceRoute = (title) => {
-    const r = document.getElementById('cui-route-announce');
+    const r = document.getElementById('fui-route-announce');
     if (!r || !title) return;
     // Cancel any in-flight timer from a previous nav so rapid A→B→C
     // navs don't race and leave the live region on the wrong title.
@@ -1649,7 +1629,7 @@
   // handled client-side via partial fetch + cache. No hard refresh.
   // This is the Angular-router-style behavior described in
   // core-ui/ARCHITECTURE.md ("Page → page navigation"). In-page state
-  // changes are NOT routes, they go through data-cui-rpc on islands
+  // changes are NOT routes, they go through data-fui-rpc on islands
   // and never hit this handler.
   //
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
@@ -1681,18 +1661,18 @@
     // browser) instead of turning a rare element into a broken page.
     if (anchor.target && String(anchor.target).toLowerCase() !== '_self') return;
     if (!isKnownRoute(href)) return;
-    // data-cui-rpc anchors are RPC triggers, not navigation.
-    if (anchor.hasAttribute('data-cui-rpc')) return;
-    // data-cui-open anchors are widget triggers, not navigation: the
+    // data-fui-rpc anchors are RPC triggers, not navigation.
+    if (anchor.hasAttribute('data-fui-rpc')) return;
+    // data-fui-open anchors are widget triggers, not navigation: the
     // widgets-boot delegator preventDefaults the click and opens the
     // widget, and the no-script page keeps the href as the fallback
     // destination. A hijacked SPA navigation here meant one click BOTH
     // navigated and opened the widget.
-    if (anchor.hasAttribute('data-cui-open')) return;
-    // data-cui-nav="off" opts a link out of SPA navigation entirely:
+    if (anchor.hasAttribute('data-fui-open')) return;
+    // data-fui-nav="off" opts a link out of SPA navigation entirely:
     // hosts whose destination page depends on full-load scripts (legacy
     // page-runtime initializers) need a real document load.
-    if (anchor.getAttribute('data-cui-nav') === 'off') return;
+    if (anchor.getAttribute('data-fui-nav') === 'off') return;
 
     const fullPath = resolvePath(href);
     if (fullPath === currentPath) {
@@ -1702,7 +1682,7 @@
     // A document-lifetime script's scope edge is a document boundary.
     // Stand down BEFORE preventDefault so the browser performs a real
     // navigation with ordinary link semantics (history, focus, target),
-    // exactly like a data-cui-nav="off" link.
+    // exactly like a data-fui-nav="off" link.
     if (crossesDocBoundary(fullPath)) return;
     // Preserve the #fragment: resolvePath strips it (path-only is what
     // route matching + cache keys want), but the URL bar and the
@@ -1835,7 +1815,7 @@
     navigate(path, { replace = false, force = false } = {}) {
       if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
-      // touching the URL bar. Server-rendered data-cui-push-state
+      // touching the URL bar. Server-rendered data-fui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
       // hrefs are the trust boundary; navigate() is the choke point
       // for all programmatic SPA navigation, so the guard lives
@@ -1930,7 +1910,7 @@
   // Widget catalog fetch. The live endpoint is session-gated and per-page
   // scoped (?page= filters widgets to the current route). A serverless
   // export never composes widgets-boot, the `static` composition omits it
-  // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
+  // and rpc-stub intercepts data-fui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
   fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
@@ -1939,7 +1919,7 @@
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
       // loaded before iterating mounts, covers the case where no
-      // [data-cui-widget] marker is present in initial HTML (the
+      // [data-fui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but server-side
       // registration says there are widgets to mount.
       if (list.length > 0) {
@@ -1982,7 +1962,7 @@
     .catch(() => { _wcr(); });
 
   // === EAGER WIDGET DELEGATORS =========================================
-  // The data-cui-open click handler, data-cui-toast click handler, and
+  // The data-fui-open click handler, data-fui-toast click handler, and
   // popstate listener used to live inside the /__gofastr/widgets
   // catalog fetch's .then() callback. That meant on a slow network the
   // very first click on an open trigger had no handler to receive it,
@@ -1998,26 +1978,26 @@
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
     document.addEventListener('click', (e) => {
-      // Toast trigger: data-cui-toast='<json>' fires a client toast.
-      const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
+      // Toast trigger: data-fui-toast='<json>' fires a client toast.
+      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
       if (toastBtn) {
         e.preventDefault();
         window.__gofastr.loadModule('headless-feedback').then(() => {
           try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
+            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
             window.__gofastr.toast(cfg);
           } catch (_) {}
         }).catch(() => {});
         return;
       }
-      const btn = e.target.closest && e.target.closest('[data-cui-open]');
+      const btn = e.target.closest && e.target.closest('[data-fui-open]');
       if (!btn) return;
       // The live catalog path mounts the widget module; RPC controls inside
       // the mounted chrome await src/rpc.js in their scoped listeners.
-      const name = btn.getAttribute('data-cui-open');
+      const name = btn.getAttribute('data-fui-open');
       if (!name) return;
       e.preventDefault();
-      const raw = btn.getAttribute('data-cui-deeplink') || '';
+      const raw = btn.getAttribute('data-fui-deeplink') || '';
       const overrides = {};
       if (raw) {
         // Degrade-don't-throw: a malformed percent escape throws URIError
@@ -2033,7 +2013,7 @@
           } catch (_) {}
         }
       }
-      const anchorPref = btn.getAttribute('data-cui-popover-anchor');
+      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
       (async () => {
         // The widgets module + catalog must both be ready before
         // openWidget can find the entry. Awaiting both here keeps the
@@ -2041,7 +2021,7 @@
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
         await _wready;
-        // btn rides along so openWidget can read data-cui-ctx (#321):
+        // btn rides along so openWidget can read data-fui-ctx (#321):
         // the trigger's context keys the chrome fetch + cache. Read in
         // the module, not here: core bytes are the scarce ones.
         await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true, btn });
@@ -2231,7 +2211,7 @@
     } catch (_) { return {}; }
   })();
   // Map-keyed, not {}: module names arrive through DOM attributes
-  // (data-cui-prefetch, data-behavior) and a plain-object cache keyed by
+  // (data-fui-prefetch, data-behavior) and a plain-object cache keyed by
   // "__proto__" re-parents through the setter while "constructor" reads
   // as a truthy inherited entry. Map keys are plain strings.
   const _modulePromises = new Map();
@@ -2243,7 +2223,7 @@
     const cached = _modulePromises.get(name);
     if (cached) return cached;
     const modPromise = new Promise((resolve, reject) => {
-      // Module names come from DOM attributes (data-cui-prefetch,
+      // Module names come from DOM attributes (data-fui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
       // a "../../../evil" token normalizes out of the runtime serve
       // route and onto an arbitrary same-origin script, which then runs
@@ -2308,16 +2288,16 @@
   const _rpcFormFallback = (form) => {
     _rpcUnavailable();
     // Native submit is correct ONLY for a form the browser could have
-    // submitted itself, a data-cui-spa form with an ordinary enctype.
+    // submitted itself, a data-fui-spa form with an ordinary enctype.
     //
-    // A data-cui-rpc form targets a JSON API: the resource engine emits it
+    // A data-fui-rpc form targets a JSON API: the resource engine emits it
     // with no enctype at all and rpc.js builds the JSON body, so submitting
     // it natively posts urlencoded (415) or cannot issue its declared
     // PUT/PATCH at all (405). Either way the user is navigated off the page
     // to a raw error and everything they typed is gone, strictly worse
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
-    if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
+    if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) return;
     if ((form.getAttribute('enctype') || '').toLowerCase() === 'application/json') return;
     // Call the prototype method, not form.submit: HTML named-property
     // lookup shadows it with any control named "submit", so a form
@@ -2327,7 +2307,7 @@
   };
   // Widget-scoped listeners live in the widgets MODULE and prevent the
   // default before awaiting rpc too, so they need the same recovery, the
-  // document bridge deliberately skips anything inside [data-cui-widget]
+  // document bridge deliberately skips anything inside [data-fui-widget]
   // and cannot cover for them.
   window.__gofastr._rpcUnavailable = _rpcUnavailable;
   window.__gofastr._rpcFormFallback = _rpcFormFallback;
@@ -2335,13 +2315,13 @@
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-cui-widget]')) return;
+      if (e.target.closest('[data-fui-widget]')) return;
       // Signal mutations win, as they did when one delegator owned both:
       // the old handler set the signal and RETURNED without consulting
-      // data-cui-rpc. Two listeners would otherwise both fire on an
+      // data-fui-rpc. Two listeners would otherwise both fire on an
       // element carrying each attribute.
-      if (e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]')) return;
-      const node = e.target.closest('[data-cui-rpc],[data-kiln-tool]');
+      if (e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]')) return;
+      const node = e.target.closest('[data-fui-rpc],[data-kiln-tool]');
       if (!node || node.tagName === 'FORM') return;
       e.preventDefault();
       try {
@@ -2352,19 +2332,19 @@
 
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
-      if (!form || form.closest('[data-cui-widget]')) return;
+      if (!form || form.closest('[data-fui-widget]')) return;
       // Confirm gate runs BEFORE every branch below, so a plain native
       // POST form (which leaves at the enctype check) is gated too. The
       // submitter wins over the form: one form can carry several submit
       // buttons of different destructive weight. Callers that already
       // gated pass {confirmed:true} so rpc.js does not prompt twice.
       const sub = e.submitter;
-      const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
+      const msg = (sub && sub.getAttribute('data-fui-confirm')) || form.getAttribute('data-fui-confirm');
       if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
         e.preventDefault();
         return;
       }
-      if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) {
+      if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) {
         e.preventDefault();
         try {
           await loadModule('rpc');
@@ -2376,7 +2356,7 @@
       const action = form.getAttribute('action');
       if (!action || !window.__gofastr._sameOrigin(action)) return;
       const enctype = (form.getAttribute('enctype') || '').toLowerCase();
-      if (enctype !== 'application/json' && !form.hasAttribute('data-cui-spa')) return;
+      if (enctype !== 'application/json' && !form.hasAttribute('data-fui-spa')) return;
       e.preventDefault();
       try {
         await loadModule('rpc');
@@ -2397,7 +2377,7 @@
           lb.removeAttribute('hidden');
         }
       }
-      const form = e.target.closest('[data-cui-rpc][data-cui-rpc-trigger="input"]');
+      const form = e.target.closest('[data-fui-rpc][data-fui-rpc-trigger="input"]');
       if (!form) return;
       loadModule('rpc')
         .then(() => window.__gofastr.dispatchRPC(form, 'input'))
@@ -2405,7 +2385,7 @@
     });
   }
 
-  // Hover/focus prefetch: any element with data-cui-prefetch="<name>"
+  // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
   // resolved. Capture phase; an element is marked attempted only once
@@ -2413,7 +2393,7 @@
   // failed fetch is retried on the next hover/focus.
   const _prefetchAttempted = new WeakSet();
   function _prefetch(e) {
-    const node = e.target && e.target.closest && e.target.closest('[data-cui-prefetch]');
+    const node = e.target && e.target.closest && e.target.closest('[data-fui-prefetch]');
     if (!node || _prefetchAttempted.has(node)) return;
     // Mark attempted only on success: a failed fetch (network blip,
     // a host not serving the module) must not pin the element, or the
@@ -2421,7 +2401,7 @@
     // _moduleMarkers entry, so no scanner picks it up either; vacate
     // panels would then stay empty for the page lifetime. Re-hovers
     // while a fetch is in flight cost nothing: loadModule dedups.
-    const names = node.getAttribute('data-cui-prefetch').split(/\s+/).filter(Boolean);
+    const names = node.getAttribute('data-fui-prefetch').split(/\s+/).filter(Boolean);
     for (const n of names) {
       loadModule(n).then(() => { _prefetchAttempted.add(node); }, () => {});
     }
@@ -2433,7 +2413,7 @@
   // Pointer-driven drag-to-close for widgets (DragDismiss /
   // preset.BottomSheet) lives in the split-runtime module at
   // core-ui/runtime/src/dragdismiss.js, demand-loaded via the
-  // [data-cui-drag-dismiss="true"] scanner below (SSR-inlined sheets
+  // [data-fui-drag-dismiss="true"] scanner below (SSR-inlined sheets
   // load at boot; dynamically-opened chrome is caught by the
   // MutationObserver scan when it's appended to <body>).
 
@@ -2441,15 +2421,15 @@
   // Marker-driven modules are rescanned after boot, SPA navigation,
   // and DOM insertion.
   const _moduleMarkers = [
-    { name: 'rpc', selector: '[data-cui-rpc],[data-kiln-tool]' },
+    { name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' },
     // Computed: client-side derived signals (core-ui/store). The module
-    // subscribes each [data-cui-computed] node to its dependency signals
+    // subscribes each [data-fui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.
-    { name: 'computed',   selector: '[data-cui-computed]' },
+    { name: 'computed',   selector: '[data-fui-computed]' },
     // Compute: registered same-origin Web Worker and WebAssembly assets.
     // The marker only loads the imperative __gofastr.compute API.
-    { name: 'compute',    selector: '[data-cui-compute]' },
-    { name: 'popover',    selector: '[data-cui-popover-anchor]' },
+    { name: 'compute',    selector: '[data-fui-compute]' },
+    { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     // SSE: background event stream, opened only for a page that takes
     // pushes. The markers are the PUSH TARGETS (any island — the
     // server can PushUpdate any island id — plus the offline banner
@@ -2461,29 +2441,31 @@
     // first interaction; the channel only carries push updates, not
     // user actions. See ROADMAP §8 Phase 5.
     { name: 'sse',        selector: '[data-island],[data-hui-system-offline]', idle: true },
-    // Widgets: any SSR-inlined widget element or any data-cui-open
+    // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
     // scanner just covers the marker-on-page path. Idle-loaded,
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
-    { name: 'widgets',    selector: '[data-cui-widget],[data-cui-open]', idle: true },
+    { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
-    { name: 'textarea',       selector: 'textarea[data-cui-autogrow]' },
+    { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
-    { name: 'dragdismiss', selector: '[data-cui-drag-dismiss="true"]' },
+    { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
+    // SearchInput: clear button visibility + input clearing.
+    { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // Dropdown: click-toggle + click-outside dismiss + Esc close.
-    { name: 'dropdown',         selector: '[data-cui-dropdown-wrap]' },
+    { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.
-    { name: 'reveal',           selector: '[data-cui-reveal]' },
+    { name: 'reveal',           selector: '[data-fui-reveal]' },
     // Animate: signal-driven CSS class toggling.
-    { name: 'animate',          selector: '[data-cui-animate-signal]' },
-    // Poll: page-level region polling. data-cui-poll="<duration>" +
-    // data-cui-poll-src="<url>" re-fetches the URL on the cadence and
+    { name: 'animate',          selector: '[data-fui-animate-signal]' },
+    // Poll: page-level region polling. data-fui-poll="<duration>" +
+    // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
     // swaps the response HTML into the element. The module owns
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
-    { name: 'poll',         selector: '[data-cui-poll]' },
+    { name: 'poll',         selector: '[data-fui-poll]' },
     // Envelope (fills, snapshots, scroll anchors): NOT a boot trigger.
     // The outlet/area marker alone costs nothing until the first
     // navigation that needs the module: frag/nav.js starts its load
@@ -2493,10 +2475,10 @@
     // boot exception is the deferred trigger below.
     // Loading content: the inert server-rendered template beside an
     // outlet. Before it loads the busy dim alone shows.
-    // View transitions: the document declares a [data-cui-vt] cell or
-    // a data-cui-vt-kinds vocabulary. Before it loads swaps run bare
+    // View transitions: the document declares a [data-fui-vt] cell or
+    // a data-fui-vt-kinds vocabulary. Before it loads swaps run bare
     // and the X-Gofastr-Transition pick is not read.
-    { name: 'transition', selector: '[data-cui-vt-kinds],[data-cui-vt]' },
+    { name: 'transition', selector: '[data-fui-vt-kinds],[data-fui-vt]' },
 ];
 
   // Registered behaviours (registry.RegisterBehavior): a component's own
@@ -2634,7 +2616,7 @@
       if (lm && own(lm, name) && lm[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
-      // markers (data-cui-drag-dismiss) on the node handed to us.
+      // markers (data-fui-drag-dismiss) on the node handed to us.
       if (!(scope.matches?.(selector) || scope.querySelector(selector))) continue;
       if (idle) {
         idleQueue.push(name);
@@ -2670,14 +2652,10 @@
   //     without it, `_initToasts` would have run only once at module
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
-    const G = window.__gofastr;
-    // The idle-loaded activelink module reads this at load: only a
-    // document that already navigated client-side has a server mark
-    // for it to clear (src/activelink.js).
-    if (G) G._navigated = true;
     _scanForModules(document);
     // Task A: re-inject aria-live onto any new signal nodes from the swapped page.
     _injectSignalAria();
+    const G = window.__gofastr;
     if (G && G._moduleScanners) {
       for (const name in G._moduleScanners) {
         if (G.loadedModules && G.loadedModules[name]) {
@@ -2701,7 +2679,7 @@
   // arrives via partial-fetch (instead of a full page load).
   //
   // Without this, the boot-time catalog only contains widgets visible
-  // on the initial path; clicking a data-cui-open trigger for a
+  // on the initial path; clicking a data-fui-open trigger for a
   // page-scoped widget elsewhere silently bails because the entry is
   // missing from _widgetCatalog.
   //
@@ -2744,10 +2722,10 @@
     // Seed _pendingLinks with names already covered by the SSR
     // bundle link, so the on-demand scanner doesn't redundantly load
     // per-component sheets. The names live on the bundle <link>'s
-    // data-cui-bundle attribute (a stable contract), not parsed
+    // data-fui-bundle attribute (a stable contract), not parsed
     // from the URL.
-    document.head.querySelectorAll('link[data-cui-bundle]').forEach((l) => {
-      const names = (l.getAttribute('data-cui-bundle') || '').split(',');
+    document.head.querySelectorAll('link[data-fui-bundle]').forEach((l) => {
+      const names = (l.getAttribute('data-fui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
     G.scanAndLoadCSS(docEl);
@@ -2769,7 +2747,7 @@
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
-  // when data-cui-signal-mode is absent or "text"): attr-mode and
+  // when data-fui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
   //  - attr-mode: injects into element attributes (e.g. <a href=…>),
   //    not text, role=status on an <a> is invalid ARIA.
@@ -2778,8 +2756,8 @@
   //    on every island update. Those regions use their own role/aria.
   // Runs at boot and after SPA navigation.
   const _injectSignalAria = () => {
-    document.querySelectorAll('[data-cui-signal]').forEach((node) => {
-      const mode = node.getAttribute('data-cui-signal-mode') || 'text';
+    document.querySelectorAll('[data-fui-signal]').forEach((node) => {
+      const mode = node.getAttribute('data-fui-signal-mode') || 'text';
       if (mode !== 'text') return;
       if (!node.getAttribute('role')) node.setAttribute('role', 'status');
       if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');

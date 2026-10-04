@@ -122,7 +122,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 
 | Attribute | Purpose |
 |---|---|
-| `data-cui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` message by the headless hooks, never by a kit class (a reserved or live `[data-hui-field-error]` node inside the `[data-hui-field]` group, or the next sibling of a bare `[data-hui-choice]` label), and when no field matched, the `error` text is toasted. |
+| `data-cui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` message by the headless hooks, never by a kit class (a reserved or live `[data-hui-field-error]` node inside the `[data-hui-field]` group, or the next sibling of a bare `[data-hui-choice]` label), and when no field matched, the `error` text is toasted. The form's next answer, refused or successful, first clears every error the form shows, the messages the server rendered with the page included: `aria-invalid` goes, live nodes are removed and every other error node empties back to reserved. |
 | `data-cui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-cui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-cui-rpc-close` | Containing widget closes on 2xx |
@@ -211,7 +211,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-menu-lazy` | Emitted by `framework/ui.Menu` when `MenuConfig.LazyPanel` is set: the panel's rows ship inside this inert `<template>` as the panel div's only child, so closed-menu row text, labels, and roles are invisible to live-DOM queries (host Playwright `getByText`/`getByLabel` contracts) until first open; the rows are still in the HTML source, so nothing is hidden from a crawler that parses the response. The panel `<div>` itself always renders, so `aria-controls` still resolves while closed. |
 | `data-hui-menu-trigger="<menu-id>"` | Emitted by `framework/ui.Menu` when `MenuConfig.TriggerElement` is set: the presentation wrapper (`role="presentation"`, `display: contents`) holding the caller's own button/anchor, beside the summary-less `<details data-hui-menu="<menu-id>" data-hui-disclosure>` that carries the panel. An interactive element inside `<summary>` is axe `nested-interactive` (SERIOUS), so a caller-owned trigger must not route through `TriggerHTML`. The value pairs the wrapper with the details it names so the module can wire `aria-expanded`/`aria-controls` onto the caller's trigger. |
 | `data-cui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting AND hands the link's current-state to the `activelink` module. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. A server-rendered first-paint mark on such a link is activelink-owned too: the sweep clears it when the route moves elsewhere (without the handover a stale SSR `aria-current` survived beside the new mark — two lit entries). Links with neither the handover attribute nor the module's own `.active` class (pagination, server breadcrumbs, hand-set state) keep owning their attributes. Without this attribute the runtime does exact-href matching only, and sets/clears only what it stamped. Root `/` is never a prefix match. |
-| `data-cui-activelink` | On a `<nav> <a>` link: hands the link's current-state to the `activelink` module without changing how it matches (exact href unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
+| `data-cui-activelink` | On a `<nav> <a>` link: hands the link's current-state to the `activelink` module without changing how it matches (exact href unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances; popovers are click-driven and don't deep-link. |
 | `data-hui-system-dismiss` | On the × button inside a `framework/ui.Banner` (the `headless.SystemBanner` contract): the headless module's delegated click sets `hidden` on the nearest `[data-hui-system]` ancestor, so dismissal survives partial-island swaps. The offline banner carries none — its ending is the reconnect. |
@@ -326,6 +326,28 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`. The server strips invisible/bidi codepoints — `core/textsafe` — from the screen title before this header and the full page's `<title>` element, so a title computed from loaded data cannot reorder or salt the tab readout.) |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders; never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 
+**Deploy skew: `X-Gofastr-Markup`.** Every navigation request the
+runtime makes (the click's partial fetch, the envelope navigator,
+prefetch, intercepted overlays) names the markup generation its kernel
+reads in `X-Gofastr-Markup` (`window.__gofastr._markup`,
+`runtime.MarkupVersion` in Go: 2 is the `data-cui-*` spelling, 1 the
+`data-fui-*` one through v0.86). A tab opened before a deploy keeps its
+runtime, and markup that kernel cannot read leaves every interactive
+marker dead: a `data-cui-rpc` form submits as a native GET with its
+fields in the URL. When a browser script fetch (`Sec-Fetch-Mode` of
+`cors`, `same-origin` or `no-cors`) names another generation or none,
+uihost answers 409 with an HTML partial at the swap key the live DOM
+holds, carrying a `<meta http-equiv="refresh">` to the destination and
+a reload link. Every runtime applies an HTML partial the same way, so
+inserting it starts the browser's own navigation and the destination
+loads whole with the current runtime. A request without Fetch Metadata
+(curl, a Go test, a browser older than Safari 16.4) gets the ordinary
+partial. An old runtime's cross-chain navigation fetches the whole
+document with no navigate header, which the server cannot tell from app
+code fetching a page, so it is not covered. Bump the generation in
+`frag/kernel.js` and `core-ui/runtime/markup.go` together when the
+attribute vocabulary changes again.
+
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
 so back/forward is instant. Eviction never re-renders the visible page;
@@ -377,7 +399,10 @@ move, so a kept sidebar never shows two lit entries after a client
 navigation. `headless.Sidebar` marks every leaf `data-cui-activelink`
 because the module loads idle: a navigation can land before it ever
 stamped the old link, and only the handover tells it the stale mark is
-its own. A link with none of the three (pagination's
+its own. That handover applies to navigations only: on a document that
+has not navigated client-side, the load-time sweep stamps matches and
+leaves `data-cui-activelink` marks alone, so the server's `Active` on a
+detail page or a URL with a query keeps its mark. A link with none of the three (pagination's
 `aria-current="page"`, server breadcrumbs, hand-set state) keeps
 whatever it carries: the sweep sets and clears only what it owns.
 Marking a link current also opens its closest

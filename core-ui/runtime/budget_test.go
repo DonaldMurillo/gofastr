@@ -864,7 +864,17 @@ const (
 	// itself, which every sheet load goes through, so no carve exists;
 	// nine spellings of the same scan were measured and none fit the
 	// old line (level-1 gzip moves by single digits on spelling alone).
-	coreCongestionWindowGZ = 14*1024 + 1185
+	//
+	// 2026-10-04, the deploy-skew header (X-Gofastr-Markup on the click's
+	// partial fetch plus the kernel's _markup generation that demand
+	// modules read) took the real bundle 15520 -> 15532. 15533, the
+	// smallest step that fits. The header is the click path itself, so
+	// no demand-module carve exists: an old tab's first click after a
+	// deploy is exactly the request the server has to recognise. Six
+	// placements and spellings were measured (15532 to 15537); the
+	// header alone, with no kernel property, measures 15527. Bracket
+	// re-verified by TestCoreBudgetRejectsCliffOverflow.
+	coreCongestionWindowGZ = 14*1024 + 1197
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation

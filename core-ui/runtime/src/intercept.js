@@ -124,12 +124,15 @@
     const underPath = location.pathname + location.search;
     const trigger = document.activeElement;
     if (!NS._originOK?.(path)) return false;
+    const hdrs = {
+      'X-Gofastr-Navigate': '1',
+      'X-Gofastr-Intercept': '1',
+      'X-Gofastr-From': underPath,
+    };
+    // The kernel's markup generation (frag/kernel.js _markup).
+    if (NS._markup) hdrs['X-Gofastr-Markup'] = NS._markup;
     fetch(path, {
-      headers: {
-        'X-Gofastr-Navigate': '1',
-        'X-Gofastr-Intercept': '1',
-        'X-Gofastr-From': underPath,
-      },
+      headers: hdrs,
       credentials: 'same-origin',
     })
       .then((r) => {

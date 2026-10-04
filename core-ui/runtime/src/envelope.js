@@ -900,6 +900,8 @@
       // SAME URL, and Chrome serializes same-URL fetches behind its
       // HTTP-cache write lock), and the abort signal.
       const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Fills': '2' };
+      // The kernel's markup generation (frag/kernel.js _markup).
+      if (NS._markup) hdrs['X-Gofastr-Markup'] = NS._markup;
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeInfo(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       if (parts) {

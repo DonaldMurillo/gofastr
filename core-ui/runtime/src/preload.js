@@ -93,6 +93,8 @@
       'X-Gofastr-From': location.pathname,
       'X-Gofastr-Prefetch': '1',
     };
+    // The kernel's markup generation (frag/kernel.js _markup).
+    if (NS._markup) hdrs['X-Gofastr-Markup'] = NS._markup;
     // The fills negotiation mirrors the click path (the opt-in gate):
     // only a document whose envelope module is loaded — one holding an
     // outlet or area marker — asks for the envelope, so a prefetched

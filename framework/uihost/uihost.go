@@ -2922,6 +2922,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 // http.StatusNotFound so a missed navigation answers partial-shaped
 // with the error status.
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
+	// Deploy skew: a runtime that reads another markup generation must
+	// not receive this body (markupskew.go).
+	if staleMarkupClient(r) {
+		writeStaleMarkupReload(w, r, path, res.SwapLayer)
+		return
+	}
 	// The status is decided ONCE, here, before any body byte (DESIGN
 	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
 	// the component's own ScreenStatusCode (the same contract the
