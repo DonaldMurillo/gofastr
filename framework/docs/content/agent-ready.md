@@ -335,12 +335,17 @@ Headers in the raw bytes (`\]`, `\|`) render as the plain characters.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the eleven tools that read the running app's state
+`WithMCPIntrospection()`, the eight tools that read the running app's state
 are reachable at the canonical endpoint the agent card advertises:
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `app_goroutine_leaks`, `app_routines`, `framework_docs_list`,
-`framework_docs_get`,
-`framework_docs_search`. Alongside them sits the contract catalog
+`app_readiness`, `app_goroutine_leaks`, `app_routines`. The embedded
+framework docs are a separate option, `framework.WithMCPTools(mcptools.Register)` from
+`framework/docs/mcptools`, which adds `framework_docs_list`,
+`framework_docs_get` and `framework_docs_search`; package framework does not
+import the docs corpus, so the app opts in. `WithMCPTools` takes any
+`func(*mcp.Server) error`: the framework runs it during init after every
+plugin and battery `Init` and before the introspection set, and a
+registrar error (a tool-name collision included) fails the boot. Alongside them sits the contract catalog
 (`contracts_list`, `contracts_explain`, `contracts_capabilities`), which
 describes what the framework requires of the app's own code. Under
 `gofastr dev` the catalog gains a working half: `contracts_verify` runs
@@ -349,7 +354,7 @@ the analyzers over the app's source and returns structured findings, and
 outside the dev loop, since both touch local source files.
 Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict. Pick one. Blueprint-generated apps ship with
-both options wired.
+`WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
 
 `framework.WithMCPControl()` adds the mutating counterpart:
 `app_module_enable` / `app_module_disable` toggle registered modules on the
@@ -447,8 +452,9 @@ to the child through the same capability broker as the module's HTTP
 routes. The agent's authority is delegated identically, and there is no
 separate tool-permission vocabulary. See [process modules](process-modules.md).
 
-**The dev loop implies all of it.** Under `gofastr dev` (`GOFASTR_DEV`),
-`framework.NewApp` auto-enables the mount, introspection, and control;
+**The dev loop implies all of it but the docs tools.** Under `gofastr dev` (`GOFASTR_DEV`),
+`framework.NewApp` auto-enables the mount, introspection, and control
+(the `framework_docs_*` tools still need `WithMCPTools(mcptools.Register)`);
 battery/log auto-registers its `log_recent` / `log_filter` /
 `log_metrics` / `log_set_level` debug tools; and every CRUD-enabled
 entity serves its `{entity}_list/get/create/update/delete` data tools
@@ -631,6 +637,8 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
 | `uihost.WithOrganization(cfg)` | Organization JSON-LD (`contactPoint` + `PostalAddress`) in every full page head. |
 | `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP) + discovery well-knowns (server card, `/.well-known/mcp.json` manifest). |
+| `framework.WithMCPIntrospection()` | The read-only `app_*` tools (routes, plugins, batteries, modules, config, readiness, goroutine leaks, routines) plus the `contracts_*` catalog. |
+| `framework.WithMCPTools(register)` | Run a `func(*mcp.Server) error` at init, after plugin/battery `Init` and before introspection; `mcptools.Register` from `framework/docs/mcptools` adds the `framework_docs_*` tools. |
 | `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
 | `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
 | `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |

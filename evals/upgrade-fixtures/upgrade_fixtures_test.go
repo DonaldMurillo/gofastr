@@ -226,7 +226,7 @@ func assertRuntimeContract(t *testing.T, fx fixture, base string, want manifestE
 	if !sortChangesOrder(t, base+"/tags") {
 		t.Fatalf("SSR list sort round-trip failed: ?sort= did not change order")
 	}
-	// Row-action RPC (data-fui-rpc) round-trip: create a tag then DELETE it via
+	// Row-action RPC (data-cui-rpc) round-trip: create a tag then DELETE it via
 	// the same auto-CRUD endpoint the generated island targets.
 	newTag := mustPost(t, base+"/api/tags", `{"name":"rpc-probe"}`, nil)
 	id := jsonField(t, newTag, "id")
@@ -235,7 +235,7 @@ func assertRuntimeContract(t *testing.T, fx fixture, base string, want manifestE
 	}
 	del := doRequest(t, "DELETE", base+"/api/tags/"+id, "", nil)
 	if del != 200 && del != 204 {
-		t.Fatalf("island RPC delete (data-fui-rpc target) failed: status %d", del)
+		t.Fatalf("island RPC delete (data-cui-rpc target) failed: status %d", del)
 	}
 
 	t.Logf("[%s] OK: SSR, OpenAPI, public CRUD (%d tags), auth (alice+bob), owner isolation (%d/%d tasks), create-stamps-owner, sort + row-action RPC round-trips",

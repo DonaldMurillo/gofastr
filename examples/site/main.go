@@ -38,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -272,6 +273,7 @@ func setupServer() *framework.App {
 		// the deployed site never sets GOFASTR_DEV, so its public /mcp
 		// stays read-only.
 		framework.WithMCPIntrospection(),
+		framework.WithMCPTools(mcptools.Register),
 		framework.WithMCP(),
 	)
 

@@ -119,7 +119,10 @@ func TestRemotePeerExpiresAfterTTL(t *testing.T) {
 }
 
 // TestRemoteReplacesLocalPeer: a peer id that reappears on another
-// replica closes the local socket; the room sees leave then join.
+// replica closes the local socket; the room sees leave then join and
+// nothing after. The duplicate leave CI saw once (#474) came from R1's
+// join mirror reaching R2 after p1 had already joined R2; the lane-held
+// replay is TestLateJoinMirrorDoesNotKickTheMovedPeer.
 func TestRemoteReplacesLocalPeer(t *testing.T) {
 	base1, base2, _, _ := twoReplicas(t, func() Config { return Config{} })
 

@@ -53,6 +53,11 @@ const (
 	childModeBadDigest childMode = "bad_digest" // surface_sha256 mismatch → terminal
 	childModeSlow      childMode = "slow"       // http handler sleeps so kill -9 lands mid-call
 	childModeCrashExit childMode = "crash_exit" // exit 1 immediately on each spawn
+	// crash_in_handshake: exit 1 from inside the handshake handler, so
+	// the host's handshake call fails on the transport (peer closed /
+	// EOF / EPIPE) rather than through a verdict. The timing crash_exit
+	// hits by accident under load, made deterministic.
+	childModeCrashInHandshake childMode = "crash_in_handshake"
 )
 
 // buildChildArtifact compiles a tiny symlink to the running test binary so
@@ -342,6 +347,43 @@ func TestSupervisor_CircuitOpensAndGenResets(t *testing.T) {
 	}
 }
 
+// A child that dies while the host's handshake call is in flight is a
+// crash and charges the circuit like one. Before the fix the supervisor
+// read the "handshake:"-wrapped transport error as an integrity fault and
+// went terminal on the first attempt, which is why
+// TestSupervisor_CircuitOpensAndGenResets flaked under load: its child
+// sometimes exited before the handshake write rather than after it.
+func TestSupervisor_ChildDyingMidHandshakeIsACrash(t *testing.T) {
+	if os.Getenv(childEnvName) != "" {
+		return
+	}
+	store := newTestStore(t)
+	sup := newTestSupervisor(t, store, childModeCrashInHandshake)
+	d := descriptorForChild(t, childModeCrashInHandshake)
+	if _, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	sup.StartLoops()
+	if err := sup.Enable(context.Background(), d.Name); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		info, _ := sup.Info(d.Name)
+		if info.CircuitOpen || info.State == framework.StateFailed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	info, _ := sup.Info(d.Name)
+	if info.State == framework.StateFailed {
+		t.Fatalf("a child dying mid-handshake went terminal (Failed) after %d restarts; want a crash cycle", info.RestartCount)
+	}
+	if !info.CircuitOpen || info.RestartCount < 5 {
+		t.Fatalf("circuit open = %v, restarts = %d; want the circuit open after 5 crashes", info.CircuitOpen, info.RestartCount)
+	}
+}
+
 // ---- Test 5: disabled → 404; enabled-but-down → 503 + Retry-After ----
 
 func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
@@ -440,6 +482,9 @@ func processModuleChildMain(mode childMode) int {
 		surface := hp.Expected.SurfaceSHA256
 		if mode == childModeBadDigest {
 			surface = "DIFFERENT"
+		}
+		if mode == childModeCrashInHandshake {
+			os.Exit(1)
 		}
 		return moduleproto.HandshakeResult{
 			Proto: moduleproto.ProtoRange{Min: 1, Max: 1},

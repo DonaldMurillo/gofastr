@@ -5,9 +5,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// Re-exports of framework/entity so existing callers, generated code, and
-// example apps using framework.X keep compiling after the entity package
-// extraction.
+// Root spellings of framework/entity. framework.X is the public API that
+// generated code, the examples and the docs write; the extraction moved
+// the implementation, not the name.
 
 type (
 	Entity                  = entity.Entity

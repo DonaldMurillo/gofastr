@@ -45,7 +45,7 @@ func SanitizeControlBytes(s string) string {
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := range s {
+	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c < 0x20 || c == 0x7f {
 			continue

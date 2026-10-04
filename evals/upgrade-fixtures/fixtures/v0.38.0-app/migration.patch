@@ -73,7 +73,7 @@ diff --git a/resource.go b/resource.go
  	"github.com/DonaldMurillo/gofastr/framework/ui"
  )
  
-@@ -206,7 +206,14 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
+@@ -206,6 +206,13 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
  	}
  
  	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
@@ -87,7 +87,6 @@ diff --git a/resource.go b/resource.go
  	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
  
  	var actions render.HTML
- 	if c.CanCreate {
 @@ -258,26 +265,26 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
  		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
  	}
@@ -125,6 +124,48 @@ diff --git a/resource.go b/resource.go
  	}
  	body = append(body, ui.DataTable(dt))
  	return render.Join(body...)
+@@ -373,20 +380,20 @@ func (c ResourceConfig) Detail(ctx context.Context, id string) render.HTML {
+ 		}
+ 		body += "}"
+ 		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: resButtonVariant(t.Variant), ExtraAttrs: html.Attrs{
+-			"data-fui-rpc":          c.APIPath + "/" + id,
+-			"data-fui-rpc-method":   "PUT",
+-			"data-fui-rpc-body":     body,
+-			"data-fui-rpc-navigate": c.BasePath + "/" + id,
++			"data-cui-rpc":          c.APIPath + "/" + id,
++			"data-cui-rpc-method":   "PUT",
++			"data-cui-rpc-body":     body,
++			"data-cui-rpc-navigate": c.BasePath + "/" + id,
+ 		}}))
+ 	}
+ 	if c.CanEdit {
+ 		actions = append(actions,
+ 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
+ 			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: html.Attrs{
+-				"data-fui-rpc":          c.APIPath + "/" + id,
+-				"data-fui-rpc-method":   "DELETE",
+-				"data-fui-rpc-navigate": c.BasePath,
+-				"data-fui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
++				"data-cui-rpc":          c.APIPath + "/" + id,
++				"data-cui-rpc-method":   "DELETE",
++				"data-cui-rpc-navigate": c.BasePath,
++				"data-cui-confirm":      "Delete this " + c.Singular + "? This cannot be undone.",
+ 			}}),
+ 		)
+ 	}
+@@ -493,9 +500,9 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+ 		rpc, method, back = c.APIPath+"/"+id, "PUT", c.BasePath+"/"+id
+ 	}
+ 	attrs := html.Attrs{
+-		"data-fui-rpc":          rpc,
+-		"data-fui-rpc-method":   method,
+-		"data-fui-rpc-navigate": back,
++		"data-cui-rpc":          rpc,
++		"data-cui-rpc-method":   method,
++		"data-cui-rpc-navigate": back,
+ 	}
+ 
+ 	fields := make([]render.HTML, 0, len(c.Fields))
 @@ -505,7 +512,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  			cur = resCell(resGet(row, f.Key))
  		}
@@ -194,7 +235,6 @@ diff --git a/resource.go b/resource.go
  	}
  }
  
-
 diff --git a/app.go b/app.go
 --- a/app.go
 +++ b/app.go

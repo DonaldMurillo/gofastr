@@ -472,6 +472,7 @@ func agentsHub() *TeachHubScreen {
     framework.WithConfig(framework.AppConfig{Name: "app"}),
     framework.WithMCP(),              // entities get MCP tools at /mcp
     framework.WithMCPIntrospection(),
+    framework.WithMCPTools(mcptools.Register), // framework_docs_* over the embedded docs
 )`,
 				RefSlug: "agent-ready",
 			},
@@ -479,14 +480,15 @@ func agentsHub() *TeachHubScreen {
 				Title: "Dev MCP",
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					codeText("gofastr dev"),
-					render.Text(" hands the running app to your coding agent, whether Claude Code or Codex, over MCP: it reads routes, config, readiness, embedded docs, and recent logs, and it can write app data through the same entity tools your API serves. It's livereload for agents; opt out with "),
+					render.Text(" hands the running app to your coding agent, whether Claude Code or Codex, over MCP: it reads routes, config, readiness and recent logs, the framework docs when the app registers them (generated apps do), and it can write app data through the same entity tools your API serves. It's livereload for agents; opt out with "),
 					codeText("GOFASTR_DEV_MCP=0"),
 					render.Text(".")),
 				},
 				CodeLang: "shell",
 				Code: `# GOFASTR_DEV=1 mounts the dev MCP tools for your coding agent:
-#   app_routes, app_config, app_readiness, framework_docs_*, log_recent
+#   app_routes, app_config, app_readiness, log_recent
 #   + every CRUD entity's data tools (posts_list, posts_create, …)
+#   + framework_docs_* when main.go has WithMCPTools(mcptools.Register)
 gofastr dev`,
 				RefSlug: "dev-livereload",
 			},

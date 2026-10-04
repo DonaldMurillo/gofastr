@@ -2,8 +2,8 @@ package framework
 
 import "github.com/DonaldMurillo/gofastr/framework/cron"
 
-// Re-exports of framework/cron so callers using framework.X (benchmarks,
-// example apps) keep compiling after the cron package extraction.
+// Root spellings of framework/cron. framework.X is the public API; the
+// extraction moved the implementation, not the name callers write.
 
 type (
 	CronJob   = cron.CronJob

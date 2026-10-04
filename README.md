@@ -326,7 +326,8 @@ suite. External production adopters are the part still ahead of us; see
 Every doc is embedded into the `gofastr` binary: `gofastr docs` browses them
 offline, the [docs site](https://donaldmurillo.github.io/gofastr/) serves them
 rendered with live component demos, and the `framework_docs_*` MCP tools
-expose them to agents connected to a running app. The
+(`framework.WithMCPTools(mcptools.Register)` from `framework/docs/mcptools`) expose them to
+agents connected to a running app. The
 [docs index](framework/docs/content/README.md) is the browsable entry point.
 Start with:
 
