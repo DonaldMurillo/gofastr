@@ -614,10 +614,14 @@
   //     without it, `_initToasts` would have run only once at module
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
+    const G = window.__gofastr;
+    // The idle-loaded activelink module reads this at load: only a
+    // document that already navigated client-side has a server mark
+    // for it to clear (src/activelink.js).
+    if (G) G._navigated = true;
     _scanForModules(document);
     // Task A: re-inject aria-live onto any new signal nodes from the swapped page.
     _injectSignalAria();
-    const G = window.__gofastr;
     if (G && G._moduleScanners) {
       for (const name in G._moduleScanners) {
         if (G.loadedModules && G.loadedModules[name]) {

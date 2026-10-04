@@ -31,10 +31,11 @@ func activelinkHandoverPage() string {
     <a id="other" href="/other" aria-current="page" data-cui-match-prefix="/other">Other</a>
     <!-- A host-owned mark with no handover: pagination's shape. -->
     <a id="owned" href="/owned" aria-current="page">Owned</a>
-    <!-- The plain sidebar leaf: no section prefix, but its first-paint
-         mark is handed over all the same (headless.Sidebar emits
-         data-cui-activelink on every leaf). A navigation that lands
-         before the idle module loads must still clear it. -->
+    <!-- The plain sidebar leaf: no section prefix, its first-paint
+         mark handed over by data-cui-activelink (headless.Sidebar
+         emits it on every leaf). The handover covers navigations only:
+         with none, the server's mark stays (Active on a detail page or
+         a query URL). activelink_sweep_e2e_test.go covers the clear. -->
     <a id="leaf" href="/leaf" aria-current="page" data-cui-activelink>Leaf</a>
   </nav>
   <main id="main">ready</main>
@@ -109,7 +110,7 @@ func TestActiveLinkClearsHandedOverMarks(t *testing.T) {
 	if marks["owned"] != "page" {
 		t.Errorf("the host-owned mark was stripped (aria-current=%q): activelink must clear only what it owns or was handed", marks["owned"])
 	}
-	if marks["leaf"] != "" {
-		t.Errorf("the stale mark survived on a data-cui-activelink leaf (aria-current=%q): the sidebar hands every leaf to the sweep, prefix or not", marks["leaf"])
+	if marks["leaf"] != "page" {
+		t.Errorf("the load-time sweep cleared a data-cui-activelink leaf with no navigation (aria-current=%q): the server's mark is the truth until one lands", marks["leaf"])
 	}
 }
