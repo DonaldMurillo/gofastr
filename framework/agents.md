@@ -152,13 +152,19 @@ already done.
 
 ## `framework.WithMCPIntrospection()`: live-app agent debug
 
-Adds `framework_docs_list`, `framework_docs_get`,
-`framework_docs_search`, `app_routes`, `app_plugins`, `app_batteries`,
+Adds `app_routes`, `app_plugins`, `app_batteries`,
 `app_modules`, `app_config`, `app_readiness`, `app_goroutine_leaks`,
 `app_routines` (the registered cron/routine bodies, so "did my routine
 body change land" is answerable from the session), endpoint so a
 connected agent can answer "what routes exist" / "is the app
 ready" / "is anything leaking goroutines" without leaving the session.
+
+The embedded framework docs are a separate option, `framework.WithMCPTools(mcptools.Register)`
+from `framework/docs/mcptools`: it adds `framework_docs_list`,
+`framework_docs_get` and `framework_docs_search`. Package framework does not
+import the docs corpus, so an app that wants the docs tools on `/mcp` adds
+that option beside `WithMCPIntrospection()` (the blueprint and the examples
+do).
 
 It also adds the contract catalog tools `contracts_list`,
 `contracts_explain`, and `contracts_capabilities`, so an agent can read what

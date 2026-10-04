@@ -56,7 +56,8 @@ Outside the dev loop, the app opts in explicitly:
 fwApp := framework.NewApp(
     framework.WithConfig(framework.AppConfig{Name: "<your-app>"}),  // battery/log needs a non-empty app name for its state dir
     framework.WithMCP(),                    // mounts /mcp (POST + GET SSE) + discovery wellknowns
-    framework.WithMCPIntrospection(),       // app_* + framework_docs_* tools (read-only)
+    framework.WithMCPIntrospection(),       // app_* tools (read-only)
+    framework.WithMCPTools(mcptools.Register), // framework_docs_* tools (framework/docs/mcptools)
     framework.WithMCPControl(),             // app_module_enable/disable (mutating; trusted /mcp only)
 )
 fwApp.RegisterPlugin(log.New(log.Config{
@@ -68,7 +69,7 @@ fwApp.RegisterPlugin(log.New(log.Config{
 
 (`WithMCP()` replaces hand-mounting `/mcp`; doing both panics with a
 route conflict.) `examples/site` and blueprint-generated apps already
-have `WithMCP` + `WithMCPIntrospection` + the log battery wired. Spin
+have `WithMCP` + `WithMCPIntrospection` + `framework.WithMCPTools(mcptools.Register)` + the log battery wired. Spin
 the site up with the repo's normal dev workflow:
 
 ```bash

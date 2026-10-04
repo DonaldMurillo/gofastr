@@ -8,6 +8,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`framework.WithMCPTools(register)`**: runs a `func(*mcp.Server) error`
+  against the app's MCP server during init, after plugins and before the
+  introspection set, so a package below the framework root can add tools
+  without importing it. A registrar error, a name collision included,
+  fails the boot.
+- **`framework/docs/mcptools`**: `Register`, the registrar that installs
+  `framework_docs_list`, `framework_docs_get` and `framework_docs_search`.
+  The blueprint and the examples pass it to `WithMCPTools` beside
+  `framework.WithMCPIntrospection()`.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
   the working tree and `origin/main`: the changed packages, their
@@ -271,6 +280,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
+- **BREAKING: the `framework_docs_*` MCP tools left
+  `framework.WithMCPIntrospection()`** (#470). Package framework no
+  longer imports `framework/docs`, so a docs-only edit no longer runs
+  every framework importer's tests. Apps that want the docs tools on
+  `/mcp` add `framework.WithMCPTools(mcptools.Register)` from
+  `framework/docs/mcptools`; `gofastr upgrade` flags every
+  `WithMCPIntrospection` call for review with that guidance.
 - **`gofastr upgrade` reports fewer review-tier hits.** Five registry
   notes whose matcher was a bare symbol every app uses (`App.Entity`,
   `WithReadHooks`, the field `Default`, the v0.65 owner-column and the

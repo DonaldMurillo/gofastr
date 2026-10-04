@@ -2,9 +2,16 @@
 // embedded filesystem. Two consumers:
 //
 //  1. `gofastr docs` CLI subcommand: list + show + search.
-//  2. `framework.WithMCPIntrospection()`: exposes framework_docs_list
-//     and framework_docs_get tools so agents connected to a running app
-//     can answer "how do I use hooks" without leaving the session.
+//  2. `framework.WithMCPTools(mcptools.Register)` (framework/docs/mcptools): exposes the
+//     framework_docs_list / framework_docs_get / framework_docs_search MCP
+//     tools so agents connected to a running app can answer "how do I
+//     use hooks" without leaving the session.
+//
+// Package framework does not import this package: the corpus is a
+// quarter of the module by bytes and a docs-only edit must not widen the
+// affected test set to every framework importer (#470). Anything that
+// needs the corpus at runtime imports it from the leaf, never from the
+// App spine.
 //
 // The embedded tree is the source of truth for shipped docs; the repo's
 // canonical edit location IS framework/docs/content/. There's no

@@ -1,13 +1,15 @@
 ---
 name: app-introspect
-description: Inspect a running GoFastr app's shape via MCP introspection tools. Use when the user asks "what routes exist", "is the app ready", "what plugins are loaded", "what's the current config", "what batteries depend on what", "what does this framework doc say", or any "describe the running server" question where the app was built with framework.WithMCPIntrospection().
+description: Inspect a running GoFastr app's shape via MCP introspection tools. Use when the user asks "what routes exist", "is the app ready", "what plugins are loaded", "what's the current config", "what batteries depend on what", "what does this framework doc say", or any "describe the running server" question where the app was built with framework.WithMCPIntrospection() (and framework.WithMCPTools(mcptools.Register) for the docs tools).
 ---
 
 # Inspect a live GoFastr app via the framework's MCP introspection
 
 `framework.WithMCPIntrospection()` opts the App into a set of read-only
 tools that describe the running server: routes, plugins, batteries,
-modules, config, readiness, plus the framework's own embedded docs.
+modules, config, readiness. `framework.WithMCPTools(mcptools.Register)` (from
+`framework/docs/mcptools`) adds the framework's own embedded docs as the
+`framework_docs_*` tools; package framework does not import the corpus.
 Use these to orient before reading code or before issuing requests.
 
 ## Prerequisites
@@ -15,10 +17,11 @@ Use these to orient before reading code or before issuing requests.
 Any GoFastr app running under `gofastr dev` has the full surface
 automatically (mount + introspection + control automatically, plus
 `log_*` tools when `battery/log` is registered; opt-out
-`GOFASTR_DEV_MCP=0`). Outside the dev loop the app must be
-built with `framework.WithMCPIntrospection()` and expose `/mcp` (via
-`framework.WithMCP()`); both `examples/site` and blueprint-generated
-apps wire both. Launch the site with `./scripts/dev-watch.sh` (port
+`GOFASTR_DEV_MCP=0`). The `framework_docs_*` tools are never implied:
+the app adds `framework.WithMCPTools(mcptools.Register)`. Outside the dev loop the app
+must be built with `framework.WithMCPIntrospection()` and expose `/mcp`
+(via `framework.WithMCP()`); `examples/site`, `examples/ecommerce` and
+blueprint-generated apps wire all three. Launch the site with `./scripts/dev-watch.sh` (port
 8082) or `go run ./examples/site` (port 8083; plain go-run has no
 `PORT` set). The curl examples below use 8082; adjust to how the app
 was launched.

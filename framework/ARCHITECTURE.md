@@ -208,7 +208,12 @@ framework/
 ├── db/              Executor + tx context primitives shared across
 │                    crud, slowquery, and the framework root tx wrapper
 ├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
-├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`
+├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`.
+│                    Never imported by package framework (#470): a docs edit
+│                    must not widen the affected test set to every importer.
+│   └── mcptools/    `Register(*mcp.Server)`: the framework_docs_* MCP tools,
+│                    handed to framework.WithMCPTools. Imports core/mcp,
+│                    never the framework root.
 ├── dsl/             ?dsl=… query string parser/builder
 ├── embed/           Embeddable screens/islands: a customer pastes one
 │                    <script> tag and gets a live, themed, authenticated

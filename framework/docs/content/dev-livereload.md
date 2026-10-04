@@ -106,7 +106,7 @@ dev process programmatically.
 The same `GOFASTR_DEV` gate turns on MCP for agents: `framework.NewApp`
 mounts `/mcp` (skipping, with a warning, if the host hand-mounted one),
 registers read-only tools for reading the running app's state
-(`app_routes`, `app_readiness`, `framework_docs_search`, …) and tools
+(`app_routes`, `app_readiness`, `app_config`, …) and tools
 that change it (`app_module_enable` / `app_module_disable`); every
 CRUD-enabled entity serves its MCP data tools without per-entity
 `mcp: true`; and battery/log, when registered, enables its

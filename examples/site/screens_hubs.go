@@ -472,6 +472,7 @@ func agentsHub() *TeachHubScreen {
     framework.WithConfig(framework.AppConfig{Name: "app"}),
     framework.WithMCP(),              // entities get MCP tools at /mcp
     framework.WithMCPIntrospection(),
+    framework.WithMCPTools(mcptools.Register), // framework_docs_* over the embedded docs
 )`,
 				RefSlug: "agent-ready",
 			},

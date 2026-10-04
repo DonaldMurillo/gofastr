@@ -386,6 +386,10 @@ type App struct {
 	// mcpControl enables the MUTATING MCP tools (module enable/disable)
 	// for trusted /mcp endpoints. Set via WithMCPControl().
 	mcpControl bool
+	// mcpRegistrars run against a.MCP during InitPlugins, after every
+	// plugin and battery Init and before the introspection set. Set via
+	// WithMCPTools.
+	mcpRegistrars []func(*mcp.Server) error
 	// mcpApps queues MCP App registrations (a UI resource + its linking
 	// tool) added via WithMCPApp, registered during InitPlugins.
 	mcpApps []mcp.AppConfig
@@ -691,6 +695,22 @@ func (a *App) Router() *router.Router { return a.router }
 func WithMCPServer(s *mcp.Server) AppOption {
 	return func(a *App) {
 		a.MCP = s
+	}
+}
+
+// WithMCPTools runs register against the app's MCP server during
+// InitPlugins, after every plugin and battery has registered its own
+// tools and before the introspection set. It is how a package that must
+// stay below the framework root (framework/docs/mcptools, which carries
+// the embedded docs corpus) adds tools without importing framework:
+//
+//	framework.NewApp(framework.WithMCP(), framework.WithMCPTools(mcptools.Register))
+//
+// A registrar error fails the boot, a tool-name collision included,
+// the way a plugin Init error does.
+func WithMCPTools(register func(*mcp.Server) error) AppOption {
+	return func(a *App) {
+		a.mcpRegistrars = append(a.mcpRegistrars, register)
 	}
 }
 
@@ -2464,6 +2484,15 @@ func (a *App) InitPlugins() error {
 	// ReadinessRegistrar interface so they can publish health checks
 	// before /readyz mounts in Start.
 	a.probeReadinessRegistrars()
+
+	// Host-supplied tool registrars (WithMCPTools) run before the
+	// introspection set so a dev-implied introspection tool yields to a
+	// host tool of the same name instead of the reverse.
+	for _, register := range a.mcpRegistrars {
+		if err := register(a.MCP); err != nil {
+			return fmt.Errorf("register MCP tools: %w", err)
+		}
+	}
 
 	// Register introspection MCP tools if opted in. After plugin/battery
 	// init so app_plugins / app_batteries reflect everything. Dev-implied
