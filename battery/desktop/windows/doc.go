@@ -1,35 +1,25 @@
-// Package windows is the Windows arm of the desktop host. It answers
-// the unsupported shell on every GOOS today: the plan (docs/
-// desktop-plan.md, phase 5) is WebView2 in-process through
-// syscall.NewLazyDLL / syscall.SyscallN / syscall.NewCallback (no cgo,
-// no linknames: the standard library already has everything) with DWM
-// Mica/Acrylic for the window materials, reusing the contract's menu
-// plan with Win32 mask bits. Until that lands, New keeps the package
-// compiling on every GOOS so a host importing battery/desktop/native
-// cross-compiles without build tags of its own.
+// Package windows implements the Windows/amd64 desktop host with a
+// Win32 message loop and WebView2. It also provides native menus,
+// file/folder dialogs, clipboard access, tray notifications, and
+// secondary windows. WebView2Loader.dll must be beside the executable
+// (gofastr desktop build places it there); the Evergreen WebView2
+// Runtime must be installed on the machine.
 //
-// The phase 13 chrome fields (docs/desktop-sections/13-chrome.md)
-// will be fulfilled this way when the Windows phase lands:
-// WindowStyle.Material answers Mica for MaterialWindow
-// (DWMSBT_MAINWINDOW) and Mica Alt (DWMSBT_TABBEDWINDOW) through
-// DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE) on build 22621+,
-// with WebView2 DefaultBackgroundColor transparent for the page;
-// there is no per-zone material, so MaterialSidebar degrades to a
-// whole-window backdrop the page paints a translucent sidebar over,
-// and MaterialGlass answers Desktop Acrylic (DWMSBT_TRANSIENTWINDOW),
-// the nearest look. ChromeUnified is a page-drawn caption through
-// WebView2 non-client regions (Caption, Minimize, Maximize, Close
-// kinds, aligned with WM_NCHITTEST). The focus callbacks ride
-// WM_ACTIVATE; Reduce Transparency has no OS setting on Windows, so
-// Appearance answers false and no reduce_transparency event fires.
+// On Windows 11 build 22000 or newer, the host asks DWM for dark-mode
+// frame colors and rounded corners. On build 22621 or newer it also
+// supports Mica (MaterialWindow), Mica Alt (MaterialSidebar), and
+// Desktop Acrylic (MaterialGlass). DWM applies materials to the whole
+// window, so MaterialSidebar is a whole-window Mica Alt surface. The
+// WebView background is transparent so the page can show the backdrop.
+// ChromeHiddenTitle and ChromeUnified use a custom frame while DWM keeps
+// the system caption controls. Without a native menu, the page can fill
+// the title-bar area. With a native menu, the shell preserves the native
+// caption and menu bands above the page so the WebView cannot cover them.
+// The shell opts into per-monitor DPI awareness so WebView2 and native
+// controls render at display scale.
+// WebView2 drag regions and the desktop drag handle can move the window.
+// Windows has no system
+// Reduce Transparency setting exposed by this host, so Appearance
+// answers false and no reduce_transparency event fires. Other targets
+// return the unsupported shell.
 package windows
-
-import (
-	"github.com/DonaldMurillo/gofastr/battery/desktop"
-)
-
-// New answers the unsupported shell. It becomes the real WebView2 shell
-// when the Windows phase lands.
-func New() desktop.Shell {
-	return desktop.NewUnsupportedShell()
-}

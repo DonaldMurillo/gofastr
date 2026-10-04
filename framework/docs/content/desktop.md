@@ -1,17 +1,17 @@
 # Desktop host (experimental)
 
 `battery/desktop` runs a GoFastr app as a local-first desktop
-application inside the operating system's own WebView, WKWebView on
-macOS, from a single `CGO_ENABLED=0` binary. The web rendering path is
+application inside the operating system's own WebView: WKWebView on
+macOS and WebView2 on Windows. The shell builds with `CGO_ENABLED=0`.
+The web rendering path is
 reused untouched: the same `framework/ui` screens, the same SSR +
 island model, the same `main.go` wiring minus `app.Start`.
 
 **EXPERIMENTAL.** This battery is a proof of concept: the capability
 set, the `Shell`/`Window` contracts, and the generated bridge may
 change or be removed without a deprecation window. Pin a version if you
-depend on it. The native `Shell` ships for darwin/arm64 only (AppKit +
-WKWebView through a pure-Go Objective-C bridge); Windows and Linux are
-designed but not built, and every other platform gets a named
+depend on it. Native shells ship for darwin/arm64 (AppKit + WKWebView)
+and windows/amd64 (Win32 + WebView2); other targets get a named
 `unsupported` error from `Run`.
 
 ## Package layout
@@ -25,11 +25,11 @@ its own.
 |---|---|
 | `battery/desktop` | The contract (`Shell`, `Window`, `NativeDriver`) and the OS-neutral half: capabilities, grants, handshake, app state, preferences, deep links, updates, and the unsupported shell. |
 | `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
-| `battery/desktop/windows` | The unsupported shell today; WebView2 plus DWM Mica/Acrylic when its phase lands. |
+| `battery/desktop/windows` | The Windows/amd64 shell: Win32, WebView2, native capabilities, custom titlebar support, and DWM Mica/Mica Alt/Acrylic. |
 | `battery/desktop/linux` | The unsupported shell today; WebKitGTK when its phase lands. |
 | `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. |
 | `battery/desktop/desktoptest` | The fake shell and the app-shell test harness. |
-| `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `update`: one package per OS seam. |
+| `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `win32`, `update`: one package per OS seam. |
 
 `desktop.New` with a nil `Config.Shell` answers the unsupported shell on
 every platform: the platform-aware default lives in `native`, so the
@@ -530,9 +530,14 @@ window it lives in.
 
 ### Host support
 
-The style contracts are OS-neutral; today the only implementing shell
-is darwin/arm64's, in battery/desktop/macos (see the package layout).
-The mask bits, the floating
+The style contracts are OS-neutral. macOS/arm64 and Windows/amd64
+implement native chrome (see the platform package layout); Linux remains
+unsupported. On Windows 11 the shell asks DWM for dark frame colors,
+rounded corners, and system materials. `MaterialWindow` maps to Mica,
+`MaterialSidebar` maps to whole-window Mica Alt, and `MaterialGlass`
+maps to whole-window Desktop Acrylic. DWM materials require Windows 11
+build 22621 or newer; older systems fall back to the ordinary window
+surface. The mask bits, the floating
 non-activating panel bit, and the canJoinAllSpaces behavior were
 verified against the SDK headers (`NSWindow.h`, `CGWindowLevel.h`)
 and the live window is proven by the native e2e step
@@ -542,6 +547,17 @@ panel never becoming key, and the page learning its own window id
 (every window carries its own `WKUserContentController` with its own
 `BootstrapJS(id)` user script while sharing the main window's
 `WKWebsiteDataStore`, so the cookie still crosses).
+
+On Windows, `ChromeHiddenTitle` and `ChromeUnified` use a custom frame
+while DWM keeps its native caption controls. Without a native menu, the
+WebView can fill the titlebar area. With a menu, the shell preserves the
+caption and menu bands above the WebView so the page cannot cover them.
+The shell uses per-monitor DPI awareness so WebView2 text, menus, and
+controls render at the display scale. WebView2 accepts CSS
+`-webkit-app-region: drag` in this mode; the shared
+`data-fui-window-drag` handle also starts a native drag.
+`WebView2Loader.dll` and the Evergreen WebView2 Runtime are required to
+launch the built executable.
 
 ## The macOS look: native chrome and the desktop theme
 

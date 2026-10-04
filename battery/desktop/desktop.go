@@ -173,11 +173,12 @@ type Battery struct {
 	shell  Shell
 	logger *slog.Logger
 	// Handshake state, minted at New.
-	bootToken    string
-	sessionValue string
-	tokenUsed    atomic.Bool
-	hostPin      atomicString
-	gateArmed    atomic.Bool
+	bootToken        string
+	sessionValue     string
+	sessionCookieKey string
+	tokenUsed        atomic.Bool
+	hostPin          atomicString
+	gateArmed        atomic.Bool
 	// Capability registry and grants.
 	reg    *registry
 	grants GrantStore
@@ -885,6 +886,10 @@ func (b *Battery) Run(app *framework.App) error {
 	// from the moment the port answers, every request needs the session
 	// cookie. An app that never calls Run keeps the gate unarmed and its
 	// routes open, which is the --serve host-independence mode.
+	// Cookie names are unique to this running battery. WebView2 profiles
+	// persist across launches and cookies are shared across loopback ports,
+	// so a fixed name would let a second instance replace this session.
+	b.sessionCookieKey = sessionCookieName + "_" + b.sessionValue
 	b.armGate()
 
 	// Deviation 7: worktree isolation off for this Start. Process-wide

@@ -72,16 +72,19 @@
     });
   }
 
-  // A borderless window drags through the page. The request rides the
-  // WebView's own script message channel (window.webkit.messageHandlers),
-  // NOT the HTTP bridge: the native side needs the mouse-down that is
-  // still the current event, which only holds on that channel. In a
-  // plain browser there is no handler and startDrag is a no-op.
+  // A borderless or unified-title window drags through the page. The
+  // request rides a WebView script message channel, not the HTTP bridge.
+  // WKWebView uses messageHandlers; WebView2 uses chrome.webview. In a
+  // plain browser there is no native handler, so startDrag is a no-op.
   const DRAG_MSG = '{"type":"drag"}';
   function startDrag() {
     const w = window.webkit;
     const h = w && w.messageHandlers && w.messageHandlers.gofastr;
     if (h) try { h.postMessage(DRAG_MSG); } catch (_) { /* handler gone */ }
+    else {
+      const webview = window.chrome && window.chrome.webview;
+      if (webview && webview.postMessage) try { webview.postMessage(DRAG_MSG); } catch (_) { /* handler gone */ }
+    }
   }
 
   // Mousedown on an element carrying data-fui-window-drag, or inside

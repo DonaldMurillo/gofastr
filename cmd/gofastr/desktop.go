@@ -115,6 +115,10 @@ func runDesktopRun(args []string) {
 			fail("Build failed: %v", err)
 			return false
 		}
+		if err := prepareDesktopRun(bin); err != nil {
+			fail("Prepare desktop runtime: %v", err)
+			return false
+		}
 		run := exec.Command(bin)
 		run.Dir = f.dir
 		run.Env = childEnv
@@ -374,6 +378,19 @@ func runDesktopBuild(args []string) {
 	if err := validateNotarizeFlags(f); err != nil {
 		fail("%v", err)
 		osExit(1)
+		return
+	}
+	if runtime.GOOS == "windows" {
+		if f.sign != "" || f.notarize || f.scheme != "" || f.icon != "" {
+			fail("Windows desktop builds support --id, --name, --pkg, --version, and -o. Signing, icons, URL schemes, and notarization are macOS-only.")
+			osExit(1)
+			return
+		}
+		if err := buildWindowsDesktop(f, name); err != nil {
+			fail("Windows desktop build failed: %v", err)
+			osExit(1)
+			return
+		}
 		return
 	}
 

@@ -230,10 +230,9 @@ var fragmentAttrs = map[string][]string{
 var moduleAttrs = map[string][]string{
 	"desktop": {
 		// battery/desktop's module. The mousedown delegator that calls
-		// startDrag lives in src/desktop.js; the drag itself is native
-		// (performWindowDragWithEvent: through the script message
-		// channel), which is why the listener is here and not in the
-		// widget/dismiss modules.
+		// startDrag lives in src/desktop.js; the native shell moves the
+		// owning window through its WebView message channel, which is why
+		// the listener is here and not in the widget/dismiss modules.
 		"data-fui-window-drag",
 	},
 	"activelink": {

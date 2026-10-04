@@ -5,18 +5,24 @@ import (
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// Theme returns the desktop theme: the canonical adaptive framework
-// theme with macOS token values. Apply it the way any host applies a
-// theme, before mounting the UI host:
+// Theme returns the macOS desktop theme preset. It remains the
+// compatibility shorthand for ThemeFor("darwin"). Use ThemeFor with
+// runtime.GOOS when the app should use its host platform's preset.
 //
 //	site := app.NewApp("Focus")
 //	site.WithTheme(desktopui.Theme())
-//
-// The token VALUES are per platform (macOS today; Windows and Linux
-// swap values later, never fields). Everything the plan sources is
-// cited in the comments; everything else is marked measured,
-// unverified, and the proof plan validates it against native captures.
 func Theme() style.Theme {
+	return ThemeFor("darwin")
+}
+
+// ThemeFor returns the canonical adaptive desktop theme with token
+// values for goos, using the names returned by runtime.GOOS. The token
+// fields stay the same across platforms. Windows and Linux presets use
+// their system font stacks and light/dark surface colors; an unknown
+// GOOS keeps the macOS reference preset.
+//
+//	site.WithTheme(desktopui.ThemeFor(runtime.GOOS))
+func ThemeFor(goos string) style.Theme {
 	t := uitheme.Default()
 	t.Name = "desktop"
 
@@ -113,6 +119,8 @@ func Theme() style.Theme {
 		t.DarkColors[k] = v
 	}
 
+	applyPlatformTokens(&t, goos)
+
 	// The producer assigns color values directly, so it runs the
 	// grammar itself (the struct-assignment path validates nothing).
 	for _, c := range []style.Color{
@@ -125,4 +133,66 @@ func Theme() style.Theme {
 	}
 
 	return t
+}
+
+func applyPlatformTokens(t *style.Theme, goos string) {
+	switch goos {
+	case "windows":
+		// Fluent's system UI font and the Windows 11 neutral surfaces.
+		// Accent is a static blue fallback; the Windows shell can replace
+		// it with the user's UISettings accent once native appearance
+		// values are wired into theme construction.
+		t.Fonts.Body.Value = "system-ui, 'Segoe UI', sans-serif"
+		t.Fonts.Heading.Value = "system-ui, 'Segoe UI', sans-serif"
+		t.Fonts.Mono.Value = "ui-monospace, 'Cascadia Mono', Consolas, monospace"
+		t.Colors.Background.Value = "#F3F3F3"
+		t.Colors.Surface.Value = "#FFFFFF"
+		t.Colors.SurfaceSoft.Value = "#F9F9F9"
+		t.Colors.Text.Value = "#1C1C1C"
+		t.Colors.Accent.Value = "#0078D4"
+		t.Colors.Primary.Value = "#0067C0"
+		t.Colors.PrimaryFg.Value = "#FFFFFF"
+		setDarkTokens(t, map[string]string{
+			"background":   "#202020",
+			"surface":      "#1C1C1C",
+			"surface-soft": "#282828",
+			"text":         "#FFFFFF",
+			"text-muted":   "#C5C5C5",
+			"text-subtle":  "#878787",
+			"accent":       "#60CDFF",
+			"primary":      "#0067C0",
+			"primary-fg":   "#FFFFFF",
+		})
+	case "linux":
+		// Adwaita documents these font families, surfaces, and blue
+		// accent variants. The stronger blue-4 is the filled-control
+		// primary because it clears the theme's 4.5:1 ink-pair floor.
+		t.Fonts.Body.Value = "system-ui, 'Adwaita Sans', Cantarell, sans-serif"
+		t.Fonts.Heading.Value = "system-ui, 'Adwaita Sans', Cantarell, sans-serif"
+		t.Fonts.Mono.Value = "ui-monospace, 'Adwaita Mono', monospace"
+		t.Colors.Background.Value = "#FAFAFB"
+		t.Colors.Surface.Value = "#FFFFFF"
+		t.Colors.SurfaceSoft.Value = "#EBEBED"
+		t.Colors.Text.Value = "#333334"
+		t.Colors.Accent.Value = "#0461BE"
+		t.Colors.Primary.Value = "#1C71D8"
+		t.Colors.PrimaryFg.Value = "#FFFFFF"
+		setDarkTokens(t, map[string]string{
+			"background":   "#222226",
+			"surface":      "#1D1D20",
+			"surface-soft": "#2E2E32",
+			"text":         "#FFFFFF",
+			"text-muted":   "#C5C5C5",
+			"text-subtle":  "#A0A0A0",
+			"accent":       "#81D0FF",
+			"primary":      "#1A5FB4",
+			"primary-fg":   "#FFFFFF",
+		})
+	}
+}
+
+func setDarkTokens(t *style.Theme, values map[string]string) {
+	for key, value := range values {
+		t.DarkColors[key] = value
+	}
 }

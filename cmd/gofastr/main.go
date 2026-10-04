@@ -141,8 +141,8 @@ func printHelp() {
     creds [add|list|delete]  Manage encrypted API-key credentials
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
   desktop run|build|types  Build/run a GoFastr app as a desktop window (experimental):
-                        run  build + launch with dev tools; build  dist/<Name>.app
-                        (darwin/arm64, ad-hoc signed by default); types  desktop.d.ts from the app manifest
+                        run  build + launch with dev tools; build  .app on macOS or
+                        .exe + WebView2Loader.dll on Windows/amd64; types  desktop.d.ts
   docs (doc) [topic]    Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
   verify [capability]   Check the app against the GoFastr contract: routing, permissions,

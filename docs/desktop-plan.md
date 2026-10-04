@@ -1,12 +1,12 @@
 # Desktop host: proof-of-concept plan
 
-Status: the macOS PoC (phases 0 to 4) and phases 8, 11, 12, and 13
-are BUILT and committed on branch `feat/desktop-host` (no PR yet as of
-2026-09-22). Two decisions
-shaped it after the first draft: no cgo anywhere (pure Go bindings to
-every OS WebView), and the host ships as an experimental battery. The
-sections below are the design as built, with the deviations recorded
-where they happened. Windows and Linux (phases 5 to 7) are not started.
+Status: the macOS PoC (phases 0 to 4), phase 5 on Windows/amd64, and
+phases 8, 11, 12, and 13 are built. Phase 5 was implemented and
+verified on Windows 10 on 2026-10-03. Linux (phases 6 to 7) is not
+started. Two decisions shaped the design after its first draft: no cgo
+anywhere (pure Go bindings to every OS WebView), and the host ships as
+an experimental battery. The sections below describe the design and
+record deviations where they happened.
 
 What exists and what proved it:
 
@@ -35,6 +35,11 @@ What exists and what proved it:
   server-rendered notes screen, and creates the data dir 0700 with the
   identity and secret at 0600. An external quit (AppleScript, Dock)
   drains through `Run`.
+- On Windows 10/amd64, `gofastr desktop build` produced a runnable
+  `.exe` beside the official, checksum-verified WebView2 loader DLL.
+  The real WebView2 end-to-end run covered page evaluation, clipboard
+  round-trip, menu navigation, tray notifications, a second window,
+  and a PNG snapshot from `CapturePreview`.
 
 Known gaps to close before Windows work starts: AppleScript reports
 "User canceled" on quit because the delegate answers `NSTerminateCancel`
@@ -818,13 +823,18 @@ run by hand; `go test ./...` green on the ubuntu runner with the
 darwin and windows cross-compiles of the real package and no e2e; the
 `.app` launches from Finder on a Mac that never ran `go`.
 
-### Phase 5: Windows
+### Phase 5: Windows — DONE (2026-10-03)
 
-`internal/win32` and `shell_windows.go` per the Windows section, the
-five capabilities' `_windows.go` files, `gofastr desktop build` for
-`.exe` plus the loader-DLL download. Iterated on a Windows VM.
-Gate: the same e2e, snapshot through `CapturePreview`, run by hand
-on that VM; CI compiles the package and runs the double-backed tests.
+The Windows/amd64 shell uses Win32 and WebView2 with `CGO_ENABLED=0`.
+It includes native menus, file and folder dialogs, clipboard, tray
+balloon notifications, secondary windows, `CapturePreview` snapshots,
+and DWM Mica/Acrylic backdrops. `gofastr desktop build` downloads the
+pinned WebView2 NuGet package, verifies its SHA-256, and writes the
+official `WebView2Loader.dll` beside the `.exe`. The target machine
+needs the Evergreen WebView2 Runtime. The end-to-end gate passed on a
+Windows 10/amd64 host with the real runtime. The Windows build does not
+yet embed a PE version resource or register URL schemes; only amd64 is
+implemented.
 
 ### Phase 6: Linux
 
@@ -1263,12 +1273,12 @@ cell.
 | Contract field | macOS 26 | macOS 12 to 15 | Windows 11 | Linux |
 |---|---|---|---|---|
 | Material: none | default | default | default | default |
-| Material: sidebar | `NSGlassEffectView` (regular) sized to the sidebar zone | `NSVisualEffectView` material `sidebar` under the zone | no per-zone material; Mica and Acrylic are whole-window only; page paints a translucent sidebar over a whole-window backdrop or falls back to opaque | unsupported, page falls back to opaque (blur belongs to the compositor) |
-| Material: window | glass view, webview as its `contentView` | `NSVisualEffectView` `underWindowBackground` behind the webview | `DWMSBT_MAINWINDOW` (Mica) or `DWMSBT_TABBEDWINDOW` (Mica Alt) via `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE)`, build 22621+, with WebView2 `DefaultBackgroundColor` transparent | `webkit_web_view_set_background_color` plus an RGBA visual and `app-paintable`; no blur of ours, page falls back to opaque unless the compositor blurs |
-| Material: glass | `NSGlassEffectView` (clear needs a dimming layer over bright content, HIG) | unsupported, nearest is popover or sheet material | unsupported; `DWMSBT_TRANSIENTWINDOW` (Desktop Acrylic) is whole-window and the nearest look | unsupported |
+| Material: sidebar | `NSGlassEffectView` (regular) sized to the sidebar zone | `NSVisualEffectView` material `sidebar` under the zone | whole-window `DWMSBT_TABBEDWINDOW` (Mica Alt); DWM has no per-zone material | unsupported, page falls back to opaque (blur belongs to the compositor) |
+| Material: window | glass view, webview as its `contentView` | `NSVisualEffectView` `underWindowBackground` behind the webview | `DWMSBT_MAINWINDOW` (Mica) via `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE)`, build 22621+, with WebView2 `DefaultBackgroundColor` transparent | `webkit_web_view_set_background_color` plus an RGBA visual and `app-paintable`; no blur of ours, page falls back to opaque unless the compositor blurs |
+| Material: glass | `NSGlassEffectView` (clear needs a dimming layer over bright content, HIG) | unsupported, nearest is popover or sheet material | whole-window `DWMSBT_TRANSIENTWINDOW` (Desktop Acrylic), the nearest look | unsupported |
 | Titlebar: default | standard | standard | standard | server decorations or a libadwaita-style headerbar |
-| Titlebar: hidden or inset | `titlebarAppearsTransparent` + `titleVisibility` hidden + `fullSizeContentView`; buttons kept and moved with `standardWindowButton` + `setFrameOrigin` (see the Electron notes) | same, 10.10+ | page-drawn caption through WebView2 non-client regions (Caption, Minimize, Maximize, Close kinds, aligned with `WM_NCHITTEST`) | GTK CSD; the page paints the headerbar |
-| Titlebar: unified | `toolbarStyle` unified plus transparent titlebar; on 26 the merged look is automatic | same, 11.0+ | Mica spans the whole window including behind a page-drawn caption | headerbar is the pattern; opaque |
+| Titlebar: hidden or inset | `titlebarAppearsTransparent` + `titleVisibility` hidden + `fullSizeContentView`; buttons kept and moved with `standardWindowButton` + `setFrameOrigin` (see the Electron notes) | same, 10.10+ | extended WebView client area with the native DWM caption controls retained; `WM_NCHITTEST` preserves resizing and caption behavior | GTK CSD; the page paints the headerbar |
+| Titlebar: unified | `toolbarStyle` unified plus transparent titlebar; on 26 the merged look is automatic | same, 11.0+ | page fills the titlebar, Mica can continue behind it, and the Windows caption controls remain native | headerbar is the pattern; opaque |
 | Focus events | window did-become-key / did-resign-key | same | `WM_ACTIVATE` | GTK focus events |
 | Accent color | CSS `AccentColor` (WebKit 16.5+, so any current system), `-webkit-focus-ring-color` fallback, `NSColor.controlAccentColor` natively | same | CSS `AccentColor` only from the Chromium 150 engine; the native read is UISettings or the registry | WebKitGTK carries the same engine support; no OS-wide accent notion |
 
@@ -1443,8 +1453,8 @@ it.
                              the unsupported shell (exported for the platform stubs)
   battery/desktop/macos      the darwin shell: WKWebView, NSWindow, menus, tray,
                              notifications, deep links, glass and vibrancy
-  battery/desktop/windows    stub today (unsupported shell); WebView2 plus DWM
-                             Mica/Acrylic when it lands
+  battery/desktop/windows    Windows/amd64 shell: Win32, WebView2,
+                             native capabilities and DWM Mica/Acrylic
   battery/desktop/linux      stub today; WebKitGTK when it lands
   battery/desktop/native     picks the platform package by GOOS: hosts write
                              desktop.New(desktop.Config{Shell: native.Shell()})
@@ -1572,11 +1582,11 @@ archive; availability is stated in each page's metadata.
 
 ## Deliberately out of scope
 
-Windows and Linux implementations (tabled 2026-09-05: contracts only,
-see phase 8), drag-and-drop from the file manager, GTK4, WinRT toasts,
-MSIX/AppImage/deb packaging, mobile. Signing, notarization,
-auto-update, multiple windows, tray icons, and deep links moved into
-scope with phases 4 and 8.
+Linux implementation (tabled 2026-09-05: contracts only, see phase 8),
+drag-and-drop from the file manager, GTK4, WinRT toasts, MSIX/AppImage/
+deb packaging, mobile. Signing, notarization, auto-update, tray icons,
+and deep links moved into scope with phases 4 and 8. Secondary windows
+are supported by the Windows shell; OS URL-scheme registration is not.
 
 ## Risks, with the mitigation chosen
 

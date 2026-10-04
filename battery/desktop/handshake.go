@@ -19,9 +19,18 @@ import (
 const (
 	// enterPath is the single-use token door.
 	enterPath = "/__gofastr/desktop/enter"
-	// sessionCookieName carries the session value.
+	// sessionCookieName is the stable prefix for per-run session cookies.
 	sessionCookieName = "__gofastr_desktop"
 )
+
+func (b *Battery) cookieName() string {
+	if b.sessionCookieKey != "" {
+		return b.sessionCookieKey
+	}
+	// Direct handler use in tests and host-independent serving does not
+	// run the desktop handshake and keeps the legacy internal name.
+	return sessionCookieName
+}
 
 // enterHandler answers GET /__gofastr/desktop/enter?t=<boot token>.
 // The token is compared in constant time and is single-use: a second
@@ -47,7 +56,7 @@ func (b *Battery) enterHandler() http.Handler {
 		// http://127.0.0.1), session lifetime (no Max-Age/Expires).
 		//gofastr:allow(security/insecure-cookie) plain loopback origin only, Secure would make the browser drop this cookie over http://127.0.0.1
 		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookieName,
+			Name:     b.cookieName(),
 			Value:    b.sessionValue,
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
@@ -127,7 +136,7 @@ func (b *Battery) armGate() {
 // duplicate the pair, and honoring only cookies[0] logs the user out).
 func (b *Battery) requestHasSession(r *http.Request) bool {
 	for _, c := range r.Cookies() {
-		if c.Name != sessionCookieName || c.Value == "" {
+		if c.Name != b.cookieName() || c.Value == "" {
 			continue
 		}
 		if subtle.ConstantTimeCompare([]byte(c.Value), []byte(b.sessionValue)) == 1 {
