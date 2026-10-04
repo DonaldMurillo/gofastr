@@ -39,20 +39,31 @@ func TestRedScriptRunsAllWhenAffectedFails(t *testing.T) {
 
 	cmd := exec.Command("bash", "scripts/red-tests.sh")
 	cmd.Dir = dir
-	env := []string{"GOWORK=off", "GOFLAGS="}
+	// The fixture's overrides go last: Go keeps the last value of a
+	// duplicate key, so an inherited GOWORK pointing at a workspace that
+	// excludes the temp module cannot win over GOWORK=off.
+	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "GOFASTR_TEST_ALL=") || strings.HasPrefix(kv, "RED_OUT=") {
+		if strings.HasPrefix(kv, "GOFASTR_TEST_ALL=") || strings.HasPrefix(kv, "RED_OUT=") ||
+			strings.HasPrefix(kv, "GOWORK=") || strings.HasPrefix(kv, "GOFLAGS=") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	cmd.Env = env
-	out, _ := cmd.CombinedOutput()
+	cmd.Env = append(env, "GOWORK=off", "GOFLAGS=")
+	out, err := cmd.CombinedOutput()
 	got := string(out)
+	// The script's contract: open findings are a report, not a failure.
+	// It exits 0 after listing them and non-zero only when a red file
+	// fails to compile or go test fails with no --- FAIL line, so the
+	// exit status is asserted rather than ignored.
+	if err != nil {
+		t.Fatalf("red-tests.sh exited non-zero (%v) with one open probe:\n%s", err, got)
+	}
 	if strings.Contains(got, "nothing to run") {
 		t.Fatalf("red-tests.sh skipped the suite when cmd/affected failed:\n%s", got)
 	}
-	if !strings.Contains(got, "TestRedProbeOpen") {
-		t.Fatalf("red-tests.sh did not run the open probe:\n%s", got)
+	if !strings.Contains(got, "1 open finding(s)") || !strings.Contains(got, "TestRedProbeOpen") {
+		t.Fatalf("red-tests.sh did not report the open probe as a finding:\n%s", got)
 	}
 }

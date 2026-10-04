@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -385,6 +386,9 @@ func TestFlushRacingTimerWholeFile(t *testing.T) {
 }
 
 func TestFailedWriteRetriedOnFlush(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory mode of 0o500 does not block file creation on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
