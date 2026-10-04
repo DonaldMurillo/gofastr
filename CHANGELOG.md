@@ -393,6 +393,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   site loads `/__site/livedash-reducers.js` on every page from an app
   route; the export skipped it, so every exported page (GitHub Pages
   included) logged a 404 and a refused script. It is now exported.
+- **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
+  when `PORT` held a host:port.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the

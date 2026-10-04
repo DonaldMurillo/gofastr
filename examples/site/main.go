@@ -86,12 +86,21 @@ func main() {
 	}
 	fmt.Println("━─────────────────────────────────────────────")
 	fmt.Println("  GoFastr product site (v2)")
-	fmt.Println("  http://localhost" + addr)
+	fmt.Println("  " + siteURL(addr))
 	fmt.Println("━─────────────────────────────────────────────")
 	if err := fwApp.Start(addr); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// siteURL is the browser URL for a listen address: a bare ":8083" binds
+// every interface and is opened as localhost, a host:port as given.
+func siteURL(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
 }
 
 // exportDir scans args for `--export <dir>` or `--export=<dir>`, returning
