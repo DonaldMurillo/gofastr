@@ -48,9 +48,9 @@ type symbolReport struct {
 }
 
 // TestRegistrySymbolsExistedAtPriorTag runs gate 1 over the shipped
-// registry: every gofastr `uses` / `fields[].field` symbol and `imports`
-// path of each note must exist at the newest git tag below the note's
-// release; marker-sink symbols must exist at HEAD.
+// registry: every gofastr `uses` / `shapes[].symbol` / `fields[].field`
+// symbol and `imports` path of each note must exist at the newest git
+// tag below the note's release; marker-sink symbols must exist at HEAD.
 func TestRegistrySymbolsExistedAtPriorTag(t *testing.T) {
 	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
 		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the registry symbol gate (reads git history)")
@@ -263,6 +263,9 @@ func checkRegistrySymbols(reg *upgrade.Registry, src *symbolSource) symbolReport
 			for _, sym := range note.Find.Uses {
 				src.checkSymbol(&rep, sym, where, "uses", ref)
 			}
+			for _, sm := range note.Find.Shapes {
+				src.checkSymbol(&rep, sm.Symbol, where, "shapes", ref)
+			}
 			for _, fm := range note.Find.Fields {
 				src.checkSymbol(&rep, fm.Field, where, "fields", ref)
 			}
@@ -289,6 +292,9 @@ func checkRegistrySymbols(reg *upgrade.Registry, src *symbolSource) symbolReport
 			where := fmt.Sprintf("%s:%d (%s, hits: review)", note.File, note.Line, rel.Version)
 			for _, sym := range note.Find.Uses {
 				src.checkSymbol(&rep, sym, where, "uses", ref)
+			}
+			for _, sm := range note.Find.Shapes {
+				src.checkSymbol(&rep, sm.Symbol, where, "shapes", ref)
 			}
 			for _, fm := range note.Find.Fields {
 				src.checkSymbol(&rep, fm.Field, where, "fields", ref)

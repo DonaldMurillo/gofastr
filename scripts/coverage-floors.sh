@@ -50,6 +50,18 @@
 # at ≥70% got a floor at measured − 1.5. Packages below 70% were left
 # unfloored deliberately: a floor under weak coverage pins the weakness
 # instead of catching drift.
+# 2026-10-03: the helper packages PR #415's dedupe created were measured
+# with `go test -cover`: framework/internal/exif,
+# internal/analyzers/internal/astx, internal/chromedptest, and
+# framework/experimental/harness/provider/providertest have no test
+# files of their own (0.0%; their behaviour is exercised through the
+# packages that import them), and core/textsafe measures 23.3% (only
+# recovered_test.go; its scrub helpers run through the many importers).
+# All below 70%, left unfloored deliberately: a floor under weak coverage
+# pins the weakness instead of catching drift. The no-test-file four
+# also cannot be floored in the COVERPROFILE form CI uses: they
+# contribute no statements to the Test step's merged profile, and an
+# affected floor with no statements in the profile fails the gate closed.
 #
 # Exclusions:
 #   cmd/gofastr (claimed 84% full-suite) is NOT gated here: its suite is

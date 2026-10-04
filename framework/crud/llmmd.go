@@ -103,7 +103,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			notes += "not filterable/sortable"
 		}
 		if opt.ReadOnly {
-			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", f.Name, fieldTypeLabel(f.Type), notes)
+			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", f.Name, schema.FieldTypeLabel(f.Type, false), notes)
 			continue
 		}
 		createCol := "—"
@@ -120,7 +120,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			createCol = "auto"
 			updateCol = "auto"
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", f.Name, fieldTypeLabel(f.Type), createCol, updateCol, notes)
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", f.Name, schema.FieldTypeLabel(f.Type, false), createCol, updateCol, notes)
 	}
 	b.WriteString("\n")
 
@@ -545,7 +545,6 @@ func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 	return ch.CanRead(ctx)
 }
 
-// fieldTypeLabel returns a human-readable label for a schema field type.
 // sanitizeDefault renders a safe summary of a field's default value.
 // Complex types (maps, structs, slices) show only the type name.
 // Long strings are truncated.
@@ -562,41 +561,6 @@ func sanitizeDefault(v any) string {
 		return fmt.Sprintf("%v", val)
 	default:
 		return fmt.Sprintf("%T", val)
-	}
-}
-
-func fieldTypeLabel(t schema.FieldType) string {
-	switch t {
-	case schema.String:
-		return "string"
-	case schema.Text:
-		return "text"
-	case schema.Int:
-		return "integer"
-	case schema.Float:
-		return "float"
-	case schema.Decimal:
-		return "decimal"
-	case schema.Bool:
-		return "boolean"
-	case schema.Enum:
-		return "enum"
-	case schema.UUID:
-		return "uuid"
-	case schema.Timestamp:
-		return "timestamp"
-	case schema.Date:
-		return "date"
-	case schema.JSON:
-		return "json"
-	case schema.Relation:
-		return "relation"
-	case schema.Image:
-		return "image"
-	case schema.File:
-		return "file"
-	default:
-		return "string"
 	}
 }
 

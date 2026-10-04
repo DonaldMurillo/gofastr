@@ -97,8 +97,9 @@ func Note(t testing.TB, reg *upgrade.Registry, version string, index int) *upgra
 }
 
 // Only returns a copy of n whose Find keeps just the matcher kinds
-// named (uses, imports, fields, strings, css, config, gomod, text). A
-// test that checks one matcher kind in isolation strips the rest.
+// named (uses, shapes, imports, fields, strings, css, config, gomod,
+// text). A test that checks one matcher kind in isolation strips the
+// rest.
 func Only(n *upgrade.Note, kinds ...string) *upgrade.Note {
 	c := *n
 	f := upgrade.Find{}
@@ -106,6 +107,8 @@ func Only(n *upgrade.Note, kinds ...string) *upgrade.Note {
 		switch k {
 		case "uses":
 			f.Uses = n.Find.Uses
+		case "shapes":
+			f.Shapes = n.Find.Shapes
 		case "imports":
 			f.Imports = n.Find.Imports
 		case "fields":

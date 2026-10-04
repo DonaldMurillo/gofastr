@@ -85,7 +85,12 @@ type sseSeatRegistry struct {
 }
 
 // admit seats one stream for principal, reporting whether it was
-// admitted. Over-cap callers are refused, not queued.
+// admitted. Over-cap callers are refused, not queued. This is not
+// core/stream.AdmitSeat and stays a plain counter: the policy is
+// refuse-only, so there is no EvictOldest arm, no FIFO to splice, and
+// no channel to close on admission; kiln/live also keeps no
+// core/stream dependency, and AdmitSeat's SeatMember shape (a done
+// channel plus FIFO order) would be state nothing here reads.
 func (r *sseSeatRegistry) admit(principal string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -14,9 +14,9 @@ notes:
     hits: review
     guidance: "The signature is now Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error. Custom stores must accept the fingerprint and refuse to write a row that no longer carries it — a store that ignores it can serve one principal's response to another. Built-in stores need no change."
     find:
-      uses:
-        - gofastr/core/middleware.IdempotencyStore.Finish
-        - gofastr/core/middleware.IdempotentResponse
+      shapes:
+        - symbol: gofastr/core/middleware.IdempotencyStore.Finish
+          type: '^func\(ctx context\.Context, key string, resp \*middleware\.IdempotentResponse\) error$'
   - change: An email longer than RFC 5321 allows is rejected at login and register
     breaking: false
     nodetect: "wire-level bound; no legitimate address is affected and no code spelling exists"

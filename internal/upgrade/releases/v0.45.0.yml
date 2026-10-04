@@ -19,7 +19,7 @@ notes:
     guidance: "Nested filters passed the caller's value through as a raw LIKE pattern while top-level filters escaped it. Drop the wildcards: ?author.name_like=A%25 becomes ?author.name_like=A."
     find:
       strings:
-        match: '_like='
+        match: '_like=[^&[:space:]]*%'
   - change: Every login path mints its session through AuthManager.MintSession
     breaking: true
     hits: review

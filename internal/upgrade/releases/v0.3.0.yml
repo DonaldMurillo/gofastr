@@ -39,11 +39,13 @@ notes:
     breaking: true
     guidance: "Use Screen.WithPolicy(p) to add a policy and Screen.PolicyChain() to read a copy; direct field access no longer compiles."
     nodetect: Screen.policies was already unexported at v0.2.2, the newest tag below v0.3.0
-  - change: Access control installs via framework.WithAccessControl / AccessMiddleware
+  - change: access.Policy.Can / RolePolicy.Can drop the unused resource parameter
     breaking: true
-    hits: review
-    guidance: "Policy + roles install in one line via the new helpers; hand-wired policy plumbing from v0.2 needs the new install path."
+    hits: edit
+    guidance: "Delete the third argument at every Can call and implementation. To install policy and roles in one line, access.Can(ctx, perm) and access.Middleware(policy, roles) are re-exported as framework.Can / framework.AccessMiddleware."
     find:
-      uses:
-        - gofastr/framework/access.Policy.Can
-        - gofastr/framework/access.RolePolicy.Can
+      shapes:
+        - symbol: gofastr/framework/access.Policy.Can
+          type: '^func\(ctx context\.Context, permission access\.Permission, resource (any|interface\{\})\) bool$'
+        - symbol: gofastr/framework/access.RolePolicy.Can
+          type: '^func\(ctx context\.Context, permission access\.Permission, resource (any|interface\{\})\) bool$'

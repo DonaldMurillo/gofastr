@@ -22,6 +22,8 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // AllFuncs yields every function body in f: declarations plus
@@ -269,22 +271,7 @@ func ReceiverTypeName(pass *analysis.Pass, x ast.Expr) string {
 // type (T or *T), or "" — including when fd has no receiver. It
 // replaces recvBaseName in nostore, unseated, and pathflow.
 func RecvBaseName(fd *ast.FuncDecl) string {
-	if fd.Recv == nil || len(fd.Recv.List) == 0 {
-		return ""
-	}
-	var t ast.Expr
-	switch r := fd.Recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		t = r.X
-	case *ast.Ident:
-		t = r
-	default:
-		return ""
-	}
-	if id, ok := t.(*ast.Ident); ok {
-		return id.Name
-	}
-	return ""
+	return astbase.RecvBaseName(fd)
 }
 
 // ResolveCall maps a callee expression to a package-local

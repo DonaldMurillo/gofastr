@@ -52,7 +52,11 @@ func (s *Signaler) spliceSeatLocked(seat *socketSeat) {
 // mirror, roster, empty-room clock), so the room's members see the
 // departure and the room can sweep when it empties. The displaced socket's
 // own peerGone later no-ops: its peer is already gone from the room and
-// its seat already spliced. Caller holds s.mu.
+// its seat already spliced. Caller holds s.mu. This is not
+// core/stream.AdmitSeat on purpose: eviction must run the room teardown
+// above per displaced seat and hand the conns back for closing OUTSIDE
+// the lock, while AdmitSeat only closes a done channel under the
+// caller's lock and knows nothing about rooms.
 func (s *Signaler) admitSeatLocked(roomName string, p *roomPeer, user string) (displaced []*stream.WebSocketConn) {
 	seat := &socketSeat{user: user, room: roomName, peer: p}
 	p.seat = seat

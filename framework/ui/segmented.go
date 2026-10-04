@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -114,7 +116,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	}
 	wrapAttrs["class"] = cls
 	wrapAttrs["role"] = "radiogroup"
-	wrapAttrs["data-count"] = itoaSmall(len(cfg.Options))
+	wrapAttrs["data-count"] = strconv.Itoa(len(cfg.Options))
 	if cfg.ID != "" {
 		wrapAttrs["id"] = cfg.ID
 	}
@@ -153,7 +155,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		labelAttrs := html.Attrs{
 			"class":             "fui-segmented__option",
 			"for":               cfg.Name + "--" + slug(o.Value),
-			"data-position":     itoaSmall(i),
+			"data-position":     strconv.Itoa(i),
 			"data-cui-internal": "",
 		}
 		items = append(items, render.Tag("label", flattenAttrs(labelAttrs), input, labelHTML))
@@ -166,21 +168,6 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	}))
 
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
-}
-
-// itoaSmall converts a non-negative int to its decimal string,
-// used for small bounded values (Options index, count). Avoids
-// importing strconv for one int.
-func itoaSmall(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	digits := []byte{}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }
 
 // slug is local to the package; toggle.go already defines one.

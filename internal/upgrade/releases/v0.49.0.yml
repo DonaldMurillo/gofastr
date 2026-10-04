@@ -18,7 +18,7 @@ notes:
   - change: "`gofastr embed` is now `gofastr semantic`"
     breaking: true
     guidance: "index|watch|query|stats|clear are unchanged; only the subcommand name moved. The old name is not aliased — it would be ambiguous with embeddable surfaces."
-    nodetect: the removed spelling is the shell command `gofastr embed`, which lives in no app file
+    nodetect: the removed spelling is the shell command `gofastr embed`, a command someone types or scripts in a Makefile or CI workflow, not code the app compiles; `gofastr semantic` replaces it
   - change: The entity registry is keyed on (name, version)
     breaking: true
     hits: review

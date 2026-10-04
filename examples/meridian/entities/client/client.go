@@ -13,8 +13,16 @@ import (
 	"strings"
 )
 
+// maxBodyBytes caps the bytes buffered from any one response body: the
+// 2xx JSON decode and the non-2xx error snapshot alike. A response bigger
+// than 1 MiB is a misbehaving or hostile endpoint, not a payload to read
+// to EOF; the decode fails on truncation instead. 1 MiB matches the cap
+// the framework's own outbound provider fetches use. The SSE watch path
+// is a stream, not a buffer: it stays line-bounded via scanner.Buffer.
+const maxBodyBytes = 1 << 20
+
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
-// Pass any *http.Client (httptest, retryable wrapper, etc.). Client never
+// Pass any *http.Client (httptest, retryable wrapper, etc.): Client never
 // closes it.
 //
 // Token, when set, is sent as "Authorization: Bearer <Token>" on every
@@ -28,7 +36,10 @@ type Client struct {
 }
 
 // NewClient constructs a Client with the default http.Client when one is
-// not supplied. BaseURL should NOT include a trailing slash.
+// not supplied. BaseURL should NOT include a trailing slash. The default
+// refuses redirects: requests carry the bearer token when Token is set,
+// and a 3xx would re-send it to whatever origin the response names. Pass
+// your own *http.Client to keep a redirect policy.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		//gofastr:allow(clienttimeout) requests carry the caller's context (http.NewRequestWithContext); a Client.Timeout would kill Watch's long-lived SSE stream mid-subscription
@@ -42,14 +53,6 @@ func NewClient(baseURL string, httpClient *http.Client) *Client {
 }
 
 // APIError is returned for non-2xx responses. Status is the HTTP code;
-// maxBodyBytes caps the bytes buffered from any one response body: the
-// 2xx JSON decode and the non-2xx error snapshot alike. A response bigger
-// than 1 MiB is a misbehaving or hostile endpoint, not a payload to read
-// to EOF; the decode fails on truncation instead. 1 MiB matches the cap
-// the framework's own outbound provider fetches use. The SSE watch path
-// is a stream, not a buffer: it stays line-bounded via scanner.Buffer.
-const maxBodyBytes = 1 << 20
-
 // Body holds the raw response (capped at maxBodyBytes) so callers can
 // decode application-level error fields if they want.
 type APIError struct {
@@ -141,7 +144,7 @@ type BatchResponse struct {
 
 // doBatch sends a _batch request. The server answers 200 (committed) or 400
 // (rolled back) with the same envelope, so a 400 with a decodable body is a
-// result, not an error, callers inspect Committed and per-item Error fields.
+// result, not an error: callers inspect Committed and per-item Error fields.
 func (c *Client) doBatch(ctx context.Context, method, path string, body any) (BatchResponse, error) {
 	var out BatchResponse
 	err := c.doJSON(ctx, method, path, body, &out)
@@ -310,7 +313,7 @@ type PlansBatchPatch struct {
 }
 
 // BatchCreatePlans creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results, a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreatePlans(ctx context.Context, items []PlansInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/plans/_batch", map[string]any{"items": items})
@@ -342,7 +345,6 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
-	UserId  string `json:"userId,omitempty"`
 }
 
 type CustomersInput struct {
@@ -351,7 +353,6 @@ type CustomersInput struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
-	UserId  string `json:"userId,omitempty"`
 }
 
 type CustomersPatch struct {
@@ -360,7 +361,6 @@ type CustomersPatch struct {
 	Company *string `json:"company,omitempty"`
 	Status  *string `json:"status,omitempty"`
 	Mrr     *string `json:"mrr,omitempty"`
-	UserId  *string `json:"userId,omitempty"`
 }
 
 type CustomersListResponse struct {
@@ -435,11 +435,10 @@ type CustomersBatchPatch struct {
 	Company *string `json:"company,omitempty"`
 	Status  *string `json:"status,omitempty"`
 	Mrr     *string `json:"mrr,omitempty"`
-	UserId  *string `json:"userId,omitempty"`
 }
 
 // BatchCreateCustomers creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results, a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateCustomers(ctx context.Context, items []CustomersInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/customers/_batch", map[string]any{"items": items})
@@ -472,7 +471,6 @@ type Subscriptions struct {
 	Mrr        string `json:"mrr,omitempty"`
 	StartedOn  string `json:"startedOn,omitempty"`
 	RenewsOn   string `json:"renewsOn,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type SubscriptionsInput struct {
@@ -482,7 +480,6 @@ type SubscriptionsInput struct {
 	Mrr        string `json:"mrr,omitempty"`
 	StartedOn  string `json:"startedOn,omitempty"`
 	RenewsOn   string `json:"renewsOn,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type SubscriptionsPatch struct {
@@ -492,7 +489,6 @@ type SubscriptionsPatch struct {
 	Mrr        *string `json:"mrr,omitempty"`
 	StartedOn  *string `json:"startedOn,omitempty"`
 	RenewsOn   *string `json:"renewsOn,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 type SubscriptionsListResponse struct {
@@ -568,11 +564,10 @@ type SubscriptionsBatchPatch struct {
 	Mrr        *string `json:"mrr,omitempty"`
 	StartedOn  *string `json:"startedOn,omitempty"`
 	RenewsOn   *string `json:"renewsOn,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 // BatchCreateSubscriptions creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results, a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateSubscriptions(ctx context.Context, items []SubscriptionsInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/subscriptions/_batch", map[string]any{"items": items})
@@ -606,7 +601,6 @@ type Invoices struct {
 	IssuedOn   string `json:"issuedOn,omitempty"`
 	DueOn      string `json:"dueOn,omitempty"`
 	PaidOn     string `json:"paidOn,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type InvoicesInput struct {
@@ -617,7 +611,6 @@ type InvoicesInput struct {
 	IssuedOn   string `json:"issuedOn,omitempty"`
 	DueOn      string `json:"dueOn,omitempty"`
 	PaidOn     string `json:"paidOn,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type InvoicesPatch struct {
@@ -628,7 +621,6 @@ type InvoicesPatch struct {
 	IssuedOn   *string `json:"issuedOn,omitempty"`
 	DueOn      *string `json:"dueOn,omitempty"`
 	PaidOn     *string `json:"paidOn,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 type InvoicesListResponse struct {
@@ -705,11 +697,10 @@ type InvoicesBatchPatch struct {
 	IssuedOn   *string `json:"issuedOn,omitempty"`
 	DueOn      *string `json:"dueOn,omitempty"`
 	PaidOn     *string `json:"paidOn,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 // BatchCreateInvoices creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results, a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreateInvoices(ctx context.Context, items []InvoicesInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/invoices/_batch", map[string]any{"items": items})
@@ -741,7 +732,6 @@ type Payments struct {
 	Amount     string `json:"amount,omitempty"`
 	Method     string `json:"method,omitempty"`
 	Status     string `json:"status,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type PaymentsInput struct {
@@ -750,7 +740,6 @@ type PaymentsInput struct {
 	Amount     string `json:"amount,omitempty"`
 	Method     string `json:"method,omitempty"`
 	Status     string `json:"status,omitempty"`
-	UserId     string `json:"userId,omitempty"`
 }
 
 type PaymentsPatch struct {
@@ -759,7 +748,6 @@ type PaymentsPatch struct {
 	Amount     *string `json:"amount,omitempty"`
 	Method     *string `json:"method,omitempty"`
 	Status     *string `json:"status,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 type PaymentsListResponse struct {
@@ -834,11 +822,10 @@ type PaymentsBatchPatch struct {
 	Amount     *string `json:"amount,omitempty"`
 	Method     *string `json:"method,omitempty"`
 	Status     *string `json:"status,omitempty"`
-	UserId     *string `json:"userId,omitempty"`
 }
 
 // BatchCreatePayments creates up to 100 records atomically (one transaction).
-// Inspect Committed and the per-item Results, a 400 rollback is returned as
+// Inspect Committed and the per-item Results: a 400 rollback is returned as
 // a BatchResponse, not an error.
 func (c *Client) BatchCreatePayments(ctx context.Context, items []PaymentsInput) (BatchResponse, error) {
 	return c.doBatch(ctx, http.MethodPost, "/payments/_batch", map[string]any{"items": items})

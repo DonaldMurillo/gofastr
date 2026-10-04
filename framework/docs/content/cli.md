@@ -231,6 +231,30 @@ Each matcher reads the code the way its language means it:
   symbol's type. A member of an interface also matches every method
   an app type declares to implement that interface, whether or not
   its package imports the interface's.
+- `shapes`: a use of a symbol that SURVIVES the release with a new
+  shape, matched by the type that use resolves to. The type string is
+  what a declaration spells with package names, not paths, and
+  parameter names appear as the release wrote them; the object
+  resolves against the gofastr version the app builds with today, so
+  an entry written for the old shape hits before the port and falls
+  silent after it. That is the point: `uses` fires on the old and the
+  new spelling of a changed shape alike, so a ported app can never go
+  clean on it. When the app no longer compiles against the version it
+  is moving to, a compile error on a line where the symbol resolved to
+  another shape is reported under the note with the error attached, so
+  the pre-port scan still finds the call, and so is an error anywhere
+  that names the symbol, such as an interface assertion failing on the
+  method that changed. A member of an interface also matches every
+  method an app type declares to implement it, read against that
+  method's own signature. An app alias of a kit type reads as the type
+  it names, so the regex is written against the kit's own spelling.
+  ```yaml
+  shapes:
+    - symbol: gofastr/core-ui/app.NewLayout
+      type: '^func\(name string\) \*app\.Layout$'
+  ```
+  matches v0.85's single-argument `NewLayout` and not v0.86's
+  `NewLayout(name, spec, build)`.
 - `imports`: an import path, or a `path/...` subtree.
 - `fields`: a composite-literal field, an assignment to it, or a keyed
   write into it. `field` names `Type.Field`, and at most one condition

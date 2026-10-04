@@ -196,6 +196,14 @@ created when absent**. That file is the extension seam:
 - Custom server endpoints are reachable via the client's raw
   `Do(ctx, method, path, body, out)` escape hatch.
 
+The rest of the tree is laid out the same way: each `<entity>.go` holds
+the command table, the per-entity filter and mutation-field tables, and
+one-line wrappers (`runPostsList`-style) binding them; `verbs.go` holds
+the shared verb bodies those wrappers call; `main.go`, `config.go`,
+`auth.go`, and `output.go` hold the dispatch, connection, and printing
+scaffold. Field names are data rows in the tables, never identifiers, so
+a field rename never changes the generated function names.
+
 Fields with `hidden: true` never appear; `read_only` fields appear as
 list filters but not as mutation flags. Image/file fields are excluded
 entirely. The generated client doesn't speak multipart yet. A field

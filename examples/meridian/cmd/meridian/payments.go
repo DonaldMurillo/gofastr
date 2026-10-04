@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
+
+	client "github.com/DonaldMurillo/gofastr/examples/meridian/entities/client"
 )
 
 func paymentsCommands() []command {
@@ -24,317 +22,76 @@ func paymentsCommands() []command {
 	}
 }
 
+// Verb wrappers: each binds this entity's command names and pre-escaped
+// base path "/payments" to the shared verb bodies in verbs.go.
+
+// paymentsListFilters is the filter-flag table behind `payments list`: one entry
+// per flag, in help order, each bound to the query param it sets.
+var paymentsListFilters = []filterFlag{
+	{flag: "invoice-id", param: "invoice_id", help: "filter: invoice_id equals (comma list = IN)"},
+	{flag: "customer-id", param: "customer_id", help: "filter: customer_id equals (comma list = IN)"},
+	{flag: "amount", param: "amount", help: "filter: amount equals (comma list = IN)"},
+	{flag: "amount-gt", param: "amount_gt", help: "filter: amount gt"},
+	{flag: "amount-gte", param: "amount_gte", help: "filter: amount gte"},
+	{flag: "amount-lt", param: "amount_lt", help: "filter: amount lt"},
+	{flag: "amount-lte", param: "amount_lte", help: "filter: amount lte"},
+	{flag: "method", param: "method", help: "filter: method equals (comma list = IN) [card|ach|wire]"},
+	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [succeeded|failed|refunded]"},
+}
+
+// Table columns for `payments list -o table`: paymentsListHeaders are the display
+// titles, paymentsListKeys the JSON wire keys each column reads.
+var (
+	paymentsListHeaders = []string{"id", "invoice_id", "customer_id", "amount", "method", "status"}
+	paymentsListKeys    = []string{"id", "invoiceId", "customerId", "amount", "method", "status"}
+)
+
 func runPaymentsList(args []string) int {
-	fs := newFlagSet("payments list")
-	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
-	page := fs.String("page", "", "page number (offset pagination)")
-	limit := fs.String("limit", "", "page size")
-	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
-	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
-	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
-	outF := fs.String("o", "json", "output format: json|table")
-	var params paramFlags
-	fs.Var(&params, "param", "extra query param key=value (repeatable)")
-	fltInvoiceId := fs.String("invoice-id", "", "filter: invoice_id equals (comma list = IN)")
-	fltCustomerId := fs.String("customer-id", "", "filter: customer_id equals (comma list = IN)")
-	fltAmount := fs.String("amount", "", "filter: amount equals (comma list = IN)")
-	fltAmountGT := fs.String("amount-gt", "", "filter: amount gt")
-	fltAmountGTE := fs.String("amount-gte", "", "filter: amount gte")
-	fltAmountLT := fs.String("amount-lt", "", "filter: amount lt")
-	fltAmountLTE := fs.String("amount-lte", "", "filter: amount lte")
-	fltMethod := fs.String("method", "", "filter: method equals (comma list = IN) [card|ach|wire]")
-	fltStatus := fs.String("status", "", "filter: status equals (comma list = IN) [succeeded|failed|refunded]")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	q := url.Values{}
-	set := func(key, val string) {
-		if val != "" {
-			q.Set(key, val)
-		}
-	}
-	set("sort", *sortF)
-	set("page", *page)
-	set("limit", *limit)
-	set("cursor", *cursor)
-	set("include", *include)
-	set("fields", *fieldsF)
-	set("invoice_id", *fltInvoiceId)
-	set("customer_id", *fltCustomerId)
-	set("amount", *fltAmount)
-	set("amount_gt", *fltAmountGT)
-	set("amount_gte", *fltAmountGTE)
-	set("amount_lt", *fltAmountLT)
-	set("amount_lte", *fltAmountLTE)
-	set("method", *fltMethod)
-	set("status", *fltStatus)
-	for _, kv := range params.pairs {
-		q.Set(kv[0], kv[1])
-	}
-	path := "/payments"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return apiFail(err)
-	}
-	if *outF == "table" {
-		printListTable([]string{"id", "invoice_id", "customer_id", "amount", "method", "status"}, []string{"id", "invoiceId", "customerId", "amount", "method", "status"}, resp.Data)
-		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows; next cursor: %s\n", len(resp.Data), resp.Cursor)
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
-	}
-	return printJSON(resp)
+	return runListVerb("payments list", "/payments", paymentsListFilters, paymentsListHeaders, paymentsListKeys, args)
 }
 
 func runPaymentsGet(args []string) int {
-	id, rest, ok := takeID("payments get", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("payments get")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/payments/"+url.PathEscape(id), nil, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runGetVerb("payments get", "/payments", args)
+}
+
+// paymentsMutationFields is the field-flag table behind `payments create/update/patch`:
+// one entry per writable field, each bound to the JSON wire key it sets.
+var paymentsMutationFields = []mutationField{
+	{flag: "invoice-id", wire: "invoiceId", kind: fieldString, usage: "invoice_id (relation)"},
+	{flag: "customer-id", wire: "customerId", kind: fieldString, usage: "customer_id (relation)"},
+	{flag: "amount", wire: "amount", kind: fieldString, usage: "amount (decimal)"},
+	{flag: "method", wire: "method", kind: fieldString, usage: "method (enum) [card|ach|wire]"},
+	{flag: "status", wire: "status", kind: fieldString, usage: "status (enum) [succeeded|failed|refunded]"},
 }
 
 func runPaymentsCreate(args []string) int {
-	fs := newFlagSet("payments create")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldInvoiceId := fs.String("invoice-id", "", "invoice_id (relation)")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldAmount := fs.String("amount", "", "amount (decimal)")
-	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
-	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "invoice-id":
-			body["invoiceId"] = *fldInvoiceId
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "amount":
-			body["amount"] = *fldAmount
-		case "method":
-			body["method"] = *fldMethod
-		case "status":
-			body["status"] = *fldStatus
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPost, "/payments", body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runCreateVerb("payments create", "/payments", paymentsMutationFields, args)
 }
 
 func runPaymentsUpdate(args []string) int {
-	id, rest, ok := takeID("payments update", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("payments update")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldInvoiceId := fs.String("invoice-id", "", "invoice_id (relation)")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldAmount := fs.String("amount", "", "amount (decimal)")
-	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
-	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "invoice-id":
-			body["invoiceId"] = *fldInvoiceId
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "amount":
-			body["amount"] = *fldAmount
-		case "method":
-			body["method"] = *fldMethod
-		case "status":
-			body["status"] = *fldStatus
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPut, "/payments/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runUpdateVerb("payments update", "/payments", paymentsMutationFields, args)
 }
 
 func runPaymentsPatch(args []string) int {
-	id, rest, ok := takeID("payments patch", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("payments patch")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldInvoiceId := fs.String("invoice-id", "", "invoice_id (relation)")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldAmount := fs.String("amount", "", "amount (decimal)")
-	fldMethod := fs.String("method", "", "method (enum) [card|ach|wire]")
-	fldStatus := fs.String("status", "", "status (enum) [succeeded|failed|refunded]")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "invoice-id":
-			body["invoiceId"] = *fldInvoiceId
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "amount":
-			body["amount"] = *fldAmount
-		case "method":
-			body["method"] = *fldMethod
-		case "status":
-			body["status"] = *fldStatus
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPatch, "/payments/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runPatchVerb("payments patch", "/payments", paymentsMutationFields, args)
 }
 
 func runPaymentsDelete(args []string) int {
-	id, rest, ok := takeID("payments delete", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("payments delete")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/payments/"+url.PathEscape(id), nil, nil); err != nil {
-		return apiFail(err)
-	}
-	fmt.Printf("deleted %s\n", id)
-	return 0
+	return runDeleteVerb("payments delete", "/payments", args)
 }
 
-// runPaymentsBatchCreate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runPaymentsBatchCreate(args []string) int {
-	fs := newFlagSet("payments batch-create")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPost, "/payments/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("payments batch-create", "/payments", http.MethodPost, args)
 }
 
-// runPaymentsBatchUpdate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runPaymentsBatchUpdate(args []string) int {
-	fs := newFlagSet("payments batch-update")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPatch, "/payments/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("payments batch-update", "/payments", http.MethodPatch, args)
 }
 
-// runPaymentsBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags, flag.Parse stops at the first positional,
-// so the trailing ones are collected from fs.Args().
 func runPaymentsBatchDelete(args []string) int {
-	var ids []string
-	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		ids = append(ids, args[0])
-		args = args[1:]
-	}
-	fs := newFlagSet("payments batch-delete")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	for _, id := range fs.Args() {
-		if id != "" && id[0] == '-' {
-			fmt.Println(binaryName + " payments batch-delete: flags must precede trailing ids (got " + id + " after an id)")
-			return 2
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		fmt.Println("usage: " + binaryName + " payments batch-delete <id> [id...]")
-		return 2
-	}
-	resp, code := doBatch(g, http.MethodDelete, "/payments/_batch", map[string]any{"ids": ids})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchDeleteVerb("payments batch-delete", "/payments", args)
 }
 
-// runPaymentsWatch streams the live event feed until interrupted; each event is
-// one JSON line on stdout.
 func runPaymentsWatch(args []string) int {
-	fs := newFlagSet("payments watch")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
-	defer stop()
-	err := g.client.WatchPayments(ctx, func(event string, data []byte) error {
-		fmt.Printf("{\"event\":%q,\"data\":%s}\n", event, data)
-		return nil
-	})
-	if err != nil && ctx.Err() == nil {
-		return apiFail(err)
-	}
-	return 0
+	return runWatchVerb("payments watch", (*client.Client).WatchPayments, args)
 }

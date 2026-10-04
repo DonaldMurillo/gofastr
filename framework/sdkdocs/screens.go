@@ -546,7 +546,7 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 		}
 		rows = append(rows, ui.Row{Cells: map[string]render.HTML{
 			"field":    code(f.Name),
-			"type":     text(fieldTypeLabel(f.Type)),
+			"type":     text(schema.FieldTypeLabel(f.Type, true)),
 			"required": text(required),
 			"notes":    text(strings.Join(notes, "; ")),
 		}})
@@ -730,41 +730,4 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-// fieldTypeLabel mirrors crud/llmmd.go's labels, human-readable field
-// types for the reference table.
-func fieldTypeLabel(t schema.FieldType) string {
-	switch t {
-	case schema.String:
-		return "string"
-	case schema.Text:
-		return "text"
-	case schema.Int:
-		return "integer"
-	case schema.Float:
-		return "float"
-	case schema.Decimal:
-		return "decimal (string on the wire)"
-	case schema.Bool:
-		return "boolean"
-	case schema.Enum:
-		return "enum"
-	case schema.UUID:
-		return "uuid"
-	case schema.Timestamp:
-		return "timestamp"
-	case schema.Date:
-		return "date"
-	case schema.JSON:
-		return "json"
-	case schema.Relation:
-		return "relation"
-	case schema.Image:
-		return "image (url)"
-	case schema.File:
-		return "file (url)"
-	default:
-		return "string"
-	}
 }

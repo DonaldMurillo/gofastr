@@ -4,14 +4,14 @@ notes:
   - change: theme.Default() is now adaptive
     breaking: true
     hits: review
-    guidance: "The canonical theme now adapts light/dark from one palette. Apps that overrode dozens of tokens to fake dark mode can delete those overrides; apps that relied on the old static values re-pin them via theme.Overrides."
+    guidance: "The canonical theme now adapts light/dark from one palette. Apps that overrode dozens of tokens to fake dark mode can delete those overrides; apps that relied on the old static values opt out with t := theme.Default(); t.DarkColors = nil, or pin explicit dark values via theme.Overrides.DarkColors."
     find:
       uses:
         - gofastr/framework/ui/theme.Default
   - change: SiteHeader wraps its Brand slot
     breaking: true
     hits: review
-    guidance: "Brand renders inside a framework-owned wrapper; CSS targeting the raw brand element needs the new wrapper class (or better, drop the CSS — the wrapper is styled)."
+    guidance: "Brand renders inside a framework-owned wrapper; CSS targeting the raw brand element needs the new .ui-site-header__brand wrapper class (or better, drop the CSS since the wrapper is styled)."
     find:
       fields:
         - field: gofastr/framework/ui.SiteHeaderConfig.Brand

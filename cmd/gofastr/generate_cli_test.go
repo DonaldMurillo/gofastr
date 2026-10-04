@@ -163,6 +163,33 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		}
 	}
 
+	// The mutation verbs are table-driven the same way: one row per
+	// writable field in <entity>.go, one shared body per verb in verbs.go.
+	for _, w := range []string{
+		`var postsMutationFields = []mutationField{`,
+		`{flag: "title", wire: "title", kind: fieldString, usage: "title (string)"}`,
+		`{flag: "views", wire: "views", kind: fieldInt, usage: "views (int)"}`,
+		`{flag: "published", wire: "published", kind: fieldBool, usage: "published (bool)"}`,
+	} {
+		if !strings.Contains(posts, w) {
+			t.Errorf("posts.go mutation table missing %q", w)
+		}
+	}
+	for _, w := range []string{
+		`fs.Int(f.flag, 0, f.usage)`,
+		`fs.Float64(f.flag, 0, f.usage)`,
+		`fs.Bool(f.flag, false, f.usage)`,
+		`fs.String(f.flag, "", f.usage)`,
+		`body[f.wire] = *strVals[i]`,
+		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+	} {
+		if !strings.Contains(posts, w) && !strings.Contains(verbs, w) {
+			t.Errorf("mutation table wiring missing %q", w)
+		}
+	}
+
 	docs := files["documents.go"]
 	for _, w := range []string{
 		`{flag: "q", param: "q"`,
@@ -295,17 +322,54 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	}
 }
 
+// A create/update/patch-only selection is the import-shrink contract for
+// the table-driven mutation verbs: the entity file carries just the field
+// table and one-line wrappers (no imports at all: no flag plumbing, no
+// http method identifiers, no path building), while verbs.go gains the
+// encoding/json, fmt, net/http, and net/url its shared body needs.
+func TestRenderCLI_MutationOnlyImports(t *testing.T) {
+	opts := defaultCLIOptions()
+	opts.verbs = "create,update,patch"
+	files := renderedCLI(t, opts)
+	posts := files["posts.go"]
+	for _, w := range []string{
+		"var postsMutationFields = []mutationField{",
+		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+	} {
+		if !strings.Contains(posts, w) {
+			t.Errorf("mutation-only posts.go missing %q\n%s", w, posts)
+		}
+	}
+	if strings.Contains(posts, "import (") {
+		t.Errorf("mutation-only posts.go should need no imports:\n%s", posts)
+	}
+	verbs := files["verbs.go"]
+	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, `"net/url"`, "func runMutationVerb("} {
+		if !strings.Contains(verbs, w) {
+			t.Errorf("mutation-only verbs.go missing %q\n%s", w, verbs)
+		}
+	}
+	for _, absent := range []string{`"context"`, "func runListVerb(", "func runWatchVerb("} {
+		if strings.Contains(verbs, absent) {
+			t.Errorf("mutation-only verbs.go should not carry %q", absent)
+		}
+	}
+}
+
 // Positional ids are path-escaped in every id-addressed verb, matching the
 // typed client: a '/' or '?' in an id must not rewrite the route. The
-// in-file mutation bodies (update/patch) and the shared get/delete bodies
-// in verbs.go each escape the id where they build their path.
+// shared bodies in verbs.go (get, delete, and the mutation with-id form
+// behind update/patch) each escape the id where they build their path;
+// the entity files bind only the pre-escaped base path.
 func TestRenderCLI_PathEscapesIDs(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
-	if got := strings.Count(files["posts.go"], "url.PathEscape(id)"); got != 2 { // update + patch
-		t.Errorf("want 2 url.PathEscape(id) uses in posts.go (mutations), got %d", got)
+	if got := strings.Count(files["posts.go"], "url.PathEscape(id)"); got != 0 {
+		t.Errorf("entity file should bind only the base path, got %d url.PathEscape(id) uses in posts.go", got)
 	}
-	if got := strings.Count(files["verbs.go"], "url.PathEscape(id)"); got != 2 { // shared get + delete
-		t.Errorf("want 2 url.PathEscape(id) uses in verbs.go (get/delete), got %d", got)
+	if got := strings.Count(files["verbs.go"], "url.PathEscape(id)"); got != 3 { // get + delete + mutation
+		t.Errorf("want 3 url.PathEscape(id) uses in verbs.go (get/delete/mutation), got %d", got)
 	}
 }
 
@@ -331,24 +395,7 @@ func TestRenderCLI_ReservedCommandName(t *testing.T) {
 // (generateProject at the module root) and returns its dir. The module
 // replaces gofastr with the repo so generated code builds offline.
 func cliTempModule(t *testing.T) string {
-	t.Helper()
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	goVersion, err := repoGoVersion(repoRoot)
-	if err != nil {
-		t.Fatalf("repoGoVersion: %v", err)
-	}
-	goMod := "module example.com/myapp\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := copyGoSum(repoRoot, dir); err != nil {
-		t.Fatalf("copy go.sum: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`app:
+	return cliModuleFromYAML(t, `app:
   name: myapp
 entities:
   - name: posts
@@ -371,7 +418,32 @@ entities:
         required: true
       - name: body
         type: text
-`), 0o644); err != nil {
+`)
+}
+
+// cliModuleFromYAML scaffolds a temp Go module whose project comes from the
+// given gofastr.yml (generateProject at the module root) and returns its
+// dir. It chdirs into the module; t.Cleanup restores the working directory.
+// The module replaces gofastr with the repo so generated code builds offline.
+func cliModuleFromYAML(t *testing.T, yaml string) string {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatalf("repoGoVersion: %v", err)
+	}
+	goMod := "module example.com/myapp\n\ngo " + goVersion + "\n\nrequire github.com/DonaldMurillo/gofastr v0.0.0\n\nreplace github.com/DonaldMurillo/gofastr => " + repoRoot + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGoSum(repoRoot, dir); err != nil {
+		t.Fatalf("copy go.sum: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

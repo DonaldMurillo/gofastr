@@ -61,7 +61,7 @@ notes:
     guidance: "Keyset mode still ignores the sort — the cursor fields control ORDER BY — but it no longer skips validation, so any ?sort= the offset path rejects is now rejected alongside a cursor too. That includes an UNKNOWN column, not just a masked one. A client that appends its UI sort state to a cursor request and previously got a silent 200 now gets a 400; drop the sort when paging by cursor."
     find:
       strings:
-        match: '[?&]cursor='
+        match: 'cursor=[^&[:space:]]*&[^[:space:]]*sort=|sort=[^&[:space:]]*&[^[:space:]]*cursor='
   - change: "Nested ?rel.field= filters require CrudHandler.Registry"
     breaking: true
     hits: review

@@ -310,6 +310,21 @@ func TestRenderButtonActionRefResolves(t *testing.T) {
 	mustContain(t, h, "fui-button--primary")
 }
 
+// TestRenderButtonDefaultVariantPrimary pins the site default: a
+// button with no variant renders as primary.
+func TestRenderButtonDefaultVariantPrimary(t *testing.T) {
+	r := New(keyResolver(map[string]string{"save": "/m/mod/save"}))
+	h, err := r.Render(tree(uinodev1.Node{
+		Component: uinodev1.CompButton,
+		Props:     uinodev1.ButtonProps{Label: "Save"},
+		ActionRef: "save",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mustContain(t, h, "fui-button--primary")
+}
+
 func TestRenderLinkActionRefResolvedToRpcURL(t *testing.T) {
 	r := New(keyResolver(map[string]string{"act": "/m/mod/act"}))
 	h, err := r.Render(tree(uinodev1.Node{

@@ -24,8 +24,9 @@ notes:
     hits: edit
     guidance: "A literal false used to silently mean \"default true\" (an unexported set-bit controlled it); only WithTimestamps(false) worked. Timestamps is now *bool with nil = default true, so the visible value is the semantic value under copying and serialization. Replace Timestamps: false with WithTimestamps(false) or a *bool literal; Timestamps: true can simply be dropped."
     find:
-      fields:
-        - field: gofastr/framework/entity.EntityConfig.Timestamps
+      shapes:
+        - symbol: gofastr/framework/entity.EntityConfig.Timestamps
+          type: '^bool$'
   - change: The harness moved under framework/experimental
     breaking: true
     hits: edit
@@ -39,7 +40,7 @@ notes:
     guidance: "core/upload.Metadata keys changed from original_name/mime_type/uploaded_at to originalName/mimeType/uploadedAt, and framework/file.FileField from mime_type/storage_ref to mimeType/storageRef. Clients parsing those responses by key must switch. The persisted <field>_variants column format is unchanged on purpose."
     find:
       strings:
-        match: 'original_name|"mime_type"|storage_ref'
+        match: 'original_name|mime_type|uploaded_at|storage_ref'
   - change: battery/storage lost its dead registry; kiln lost two advertised action kinds
     breaking: true
     hits: edit
@@ -53,3 +54,52 @@ notes:
     breaking: false
     guidance: "Older generated apps keep working with their private resource.go engine; optionally regenerate or migrate its config to framework/ui/resource, because future correctness and security fixes do not reach the private copy."
     nodetect: advisory regeneration; the private resource.go keeps compiling
+  - change: Deprecated UI shims ui.BaseCSS and interactive.Confirm are deleted
+    breaking: true
+    hits: edit
+    guidance: "ui.BaseCSS() returned an empty string: delete the call. interactive.Confirm(message) becomes Action.WithConfirm(message) on the action it guarded."
+    find:
+      uses:
+        - gofastr/framework/ui.BaseCSS
+        - gofastr/core-ui/interactive.Confirm
+  - change: Pattern components register under bare names (disclosure, multiselect, sortablelist)
+    breaking: true
+    hits: edit
+    guidance: "The emitted data-fui-comp value, the CSS scope and multiselect.js's selectors drop the ui- prefix, so a stylesheet or script keyed on ui-disclosure, ui-multiselect or ui-sortable-list selects nothing; the components emit disclosure, multiselect and sortablelist."
+    find:
+      strings:
+        classes: [ui-disclosure, ui-multiselect, ui-sortable-list]
+      css:
+        classes: [ui-disclosure, ui-multiselect, ui-sortable-list]
+  - change: data-fui-sticky and data-fui-viewport are no longer emitted
+    breaking: true
+    hits: edit
+    guidance: "Both were emit-only markers with no runtime or CSS consumer; styling keys off the .ui-sticky--* and .ui-responsive__* classes. A selector or script reading either attribute matches nothing now."
+    find:
+      strings:
+        attrs: [data-fui-sticky, data-fui-viewport]
+  - change: Dead exported surface is deleted (experimental redis stores, harness failover/routing/copilot providers, kiln render.Deferred, freeze.ErrGenerateViaBlueprint)
+    breaking: true
+    hits: edit
+    guidance: "None of it had a working path: the redis stores could not be wired, the providers were never selected, render.Deferred was never populated and ErrGenerateViaBlueprint was never returned. Delete the import or the reference."
+    find:
+      imports:
+        - gofastr/battery/experimental/redisflags
+        - gofastr/battery/experimental/redisidempotency
+        - gofastr/framework/harness/provider/copilot
+        - gofastr/framework/harness/provider/failover
+        - gofastr/framework/harness/provider/routing
+      uses:
+        - gofastr/kiln/render.Deferred
+        - gofastr/kiln/freeze.ErrGenerateViaBlueprint
+  - change: framework facade re-exports are functions, not assignable vars
+    breaking: true
+    guidance: "framework.AutoMigrate, framework.NewCrudHandler, framework.Define and the other re-exports in framework/reexports_*.go are wrapper functions with identical signatures: assigning to one or taking its address no longer compiles; plain calls are unchanged."
+    nodetect: "an assignment or address-of on a re-export has no spelling apart from the plain call every app makes, and the compile error names the symbol"
+  - change: WithConfig replaces AppConfig wholesale instead of merging field by field
+    breaking: true
+    hits: review
+    guidance: "Later options win, including granular setters placed after WithConfig, and a field WithConfig leaves at its zero value becomes zero rather than keeping an earlier option's value: fill every field the config should carry, or place the granular setters after it."
+    find:
+      uses:
+        - gofastr/framework.WithConfig

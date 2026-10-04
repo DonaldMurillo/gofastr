@@ -3,6 +3,8 @@ package scan
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -170,6 +172,68 @@ func TestSolveImpliedOSTags(t *testing.T) {
 		if !ok || cfg.goos != c.goos {
 			t.Errorf("%s with //go:build %s: got %+v ok=%v, want GOOS=%s", c.name, c.tag, cfg, ok, c.goos)
 		}
+	}
+}
+
+// The solver only offers GOOS/GOARCH pairs the go command runs
+// (go tool dist list): solaris, illumos and aix are single-arch, so a
+// constraint naming them must not inherit the host's arch.
+func TestSolveOSPinsValidArch(t *testing.T) {
+	for _, c := range []struct{ tag, goarch string }{
+		{"solaris", "amd64"},
+		{"illumos", "amd64"},
+		{"aix", "ppc64"},
+	} {
+		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), "x.go")
+		if !ok || cfg.goos != c.tag || cfg.goarch != c.goarch {
+			t.Errorf("//go:build %s: got %+v ok=%v, want GOOS=%s GOARCH=%s", c.tag, cfg, ok, c.tag, c.goarch)
+		}
+	}
+}
+
+// zos is a known GOOS no supported pair reaches: the _zos suffix still
+// constrains the file, and -tags satisfies the name on the host.
+func TestSolveUnpairableOSViaTags(t *testing.T) {
+	cfg, ok := solveFileConfig([]byte("package main\n"), "x_zos.go")
+	if !ok || cfg.goos != runtime.GOOS || cfg.goarch != runtime.GOARCH || !slices.Equal(cfg.tags, []string{"zos"}) {
+		t.Errorf("x_zos.go: got %+v ok=%v, want host platform with tags [zos]", cfg, ok)
+	}
+}
+
+// go/build remaps boringcrypto to goexperiment.boringcrypto, which no
+// -tags value carries: no configuration in the solver's space exists.
+func TestSolveBoringcryptoNoConfig(t *testing.T) {
+	if _, ok := solveFileConfig([]byte("//go:build boringcrypto\n\npackage main\n"), "x.go"); ok {
+		t.Error("//go:build boringcrypto: got a configuration, want unsatisfiable")
+	}
+}
+
+// GOOS=ios matches darwin files, android matches linux files
+// (go help buildconstraint), so a constraint naming the implying OS is
+// satisfied by the GOOS that implies the filename's.
+func TestSolveSuffixSatisfiedByImplyingOS(t *testing.T) {
+	for _, c := range []struct{ name, tag, goos string }{
+		{"x_darwin.go", "ios", "ios"},
+		{"x_linux.go", "android", "android"},
+		{"x_solaris.go", "illumos", "illumos"},
+	} {
+		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
+		if !ok || cfg.goos != c.goos {
+			t.Errorf("%s with //go:build %s: got %+v ok=%v, want GOOS=%s", c.name, c.tag, cfg, ok, c.goos)
+		}
+	}
+}
+
+// A filename suffix's own OS is the platform offered, not one that
+// merely matches its files: android compiles _linux.go too, but linux
+// is what the name means.
+func TestSolveSuffixPicksOwnOS(t *testing.T) {
+	if runtime.GOOS == "linux" || runtime.GOOS == "android" {
+		t.Skipf("host %s satisfies _linux itself", runtime.GOOS)
+	}
+	cfg, ok := solveFileConfig([]byte("package main\n"), "x_linux.go")
+	if !ok || cfg.goos != "linux" || cfg.goarch != runtime.GOARCH {
+		t.Errorf("x_linux.go: got %+v ok=%v, want GOOS=linux GOARCH=%s", cfg, ok, runtime.GOARCH)
 	}
 }
 

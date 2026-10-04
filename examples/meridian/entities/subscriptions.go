@@ -34,13 +34,14 @@ var (
 	SubscriptionsUserId     = framework.NewStringColumn("user_id")
 )
 
-// Subscriptions include names, pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Subscriptions include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	SubscriptionsInclCustomer = "customer"
 	SubscriptionsInclPlan     = "plan"
 )
 
 // SubscriptionsRepo is the typed repository for subscriptions rows.
+// Event helpers: OnSubscriptionsCreated/OnSubscriptionsUpdated/OnSubscriptionsDeleted in this package.
 type SubscriptionsRepo struct {
 	handler *framework.CrudHandler
 }
@@ -61,7 +62,7 @@ func NewSubscriptionsRepo(app *framework.App) *SubscriptionsRepo {
 	return &SubscriptionsRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler, useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *SubscriptionsRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -211,78 +212,52 @@ func (r *SubscriptionsRepo) BatchDelete(ctx context.Context, ids []string) error
 // OnSubscriptionsCreated subscribes to entity.created events scoped to "subscriptions".
 // Returns a cancel func; call it to remove the handler.
 func OnSubscriptionsCreated(app *framework.App, fn func(ctx context.Context, row *Subscriptions) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractSubscriptionsRecord(ev, "subscriptions")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Subscriptions](app, "subscriptions", framework.EntityCreated, fn)
 }
 
 // OnSubscriptionsUpdated subscribes to entity.updated events scoped to "subscriptions".
 func OnSubscriptionsUpdated(app *framework.App, fn func(ctx context.Context, row *Subscriptions) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractSubscriptionsRecord(ev, "subscriptions")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Subscriptions](app, "subscriptions", framework.EntityUpdated, fn)
 }
 
 // OnSubscriptionsDeleted subscribes to entity.deleted events scoped to "subscriptions". Callback
-// receives the deleted row's id only, by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnSubscriptionsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "subscriptions" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "subscriptions", fn)
 }
 
 // extractSubscriptionsRecord unmarshals an event payload's "record" field into a
 // *Subscriptions, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractSubscriptionsRecord(ev framework.Event, entityName string) (*Subscriptions, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Subscriptions
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Subscriptions](ev, entityName)
 }
 
 // registerSubscriptions registers the "subscriptions" entity with app.
 func registerSubscriptions(app *framework.App) {
-	app.Entity("subscriptions", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
-		{Name: "plan_id", Type: schema.Relation, Required: true, To: "plans"},
-		{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
-		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
-		{Name: "started_on", Type: schema.Date},
-		{Name: "renews_on", Type: schema.Date},
-		{Name: "user_id", Type: schema.String, Hidden: true},
-	},
+	app.Entity("subscriptions", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
+			{Name: "plan_id", Type: schema.Relation, Required: true, To: "plans"},
+			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
+			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
+			{Name: "started_on", Type: schema.Date},
+			{Name: "renews_on", Type: schema.Date},
+			{Name: "user_id", Type: schema.String, Hidden: true},
+		},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
 			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: "plan_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Subscriptions"},
+		},
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Properties: map[string]any{"label": "Subscriptions"},
 	})
 	_ = Subscriptions{}
 }

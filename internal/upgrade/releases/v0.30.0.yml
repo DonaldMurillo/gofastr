@@ -5,8 +5,9 @@ notes:
     breaking: false
     guidance: "Grant now reports strict-mode capability rejections. Statement-form calls keep compiling; error-checking linters will flag the ignored return. With StrictCapabilities() configured, handle the error — errors.As with *access.UnknownCapabilityError distinguishes a typo'd capability (answer 400) from a store failure (500)."
     find:
-      uses:
-        - gofastr/framework/access.RolePolicy.Grant
+      shapes:
+        - symbol: gofastr/framework/access.RolePolicy.Grant
+          type: '^func\(role string, permissions \.\.\.access\.Permission\)$'
   - change: Same-container sortable commits include container=
     breaking: false
     guidance: "Sortable lists that configure Container now send container=<id> on same-container reorders too (previously cross-container only). Handlers that distinguished the two cases by container's presence should key on moved= instead — it remains cross-container-only."
