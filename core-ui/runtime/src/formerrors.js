@@ -24,12 +24,25 @@
   const CHOICE = '[data-hui-choice]';
   const ERR = '[data-hui-field-error]';
 
+  // describe adds id to a control's aria-describedby tokens (on) or
+  // drops it, keeping every other token: a hint stays described.
+  function describe(el, id, on) {
+    const t = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter((x) => x && x !== id);
+    if (on) t.push(id);
+    if (t.length) el.setAttribute('aria-describedby', t.join(' '));
+    else el.removeAttribute('aria-describedby');
+  }
+
   // clear removes what a previous failed attempt placed, so a retry
   // starts clean and a success leaves no stale error behind: live
-  // paragraphs go, filled rendered nodes empty back to reserved.
+  // paragraphs go with their describedby token, filled rendered nodes
+  // empty back to reserved.
   function clear(form) {
     if (!form) return;
-    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => e.remove());
+    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => {
+      if (e.id) form.querySelectorAll('[aria-describedby]').forEach((c) => describe(c, e.id, false));
+      e.remove();
+    });
     form.querySelectorAll('[data-hui-field-error="filled"]').forEach((e) => {
       e.textContent = '';
       e.setAttribute('data-hui-field-error', '');
@@ -75,7 +88,7 @@
         if (field) field.appendChild(p);
         else choice.after(p);
       }
-      if (p.id) el.setAttribute('aria-describedby', p.id);
+      if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
       placed++;
     }

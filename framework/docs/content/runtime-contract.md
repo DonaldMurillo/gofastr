@@ -122,7 +122,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 
 | Attribute | Purpose |
 |---|---|
-| `data-cui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` message by the headless hooks, never by a kit class (a reserved or live `[data-hui-field-error]` node inside the `[data-hui-field]` group, or the next sibling of a bare `[data-hui-choice]` label), and when no field matched, the `error` text is toasted. |
+| `data-cui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, and the error node's id added to its `aria-describedby` beside any hint already there; the retry that removes a live node drops only that id) and places a `role="alert"` message by the headless hooks, never by a kit class (a reserved or live `[data-hui-field-error]` node inside the `[data-hui-field]` group, or the next sibling of a bare `[data-hui-choice]` label), and when no field matched, the `error` text is toasted. |
 | `data-cui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-cui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-cui-rpc-close` | Containing widget closes on 2xx |
