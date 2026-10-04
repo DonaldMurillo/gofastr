@@ -110,12 +110,31 @@
     return 'auto';
   }
 
+  // resolveScheme: the scheme a page in this mode shows — auto is the
+  // OS preference, never a value of its own.
+  function resolveScheme(scheme) {
+    if (scheme === 'light' || scheme === 'dark') return scheme;
+    const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    return mq && mq.matches ? 'dark' : 'light';
+  }
+
+  // applyScheme hands the choice to the colour-scheme bootstrap
+  // (core-ui/runtime/colorscheme.js), which persists it, resolves auto
+  // and writes data-color-scheme AND the color-scheme meta the native
+  // controls follow. A page without the bootstrap gets the same
+  // storage and a resolved attribute written here.
   function applyScheme(scheme, root) {
-    try { localStorage.setItem(THEME_KEY, scheme); } catch (_) {}
-    const html = document.documentElement;
-    html.setAttribute('data-color-scheme', scheme);
-    if (window.__gofastr_colorScheme) {
-      try { window.__gofastr_colorScheme.apply(scheme); } catch (_) {}
+    const api = window.__gofastr_colorScheme;
+    let done = false;
+    if (api && typeof api.set === 'function') {
+      try { api.set(scheme); done = true; } catch (_) {}
+    }
+    if (!done) {
+      try {
+        if (scheme === 'auto') localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, scheme);
+      } catch (_) {}
+      document.documentElement.setAttribute('data-color-scheme', resolveScheme(scheme));
     }
     const scope = root && root.querySelectorAll ? root : document;
     for (const opt of scope.querySelectorAll('[data-hui-theme-option]')) {
