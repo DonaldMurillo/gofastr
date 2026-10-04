@@ -1,9 +1,11 @@
 package upgrade
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -382,6 +384,29 @@ func TestThroughCoversNewestEntry(t *testing.T) {
 	}
 	if len(pending) > 1 {
 		t.Errorf("through %s is older than %d entries %v: only the next release's pending file may sit above it", reg.Through, len(pending), pending)
+	}
+	// The pending file names the release that comes next: the patch,
+	// minor or major right after through. A file further out stays the
+	// single file above through across releases, so nothing else would
+	// ever say its version is wrong.
+	for _, v := range pending {
+		if !slices.Contains(nextVersions(reg.Through), v) {
+			t.Errorf("pending releases/%s.yml is not the release after through %s (one of %v)", v, reg.Through, nextVersions(reg.Through))
+		}
+	}
+}
+
+// nextVersions lists the three releases that can follow v: its next
+// patch, next minor, and next major.
+func nextVersions(v string) []string {
+	var major, minor, patch int
+	if _, err := fmt.Sscanf(v, "v%d.%d.%d", &major, &minor, &patch); err != nil {
+		return nil
+	}
+	return []string{
+		fmt.Sprintf("v%d.%d.%d", major, minor, patch+1),
+		fmt.Sprintf("v%d.%d.0", major, minor+1),
+		fmt.Sprintf("v%d.0.0", major+1),
 	}
 }
 

@@ -58,3 +58,26 @@ func TestTextSkipsMinifiedBundles(t *testing.T) {
 	}), n)
 	wantHits(t, res, n, "assets/widget.js:2:1 text \\.observe\\(\\s*document")
 }
+
+func TestTextLongLinesCountOutsideScripts(t *testing.T) {
+	// A kiln journal line carries a whole entity snapshot and runs far
+	// past the minified-line bound; it is the host's own record, so the
+	// JSONL notes must still hit it. Only script files get the skip, and
+	// a .min.<data ext> name is not a minified script either.
+	longLine := `{"kind":"update_entity","entity":{"pad":"` + strings.Repeat("x", minifiedLineBytes) + `"}}` + "\n"
+	n := &upgrade.Note{Find: upgrade.Find{Text: []upgrade.TextMatch{{
+		Glob:  "**/*.jsonl",
+		Match: regexp.MustCompile(`update_entity`),
+	}, {
+		Glob:  "**/*.json",
+		Match: regexp.MustCompile(`update_entity`),
+	}}}}
+	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
+		"main.go":                "package main\n\nfunc main() {}\n",
+		"journal/session.jsonl":  longLine,
+		"fixtures/seed.min.json": `{"kind":"update_entity"}` + "\n",
+	}), n)
+	wantHits(t, res, n,
+		"fixtures/seed.min.json:1:1 text update_entity",
+		"journal/session.jsonl:1:1 text update_entity")
+}

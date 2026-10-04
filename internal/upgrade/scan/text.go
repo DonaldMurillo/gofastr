@@ -16,9 +16,12 @@ const minifiedLineBytes = 1000
 // textFile is the last resort: a per-line regex over files no other
 // matcher reads. Go and CSS files are never text targets — their
 // matchers read them structurally, and the file dispatch never routes
-// them here. Minified files (.min.js, .min.css, .min.mjs) and minified
-// lines (see minifiedLineBytes) are skipped: a hit there is a vendored
-// bundle, not the host's code.
+// them here. Minified scripts are skipped, by name (name.min.js,
+// name.min.mjs, name.min.cjs) and by line (a script line over
+// minifiedLineBytes): a hit there is a vendored bundle, not the host's
+// code. The line skip applies to script files only; a line-oriented
+// data file (a .jsonl journal) carries long lines by design and every
+// one of them is the host's own.
 func (e *engine) textFile(rel string, read func() ([]byte, bool)) {
 	if len(e.textWants) == 0 || strings.HasSuffix(rel, ".go") || isMinifiedName(rel) {
 		return
@@ -36,8 +39,9 @@ func (e *engine) textFile(rel string, read func() ([]byte, bool)) {
 	if !ok {
 		return
 	}
+	skipLong := isScriptName(rel)
 	for i, line := range strings.Split(string(src), "\n") {
-		if len(line) > minifiedLineBytes {
+		if skipLong && len(line) > minifiedLineBytes {
 			continue
 		}
 		for _, w := range wants {
@@ -48,12 +52,23 @@ func (e *engine) textFile(rel string, read func() ([]byte, bool)) {
 	}
 }
 
-// isMinifiedName reports whether rel names a minified build by its
-// extension: name.min.js, name.min.css, name.min.mjs.
+// isScriptName reports whether rel is a JavaScript source by extension.
+func isScriptName(rel string) bool {
+	switch path.Ext(rel) {
+	case ".js", ".mjs", ".cjs":
+		return true
+	}
+	return false
+}
+
+// isMinifiedName reports whether rel names a minified script build:
+// name.min.js, name.min.mjs, name.min.cjs.
 func isMinifiedName(rel string) bool {
+	if !isScriptName(rel) {
+		return false
+	}
 	base := path.Base(rel)
-	ext := path.Ext(base)
-	return ext != "" && strings.HasSuffix(strings.TrimSuffix(base, ext), ".min")
+	return strings.HasSuffix(strings.TrimSuffix(base, path.Ext(base)), ".min")
 }
 
 // matchGlob matches a root-relative slash path against a glob where

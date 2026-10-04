@@ -192,8 +192,8 @@ hit on every ordinary use of a symbol says nothing the guidance does
 not.
 
 ```yaml
-# internal/upgrade/releases/v0.87.0.yml
-version: v0.87.0
+# internal/upgrade/releases/v0.99.0.yml (an illustration, not a shipped file)
+version: v0.99.0
 title: Site chrome moves to owned packages
 notes:
   - change: 'ui.SiteHeader is now siteheader.Render'
@@ -298,10 +298,12 @@ Each matcher reads the code the way its language means it:
   nothing above reads (shell, JS). Go and CSS files are refused: their
   matchers read them structurally. So is a glob that would never
   match: a malformed segment, or `**` sharing a segment with other
-  characters. Minified builds are skipped, by name (`.min.js`,
-  `.min.css`, `.min.mjs`) and by line (a line over 1000 bytes): a hit
-  inside a vendored maplibre or monaco bundle points at code the app
-  did not write and cannot act on.
+  characters. Minified scripts are skipped, by name (`.min.js`,
+  `.min.mjs`, `.min.cjs`) and by line (a script line over 1000 bytes):
+  a hit inside a vendored maplibre or monaco build points at code the
+  app did not write and cannot act on. The line skip is for scripts
+  only; a data file such as a `.jsonl` journal keeps its long lines.
+  CSS never reaches the text matcher.
 
 When the app does not type-check against its current gofastr version
 (the `go.mod` was bumped first), the Go matchers fall back to the

@@ -280,19 +280,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
-- **BREAKING: the `framework_docs_*` MCP tools left
-  `framework.WithMCPIntrospection()`** (#470). Package framework no
-  longer imports `framework/docs`, so a docs-only edit no longer runs
-  every framework importer's tests. Apps that want the docs tools on
-  `/mcp` add `framework.WithMCPTools(mcptools.Register)` from
-  `framework/docs/mcptools`; `gofastr upgrade` flags every
-  `WithMCPIntrospection` call for review with that guidance.
+- **BREAKING: the `framework_docs_*` MCP tools are opt-in** (#470).
+  `framework.WithMCPIntrospection()` no longer registers
+  `framework_docs_list` / `framework_docs_get` / `framework_docs_search`,
+  and neither does the `gofastr dev` loop: an app whose agents read the
+  framework docs over `/mcp` adds
+  `framework.WithMCPTools(mcptools.Register)` from
+  `framework/docs/mcptools` (the blueprint, `gofastr init` and the
+  examples do). Package framework no longer imports the docs corpus.
+  `gofastr upgrade` flags every `WithMCPIntrospection` call for review
+  with that guidance.
 - **`gofastr upgrade` reports fewer review-tier hits.** Five registry
   notes whose matcher was a bare symbol every app uses (`App.Entity`,
-  `WithReadHooks`, the field `Default`, the v0.65 owner-column and the
-  v0.68 `migrate repair` notes) now carry a `nodetect` reason instead of
-  a `find`, and the text matcher skips `*.min.*` files and lines over
-  1000 bytes, so a vendored minified bundle no longer produces hits.
+  the v0.48 `CrudHandler.ListAll` / `GetOne` / `CountAll` read-hook
+  note, the field `Default`, the v0.65 owner-column and the v0.68
+  `migrate repair` notes) now carry a `nodetect` reason instead of a
+  `find`, and the text matcher skips minified scripts, by name
+  (`.min.js`, `.min.mjs`, `.min.cjs`) and by line (a script line over
+  1000 bytes), so a vendored maplibre or monaco build no longer
+  produces hits. Long lines in data files (a `.jsonl` journal) still
+  count.
 - **BREAKING: every class and attribute carries the prefix of the
   tree that defines it** (#467). The kernel's attribute vocabulary is
   `data-cui-*`: every `data-fui-*` the runtime read is renamed
