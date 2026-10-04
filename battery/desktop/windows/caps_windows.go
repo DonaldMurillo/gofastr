@@ -744,7 +744,6 @@ func showFileDialog(s *winShell, op *modalOperation, opts desktop.OpenOptions, s
 		flags |= fosPickFolders
 		flags &^= fosFileMustExist
 	}
-	_, _ = win32.COMCall(dlg, 10, uintptr(unsafe.Pointer(&flags)))
 	if _, err := win32.COMCall(dlg, 9, uintptr(flags)); err != nil {
 		return nil, err
 	}

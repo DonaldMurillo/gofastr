@@ -137,6 +137,7 @@ type winWindow struct {
 	hwnd                uintptr
 	controller          uintptr
 	webview             uintptr
+	titleMu             sync.RWMutex
 	title               string
 	style               desktop.WindowStyle
 	titlebarTransparent bool

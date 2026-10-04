@@ -302,7 +302,7 @@ func (s *winShell) WindowState(id string) (desktop.WindowState, error) {
 			frame = frameFromWindowRect(w.hwnd, l, t, r, b)
 		}
 		state = desktop.WindowState{
-			Title: w.title, Visible: win32.IsWindowVisible(w.hwnd),
+			Title: w.cachedTitle(), Visible: win32.IsWindowVisible(w.hwnd),
 			Key: win32.GetForegroundWindow() == w.hwnd, Class: "HWND", ContentClass: "WebView2",
 			X: frame.X, Y: frame.Y, Width: frame.Width, Height: frame.Height,
 			Material: w.material, SidebarWidth: w.sidebarWidth,

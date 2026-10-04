@@ -249,30 +249,45 @@ func (w *winWindow) Snapshot(ctx context.Context) ([]byte, error) {
 }
 
 func (w *winWindow) Title() string {
-	title := w.title
+	title := w.cachedTitle()
 	_ = w.shell.Main(func() {
 		if w.hwnd != 0 {
 			title = win32.GetWindowText(w.hwnd)
 		}
+		if title != "" {
+			w.setCachedTitle(title)
+		}
 	})
-	if title != "" {
-		w.title = title
-	}
 	return title
 }
 
 func (w *winWindow) SetTitle(title string) error {
-	w.title = title
 	var nativeErr error
 	mainErr := w.shell.Main(func() {
 		if w.hwnd != 0 {
 			nativeErr = win32.SetWindowText(w.hwnd, title)
+		}
+		if nativeErr == nil {
+			w.setCachedTitle(title)
 		}
 	})
 	if mainErr != nil {
 		return mainErr
 	}
 	return nativeErr
+}
+
+func (w *winWindow) cachedTitle() string {
+	w.titleMu.RLock()
+	title := w.title
+	w.titleMu.RUnlock()
+	return title
+}
+
+func (w *winWindow) setCachedTitle(title string) {
+	w.titleMu.Lock()
+	w.title = title
+	w.titleMu.Unlock()
 }
 
 func (w *winWindow) Focus() error {
@@ -322,20 +337,30 @@ func (w *winWindow) SetFrame(f desktop.Frame) error {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
 	var nativeErr error
+	applied := f
 	err := w.shell.Main(func() {
 		screenDPI := win32.SystemDPI()
 		sizeDPI := windowDPI(w.hwnd)
 		nativeErr = win32.MoveWindow(w.hwnd,
 			int(pointsToPixels(f.X, screenDPI)), int(pointsToPixels(f.Y, screenDPI)),
 			int(pointsToPixels(f.Width, sizeDPI)), int(pointsToPixels(f.Height, sizeDPI)), true)
+		if nativeErr != nil {
+			return
+		}
+		if !win32.IsIconic(w.hwnd) && !win32.IsZoomed(w.hwnd) {
+			left, top, right, bottom, ok := win32.GetWindowRect(w.hwnd)
+			if ok {
+				applied = frameFromWindowRect(w.hwnd, left, top, right, bottom)
+			}
+		}
+		w.frame = applied
 	})
 	if err == nil {
 		if nativeErr != nil {
 			return nativeErr
 		}
-		w.frame = f
 		if w.shell.onFrame != nil {
-			go w.shell.onFrame(w.id, f)
+			go w.shell.onFrame(w.id, applied)
 		}
 	}
 	return err
