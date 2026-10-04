@@ -334,6 +334,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   with `go run ./evals/dev-loop/cmd/devloop-eval -runs 3`.
 
 ### Changed
+- **Generated `CLAUDE.md`, `AGENTS.md` and the `gofastr-host` skill now
+  open with the dev loop**: start `gofastr dev` once and leave it
+  running, because `go run .` never sets `GOFASTR_DEV=1` and so never
+  reloads. Before, `CLAUDE.md` named `gofastr dev` only in its closing
+  command list and the warning against `go run .` lived in
+  `agents/framework.md`, where an agent found it only by searching. The
+  skill also triggers on "run the app", "dev server" and "hot reload".
+  In an existing project, `gofastr init . --reinit --force` refreshes
+  the skill and `CLAUDE.md` (replacing any edits to `CLAUDE.md`). The
+  text above the `AGENTS.md` markers belongs to the project, so copy the
+  "Run the app while you work" section in by hand.
+- **The `evals/ui-quality` builder prompt no longer says "make the
+  workspace runnable with go run ."**: it named the one command that
+  skips hot reload in an eval that records whether the builder found
+  `gofastr dev`.
 - **A blueprint `type: link` block renders `ui.Link`** instead of
   `html.Link`, so generated links pick up the design system's link
   style, and validation now refuses an unsafe `href` (`javascript:`,
