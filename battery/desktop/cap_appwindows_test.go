@@ -269,6 +269,9 @@ func TestRunWiresSettingsAndTray(t *testing.T) {
 	})
 	cfg, _ := shell.config()
 
+	if cfg.AppID != "wiring.example.app" {
+		t.Fatalf("WindowConfig.AppID = %q, want wiring.example.app", cfg.AppID)
+	}
 	// The tray reached the shell with its RoleShow row.
 	if cfg.Tray == nil || cfg.Tray.Title != "Wire" {
 		t.Fatalf("WindowConfig.Tray = %+v", cfg.Tray)
@@ -305,5 +308,32 @@ func TestRunWiresSettingsAndTray(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("Run did not return after Quit")
+	}
+}
+
+type windowWithCloseState struct {
+	Window
+	closed bool
+}
+
+func (w windowWithCloseState) IsClosed() bool { return w.closed }
+
+func TestHandleWindowClosedKeepsRegistrationForOpenWindow(t *testing.T) {
+	b, _ := newTestBattery(t)
+	w := windowWithCloseState{Window: &fakeWindow{id: "w2", title: "Settings"}}
+	b.windows["w2"] = w
+	b.winOrder = []string{"w2"}
+	b.winPaths["/settings"] = "w2"
+
+	b.handleWindowClosed("w2")
+
+	if got := b.windows["w2"]; got != w {
+		t.Fatalf("window registration = %v, want current open window", got)
+	}
+	if got := b.winPaths["/settings"]; got != "w2" {
+		t.Fatalf("path registration = %q, want w2", got)
+	}
+	if len(b.winOrder) != 1 || b.winOrder[0] != "w2" {
+		t.Fatalf("window order = %v, want [w2]", b.winOrder)
 	}
 }

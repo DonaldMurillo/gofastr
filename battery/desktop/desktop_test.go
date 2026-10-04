@@ -150,7 +150,7 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 		t.Fatalf("enter: %d", resp.StatusCode)
 	}
 	cookies := resp.Cookies()
-	if len(cookies) != 1 || cookies[0].Name != sessionCookieName {
+	if len(cookies) != 1 || !strings.HasPrefix(cookies[0].Name, sessionCookieName+"_") {
 		t.Fatalf("enter cookies = %+v", cookies)
 	}
 

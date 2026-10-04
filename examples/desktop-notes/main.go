@@ -108,7 +108,11 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		Title:  "Notes",
 		Width:  960,
 		Height: 680,
-		Shell:  shell,
+		Style: desktop.WindowStyle{
+			Chrome:   desktop.ChromeUnified,
+			Material: desktop.MaterialWindow,
+		},
+		Shell: shell,
 		// Settings gets three entry points: the app menu's own
 		// Settings item (synthesized by the shell, cmd+,), this File
 		// menu row, and the tray's Settings row below. The screen it
