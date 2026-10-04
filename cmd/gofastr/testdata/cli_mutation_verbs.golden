@@ -1,0 +1,244 @@
+== create help: gadgets create --help (exit 0)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+Usage of myapp gadgets create:
+  -json string
+    	raw JSON body: inline, @file, or - for stdin
+  -meta string
+    	meta (json)
+  -notes string
+    	notes (text)
+  -price string
+    	price (decimal)
+  -published
+    	published (bool)
+  -rating float
+    	rating (float)
+  -released-on string
+    	released_on (date)
+  -status string
+    	status (enum) [draft|shipped]
+  -title string
+    	title (string)
+  -url string
+    	server URL (default $MYAPP_URL, then stored config)
+  -views int
+    	views (int)
+
+== update help: gadgets update rec-9 --help (exit 0)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+Usage of myapp gadgets update:
+  -json string
+    	raw JSON body: inline, @file, or - for stdin
+  -meta string
+    	meta (json)
+  -notes string
+    	notes (text)
+  -price string
+    	price (decimal)
+  -published
+    	published (bool)
+  -rating float
+    	rating (float)
+  -released-on string
+    	released_on (date)
+  -status string
+    	status (enum) [draft|shipped]
+  -title string
+    	title (string)
+  -url string
+    	server URL (default $MYAPP_URL, then stored config)
+  -views int
+    	views (int)
+
+== patch help: gadgets patch rec-9 --help (exit 0)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+Usage of myapp gadgets patch:
+  -json string
+    	raw JSON body: inline, @file, or - for stdin
+  -meta string
+    	meta (json)
+  -notes string
+    	notes (text)
+  -price string
+    	price (decimal)
+  -published
+    	published (bool)
+  -rating float
+    	rating (float)
+  -released-on string
+    	released_on (date)
+  -status string
+    	status (enum) [draft|shipped]
+  -title string
+    	title (string)
+  -url string
+    	server URL (default $MYAPP_URL, then stored config)
+  -views int
+    	views (int)
+
+== create all flag kinds: gadgets create --title hello --notes second --status draft --views 3 --rating 4.5 --price 19.99 --published --meta {"a":[1,2]} --released-on 2026-01-02 (exit 0)
+-- request
+POST /api/gadgets
+{"meta":{"a":[1,2]},"notes":"second","price":"19.99","published":true,"rating":4.5,"releasedOn":"2026-01-02","status":"draft","title":"hello","views":3}
+-- stdout
+{
+  "id": "rec-1",
+  "title": "echo"
+}
+-- stderr
+
+
+== create explicit zeros: gadgets create --views 0 --rating 0 --published=false (exit 0)
+-- request
+POST /api/gadgets
+{"published":false,"rating":0,"views":0}
+-- stdout
+{
+  "id": "rec-1",
+  "title": "echo"
+}
+-- stderr
+
+
+== update path-escapes id: gadgets update a/b?x --title edited (exit 0)
+-- request
+PUT /api/gadgets/a%2Fb%3Fx
+{"title":"edited"}
+-- stdout
+{
+  "id": "rec-1",
+  "title": "echo"
+}
+-- stderr
+
+
+== patch keeps explicit zero: gadgets patch rec-9 --views 0 --published (exit 0)
+-- request
+PATCH /api/gadgets/rec-9
+{"published":true,"views":0}
+-- stdout
+{
+  "id": "rec-1",
+  "title": "echo"
+}
+-- stderr
+
+
+== update via --json: gadgets update rec-9 --json {"title":"edited","meta":{"k":1}} (exit 0)
+-- request
+PUT /api/gadgets/rec-9
+{"meta":{"k":1},"title":"edited"}
+-- stdout
+{
+  "id": "rec-1",
+  "title": "echo"
+}
+-- stderr
+
+
+== rejects --json plus field flags: gadgets create --title x --json {} (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+--json and field flags are mutually exclusive
+
+== rejects empty create: gadgets create (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+nothing to send: pass field flags or --json
+
+== rejects bad json field value: gadgets create --meta nope (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+--meta: invalid character 'o' in literal null (expecting 'u')
+
+== update without id: gadgets update (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+usage: myapp gadgets update <id> [flags]
+
+== rejects unknown flag: gadgets create --nope (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+flag provided but not defined: -nope
+Usage of myapp gadgets create:
+  -json string
+    	raw JSON body: inline, @file, or - for stdin
+  -meta string
+    	meta (json)
+  -notes string
+    	notes (text)
+  -price string
+    	price (decimal)
+  -published
+    	published (bool)
+  -rating float
+    	rating (float)
+  -released-on string
+    	released_on (date)
+  -status string
+    	status (enum) [draft|shipped]
+  -title string
+    	title (string)
+  -url string
+    	server URL (default $MYAPP_URL, then stored config)
+  -views int
+    	views (int)
+
+== read-only field not a mutation flag: gadgets create --sku S1 (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+flag provided but not defined: -sku
+Usage of myapp gadgets create:
+  -json string
+    	raw JSON body: inline, @file, or - for stdin
+  -meta string
+    	meta (json)
+  -notes string
+    	notes (text)
+  -price string
+    	price (decimal)
+  -published
+    	published (bool)
+  -rating float
+    	rating (float)
+  -released-on string
+    	released_on (date)
+  -status string
+    	status (enum) [draft|shipped]
+  -title string
+    	title (string)
+  -url string
+    	server URL (default $MYAPP_URL, then stored config)
+  -views int
+    	views (int)
+

@@ -100,8 +100,10 @@ func TestGenerateCLI_PlainNamesStillGenerate(t *testing.T) {
 	for _, f := range files {
 		joined += f.content
 	}
-	if !strings.Contains(joined, `"/blog-posts/"`) {
-		t.Errorf("expected the dashed table in a path literal")
+	// The wrappers bind the pre-escaped base path; the with-id tail is
+	// appended at runtime by the shared verb bodies in verbs.go.
+	if !strings.Contains(joined, `"/blog-posts"`) {
+		t.Errorf("expected the dashed table in a base-path literal")
 	}
 }
 
@@ -247,17 +249,19 @@ func TestScaffoldNameGuardedByValidate(t *testing.T) {
 }
 
 // TestGenerateCLI_FieldNameMustDeriveIdentifier: buildCLIEntity guards
-// ent.Struct (isGoIdentifier) and ent.Table (literal-safe), but a FIELD name
-// lands in generated identifier positions with no guard of its own:
+// ent.Struct (isGoIdentifier) and ent.Table (literal-safe), but a FIELD
+// name has landed in generated identifier positions with no guard of its
+// own. Today the emitter spells field names as string literals everywhere
+// (rows of the list filter table and the mutationField table), so the
+// guard is prophylactic: it is the boundary that keeps a future emitter
+// change from quietly reintroducing identifier sinks like
 //
-//	flt%s := fs.String(...)  (list filters)
 //	fld%s := fs.String(...)  (create/update/patch flags)
-//	set(%q, *flt%s)          (list param wiring)
 //	body[%q] = *fld%s        (mutation payload wiring)
 //
 // toCamelCase only splits on _/-/space, so every other byte survives into
-// `fld`+name. A NoQuery writable field reaches only the statement-context
-// sinks (flag decl + body assignment), where `x;pwn();y` renders
+// `fld`+name. Before the tables existed, a NoQuery writable field reached
+// statement-context sinks where `x;pwn();y` rendered
 //
 //	fldX;pwn();y := fs.String("x;pwn();y", "", "…")
 //	body["x;pwn();y"] = *fldX;pwn();y
@@ -265,8 +269,8 @@ func TestScaffoldNameGuardedByValidate(t *testing.T) {
 // — syntactically valid Go with pwn() at statement position, which passes
 // the format.Source gate emitCLIFiles relies on and ships in the operator's
 // CLI. Same trust boundary as the entity/table guards above (hand-written
-// entities/*.go via packReadEntities); the field is the one input the guard
-// forgot.
+// entities/*.go via packReadEntities); the field is the one input the
+// guard forgot.
 func TestCLIFieldNameMustDeriveIdentifier(t *testing.T) {
 	for _, name := range []string{
 		"x;PWN();y",  // statement-position call, parses (the NoQuery shape below)
@@ -450,11 +454,10 @@ func TestCLISummaryControlBytesRefused(t *testing.T) {
 // TestCLIRouteLiteralsEscapeTable: every route the entity CLI and the
 // typed client emit is fed by cliEntity.Table, which the literal gate
 // only clears of quote/backslash/control bytes — path-shaping bytes
-// (?, #, spaces, traversal) survive it raw. All table slots therefore go
 // through url.PathEscape at the emitter: the per-entity wrapper base
-// paths, the in-file mutation paths (create literal, update/patch
-// with-id), and the shared verbs.go route construction (get/delete
-// with-id, list, _batch), plus the typed client
+// paths (list/get/create/update/patch/delete/batch bindings), and the
+// shared verbs.go route construction (get/delete and mutation with-id,
+// list, _batch), plus the typed client
 // (generate_client.go List/Get/Create/Update/Patch/Delete/Batch*/Watch
 // paths).
 func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
@@ -483,11 +486,11 @@ func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`"/` + escaped + `/"`,         // mutation with-id paths (<entity>.go update/patch)
-		`"/` + escaped + `",`,         // wrapper base-path bindings in <entity>.go
-		`base+"/"+url.PathEscape(id)`, // shared get/delete (verbs.go)
-		`base+"/_batch"`,              // shared batch verbs (verbs.go)
-		`path := base`,                // shared list (verbs.go)
+		`"/` + escaped + `",`,              // wrapper base-path bindings in <entity>.go
+		`base+"/"+url.PathEscape(id)`,      // shared get/delete (verbs.go)
+		`path += "/" + url.PathEscape(id)`, // shared create/update/patch with-id (verbs.go)
+		`base+"/_batch"`,                   // shared batch verbs (verbs.go)
+		`path := base`,                     // shared list (verbs.go)
 	} {
 		if !strings.Contains(cliJoined, want) {
 			t.Errorf("emitted CLI route construction missing escaped-table site %q:\n%s", want, cliJoined)
@@ -525,7 +528,9 @@ func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 	for _, f := range renderCLIFiles(plainSpec) {
 		plainJoined += f.content
 	}
-	if !strings.Contains(plainJoined, `"/blog-posts/"`) {
+	// PathEscape is the identity here; the wrappers bind it as the base
+	// path, with the with-id tail appended at runtime by verbs.go.
+	if !strings.Contains(plainJoined, `"/blog-posts"`) {
 		t.Errorf("plain dashed table no longer emitted verbatim")
 	}
 }

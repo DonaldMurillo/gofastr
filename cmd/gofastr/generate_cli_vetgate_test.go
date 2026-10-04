@@ -24,7 +24,7 @@ import (
 //	run go vet -vettool=<it> over the generated module,
 //	fail on ANY diagnostic, printing it.
 //
-// Two legs, both RED while the round-3 findings are open:
+// Three legs:
 //
 //   - the control-bytes leg: a spec summary carrying terminal-control
 //     bytes must be refused at spec build (the buildCLISpec Selection
@@ -38,13 +38,16 @@ import (
 //     under the repo vettool. Today discardeddecode fires on the emitted
 //     config.go's `_ = json.Unmarshal` (renderCLIConfig), a real finding:
 //     a corrupt config file parses to the zero value and the CLI marches
-//     on with empty URL/token.
+//     on with empty URL/token;
+//   - the entity-path leg (vetEntityPathGeneratedCLI): the same vettool
+//     over an entity-mode module, which additionally carries verbs.go and
+//     the per-entity flag/field tables.
 //
-// Deterministic and offline: the temp module replaces
-// github.com/DonaldMurillo/gofastr with the repo root and pins
+// Deterministic and offline: the temp modules replace
+// github.com/DonaldMurillo/gofastr with the repo root and pin
 // GOPROXY=off; a module-resolution failure skips with a message rather
-// than failing. Runtime ~3s warm (vettool build + one go vet), so it
-// stays in -short.
+// than failing. Runtime ~15s warm (vettool build, module scaffolds, three
+// go vets).
 func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	// ── leg 1: terminal-control summaries never ship live ────────────
 	hostile := "list things\x1b]0;pwned\x07\r  EVIL"
@@ -121,21 +124,37 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 		t.Fatalf("building the repo vettool failed: %v\n%s", err, out)
 	}
 
-	vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
-	vet.Dir = dir
-	vet.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
-	out, err := vet.CombinedOutput()
-	if err != nil {
+	vetEntityPathGeneratedCLI(t, vettool)
+}
+
+// vetEntityPathGeneratedCLI is the entity-path leg of the vetgate: legs 1
+// and 2 exercise the --from-openapi render, whose operations.go shares
+// only the scaffold; the entity mode additionally emits verbs.go (the
+// shared verb bodies behind the per-entity flag/field tables) and the
+// per-entity files. It vets the full verb set and a create/update/patch-
+// only selection in one module: the narrow one is the import-shrink
+// contract (an entity file with no imports at all), so a stray reference
+// there is a compile error this leg reports instead of a broken emit.
+func vetEntityPathGeneratedCLI(t *testing.T, vettool string) {
+	t.Helper()
+	dir := cliModuleFromYAML(t, cliMutationFixtureYAML)
+	runGenerateCLI([]string{"--binary=myapp"})
+	runGenerateCLI([]string{"--binary=mymut", "--out=cmd/mymut", "--verbs=create,update,patch"})
+	for _, pkg := range []string{"./cmd/myapp", "./cmd/mymut"} {
+		vet := exec.Command("go", "vet", "-vettool="+vettool, pkg)
+		vet.Dir = dir
+		vet.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
+		out, err := vet.CombinedOutput()
+		if err == nil {
+			continue
+		}
 		text := string(out)
-		// Offline skip: the temp module resolves the repo through the
-		// replace above, so this only triggers when the environment
-		// cannot build Go code at all.
 		for _, marker := range []string{"cannot find module", "finding module for package", "dial tcp", "module lookup disabled"} {
 			if strings.Contains(text, marker) {
 				t.Skipf("generated module could not be built in this environment: %s", text)
 			}
 		}
-		t.Errorf("GATE: generated CLI does not pass the repo vettool — every diagnostic is a finding in the emitted templates (generate_cli*.go), not in the customer's code:\n%s", text)
+		t.Errorf("GATE: entity-path generated CLI (%s) does not pass the repo vettool — every diagnostic is a finding in the emitted templates (generate_cli*.go), not in the customer's code:\n%s", pkg, text)
 	}
 }
 

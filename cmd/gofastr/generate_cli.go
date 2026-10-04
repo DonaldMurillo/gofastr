@@ -684,8 +684,10 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 		{name: "custom.go", content: renderCLICustom(spec)},
 	}
 	// One shared verb-body file per CLI (pruned to the selected verbs);
-	// the per-entity files keep one-line run wrappers over these bodies.
+	// the per-entity files keep one-line run wrappers and per-entity
+	// flag/field tables over these bodies.
 	if cliAnyVerb(spec, "list") || cliAnyVerb(spec, "get") || cliAnyVerb(spec, "delete") ||
+		cliAnyVerb(spec, "create") || cliAnyVerb(spec, "update") || cliAnyVerb(spec, "patch") ||
 		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
 		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") {
 		files = append(files, generatedFile{
@@ -1351,40 +1353,20 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		return false
 	}
 
-	hasJSONField := false
-	for _, f := range ent.Fields {
-		if f.GoType == "map[string]any" && !f.ReadOnly {
-			hasJSONField = true
-		}
-	}
 	hasMutation := has("create") || has("update") || has("patch")
 	hasWrapper := has("list") || has("get") || has("delete") || has("batch-create") ||
 		has("batch-update") || has("batch-delete") || has("watch")
 	// Import needs shrink with the shared verb bodies (verbs.go): this
-	// file holds the command table, the one-line wrappers, the list
-	// flag/column tables, and the per-field mutation bodies. Only the
-	// mutation bodies and the batch wrappers reference http method
-	// identifiers directly; get/delete/list/watch plumbing is verbs.go's.
-	needsJSONImport := hasJSONField && hasMutation
-	needsFmt := needsJSONImport // json-typed mutation flags wrap parse errors
-	needsHTTP := hasMutation || has("batch-create") || has("batch-update")
-	// net/url: only the with-id mutation bodies (update/patch) build a
-	// path in this file; get/delete id escaping lives in verbs.go.
-	needsURLValues := has("update") || has("patch")
+	// file holds the command table, the one-line wrappers, and the
+	// per-entity flag/field tables. Only the batch wrappers reference
+	// http method identifiers directly; list/get/delete/watch and the
+	// create/update/patch plumbing are verbs.go's.
+	needsHTTP := has("batch-create") || has("batch-update")
 	needsClient := has("watch") // wrapper passes the typed Watch method expression
 
 	var imports []string
-	if needsJSONImport {
-		imports = append(imports, "\t\"encoding/json\"")
-	}
-	if needsFmt {
-		imports = append(imports, "\t\"fmt\"")
-	}
 	if needsHTTP {
 		imports = append(imports, "\t\"net/http\"")
-	}
-	if needsURLValues {
-		imports = append(imports, "\t\"net/url\"")
 	}
 	if needsClient {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
@@ -1434,14 +1416,20 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		fmt.Fprintf(&sb, "func run%sGet(args []string) int {\n\treturn runGetVerb(%q, %q, args)\n}\n\n",
 			ent.Struct, ent.Command+" get", base)
 	}
+	if hasMutation {
+		renderCLIMutationFields(&sb, ent)
+	}
 	if has("create") {
-		renderCLIMutationVerb(&sb, ent, "create")
+		fmt.Fprintf(&sb, "func run%sCreate(args []string) int {\n\treturn runCreateVerb(%q, %q, %sMutationFields, args)\n}\n\n",
+			ent.Struct, ent.Command+" create", base, lowerFirst(ent.Struct))
 	}
 	if has("update") {
-		renderCLIMutationVerb(&sb, ent, "update")
+		fmt.Fprintf(&sb, "func run%sUpdate(args []string) int {\n\treturn runUpdateVerb(%q, %q, %sMutationFields, args)\n}\n\n",
+			ent.Struct, ent.Command+" update", base, lowerFirst(ent.Struct))
 	}
 	if has("patch") {
-		renderCLIMutationVerb(&sb, ent, "patch")
+		fmt.Fprintf(&sb, "func run%sPatch(args []string) int {\n\treturn runPatchVerb(%q, %q, %sMutationFields, args)\n}\n\n",
+			ent.Struct, ent.Command+" patch", base, lowerFirst(ent.Struct))
 	}
 	if has("delete") {
 		fmt.Fprintf(&sb, "func run%sDelete(args []string) int {\n\treturn runDeleteVerb(%q, %q, args)\n}\n\n",
@@ -1522,81 +1510,46 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 	fmt.Fprintf(sb, "var (\n\t%sListHeaders = []string{%s}\n\t%sListKeys    = []string{%s}\n)\n\n", p, quoteList(headers), p, quoteList(keys))
 }
 
-// renderCLIMutationVerb emits create/update/patch: per-field flags OR --json,
-// sent as a presence-faithful map so explicit zero values survive.
-func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
-	funcName := "run" + ent.Struct + verbFuncSuffix(verb)
-	withID := verb != "create"
-	method := map[string]string{"create": "http.MethodPost", "update": "http.MethodPut", "patch": "http.MethodPatch"}[verb]
-
-	fmt.Fprintf(sb, "func %s(args []string) int {\n", funcName)
-	if withID {
-		fmt.Fprintf(sb, "\tid, rest, ok := takeID(%q, args)\n\tif !ok {\n\t\treturn 2\n\t}\n\targs = rest\n", ent.Command+" "+verb)
-	}
-	fmt.Fprintf(sb, "\tfs := newFlagSet(%q)\n", ent.Command+" "+verb)
-	sb.WriteString("\tjsonBody := fs.String(\"json\", \"\", \"raw JSON body: inline, @file, or - for stdin\")\n")
-	var writable []cliField
+// renderCLIMutationFields emits the per-entity field table behind the
+// mutation verbs: one entry per writable field, in declaration order,
+// each binding the CLI flag to the JSON wire key it sets. The mechanics
+// live once in verbs.go (runMutationVerb); this is the part that
+// genuinely varies. Field names are string literals here, never
+// identifiers.
+func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
+	p := lowerFirst(ent.Struct)
+	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	for _, f := range ent.Fields {
 		if f.ReadOnly {
 			continue
 		}
-		writable = append(writable, f)
-	}
-	for _, f := range writable {
 		help := f.Snake + " (" + f.Type + ")"
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		switch f.GoType {
-		case "int":
-			fmt.Fprintf(sb, "\tfld%s := fs.Int(%q, 0, %q)\n", toCamelCase(f.Flag), f.Flag, help)
-		case "float64":
-			fmt.Fprintf(sb, "\tfld%s := fs.Float64(%q, 0, %q)\n", toCamelCase(f.Flag), f.Flag, help)
-		case "bool":
-			fmt.Fprintf(sb, "\tfld%s := fs.Bool(%q, false, %q)\n", toCamelCase(f.Flag), f.Flag, help)
-		default: // string and json-typed fields both arrive as strings
-			fmt.Fprintf(sb, "\tfld%s := fs.String(%q, \"\", %q)\n", toCamelCase(f.Flag), f.Flag, help)
-		}
+		fmt.Fprintf(sb, "\t{flag: %q, wire: %q, kind: %s, usage: %q},\n",
+			f.Flag, f.Wire, cliFieldKindConst(f.GoType), help)
 	}
-	sb.WriteString(`	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-`)
-	for _, f := range writable {
-		fmt.Fprintf(sb, "\t\tcase %q:\n", f.Flag)
-		if f.GoType == "map[string]any" {
-			fmt.Fprintf(sb, `			var v any
-			if err := json.Unmarshal([]byte(*fld%s), &v); err != nil {
-				return fmt.Errorf("--%s: %%w", err)
-			}
-			body[%q] = v
-`, toCamelCase(f.Flag), f.Flag, f.Wire)
-		} else {
-			fmt.Fprintf(sb, "\t\t\tbody[%q] = *fld%s\n", f.Wire, toCamelCase(f.Flag))
-		}
-	}
-	sb.WriteString(`		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-`)
-	path := fmt.Sprintf("%q", "/"+url.PathEscape(ent.Table))
-	if withID {
-		path = fmt.Sprintf("\"/%s/\"+url.PathEscape(id)", url.PathEscape(ent.Table))
-	}
-	fmt.Fprintf(sb, `	var out singleResponse
-	if err := g.client.Do(g.ctx, %s, %s, body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	sb.WriteString("}\n\n")
 }
 
-`, method, path)
+// cliFieldKindConst maps the derived Go type to the fieldKind constant
+// the shared mutation body switches on. Fixed vocabulary: no declaration
+// string reaches an identifier slot.
+func cliFieldKindConst(goType string) string {
+	switch goType {
+	case "int":
+		return "fieldInt"
+	case "float64":
+		return "fieldFloat"
+	case "bool":
+		return "fieldBool"
+	case "map[string]any":
+		return "fieldJSON"
+	default:
+		return "fieldString"
+	}
 }
 
 // cliAnyVerb reports whether any selected entity kept the verb; it gates
@@ -1613,18 +1566,20 @@ func cliAnyVerb(spec cliSpec, verb string) bool {
 }
 
 // renderCLIVerbsFile emits verbs.go, the shared verb bodies. The former
-// per-entity copies (run<Ent>List/Get/Delete/BatchCreate/BatchUpdate/
-// BatchDelete/Watch inside every <entity>.go) differed only in the
-// command name, the pre-escaped base path, and per-entity flag/column
-// tables, so each verb now has ONE body here and the entity files keep
-// one-line wrappers binding theirs. The create/update/patch bodies stay
-// per-entity: their field-flag declarations vary by field type, not just
-// by name. Emitted only when some entity kept a verb, pruned to the
+// per-entity copies (run<Ent>List/Get/Create/Update/Patch/Delete/
+// BatchCreate/BatchUpdate/BatchDelete/Watch inside every <entity>.go)
+// differed only in the command name, the pre-escaped base path, and
+// per-entity flag/column/field tables, so each verb now has ONE body here
+// and the entity files keep one-line wrappers binding theirs plus the
+// tables those bodies walk (issue #417 moved create/update/patch over:
+// their per-field flag declarations became rows in a mutationField
+// table). Emitted only when some entity kept a verb, pruned to the
 // selected verbs.
 func renderCLIVerbsFile(spec cliSpec) string {
 	list := cliAnyVerb(spec, "list")
 	get := cliAnyVerb(spec, "get")
 	del := cliAnyVerb(spec, "delete")
+	mutation := cliAnyVerb(spec, "create") || cliAnyVerb(spec, "update") || cliAnyVerb(spec, "patch")
 	batchJSON := cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update")
 	batchDel := cliAnyVerb(spec, "batch-delete")
 	watch := cliAnyVerb(spec, "watch")
@@ -1633,13 +1588,16 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if watch {
 		imports = append(imports, "\t\"context\"")
 	}
-	if list || del || batchDel || watch {
+	if mutation {
+		imports = append(imports, "\t\"encoding/json\"") // json-typed field flags unwrap their value
+	}
+	if list || del || batchDel || watch || mutation {
 		imports = append(imports, "\t\"fmt\"")
 	}
-	if list || get || del || batchDel {
+	if list || get || del || batchDel || mutation {
 		imports = append(imports, "\t\"net/http\"")
 	}
-	if list || get || del {
+	if list || get || del || mutation {
 		imports = append(imports, "\t\"net/url\"")
 	}
 	if watch {
@@ -1747,6 +1705,121 @@ func runGetVerb(cmd, base string, args []string) int {
 	}
 	var out singleResponse
 	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+url.PathEscape(id), nil, &out); err != nil {
+		return apiFail(err)
+	}
+	return printJSON(out.Data)
+}
+
+`)
+	}
+	if mutation {
+		sb.WriteString(`// fieldKind is the flag type a mutation field declares.
+type fieldKind int
+
+const (
+	fieldString fieldKind = iota
+	fieldInt
+	fieldFloat
+	fieldBool
+	fieldJSON
+)
+
+// mutationField describes one writable field behind create/update/patch:
+// the CLI flag, the JSON wire key it sets, the flag type, and the usage
+// line. Field names are data bound at generate time (string literals),
+// never identifiers.
+type mutationField struct {
+	flag  string
+	wire  string
+	kind  fieldKind
+	usage string
+}
+
+// runCreateVerb is the shared create body over the entity's field table.
+func runCreateVerb(cmd, base string, fields []mutationField, args []string) int {
+	return runMutationVerb(cmd, http.MethodPost, false, base, fields, args)
+}
+
+// runUpdateVerb is the shared update body over the entity's field table.
+func runUpdateVerb(cmd, base string, fields []mutationField, args []string) int {
+	return runMutationVerb(cmd, http.MethodPut, true, base, fields, args)
+}
+
+// runPatchVerb is the shared patch body over the entity's field table.
+func runPatchVerb(cmd, base string, fields []mutationField, args []string) int {
+	return runMutationVerb(cmd, http.MethodPatch, true, base, fields, args)
+}
+
+// runMutationVerb is the shared create/update/patch body: per-field flags
+// from the entity's field table OR --json, sent as a presence-faithful map
+// so explicit zero values survive. withID selects the item form:
+// update/patch pop the positional id first and address base/{id}; create
+// posts the collection itself.
+func runMutationVerb(cmd, method string, withID bool, base string, fields []mutationField, args []string) int {
+	id := ""
+	if withID {
+		var rest []string
+		var ok bool
+		if id, rest, ok = takeID(cmd, args); !ok {
+			return 2
+		}
+		args = rest
+	}
+	fs := newFlagSet(cmd)
+	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
+	strVals := make([]*string, len(fields))
+	intVals := make([]*int, len(fields))
+	floatVals := make([]*float64, len(fields))
+	boolVals := make([]*bool, len(fields))
+	for i, f := range fields {
+		switch f.kind {
+		case fieldInt:
+			intVals[i] = fs.Int(f.flag, 0, f.usage)
+		case fieldFloat:
+			floatVals[i] = fs.Float64(f.flag, 0, f.usage)
+		case fieldBool:
+			boolVals[i] = fs.Bool(f.flag, false, f.usage)
+		default: // string and json-typed fields both arrive as strings
+			strVals[i] = fs.String(f.flag, "", f.usage)
+		}
+	}
+	g, code := parseGlobals(fs, args)
+	if g == nil {
+		return code
+	}
+	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
+		for i, f := range fields {
+			if f.flag != name {
+				continue
+			}
+			switch f.kind {
+			case fieldInt:
+				body[f.wire] = *intVals[i]
+			case fieldFloat:
+				body[f.wire] = *floatVals[i]
+			case fieldBool:
+				body[f.wire] = *boolVals[i]
+			case fieldJSON:
+				var v any
+				if err := json.Unmarshal([]byte(*strVals[i]), &v); err != nil {
+					return fmt.Errorf("--%s: %w", f.flag, err)
+				}
+				body[f.wire] = v
+			default:
+				body[f.wire] = *strVals[i]
+			}
+		}
+		return nil
+	})
+	if code != 0 {
+		return code
+	}
+	path := base
+	if withID {
+		path += "/" + url.PathEscape(id)
+	}
+	var out singleResponse
+	if err := g.client.Do(g.ctx, method, path, body, &out); err != nil {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
