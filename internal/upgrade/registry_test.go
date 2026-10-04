@@ -361,6 +361,11 @@ func TestEmbeddedRegistryParsesSorted(t *testing.T) {
 	}
 }
 
+// TestThroughCoversNewestEntry: `through` is the newest SHIPPED release.
+// One file may sit above it: the pending notes for the release being
+// built, added in the PR that lands each breaking change (the CHANGELOG
+// policy, where entries accrue under Unreleased). Two files above it
+// mean a release PR shipped without bumping `through`.
 func TestThroughCoversNewestEntry(t *testing.T) {
 	reg, err := Load()
 	if err != nil {
@@ -369,8 +374,42 @@ func TestThroughCoversNewestEntry(t *testing.T) {
 	if err := ValidateSemver(reg.Through); err != nil {
 		t.Fatalf("through: %v", err)
 	}
-	if last := reg.Releases[len(reg.Releases)-1].Version; SemverLess(reg.Through, last) {
-		t.Errorf("through %s is older than the newest entry %s", reg.Through, last)
+	var pending []string
+	for _, rel := range reg.Releases {
+		if SemverLess(reg.Through, rel.Version) {
+			pending = append(pending, rel.Version)
+		}
+	}
+	if len(pending) > 1 {
+		t.Errorf("through %s is older than %d entries %v: only the next release's pending file may sit above it", reg.Through, len(pending), pending)
+	}
+}
+
+// TestShippedEntriesAreChangelogReleases: every registry file at or
+// below `through` names a release CHANGELOG.md has a heading for. A
+// pending file written as v0.87.0 while the release shipped as v0.88.0
+// slips under `through` at the bump with a version that never existed;
+// this is the tripwire that says rename it.
+func TestShippedEntriesAreChangelogReleases(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
+	if err != nil {
+		t.Fatalf("read CHANGELOG.md: %v", err)
+	}
+	shipped := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`).FindAllStringSubmatch(string(body), -1) {
+		shipped["v"+m[1]] = true
+	}
+	reg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, rel := range reg.Releases {
+		if SemverLess(reg.Through, rel.Version) {
+			continue // pending: the release PR names it
+		}
+		if !shipped[rel.Version] {
+			t.Errorf("releases/%s.yml is at or below through %s but CHANGELOG.md has no [%s] release: rename the pending file to the version that shipped", rel.Version, reg.Through, strings.TrimPrefix(rel.Version, "v"))
+		}
 	}
 }
 

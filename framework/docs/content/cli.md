@@ -166,7 +166,10 @@ The registry lives in `internal/upgrade/` and is embedded in the CLI:
 `registry.yml` holds the `through:` marker every release PR bumps and
 the marker sinks, and `releases/<version>.yml` holds one file per
 release that carries migration-relevant changes (the file name must be
-its version). Each note is a one-line
+its version). A PR that lands a breaking change writes its note into
+`releases/<next version>.yml` in the same PR; that one file may sit
+above `through` until the release PR keeps or renames it to the version
+that ships (a file at or below `through` must name a CHANGELOG release). Each note is a one-line
 `change`, whether it is `breaking`, a one-line `guidance`, and one of
 two things: a `find:` block saying which code the change affects, or a
 `nodetect:` one-liner saying why nothing can (a default that flipped, a
