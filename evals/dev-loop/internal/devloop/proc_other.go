@@ -12,5 +12,9 @@ func killGroup(cmd *exec.Cmd) {
 	}
 }
 
+func detach(*exec.Cmd) {}
+
+func reapUnder(string) {}
+
 // The shims are sh scripts; a Windows host would need .cmd twins.
 const supported = false

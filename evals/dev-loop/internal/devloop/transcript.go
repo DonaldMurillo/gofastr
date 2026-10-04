@@ -8,11 +8,12 @@ import (
 )
 
 // toolEvent is one tool call from a Claude Code stream-json transcript,
-// in the order the agent made them.
+// in the order the agent made them. Command is a Bash call's shell line;
+// Path is the file or directory a Read, Grep or Glob call named.
 type toolEvent struct {
-	Name       string `json:"name"`
-	Command    string `json:"command,omitempty"`
-	Background bool   `json:"background,omitempty"`
+	Name    string `json:"name"`
+	Command string `json:"command,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 // transcriptSummary is what grading needs from the transcript: the tool
@@ -45,8 +46,9 @@ func readTranscript(path string) (transcriptSummary, error) {
 					Type  string `json:"type"`
 					Name  string `json:"name"`
 					Input struct {
-						Command         string `json:"command"`
-						RunInBackground bool   `json:"run_in_background"`
+						Command  string `json:"command"`
+						FilePath string `json:"file_path"`
+						Path     string `json:"path"`
 					} `json:"input"`
 				} `json:"content"`
 			} `json:"message"`
@@ -63,10 +65,14 @@ func readTranscript(path string) (transcriptSummary, error) {
 				if c.Type != "tool_use" {
 					continue
 				}
+				p := c.Input.FilePath
+				if p == "" {
+					p = c.Input.Path
+				}
 				out.Events = append(out.Events, toolEvent{
-					Name:       c.Name,
-					Command:    strings.TrimSpace(c.Input.Command),
-					Background: c.Input.RunInBackground,
+					Name:    c.Name,
+					Command: strings.TrimSpace(c.Input.Command),
+					Path:    p,
 				})
 			}
 		case "result":

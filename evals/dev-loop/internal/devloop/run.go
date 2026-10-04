@@ -77,6 +77,9 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	if !supported {
 		return Report{}, errors.New("the dev-loop eval needs a unix host (its PATH shims are sh scripts)")
 	}
+	if opts.Runs < 1 {
+		return Report{}, fmt.Errorf("runs must be at least 1, got %d", opts.Runs)
+	}
 	realGo, err := exec.LookPath("go")
 	if err != nil {
 		return Report{}, err
@@ -113,13 +116,39 @@ func Regrade(ctx context.Context, runDir string) (Report, error) {
 	}
 	report := Report{Model: prior.Model}
 	for _, p := range prior.Trials {
-		t := gradeTrial(ctx, trialDir(runDir, p.Index), p.Index, realGo)
+		dir := trialDir(runDir, p.Index)
+		t := gradeTrial(ctx, dir, p.Index, realGo, carriedIssues(p.Issues))
 		t.Duration = p.Duration
-		t.Issues = append(t.Issues, p.Issues...)
 		report.Trials = append(report.Trials, t)
+		// Keep the per-trial file in step with RESULTS.md.
+		if err := writeJSON(filepath.Join(dir, "grade.json"), t); err != nil {
+			return report, err
+		}
 	}
 	err = writeReport(runDir, &report)
 	return report, err
+}
+
+// Grade-time issue prefixes. gradeTrial derives these from the files on
+// disk, so a regrade derives them again instead of copying them: a
+// grader fix clears a stale one, and none of them doubles up.
+const (
+	issueReadShimLog    = "read shim log: "
+	issueReadTranscript = "read transcript: "
+	issueAgentErrored   = "agent run ended in an error: "
+)
+
+// carriedIssues keeps the issues a regrade cannot re-derive: the agent's
+// timeout or exit status, and setup failures.
+func carriedIssues(prior []string) []string {
+	var out []string
+	for _, issue := range prior {
+		if strings.HasPrefix(issue, issueReadShimLog) || strings.HasPrefix(issue, issueReadTranscript) || strings.HasPrefix(issue, issueAgentErrored) {
+			continue
+		}
+		out = append(out, issue)
+	}
+	return out
 }
 
 func trialDir(runDir string, i int) string {
@@ -181,11 +210,12 @@ func runTrial(ctx context.Context, opts Options, i int, gofastrBin, realGo strin
 	agentErr := runAgent(ctx, opts, workspace, shimDir, dir, addr)
 	duration := time.Since(started).Seconds()
 
-	t := gradeTrial(ctx, dir, i, realGo)
-	t.Duration = duration
+	var agentIssues []string
 	if agentErr != nil {
-		t.Issues = append(t.Issues, "agent: "+agentErr.Error())
+		agentIssues = append(agentIssues, "agent: "+agentErr.Error())
 	}
+	t := gradeTrial(ctx, dir, i, realGo, agentIssues)
+	t.Duration = duration
 	return t
 }
 
@@ -215,8 +245,11 @@ func runAgent(ctx context.Context, opts Options, workspace, shimDir, dir, addr s
 	ownProcessGroup(cmd)
 	err = cmd.Run()
 	// A dev server the agent backgrounded and never stopped outlives the
-	// agent; reap the whole group before the probe takes a port.
+	// agent; reap the whole group before the probe takes a port. One the
+	// agent detached (setsid, a new session) left the group, so also reap
+	// every process still working inside the trial directory.
 	killGroup(cmd)
+	reapUnder(dir)
 	if runCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("timed out after %s", opts.Timeout)
 	}
@@ -253,16 +286,27 @@ func agentEnv(shimDir, addr string) []string {
 	return env
 }
 
-func gradeTrial(ctx context.Context, dir string, i int, realGo string) Trial {
-	t := Trial{Index: i}
+// gradeTrial grades one trial directory. agentIssues are problems from
+// running the agent (a timeout, an exit status); like every issue, they
+// fail the trial, so they must arrive before the verdict is settled.
+func gradeTrial(ctx context.Context, dir string, i int, realGo string, agentIssues []string) Trial {
+	t := Trial{Index: i, Issues: append([]string(nil), agentIssues...)}
 	workspace := filepath.Join(dir, "app")
 	calls, err := readShimLog(filepath.Join(dir, "cli.log"))
 	if err != nil {
-		t.Issues = append(t.Issues, "read shim log: "+err.Error())
+		t.Issues = append(t.Issues, issueReadShimLog+err.Error())
 	}
 	summary, err := readTranscript(filepath.Join(dir, "transcript.jsonl"))
 	if err != nil {
-		t.Issues = append(t.Issues, "read transcript: "+err.Error())
+		t.Issues = append(t.Issues, issueReadTranscript+err.Error())
+	}
+	// An auth failure, overload or turn limit is not the guidance failing.
+	if summary.IsError {
+		msg := summary.Final
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		t.Issues = append(t.Issues, issueAgentErrored+msg)
 	}
 	t.Signals = collectSignals(calls, summary.Events, workspace, module)
 	t.CostUSD, t.Final = summary.CostUSD, summary.Final

@@ -1,11 +1,13 @@
 package devloop
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func bash(cmd string) toolEvent { return toolEvent{Name: "Bash", Command: cmd} }
@@ -87,6 +89,27 @@ func TestTranscriptLaunchShapes(t *testing.T) {
 		{"# later; gofastr dev\ncurl localhost:8080", 0, 0, 0},
 		{"pkill -f \"gofastr dev\"", 0, 0, 0},
 		{"(gofastr dev > /tmp/dev.log 2>&1 &) ; sleep 3", 1, 0, 0},
+		// A system tool by absolute path is not the app's binary.
+		{"/usr/bin/curl -s http://127.0.0.1:1/", 0, 0, 0},
+		// Only a `go run` of the app's own main package is a bypass.
+		{"go run -race .", 0, 1, 0},
+		{"go run -tags dev ./", 0, 1, 0},
+		{"go run eval.local/devloop", 0, 1, 0},
+		{"go run " + ws, 0, 1, 0},
+		{"go run ./scripts/seed", 0, 0, 0},
+		{"go run golang.org/x/tools/cmd/goimports@latest -w .", 0, 0, 0},
+		{"go run github.com/DonaldMurillo/gofastr/cmd/gofastr docs ui", 0, 0, 0},
+		// Heredoc bodies are data, not commands, and an apostrophe in one
+		// must not swallow what follows the terminator.
+		{"cat > notes.txt <<'EOF'\nthe shop's page\nEOF\ngo run .", 0, 1, 0},
+		{"cat > README.md <<EOF\nRun it:\ngo run .\ngofastr dev\nEOF", 0, 0, 0},
+		// The CLI treats only --help and -h as help; -help serves.
+		{"gofastr dev -help", 1, 0, 0},
+		{"cat <<-EOF > x.txt\n\tgo run .\n\tEOF\ngofastr dev &", 1, 0, 0},
+		{"grep -c x <<< 'go run .'", 0, 0, 0},
+		// A `sh -c` payload is shell code too.
+		{"sh -c '/usr/local/go/bin/go run .'", 0, 1, 0},
+		{`bash -c "gofastr dev > dev.log 2>&1 &"`, 1, 0, 0},
 	}
 	for _, c := range cases {
 		s := collectSignals(nil, []toolEvent{bash(c.cmd)}, ws, module)
@@ -109,6 +132,26 @@ func TestBinaryHeaderMarksLaunch(t *testing.T) {
 	if len(s.BinaryLaunches) != 1 || !strings.HasPrefix(s.BinaryLaunches[0], "./srv") {
 		t.Errorf("BinaryLaunches = %v, want only ./srv", s.BinaryLaunches)
 	}
+	// A binary the agent built, run by bare name through PATH.
+	s = collectSignals(nil, []toolEvent{bash("go build -o srv . && PATH=.:$PATH srv")}, ws, module)
+	if len(s.BinaryLaunches) != 1 {
+		t.Errorf("bare-name launch of a built binary: BinaryLaunches = %v, want 1", s.BinaryLaunches)
+	}
+}
+
+func TestShimAndTranscriptLaunchesAdd(t *testing.T) {
+	// Two launches only the shim saw (from a script) and two only the
+	// transcript saw (absolute path, which skips the shim) are four
+	// launches, not two.
+	launch := shimCall{Caller: "agent", Tool: "gofastr", Args: []string{"dev"}}
+	events := []toolEvent{bash("./start.sh"), bash("/opt/bin/gofastr dev &"), bash("./start.sh"), bash("/opt/bin/gofastr dev &")}
+	if s := collectSignals([]shimCall{launch, launch}, events, t.TempDir(), module); s.DevLaunches != 4 {
+		t.Errorf("DevLaunches = %d, want 4", s.DevLaunches)
+	}
+	// A bare `gofastr dev` shows up in both logs: one launch, not two.
+	if s := collectSignals([]shimCall{launch}, []toolEvent{bash("gofastr dev &")}, t.TempDir(), module); s.DevLaunches != 1 {
+		t.Errorf("DevLaunches = %d for one bare launch, want 1", s.DevLaunches)
+	}
 }
 
 func TestRebuildsExcludeFirstBuild(t *testing.T) {
@@ -125,6 +168,127 @@ func TestRebuildsExcludeFirstBuild(t *testing.T) {
 	}
 	if s := collectSignals(calls, nil, t.TempDir(), module); s.DevRebuilds != 2 {
 		t.Errorf("DevRebuilds = %d, want 2", s.DevRebuilds)
+	}
+}
+
+func TestRebuildsCountPerLaunch(t *testing.T) {
+	devBuild := shimCall{Caller: "gofastr-dev", Tool: "go", Args: []string{"build", "-o", "/tmp/gofastr-dev-server-1/server", "."}}
+	launch := shimCall{Caller: "agent", Tool: "gofastr", Args: []string{"dev"}}
+	// The second launch died before building (a port clash caught early),
+	// so its launch must not swallow one of the watcher's rebuilds.
+	calls := []shimCall{launch, launch, devBuild, devBuild, devBuild}
+	if s := collectSignals(calls, nil, t.TempDir(), module); s.DevRebuilds != 2 {
+		t.Errorf("DevRebuilds = %d, want 2: one initial build, two rebuilds", s.DevRebuilds)
+	}
+	// A relaunch's own first build is its startup, not a rebuild.
+	calls = []shimCall{launch, devBuild, devBuild, launch, devBuild, devBuild}
+	if s := collectSignals(calls, nil, t.TempDir(), module); s.DevRebuilds != 2 {
+		t.Errorf("DevRebuilds = %d, want 2: one rebuild under each launch", s.DevRebuilds)
+	}
+}
+
+func TestLookupsBeforeFirstDevLaunch(t *testing.T) {
+	events := []toolEvent{
+		{Name: "Read", Path: "/w/AGENTS.md"},
+		{Name: "Read", Path: "/w/agents/framework.md"},
+		bash("gofastr --help"),
+		bash(`grep -n "gofastr dev" agents/framework.md`),
+		bash("gofastr dev --help"),
+		bash("gofastr dev &"),
+		{Name: "Read", Path: "/w/agents/ui.md"},
+	}
+	s := collectSignals(nil, events, t.TempDir(), module)
+	if s.CallsBeforeDev != 5 {
+		t.Errorf("CallsBeforeDev = %d, want 5", s.CallsBeforeDev)
+	}
+	// Not the prompted AGENTS.md, not reads after launch, and not
+	// `gofastr dev --help`: an agent asking for dev's flags has already
+	// chosen the command.
+	if len(s.Lookups) != 3 {
+		t.Errorf("Lookups = %v, want the framework.md read, gofastr --help and the grep", s.Lookups)
+	}
+	if s := collectSignals(nil, events[:2], t.TempDir(), module); s.CallsBeforeDev != -1 {
+		t.Errorf("CallsBeforeDev = %d with no launch, want -1", s.CallsBeforeDev)
+	}
+}
+
+func TestLookupLabelNamesTheCommand(t *testing.T) {
+	long := "cd /Users/someone/" + strings.Repeat("deep/", 30) + "app; "
+	for cmd, want := range map[string]string{
+		long + "cat go.mod; gofastr --help 2>&1 | head -30": "Bash gofastr --help 2>&1",
+		long + "ls; grep -n serve agents/framework.md":      "Bash grep -n serve agents/framework.md",
+	} {
+		if got := lookup(bash(cmd)); got != want {
+			t.Errorf("lookup(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}
+
+func TestIssuesFailTheTrial(t *testing.T) {
+	dir := t.TempDir()
+	log := "agent\tgofastr\tdev\n" + strings.Repeat("gofastr-dev\tgo\tbuild -o /tmp/gofastr-dev-server-1/server .\n", 3)
+	if err := os.WriteFile(filepath.Join(dir, "cli.log"), []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeTranscript := func(result string) {
+		if err := os.WriteFile(filepath.Join(dir, "transcript.jsonl"), []byte(result+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeTranscript(`{"type":"result","result":"ok","is_error":false}`)
+	if tr := gradeTrial(context.Background(), dir, 1, "go", nil); !tr.Verdict.Pass {
+		t.Fatalf("control: clean trial failed: %+v", tr.Verdict)
+	}
+	// An agent that timed out after working under the watcher is not a pass.
+	if tr := gradeTrial(context.Background(), dir, 1, "go", []string{"agent: timed out after 20m0s"}); tr.Verdict.Pass {
+		t.Errorf("agent issue left Pass=true: %+v", tr)
+	}
+	// Neither is a Claude run whose result record says it errored.
+	writeTranscript(`{"type":"result","result":"API Error: overloaded","is_error":true}`)
+	if tr := gradeTrial(context.Background(), dir, 1, "go", nil); tr.Verdict.Pass || len(tr.Issues) == 0 {
+		t.Errorf("errored agent run graded as Pass=%t issues=%v", tr.Verdict.Pass, tr.Issues)
+	}
+}
+
+func TestZeroRunsIsAnError(t *testing.T) {
+	if !supported {
+		t.Skip("sh shims")
+	}
+	_, err := Run(context.Background(), Options{RunDir: t.TempDir(), Runs: 0})
+	if err == nil || !strings.Contains(err.Error(), "runs must be at least 1") {
+		t.Errorf("Run with Runs=0: err = %v, want the runs check to refuse before anything builds", err)
+	}
+}
+
+func TestRegradeCarriesOnlyAgentIssues(t *testing.T) {
+	got := carriedIssues([]string{"agent: timed out after 20m0s", "read transcript: bad line", "agent run ended in an error: x", "agent: exit status 1"})
+	want := []string{"agent: timed out after 20m0s", "agent: exit status 1"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("carried %v, want %v: grade-time issues are re-derived, not copied", got, want)
+	}
+}
+
+func TestReapKillsDetachedServer(t *testing.T) {
+	if !supported {
+		t.Skip("unix process tools")
+	}
+	dir := t.TempDir()
+	// A server the agent detached with setsid sits outside the agent's
+	// process group; the reaper finds it by working directory instead.
+	cmd := exec.Command("sleep", "60")
+	cmd.Dir = dir
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	reapUnder(dir)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("detached process under the trial dir survived reapUnder")
 	}
 }
 
@@ -175,6 +339,7 @@ func TestShimPinsDevAddr(t *testing.T) {
 		{"dev", "--addr", "127.0.0.1:9000"},
 		{"dev", "--addr=:9000"},
 		{"dev", "-p", "9001"},
+		{"dev", "-p=9002"},
 		{"init", "x"},
 	} {
 		if out, err := exec.Command(filepath.Join(shimDir, "gofastr"), argv...).CombinedOutput(); err != nil {
@@ -190,6 +355,7 @@ func TestShimPinsDevAddr(t *testing.T) {
 		"dev --addr 127.0.0.1:9000\n" +
 		"dev --addr=:9000\n" +
 		"dev -p 9001\n" +
+		"dev -p=9002\n" +
 		"init x\n"
 	if string(data) != want {
 		t.Errorf("real gofastr saw:\n%s\nwant:\n%s", data, want)
@@ -222,7 +388,7 @@ not json
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Events) != 2 || got.Events[0].Command != "gofastr dev" || !got.Events[0].Background || got.Events[1].Name != "Edit" {
+	if len(got.Events) != 2 || got.Events[0].Command != "gofastr dev" || got.Events[1].Name != "Edit" || got.Events[1].Path != "home.go" {
 		t.Errorf("events = %+v", got.Events)
 	}
 	if got.Final != "done" || got.CostUSD != 0.42 {
@@ -240,5 +406,47 @@ func TestReportTalliesPassesForCaller(t *testing.T) {
 	}
 	if r.TasksDone != 1 {
 		t.Errorf("TasksDone = %d, want 1", r.TasksDone)
+	}
+}
+
+func TestFindingSummaryMedian(t *testing.T) {
+	trial := func(calls int, lookups ...string) Trial {
+		return Trial{Signals: Signals{CallsBeforeDev: calls, Lookups: lookups}}
+	}
+	got := findingSummary([]Trial{trial(2), trial(5, "Read agents/framework.md"), trial(3), trial(-1), trial(9)})
+	for _, want := range []string{"median 4 tool calls", "4 of 5 trials launched it", "1 of 5 looked the command up"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary %q lacks %q", got, want)
+		}
+	}
+	if got := findingSummary([]Trial{trial(9), trial(2), trial(5)}); !strings.Contains(got, "median 5 tool calls") {
+		t.Errorf("odd-length summary %q, want median 5", got)
+	}
+}
+
+func TestRegradeRewritesTrialGrade(t *testing.T) {
+	runDir := t.TempDir()
+	dir := trialDir(runDir, 1)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "transcript.jsonl"), []byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"gofastr dev &"}}]}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(dir, "grade.json"), Trial{Index: 1, Signals: Signals{CallsBeforeDev: 99}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(runDir, "results.json"), Report{Model: "m", Trials: []Trial{{Index: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Regrade(context.Background(), runDir); err != nil {
+		t.Fatal(err)
+	}
+	var got Trial
+	if err := readJSON(filepath.Join(dir, "grade.json"), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Signals.CallsBeforeDev != 0 {
+		t.Errorf("grade.json CallsBeforeDev = %d after regrade, want 0: the per-trial file must match RESULTS.md", got.Signals.CallsBeforeDev)
 	}
 }

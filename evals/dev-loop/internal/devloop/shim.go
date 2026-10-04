@@ -49,7 +49,7 @@ func installShims(dir, realGofastr, realGo, logPath, devAddr string) error {
 		"if [ \"$1\" = dev ]; then\n" +
 		"  pin=1\n" +
 		"  for a in \"$@\"; do\n" +
-		"    case \"$a\" in --addr|--addr=*|-p) pin=0 ;; esac\n" +
+		"    case \"$a\" in --addr|--addr=*|-p|-p=*) pin=0 ;; esac\n" +
 		"  done\n" +
 		"  if [ \"$pin\" = 1 ]; then\n" +
 		"    shift\n" +

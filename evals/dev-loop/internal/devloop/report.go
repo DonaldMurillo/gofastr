@@ -3,6 +3,8 @@ package devloop
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -30,12 +32,17 @@ func markdown(r Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Dev-loop eval\n\nModel `%s`: **%d of %d** trials developed under `gofastr dev`. %d of %d finished the task.\n\n",
 		r.Model, r.Passed, len(r.Trials), r.TasksDone, len(r.Trials))
-	b.WriteString("| Trial | Dev loop | Task done | `gofastr dev` launches | `go run` | Binary launches | Dev rebuilds | Cost (USD) |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "Finding the dev loop: %s\n\n", findingSummary(r.Trials))
+	b.WriteString("| Trial | Dev loop | Task done | Calls before `gofastr dev` | Lookups | `gofastr dev` launches | `go run` | Binary launches | Dev rebuilds | Cost (USD) |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, t := range r.Trials {
 		s := t.Signals
-		fmt.Fprintf(&b, "| %02d | %t | %t | %d | %d | %d | %d | %.2f |\n",
-			t.Index, t.Verdict.Pass, t.Verdict.TaskDone, s.DevLaunches, len(s.GoRuns), len(s.BinaryLaunches), s.DevRebuilds, t.CostUSD)
+		before := "never"
+		if s.CallsBeforeDev >= 0 {
+			before = strconv.Itoa(s.CallsBeforeDev)
+		}
+		fmt.Fprintf(&b, "| %02d | %t | %t | %s | %d | %d | %d | %d | %d | %.2f |\n",
+			t.Index, t.Verdict.Pass, t.Verdict.TaskDone, before, len(s.Lookups), s.DevLaunches, len(s.GoRuns), len(s.BinaryLaunches), s.DevRebuilds, t.CostUSD)
 	}
 	for _, t := range r.Trials {
 		if t.Verdict.Pass && t.Verdict.TaskDone && len(t.Issues) == 0 {
@@ -56,4 +63,34 @@ func markdown(r Report) string {
 		}
 	}
 	return b.String()
+}
+
+// findingSummary says how directly the trials reached `gofastr dev`:
+// the median tool calls before the first launch, and how many trials
+// looked the command up on the way.
+func findingSummary(trials []Trial) string {
+	var calls []int
+	lookedUp := 0
+	for _, t := range trials {
+		if t.Signals.CallsBeforeDev >= 0 {
+			calls = append(calls, t.Signals.CallsBeforeDev)
+		}
+		if len(t.Signals.Lookups) > 0 {
+			lookedUp++
+		}
+	}
+	if len(calls) == 0 {
+		return fmt.Sprintf("no trial launched `gofastr dev`; %d of %d looked it up.", lookedUp, len(trials))
+	}
+	slices.Sort(calls)
+	return fmt.Sprintf("median %s tool calls before the first `gofastr dev` (%d of %d trials launched it); %d of %d looked the command up first (an agents/ doc, `gofastr --help`, `gofastr docs`).",
+		median(calls), len(calls), len(trials), lookedUp, len(trials))
+}
+
+func median(sorted []int) string {
+	n := len(sorted)
+	if n%2 == 1 {
+		return strconv.Itoa(sorted[n/2])
+	}
+	return strconv.FormatFloat(float64(sorted[n/2-1]+sorted[n/2])/2, 'f', -1, 64)
 }

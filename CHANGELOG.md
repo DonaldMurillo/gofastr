@@ -337,9 +337,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ran `gofastr dev`, never used `go run` or launched a built binary,
   started the dev server at most twice, and let it rebuild at least
   twice. Whether the finished app has the three changes is reported
-  beside that verdict, not folded into it. Each trial serves on its own
-  free port, named in the task, so another process on `:8080` cannot
-  derail it. `-regrade` re-scores a run without agent tokens. Run it
+  beside that verdict, not folded into it, and so is how hard the agent
+  looked: tool calls before its first `gofastr dev` and the lookups on
+  the way (an `agents/` doc, `gofastr --help`, `gofastr docs`). Each
+  trial serves on its own free port, named in the task, so another
+  process on `:8080` cannot derail it. `-regrade` re-scores a run
+  without agent tokens. Run it
   with `go run ./evals/dev-loop/cmd/devloop-eval -runs 3`.
 
 ### Changed

@@ -25,13 +25,22 @@ Two logs, both deterministic:
 
 - **PATH shims** for `gofastr` and `go` record every invocation and who
   made it. A `go build` that `gofastr dev` runs to rebuild the app is
-  attributed to the dev loop; a `go run` from the agent's shell is a
-  bypass. Shims also catch commands run from scripts.
+  attributed to the dev loop. A `go run` from the agent's shell is a
+  bypass when it runs the app (`.`, the module path, the workspace, or
+  its root `.go` files); `go run golang.org/x/...` for a tool is not.
+  Shims also catch `gofastr` and `go` run from scripts.
 - **The stream-json transcript** catches what the shims cannot: a
-  `gofastr dev` started through an absolute path, and launches of a built
-  binary (`./bin/server`, or any workspace file with an ELF or Mach-O
-  header). Its shell splitter honors quotes and comments, so
-  `grep "gofastr dev"` is not a launch.
+  `gofastr dev` started through an absolute path, and launches of a
+  built binary: `./bin/server`, a name the agent built and runs from
+  PATH, or any workspace file with an ELF or Mach-O header. A system
+  tool by absolute path (`/usr/bin/curl`) is not a launch. Its shell
+  splitter honors quotes and comments, skips heredoc bodies, and reads
+  the payload of `sh -c` / `bash -c`, so `grep "gofastr dev"` and a
+  `cat <<EOF` naming the command are not launches.
+
+Launches add up across the two logs: the bare-name count is the larger
+of the shim's and the transcript's (both see the same `gofastr dev`),
+and launches by path, which only the transcript sees, add to it.
 
 A trial passes the dev loop when all of these hold:
 
@@ -51,7 +60,24 @@ verdict sets the exit code.
 
 Rebuilds come from the shim log, not from counting edit-tool calls:
 agents edit through the shell (`sed -i`, heredocs) as often as through an
-edit tool, and every edit the watcher saw shows up as a rebuild.
+edit tool, and every edit the watcher saw shows up as a rebuild. Each
+launch's first build is its startup, so a relaunch is not a rebuild.
+
+## Finding the dev loop
+
+With a capable model, pass/fail saturates: it finds `gofastr dev`
+whatever the guidance says. What the guidance changes is how much
+searching it costs. Each trial records:
+
+- **Calls before `gofastr dev`**: tool calls before the first launch
+  (-1 when the agent never launched it).
+- **Lookups**: the searches it made on the way: reading or grepping an
+  `agents/` doc, `gofastr --help`, `gofastr docs`. `CLAUDE.md` and
+  `AGENTS.md` do not count, since the prompt tells the agent to read
+  them, and neither does `gofastr dev --help`: an agent asking for
+  dev's flags has already chosen the command.
+
+The report header gives the medians, and the table gives both per trial.
 
 ## Run
 
@@ -62,7 +88,12 @@ go run ./evals/dev-loop/cmd/devloop-eval -runs 3
 ```
 
 Flags: `-model` (default `opus`), `-timeout` per trial (default 20m),
-`-claude-bin`, `-out`. Results land in
+`-claude-bin`, `-out`. Trials run one at a time, and two eval runs
+must not overlap either: agents stop their server with
+`pkill -f "gofastr dev"`, which also kills another trial's. After each
+trial the runner kills whatever process still has its working directory
+inside the trial, which reaches a server the agent detached into
+its own session with `setsid`. Results land in
 `dist/dev-loop-eval/<timestamp>/`: `RESULTS.md`, `results.json`, and per
 trial the workspace, `cli.log`, `transcript.jsonl` and `grade.json`. The
 command exits 1 when any trial fails the dev loop.
@@ -76,6 +107,16 @@ go run ./evals/dev-loop/cmd/devloop-eval -regrade dist/dev-loop-eval/<timestamp>
 
 `go test ./evals/dev-loop/...` covers the grader: shim attribution, the
 command shapes it classifies, and each verdict rule.
+
+## Limits
+
+- The port pin lives in the shim, so a `gofastr dev` started through
+  an absolute path or `go run .../cmd/gofastr dev` skips it and serves
+  on `:8080`. Grading stays correct; only the isolation from another
+  process on `:8080` is lost. No recorded trial has done this.
+- A built binary launched from inside a script the agent wrote is in
+  neither log: the shims see only `gofastr` and `go`, and the
+  transcript sees only the script's name.
 
 ## Related signals
 
