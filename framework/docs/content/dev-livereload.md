@@ -111,7 +111,9 @@ that change it (`app_module_enable` / `app_module_disable`); every
 CRUD-enabled entity serves its MCP data tools without per-entity
 `mcp: true`; and battery/log, when registered, enables its
 `log_recent` / `log_filter` / `log_metrics` / `log_set_level` debug
-tools. A connected agent can check what's running, read recent
+tools. The `framework_docs_*` tools are the one surface the dev loop
+does not imply: the app passes `framework.WithMCPTools(mcptools.Register)`
+(generated apps do). A connected agent can check what's running, read recent
 requests and errors, read and write app data, and turn modules on or
 off on the running dev app without extra setup. See
 [agent-ready](agent-ready.md). Opt out with `GOFASTR_DEV_MCP=0`.

@@ -10,10 +10,12 @@ running GoFastr app via MCP. For deep recipes, jump to:
 
 - `.claude/skills/log-debug/SKILL.md` covers the four `log_*` tools
   (recent entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` covers the eleven introspection
-  tools: `app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
-  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`, plus `framework_docs_list` /
-  `framework_docs_get` / `framework_docs_search` for the embedded
+- `.claude/skills/app-introspect/SKILL.md` covers the eight introspection
+  tools (`app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
+  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`),
+  the `framework_docs_list` / `framework_docs_get` /
+  `framework_docs_search` tools an app adds with
+  `framework.WithMCPTools(mcptools.Register)` for the embedded
   framework docs, and `contracts_list` / `contracts_explain` /
   `contracts_capabilities` for the rules `gofastr verify` enforces. Under
   `gofastr dev` only, `contracts_verify` runs those rules against the
@@ -47,8 +49,10 @@ running GoFastr app via MCP. For deep recipes, jump to:
 auto-mounts `/mcp` and enables introspection + control, every
 CRUD-enabled entity serves its `{entity}_*` data tools (no `mcp: true`
 needed), and battery/log (if registered) auto-enables its `log_*`
-tools. Opt-out: `GOFASTR_DEV_MCP=0`. So for a dev-loop app there is
-nothing to wire; just connect.
+tools. Opt-out: `GOFASTR_DEV_MCP=0`. The one exception is the
+`framework_docs_*` set: the dev loop never implies it, the app passes
+`framework.WithMCPTools(mcptools.Register)` (generated apps do). So for a
+dev-loop app there is nothing else to wire; just connect.
 
 Outside the dev loop, the app opts in explicitly:
 

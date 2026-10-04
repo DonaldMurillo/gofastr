@@ -7,8 +7,8 @@
 //     tools so agents connected to a running app can answer "how do I
 //     use hooks" without leaving the session.
 //
-// Package framework does not import this package: the corpus is a
-// quarter of the module by bytes and a docs-only edit must not widen the
+// Package framework does not import this package: the corpus is about
+// 2 MB of markdown and a docs-only edit must not widen the
 // affected test set to every framework importer (#470). Anything that
 // needs the corpus at runtime imports it from the leaf, never from the
 // App spine.

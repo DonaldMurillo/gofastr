@@ -2,8 +2,8 @@ package framework
 
 import "github.com/DonaldMurillo/gofastr/framework/event"
 
-// Re-exports of framework/event so existing callers and generated code
-// using framework.X keep compiling after the event package extraction.
+// Root spellings of framework/event. framework.X is the public API; the
+// extraction moved the implementation, not the name callers write.
 
 type (
 	Event        = event.Event

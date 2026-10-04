@@ -7,9 +7,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Re-exports of framework/migrate so tests, generated code, and external
-// callers using framework.X keep compiling after the migrate package
-// extraction.
+// Root spellings of framework/migrate. framework.X is the public API that
+// tests, generated code and external callers write; the extraction moved
+// the implementation, not the name.
 
 type (
 	Dialect                = migrate.Dialect

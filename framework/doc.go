@@ -34,7 +34,8 @@
 //
 // The root spelling is the public API, not a compatibility layer left
 // over from the extractions: generated code, the examples and the docs
-// write framework.EntityDeclaration, and the re-export files stay for as
+// write the root spelling (framework.EntityConfig,
+// framework.EntityDeclaration), and the re-export files stay for as
 // long as the subpackages do. A new subpackage symbol that callers reach
 // for gets a re-export; nothing is removed from the root to "clean up".
 //

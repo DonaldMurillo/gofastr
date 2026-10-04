@@ -155,7 +155,7 @@ already done.
 Adds `app_routes`, `app_plugins`, `app_batteries`,
 `app_modules`, `app_config`, `app_readiness`, `app_goroutine_leaks`,
 `app_routines` (the registered cron/routine bodies, so "did my routine
-body change land" is answerable from the session), endpoint so a
+body change land" is answerable from the session), so a
 connected agent can answer "what routes exist" / "is the app
 ready" / "is anything leaking goroutines" without leaving the session.
 

@@ -26,7 +26,7 @@ blueprint-generated apps wire all three. Launch the site with `./scripts/dev-wat
 `PORT` set). The curl examples below use 8082; adjust to how the app
 was launched.
 
-## The ten tools
+## The tools
 
 | Tool                    | Use                                                                                  |
 |-------------------------|--------------------------------------------------------------------------------------|
@@ -38,9 +38,9 @@ was launched.
 | `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
 | `app_goroutine_leaks`   | Count + stacks of goroutines the runtime has PROVEN leaked (Go's `goroutineleak` profile, GC-fresh). Zero is healthy; a growing count means a worker/stream is being abandoned. |
 | `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown; `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
-| `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary).              |
-| `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`).                      |
-| `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits).                  |
+| `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary). Needs `WithMCPTools(mcptools.Register)`. |
+| `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`). Needs `WithMCPTools(mcptools.Register)`. |
+| `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits). Needs `WithMCPTools(mcptools.Register)`. |
 | `contracts_list`        | Every rule `gofastr verify` enforces: ID, slug, capability, default severity, one-line summary. Optional `capability` filter. |
 | `contracts_explain`     | One rule in full: what it detects, why it matters, how to fix it, a bad/good example pair, and the exact suppression syntax. Takes an ID (`GOFASTR1002`) or a slug (`routing/colon-path-parameter`). |
 | `contracts_capabilities`| The rule capabilities with counts and severity breakdown; use to pick the argument for `gofastr verify <capability>`. |
