@@ -61,7 +61,8 @@ func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") {
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(k), "data-fui-") {
+		//gofastr:allow(layerprefix) the refusal filter names the framework prefix to bar it from extra attrs
+		if lk := strings.ToLower(k); strings.HasPrefix(lk, "data-cui-") || strings.HasPrefix(lk, "data-fui-") {
 			continue
 		}
 		drop := false

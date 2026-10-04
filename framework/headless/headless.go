@@ -184,7 +184,7 @@ func Flag(a html.Attrs, name string, on bool) html.Attrs {
 // refused reports whether a caller-supplied attribute may never reach
 // the markup, whichever way it came in. Attribute names are
 // case-insensitive in HTML — the parser lowercases them, so
-// DATA-FUI-RPC is data-fui-rpc by the time the runtime looks — which
+// DATA-CUI-RPC is data-cui-rpc by the time the runtime looks — which
 // is why the key is folded before every check, and why a sanitiser
 // that compared the spelling as written let the request through.
 //
@@ -216,7 +216,8 @@ func refused(key string) bool {
 	if strings.HasPrefix(k, "on") {
 		return true
 	}
-	for _, prefix := range []string{"data-hui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
+	//gofastr:allow(layerprefix) Safe names every reserved prefix to refuse it from ExtraAttrs
+	for _, prefix := range []string{"data-hui-", "data-cui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
 		if strings.HasPrefix(k, prefix) {
 			return true
 		}

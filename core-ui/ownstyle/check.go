@@ -460,6 +460,7 @@ func (c *checker) checkSelector(r *Rule) {
 		t := prel[i]
 		switch {
 		case t.Type == TokenDelim && t.Text == "." && i+1 < len(prel) && prel[i+1].Type == TokenIdent:
+			//gofastr:allow(layerprefix) the owned-style checker names kit classes to bar an app sheet from them
 			if strings.HasPrefix(prel[i+1].Text, "fui-") {
 				c.report(Diagnostic{
 					Rule:     RuleKitClassSelector,
@@ -474,7 +475,8 @@ func (c *checker) checkSelector(r *Rule) {
 			// The first ident inside the brackets is the attribute name.
 			for j := i + 1; j < len(prel) && prel[j].Type != TokenCloseSquare; j++ {
 				if prel[j].Type == TokenIdent {
-					if strings.HasPrefix(prel[j].Text, "data-fui-") {
+					//gofastr:allow(layerprefix) the owned-style checker names the kit attribute prefix to bar an app sheet from it
+					if n := prel[j].Text; strings.HasPrefix(n, "data-cui-") || strings.HasPrefix(n, "data-fui-") || strings.HasPrefix(n, "data-hui-") {
 						c.report(Diagnostic{
 							Rule:     RuleKitClassSelector,
 							Severity: SeverityError,
@@ -691,6 +693,7 @@ func (c *checker) checkVarRefs(d *Decl) {
 		// one other way out is a gofastr:allow(GOFASTR1806) marker with
 		// its reason.
 		if !c.declaredProps[name] &&
+			//gofastr:allow(layerprefix) the owned-style checker names the kit class prefix to tell a kit sheet from an app sheet
 			!strings.HasPrefix(name, "ui-") && !strings.HasPrefix(name, "fui-") {
 			if _, known := slices.BinarySearch(c.known, name); !known {
 				msg := fmt.Sprintf("--%s is not a theme token", name)

@@ -167,8 +167,9 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		if it.Caption != "" {
 			dl += "&caption=" + url.PathEscape(scrubControlBytes(it.Caption))
 		}
-		linkAttrs["data-fui-open"] = p.Lightbox.Name
-		linkAttrs["data-fui-deeplink"] = dl
+		linkAttrs["data-cui-open"] = p.Lightbox.Name
+		linkAttrs["data-cui-deeplink"] = dl
+		//gofastr:allow(layerprefix) the gallery link carries the framework lightbox module's group key by explicit Wiring; the hui family is the unwired render
 		linkAttrs["data-fui-lightbox-group"] = group
 	}
 	img := b.El("img", PartBody, Attrs(map[string]string{

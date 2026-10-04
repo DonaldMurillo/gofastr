@@ -52,7 +52,17 @@ var Analyzers = []string{
 	"worldreadable",
 }
 
-// Known reports whether name is a registered repo analyzer.
+// Lints is every source lint outside the vettool that shares the
+// marker spelling: a rule that reads files, not types, and drops its
+// own finding at a marked site. layerprefix (core-ui/check) hunts kit
+// vocabulary in kernel and headless sources; its markers sit at the
+// refusal filters and the lightbox wiring.
+var Lints = []string{
+	"layerprefix",
+}
+
+// Known reports whether name is a registered repo analyzer or a source
+// lint that honours the marker.
 func Known(name string) bool {
-	return slices.Contains(Analyzers, name)
+	return slices.Contains(Analyzers, name) || slices.Contains(Lints, name)
 }

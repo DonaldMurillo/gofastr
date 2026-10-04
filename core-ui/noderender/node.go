@@ -536,6 +536,8 @@ var privilegedDataAttrs = map[string]bool{
 // (RenderNode vs RenderTrustedNode) is what tells the two apart. See
 // actionAttrs for why they matter and TestIRCannotFireActions for the pin.
 var privilegedDataPrefixes = []string{
+	"data-cui-",
+	//gofastr:allow(layerprefix) the privileged-prefix refusal names the framework prefix to bar it from node attrs
 	"data-fui-",
 }
 
