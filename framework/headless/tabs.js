@@ -46,34 +46,30 @@
     return null;
   }
 
-  // resyncNested repairs the strips nested in this one's panels: the
-  // kernel's data-active mirror (core-ui/runtime frag/signals.js)
-  // writes aria-selected on every [role=tab][data-cui-tab-index] under
-  // the wrapper whose signal changed, nested strips included. Each
-  // nested strip's own data-active is its truth.
-  function resyncNested(wrapper) {
-    for (const inner of wrapper.querySelectorAll('[data-hui-tabs]')) {
-      const idx = parseInt(inner.getAttribute('data-active') || '0', 10);
-      for (const t of own(inner, '[role="tab"]')) {
-        const on = t.getAttribute('data-cui-tab-index') === String(idx);
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-        t.setAttribute('tabindex', on ? '0' : '-1');
-      }
+  // syncTabs makes the strip's own tabs say what data-active says: the
+  // selected tab is aria-selected and the one roving tabindex 0, and
+  // with data-hui-tabs-state the data-state mirror follows. A
+  // selection can arrive with no click (setSignal, a deep link, an
+  // island), so this runs on every data-active change.
+  function syncTabs(wrapper) {
+    const idx = String(parseInt(wrapper.getAttribute('data-active') || '0', 10));
+    const state = wrapper.hasAttribute('data-hui-tabs-state');
+    for (const t of own(wrapper, '[role="tab"]')) {
+      const on = t.getAttribute('data-cui-tab-index') === idx;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+      if (state) t.setAttribute('data-state', on ? 'active' : 'inactive');
     }
   }
 
   function apply(wrapper) {
     const idx = parseInt(wrapper.getAttribute('data-active') || '0', 10);
-    if (wrapper.hasAttribute('data-hui-tabs-state')) {
-      for (const t of own(wrapper, '[role="tab"]')) {
-        const on = t.getAttribute('data-cui-signal-set') === wrapper.getAttribute('data-cui-signal') + ':' + idx ||
-          t.closest('[data-hui-tabs]') === wrapper && t.getAttribute('aria-selected') === 'true';
-        t.setAttribute('data-state', on ? 'active' : 'inactive');
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-        t.setAttribute('tabindex', on ? '0' : '-1');
-      }
-    }
-    resyncNested(wrapper);
+    syncTabs(wrapper);
+    // The kernel's data-active mirror (core-ui/runtime frag/signals.js)
+    // writes aria-selected on every [role=tab][data-cui-tab-index]
+    // under the wrapper whose signal changed, nested strips included:
+    // each nested strip is put back from its own data-active.
+    for (const inner of wrapper.querySelectorAll('[data-hui-tabs]')) syncTabs(inner);
     if (!wrapper.hasAttribute('data-hui-tabs-vacate')) return;
     const stash = stashMap(wrapper);
     for (const panel of own(wrapper, '[role="tabpanel"]')) {

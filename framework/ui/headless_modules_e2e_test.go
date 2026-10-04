@@ -296,6 +296,30 @@ func TestNestedTabsKeepTheirOwnState(t *testing.T) {
 	}
 }
 
+// A selection that arrives through the signal (no click) moves the
+// roving tabindex and aria-selected with it, with StateAttrs off: the
+// tab of the shown panel is the one Tab reaches and the one selected.
+func TestTabsSignalMovesRovingTabindex(t *testing.T) {
+	strip := ui.Tabs(ui.TabsConfig{SignalName: "tb", ID: "tb", Tabs: []ui.TabItem{
+		{Label: "A", Content: "a"}, {Label: "B", Content: "b"}, {Label: "C", Content: "c"}}})
+	ctx := moduleTestCtx(t, string(strip))
+	if !pollJS(ctx, moduleLoaded("headless-tabs")) {
+		t.Fatal("the tabs marker never loaded headless-tabs")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('tb', '2')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	const state = `[0,1,2].map(function(i){var t=document.getElementById('tb-tab-'+i);` +
+		`return (t.getAttribute('aria-selected')==='true'?'s':'u')+t.getAttribute('tabindex');}).join(',')`
+	if !pollJS(ctx, `document.querySelector('[data-hui-tabs]').getAttribute('data-active') === '2'`) {
+		t.Fatal("setSignal('tb','2') never reached data-active")
+	}
+	const want = "u-1,u-1,s0"
+	if !pollJS(ctx, state+` === '`+want+`'`) {
+		t.Fatalf("after setSignal('tb','2') the strip reads %q, want %q", evalString(ctx, state), want)
+	}
+}
+
 // toastProbeStatus is a status variant an app registers: a runtime
 // toast carrying it wears its class and glyph, the way a server
 // Notification does.
