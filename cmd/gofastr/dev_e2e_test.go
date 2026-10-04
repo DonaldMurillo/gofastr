@@ -49,17 +49,13 @@ func devTempEnv(t *testing.T) []string {
 	return []string{"TMPDIR=" + dir, "TMP=" + dir, "TEMP=" + dir}
 }
 
+// buildGofastrBinary returns the package-wide shared gofastr binary
+// (testbin_test.go); the name is kept for the e2e call sites.
 func buildGofastrBinary(t *testing.T) string {
 	t.Helper()
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	bin, err := gofastrTestBinary()
 	if err != nil {
-		t.Fatal(err)
-	}
-	bin := testExecutablePath(filepath.Join(t.TempDir(), "gofastr"))
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = filepath.Join(repoRoot, "cmd", "gofastr")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build gofastr: %v\n%s", err, out)
+		t.Fatalf("build gofastr: %v", err)
 	}
 	return bin
 }

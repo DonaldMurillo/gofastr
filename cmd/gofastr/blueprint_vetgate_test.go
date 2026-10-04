@@ -81,6 +81,8 @@ func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
+			// Per-example scratch dir; the vettool binary is shared read-only.
+			t.Parallel()
 			appDir := renderBlueprintForVet(t, repoRoot, path, name)
 			vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
 			vet.Dir = appDir

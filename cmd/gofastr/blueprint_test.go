@@ -1095,7 +1095,6 @@ func TestBlueprintCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 	appBin := testExecutablePath(filepath.Join(dir, "generated-blueprint-app"))
 	buildCmd := exec.Command("go", "build", "-mod=mod", "-o", appBin, ".")
 	buildCmd.Dir = dir
-	buildCmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("build generated app failed: %v\n%s", err, output)
 	}

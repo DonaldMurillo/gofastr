@@ -77,7 +77,6 @@ func TestSoftDeleteOnlyAppCompiles(t *testing.T) {
 	}
 	cmd := exec.Command("go", "build", "-mod=mod", "./gen/entities", "./gen")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("minimal soft-delete app did not build: %v\n%s", err, output)
 	}

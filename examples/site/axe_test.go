@@ -20,7 +20,10 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -196,6 +199,68 @@ func axePages(t *testing.T) []string {
 	return out
 }
 
+// axeShard reads GOFASTR_AXE_SHARD, the CI knob that splits the gate across
+// runners. Empty means the whole gate (shard 0 of 1).
+func axeShard(t *testing.T) (shard, shards int) {
+	t.Helper()
+	shard, shards, err := parseAxeShard(os.Getenv("GOFASTR_AXE_SHARD"))
+	if err != nil {
+		t.Fatalf("GOFASTR_AXE_SHARD: %v", err)
+	}
+	return shard, shards
+}
+
+// pageResult is one unit of the axe gate's work list: a page at a viewport
+// (and, for mobile, one scheme), plus the violations its scan reported.
+type pageResult struct {
+	path       string
+	viewport   string // "desktop" (1280) or "mobile" (390)
+	scheme     string // mobile items scan one scheme each; desktop scans both
+	violations []axetest.Violation
+}
+
+// shardItems returns the items shard k of n scans: every index with
+// i%n == k. An empty selection is an error, never a green no-op: a matrix
+// entry whose shard count outnumbers the items would otherwise scan
+// nothing and pass.
+func shardItems(items []pageResult, shard, shards int) ([]pageResult, error) {
+	var out []pageResult
+	for i, it := range items {
+		if i%shards == shard {
+			out = append(out, it)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("shard %d/%d selected none of %d items", shard, shards, len(items))
+	}
+	return out, nil
+}
+
+// parseAxeShard accepts "" (everything) or "k/n" with 0 <= k < n. Anything
+// else is an error: a mistyped value must fail the gate, never select
+// nothing and pass.
+func parseAxeShard(v string) (shard, shards int, err error) {
+	if v == "" {
+		return 0, 1, nil
+	}
+	k, n, ok := strings.Cut(v, "/")
+	if !ok {
+		return 0, 0, fmt.Errorf("want k/n, got %q", v)
+	}
+	shard, err = strconv.Atoi(k)
+	if err != nil {
+		return 0, 0, fmt.Errorf("want k/n with integer k, got %q", v)
+	}
+	shards, err = strconv.Atoi(n)
+	if err != nil {
+		return 0, 0, fmt.Errorf("want k/n with integer n, got %q", v)
+	}
+	if shards < 1 || shard < 0 || shard >= shards {
+		return 0, 0, fmt.Errorf("want 0 <= k < n, got %q", v)
+	}
+	return shard, shards, nil
+}
+
 // TestAxe_AllPagesAreClean is the gate. It prints every page's violations
 // before failing so the full slate is visible, not just the first.
 func TestAxe_AllPagesAreClean(t *testing.T) {
@@ -213,15 +278,15 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	if err := chromedp.Run(browser, chromedp.Navigate("about:blank")); err != nil {
 		t.Fatalf("chrome warm-up failed: %v", err)
 	}
-	type pageResult struct {
-		path       string
-		viewport   string // "desktop" (1280) or "mobile" (390)
-		violations []axetest.Violation
-	}
-	var results []pageResult
+	// The work list is built in full, in a deterministic order, before any
+	// page is scanned. GOFASTR_AXE_SHARD=k/n then keeps every n-th item from
+	// k on, so CI can split the gate across runners and the union of the
+	// shards is exactly the unsharded run. Interleaving (i mod n) rather than
+	// slicing keeps the heavy docs pages spread across shards.
+	var items []pageResult
 	// Desktop pass: every page × both schemes at the browser's 1280×800 viewport.
 	for _, p := range pages {
-		results = append(results, pageResult{path: p, viewport: "desktop", violations: runAxeIn(t, browser, base, p)})
+		items = append(items, pageResult{path: p, viewport: "desktop"})
 	}
 	// Mobile pass: curated subset × both schemes at 390×844. The full matrix
 	// would double the suite, so only the pages whose responsive layout is most
@@ -240,13 +305,24 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 	}
 	for _, p := range mobileSubset {
 		for _, scheme := range axetest.Schemes {
-			results = append(results, pageResult{
-				path:       p,
-				viewport:   "mobile",
-				violations: runAxeMobileScheme(t, browser, base, p, scheme),
-			})
+			items = append(items, pageResult{path: p, viewport: "mobile", scheme: scheme})
 		}
 	}
+	shard, shards := axeShard(t)
+	selected, err := shardItems(items, shard, shards)
+	if err != nil {
+		t.Fatalf("axe: %v", err)
+	}
+	var results []pageResult
+	for _, it := range selected {
+		if it.viewport == "desktop" {
+			it.violations = runAxeIn(t, browser, base, it.path)
+		} else {
+			it.violations = runAxeMobileScheme(t, browser, base, it.path, it.scheme)
+		}
+		results = append(results, it)
+	}
+	t.Logf("axe: shard %d/%d scanned %d of %d items", shard, shards, len(results), len(items))
 	any := false
 	for _, r := range results {
 		if len(r.violations) == 0 {

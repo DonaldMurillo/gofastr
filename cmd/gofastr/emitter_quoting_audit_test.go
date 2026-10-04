@@ -772,6 +772,10 @@ func TestAuditBlueprintEmitterQuotingExhaustive(t *testing.T) {
 			payload := payload
 			label := strings.NewReplacer("\n", "N", "\r", "R", "`", "BT", `"`, "Q", "\\", "S", "/", "SL", "*", "ST").Replace(payload)
 			t.Run(site.name+"/"+label, func(t *testing.T) {
+				// Pure render into a per-subtest temp dir. The fontFetcher
+				// stub set above stays in place: the parent's Cleanup runs
+				// only after every parallel subtest has finished.
+				t.Parallel()
 				files, err := loadAudit(t, marker, payload)
 				if err != nil {
 					// Rejected at the boundary (or the emitter refused

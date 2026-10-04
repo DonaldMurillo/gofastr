@@ -65,15 +65,18 @@ else
   # differs from origin/main; GOFASTR_TEST_ALL=1 widens to the whole tree).
   # No -count=1: cached PASSes on unchanged packages keep repeat pushes
   # fast (same content-addressed cache CI relies on). The -exclude list is
-  # CI's: the chromedp suites that run isolated in browser-e2e.
+  # CI's: the chromedp suites that run isolated in browser-e2e. The merged
+  # coverprofile feeds the floors check below, so the suites run once.
+  coverprofile=$(mktemp)
+  trap 'rm -f "$coverprofile"' EXIT
   go run ./cmd/affected \
-    -exclude 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
-    -- go test -timeout=20m -p 2 \
-    -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload'
+    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+    -- go test -timeout=20m -coverprofile="$coverprofile" \
+    -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
   pass "Deterministic tests passed"
 
   echo ""
-  bash scripts/coverage-floors.sh
+  COVERPROFILE="$coverprofile" bash scripts/coverage-floors.sh
   pass "Coverage floors hold"
 fi
 

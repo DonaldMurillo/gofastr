@@ -39,10 +39,7 @@ func TestInitGeneratedProjectsBuild(t *testing.T) {
 
 			build := exec.Command("go", "build", ".")
 			build.Dir = project
-			build.Env = append(os.Environ(),
-				"GOCACHE="+filepath.Join(t.TempDir(), "gocache"),
-				"GOFLAGS=-mod=mod",
-			)
+			build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 			out, err = build.CombinedOutput()
 			if err != nil {
 				t.Fatalf("generated project did not build: %v\n%s", err, out)
@@ -161,7 +158,6 @@ func TestThemeInitGeneratedPackageBuildsFromCLI(t *testing.T) {
 
 	test := exec.Command("go", "test", "-mod=mod", "./theme")
 	test.Dir = project
-	test.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if out, err := test.CombinedOutput(); err != nil {
 		t.Fatalf("generated theme package did not build: %v\n%s", err, out)
 	}
@@ -182,7 +178,6 @@ func prepareGeneratedModule(t *testing.T, repoRoot, project string) {
 	}
 	tidy := exec.Command("go", "mod", "tidy")
 	tidy.Dir = project
-	tidy.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "gocache"))
 	if out, err := tidy.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
 	}
@@ -244,10 +239,7 @@ func TestInitEmitsFlatOwnedLayout(t *testing.T) {
 	prepareGeneratedModule(t, repoRoot, project)
 	build := exec.Command("go", "build", ".")
 	build.Dir = project
-	build.Env = append(os.Environ(),
-		"GOCACHE="+filepath.Join(t.TempDir(), "gocache"),
-		"GOFLAGS=-mod=mod",
-	)
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("generated flat project did not build: %v\n%s", err, out)
 	}

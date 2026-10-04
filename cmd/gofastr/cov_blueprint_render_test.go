@@ -276,18 +276,16 @@ func TestRenderBlueprintNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 	if err := copyGoSum(repoRoot, dir); err != nil {
 		t.Fatalf("copy go.sum: %v", err)
 	}
-	gocache := filepath.Join(t.TempDir(), "gocache")
-
 	build := exec.Command("go", "build", "-mod=mod", ".")
 	build.Dir = dir
-	build.Env = append(os.Environ(), "GOCACHE="+gocache, "GOFLAGS=-mod=mod")
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("generated app did not build: %v\n%s", err, out)
 	}
 
 	deps := exec.Command("go", "list", "-mod=mod", "-deps", ".")
 	deps.Dir = dir
-	deps.Env = append(os.Environ(), "GOCACHE="+gocache, "GOFLAGS=-mod=mod")
+	deps.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
 	out, err := deps.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go list -deps .: %v\n%s", err, out)
