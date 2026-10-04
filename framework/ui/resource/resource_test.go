@@ -245,6 +245,32 @@ func TestRelationSelectOptionsAreDeterministic(t *testing.T) {
 	}
 }
 
+// TestDetailTransitionUnknownVariantSecondary pins the site default:
+// a transition whose variant string is unrecognised renders the quiet
+// secondary button, so a row action never outranks the page's primary
+// action.
+func TestDetailTransitionUnknownVariantSecondary(t *testing.T) {
+	cfg := Config{
+		Entity:   "orders",
+		Title:    "Orders",
+		Singular: "Order",
+		BasePath: "/orders",
+		APIPath:  "/api/orders",
+		Crud:     &stubSource{rows: []map[string]any{{"id": "o-1", "status": "past_due"}}},
+		Transitions: []Transition{
+			{Label: "Ship", Status: "shipped", Variant: "bogus"},
+		},
+		Fields: []Field{{Key: "status", Label: "State", Type: "enum"}},
+	}
+	html := string(cfg.Detail(context.Background(), "o-1"))
+	if !strings.Contains(html, "fui-button--secondary") {
+		t.Errorf("a transition with an unknown variant must render the secondary button:\n%s", html)
+	}
+	if strings.Contains(html, "fui-button--primary") {
+		t.Errorf("a transition with an unknown variant must not render the primary button:\n%s", html)
+	}
+}
+
 // betweenAttr pulls attr="…" out of an <option …-shaped segment.
 func betweenAttr(seg, attr string) string {
 	needle := attr + `="`

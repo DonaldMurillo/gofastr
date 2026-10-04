@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1094,7 +1095,7 @@ func summarizeArgs(args map[string]any) string {
 	if ent, ok := args["entity"].(map[string]any); ok {
 		name, _ := ent["name"].(string)
 		fields, _ := ent["fields"].([]any)
-		return "name=" + name + " fields=" + itoa(len(fields))
+		return "name=" + name + " fields=" + strconv.Itoa(len(fields))
 	}
 	if page, ok := args["page"].(map[string]any); ok {
 		path, _ := page["path"].(string)
@@ -1114,7 +1115,7 @@ func summarizeArgs(args map[string]any) string {
 	if seed, ok := args["seed"].(map[string]any); ok {
 		entity, _ := seed["entity"].(string)
 		rows, _ := seed["rows"].([]any)
-		return "entity=" + entity + " rows=" + itoa(len(rows))
+		return "entity=" + entity + " rows=" + strconv.Itoa(len(rows))
 	}
 	// fallback: short JSON
 	var buf bytes.Buffer
@@ -1180,5 +1181,3 @@ func attrJSON(v any) string {
 	}
 	return render.Escape(string(b))
 }
-
-func itoa(n int) string { return fmt.Sprintf("%d", n) }

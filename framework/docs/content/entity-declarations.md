@@ -86,6 +86,10 @@ and the `limit` row reports the same cap the List route clamps `?limit`
 with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
 that advertises routes or limits the server refuses sends agents into
 404s; the generators read the mount, not the declaration.
+The type column of its field tables and the SDK reference screens
+(`gofastr docs sdk`) share one label table, `schema.FieldTypeLabel`; the
+SDK form adds the wire-format notes (decimal arrives as a string, image
+and file fields as URLs), and an unknown type labels as `string`.
 
 The skip side of pagination is bounded the same way the limit side is:
 an explicit `?offset=` beyond the handler's ceiling is refused with

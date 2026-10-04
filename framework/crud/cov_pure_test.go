@@ -111,24 +111,6 @@ func TestSanitizeDefault_Variants(t *testing.T) {
 	}
 }
 
-func TestFieldTypeLabel_AllTypes(t *testing.T) {
-	cases := map[schema.FieldType]string{
-		schema.String: "string", schema.Text: "text", schema.Int: "integer",
-		schema.Float: "float", schema.Decimal: "decimal", schema.Bool: "boolean",
-		schema.Enum: "enum", schema.UUID: "uuid", schema.Timestamp: "timestamp",
-		schema.Date: "date", schema.JSON: "json", schema.Relation: "relation",
-		schema.Image: "image", schema.File: "file",
-	}
-	for ft, want := range cases {
-		if got := fieldTypeLabel(ft); got != want {
-			t.Errorf("fieldTypeLabel(%v) = %q, want %q", ft, got, want)
-		}
-	}
-	if got := fieldTypeLabel(schema.FieldType(9999)); got != "string" {
-		t.Errorf("unknown type fallback = %q", got)
-	}
-}
-
 func TestRelationTypeLabel_AllTypes(t *testing.T) {
 	cases := map[entity.RelationType]string{
 		entity.RelHasOne: "has-one", entity.RelHasMany: "has-many",

@@ -1371,11 +1371,13 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	if secure && !requestIsSecure(r) {
 		plaintextRemoteWarnOnce.Do(func() {
 			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin: browsers will drop it and every session check will 401",
-				// r.Host is request-borne: scrub control bytes the way
-				// every other log sink does (markdownAlternate's C0
-				// filter, battery/log's scrubControlBytes), so a forged
-				// Host cannot paint a forged line into the tail.
-				"host", scrubCtl(r.Host),
+				// r.Host is request-borne: scrub it with the full textsafe
+				// set (C0/DEL plus C1 and bidi):
+				// net/http's header reader passes every byte >= 0x80
+				// through, and slog's JSON handler leaves those runes raw
+				// in the encoded line. scrubCtl is not enough here: it
+				// stops at C0/DEL.
+				"host", textsafe.ScrubControlBytes(r.Host),
 				"fix", "serve over TLS (or a reverse proxy setting X-Forwarded-Proto), or use http://localhost for development")
 		})
 	}
@@ -1390,12 +1392,15 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 // scrubCtl percent-encodes C0 control bytes (except tab) and DEL in a
-// request-derived log field. Deliberately narrower than core/textsafe.
-// ScrubControlBytes, which this package already imports: that one also
-// encodes tab and the C1/bidi set, while this filter passes tab and all
-// non-ASCII through untouched. Kept local because of that contract
-// difference, not to avoid an import. Tab and printable bytes pass
-// through untouched.
+// Location header value built from request-derived paths. It is the
+// header scrub, and its two deliberate pass-throughs hold there:
+// net/http's http.Redirect hex-escapes every non-ASCII byte in the
+// Location value it writes, so C1 and the bidi set cannot reach the
+// wire raw downstream of these emit sites (the gap it closes is
+// exactly the C0/DEL that hexEscapeNonASCII leaves alone), and HTAB
+// is a legal header-value byte. The log sink is NOT this scrub's
+// customer: slog leaves C1/bidi runes raw, so log fields
+// use textsafe.ScrubControlBytes instead.
 func scrubCtl(s string) string {
 	for i := range len(s) {
 		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {

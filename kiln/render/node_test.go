@@ -194,6 +194,21 @@ func TestRenderNodeUsesDesignSystemCard(t *testing.T) {
 	}
 }
 
+// TestLinkButtonUnknownVariantPrimary pins the site default: a
+// link_button whose variant string is empty or unrecognised still
+// renders the primary button.
+func TestLinkButtonUnknownVariantPrimary(t *testing.T) {
+	for _, variant := range []string{"", "bogus"} {
+		got := render.RenderNode(world.Node{
+			Kind:  "link_button",
+			Props: map[string]any{"label": "Open", "href": "/x", "variant": variant},
+		})
+		if !strings.Contains(string(got), "fui-button--primary") {
+			t.Errorf("variant %q must render the primary button: %q", variant, got)
+		}
+	}
+}
+
 // TestRawNodeDoesNotEmitUnescapedHTML asserts a `raw` node in untrusted IR
 // (an agent-authored world.Node tree carries arbitrary Kind values, with no
 // whitelist) cannot inject live <script>. The strict CSP blocks inline
