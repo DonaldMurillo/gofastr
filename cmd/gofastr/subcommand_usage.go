@@ -85,7 +85,7 @@ func printDesktopUsage() {
 	fmt.Println(`Usage: gofastr desktop run|build|types|keygen|feed [flags]
 
 Build and run a GoFastr app as a desktop application (battery/desktop,
-experimental: darwin/arm64 only today).
+experimental: macOS/arm64 and Windows/amd64).
 
   run [--dir=<path>] [--pkg=<path>] [--watch]
         CGO_ENABLED=0 build of the package, then exec it with
@@ -117,6 +117,12 @@ experimental: darwin/arm64 only today).
         carries the staple, and FAILS the build if any step fails.
         --scheme writes CFBundleURLTypes so the OS hands gofastr-notes://...
         links to the app (desktop.Config.DeepLink handles them).
+        On Windows/amd64, builds <o>/<Name>.exe and places the official
+        WebView2Loader.dll beside it. The pinned loader is verified and
+        fetched from NuGet; the target machine needs the Evergreen WebView2
+        Runtime installed. --icon, signing, notarization, and --scheme are
+        macOS-only. The Windows build does not embed a PE version resource
+        or register a URL scheme.
   keygen -o=<path>
         Mints the auto-update signing pair: <path> (private, 0600) and
         <path>.pub (the hex public key for desktop.UpdateConfig).

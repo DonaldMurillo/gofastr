@@ -27,6 +27,7 @@ func TestRuntimeModule_Desktop(t *testing.T) {
 		"startDrag",                // window-drag entry point (window namespace)
 		"data-cui-window-drag",     // the drag-handle attribute the module wires
 		"messageHandlers",          // the drag rides the WebView message channel
+		"chrome.webview",           // WebView2's native message channel
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("desktop module missing %q", want)

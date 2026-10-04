@@ -173,11 +173,12 @@ type Battery struct {
 	shell  Shell
 	logger *slog.Logger
 	// Handshake state, minted at New.
-	bootToken    string
-	sessionValue string
-	tokenUsed    atomic.Bool
-	hostPin      atomicString
-	gateArmed    atomic.Bool
+	bootToken        string
+	sessionValue     string
+	sessionCookieKey string
+	tokenUsed        atomic.Bool
+	hostPin          atomicString
+	gateArmed        atomic.Bool
 	// Capability registry and grants.
 	reg    *registry
 	grants GrantStore
@@ -567,14 +568,18 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	}
 	if id, ok := b.winPaths[spec.Path]; ok {
 		w := b.windows[id]
-		b.windowMu.Unlock()
-		if w == nil {
-			return nil, &Error{Code: CodeInternal, Message: InternalErrorMsg}
+		if closed, known := windowClosed(w); w != nil && known && closed {
+			b.removeWindowLocked(id)
+		} else {
+			b.windowMu.Unlock()
+			if w == nil {
+				return nil, &Error{Code: CodeInternal, Message: InternalErrorMsg}
+			}
+			if err := w.Focus(); err != nil {
+				return nil, err
+			}
+			return w, nil
 		}
-		if err := w.Focus(); err != nil {
-			return nil, err
-		}
-		return w, nil
 	}
 	// Every count created from request input is capped. windows.open is
 	// UNGATED, OpenWindow de-dupes per path STRING, and
@@ -694,8 +699,40 @@ func (b *Battery) handleWindowClosed(id string) {
 	if id == "main" {
 		return
 	}
+	// OpenWindow holds openMu until it registers the window. A close callback
+	// can arrive first during WebView startup, so wait on the same lock before
+	// removing the registration.
+	b.openMu.Lock()
+	defer b.openMu.Unlock()
+	b.handleWindowClosedLocked(id)
+}
+
+// handleWindowClosedLocked removes a closed window while the caller holds
+// openMu, so an id cannot be reused between lookup and cleanup.
+func (b *Battery) handleWindowClosedLocked(id string) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
+	if w := b.windows[id]; w != nil {
+		if closed, known := windowClosed(w); known && !closed {
+			// A delayed close callback may belong to an older window that
+			// reused this id. Keep the current, still-open registration.
+			return
+		}
+	}
+	b.removeWindowLocked(id)
+}
+
+func windowClosed(w Window) (closed, known bool) {
+	state, ok := w.(interface{ IsClosed() bool })
+	if !ok {
+		return false, false
+	}
+	return state.IsClosed(), true
+}
+
+// removeWindowLocked removes a registration while the caller holds
+// windowMu.
+func (b *Battery) removeWindowLocked(id string) {
 	delete(b.windows, id)
 	for p, pid := range b.winPaths {
 		if pid == id {
@@ -885,6 +922,10 @@ func (b *Battery) Run(app *framework.App) error {
 	// from the moment the port answers, every request needs the session
 	// cookie. An app that never calls Run keeps the gate unarmed and its
 	// routes open, which is the --serve host-independence mode.
+	// Cookie names are unique to this running battery. WebView2 profiles
+	// persist across launches and cookies are shared across loopback ports,
+	// so a fixed name would let a second instance replace this session.
+	b.sessionCookieKey = sessionCookieName + "_" + b.sessionValue
 	b.armGate()
 
 	// Deviation 7: worktree isolation off for this Start. Process-wide
@@ -933,6 +974,7 @@ func (b *Battery) Run(app *framework.App) error {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
 	shellErr := b.shell.Run(ctx, WindowConfig{
+		AppID:    b.cfg.ID,
 		Title:    b.windowTitle(),
 		Width:    b.windowWidth(),
 		Height:   b.windowHeight(),

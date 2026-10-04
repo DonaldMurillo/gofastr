@@ -154,7 +154,7 @@ func Run(t testing.TB, app *framework.App, d *desktop.Battery) *Harness {
 	}
 	h.bootRedirect = resp.Header.Get("Location")
 	for _, c := range resp.Cookies() {
-		if c.Name == sessionCookieName {
+		if c.Name == sessionCookieName || strings.HasPrefix(c.Name, sessionCookieName+"_") {
 			h.session = c
 		}
 	}

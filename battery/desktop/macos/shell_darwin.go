@@ -814,6 +814,13 @@ func (s *darwinShell) bridgeID() objc.ID {
 // ID implements desktop.Window.
 func (w *darwinWindow) ID() string { return w.id }
 
+// IsClosed reports whether this window is still in the shell's live-window map.
+func (w *darwinWindow) IsClosed() bool {
+	w.shell.mu.Lock()
+	defer w.shell.mu.Unlock()
+	return w.shell.windowsByID[w.id] != w
+}
+
 // ids snapshots the window's live NSWindow/WKWebView pair.
 func (w *darwinWindow) ids() (objc.ID, objc.ID) {
 	w.mu.Lock()
