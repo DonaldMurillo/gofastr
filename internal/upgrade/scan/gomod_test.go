@@ -57,17 +57,22 @@ func TestGoVersionPrereleaseBelowRelease(t *testing.T) {
 		less bool
 	}{
 		{"1.26rc1", "1.27", true},
-		{"1.26rc1", "1.26", true},
+		// Go's own order: a bare language version sits below every
+		// release of its minor, prereleases included (1.26 < 1.26rc1
+		// < 1.26.0), so a go 1.27rc1 directive is not below 1.27.
+		{"1.26", "1.26rc1", true},
+		{"1.26rc1", "1.26", false},
 		{"1.26beta1", "1.26rc1", true},
 		{"1.26rc1", "1.26rc2", true},
-		{"1.27rc1", "1.27", true},
+		{"1.27rc1", "1.27", false},
 		{"1.27rc1", "1.27.0", true},
-		{"1.27beta2", "1.27", true},
+		{"1.27beta2", "1.27", false},
 		{"1.26", "1.27", true},
 		{"1.26.3", "1.27", true},
 		{"1.27", "1.27", false},
 		{"1.27.0", "1.27", false},
-		{"1.27", "1.27rc1", false},
+		{"1.27", "1.27.0", true},
+		{"1.27", "1.27rc1", true},
 		{"1.28rc1", "1.27", false},
 		{"1.26rc", "1.27", false},
 		{"1.26gamma1", "1.27", false},

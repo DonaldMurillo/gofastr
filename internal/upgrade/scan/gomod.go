@@ -44,9 +44,11 @@ func (e *engine) gomodMatchers(moduleRoot string) {
 
 // goVersionLess compares go directive spellings as Go versions
 // ("1.26.3" < "1.27"): both normalised to vMAJOR.MINOR.PATCH for semver.
-// A prerelease ("1.26rc1", "1.27beta2") sorts below its release, so
-// 1.26rc1 < 1.26 < 1.27. Unparsable versions compare as equal, never
-// below.
+// The order is the go command's own: a bare language version sits
+// below every release of its minor and a prerelease below the final
+// release, so 1.26 < 1.26rc1 < 1.26.0 < 1.27, and a go 1.27rc1
+// directive is not below 1.27. Unparsable versions compare as equal,
+// never below.
 func goVersionLess(a, b string) bool {
 	va, aok := normalizeGoVersion(a)
 	vb, bok := normalizeGoVersion(b)
@@ -96,6 +98,7 @@ func normalizeGoVersion(s string) (string, bool) {
 	if len(parts) < 2 || len(parts) > 3 || (pre != "" && len(parts) != 2) {
 		return "", false
 	}
+	bare := len(parts) == 2 && pre == ""
 	for len(parts) < 3 {
 		parts = append(parts, "0")
 	}
@@ -105,8 +108,15 @@ func normalizeGoVersion(s string) (string, bool) {
 		}
 	}
 	v := "v" + strings.Join(parts, ".")
-	if pre != "" {
+	switch {
+	case pre != "":
 		v += "-" + pre
+	case bare:
+		// Go orders a bare language version below every release of
+		// its minor, prereleases included: 1.26 < 1.26rc1 < 1.26.0.
+		// A numeric prerelease sorts below an alphanumeric one, so
+		// v1.26.0-0 lands under v1.26.0-rc.1 and under v1.26.0.
+		v += "-0"
 	}
 	return v, true
 }

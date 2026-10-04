@@ -310,8 +310,11 @@ Each matcher reads the code the way its language means it:
 - `config`: `gofastr.yml` keys (`*` matches any one key or list item),
   with an optional `value` regex over the scalar or a `refused` URL
   policy, as in `fields`.
-- `gomod`: the `go` directive; `go_below: "1.27"` flags an older one. A
-  prerelease sorts below its release: `go 1.26rc1` < `1.26` < `1.27`.
+- `gomod`: the `go` directive; `go_below: "1.27"` flags an older one.
+  Versions order the way Go's own `go` command orders them: a bare
+  language version sits below every release of that minor, and a
+  prerelease below the final release, so `1.26` < `1.26rc1` < `1.26.0`
+  < `1.27`; a `go 1.27rc1` directive is not below `1.27`.
 - `text`: a per-line regex over files matching a glob, for languages
   nothing above reads (shell, JS). Go and CSS files are refused: their
   matchers read them structurally. So is a glob that would never
