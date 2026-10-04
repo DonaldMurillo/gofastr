@@ -264,6 +264,21 @@ Pager:r(d+' .pager'),PageNext:r(d+' .page.next'),ProseMeasure:prose})})()`
 		}
 	})
 
+	// Between md and lg the nav rail stays beside the article; the
+	// below-lg collapse must key on the same empty shape the desktop
+	// rules do, or a nav holding its list next to an empty outlet
+	// stacks to one column at this width only.
+	t.Run("nav-plus-empty-stays-at-1000", func(t *testing.T) {
+		g := at(1000, "/nav-plus-empty")
+		if g.NavDisplay == "none" || !shown(g.Nav) {
+			t.Fatalf("a nav holding its list beside an empty child should stay at 1000 (display %q, nav %v)", g.NavDisplay, g.Nav)
+		}
+		// Stacked, both start at the same x; beside, the nav is left.
+		if !shown(g.Article) || !(g.Nav[0]+g.Nav[2] <= g.Article[0]) {
+			t.Fatalf("the nav should sit beside the article at 1000, not above it: nav %v, article %v", g.Nav, g.Article)
+		}
+	})
+
 	t.Run("unset-toc-collapses-too", func(t *testing.T) {
 		fullPage := at(1280, "/")
 		g := at(1280, "/no-toc")
