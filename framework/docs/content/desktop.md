@@ -1003,7 +1003,9 @@ __gofastr.desktop.on('deep_link', ({ url, path }) => { ... })
 Links that arrive before the window is up (a cold launch: the OS may
 deliver the URL event before the first window finished its boot
 navigation) are queued, at most 16, oldest dropped first with a Warn,
-and replayed in arrival order right after the boot navigation.
+and replayed in arrival order right after the boot navigation. A
+queued link is validated and mapped when it arrives, so `OnDeepLink`
+runs once per link, never again at replay.
 
 ### The macOS handoff
 

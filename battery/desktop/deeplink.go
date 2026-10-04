@@ -102,7 +102,15 @@ func scrubDeepLink(raw string) string {
 // deepLinkQueue is the per-battery pre-window queue (Battery.deepLinks).
 type deepLinkQueue struct {
 	mu     sync.Mutex
-	queued []string
+	queued []queuedDeepLink
+}
+
+// queuedDeepLink is a link that passed validation and mapping before the
+// window was up. The mapped path is kept so the flush delivers it
+// without running the host OnDeepLink a second time.
+type queuedDeepLink struct {
+	raw  string
+	path string
 }
 
 // deepLinkQueueState returns this battery's queue.
@@ -123,11 +131,11 @@ func (b *Battery) handleDeepLink(rawURL string) {
 	if !ok {
 		q := b.deepLinkQueueState()
 		q.mu.Lock()
-		q.queued = append(q.queued, rawURL)
+		q.queued = append(q.queued, queuedDeepLink{raw: rawURL, path: path})
 		over := len(q.queued) > maxQueuedDeepLinks
 		var dropped string
 		if over {
-			dropped = q.queued[0]
+			dropped = q.queued[0].raw
 			q.queued = q.queued[1:]
 		}
 		q.mu.Unlock()
@@ -215,14 +223,16 @@ func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
 }
 
 // flushDeepLinks delivers links queued before the window opened, in
-// arrival order. Run calls it right after the boot navigation.
-func (b *Battery) flushDeepLinks() {
+// arrival order, to w. Run calls it right after the boot navigation.
+// Each link was validated and mapped when it arrived, so the flush
+// delivers the stored path and never re-runs the host OnDeepLink.
+func (b *Battery) flushDeepLinks(w Window) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
 	queued := q.queued
 	q.queued = nil
 	q.mu.Unlock()
-	for _, raw := range queued {
-		b.handleDeepLink(raw)
+	for _, l := range queued {
+		b.deliverDeepLink(w, l.raw, l.path)
 	}
 }

@@ -1004,7 +1004,7 @@ func (b *Battery) Run(app *framework.App) error {
 		if err := w.Navigate(enterURL); err != nil {
 			b.logger.Error("desktop: initial navigation failed", "error", err)
 		}
-		b.flushDeepLinks()
+		b.flushDeepLinks(w)
 		// Config.Widgets open after the boot navigation, in order,
 		// through the same OpenWindow everything else uses (path
 		// validation, id assignment, per-path dedupe included).
