@@ -10,15 +10,16 @@
   padding: var(--spacing-2xl) var(--size-page-gutter) var(--spacing-3xl);
 }
 /* An empty rail is one of two shapes: an element with no child at all
-   (a region the caller left unset) or an empty child (an outlet with
-   no fill). Both collapse. */
-:scope:has(.toc:empty, .toc > :empty) { grid-template-columns: 13rem minmax(0, 1fr); }
-.toc:empty, .toc:has(> :empty) { display: none; }
-:scope:has(.nav:empty, .nav > :empty) { grid-template-columns: minmax(0, 1fr) 12rem; }
-.nav:empty, .nav:has(> :empty) { display: none; }
+   (a region the caller left unset) or a sole child that is empty (an
+   outlet with no fill). Both collapse. A rail holding content beside
+   an empty outlet is not empty and stays. */
+:scope:has(.toc:empty, .toc > :only-child:empty) { grid-template-columns: 13rem minmax(0, 1fr); }
+.toc:empty, .toc:has(> :only-child:empty) { display: none; }
+:scope:has(.nav:empty, .nav > :only-child:empty) { grid-template-columns: minmax(0, 1fr) 12rem; }
+.nav:empty, .nav:has(> :only-child:empty) { display: none; }
 /* No rails at all: one centred reading column at the prose measure. */
-:scope:has(.nav:empty, .nav > :empty):has(.toc:empty, .toc > :empty) { grid-template-columns: minmax(0, 1fr); }
-:scope:has(.nav:empty, .nav > :empty):has(.toc:empty, .toc > :empty) .article {
+:scope:has(.nav:empty, .nav > :only-child:empty):has(.toc:empty, .toc > :only-child:empty) { grid-template-columns: minmax(0, 1fr); }
+:scope:has(.nav:empty, .nav > :only-child:empty):has(.toc:empty, .toc > :only-child:empty) .article {
   inline-size: 100%;
   max-inline-size: var(--size-prose-measure);
   margin-inline: auto;

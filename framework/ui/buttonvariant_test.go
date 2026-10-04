@@ -2,8 +2,9 @@ package ui
 
 import "testing"
 
-// TestParseButtonVariant pins the recognised spellings: exactly the
-// four registered variants, case-sensitive, and ok=false for anything
+// TestParseButtonVariant pins the recognised spellings: the four
+// built-in variants and the ones registered at init (testBrandVariant,
+// from variants_test.go), case-sensitive, and ok=false for anything
 // else so every caller keeps its own default.
 func TestParseButtonVariant(t *testing.T) {
 	cases := []struct {
@@ -15,6 +16,8 @@ func TestParseButtonVariant(t *testing.T) {
 		{"secondary", ButtonSecondary, true},
 		{"danger", ButtonDanger, true},
 		{"ghost", ButtonGhost, true},
+		{"brand", testBrandVariant, true},
+		{"Brand", ButtonVariant(""), false},
 		{"", ButtonVariant(""), false},
 		{"Primary", ButtonVariant(""), false},
 		{"SECONDARY", ButtonVariant(""), false},

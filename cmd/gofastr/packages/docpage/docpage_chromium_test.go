@@ -107,6 +107,13 @@ func TestDocPageLayoutPromises(t *testing.T) {
 		Nav:  navRail,
 		Body: render.Join(article(2)...),
 	})
+	// navPlusEmpty: the left rail holds the list AND an empty outlet
+	// beside it. Only a rail whose sole child is empty collapses.
+	navPlusEmpty := shell(docpage.Config{
+		Nav:  render.Join(navRail, html.Div(html.DivConfig{}, render.HTML(""))),
+		Body: render.Join(article(2)...),
+		Toc:  tocRail,
+	})
 
 	site := app.NewApp("Docs")
 	// A theme set the way an app sets one; docpage's prose-measure
@@ -117,6 +124,7 @@ func TestDocPageLayoutPromises(t *testing.T) {
 	site.RegisterScreen(app.NewScreen("/plain", app.NewStaticComponent(plain)), nil)
 	site.RegisterScreen(app.NewScreen("/no-nav", app.NewStaticComponent(noNav)), nil)
 	site.RegisterScreen(app.NewScreen("/no-toc", app.NewStaticComponent(noToc)), nil)
+	site.RegisterScreen(app.NewScreen("/nav-plus-empty", app.NewStaticComponent(navPlusEmpty)), nil)
 	host := uihost.New(site)
 	fw := framework.NewApp()
 	fw.Use(host.RouteMatchMiddleware())
@@ -243,6 +251,16 @@ Pager:r(d+' .pager'),PageNext:r(d+' .page.next'),ProseMeasure:prose})})()`
 		// rail in.
 		if !near(g.Article[0], g.Scope[0]+g.ScopePadLeft) {
 			t.Errorf("the article should start at the page padding: article x %v, scope %v + %v", g.Article[0], g.Scope[0], g.ScopePadLeft)
+		}
+	})
+
+	t.Run("populated-nav-beside-empty-child-stays", func(t *testing.T) {
+		g := at(1280, "/nav-plus-empty")
+		if g.NavDisplay == "none" || !shown(g.Nav) {
+			t.Fatalf("a nav holding its list beside an empty child should stay (display %q, nav %v)", g.NavDisplay, g.Nav)
+		}
+		if !shown(g.Article) || !(g.Nav[0] < g.Article[0]) {
+			t.Fatalf("the nav should stay left of the article: nav %v, article %v", g.Nav, g.Article)
 		}
 	})
 

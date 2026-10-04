@@ -1,7 +1,8 @@
 package ui
 
 // ParseButtonVariant maps a variant spelling to its ButtonVariant,
-// reporting whether the spelling is one of the registered variants.
+// reporting whether the spelling is a built-in variant or one an app
+// registered through RegisterButtonVariant.
 // It is the single mapping behind the three host-side renderers that
 // turn a caller-supplied variant string into a button (kiln's node
 // renderer, the resource screens, and uihost's trusted node renderer);
@@ -18,7 +19,9 @@ func ParseButtonVariant(s string) (ButtonVariant, bool) {
 		return ButtonDanger, true
 	case "ghost":
 		return ButtonGhost, true
-	default:
-		return ButtonVariant(""), false
 	}
+	if buttonMods.has(s, kindVariant) {
+		return ButtonVariant(s), true
+	}
+	return ButtonVariant(""), false
 }

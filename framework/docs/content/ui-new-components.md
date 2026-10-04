@@ -42,9 +42,10 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 "Custom variants on framework components" in `ui-getting-started`.
 A host that receives the variant as a string (kiln's node renderer,
 the generated resource screens, uihost's trusted node renderer)
-resolves it with `ui.ParseButtonVariant`, which answers `ok=false` for
-an unregistered spelling so the host applies its own default instead
-of panicking.
+resolves it with `ui.ParseButtonVariant`, which knows the four built-in
+variants and every one the app registered through
+`ui.RegisterButtonVariant`, and answers `ok=false` for any other
+spelling so the host applies its own default instead of panicking.
 
 Every component Config carries `ExtraAttrs html.Attrs`, forwarded to
 the component's root element for `data-*` test hooks, analytics
