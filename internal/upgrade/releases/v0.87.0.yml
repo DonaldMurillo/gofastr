@@ -1,5 +1,5 @@
 version: v0.87.0
-title: Docs tools leave the App spine
+title: Layer prefixes, headless form and toast hooks, docs tools opt-in
 notes:
   - change: "the framework_docs_list / framework_docs_get / framework_docs_search MCP tools moved out of framework.WithMCPIntrospection into framework/docs/mcptools, registered through the new framework.WithMCPTools option; package framework no longer imports the docs corpus"
     breaking: true
@@ -7,4 +7,54 @@ notes:
     find:
       uses:
         - gofastr/framework.WithMCPIntrospection
-    guidance: "Add framework.WithMCPTools(mcptools.Register) beside WithMCPIntrospection() (import github.com/DonaldMurillo/gofastr/framework/docs/mcptools) where agents on /mcp used the framework_docs_* tools; leave it out to keep the docs corpus out of the binary."
+    guidance: "Add framework.WithMCPTools(mcptools.Register) beside WithMCPIntrospection() (import github.com/DonaldMurillo/gofastr/framework/docs/mcptools) where agents on /mcp used the framework_docs_* tools; leave it out to keep the docs corpus out of the binary. An app that only ever had the tools through gofastr dev has no WithMCPIntrospection call and is not listed: add the option there too if its agents read the docs."
+  - change: "every kernel attribute is data-cui-* and every class core-ui mints is cui-*: the data-fui-* keys the runtime read (data-fui-rpc, data-fui-open, data-fui-signal, data-fui-comp, data-fui-toast-stack, …), their dataset camelCase reads, and the fui-widget / fui-slot / fui-pos-* / fui-panel / fui-backdrop / fui-hidden / fui-reveal / fui-dropdown / fui-section-menu / fui-flash / fui-loading / fui-sse-* / fui-css-* / fui-vt-* / fui-intercept / fui-render-error / fui-screen-group / fui-route-announce / fui-theme-<hash> classes, the enter animations and the fui-backtotop-sentinel / fui-nav-toast / fui-toast-fallback singletons are renamed; the framework's own modules keep data-fui-lightbox*, data-fui-zoomed, data-fui-dropzone-preview*, data-fui-pane*, data-fui-z-tier, data-fui-network-retry-*, data-fui-plugin* and data-fui-page-loading, and fui-* classes stay framework/ui's"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        attrs: [data-fui-action, data-fui-activelink, data-fui-activelink-skip, data-fui-after, data-fui-animate-class, data-fui-animate-signal, data-fui-area, data-fui-autogrow, data-fui-backdrop, data-fui-banner-dismiss-id, data-fui-borne, data-fui-bundle, data-fui-charcount-source, data-fui-clear-on-esc, data-fui-comp, data-fui-comp-extra, data-fui-compute, data-fui-computed, data-fui-computed-deps, data-fui-confirm, data-fui-copy-text-from, data-fui-ctx, data-fui-deeplink, data-fui-derived, data-fui-disable-when-invalid, data-fui-doc, data-fui-drag-dismiss, data-fui-drag-handle, data-fui-dragging, data-fui-dropdown, data-fui-dropdown-open, data-fui-dropdown-panel, data-fui-dropdown-wrap, data-fui-embed-state, data-fui-fill, data-fui-fill-input, data-fui-fill-text, data-fui-flash-duration-ms, data-fui-flash-on-update, data-fui-intercept-as, data-fui-intercept-close, data-fui-intercept-overlay, data-fui-internal, data-fui-island, data-fui-lang, data-fui-layout, data-fui-layout-key, data-fui-layout-slot, data-fui-loading, data-fui-loadstate, data-fui-match-prefix, data-fui-min, data-fui-nav, data-fui-open, data-fui-optimistic-, data-fui-os, data-fui-outlet, data-fui-persist-storage, data-fui-poll, data-fui-poll-src, data-fui-popover-anchor, data-fui-popover-side, data-fui-popover-trigger, data-fui-prefetch, data-fui-push-state, data-fui-reveal, data-fui-rpc, data-fui-rpc-, data-fui-scope, data-fui-scopey, data-fui-screen-group, data-fui-scroll-bottom-on-update, data-fui-shortcut-target, data-fui-sidebar-storage, data-fui-signal, data-fui-signal-attr, data-fui-signal-inc, data-fui-signal-mode, data-fui-signal-set, data-fui-signal-toggle, data-fui-skip-label, data-fui-spa, data-fui-static, data-fui-static-options, data-fui-style, data-fui-submit-on-enter, data-fui-tab-index, data-fui-tick-elapsed, data-fui-toast, data-fui-toast-fallback, data-fui-toast-id, data-fui-toast-stack, data-fui-toggle-, data-fui-trusted, data-fui-vt, data-fui-vt-kinds, data-fui-vt-when, data-fui-widget, data-fui-window-drag]
+        classes: [fui-widget, fui-widget-drag-handle, fui-slot, fui-slot-bare, fui-pos-bottom, fui-pos-bottom-center, fui-pos-bottom-left, fui-pos-bottom-right, fui-pos-center, fui-pos-edge-left, fui-pos-edge-right, fui-pos-top, fui-pos-top-center, fui-pos-top-left, fui-pos-top-right, fui-panel, fui-backdrop, fui-backdrop-in, fui-hidden, fui-reveal, fui-reveal-fade-up, fui-revealed, fui-dropdown, fui-dropdown-open, fui-dropdown-panel, fui-dropdown-wrap, fui-section-menu, fui-flash, fui-loading, fui-sse-up, fui-sse-down, fui-intercept, fui-intercept-in, fui-intercept-overlay, fui-render-error, fui-screen-group, fui-route-announce, fui-top-in, fui-bottom-in, fui-edge-left-in, fui-edge-right-in, fui-overlay-scale-in, fui-vt-fade-in, fui-vt-fade-out, fui-vt-slide-in, fui-vt-slide-in-b, fui-vt-slide-out, fui-vt-slide-out-b, fui-backtotop-sentinel, fui-nav-toast, fui-toast-fallback]
+        match: '(?:^|[^-a-zA-Z0-9_])fui-(?:css-[a-z0-9]|theme-[0-9a-f]{8})'
+      css:
+        classes: [fui-widget, fui-widget-drag-handle, fui-slot, fui-slot-bare, fui-pos-bottom, fui-pos-bottom-center, fui-pos-bottom-left, fui-pos-bottom-right, fui-pos-center, fui-pos-edge-left, fui-pos-edge-right, fui-pos-top, fui-pos-top-center, fui-pos-top-left, fui-pos-top-right, fui-panel, fui-backdrop, fui-backdrop-in, fui-hidden, fui-reveal, fui-reveal-fade-up, fui-revealed, fui-dropdown, fui-dropdown-open, fui-dropdown-panel, fui-dropdown-wrap, fui-section-menu, fui-flash, fui-loading, fui-sse-up, fui-sse-down, fui-intercept, fui-intercept-in, fui-intercept-overlay, fui-render-error, fui-screen-group, fui-route-announce, fui-top-in, fui-bottom-in, fui-edge-left-in, fui-edge-right-in, fui-overlay-scale-in, fui-vt-fade-in, fui-vt-fade-out, fui-vt-slide-in, fui-vt-slide-in-b, fui-vt-slide-out, fui-vt-slide-out-b, fui-backtotop-sentinel, fui-nav-toast, fui-toast-fallback]
+      text:
+        - glob: "**/*.js"
+          match: 'data-fui-(?:scroll-bottom-on-update|disable-when-invalid|banner-dismiss-id|flash-duration-ms|intercept-overlay|charcount-source|activelink-skip|flash-on-update|intercept-close|persist-storage|popover-trigger|shortcut-target|sidebar-storage|submit-on-enter|animate-signal|copy-text-from|dropdown-panel|popover-anchor|static-options|toast-fallback|animate-class|computed-deps|dropdown-open|dropdown-wrap|signal-toggle|clear-on-esc|drag-dismiss|intercept-as|match-prefix|popover-side|screen-group|tick-elapsed|drag-handle|embed-state|layout-slot|signal-attr|signal-mode|toast-stack|window-drag|activelink|comp-extra|fill-input|layout-key|optimistic|push-state|signal-inc|signal-set|skip-label|fill-text|loadstate|tab-index|autogrow|backdrop|computed|deeplink|dragging|dropdown|internal|poll-src|prefetch|toast-id|vt-kinds|compute|confirm|derived|loading|trusted|vt-when|action|bundle|island|layout|outlet|reveal|scopey|signal|static|toggle|widget|after|borne|scope|style|toast|area|comp|fill|lang|open|poll|ctx|doc|min|nav|rpc|spa|os|vt)(?:[^a-z0-9]|$)'
+        - glob: "**/*.html"
+          match: 'data-fui-(?:scroll-bottom-on-update|disable-when-invalid|banner-dismiss-id|flash-duration-ms|intercept-overlay|charcount-source|activelink-skip|flash-on-update|intercept-close|persist-storage|popover-trigger|shortcut-target|sidebar-storage|submit-on-enter|animate-signal|copy-text-from|dropdown-panel|popover-anchor|static-options|toast-fallback|animate-class|computed-deps|dropdown-open|dropdown-wrap|signal-toggle|clear-on-esc|drag-dismiss|intercept-as|match-prefix|popover-side|screen-group|tick-elapsed|drag-handle|embed-state|layout-slot|signal-attr|signal-mode|toast-stack|window-drag|activelink|comp-extra|fill-input|layout-key|optimistic|push-state|signal-inc|signal-set|skip-label|fill-text|loadstate|tab-index|autogrow|backdrop|computed|deeplink|dragging|dropdown|internal|poll-src|prefetch|toast-id|vt-kinds|compute|confirm|derived|loading|trusted|vt-when|action|bundle|island|layout|outlet|reveal|scopey|signal|static|toggle|widget|after|borne|scope|style|toast|area|comp|fill|lang|open|poll|ctx|doc|min|nav|rpc|spa|os|vt)(?:[^a-z0-9]|$)'
+        - glob: "**/*.js"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-(?:backtotop-sentinel|widget-drag-handle|intercept-overlay|pos-bottom-center|overlay-scale-in|pos-bottom-right|pos-bottom-left|dropdown-panel|pos-edge-right|pos-top-center|reveal-fade-up|route-announce|toast-fallback|vt-slide-out-b|dropdown-open|dropdown-wrap|edge-right-in|pos-edge-left|pos-top-right|vt-slide-in-b|edge-left-in|intercept-in|pos-top-left|render-error|screen-group|section-menu|vt-slide-out|backdrop-in|vt-fade-out|vt-slide-in|pos-bottom|pos-center|vt-fade-in|bottom-in|intercept|nav-toast|slot-bare|backdrop|dropdown|revealed|sse-down|loading|pos-top|hidden|reveal|sse-up|top-in|widget|flash|panel|slot|css-[a-z0-9]|theme-[0-9a-f]{8})(?:[^a-z0-9_-]|$)'
+        - glob: "**/*.html"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-(?:backtotop-sentinel|widget-drag-handle|intercept-overlay|pos-bottom-center|overlay-scale-in|pos-bottom-right|pos-bottom-left|dropdown-panel|pos-edge-right|pos-top-center|reveal-fade-up|route-announce|toast-fallback|vt-slide-out-b|dropdown-open|dropdown-wrap|edge-right-in|pos-edge-left|pos-top-right|vt-slide-in-b|edge-left-in|intercept-in|pos-top-left|render-error|screen-group|section-menu|vt-slide-out|backdrop-in|vt-fade-out|vt-slide-in|pos-bottom|pos-center|vt-fade-in|bottom-in|intercept|nav-toast|slot-bare|backdrop|dropdown|revealed|sse-down|loading|pos-top|hidden|reveal|sse-up|top-in|widget|flash|panel|slot|css-[a-z0-9]|theme-[0-9a-f]{8})(?:[^a-z0-9_-]|$)'
+        - glob: "**/*.js"
+          match: 'dataset\.fui(?:Comp|RpcAfterDone|Scope)\b'
+    guidance: "Rename data-fui-<name> to data-cui-<name> and dataset.fui<Name> to dataset.cui<Name> for every kernel key, and fui-<name> to cui-<name> for the kernel's classes and singletons (the ownership table is core-ui/ARCHITECTURE.md, \"Who owns which prefix\"); the kept framework-module keys and framework/ui's own fui-* classes are untouched."
+  - change: "the kernel's copy module marks a successful copy data-hui-copy-state=\"done\" and no longer sets the fui-copied class; its form-errors module places messages by the data-hui-field / data-hui-field-error / data-hui-choice hooks instead of naming kit classes"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        classes: [fui-copied]
+      css:
+        classes: [fui-copied]
+      text:
+        - glob: "**/*.js"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-copied(?:[^a-z0-9_-]|$)'
+        - glob: "**/*.html"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-copied(?:[^a-z0-9_-]|$)'
+    guidance: "Style or read [data-hui-copy-state=\"done\"] instead of .fui-copied; a bare input outside ui.FormField gets its refused-submission message after a data-hui-field-error node, so a sheet keyed on the old module-placed markup moves to the hooks."
+  - change: "runtime toasts are cloned from the kit's registered template inside a host-guaranteed stack: the headless-feedback module no longer mounts the fui-toast-stack-auto singleton, and a dismissed row is marked data-hui-toast-leaving instead of the is-leaving class"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        classes: [fui-toast-stack-auto]
+      css:
+        classes: [fui-toast-stack-auto]
+      text:
+        - glob: "**/*.js"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-toast-stack-auto(?:[^a-z0-9_-]|$)'
+        - glob: "**/*.html"
+          match: '(?:^|[^-a-zA-Z0-9_])fui-toast-stack-auto(?:[^a-z0-9_-]|$)'
+    guidance: "Mount a stack (ui.ToastSlot, or let framework/uihost mount uihost.DefaultToastStack) instead of styling or querying .fui-toast-stack-auto, and key leaving-row CSS on [data-hui-toast-leaving]."
