@@ -112,6 +112,12 @@ clipboard via `navigator.clipboard.writeText()`. The feedback module
 brief "Copied!" state and announces it to screen readers. Without
 script the page promises nothing about the clipboard.
 
+`CopyButtonConfig.Target` is the source element's id, with or without
+a leading `#` (`"code-1"` and `"#code-1"` are the same). It is not a
+CSS selector: the module looks the element up with `getElementById`,
+and render panics on a value with selector syntax such as
+`".code"` or `"pre > code"`.
+
 ### Password visibility toggle
 
 `framework/ui.PasswordInput` renders a password field with a reveal

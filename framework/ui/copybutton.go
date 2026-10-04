@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"encoding/json"
@@ -32,8 +33,12 @@ import (
 
 // CopyButtonConfig configures the copy button.
 type CopyButtonConfig struct {
-	// Target is a CSS selector that identifies the element whose
-	// textContent will be copied. Required.
+	// Target is the id of the element whose textContent will be
+	// copied. Required. A leading "#" is accepted and dropped, so
+	// "code-1" and "#code-1" name the same element. It is not a CSS
+	// selector: the copy module resolves it with getElementById, and
+	// Render panics on a value carrying selector syntax (whitespace,
+	// '.', '>', '[', ':', '#' past the first byte).
 	Target string
 
 	// Label is the visible button text before copying. Default "Copy".
@@ -95,6 +100,15 @@ type CopyButtonConfig struct {
 func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.Target == "" {
 		panic("ui: CopyButton requires Target")
+	}
+	// The hook carries an ELEMENT ID, not a selector: the module
+	// resolves it with getElementById, so a value carrying "#" (the
+	// old selector spelling) loses its prefix here, and anything that
+	// still reads as a selector would silently match nothing.
+	targetID := strings.TrimPrefix(cfg.Target, "#")
+	if targetID == "" || strings.ContainsAny(targetID, " \t\n\r\f.>[:#") {
+		panic("ui: CopyButton Target must be an element id (a leading # is allowed), not a CSS selector: " +
+			strconv.Quote(cfg.Target))
 	}
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -199,10 +213,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		},
 	})
 
-	// The hook carries an ELEMENT ID, not a selector: the module
-	// resolves it with getElementById, so a value carrying "#" (the
-	// old selector spelling) loses its prefix here.
-	targetID := strings.TrimPrefix(cfg.Target, "#")
 	wrapAttrs := html.Attrs{
 		"data-hui-copy":          "",
 		"data-hui-copy-target":   targetID,

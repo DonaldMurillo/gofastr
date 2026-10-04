@@ -93,3 +93,27 @@ func TestCopyButtonExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("wrapper root missing data-test:\n%s", root)
 	}
 }
+
+func TestCopyButtonTargetRefusesSelector(t *testing.T) {
+	for _, target := range []string{
+		"#code .line", ".code", "pre > code", "[data-x]", "code:first-child", "div#code",
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Target %q: expected a panic, got a render", target)
+				}
+			}()
+			CopyButton(CopyButtonConfig{Target: target})
+		}()
+	}
+}
+
+func TestCopyButtonTargetAcceptsID(t *testing.T) {
+	for _, target := range []string{"code-1", "#code-1"} {
+		out := string(CopyButton(CopyButtonConfig{Target: target}))
+		if !strings.Contains(out, `data-hui-copy-target="code-1"`) {
+			t.Errorf("Target %q: want data-hui-copy-target=\"code-1\"\nout: %s", target, out)
+		}
+	}
+}
