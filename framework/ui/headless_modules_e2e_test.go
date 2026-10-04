@@ -356,3 +356,30 @@ func TestRuntimeToastKeepsItsVariant(t *testing.T) {
 		}
 	}
 }
+
+// A MultiSelect that arrives as the root node of an insertion (an
+// island swap, an appended fragment) is wired by the kernel's
+// arrival pass: its pre-selected options render as chips.
+func TestInsertedMultiSelectRendersChips(t *testing.T) {
+	first := ui.MultiSelect(ui.MultiSelectConfig{Name: "a", Label: "A", ID: "ms-a",
+		Options: []ui.MultiSelectOption{{Value: "x", Label: "X"}}})
+	later := ui.MultiSelect(ui.MultiSelectConfig{Name: "b", Label: "B", ID: "ms-b",
+		Options: []ui.MultiSelectOption{{Value: "red", Label: "Red", Selected: true},
+			{Value: "blue", Label: "Blue", Selected: true}, {Value: "green", Label: "Green"}}})
+	ctx := moduleTestCtx(t, string(first)+`<template id="later">`+string(later)+`</template>`)
+	if !pollJS(ctx, moduleLoaded("headless-multiselect")) {
+		t.Fatal("the multiselect marker never loaded headless-multiselect")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.appendChild(`+
+		`document.getElementById('later').content.firstElementChild.cloneNode(true))`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	const chips = `document.querySelectorAll('#ms-b [data-hui-multiselect-chip-text]')`
+	if !pollJS(ctx, chips+`.length === 2`) {
+		t.Fatalf("the inserted MultiSelect shows %s chips, want 2 (Red, Blue)",
+			evalString(ctx, `String(`+chips+`.length)`))
+	}
+	if got := evalString(ctx, `Array.from(`+chips+`).map(function(c){return c.textContent}).join(',')`); got != "Red,Blue" {
+		t.Errorf("chips = %q, want \"Red,Blue\"", got)
+	}
+}

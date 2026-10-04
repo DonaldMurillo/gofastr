@@ -92,9 +92,19 @@
     });
   });
 
+  // within: the scope itself when it matches, then its descendants.
+  // The kernel hands an arrival pass the inserted node, and a swap
+  // whose root IS a multiselect must be wired too.
+  function within(root, sel) {
+    const out = [];
+    if (root.matches && root.matches(sel)) out.push(root);
+    if (root.querySelectorAll) out.push.apply(out, root.querySelectorAll(sel));
+    return out;
+  }
+
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-hui-multiselect]').forEach(renderChips);
+    within(scope, '[data-hui-multiselect]').forEach(renderChips);
   }
 
   scan(document);
