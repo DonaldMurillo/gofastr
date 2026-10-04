@@ -30,6 +30,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `App.ExportStatic` passes the app's router. A same-origin rail script
   that does not answer 200, or whose path is an exported page, fails the
   build; a CDN or relative src is left to the browser.
+- **`gofastr generate screen <name> --from-a11y=<file>`** builds an
+  owned screen from a Playwright aria snapshot (#434). The YAML that
+  `locator.ariaSnapshot()` returns (a file, or `-` for stdin) is
+  parsed and each role maps to a design-system component:
+  the first level-1 heading becomes `ui.PageHeader`, a run of fields
+  and buttons (with the help text between them and any fieldset holding
+  a control) becomes one `ui.Form` posting to the screen's route,
+  textbox/spinbutton/checkbox/switch/combobox/radiogroup become the
+  matching `ui` field, a fieldset of radios becomes a `ui.RadioGroup`
+  with the fieldset's name as legend, tables become `ui.DataTable`,
+  lists become lists, navigation becomes a labelled `<nav>` of its
+  links, and links keep their `/url` behind the unsafe-scheme guard.
+  Banners, footers and images are skipped with a warning; a role with
+  no mapping keeps its children, or its text when it has none, also
+  with a warning, and so does content a mapping leaves out (text in a
+  nav, links in table cells, a textbox's value). The screen is written
+  through the additive blueprint path, so it is ordinary editable Go.
+  The input is capped at 4 MiB, 128 levels and 50,000 nodes.
+- **Blueprint catalog kinds for controls, tables and lists**:
+  `action_button`, `text_field`, `number_field`, `checkbox`, `switch`,
+  `select_field`, `radio_group`, `custom_form`, `data_table`,
+  `item_list` and `nav_links`, rendering `ui.Button`, `ui.TextField`,
+  `ui.NumberField`, `ui.Checkbox`, `ui.Switch`, `ui.Select`,
+  `ui.RadioGroup`, `ui.Form` (with the request context, so it carries
+  the CSRF token), `ui.DataTable`, `html.UnorderedList`/`OrderedList`
+  and `html.Nav` around a `ui.Cluster`. Validation refuses a field
+  without a label or name, a choice control without options, a form
+  action that fails the anchor URL check, a `custom_form` inside
+  another, an unlabelled `nav_links`, and a table row wider than its
+  columns.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
   the working tree and `origin/main`: the changed packages, their
@@ -293,6 +323,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
+- **A blueprint `type: link` block renders `ui.Link`** instead of
+  `html.Link`, so generated links pick up the design system's link
+  style, and validation now refuses an unsafe `href` (`javascript:`,
+  `data:`, `//host`). Before, the generator accepted one and the page
+  rendered the link with no `href`.
 - **BREAKING: every class and attribute carries the prefix of the
   tree that defines it** (#467). The kernel's attribute vocabulary is
   `data-cui-*`: every `data-fui-*` the runtime read is renamed
@@ -395,14 +430,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
-- **A process module that died mid-handshake was quarantined as
-  tampered.** The supervisor filed every handshake-stage error as an
-  integrity fault (terminal Failed), so a child that crashed or closed
-  its pipe before answering never charged the restart circuit. A
-  handshake call that got no answer now carries the new
-  `moduleproto.ErrHandshakeUnanswered` and counts as a crash; a
-  mismatch, a negotiation failure or an RPC error reply stays an
-  integrity fault.
+- **A catalog block under a node block is refused at validation.** A
+  `type: div` (or any node-tree block) holding a `card`, `stack`, form
+  control or other catalog kind passed validation and rendered as an
+  `unknown kind` HTML comment, so the content vanished from the page.
+  Validation now names the block and says to use a `stack`, `cluster`,
+  `card` or `section` instead.
+- **`gofastr generate screen` runs again.** v0.86.0 dropped the
+  `screen` case from the `generate` dispatch, so the command printed
+  "Unknown resource type: screen" and exited 1, while its own help
+  listed `screen` as supported.
+- **A process module that dies mid-handshake restarts instead of
+  failing for good.** The supervisor classed any error whose text held
+  `handshake:` as an integrity fault, so a child that crashed while the
+  host was still writing the handshake (broken pipe, EOF, peer closed)
+  went to terminal `Failed` with no restart and no circuit-breaker
+  charge. Transport errors are crashes now, as is a handshake call the
+  child never answered, which carries the new
+  `moduleproto.ErrHandshakeUnanswered`; a handshake mismatch, a failed
+  negotiation, an RPC error reply or an executable SHA mismatch is
+  still terminal.
 - **Static export shipped pages that load a missing script.** The docs
   site loads `/__site/livedash-reducers.js` on every page from an app
   route; the export skipped it, so every exported page (GitHub Pages

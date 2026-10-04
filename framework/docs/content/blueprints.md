@@ -471,6 +471,79 @@ immediately edit:
 * `generate screen <name>` emits one screen at `/<kebab-name>` with a heading
   and a stub paragraph; replace its `Render`.
 
+#### Screens from an accessibility tree (`--from-a11y`)
+
+`generate screen <name> --from-a11y=<file>` builds the screen body from a
+Playwright aria snapshot instead of the stub: the YAML accessibility tree
+that `locator.ariaSnapshot()` returns and Playwright MCP's `browser_snapshot`
+prints. `--from-a11y=-` reads it from stdin.
+
+```yaml
+# signup.aria.yml
+- main:
+  - heading "Create account" [level=1]
+  - paragraph: Start your free trial.
+  - textbox "Email"
+  - checkbox "I agree to the terms"
+  - button "Sign up"
+```
+
+```bash
+gofastr generate screen signup --from-a11y=signup.aria.yml
+```
+
+Each role becomes a block from the [UI component catalog](#ui-component-blocks-the-frameworkui-catalog),
+so the screen file holds `framework/ui` calls and no CSS:
+
+| Snapshot role | Block → component |
+|---|---|
+| first `heading [level=1]` (+ a paragraph right under it) | `page_header` (title + subtitle) |
+| other `heading` (a later level 1 becomes level 2) | `type: heading` |
+| `paragraph`, `text`, `blockquote`, `code`, … | `type: text` |
+| `link` (+ `/url`) | `type: link` → `ui.Link` |
+| `button` | `action_button` |
+| `textbox`, `searchbox`, option-less `combobox` | `text_field` |
+| `spinbutton` | `number_field` |
+| `checkbox` / `switch` | `checkbox` / `switch` |
+| `combobox` or `listbox` with `option`s | `select_field` |
+| `radiogroup`, a named `group` holding only radios, or adjacent `radio`s | `radio_group` |
+| `form`, or a run of adjacent controls | `custom_form` |
+| `table`, `grid` | `data_table` |
+| `list` | `item_list` |
+| `navigation` | `nav_links` of its links |
+| named `region`, `article`, `group`, `dialog`, … | `section` |
+| `alert` | `callout` (name as title, text as body) |
+| `separator` | `divider` |
+
+Mapping rules worth knowing:
+
+* Controls next to each other (after unwrapping `generic` layout wrappers)
+  become one `custom_form`. Help, hint and error text between them, and a
+  named `group` (fieldset) holding a control, stay inside the same form.
+  Its last button becomes the submit; with no button the submit is
+  hidden. The form posts to the screen's own route, which has no POST
+  handler yet: point `action` at your handler. Forms never nest: a `form`
+  inside a form gives its fields to the outer one.
+* A `text` node that repeats the next control's name (its visible label)
+  is dropped, since the generated field renders its own label.
+* Field names come from labels (`"E-mail"` → `e_mail`), unique across the
+  screen; two radios with the same label get distinct values.
+* A table with no name gets the caption "Table", hidden on screen; a
+  caption used twice gets an `id`, so the two tables' ids stay distinct.
+* `banner` and `contentinfo` are skipped: the app layout draws the site
+  header and footer. `img` is skipped because a snapshot carries no image
+  source. A warning (to stderr under `--json`, with its snapshot line)
+  names every skipped or inlined node and every piece of content a mapping
+  leaves out: text and buttons inside a `navigation`, links and buttons in
+  table cells (cells become text), non-radio content in a `radiogroup`,
+  and a textbox's current value.
+* A `javascript:` or other unsafe `/url` becomes `#`, with a warning.
+  Control and bidi characters are stripped from names and text.
+
+The snapshot is capped at 4 MiB, 50,000 entries and 128 levels of
+nesting; a malformed line fails the command with its line number and
+writes nothing.
+
 Scaffolds and yml fragments are complementary, not competing: the **stub** is
 basic scaffolding (one thing, fast); a blueprint **yml** is full intention
 (fields, relations, RBAC, theme, nav, seed, multi-screen layouts). For
@@ -691,7 +764,9 @@ Any screen body can compose the framework's UI components directly via block
 `page_header` · `hero` · `section` (with child blocks) · `card` · `stack` ·
 `cluster` · `grid` · `stat_row` · `stat_grid` · `stat_card` · `bar_chart` ·
 `pie_chart` · `line_chart` · `link_button` · `callout` · `divider` ·
-`markdown` · `pricing`.
+`markdown` · `pricing` · `custom_form` · `text_field` · `number_field` ·
+`checkbox` · `switch` · `select_field` · `radio_group` · `action_button` ·
+`data_table` · `item_list`.
 
 The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
@@ -706,6 +781,66 @@ column on marketing pages. **Pricing**: a `pricing` block takes
 `props: {plans: [{name, price, period, description, features: […], cta_text,
 cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
 highlighted), so a pricing page reads like marketing, not an admin grid.
+
+**Controls, tables and lists:** these kinds carry a form that is not bound
+to an entity (for that, use `entity_form`). Validation rejects a block
+missing a required prop, which the component would otherwise refuse at
+render time.
+
+| Kind | Component | Props (required in bold) |
+|---|---|---|
+| `custom_form` | `ui.Form` | **`action`** (http(s) or root-relative), `method` (`get`\|`post`), `submit` (submit label), `hide_submit`; child blocks are the fields |
+| `text_field` | `ui.TextField` | **`label`**, **`name`**, `placeholder`, `help`, `required`, `disabled` |
+| `number_field` | `ui.NumberField` | same as `text_field` |
+| `checkbox` / `switch` | `ui.Checkbox` / `ui.Switch` | **`label`**, **`name`**, `checked`, `disabled` |
+| `select_field` | `ui.Select` | **`label`**, **`name`**, **`options`**, `required`, `disabled` |
+| `radio_group` | `ui.RadioGroup` | **`legend`**, **`name`**, **`options`**, `required` |
+| `action_button` | `ui.Button` | **`label`**, `variant` (`primary`\|`secondary`\|`ghost`\|`danger`), `type` (`button`\|`submit`\|`reset`, default `button`), `disabled` |
+| `data_table` | `ui.DataTable` | **`columns`** (list of headers), `rows` (list of lists of cell text), `caption`, `caption_hidden`, `id` (needed when two tables share a caption) |
+| `item_list` | `html.UnorderedList` | `ordered`; each child block is one item |
+| `nav_links` | `html.Nav` + `ui.Cluster` | **`label`** (the landmark's name), `gap` (default `md`); child blocks are the links |
+
+`options` is a list of strings, or of `{label, value, selected}` maps
+(`checked` for a radio); a missing `value` is the label. `variant`, `type`
+and `method` are matched without regard to case. A form's fields render
+with the request context, so the form carries the CSRF token, and a
+`custom_form` cannot hold another one.
+
+```yaml
+- kind: custom_form
+  props:
+    action: /contact
+    submit: Send
+  children:
+    - kind: text_field
+      props:
+        label: Email
+        name: email
+        required: true
+    - kind: select_field
+      props:
+        label: Topic
+        name: topic
+        options: [Sales, Support]
+    - kind: radio_group
+      props:
+        legend: Plan
+        name: plan
+        options:
+          - label: Free
+            value: free
+            checked: true
+          - label: Pro
+            value: pro
+```
+
+The names differ from the raw node kinds `button`, `form`, `select`,
+`list`, `table` and `nav`, which still render as plain elements through
+the node renderer. That renderer draws only node kinds, so validation
+refuses a catalog block nested under a node block (`type: div` holding a
+`custom_form`): put it in a `stack`, `cluster`, `card` or `section`.
+A `type: link` block renders through `ui.Link`, the styled anchor;
+validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
 that computes a live metric server-side:

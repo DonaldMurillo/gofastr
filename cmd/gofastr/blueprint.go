@@ -3172,6 +3172,11 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if href == "" {
 			return fmt.Errorf("blueprint: screen %q link block href is required", screenName)
 		}
+		// The renderer swaps an unsafe href for "#"; refuse it here so the
+		// author hears about it instead of shipping a dead link.
+		if !urlsafe.OK(href, urlsafe.Anchor) {
+			return fmt.Errorf("blueprint: screen %q link href %q is not a safe link: use an http(s), mailto, fragment or relative URL", screenName, href)
+		}
 	case "entity_list":
 		if block.Entity == "" {
 			return fmt.Errorf("blueprint: screen %q entity_list block entity is required", screenName)
@@ -3411,8 +3416,22 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		"markdown", "pricing", "divider":
 		// framework/ui catalog blocks. Props are validated leniently (the
 		// generator reads only the props each component understands).
+	case "action_button", "custom_form", "text_field", "number_field",
+		"checkbox", "switch", "select_field", "radio_group", "data_table",
+		"item_list", "nav_links":
+		if err := validateBlueprintControlBlock(screenName, strings.ToLower(strings.TrimSpace(kind)), block); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("blueprint: screen %q has unsupported block type %q", screenName, kind)
+	}
+	// A node-tree block hands its whole subtree to the node renderer, which
+	// draws only node kinds: a catalog block anywhere under it would render
+	// as an "unknown kind" comment, so it is refused here.
+	if !blueprintCatalogKind(block.Kind) && blueprintBlockUsesNodeRenderer(block) {
+		if inner := blueprintCatalogUnderNode(block.Children); inner != "" {
+			return fmt.Errorf("blueprint: screen %q %s block cannot hold a %s block: node blocks draw only node kinds; put it in a stack, cluster, card or section", screenName, kind, inner)
+		}
 	}
 	for _, child := range block.Children {
 		if err := validateBlueprintBlock(screenName, entities, child); err != nil {
@@ -3420,6 +3439,21 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		}
 	}
 	return nil
+}
+
+// blueprintCatalogUnderNode returns the first catalog kind among blocks the
+// node renderer draws. section is a node kind as well as a catalog one, so
+// it renders either way.
+func blueprintCatalogUnderNode(blocks []BlueprintBlock) string {
+	for _, b := range blocks {
+		if blueprintCatalogKind(b.Kind) && !strings.EqualFold(strings.TrimSpace(b.Kind), "section") {
+			return b.Kind
+		}
+		if inner := blueprintCatalogUnderNode(b.Children); inner != "" {
+			return inner
+		}
+	}
+	return ""
 }
 
 func validateBlueprintLayoutBlock(screenName, kind string, props map[string]any) error {
@@ -6056,7 +6090,7 @@ func screenNeedsCtx(screen BlueprintScreen) bool {
 			if isLoginFormBlock(b) || isSignupFormBlock(b) {
 				return true
 			}
-			if blueprintBlockHasSource(b) {
+			if blueprintBlockHasSource(b) || blueprintBlocksHaveCustomForm([]BlueprintBlock{b}) {
 				return true
 			}
 			if walk(b.Children, false) {
@@ -6330,7 +6364,7 @@ func blueprintCatalogKind(kind string) bool {
 		"markdown", "pricing":
 		return true
 	}
-	return false
+	return blueprintControlKind(kind)
 }
 
 // blueprintCatalogUsesHTML reports whether a catalog block's emitted code
@@ -6440,6 +6474,9 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 				}
 				if blueprintTopLevelBlockEmitsHTML(block) {
 					needs.html = true
+				}
+				if strings.EqualFold(strings.TrimSpace(block.Type), "link") {
+					needs.ui = true
 				}
 			}
 		}
@@ -6646,6 +6683,14 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 			parts = append(parts, renderBlueprintBlockForScreen(bp, screen, ch, cp, entityMap, apiBase))
 		}
 		return strings.Join(parts, ", ")
+	}
+	if blueprintControlKind(kind) {
+		var children []string
+		for i, ch := range block.Children {
+			cp := append(append([]int(nil), path...), i)
+			children = append(children, renderBlueprintBlockForScreen(bp, screen, ch, cp, entityMap, apiBase))
+		}
+		return renderBlueprintControlBlock(block, children)
 	}
 	switch kind {
 	case "stack":
@@ -6866,7 +6911,14 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 		}
 		return fmt.Sprintf("html.Heading(html.HeadingConfig{Level: %d, Class: %q}, render.Text(%q))", level, block.Class, block.Text)
 	case "link":
-		return fmt.Sprintf("html.Link(html.LinkConfig{Href: %q, Text: %q, Class: %q})", block.Href, block.Text, block.Class)
+		// ui.Link is the design system's anchor: the same unsafe-scheme
+		// guard html.Link applies, plus the link styling a bare <a> lacks.
+		// It refuses empty text, so a text-less link reads as its href.
+		text := block.Text
+		if text == "" {
+			text = block.Href
+		}
+		return fmt.Sprintf("ui.Link(ui.LinkConfig{Href: %q, Text: %q, Class: %q})", block.Href, text, block.Class)
 	case "section":
 		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%q))", attrs, block.Text)
 	default:

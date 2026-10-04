@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -290,6 +292,29 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 		moduleproto.ErrHandshakeUnanswered, fmt.Errorf("moduleproto: write: %w", syscall.EPIPE)))
 	if isIntegrityFault(died) {
 		t.Error("a broken pipe mid-handshake is a crash, not an integrity fault")
+	}
+}
+
+// A child that dies mid-handshake crashed; it did not lie about itself.
+// Classing it terminal skipped the restart cycle and the circuit breaker,
+// and TestSupervisor_CircuitOpensAndGenResets failed whenever load let the
+// crash land inside the handshake instead of before it.
+func TestPeerGoneMidHandshakeIsCrash(t *testing.T) {
+	for _, cause := range []error{
+		moduleproto.ErrClosed,
+		io.EOF,
+		io.ErrUnexpectedEOF,
+		syscall.EPIPE,
+		os.ErrClosed,
+	} {
+		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", cause))
+		if isIntegrityFault(err) {
+			t.Errorf("%v classed as an integrity fault", err)
+		}
+	}
+	mismatch := fmt.Errorf("handshake: %w", &moduleproto.HandshakeMismatchError{Field: "x", Want: "a", Got: "b"})
+	if !isIntegrityFault(mismatch) {
+		t.Error("a wrapped handshake mismatch must stay terminal")
 	}
 }
 
