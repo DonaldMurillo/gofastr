@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`core/static.Config.NotFoundFile`**: answer a miss with a file from
+  the served `FS` (a static export's `404.html`) under status 404. A
+  conditional request cannot turn it into a 304, and SPA mode ignores it.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
   the working tree and `origin/main`: the changed packages, their
