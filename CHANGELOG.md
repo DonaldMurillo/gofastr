@@ -83,7 +83,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `./scripts/test-all.sh` and the new `make test-all` run everything;
   pushes to main and the merge queue always do. A change to go.mod,
   go.sum or the tool itself, or a base ref that cannot be resolved,
-  widens to the full run rather than skipping anything.
+  widens to the full run rather than skipping anything. `make red-tests`
+  does the same when `cmd/affected` itself exits non-zero: it runs every
+  red-tagged package instead of filtering against an empty list and
+  reporting nothing to run.
 - **`battery/desktop` (experimental)**: a desktop host that runs a
   GoFastr app inside the OS WebView from a `CGO_ENABLED=0` binary.
   The macOS arm ships (WKWebView through a pure-Go Objective-C bridge
@@ -157,7 +160,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   emitting a `deep_link` event with `{url, path}`. Links are refused on
   any other scheme, userinfo, or length over 2048 bytes; links before
   the window opens are queued (16) and flushed after the boot
-  navigation. macOS arm64 only; experimental, like the rest of
+  navigation, and `OnDeepLink` runs once per link, queued or not (a
+  queued link is mapped when it arrives and delivered as-is at flush).
+  macOS arm64 only; experimental, like the rest of
   `battery/desktop`.
 - `gofastr desktop build --notarize` (with `--notary-profile`, default
   `gofastr`, and `--entitlements`, default a generated empty-dict
@@ -196,7 +201,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the preferences, and a new ungated `state` capability share it: the
   page's keys are confined to the `page.` prefix
   (`get`/`set`/`delete`/`keys`), and every successful `set`/`delete`
-  broadcasts `state_changed` with `{key}` to every open window.
+  broadcasts `state_changed` with `{key}` to every open window. A write
+  that fails (a read-only data dir, a scanner holding `state.json`)
+  leaves the store dirty, so the next write or the quit `Flush` retries
+  it and reports the error instead of dropping the change.
 - `battery/desktop`: declared preferences. `Config.Preferences` takes
   a `desktop.Preference` list (kinds bool, int, string, choice;
   validated at `New` with a defensive copy), stores the values typed
@@ -413,11 +421,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   container carries no class of its own (`data-cui-comp="ui-toast-stack"`
   is what the sheet keys on). `ui.ToastSlot` delegates to the preset.
   New: `registry.Template`, `preset.IsToastStack`,
-  `widget.IsolateForTest`.
-- The pinned v0.85.0 runtime fixture and the test that drove it against
-  today's server are gone: a client that speaks none of the page's
-  attributes intercepts nothing, so the browser's own navigation is the
-  full load the skew contract demands, with no bundle to pin.
+  `widget.IsolateForTest`. The template also lists the variants it
+  draws that are not tones (`headless.ToastTemplateProps.Variants`,
+  rendered as `data-hui-toast-variants`; `framework/ui` passes `neutral`
+  and every registered status variant), so a `neutral` or custom toast
+  keeps its own class and glyph with no tone word, `error` is drawn and
+  announced as `danger`, and only a variant the template does not list
+  falls back to a bare row.
+- **Deploy skew across the rename is a full load, not a dead swap.** A
+  tab still running the previous runtime kept intercepting links after
+  the server was upgraded and swapped the new `data-cui-*` markup into
+  a page whose kernel read none of it: a `data-cui-rpc` form then
+  submitted as a native GET with its fields in the URL. The kernel now
+  carries a markup generation (`runtime.MarkupVersion`, `"2"`) and
+  sends it as `X-Gofastr-Markup` on every navigation, envelope,
+  preload and intercept fetch; `framework/uihost` answers a browser
+  fetch that carries a missing or different generation with a 409
+  whose body is a partial the old runtime swaps in: a meta refresh to
+  the destination and a reload link, so the browser loads the page
+  whole with the new runtime. Requests with no Fetch Metadata (curl,
+  Go tests) keep the ordinary partial. The v0.86.0 runtime is pinned
+  as a fixture again and drives the old-client test against today's
+  host, beside a new-client control.
 
 - **examples/meridian: `entities/` and `cmd/meridian/` are
   generator-owned again and gated for byte drift** (#416).
@@ -459,6 +484,102 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **`S3Storage.PresignedGetURL` and `PresignedPutURL` return an error
+  with no presigner** (since v0.86.0). The method value
+  `s.presigner.PresignGet` was evaluated on the nil interface before
+  the shared guard ran, so a storage built without a presigner panicked
+  with a nil dereference where it used to answer
+  `storage: presigner not configured`.
+- **A static export writes `_headers` again** (since v0.86.0). The
+  layout-primitive change replaced the `writeHeadersFile` call in
+  `static.Builder.Build` with the `404.html` write, so a Netlify or
+  Cloudflare Pages deploy shipped without the Content-Security-Policy,
+  `X-Content-Type-Options: nosniff` and Referrer-Policy lines the docs
+  promise; the security test now runs `Build` instead of the helper.
+- **The v0.86.0 upgrade notes name every removed export.** `gofastr
+  upgrade --from v0.85.0 --to v0.86.0` stayed silent on twenty removed
+  identifiers (`core-ui/patterns/{tabs,combobox,disclosure,scrollspy,
+  skeleton}`, the `app.Layout` Header/Sidebar/Footer/Container/
+  StickyHeader fields and `WrapNested`/`WrapNestedCtx`,
+  `ui.ResponsiveConfig.Breakpoint`, `ui.TOCConfig.Levels`,
+  `theme.Overrides.DarkColors`, the `ui.SiteHeaderDrawer*` identifiers,
+  `check.LintNoPatternBaseCSS`, `kiln/freeze.DSNHasSecret`), so the app
+  learned of them from compile errors. Each has a note, `ui.Responsive`
+  gains a review note for its zero breakpoint (1024px became 48rem),
+  and a new gate (`TestRemovedExportsHaveNotes`, under
+  `GOFASTR_UPGRADE_FIXTURES=1`) diffs the public packages' exported API
+  between each release tag and the one below it, and the newest tag
+  against the tree, failing on a removed package, name, field or method
+  no note in that range finds.
+- **A prerelease `go` directive orders below its release.** The upgrade
+  scanner read `go 1.26rc1` as unparsable and compared it as equal, so
+  a `go_below` note for a release that needs Go 1.27 never fired; an
+  `rcN`/`betaN` suffix now sorts under the plain version.
+- **Filter chips dismiss with a POST and their `DismissBody`** (since
+  v0.86.0). The move onto `headless.Tag` turned a chip's dismissal into a
+  GET of `DismissPath` with the path pushed into the address bar and
+  `FilterChip.DismissBody` unread, while "Clear all" still posted.
+  `headless.Island` carries a method and body, and the chip posts.
+- **`CopyButtonConfig.Target` is an element id**, as the headless copy
+  module has resolved it since v0.86.0; the doc said "a CSS selector" and
+  `.snippet pre` silently copied nothing. A leading `#` is accepted and
+  a value holding selector characters is refused at render. `ID` lands
+  on the button once (the wrapper carried a duplicate), and
+  `ToastOnCopy` shows its toast again: the module read the toast config
+  from a `data-hui-copy-label` hook no kit renders.
+- **`TagConfig.DismissAttrs` reach the dismiss control and
+  `CodeTabsConfig.Label` names the tablist** (since v0.86.0); both were
+  declared and dropped by the headless move.
+- **`ui.Sidebar` with no items renders nothing** instead of reaching
+  `headless.Sidebar`'s "requires at least one item" panic (since
+  v0.86.0), the way a role filter that empties the list already did; a
+  nav built from a query that returns no rows no longer 500s.
+- **Component option variables always get their floor.** A partial
+  root `theme.Components` map (only `density`, as the scaffolded theme
+  invites) suppressed the registered defaults, so `:root` never
+  declared `--fui-button-primary-bg`, `--fui-button-radius` or the
+  `--fui-field-*` set and primary buttons rendered with no fill; and a
+  palette-only `ui.Themed` scope declared none of them, so its primary
+  button inherited the root's resolved colour (meridian's ink band drew
+  indigo). The compiler now merges the theme's own options over the
+  defaults at the root and in every light and dark scope block. A key a
+  scope leaves out takes the framework default, not the enclosing
+  scope's value; themes built by `theme.Default` already declared the
+  full set, so only hand-built partial maps nested in another
+  option-setting scope see a difference.
+- **The theme toggle goes through the scheme bootstrap** (since
+  v0.86.0). `headless-navigation` called a `__gofastr_colorScheme.apply`
+  that does not exist and wrote `data-color-scheme` itself, including
+  the literal `auto`, so choosing dark left `meta[name=color-scheme]`
+  light and `auto` matched no `[data-color-scheme="dark"]` rule. It now
+  calls `set`, which resolves `auto` and writes both; the cycle button
+  skips a step that resolves to the scheme already showing, so the
+  first click on a dark OS is no longer a no-op.
+- **An island combobox announces its results** (since v0.86.0). The
+  status region was set to "Loading…" and only a static listbox ever
+  rewrote it; the module now watches each island listbox and announces
+  the count when rows land, and a static listbox with no match reads
+  its empty wording from the status element.
+- **`NotificationBell`'s spoken count follows its badge** (since
+  v0.86.0). The module listened for a `gofastr:signal` event nothing
+  dispatched and looked for the signal on the anchor instead of the
+  badge; it now watches the badge text and reformats the label.
+- **Nested tab strips keep their own state, and a signal moves the
+  roving tabindex** (since v0.86.0). The keyboard and click handlers
+  selected `[role="tab"]` through nested panels, so an outer click
+  unselected an inner strip and ArrowLeft focused an inner tab; every
+  lookup is scoped to its own strip. Without `StateAttrs`,
+  `setSignal` showed the new panel but left `aria-selected` and
+  `tabindex` on the old tab; `apply()` always resyncs them and gates
+  only the `data-state` mirror on `data-hui-tabs-state`.
+- **A `MultiSelect` that arrives as a swap's root is wired** (since
+  v0.86.0): `scan()` used `querySelectorAll`, which skips the scanned
+  node itself, so its pre-selected chips never rendered.
+- **The generated-CLI vet gate vets the `--from-openapi` module again.**
+  `TestGeneratedCLIPassesRepoVettool` still rendered it and built the
+  vettool but the `go vet` over it had been replaced by the entity-path
+  leg; the openapi leg is back, proven by a discarded-decode mutation
+  the gate now catches.
 - **A catalog block under a node block is refused at validation.** A
   `type: div` (or any node-tree block) holding a `card`, `stack`, form
   control or other catalog kind passed validation and rendered as an
@@ -506,7 +627,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   module's to clear. Before, the module only cleared links it had
   stamped itself or that carried `data-cui-match-prefix`, so a click
   made in the gap before it loaded left two lit entries (the acme-site
-  help nav e2e failed about one run in ten on Linux).
+  help nav e2e failed about one run in ten on Linux). The module's
+  load-time sweep leaves a marked leaf alone, so a server
+  `aria-current` on a leaf whose href is not the exact URL
+  (`SidebarItem.Active`, or `/orders` served at `/orders?page=2`)
+  survives the module loading; only a navigation clears it.
 - **A screen that panics is a logged 500, never a silent 404.** A
   render or `Load` panic on any serving path (full page with or
   without a layout, partial navigation, overlay, and the embed content
@@ -554,7 +679,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`aria-invalid`, `aria-describedby`) and places a `role="alert"`
   message in the kit's own error markup (`fui-field__error` in a
   `ui.FormField`, `fui-choice-field__error` beside a standalone
-  checkbox) and, when no field matched, the error text is toasted.
+  checkbox) and, when no field matched, the error text is toasted. The
+  error id joins the control's existing `aria-describedby` tokens, so a
+  hint stays announced, and leaves them when the error clears; a retry
+  first empties every error node in the form, including the paragraphs
+  the server rendered, so a message the server no longer refuses does
+  not linger, and a 2xx answer clears them too.
 - **Runtime form intercept: the hidden-input-plus-checkbox pair
   serializes as one value.** A `data-fui-rpc` form turned every
   repeated name into an array, so the HTML checkbox idiom (hidden
@@ -586,7 +716,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   renders one centred reading column at the prose measure, the shape
   the deleted `ui.DocLayout(ui.DocLayoutConfig{}, body)` gave blog
   posts and standalone pages. A rail collapses only when its sole child
-  is empty: a nav holding its list beside an empty outlet stays (#457).
+  is empty: a nav holding its list beside an empty outlet stays (#457),
+  at every width (the below-lg and below-md rules collapsed on any
+  empty child, so that nav stacked above the article between md and lg).
 - **Generated CLIs write `batch-delete` usage errors to stderr.** The
   missing-ids and flag-after-id messages went to stdout, so a script
   reading the JSON batch result got prose; every other verb error
