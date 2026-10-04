@@ -22,6 +22,10 @@ import (
 // root-absolute asset/nav URL in the HTML and bakes the prefix into
 // runtime.js so dynamically-loaded modules resolve under the mount path.
 //
+// Scripts on the extra-script rail that the app serves from its own
+// router (uihost.WithExtraScripts("/__site/x.js") plus a router.Get for
+// that path) are fetched through the router and exported too.
+//
 // This is the native replacement for the wget mirror the Pages deploy
 // used to ship: declaration-driven (no crawling), and it dumps the
 // split modules the crawl baked a "?v=" into and 404'd.
@@ -30,7 +34,7 @@ import (
 func (a *App) ExportStatic(ctx context.Context, dir, basePath string) error {
 	for _, m := range a.Mountables() {
 		if host, ok := m.(*uihost.UIHost); ok {
-			_, err := (&static.Builder{Host: host, OutDir: dir, BasePath: basePath}).Build(ctx)
+			_, err := (&static.Builder{Host: host, OutDir: dir, BasePath: basePath, Handler: a.router}).Build(ctx)
 			return err
 		}
 	}

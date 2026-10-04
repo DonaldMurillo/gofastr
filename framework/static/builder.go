@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,6 +60,16 @@ type Builder struct {
 	// failed and was contained, so routes that fail on purpose must be
 	// excluded explicitly or the export errors.
 	ExcludeRoutes []string
+	// Handler, when set, serves the extra-script rail entries
+	// (uihost.WithExtraScripts) that the host does not own: a script an
+	// app serves from its own router, e.g. a reducer at
+	// /__site/livedash-reducers.js. Each such src is fetched through
+	// Handler and written into the export; one that does not answer 200
+	// fails the build, since every exported page would 404 on it.
+	// App.ExportStatic passes the app's router. A script this build
+	// already wrote (a framework asset, the static dir) is not fetched,
+	// nor is a src that is not a same-origin path (a CDN URL).
+	Handler http.Handler
 }
 
 // Result is a summary of a Build run.
@@ -336,6 +347,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// downloads). After the user static dir so its files win; before the
 	// PWA surface so the worker fingerprints the complete export.
 	if err := b.dumpExtraDirs(&res); err != nil {
+		return res, err
+	}
+	if err := b.dumpRailScripts(ctx, &res); err != nil {
 		return res, err
 	}
 
@@ -747,7 +761,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	}{
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
-		{"/__gofastr/pwa/register.js", filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
+		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
 		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
 	}
 	for _, f := range files {
@@ -773,6 +787,10 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	}
 	return nil
 }
+
+// pwaRegisterJS is the WithPWA registration script, on the rail and
+// written by dumpPWAAssets.
+const pwaRegisterJS = "/__gofastr/pwa/register.js"
 
 // staticSourceHas reports whether the host's static asset source (dir or
 // embedded FS) provides rel, meaning the user shipped their own copy.
@@ -887,6 +905,47 @@ func pathToLLMFile(p string) string {
 		return "llm.md"
 	}
 	return filepath.Join(clean, "llm.md")
+}
+
+// dumpRailScripts fetches each extra-script rail entry through b.Handler
+// and writes it into the export. A file this build already wrote (a
+// framework asset, the static dir, ExtraDirs) wins; a leftover from an
+// earlier build in a reused OutDir does not. The PWA registration script
+// is skipped because dumpPWAAssets writes its base-path-aware copy, and
+// a src that is not a same-origin path (a CDN URL, a relative src) is
+// not the app's to serve and is left to the browser.
+func (b *Builder) dumpRailScripts(ctx context.Context, res *Result) error {
+	if b.Handler == nil {
+		return nil
+	}
+	written := make(map[string]bool, len(res.Assets))
+	for _, p := range res.Assets {
+		written[p] = true
+	}
+	for _, src := range b.Host.ExtraScriptSrcs() {
+		u, err := url.Parse(src)
+		if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(src, "/") || strings.HasPrefix(src, "//") || strings.HasPrefix(src, "/\\") {
+			continue
+		}
+		// The file goes under the decoded path, the name a static host
+		// resolves the request to.
+		urlPath := u.Path
+		if written[urlPath] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
+			continue
+		}
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, u.EscapedPath(), nil)
+		rec := httptest.NewRecorder()
+		b.Handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			return fmt.Errorf("static: extra script %s answered %d; every exported page loads it", urlPath, rec.Code)
+		}
+		if err := b.writeRawAsset(urlPath, b.rewriteJSAsset(rec.Body.Bytes())); err != nil {
+			return err
+		}
+		res.Assets = append(res.Assets, urlPath)
+		b.log("script %s", urlPath)
+	}
+	return nil
 }
 
 // dumpExtraDirs copies every Builder.ExtraDirs filesystem under its mount

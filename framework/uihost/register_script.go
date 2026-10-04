@@ -3,6 +3,7 @@ package uihost
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -110,6 +111,25 @@ func (ds *UIHost) registerScript(s externalScript, caller string) error {
 	}
 	ds.extraScripts = append(ds.extraScripts, s)
 	return nil
+}
+
+// ExtraScriptSrcs returns the src of every script on the extra-script
+// rail (WithExtraScripts, RegisterExternalScript, document-scoped
+// entries), deduplicated and sorted. The static exporter uses it to ship
+// scripts an app serves from its own routes.
+func (ds *UIHost) ExtraScriptSrcs() []string {
+	ds.scriptMu.Lock()
+	defer ds.scriptMu.Unlock()
+	seen := make(map[string]bool, len(ds.extraScripts))
+	out := make([]string, 0, len(ds.extraScripts))
+	for _, s := range ds.extraScripts {
+		if !seen[s.src] {
+			seen[s.src] = true
+			out = append(out, s.src)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // markServingBegun latches on the first full-shell render. It takes
