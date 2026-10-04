@@ -1,4 +1,4 @@
-.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint dupl mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -75,6 +75,16 @@ test-all:
 # non-zero only on compile errors or unexpectedly-green red tests.
 red-tests:
 	@./scripts/red-tests.sh
+
+
+# Duplicate-code gate (issue #417): dupl over the repo's Go files
+# (threshold 100, test files included, examples/evals/testdata/*.gen.go
+# excluded), gated by scripts/dupl-baseline.txt: fails when the
+# clone-group count GROWS. Pay clones down and the count drops; accept
+# new debt deliberately with scripts/dupl.sh --rebaseline, committed
+# together with the change that moved the number.
+dupl:
+	@./scripts/dupl.sh
 
 # Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.

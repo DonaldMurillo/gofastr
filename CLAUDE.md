@@ -406,6 +406,11 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   `*_security_test.go`; a probe that is deleted says why in the commit
   message and beside the sibling test that carries the contract. The raw
   `go test` output is kept at `.gofastr/red-tests.log`.
+- **Check for duplicated code**: `make dupl` (dupl at threshold 100 over
+  the repo's Go files, examples/evals/testdata/`*.gen.go` excluded). Fails
+  when the clone-group count grows past `scripts/dupl-baseline.txt`;
+  re-baseline with `scripts/dupl.sh --rebaseline` and commit the baseline
+  with the change that moved the number.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors: it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
 - **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
 - **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).

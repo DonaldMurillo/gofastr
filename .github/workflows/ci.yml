@@ -228,6 +228,14 @@ jobs:
           go build -o /tmp/gofastr-vettool ./cmd/vettool
           go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool=/tmp/gofastr-vettool
 
+      - name: Duplicate code (dupl, baseline-gated)
+        # make dupl counts dupl clone groups (threshold 100) over the
+        # repo's Go files and fails when the count GROWS past the
+        # committed scripts/dupl-baseline.txt. Pinned to an exact dupl
+        # version in scripts/dupl.sh so its tree matching cannot drift;
+        # ~7s on an M-series laptop, dominated by parsing, no services.
+        run: make dupl
+
       - name: Test (deterministic packages)
         # -timeout=20m. The old `-p 2` kept chromedp sockets off the
         # ephemeral-port ceiling while chromedp suites ran here; those now
