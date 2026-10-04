@@ -33,17 +33,18 @@
     else el.removeAttribute('aria-describedby');
   }
 
-  // clear removes what a previous failed attempt placed, so a retry
-  // starts clean and a success leaves no stale error behind: live
-  // paragraphs go with their describedby token, filled rendered nodes
-  // empty back to reserved.
+  // clear removes every error the form shows, so a retry starts clean
+  // and a success leaves no stale error behind: live paragraphs go with
+  // their describedby token, and every other error node (one this
+  // module filled, or one the server rendered with the page) empties
+  // back to reserved.
   function clear(form) {
     if (!form) return;
     form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => {
       if (e.id) form.querySelectorAll('[aria-describedby]').forEach((c) => describe(c, e.id, false));
       e.remove();
     });
-    form.querySelectorAll('[data-hui-field-error="filled"]').forEach((e) => {
+    form.querySelectorAll(ERR).forEach((e) => {
       e.textContent = '';
       e.setAttribute('data-hui-field-error', '');
     });
@@ -64,6 +65,9 @@
   // naming the status.
   function report(form, status, txt) {
     if (!form) return;
+    // The first refusal in a document loads this module after the
+    // request, so rpc.js could not clear the server's own messages.
+    clear(form);
     let d = null;
     try { d = JSON.parse(txt); } catch (_) { d = null; }
     const fields = d && d.fields && typeof d.fields === 'object' ? d.fields : {};

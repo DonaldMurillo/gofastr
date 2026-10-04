@@ -244,6 +244,11 @@
         }
         return;
       }
+      // A form the server rendered with errors (aria-invalid) clears
+      // them on success too, loading the module if no refusal has yet.
+      if (formSource && formSource.querySelector('[aria-invalid="true"]')) {
+        NS.loadModule('formerrors').then(() => NS._formErrors.clear(formSource)).catch(() => {});
+      }
 
       // nav is absent from the embed composition, so invalidation is optional.
       NS._inval?.(r);
