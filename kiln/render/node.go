@@ -53,8 +53,14 @@ func RenderNode(n world.Node) render.HTML {
 		if label == "" || href == "" {
 			return renderLeaf(n, children)
 		}
+		variant, ok := ui.ParseButtonVariant(propString(n.Props, "variant"))
+		if !ok {
+			// An unknown variant string from the IR still renders a
+			// button; primary is that default.
+			variant = ui.ButtonPrimary
+		}
 		return ui.LinkButton(ui.LinkButtonConfig{
-			Label: label, Href: href, Variant: buttonVariant(propString(n.Props, "variant")),
+			Label: label, Href: href, Variant: variant,
 			Size: buttonSize(propString(n.Props, "size")), External: propBool(n.Props, "external"),
 			ID: propString(n.Props, "id"),
 		})
@@ -251,19 +257,6 @@ func propInt(props map[string]any, keys ...string) int {
 func propBool(props map[string]any, key string) bool {
 	value, _ := props[key].(bool)
 	return value
-}
-
-func buttonVariant(value string) ui.ButtonVariant {
-	switch value {
-	case "secondary":
-		return ui.ButtonSecondary
-	case "danger":
-		return ui.ButtonDanger
-	case "ghost":
-		return ui.ButtonGhost
-	default:
-		return ui.ButtonPrimary
-	}
 }
 
 func buttonSize(value string) ui.ButtonSize {

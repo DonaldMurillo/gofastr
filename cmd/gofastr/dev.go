@@ -308,7 +308,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	*cmd = buildCmd
 	mu.Unlock()
 
-	if err := buildCmd.Run(); err != nil {
+	if err := runBuildWithHeartbeat(buildCmd, dir); err != nil {
 		return false
 	}
 
@@ -349,6 +349,32 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	}(os.Stdout)
 
 	return true
+}
+
+// runBuildWithHeartbeat waits out the dev build, printing a progress
+// line every 10s it runs. `go build` is silent however long it takes,
+// the banner above has already named an address, and under load a
+// build can run for minutes after that: the heartbeat is what tells
+// a reader (a person at the terminal, or the dev-loop e2e suite,
+// which fails on output silence rather than a wall clock) "still
+// building" from "wedged". The writer is captured at entry for the
+// same reason the crash watcher below captures its copy: coverage
+// tests swap os.Stdout around buildAndServe.
+func runBuildWithHeartbeat(buildCmd *exec.Cmd, what string) error {
+	w := os.Stdout
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- buildCmd.Run() }()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ticker.C:
+			fmt.Fprintf(w, "%s\n", infoString("Building %s (%ds)...", what, int(time.Since(start).Seconds())))
+		}
+	}
 }
 
 // killServer kills the current server process.

@@ -34,9 +34,12 @@ notes:
     hits: edit
     guidance: "Subscribe(sessionID) now returns (<-chan IslandUpdate, func()) — each SSE connection gets its own channel and updates broadcast to ALL of a session's tabs (they previously competed for one shared channel). The cancel func replaces the removed Manager.Unsubscribe; ConnectSession changed identically."
     find:
+      shapes:
+        - symbol: gofastr/core-ui/island.Manager.Subscribe
+          type: '^func\(sessionID string\) <-chan island\.IslandUpdate$'
+        - symbol: gofastr/core-ui/island.Manager.ConnectSession
+          type: '^func\(sessionID string\) <-chan island\.IslandUpdate$'
       uses:
-        - gofastr/core-ui/island.Manager.Subscribe
-        - gofastr/core-ui/island.Manager.ConnectSession
         - gofastr/core-ui/island.Manager.Unsubscribe
   - change: Widget SSE bindings replaced by polling (#112)
     breaking: true

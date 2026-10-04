@@ -20,9 +20,14 @@ notes:
     hits: review
     guidance: "The framework's own route registration passes both automatically; only hand-rolled mounts change. Pass LLMMDOptions{ReadOnly: true} beside a read-only mount so the generated docs stop advertising write endpoints that answer 404/405."
     find:
-      uses:
-        - gofastr/framework/crud.RegistryLLMMD
-        - gofastr/framework/crud.RegistryLLMMDHandler
-        - gofastr/framework/crud.EntityLLMMD
-        - gofastr/framework/crud.LLMMDHandler
-        - gofastr/framework/crud.LLMMDHandlerFor
+      shapes:
+        - symbol: gofastr/framework/crud.RegistryLLMMD
+          type: '^func\(registry entity\.Registry, appName string, crudMounted func\(\*entity\.Entity\) bool\) string$'
+        - symbol: gofastr/framework/crud.RegistryLLMMDHandler
+          type: '^func\(registry entity\.Registry, appName string, crudMounted func\(\*entity\.Entity\) bool\) http\.Handler$'
+        - symbol: gofastr/framework/crud.EntityLLMMD
+          type: '^func\(ent \*entity\.Entity\) string$'
+        - symbol: gofastr/framework/crud.LLMMDHandler
+          type: '^func\(ent \*entity\.Entity\) http\.Handler$'
+        - symbol: gofastr/framework/crud.LLMMDHandlerFor
+          type: '^func\(ch \*crud\.CrudHandler\) http\.Handler$'

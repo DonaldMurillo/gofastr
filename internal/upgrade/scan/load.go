@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -387,19 +388,60 @@ func (c buildConfig) buildFlags() []string {
 	return []string{"-tags", strings.Join(c.tags, ",")}
 }
 
-// knownOS and knownArch are the go command's platform suffix sets
-// (go/build's internal lists): a constraint or filename naming one is
-// a platform dimension, never a free tag. unixOS is the tag set the
-// "unix" shorthand stands for.
+// knownOS and knownArch are the go command's platform name sets
+// (go/build's internal lists, zos included): a file name ending in one
+// is constrained, whatever the toolchain can build. unixOS is the tag
+// set the "unix" shorthand stands for.
 var knownOS = stringSet("aix", "android", "darwin", "dragonfly", "freebsd", "hurd",
 	"illumos", "ios", "js", "linux", "nacl", "netbsd", "openbsd", "plan9",
-	"solaris", "wasip1", "windows")
+	"solaris", "wasip1", "windows", "zos")
 var knownArch = stringSet("386", "amd64", "amd64p32", "arm", "arm64", "arm64be", "armbe",
 	"loong64", "mips", "mips64", "mips64le", "mips64p32", "mips64p32le", "mipsle",
 	"ppc", "ppc64", "ppc64le", "riscv", "riscv64", "s390", "s390x", "sparc",
 	"sparc64", "wasm")
 var unixOS = stringSet("aix", "android", "darwin", "dragonfly", "freebsd", "hurd",
 	"illumos", "ios", "linux", "netbsd", "openbsd", "solaris")
+
+// osArches is the GOOS/GOARCH pair table the toolchain builds
+// (go tool dist list, Go 1.27). The solver never offers a pair outside
+// it: the go command rejects the pair outright, failing the whole
+// load, not just the file that named it. Platform names go/build knows
+// but no pair reaches (zos, nacl, hurd, amd64p32, ...) are still real
+// constraints; -tags satisfies them, for //go:build terms and filename
+// suffixes alike, so they stay free tags here.
+var osArches = map[string][]string{
+	"aix":       {"ppc64"},
+	"android":   {"386", "amd64", "arm", "arm64"},
+	"darwin":    {"amd64", "arm64"},
+	"dragonfly": {"amd64"},
+	"freebsd":   {"386", "amd64", "arm", "arm64"},
+	"illumos":   {"amd64"},
+	"ios":       {"amd64", "arm64"},
+	"js":        {"wasm"},
+	"linux":     {"386", "amd64", "arm", "arm64", "loong64", "mips", "mips64", "mips64le", "mipsle", "ppc64", "ppc64le", "riscv64", "s390x"},
+	"netbsd":    {"386", "amd64", "arm", "arm64"},
+	"openbsd":   {"386", "amd64", "arm", "arm64", "ppc64", "riscv64"},
+	"plan9":     {"386", "amd64", "arm"},
+	"solaris":   {"amd64"},
+	"wasip1":    {"wasm"},
+	"windows":   {"386", "amd64", "arm64"},
+}
+
+var osList = slices.Sorted(maps.Keys(osArches))
+
+// archHasPair is the arch side of osArches: known arch names with at
+// least one supported pair.
+var archHasPair = func() map[string]bool {
+	set := map[string]bool{}
+	for _, arches := range osArches {
+		for _, arch := range arches {
+			set[arch] = true
+		}
+	}
+	return set
+}()
+
+var archList = slices.Sorted(maps.Keys(archHasPair))
 
 // maxConstraintTags bounds the free-tag truth assignments the solver
 // enumerates; a constraint naming more is reported Unscanned instead.
@@ -425,8 +467,9 @@ func solveFileConfig(src []byte, name string) (buildConfig, bool) {
 // solveBuildConstraint enumerates candidate platforms and free-tag
 // assignments until one satisfies expr (and the filename's platform,
 // when set): the host's GOOS/GOARCH first, then the expression's own
-// platform tags, then every known one; cgo stays off unless nothing
-// else satisfies. At most one OS and one arch are ever true.
+// platform tags, then every pairable one; cgo stays off unless nothing
+// else satisfies. At most one OS and one arch are ever true, and every
+// (goos, goarch) offered is a pair from osArches.
 func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig, bool) {
 	var osTags, archTags, free []string
 	seen := stringSet()
@@ -436,15 +479,33 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 		}
 		seen[tag] = true
 		switch {
-		case knownOS[tag]:
+		case osArches[tag] != nil:
 			osTags = append(osTags, tag)
-		case knownArch[tag]:
+		case archHasPair[tag]:
 			archTags = append(archTags, tag)
-		case tag == "unix" || tag == "cgo" || tag == "gc" || tag == "gccgo":
-			// Reserved: decided by the platform choice, not free.
+		case tag == "unix" || tag == "cgo" || tag == "gc" ||
+			tag == "gccgo" || tag == "boringcrypto":
+			// Reserved: decided by the platform or the toolchain, not
+			// free. go/build remaps boringcrypto to
+			// goexperiment.boringcrypto, which no -tags value carries.
 		default:
 			free = append(free, tag)
 		}
+	}
+	// A filename suffix naming a platform no supported pair reaches
+	// (zos, hurd, amd64p32, ...) still constrains the file, and
+	// -tags satisfies the name: fold it into the expression as a tag.
+	if osArches[fos] == nil {
+		if fos != "" {
+			expr = andTag(expr, fos)
+			fos = ""
+		}
+	} else {
+		farch = archFor(fos, farch)
+	}
+	if farch != "" && !archHasPair[farch] {
+		expr = andTag(expr, farch)
+		farch = ""
 	}
 	constraintTags(expr, add)
 	sort.Strings(osTags)
@@ -453,29 +514,34 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 	if len(free) > maxConstraintTags {
 		return buildConfig{}, false
 	}
-	if fos != "" {
-		farch = archFor(fos, farch)
-	}
-	candidates := func(host string, named []string, known map[string]bool) []string {
+	candidates := func(host string, named, known []string) []string {
 		out := append([]string{host}, named...)
-		for tag := range known {
-			if !seen[tag] {
-				out = append(out, tag)
-			}
-		}
+		out = append(out, known...)
 		sort.Strings(out[1+len(named):])
 		return dedupSorted(out)
 	}
-	osCands := candidates(runtime.GOOS, osTags, knownOS)
-	archCands := candidates(runtime.GOARCH, archTags, knownArch)
+	// The suffix's own OS leads the non-host candidates: android also
+	// matches _linux files, but linux is the platform the name means.
+	osNamed := osTags
+	if fos != "" && !slices.Contains(osNamed, fos) {
+		osNamed = append([]string{fos}, osNamed...)
+	}
+	osCands := candidates(runtime.GOOS, osNamed, osList)
+	archCands := candidates(runtime.GOARCH, archTags, archList)
 	for _, cgo := range []bool{false, true} {
 		for mask := range 1 << len(free) {
 			for _, goos := range osCands {
-				if fos != "" && goos != fos {
+				if fos != "" && !satisfiesOSSuffix(goos, fos) {
 					continue
 				}
 				for _, goarch := range archCands {
 					if farch != "" && goarch != farch {
+						continue
+					}
+					if !slices.Contains(osArches[goos], goarch) {
+						// The go command rejects the pair outright
+						// ("unsupported GOOS/GOARCH pair"), failing
+						// the whole load, not just this file.
 						continue
 					}
 					sat := func(tag string) bool {
@@ -488,7 +554,7 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 							return cgo
 						case tag == "gc":
 							return true
-						case tag == "gccgo":
+						case tag == "gccgo" || tag == "boringcrypto":
 							return false
 						case tag == "linux" && goos == "android",
 							tag == "darwin" && goos == "ios",
@@ -516,6 +582,28 @@ func solveBuildConstraint(expr constraint.Expr, fos, farch string) (buildConfig,
 		}
 	}
 	return buildConfig{}, false
+}
+
+// andTag ANDs one tag into expr; a nil expr becomes the tag alone.
+func andTag(expr constraint.Expr, tag string) constraint.Expr {
+	t := &constraint.TagExpr{Tag: tag}
+	if expr == nil {
+		return t
+	}
+	return &constraint.AndExpr{X: expr, Y: t}
+}
+
+// satisfiesOSSuffix reports whether GOOS=goos compiles a file whose
+// name carries the fos suffix: the suffix's own OS, or one that
+// matches its files (go help buildconstraint: android matches linux
+// files, illumos solaris, ios darwin; never the other way round).
+func satisfiesOSSuffix(goos, fos string) bool {
+	if goos == fos {
+		return true
+	}
+	return (goos == "android" && fos == "linux") ||
+		(goos == "illumos" && fos == "solaris") ||
+		(goos == "ios" && fos == "darwin")
 }
 
 // constraintTags walks an expression's tag references into add.
@@ -558,9 +646,8 @@ func fileOSArch(name string) (goos, goarch string) {
 	return "", ""
 }
 
-// archFor pins the single GOARCH a GOOS implies (js and wasip1 build
-// on wasm only), so the solver does not offer pairs the go tool
-// refuses.
+// archFor pins the single GOARCH a GOOS builds on (js and wasip1 build
+// on wasm only), so the candidates reach a valid pair first try.
 func archFor(goos, goarch string) string {
 	if goarch != "" {
 		return goarch

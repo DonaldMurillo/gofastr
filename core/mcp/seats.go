@@ -55,6 +55,14 @@ func (s *Server) SetSSESeatOverflow(p SeatOverflowPolicy) {
 	s.sseMu.Unlock()
 }
 
+// Why addSSESubscriber (notifications.go) is not stream.AdmitSeat: the
+// cap and the EvictOldest splice are the same rule, but eviction here
+// must also delete the oldest subscriber from the sseSubs set and
+// re-run expireResourceSubsIfIdleLocked, because the caller's last
+// notification stream may have been the one holding its resource
+// subscriptions open. AdmitSeat's contract is splice plus close the
+// done channel; it cannot reach the set or the expiry.
+
 // sseSeatKey derives the per-caller seat key: the authenticated user's
 // id when upstream middleware resolved one into the request context,
 // else the TCP peer. The prefixes keep the two namespaces from

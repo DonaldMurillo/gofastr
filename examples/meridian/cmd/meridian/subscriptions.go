@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
+
+	client "github.com/DonaldMurillo/gofastr/examples/meridian/entities/client"
 )
 
 func subscriptionsCommands() []command {
@@ -24,344 +22,86 @@ func subscriptionsCommands() []command {
 	}
 }
 
+// Verb wrappers: each binds this entity's command names and pre-escaped
+// base path "/subscriptions" to the shared verb bodies in verbs.go.
+
+// subscriptionsListFilters is the filter-flag table behind `subscriptions list`: one entry
+// per flag, in help order, each bound to the query param it sets.
+var subscriptionsListFilters = []filterFlag{
+	{flag: "customer-id", param: "customer_id", help: "filter: customer_id equals (comma list = IN)"},
+	{flag: "plan-id", param: "plan_id", help: "filter: plan_id equals (comma list = IN)"},
+	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [trialing|active|past_due|canceled]"},
+	{flag: "mrr", param: "mrr", help: "filter: mrr equals (comma list = IN)"},
+	{flag: "mrr-gt", param: "mrr_gt", help: "filter: mrr gt"},
+	{flag: "mrr-gte", param: "mrr_gte", help: "filter: mrr gte"},
+	{flag: "mrr-lt", param: "mrr_lt", help: "filter: mrr lt"},
+	{flag: "mrr-lte", param: "mrr_lte", help: "filter: mrr lte"},
+	{flag: "started-on", param: "started_on", help: "filter: started_on equals (comma list = IN)"},
+	{flag: "started-on-gt", param: "started_on_gt", help: "filter: started_on gt"},
+	{flag: "started-on-gte", param: "started_on_gte", help: "filter: started_on gte"},
+	{flag: "started-on-lt", param: "started_on_lt", help: "filter: started_on lt"},
+	{flag: "started-on-lte", param: "started_on_lte", help: "filter: started_on lte"},
+	{flag: "renews-on", param: "renews_on", help: "filter: renews_on equals (comma list = IN)"},
+	{flag: "renews-on-gt", param: "renews_on_gt", help: "filter: renews_on gt"},
+	{flag: "renews-on-gte", param: "renews_on_gte", help: "filter: renews_on gte"},
+	{flag: "renews-on-lt", param: "renews_on_lt", help: "filter: renews_on lt"},
+	{flag: "renews-on-lte", param: "renews_on_lte", help: "filter: renews_on lte"},
+}
+
+// Table columns for `subscriptions list -o table`: subscriptionsListHeaders are the display
+// titles, subscriptionsListKeys the JSON wire keys each column reads.
+var (
+	subscriptionsListHeaders = []string{"id", "customer_id", "plan_id", "status", "mrr", "started_on", "renews_on"}
+	subscriptionsListKeys    = []string{"id", "customerId", "planId", "status", "mrr", "startedOn", "renewsOn"}
+)
+
 func runSubscriptionsList(args []string) int {
-	fs := newFlagSet("subscriptions list")
-	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
-	page := fs.String("page", "", "page number (offset pagination)")
-	limit := fs.String("limit", "", "page size")
-	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
-	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
-	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
-	outF := fs.String("o", "json", "output format: json|table")
-	var params paramFlags
-	fs.Var(&params, "param", "extra query param key=value (repeatable)")
-	fltCustomerId := fs.String("customer-id", "", "filter: customer_id equals (comma list = IN)")
-	fltPlanId := fs.String("plan-id", "", "filter: plan_id equals (comma list = IN)")
-	fltStatus := fs.String("status", "", "filter: status equals (comma list = IN) [trialing|active|past_due|canceled]")
-	fltMrr := fs.String("mrr", "", "filter: mrr equals (comma list = IN)")
-	fltMrrGT := fs.String("mrr-gt", "", "filter: mrr gt")
-	fltMrrGTE := fs.String("mrr-gte", "", "filter: mrr gte")
-	fltMrrLT := fs.String("mrr-lt", "", "filter: mrr lt")
-	fltMrrLTE := fs.String("mrr-lte", "", "filter: mrr lte")
-	fltStartedOn := fs.String("started-on", "", "filter: started_on equals (comma list = IN)")
-	fltStartedOnGT := fs.String("started-on-gt", "", "filter: started_on gt")
-	fltStartedOnGTE := fs.String("started-on-gte", "", "filter: started_on gte")
-	fltStartedOnLT := fs.String("started-on-lt", "", "filter: started_on lt")
-	fltStartedOnLTE := fs.String("started-on-lte", "", "filter: started_on lte")
-	fltRenewsOn := fs.String("renews-on", "", "filter: renews_on equals (comma list = IN)")
-	fltRenewsOnGT := fs.String("renews-on-gt", "", "filter: renews_on gt")
-	fltRenewsOnGTE := fs.String("renews-on-gte", "", "filter: renews_on gte")
-	fltRenewsOnLT := fs.String("renews-on-lt", "", "filter: renews_on lt")
-	fltRenewsOnLTE := fs.String("renews-on-lte", "", "filter: renews_on lte")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	q := url.Values{}
-	set := func(key, val string) {
-		if val != "" {
-			q.Set(key, val)
-		}
-	}
-	set("sort", *sortF)
-	set("page", *page)
-	set("limit", *limit)
-	set("cursor", *cursor)
-	set("include", *include)
-	set("fields", *fieldsF)
-	set("customer_id", *fltCustomerId)
-	set("plan_id", *fltPlanId)
-	set("status", *fltStatus)
-	set("mrr", *fltMrr)
-	set("mrr_gt", *fltMrrGT)
-	set("mrr_gte", *fltMrrGTE)
-	set("mrr_lt", *fltMrrLT)
-	set("mrr_lte", *fltMrrLTE)
-	set("started_on", *fltStartedOn)
-	set("started_on_gt", *fltStartedOnGT)
-	set("started_on_gte", *fltStartedOnGTE)
-	set("started_on_lt", *fltStartedOnLT)
-	set("started_on_lte", *fltStartedOnLTE)
-	set("renews_on", *fltRenewsOn)
-	set("renews_on_gt", *fltRenewsOnGT)
-	set("renews_on_gte", *fltRenewsOnGTE)
-	set("renews_on_lt", *fltRenewsOnLT)
-	set("renews_on_lte", *fltRenewsOnLTE)
-	for _, kv := range params.pairs {
-		q.Set(kv[0], kv[1])
-	}
-	path := "/subscriptions"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return apiFail(err)
-	}
-	if *outF == "table" {
-		printListTable([]string{"id", "customer_id", "plan_id", "status", "mrr", "started_on", "renews_on"}, []string{"id", "customerId", "planId", "status", "mrr", "startedOn", "renewsOn"}, resp.Data)
-		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows; next cursor: %s\n", len(resp.Data), resp.Cursor)
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
-	}
-	return printJSON(resp)
+	return runListVerb("subscriptions list", "/subscriptions", subscriptionsListFilters, subscriptionsListHeaders, subscriptionsListKeys, args)
 }
 
 func runSubscriptionsGet(args []string) int {
-	id, rest, ok := takeID("subscriptions get", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("subscriptions get")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runGetVerb("subscriptions get", "/subscriptions", args)
+}
+
+// subscriptionsMutationFields is the field-flag table behind `subscriptions create/update/patch`:
+// one entry per writable field, each bound to the JSON wire key it sets.
+var subscriptionsMutationFields = []mutationField{
+	{flag: "customer-id", wire: "customerId", kind: fieldString, usage: "customer_id (relation)"},
+	{flag: "plan-id", wire: "planId", kind: fieldString, usage: "plan_id (relation)"},
+	{flag: "status", wire: "status", kind: fieldString, usage: "status (enum) [trialing|active|past_due|canceled]"},
+	{flag: "mrr", wire: "mrr", kind: fieldString, usage: "mrr (decimal)"},
+	{flag: "started-on", wire: "startedOn", kind: fieldString, usage: "started_on (date)"},
+	{flag: "renews-on", wire: "renewsOn", kind: fieldString, usage: "renews_on (date)"},
 }
 
 func runSubscriptionsCreate(args []string) int {
-	fs := newFlagSet("subscriptions create")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldPlanId := fs.String("plan-id", "", "plan_id (relation)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	fldStartedOn := fs.String("started-on", "", "started_on (date)")
-	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "plan-id":
-			body["planId"] = *fldPlanId
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		case "started-on":
-			body["startedOn"] = *fldStartedOn
-		case "renews-on":
-			body["renewsOn"] = *fldRenewsOn
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPost, "/subscriptions", body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runCreateVerb("subscriptions create", "/subscriptions", subscriptionsMutationFields, args)
 }
 
 func runSubscriptionsUpdate(args []string) int {
-	id, rest, ok := takeID("subscriptions update", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("subscriptions update")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldPlanId := fs.String("plan-id", "", "plan_id (relation)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	fldStartedOn := fs.String("started-on", "", "started_on (date)")
-	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "plan-id":
-			body["planId"] = *fldPlanId
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		case "started-on":
-			body["startedOn"] = *fldStartedOn
-		case "renews-on":
-			body["renewsOn"] = *fldRenewsOn
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPut, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runUpdateVerb("subscriptions update", "/subscriptions", subscriptionsMutationFields, args)
 }
 
 func runSubscriptionsPatch(args []string) int {
-	id, rest, ok := takeID("subscriptions patch", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("subscriptions patch")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldCustomerId := fs.String("customer-id", "", "customer_id (relation)")
-	fldPlanId := fs.String("plan-id", "", "plan_id (relation)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	fldStartedOn := fs.String("started-on", "", "started_on (date)")
-	fldRenewsOn := fs.String("renews-on", "", "renews_on (date)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "customer-id":
-			body["customerId"] = *fldCustomerId
-		case "plan-id":
-			body["planId"] = *fldPlanId
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		case "started-on":
-			body["startedOn"] = *fldStartedOn
-		case "renews-on":
-			body["renewsOn"] = *fldRenewsOn
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPatch, "/subscriptions/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runPatchVerb("subscriptions patch", "/subscriptions", subscriptionsMutationFields, args)
 }
 
 func runSubscriptionsDelete(args []string) int {
-	id, rest, ok := takeID("subscriptions delete", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("subscriptions delete")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/subscriptions/"+url.PathEscape(id), nil, nil); err != nil {
-		return apiFail(err)
-	}
-	fmt.Printf("deleted %s\n", id)
-	return 0
+	return runDeleteVerb("subscriptions delete", "/subscriptions", args)
 }
 
-// runSubscriptionsBatchCreate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runSubscriptionsBatchCreate(args []string) int {
-	fs := newFlagSet("subscriptions batch-create")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPost, "/subscriptions/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("subscriptions batch-create", "/subscriptions", http.MethodPost, args)
 }
 
-// runSubscriptionsBatchUpdate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runSubscriptionsBatchUpdate(args []string) int {
-	fs := newFlagSet("subscriptions batch-update")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPatch, "/subscriptions/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("subscriptions batch-update", "/subscriptions", http.MethodPatch, args)
 }
 
-// runSubscriptionsBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags, flag.Parse stops at the first positional,
-// so the trailing ones are collected from fs.Args().
 func runSubscriptionsBatchDelete(args []string) int {
-	var ids []string
-	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		ids = append(ids, args[0])
-		args = args[1:]
-	}
-	fs := newFlagSet("subscriptions batch-delete")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	for _, id := range fs.Args() {
-		if id != "" && id[0] == '-' {
-			fmt.Println(binaryName + " subscriptions batch-delete: flags must precede trailing ids (got " + id + " after an id)")
-			return 2
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		fmt.Println("usage: " + binaryName + " subscriptions batch-delete <id> [id...]")
-		return 2
-	}
-	resp, code := doBatch(g, http.MethodDelete, "/subscriptions/_batch", map[string]any{"ids": ids})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchDeleteVerb("subscriptions batch-delete", "/subscriptions", args)
 }
 
-// runSubscriptionsWatch streams the live event feed until interrupted; each event is
-// one JSON line on stdout.
 func runSubscriptionsWatch(args []string) int {
-	fs := newFlagSet("subscriptions watch")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
-	defer stop()
-	err := g.client.WatchSubscriptions(ctx, func(event string, data []byte) error {
-		fmt.Printf("{\"event\":%q,\"data\":%s}\n", event, data)
-		return nil
-	})
-	if err != nil && ctx.Err() == nil {
-		return apiFail(err)
-	}
-	return 0
+	return runWatchVerb("subscriptions watch", (*client.Client).WatchSubscriptions, args)
 }

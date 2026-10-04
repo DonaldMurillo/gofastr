@@ -32,13 +32,14 @@ var (
 	PaymentsUserId     = framework.NewStringColumn("user_id")
 )
 
-// Payments include names, pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Payments include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	PaymentsInclInvoice  = "invoice"
 	PaymentsInclCustomer = "customer"
 )
 
 // PaymentsRepo is the typed repository for payments rows.
+// Event helpers: OnPaymentsCreated/OnPaymentsUpdated/OnPaymentsDeleted in this package.
 type PaymentsRepo struct {
 	handler *framework.CrudHandler
 }
@@ -59,7 +60,7 @@ func NewPaymentsRepo(app *framework.App) *PaymentsRepo {
 	return &PaymentsRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler, useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *PaymentsRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -209,77 +210,51 @@ func (r *PaymentsRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnPaymentsCreated subscribes to entity.created events scoped to "payments".
 // Returns a cancel func; call it to remove the handler.
 func OnPaymentsCreated(app *framework.App, fn func(ctx context.Context, row *Payments) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractPaymentsRecord(ev, "payments")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Payments](app, "payments", framework.EntityCreated, fn)
 }
 
 // OnPaymentsUpdated subscribes to entity.updated events scoped to "payments".
 func OnPaymentsUpdated(app *framework.App, fn func(ctx context.Context, row *Payments) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractPaymentsRecord(ev, "payments")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Payments](app, "payments", framework.EntityUpdated, fn)
 }
 
 // OnPaymentsDeleted subscribes to entity.deleted events scoped to "payments". Callback
-// receives the deleted row's id only, by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnPaymentsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "payments" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "payments", fn)
 }
 
 // extractPaymentsRecord unmarshals an event payload's "record" field into a
 // *Payments, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractPaymentsRecord(ev framework.Event, entityName string) (*Payments, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Payments
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Payments](ev, entityName)
 }
 
 // registerPayments registers the "payments" entity with app.
 func registerPayments(app *framework.App) {
-	app.Entity("payments", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "invoice_id", Type: schema.Relation, Required: true, To: "invoices"},
-		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
-		{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-		{Name: "method", Type: schema.Enum, Default: "card", Values: []string{"card", "ach", "wire"}},
-		{Name: "status", Type: schema.Enum, Default: "succeeded", Values: []string{"succeeded", "failed", "refunded"}},
-		{Name: "user_id", Type: schema.String, Hidden: true},
-	},
+	app.Entity("payments", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "invoice_id", Type: schema.Relation, Required: true, To: "invoices"},
+			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
+			{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "method", Type: schema.Enum, Default: "card", Values: []string{"card", "ach", "wire"}},
+			{Name: "status", Type: schema.Enum, Default: "succeeded", Values: []string{"succeeded", "failed", "refunded"}},
+			{Name: "user_id", Type: schema.String, Hidden: true},
+		},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "invoice", Entity: "invoices", ForeignKey: "invoice_id"},
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Payments"},
+		},
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Properties: map[string]any{"label": "Payments"},
 	})
 	_ = Payments{}
 }

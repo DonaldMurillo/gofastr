@@ -5,8 +5,9 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/battery/auth.NewEntityTwoFAStore
+      shapes:
+        - symbol: gofastr/battery/auth.NewEntityTwoFAStore
+          type: '^func\(db \*sql\.DB, table string\) \*auth\.EntityTwoFAStore$'
     guidance: "Pass EntityTwoFAStoreConfig{EncryptionKey: <32 random bytes from your secret manager>} and handle the returned error. Rows written as plaintext by an older build still verify and are re-sealed on their next write, so no data migration is needed; an empty key is a config error at construction."
   - change: "battery/auth JSON endpoints refuse unknown top-level keys with 400, the rule handler.Bind already applies everywhere else"
     breaking: true

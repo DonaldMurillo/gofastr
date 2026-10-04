@@ -2,10 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // storedConfig is what `meridian login` persists: the server URL and a
@@ -24,8 +23,11 @@ func configPath() (string, error) {
 }
 
 // loadConfig returns the stored config, or the zero value when there is
-// none. A missing or unreadable file is not an error, it just means the
-// caller falls through to flags/env.
+// none: a missing or unreadable file is not an error, it just means the
+// caller falls through to flags/env. A CORRUPT file is refused loudly
+// instead: the zero value would march on as data, silently dropping the
+// stored token so every call runs unauthenticated against the
+// operator's assumption.
 func loadConfig() storedConfig {
 	var cfg storedConfig
 	path, err := configPath()
@@ -37,10 +39,8 @@ func loadConfig() storedConfig {
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		// A malformed file is refused, not half-applied: fall through to
-		// flags/env exactly like a missing file, instead of marching on
-		// with whatever partial fields the decoder did populate.
-		return storedConfig{}
+		fmt.Fprintf(os.Stderr, "%s: config file %s is corrupt (%v); delete it or run '%s login' again\n", binaryName, path, err, binaryName)
+		os.Exit(1)
 	}
 	return cfg
 }
@@ -57,11 +57,23 @@ func saveConfig(cfg storedConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Owner-only on create AND overwrite: the file holds a bearer
-	// credential, and os.WriteFile's 0600 applies only at create, so a
-	// pre-existing 0644 file would be refilled world-readable.
-	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
+	// 0600 on CREATE and OVERWRITE alike: os.WriteFile applies its mode
+	// only when creating, so a pre-existing 0644 config.json (operator
+	// chmod, restored backup, dotfiles manager) would be truncated and
+	// refilled with the bearer token while still world-readable. Open,
+	// chmod the handle, then write — the credential bytes land only
+	// after the mode is fixed.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return "", err
 	}
-	return path, nil
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return "", err
+	}
+	return path, f.Close()
 }

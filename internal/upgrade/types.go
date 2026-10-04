@@ -70,6 +70,11 @@ type Find struct {
 	// values, embedded promotion, composite-literal keys and generic
 	// instantiations, across lines and through aliases.
 	Uses []Symbol
+	// Shapes: a use of one of these symbols whose resolved type string
+	// matches the entry's regex, the matcher for a symbol that
+	// survives the release with a new shape (a signature that gained
+	// parameters, a field that became a builder). See ShapeMatch.
+	Shapes []ShapeMatch
 	// Imports: an import of one of these package paths. A path ending in
 	// "/..." matches the package and every package below it.
 	Imports []string
@@ -91,9 +96,9 @@ type Find struct {
 
 // Empty reports whether f has no matcher at all.
 func (f Find) Empty() bool {
-	return len(f.Uses) == 0 && len(f.Imports) == 0 && len(f.Fields) == 0 &&
-		f.Strings.Empty() && f.CSS.Empty() && len(f.Config) == 0 &&
-		f.GoMod == nil && len(f.Text) == 0
+	return len(f.Uses) == 0 && len(f.Shapes) == 0 && len(f.Imports) == 0 &&
+		len(f.Fields) == 0 && f.Strings.Empty() && f.CSS.Empty() &&
+		len(f.Config) == 0 && f.GoMod == nil && len(f.Text) == 0
 }
 
 // Symbol names a Go object: a package-level Name, or a Member (method
@@ -104,6 +109,24 @@ type Symbol struct {
 	Pkg    string
 	Name   string
 	Member string // "" for a package-level object
+}
+
+// ShapeMatch matches a use of Symbol by the type that use resolves to.
+// The type string is types.TypeString(obj.Type(), qual) with every
+// package printed by its NAME, not its path, exactly as a declaration
+// spells its own types: for v0.85's app.NewLayout that is
+// "func(name string) *app.Layout". Parameter names appear in the string
+// (Go prints them), so the regex is written against the library's
+// declaration as spelled in the release, not a general signature.
+// The object resolves through the type checker against the gofastr
+// version the app builds with today, so an entry written for the old
+// shape hits before the port and falls silent after it: the symbol
+// survives, only its shape changed, which a uses matcher cannot tell
+// apart. The walk is the same identifier-use walk Uses does, in
+// scan/symbols.go usesPackage.
+type ShapeMatch struct {
+	Symbol Symbol
+	Type   *regexp.Regexp
 }
 
 // String is the registry spelling with the full import path:

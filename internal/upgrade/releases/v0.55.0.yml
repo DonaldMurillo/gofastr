@@ -22,6 +22,9 @@ notes:
     guidance: "BootstrapMode, Definition.Bootstrap, Definition.BootstrapPath, Builder.Bootstrap, Builder.RPCWithSignal and RPCEndpoint.ResponseSignal are deleted. Mount never applied the documented bootstrap default and ResponseSignal was written but never read. Use RPC(...) and route signals through the data-fui-rpc-signal attribute."
     find:
       uses:
+        - gofastr/core-ui/widget.BootstrapMode
+        - gofastr/core-ui/widget.AutoScript
+        - gofastr/core-ui/widget.Embedded
         - gofastr/core-ui/widget.Builder.Bootstrap
         - gofastr/core-ui/widget.Builder.RPCWithSignal
         - gofastr/core-ui/widget.Definition.Bootstrap
@@ -46,10 +49,10 @@ notes:
   - change: An over-length ?field_in= list is a 400
     breaking: true
     hits: review
-    guidance: "Above 1000 entries the filter parser silently dropped the remainder, narrowing the predicate without telling the caller — rows past the cap vanished from results. The request now fails with an error naming the field and the cap, matching the include-scoped IN list. Split large IN lists across requests, or filter server-side."
+    guidance: "Above 1000 entries the filter parser silently dropped the remainder, narrowing the predicate without telling the caller, rows past the cap vanished from results. The request now fails with an error naming the field and the cap, matching the include-scoped IN list. Split large IN lists across requests, or filter server-side."
     find:
       strings:
-        match: '_in='
+        match: '_in=(?:[^&,[:space:]]+,){499,}'
   - change: AutoTimestamp writes microsecond precision
     breaking: true
     guidance: "Generated created_at/updated_at values were whole seconds, so rows written in the same second tied and stalled single-field cursor pagination. The format is now fixed-width microseconds (2006-01-02T15:04:05.000000Z07:00) because SQLite compares these as strings and a zero-stripped fraction sorts wrongly. Clients parsing the old exact format need RFC3339 with optional fractional seconds; existing rows are not rewritten."

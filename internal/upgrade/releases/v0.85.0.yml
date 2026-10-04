@@ -61,11 +61,11 @@ notes:
   - change: "generated CLIs drop the --token flag; the token resolves from $PREFIX_TOKEN, the stored config, or login --with-token reading stdin"
     breaking: true
     hits: review
+    guidance: "Re-generate the CLI and update scripts that passed --token on the command line (visible to every local process via ps) to export the env var or pipe the token into login --with-token."
     find:
       text:
         - glob: "**/*.sh"
-          match: '--token'
-    guidance: "Re-generate the CLI and update scripts that passed --token on the command line (visible to every local process via ps) to export the env var or pipe the token into login --with-token."
+          match: '--token\b'
   - change: "the harness mcpserver answers malformed JSON-RPC with -32602 invalid params (was -32700 parse error)"
     breaking: true
     hits: review
@@ -83,7 +83,7 @@ notes:
     find:
       text:
         - glob: "**/*.js"
-          match: 'MutationObserver'
+          match: '\.observe\(\s*document(\.body|\.documentElement)?\s*[,)]'
   - change: "CodeBlockConfig gains HighlightLines, Diff, HighlightWords, and Wrap, and ui.Markdown forwards the fence options title, showLineNumbers, scroll, {1,3-5}/highlight=, diff, words=, and wrap"
     breaking: false
     guidance: "Additive; a zero config renders byte-identical markup. A docs site that lifted option-carrying fences out of Markdown to render them itself can delete that parser. Option-carrying fences now also carry the raw info string on the block's data-meta attribute."

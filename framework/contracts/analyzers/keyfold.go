@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // ----------------------------------------------------------------------
@@ -188,23 +189,13 @@ func firstDiskWrite(body *ast.BlockStmt) *ast.CallExpr {
 	return hit
 }
 
-// recvBaseName returns the identifier at the base of fn's receiver
-// type (T or *T), or "".
+// recvBaseName delegates to internal/astbase.RecvBaseName, the one
+// shared body. The package-local name stays because security.go's
+// method map calls it too; only the body was duplicated, and the body
+// now lives once, in astbase (which this package can import and
+// golang.org/x/tools cannot follow it in).
 func recvBaseName(fn *ast.FuncDecl) string {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
-		return ""
-	}
-	switch t := fn.Recv.List[0].Type.(type) {
-	case *ast.Ident:
-		return t.Name
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			return id.Name
-		}
-		return ""
-	default:
-		return ""
-	}
+	return astbase.RecvBaseName(fn)
 }
 
 // exprString renders e compactly without importing go/types: the only

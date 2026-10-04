@@ -265,12 +265,17 @@ func parseFind(n *coreyaml.Node) (Find, error) {
 	if len(n.Map) == 0 {
 		return f, errAt(n.Line, "find is empty: a note either describes matchers or says nodetect")
 	}
-	if err := unknownKeys(n, "uses", "imports", "fields", "strings", "css", "config", "gomod", "text"); err != nil {
+	if err := unknownKeys(n, "uses", "shapes", "imports", "fields", "strings", "css", "config", "gomod", "text"); err != nil {
 		return f, err
 	}
 	var err error
 	if f.Uses, err = parseSymbolList(n.Map["uses"], "uses", false); err != nil {
 		return f, err
+	}
+	if n.Map["shapes"] != nil {
+		if f.Shapes, err = parseShapeMatches(n.Map["shapes"]); err != nil {
+			return f, err
+		}
 	}
 	if f.Imports, err = parseStringList(n.Map["imports"], "imports", true); err != nil {
 		return f, err
@@ -306,6 +311,45 @@ func parseFind(n *coreyaml.Node) (Find, error) {
 		}
 	}
 	return f, nil
+}
+
+// parseShapeMatches reads a find's shapes entries: a symbol and the
+// regex its resolved type string must match, both required.
+func parseShapeMatches(n *coreyaml.Node) ([]ShapeMatch, error) {
+	if n.Kind != coreyaml.List {
+		return nil, errAt(n.Line, "shapes must be a list")
+	}
+	out := make([]ShapeMatch, 0, len(n.List))
+	for _, item := range n.List {
+		if item.Kind != coreyaml.Map {
+			return nil, errAt(item.Line, "shapes entry must be a map")
+		}
+		if err := unknownKeys(item, "symbol", "type"); err != nil {
+			return nil, err
+		}
+		sn := item.Map["symbol"]
+		if sn == nil {
+			return nil, errAt(item.Line, "shapes entry is missing symbol")
+		}
+		sym, err := parseSymbol(sn)
+		if err != nil {
+			return nil, err
+		}
+		tn := item.Map["type"]
+		if tn == nil {
+			return nil, errAt(item.Line, "shapes entry is missing type")
+		}
+		src, err := optString(tn, "shapes.type")
+		if err != nil {
+			return nil, err
+		}
+		re, err := compileRegex(tn.Line, "shapes.type", src)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ShapeMatch{Symbol: sym, Type: re})
+	}
+	return out, nil
 }
 
 func parseStringMatch(n *coreyaml.Node) (StringMatch, error) {

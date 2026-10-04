@@ -2,6 +2,7 @@ package upgrade_test
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -290,6 +291,17 @@ var v086StringPairs = map[int]*v086Pair{
 			"n39.css": "--spacing-2xl: 32px;\n--breakpoint-2xl: 64em;\n",
 		},
 	},
+	49: { // toggle family classes
+		oldFiles: map[string]string{
+			"n49.go":  "package app\n\nvar agreeCls = \"ui-toggle ui-toggle--checkbox\"\n",
+			"n49.css": ".ui-toggle-group__legend { font-weight: 600 }\n",
+		},
+		oldMarks: []string{"ui-toggle ui-toggle--checkbox", ".ui-toggle-group__legend"},
+		newFiles: map[string]string{
+			"n49.go":  "package app\n\nvar agreeCls = \"fui-choice fui-choice--checkbox\"\n",
+			"n49.css": ".fui-choice-group__legend { font-weight: 600 }\n",
+		},
+	},
 }
 
 // TestV086StringsOldVsNew builds one pre-migration app and one migrated
@@ -374,6 +386,12 @@ func TestV086StringsOldVsNew(t *testing.T) {
 			t.Errorf("note %d (%s): fires on the migrated spellings at %v", i, n.Change, lines)
 		}
 	}
+	// A pair pinned for an index no note holds points at nothing.
+	for idx := range v086StringPairs {
+		if idx >= len(rel.Notes) {
+			t.Errorf("a pair pinned in v086StringPairs for note %d, but the release holds %d notes", idx, len(rel.Notes))
+		}
+	}
 }
 
 // v086Kit is a stub of the gofastr module at v0.85.0 holding just the
@@ -450,8 +468,11 @@ func (l *Layout) WrapCtx(ctx context.Context, content any) any { return content 
 	"framework/ui/ui.go": `package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type DataTableConfig struct {
@@ -476,9 +497,58 @@ type FormConfig struct {
 
 func Form(cfg FormConfig) string { return "" }
 
-type FormFieldConfig struct{ Input string }
+type FormFieldConfig struct{ Input render.HTML }
 
 func FormField(cfg FormFieldConfig) string { return "" }
+
+type PasswordInputConfig struct {
+	Name  string
+	Error string
+}
+
+func PasswordInput(cfg PasswordInputConfig) string { return "" }
+
+type ColorFieldConfig struct {
+	Value       string
+	SwatchValue string
+}
+
+func ColorField(cfg ColorFieldConfig) string { return "" }
+
+type CalloutConfig struct {
+	Title    string
+	Landmark *bool
+}
+
+func Callout(cfg CalloutConfig) string { return "" }
+
+type SectionConfig struct {
+	Heading string
+	Ctx     context.Context
+}
+
+func Section(cfg SectionConfig) string { return "" }
+
+type NetworkRetryBannerConfig struct {
+	HealthEndpoint   string
+	FailureThreshold int
+	SSESilenceMs     int
+}
+
+func NetworkRetryBanner(cfg NetworkRetryBannerConfig) string { return "" }
+
+type CarouselConfig struct {
+	Label                    string
+	VirtualScroll            bool
+	VirtualWindow            int
+	VirtualPlaceholderHeight string
+}
+
+func Carousel(cfg CarouselConfig) string { return "" }
+
+type SkeletonAvatarConfig struct{ Size string }
+
+func SkeletonAvatar(cfg SkeletonAvatarConfig) string { return "" }
 
 type ConditionalFieldConfig struct{ WhenName string }
 
@@ -599,7 +669,121 @@ type Config struct{ SignalPrefix string }
 
 func Render(cfg Config) string { return "" }
 `,
+	"core/render/render.go": `package render
+
+type HTML string
+`,
 }
+
+// v086NewKit is v086Kit with the symbols that survive the release
+// spelled in their v0.86 shape: app.NewLayout's tree-layout signature
+// (the With* builders are gone with it), FormFieldConfig.Input's
+// builder type, and ThemeRef.Hash the field become a method
+// (style.DarkSchemeCSS went with the release). The migrated app
+// compiles against it, so silence on its files proves a matcher
+// separates the new shape from the old.
+var v086NewKit = func() map[string]string {
+	kit := maps.Clone(v086Kit)
+	kit["core-ui/style/style.go"] = `package style
+
+type ThemeRef struct{}
+
+func (r ThemeRef) Hash() string { return "" }
+
+type Theme struct{ DarkColors map[string]string }
+`
+	kit["core-ui/app/app.go"] = `package app
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+type Layout struct{}
+
+type LayoutSpec struct{}
+
+type LayoutTree struct{}
+
+type LayoutFunc func(ctx context.Context, l *LayoutTree) render.HTML
+
+func NewLayout(name string, spec LayoutSpec, build LayoutFunc) *Layout { return nil }
+
+func LayoutBaseCSS() string { return "" }
+
+func (l *Layout) Wrap(content any) any { return content }
+
+func (l *Layout) WrapCtx(ctx context.Context, content any) any { return content }
+`
+	kit["framework/ui/ui.go"] = `package ui
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+)
+
+type DataTableConfig struct {
+	Pagination      *pagination.Config
+	SortHrefPattern string
+	IslandSignal    string
+	IslandEndpoint  string
+}
+
+type ButtonConfig struct {
+	ExtraAttrs html.Attrs
+	Disabled   bool
+}
+
+func Button(cfg ButtonConfig) string { return "" }
+
+type FormConfig struct {
+	Action     string
+	ID         string
+	ExtraAttrs html.Attrs
+}
+
+func Form(cfg FormConfig) string { return "" }
+
+type FormFieldConfig struct{ Input func(headless.FieldControl) render.HTML }
+
+func FormField(cfg FormFieldConfig) string { return "" }
+
+type PasswordInputConfig struct{ Name string }
+
+func PasswordInput(cfg PasswordInputConfig) string { return "" }
+
+type ColorFieldConfig struct {
+	Name  string
+	Value string
+}
+
+func ColorField(cfg ColorFieldConfig) string { return "" }
+
+type CalloutConfig struct{ Title string }
+
+func Callout(cfg CalloutConfig) string { return "" }
+
+type SectionConfig struct{ Heading string }
+
+func Section(cfg SectionConfig) string { return "" }
+
+type NetworkRetryBannerConfig struct{ HealthEndpoint string }
+
+func NetworkRetryBanner(cfg NetworkRetryBannerConfig) string { return "" }
+
+type CarouselConfig struct{ Label string }
+
+func Carousel(cfg CarouselConfig) string { return "" }
+
+type SkeletonAvatarConfig struct{}
+
+func SkeletonAvatar(cfg SkeletonAvatarConfig) string { return "" }
+`
+	return kit
+}()
 
 // v086GoOldFiles is one app written against v0.85.0: every Go API the
 // v0.86.0 notes retire, one spelling per note.
@@ -823,6 +1007,58 @@ var entryLookup = gallery.MustLookup
 
 var toastSig = ui.ToastStackSignal("app")
 `,
+	"n42.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var pwField = ui.PasswordInput(ui.PasswordInputConfig{Name: "password", Error: "Wrong password"})
+`,
+	"n43.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var tintField = ui.ColorField(ui.ColorFieldConfig{Value: "var(--tint)", SwatchValue: "#38bdf8"})
+`,
+	"n44.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var inlineTip bool
+
+var tip = ui.Callout(ui.CalloutConfig{Title: "Tip", Landmark: &inlineTip})
+`,
+	"n45.go": `package app
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+var about = ui.Section(ui.SectionConfig{Heading: "About", Ctx: context.Background()})
+`,
+	"n46.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var retryBanner = ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{
+	HealthEndpoint:   "/health",
+	FailureThreshold: 5,
+	SSESilenceMs:     9000,
+})
+`,
+	"n47.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var covers = ui.Carousel(ui.CarouselConfig{Label: "Covers", VirtualScroll: true, VirtualWindow: 8, VirtualPlaceholderHeight: "240px"})
+`,
+	"n48.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var who = ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"})
+`,
 }
 
 // v086GoOldMarks holds, per note index, the marks whose lines each
@@ -856,15 +1092,31 @@ var v086GoOldMarks = map[int][]string{
 	38: {"html.ContainerType(", "style.DarkSchemeCSS(", "gallery.MustLookup", "ui.ToastStackSignal("},
 	40: {"core-ui/patterns/pagination\"", "&pagination.Config{", "pagination.New("},
 	41: {"SortHrefPattern:", "IslandSignal:", "IslandEndpoint:"},
+	42: {`Error: "Wrong password"`},
+	43: {`SwatchValue: "#38bdf8"`},
+	44: {"Landmark: &inlineTip"},
+	45: {"Ctx: context.Background()"},
+	46: {"FailureThreshold: 5", "SSESilenceMs:"},
+	47: {"VirtualScroll: true", "VirtualWindow: 8", `VirtualPlaceholderHeight: "240px"`},
+	48: {`Size: "3rem"`},
 }
 
 // v086GoNewFiles is the same app after the migration the notes
-// prescribe. The notes whose symbol keeps its name with a new shape
-// (ThemeRef.Hash the field becomes a method, FormFieldConfig.Input the
-// pre-built markup becomes a builder, app.NewLayout gains arguments)
-// have no entry here: their new spelling still references the old
-// symbol, so silence against the v0.85.0 stub proves nothing.
+// prescribe, scanned against v086NewKit (the v0.86-shaped stub): the
+// notes whose symbol keeps its name with a new shape
+// (FormFieldConfig.Input the pre-built markup becomes a builder,
+// app.NewLayout gains arguments, ThemeRef.Hash the field becomes a
+// method) carry their migrated spelling here, and silence proves the
+// shape matcher separated it from the old one.
 var v086GoNewFiles = map[string]string{
+	"m00.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+var dark = style.ThemeRef{}
+
+var darkHash = dark.Hash()
+`,
 	"m40.go": `package app
 
 import "github.com/DonaldMurillo/gofastr/framework/ui"
@@ -882,6 +1134,16 @@ var sortTable = ui.DataTableConfig{}
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 
 var saveBtn = ui.Button(ui.ButtonConfig{Disabled: true})
+`,
+	"m04.go": `package app
+
+import (
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+var emailField = ui.FormField(ui.FormFieldConfig{Input: func(headless.FieldControl) render.HTML { return "" }})
 `,
 	"m03.go": `package app
 
@@ -916,6 +1178,19 @@ var extForm = ui.Form(ui.FormConfig{Action: "/customers"})
 	"m10.go": `package app
 
 var watchAttrs = map[string]string{"data-hui-when": "kind", "data-hui-when-value": "business"}
+`,
+	"m28.go": `package app
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
+)
+
+var shell = app.NewLayout("shell", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+	return ""
+})
 `,
 	"m16.go": `package app
 
@@ -978,22 +1253,73 @@ var darkTheme = style.Theme{DarkColors: nil}
 
 var toast2 = preset.ToastStack("app")
 `,
+	"m42.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var pwField = ui.PasswordInput(ui.PasswordInputConfig{Name: "password"})
+`,
+	"m43.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var tintField = ui.ColorField(ui.ColorFieldConfig{Name: "tint", Value: "#38bdf8"})
+`,
+	"m44.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var tip = ui.Callout(ui.CalloutConfig{Title: "Tip"})
+`,
+	"m45.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var about = ui.Section(ui.SectionConfig{Heading: "About"})
+`,
+	"m46.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var retryBanner = ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{HealthEndpoint: "/health"})
+`,
+	"m47.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var covers = ui.Carousel(ui.CarouselConfig{Label: "Covers"})
+`,
+	"m48.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var who = ui.SkeletonAvatar(ui.SkeletonAvatarConfig{})
+`,
 	"mailer/mailer.go":         `package mailer` + "\n" + `func WithHeader(key, value string) string { return "" }` + "\n",
 	"uiown/uiown.go":           "package uiown\n\nfunc Stack(children ...string) string { return \"\" }\n",
 	"fanout/fanout.go":         "package fanout\n\nfunc Wrap(nodeID, body string) string { return \"\" }\n",
 	"siteheader/siteheader.go": "package siteheader\n\ntype Config struct{ Name string }\n\nfunc Render(cfg Config) string { return \"\" }\n",
 }
 
-// TestV086GoAPIOldVsNew scans the pre-migration app and the migrated
-// app (both against the v0.85.0 stub kit) with the whole release: every
-// Go-API note hits its old spelling's line, and every note stays silent
-// on the migrated app.
+// TestV086GoAPIOldVsNew scans the pre-migration app against the v0.85.0
+// stub kit and the migrated app against the v0.86-shaped one, with the
+// whole release: every Go-API note hits its old spelling's line, and
+// every note stays silent on the migrated app.
 func TestV086GoAPIOldVsNew(t *testing.T) {
 	reg, rel := v086Loaded(t)
 	oldRes := scantest.Run(t, scantest.App(t, v086GoOldFiles, scantest.Options{Kit: v086Kit}), rel.Notes, reg.MarkerSinks)
-	newRes := scantest.Run(t, scantest.App(t, v086GoNewFiles, scantest.Options{Kit: v086Kit}), rel.Notes, reg.MarkerSinks)
+	newRes := scantest.Run(t, scantest.App(t, v086GoNewFiles, scantest.Options{Kit: v086NewKit}), rel.Notes, reg.MarkerSinks)
+	// Both apps must type-check against their kit: a fixture that does
+	// not compile is scanned through the compile-error fallback, whose
+	// looser struct-literal rule can hand a hit to the wrong note, and
+	// silence on a broken migrated app proves nothing.
+	for name, res := range map[string]*scan.Result{"old": oldRes, "new": newRes} {
+		if !res.TypeChecked {
+			t.Fatalf("the %s fixture app does not type-check (broken: %v; unexplained: %v)", name, res.Broken, res.Unexplained)
+		}
+	}
 	for i, n := range rel.Notes {
-		goAPI := len(n.Find.Uses) > 0 || len(n.Find.Imports) > 0 || len(n.Find.Fields) > 0
+		goAPI := len(n.Find.Uses) > 0 || len(n.Find.Shapes) > 0 || len(n.Find.Imports) > 0 || len(n.Find.Fields) > 0
 		marks, ok := v086GoOldMarks[i]
 		if goAPI != ok {
 			// A Go-API note with no fixture is a matcher nobody watched
@@ -1013,6 +1339,13 @@ func TestV086GoAPIOldVsNew(t *testing.T) {
 		}
 		if lines := hitLines(newRes, n); len(lines) > 0 {
 			t.Errorf("note %d (%s): fires on the migrated spelling at %v", i, n.Change, lines)
+		}
+	}
+	// A mark pinned for an index no note holds points at nothing: a
+	// fixture whose matcher nobody wrote.
+	for idx := range v086GoOldMarks {
+		if idx >= len(rel.Notes) {
+			t.Errorf("marks pinned in v086GoOldMarks for note %d, but the release holds %d notes", idx, len(rel.Notes))
 		}
 	}
 	if len(v086GoOldMarks) == 0 {

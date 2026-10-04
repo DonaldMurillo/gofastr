@@ -94,6 +94,13 @@ running, fixing and saving retries. `gofastr dev --no-a11y` skips the
 gate with the same "escape hatch, not a setting" caveat as build's
 flag (see the accessibility doc).
 
+A build that runs longer than ten seconds prints a progress line every
+ten seconds (`Building <dir> (20s)...`). `go build` itself is silent
+however long it takes, and the startup banner has already named an
+address, so the heartbeat is what tells "still building" from "stuck",
+both to a person reading the terminal and to anything waiting on the
+dev process programmatically.
+
 ## The dev loop is also livereload for agents
 
 The same `GOFASTR_DEV` gate turns on MCP for agents: `framework.NewApp`

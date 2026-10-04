@@ -318,9 +318,15 @@ func (r *Renderer) renderButton(n uinodev1.Node) (render.HTML, error) {
 	if err != nil {
 		return "", err
 	}
+	variant, ok := ui.ParseButtonVariant(p.Variant)
+	if !ok {
+		// An unlisted value (the empty default; the wire enum is
+		// validated upstream) renders as the primary button.
+		variant = ui.ButtonPrimary
+	}
 	return ui.Button(ui.ButtonConfig{
 		Label:   p.Label,
-		Variant: buttonVariant(p.Variant),
+		Variant: variant,
 		ExtraAttrs: html.Attrs{
 			"data-cui-rpc": rpcURL,
 		},
@@ -385,19 +391,6 @@ func badgeTone(tone string) ui.StatusVariant {
 		return ui.StatusInfo
 	default: // "" | "neutral"
 		return ui.StatusNeutral
-	}
-}
-
-func buttonVariant(v string) ui.ButtonVariant {
-	switch v {
-	case "secondary":
-		return ui.ButtonSecondary
-	case "ghost":
-		return ui.ButtonGhost
-	case "danger":
-		return ui.ButtonDanger
-	default: // "" | "primary"
-		return ui.ButtonPrimary
 	}
 }
 

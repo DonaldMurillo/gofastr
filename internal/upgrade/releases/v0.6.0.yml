@@ -3,9 +3,9 @@ title: Generator ownership model
 notes:
   - change: gofastr generate scaffolds into the module root, not gen/
     breaking: true
-    guidance: "Generated files land next to your code and are add-only afterwards. Move any custom code out of gen/ and re-run generate once."
+    guidance: "Generated files land next to your code and are add-only afterwards. Move any custom code out of gen/ and re-run generate once, then build with go run . instead of go run ./gen. To keep the quarantined layout, pass --out=gen or set app.output_dir: gen in the blueprint."
     nodetect: the custom code is Go files under gen/ whose import paths are app-module-specific; no framework symbol or string names them
   - change: gofastr migrate diff removed
     breaking: true
     guidance: "Use `gofastr migrate generate` for versioned migrations; dev-mode auto-migrate covers the inner loop."
-    nodetect: the removed spelling is the shell command `gofastr migrate diff`, which lives in no app file
+    nodetect: the removed spelling is the shell command `gofastr migrate diff`, a command someone types or scripts in a Makefile or CI workflow, not code the app compiles; `gofastr migrate generate` replaces it

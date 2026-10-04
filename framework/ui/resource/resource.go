@@ -698,7 +698,13 @@ func (c Config) Detail(ctx context.Context, id string) render.HTML {
 			body += ",\"" + t.Stamp + "\":\"" + today() + "\""
 		}
 		body += "}"
-		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: buttonVariant(t.Variant), ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
+		variant, ok := ui.ParseButtonVariant(t.Variant)
+		if !ok {
+			// The row action should not shout: an unknown variant
+			// renders the quiet secondary button.
+			variant = ui.ButtonSecondary
+		}
+		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: variant, ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
 			WithBody(body).
 			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
 	}
@@ -964,19 +970,6 @@ func inputType(t string) string {
 
 func today() string {
 	return time.Now().Format("2006-01-02")
-}
-
-func buttonVariant(v string) ui.ButtonVariant {
-	switch v {
-	case "primary":
-		return ui.ButtonPrimary
-	case "danger":
-		return ui.ButtonDanger
-	case "ghost":
-		return ui.ButtonGhost
-	default:
-		return ui.ButtonSecondary
-	}
 }
 
 // ----- formatting helpers ---------------------------------------------------

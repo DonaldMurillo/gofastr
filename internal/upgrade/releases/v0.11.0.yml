@@ -4,7 +4,7 @@ notes:
   - change: battery/admin exposure is opt-in
     breaking: true
     hits: review
-    guidance: "An app that registered the admin battery implicitly no longer serves it; register it explicitly with a Config."
+    guidance: "An app that registered the admin battery implicitly no longer serves it; set admin.Config{AllEntities: true} for the previous whole back-office (still skips CRUD=false credential tables), or name the entities in Config.Entities."
     find:
       uses:
         - gofastr/battery/admin.New

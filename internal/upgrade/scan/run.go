@@ -50,6 +50,7 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 		sinks:         sinks,
 		hits:          map[*upgrade.Note][]Hit{},
 		goHitLines:    map[lineKey]bool{},
+		shapeSites:    map[lineKey][]shapeSite{},
 		broken:        map[string]bool{},
 		pkgNames:      map[string]string{},
 		loadOf:        map[*packages.Package]int{},
@@ -102,8 +103,9 @@ type engine struct {
 	sinks      upgrade.MarkerSinks
 
 	hits          map[*upgrade.Note][]Hit
-	pendingErrs   []Hit            // compile errors no symbol or import named
-	goHitLines    map[lineKey]bool // lines holding a typed Go hit
+	pendingErrs   []Hit                   // compile errors no symbol or import named
+	goHitLines    map[lineKey]bool        // lines holding a typed Go hit
+	shapeSites    map[lineKey][]shapeSite // shapes symbols resolved to a shape their regex refused
 	broken        map[string]bool
 	pkgNames      map[string]string           // import path → declared package name
 	typesByLoad   []map[string]*types.Package // per load: import path → type-checked package, whole graph
@@ -119,6 +121,7 @@ type engine struct {
 	ifaceCache    map[ifaceKey]*ifaceWant   // uses symbol, per load → resolved interface (nil: not one)
 
 	symIndex     map[upgrade.Symbol][]*upgrade.Note // uses
+	shapeIndex   map[upgrade.Symbol][]shapeWant     // shapes
 	fieldWantIdx map[upgrade.Symbol][]fieldWant     // fields
 	importExact  map[string][]*upgrade.Note
 	importSub    []importWant
@@ -132,6 +135,11 @@ type engine struct {
 type fieldWant struct {
 	n  *upgrade.Note
 	fm upgrade.FieldMatch
+}
+
+type shapeWant struct {
+	n  *upgrade.Note
+	re *regexp.Regexp
 }
 
 type importWant struct {
@@ -148,12 +156,16 @@ type textWant struct {
 // by key instead of walking the note list per candidate.
 func (e *engine) buildIndexes() {
 	e.symIndex = map[upgrade.Symbol][]*upgrade.Note{}
+	e.shapeIndex = map[upgrade.Symbol][]shapeWant{}
 	e.fieldWantIdx = map[upgrade.Symbol][]fieldWant{}
 	e.importExact = map[string][]*upgrade.Note{}
 	for _, n := range e.notes {
 		f := n.Find
 		for _, s := range f.Uses {
 			e.symIndex[s] = append(e.symIndex[s], n)
+		}
+		for _, sm := range f.Shapes {
+			e.shapeIndex[sm.Symbol] = append(e.shapeIndex[sm.Symbol], shapeWant{n, sm.Type})
 		}
 		for _, fm := range f.Fields {
 			e.fieldWantIdx[fm.Field] = append(e.fieldWantIdx[fm.Field], fieldWant{n, fm})
@@ -448,8 +460,18 @@ type lineKey struct {
 	line int
 }
 
-// addGo records a Go-API hit (uses, imports, fields) and remembers its
-// line, which explains a compile error reported there.
+// shapeSite is a use of a shapes symbol whose resolved type did not
+// match the note's regex, kept for the compile-error fallback: the
+// column is the identifier's, so a hit minted from the site lands where
+// the typed walk would have put it.
+type shapeSite struct {
+	n   *upgrade.Note
+	sym upgrade.Symbol
+	col int
+}
+
+// addGo records a Go-API hit (uses, shapes, imports, fields) and
+// remembers its line, which explains a compile error reported there.
 func (e *engine) addGo(n *upgrade.Note, h Hit) {
 	e.add(n, h)
 	e.goHitLines[lineKey{h.File, h.Line}] = true
@@ -465,6 +487,14 @@ func (e *engine) noteUnscanned(rel, reason string) {
 // what makes the output independent of map iteration order.
 func (e *engine) result() *Result {
 	res := &Result{Hits: map[*upgrade.Note][]Hit{}, TypeChecked: len(e.broken) == 0}
+	// Pending errors first: explaining one by a shape site mints a hit,
+	// which the hit lists below must include.
+	var unexplained []Hit
+	for _, h := range e.pendingErrs {
+		if !e.explainedByLine(h) && !e.explainedByShapeSite(h) {
+			unexplained = append(unexplained, h)
+		}
+	}
 	for n, hs := range e.hits {
 		sortHits(hs)
 		res.Hits[n] = dedupeHits(hs)
@@ -474,12 +504,6 @@ func (e *engine) result() *Result {
 		res.Broken = append(res.Broken, p)
 	}
 	sort.Strings(res.Broken)
-	var unexplained []Hit
-	for _, h := range e.pendingErrs {
-		if !e.explainedByLine(h) {
-			unexplained = append(unexplained, h)
-		}
-	}
 	sortHits(unexplained)
 	res.Unexplained = dedupeHits(unexplained)
 	res.Unscanned = append([]string(nil), e.unscanned...)

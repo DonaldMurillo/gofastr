@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -204,7 +205,7 @@ func TestFilterToolbarPanics(t *testing.T) {
 		},
 	}
 	for i, fn := range cases {
-		t.Run("case-"+itoaSmall(i), func(t *testing.T) {
+		t.Run("case-"+strconv.Itoa(i), func(t *testing.T) {
 			defer func() {
 				if recover() == nil {
 					t.Error("expected panic")
