@@ -172,6 +172,23 @@
     return container.getAttribute(attr) || (tpl && tpl.getAttribute(attr)) || '';
   }
 
+  // templateVariant: the class and glyph the template lists for a
+  // variant beyond the four tones (data-hui-toast-variants, a JSON map
+  // the kit renders). A name the template does not list, or a map that
+  // does not parse, is a row with no variant class and no glyph.
+  function templateVariant(tpl, variant) {
+    const none = { cls: '', glyph: '' };
+    let map = null;
+    try { map = JSON.parse(tpl.getAttribute('data-hui-toast-variants') || 'null'); } catch (_) { return none; }
+    if (!map || typeof map !== 'object' || !Object.prototype.hasOwnProperty.call(map, variant)) return none;
+    const v = map[variant];
+    if (!v || typeof v !== 'object') return none;
+    return {
+      cls: typeof v.class === 'string' ? v.class : '',
+      glyph: typeof v.glyph === 'string' ? v.glyph : ''
+    };
+  }
+
   NS.toast = function (cfg) {
     if (cfg == null) return null;
     if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
@@ -180,8 +197,15 @@
     if (!container) return null;
 
     const id = 't' + (++NS._toastSeq);
-    const variant = cfg.variant || 'info';
-    const tone = TONES.indexOf(variant) >= 0 ? variant : 'info';
+    // The kernel's own failures say 'error' (formerrors.js, rpc.js):
+    // that is the danger tone by another name.
+    let variant = String(cfg.variant || 'info');
+    if (variant === 'error') variant = 'danger';
+    // A tone gets its word, its glyph and its class from the per-tone
+    // attributes. Any other variant (neutral, a registered status
+    // variant) is not a tone: it wears what the template lists for it
+    // and says no tone word, so it never passes for info.
+    const tone = TONES.indexOf(variant) >= 0 ? variant : '';
     const assertive = tone === 'warning' || tone === 'danger';
 
     const tpl = rowTemplate(container);
@@ -196,14 +220,23 @@
     if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(ttl));
 
     const root = item.querySelector('[data-hui-toast]') || item;
-    const variantCls = tpl ? (tpl.getAttribute(VARIANT_ATTR[tone]) || '') : '';
+    let variantCls = '';
+    let glyph = '';
+    if (tpl && tone) {
+      variantCls = tpl.getAttribute(VARIANT_ATTR[tone]) || '';
+      glyph = tpl.getAttribute(GLYPH_ATTR[tone]) || '';
+    } else if (tpl) {
+      const extra = templateVariant(tpl, variant);
+      variantCls = extra.cls;
+      glyph = extra.glyph;
+    }
     variantCls.split(/\s+/).forEach(function (c) { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
     root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
-    const toneWord = readWord(container, tpl, TONE_ATTR[tone]);
+    const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
-    fill(root, 'data-hui-toast-icon', tpl ? (tpl.getAttribute(GLYPH_ATTR[tone]) || '') : '');
+    fill(root, 'data-hui-toast-icon', glyph);
     fill(root, 'data-hui-toast-title', cfg.title);
     fill(root, 'data-hui-toast-body', cfg.body || '');
     const dismiss = root.querySelector('[data-hui-toast-dismiss]');
@@ -262,8 +295,9 @@
       if (btn && back) btn.textContent = back;
     }, 1200);
     // A toast on copy rides this module's own toast runtime; the
-    // config JSON travels on the button.
-    const toastCfg = (btn && btn.getAttribute('data-hui-copy-toast')) || '';
+    // config JSON travels on the button that carries it.
+    const toastEl = wrap.querySelector('[data-hui-copy-toast]');
+    const toastCfg = (toastEl && toastEl.getAttribute('data-hui-copy-toast')) || '';
     if (toastCfg) {
       try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
     }
@@ -271,28 +305,34 @@
 
   // ─── notification bell ───────────────────────────────────────────
 
-  // The spoken count follows the signal the badge follows: the kernel
-  // writes the number into the bound nodes, and the module re-formats
-  // the anchor's accessible name through the sentence shape the
-  // component rendered.
-  document.addEventListener('gofastr:signal', function (e) {
-    const d = e && e.detail;
-    if (!d || typeof d.name !== 'string') return;
-    for (const bell of document.querySelectorAll('[data-hui-notification-bell]')) {
-      if (bell.getAttribute('data-cui-signal') !== d.name) continue;
-      const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
-      const n = parseInt(d.value, 10);
-      if (!Number.isFinite(n)) return;
-      if (fmt) {
-        bell.setAttribute('aria-label', fmt.replace('%d', String(n)).replace('%d', String(n)));
-      }
-      // The badge's count attribute follows the signal too, so the
-      // next reader of it (a stylesheet's 99+ shaping, a test) sees
-      // the same number the anchor says.
-      const badge = bell.querySelector('[data-hui-notification-count]');
-      if (badge) badge.setAttribute('data-hui-notification-count', String(n));
-    }
-  });
+  // The spoken count follows the badge: the kernel writes a bound
+  // signal's value into the badge span (UnreadBind puts the binding on
+  // the badge, not the anchor), and an observer on that span's text
+  // re-formats the anchor's accessible name through the sentence shape
+  // the component rendered. Watching the badge, not the signal store,
+  // means no subscription outlives a bell a navigation removed.
+  const bellsWatched = new WeakSet();
+  function sayBellCount(bell, badge) {
+    const text = (badge.textContent || '').trim();
+    // An empty badge is the signal's "nothing unread" (the sheet hides
+    // it); anything else that is not a number leaves the name alone.
+    const n = text === '' ? 0 : parseInt(text, 10);
+    if (!Number.isFinite(n) || n < 0) return;
+    const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
+    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(String(n)));
+    // The badge's count attribute follows too, so the next reader of
+    // it (a stylesheet's 99+ shaping, a test) sees the same number the
+    // anchor says. An attribute write, so the observer does not hear it.
+    badge.setAttribute('data-hui-notification-count', String(n));
+  }
+  function watchBell(bell) {
+    if (bellsWatched.has(bell) || typeof MutationObserver !== 'function') return;
+    const badge = bell.querySelector('[data-hui-notification-count]');
+    if (!badge) return;
+    bellsWatched.add(bell);
+    new MutationObserver(function () { sayBellCount(bell, badge); })
+      .observe(badge, { childList: true, characterData: true, subtree: true });
+  }
 
   // ─── network retry ───────────────────────────────────────────────
 
@@ -333,6 +373,7 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
+    for (const bell of within(scope, '[data-hui-notification-bell]')) watchBell(bell);
   }
 
   scan(document);
