@@ -218,7 +218,7 @@ func firstLineWith(s string, needles ...string) string {
 //   - block link_button `href`          → ui.LinkButton:   GUARDED (isUnsafeScheme)
 //   - block hero `cta_href`/`secondary_href` → ui.LinkButton:  GUARDED
 //   - block pricing plan `cta_href`     → ui.PricingCard → LinkButton:  GUARDED
-//   - block type:link `href`            → html.Link → setURLAttr(urlsafe.Anchor):  GUARDED
+//   - block type:link `href`            → validate urlsafe.OK, ui.Link → urlsafe.CleanAnchor:  GUARDED
 //   - node-renderer props `href`        → html.Link/LinkHTML → setURLAttr:  GUARDED
 //   - nav item `href`                   → ui.SidebarItem → safeURL:  GUARDED
 //   - login_form  props `register_href` → hand-rolled <a> inside render.Raw:  UNGUARDED
