@@ -18,22 +18,12 @@ import (
 // their bases. Short heartbeat/TTL so the tests converge fast.
 func twoReplicas(t *testing.T, cfg func() Config) (string, string, *Signaler, *Signaler) {
 	t.Helper()
-	return twoReplicasTTL(t, cfg, 300*time.Millisecond)
-}
-
-// twoReplicasTTL is twoReplicas with the remote TTL chosen by the test.
-// A test that asserts SILENCE after the replicas converge must hold the
-// TTL well above its silence window: with the default 300 ms a heartbeat
-// goroutine starved for one GC pause on a loaded runner lets the other
-// replica sweep a live peer and replay its leave (#474).
-func twoReplicasTTL(t *testing.T, cfg func() Config, ttl time.Duration) (string, string, *Signaler, *Signaler) {
-	t.Helper()
 	f := fanout.NewInProcess()
 	s1 := newTestSignaler(t, cfg())
 	s2 := newTestSignaler(t, cfg())
 	for _, s := range []*Signaler{s1, s2} {
 		s.heartbeatEvery = 60 * time.Millisecond
-		s.remoteTTL = ttl
+		s.remoteTTL = 300 * time.Millisecond
 		if _, err := s.SetFanout(f); err != nil {
 			t.Fatalf("SetFanout: %v", err)
 		}
@@ -129,12 +119,12 @@ func TestRemotePeerExpiresAfterTTL(t *testing.T) {
 }
 
 // TestRemoteReplacesLocalPeer: a peer id that reappears on another
-// replica closes the local socket; the room sees leave then join. The
-// TTL sits far above the silence window so a stalled heartbeat cannot
-// turn into a swept-and-replayed leave inside it; TestStalledBeatSweepsReplacedPeer
-// pins that mechanism on its own.
+// replica closes the local socket; the room sees leave then join and
+// nothing after. The duplicate leave CI saw once (#474) came from R1's
+// join mirror reaching R2 after p1 had already joined R2; the lane-held
+// replay is TestLateJoinMirrorDoesNotKickTheMovedPeer.
 func TestRemoteReplacesLocalPeer(t *testing.T) {
-	base1, base2, _, _ := twoReplicasTTL(t, func() Config { return Config{} }, 10*time.Second)
+	base1, base2, _, _ := twoReplicas(t, func() Config { return Config{} })
 
 	old, _ := join(t, base1, "room1", "p1")
 	w, _ := join(t, base1, "room1", "pW")

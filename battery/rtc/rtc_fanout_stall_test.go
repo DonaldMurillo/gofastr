@@ -8,12 +8,10 @@ import (
 
 // TestStalledBeatSweepsReplacedPeer: after a remote replacement, a
 // replica whose heartbeat stalls past remoteTTL is swept by the other,
-// and the watcher sees the displaced id leave again. This is the
-// mechanism behind #474: TestRemoteReplacesLocalPeer ran with a 300 ms
-// TTL under a 500 ms silence window, so one starved heartbeat on a
-// loaded CI runner replayed the leave. The displaced socket's own close
-// path cannot double-fire (peerGone no-ops when the room no longer
-// holds that peer); the sweep is the only second source.
+// and the watcher sees the displaced id leave again. The crash fallback
+// still applies to a peer that moved: the sweep is the one path, besides
+// the move itself, that may announce the same id leaving twice, and it
+// needs a stall longer than the TTL (45 s in production) to do so.
 func TestStalledBeatSweepsReplacedPeer(t *testing.T) {
 	base1, base2, _, s2 := twoReplicas(t, func() Config { return Config{} })
 

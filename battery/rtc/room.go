@@ -275,7 +275,9 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 			Role:        join.Role,
 			User:        join.User,
 			DisplayName: join.DisplayName,
-			Order:       time.Now().UnixNano(),
+			// Order sorts the roster and doubles as the join instant a
+			// late fanout join mirror is compared against (fanoutMsg.At).
+			Order: time.Now().UnixNano(),
 		},
 		conn:    conn,
 		limiter: newFrameLimiter(s.cfg.MaxFramesPerSecond),
@@ -392,7 +394,13 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 		return
 	}
 	delete(rm.peers, p.info.ID)
-	s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: p.info.ID})
+	// A live remote seat for the same id keeps the peer in the merged
+	// roster (local wins while local exists; remote carries it after), so
+	// the wire says nothing: the room never lost the peer. Other replicas
+	// still hear the leave mirror and drop this replica's copy.
+	if !s.remoteHasPeerLocked(roomName, p.info.ID) {
+		s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: p.info.ID})
+	}
 	s.mirrorLocked(roomName, fanoutMsg{Kind: evLeave, ID: p.info.ID})
 	// The seat frees with the socket: the FIFO never retains a departed
 	// peer, so the cap counts exactly the live ones.
