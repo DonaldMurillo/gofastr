@@ -28,7 +28,7 @@ type command struct {
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// commandMap merges customCommands() over the generated set, a custom
+// commandMap merges customCommands() over the generated set: a custom
 // entry with a generated name replaces it.
 func commandMap() map[string]command {
 	cmds := map[string]command{}
@@ -87,7 +87,7 @@ func printUsage(cmds map[string]command) {
 	for _, name := range names {
 		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
 	}
-	fmt.Printf("\nConnection: --url/--token flags, %s_URL/%s_TOKEN env vars, or `%s login`.\n", envPrefix, envPrefix, binaryName)
+	fmt.Printf("\nConnection: --url flag, %s_URL/%s_TOKEN env vars, or `%s login` (no --token flag: tokens never ride argv).\n", envPrefix, envPrefix, binaryName)
 }
 
 // groupUsage prints one command group's subcommands (the bare entity

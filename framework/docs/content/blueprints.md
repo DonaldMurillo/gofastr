@@ -533,11 +533,15 @@ Note what that invariant does and does not say. It is about the
 **declarations**: pack reads `examples/meridian`'s Go and recovers the same
 entities, screens, nav, and seed the blueprint declares. It is *not* a claim
 that re-running `gofastr generate` reproduces that app's source. Meridian has
-been hand-edited since it was scaffolded, so regenerating it would overwrite
-code the generator never wrote; `examples/meridian/doc.go` says so, and
-`--force` there is a mistake, not a refresh. Only `examples/ecommerce`
-regenerates in place, because its blueprint sets `output_dir: app` and the
-generator owns that directory outright.
+been hand-edited since it was scaffolded, so regenerating it in place would
+overwrite code the generator never wrote; `examples/meridian/doc.go` says so,
+and `--force` there is a mistake, not a refresh. Two of its trees are the
+exception: `entities/` and `cmd/meridian/` are generator-owned, and
+`TestGeneratedTreesMatchGenerator` regenerates them into a scratch package
+and fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
+excluded). `examples/ecommerce` regenerates in place as a whole, because its
+blueprint sets `output_dir: app` and the generator owns that directory
+outright.
 
 `endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
 pack: the generator emits them as `stubs.go` signatures you fill with your own

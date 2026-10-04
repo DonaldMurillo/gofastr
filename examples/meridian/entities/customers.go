@@ -31,6 +31,7 @@ var (
 )
 
 // CustomersRepo is the typed repository for customers rows.
+// Event helpers: OnCustomersCreated/OnCustomersUpdated/OnCustomersDeleted in this package.
 type CustomersRepo struct {
 	handler *framework.CrudHandler
 }
@@ -51,7 +52,7 @@ func NewCustomersRepo(app *framework.App) *CustomersRepo {
 	return &CustomersRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler, useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *CustomersRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -201,75 +202,49 @@ func (r *CustomersRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnCustomersCreated subscribes to entity.created events scoped to "customers".
 // Returns a cancel func; call it to remove the handler.
 func OnCustomersCreated(app *framework.App, fn func(ctx context.Context, row *Customers) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractCustomersRecord(ev, "customers")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Customers](app, "customers", framework.EntityCreated, fn)
 }
 
 // OnCustomersUpdated subscribes to entity.updated events scoped to "customers".
 func OnCustomersUpdated(app *framework.App, fn func(ctx context.Context, row *Customers) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractCustomersRecord(ev, "customers")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Customers](app, "customers", framework.EntityUpdated, fn)
 }
 
 // OnCustomersDeleted subscribes to entity.deleted events scoped to "customers". Callback
-// receives the deleted row's id only, by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnCustomersDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "customers" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "customers", fn)
 }
 
 // extractCustomersRecord unmarshals an event payload's "record" field into a
 // *Customers, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractCustomersRecord(ev framework.Event, entityName string) (*Customers, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Customers
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Customers](ev, entityName)
 }
 
 // registerCustomers registers the "customers" entity with app.
 func registerCustomers(app *framework.App) {
-	app.Entity("customers", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "name", Type: schema.String, Required: true, Max: floatPtr(120)},
-		{Name: "email", Type: schema.String, Required: true, Unique: true},
-		{Name: "company", Type: schema.String, Max: floatPtr(120)},
-		{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
-		{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
-		{Name: "user_id", Type: schema.String, Hidden: true},
-	}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Indices: []framework.Index{
-		{Name: "idx_customers_email", Columns: []string{"email"}, Unique: true},
-	},
+	app.Entity("customers", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(120)},
+			{Name: "email", Type: schema.String, Required: true, Unique: true},
+			{Name: "company", Type: schema.String, Max: floatPtr(120)},
+			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
+			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
+			{Name: "user_id", Type: schema.String, Hidden: true},
+		},
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Indices: []framework.Index{
+			{Name: "idx_customers_email", Columns: []string{"email"}, Unique: true},
+		},
 		Properties: map[string]any{"label": "Customers"},
 	})
 	_ = Customers{}

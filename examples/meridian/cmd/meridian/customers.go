@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
+
+	client "github.com/DonaldMurillo/gofastr/examples/meridian/entities/client"
 )
 
 func customersCommands() []command {
@@ -24,323 +22,79 @@ func customersCommands() []command {
 	}
 }
 
+// Verb wrappers: each binds this entity's command names and pre-escaped
+// base path "/customers" to the shared verb bodies in verbs.go.
+
+// customersListFilters is the filter-flag table behind `customers list`: one entry
+// per flag, in help order, each bound to the query param it sets.
+var customersListFilters = []filterFlag{
+	{flag: "name", param: "name", help: "filter: name equals (comma list = IN)"},
+	{flag: "name-like", param: "name_like", help: "filter: name contains"},
+	{flag: "email", param: "email", help: "filter: email equals (comma list = IN)"},
+	{flag: "email-like", param: "email_like", help: "filter: email contains"},
+	{flag: "company", param: "company", help: "filter: company equals (comma list = IN)"},
+	{flag: "company-like", param: "company_like", help: "filter: company contains"},
+	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [trialing|active|past_due|canceled]"},
+	{flag: "mrr", param: "mrr", help: "filter: mrr equals (comma list = IN)"},
+	{flag: "mrr-gt", param: "mrr_gt", help: "filter: mrr gt"},
+	{flag: "mrr-gte", param: "mrr_gte", help: "filter: mrr gte"},
+	{flag: "mrr-lt", param: "mrr_lt", help: "filter: mrr lt"},
+	{flag: "mrr-lte", param: "mrr_lte", help: "filter: mrr lte"},
+}
+
+// Table columns for `customers list -o table`: customersListHeaders are the display
+// titles, customersListKeys the JSON wire keys each column reads.
+var (
+	customersListHeaders = []string{"id", "name", "email", "company", "status", "mrr"}
+	customersListKeys    = []string{"id", "name", "email", "company", "status", "mrr"}
+)
+
 func runCustomersList(args []string) int {
-	fs := newFlagSet("customers list")
-	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
-	page := fs.String("page", "", "page number (offset pagination)")
-	limit := fs.String("limit", "", "page size")
-	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
-	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
-	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
-	outF := fs.String("o", "json", "output format: json|table")
-	var params paramFlags
-	fs.Var(&params, "param", "extra query param key=value (repeatable)")
-	fltName := fs.String("name", "", "filter: name equals (comma list = IN)")
-	fltNameLike := fs.String("name-like", "", "filter: name contains")
-	fltEmail := fs.String("email", "", "filter: email equals (comma list = IN)")
-	fltEmailLike := fs.String("email-like", "", "filter: email contains")
-	fltCompany := fs.String("company", "", "filter: company equals (comma list = IN)")
-	fltCompanyLike := fs.String("company-like", "", "filter: company contains")
-	fltStatus := fs.String("status", "", "filter: status equals (comma list = IN) [trialing|active|past_due|canceled]")
-	fltMrr := fs.String("mrr", "", "filter: mrr equals (comma list = IN)")
-	fltMrrGT := fs.String("mrr-gt", "", "filter: mrr gt")
-	fltMrrGTE := fs.String("mrr-gte", "", "filter: mrr gte")
-	fltMrrLT := fs.String("mrr-lt", "", "filter: mrr lt")
-	fltMrrLTE := fs.String("mrr-lte", "", "filter: mrr lte")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	q := url.Values{}
-	set := func(key, val string) {
-		if val != "" {
-			q.Set(key, val)
-		}
-	}
-	set("sort", *sortF)
-	set("page", *page)
-	set("limit", *limit)
-	set("cursor", *cursor)
-	set("include", *include)
-	set("fields", *fieldsF)
-	set("name", *fltName)
-	set("name_like", *fltNameLike)
-	set("email", *fltEmail)
-	set("email_like", *fltEmailLike)
-	set("company", *fltCompany)
-	set("company_like", *fltCompanyLike)
-	set("status", *fltStatus)
-	set("mrr", *fltMrr)
-	set("mrr_gt", *fltMrrGT)
-	set("mrr_gte", *fltMrrGTE)
-	set("mrr_lt", *fltMrrLT)
-	set("mrr_lte", *fltMrrLTE)
-	for _, kv := range params.pairs {
-		q.Set(kv[0], kv[1])
-	}
-	path := "/customers"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return apiFail(err)
-	}
-	if *outF == "table" {
-		printListTable([]string{"id", "name", "email", "company", "status", "mrr"}, []string{"id", "name", "email", "company", "status", "mrr"}, resp.Data)
-		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows; next cursor: %s\n", len(resp.Data), resp.Cursor)
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
-	}
-	return printJSON(resp)
+	return runListVerb("customers list", "/customers", customersListFilters, customersListHeaders, customersListKeys, args)
 }
 
 func runCustomersGet(args []string) int {
-	id, rest, ok := takeID("customers get", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("customers get")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/customers/"+url.PathEscape(id), nil, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runGetVerb("customers get", "/customers", args)
+}
+
+// customersMutationFields is the field-flag table behind `customers create/update/patch`:
+// one entry per writable field, each bound to the JSON wire key it sets.
+var customersMutationFields = []mutationField{
+	{flag: "name", wire: "name", kind: fieldString, usage: "name (string)"},
+	{flag: "email", wire: "email", kind: fieldString, usage: "email (string)"},
+	{flag: "company", wire: "company", kind: fieldString, usage: "company (string)"},
+	{flag: "status", wire: "status", kind: fieldString, usage: "status (enum) [trialing|active|past_due|canceled]"},
+	{flag: "mrr", wire: "mrr", kind: fieldString, usage: "mrr (decimal)"},
 }
 
 func runCustomersCreate(args []string) int {
-	fs := newFlagSet("customers create")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldName := fs.String("name", "", "name (string)")
-	fldEmail := fs.String("email", "", "email (string)")
-	fldCompany := fs.String("company", "", "company (string)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "name":
-			body["name"] = *fldName
-		case "email":
-			body["email"] = *fldEmail
-		case "company":
-			body["company"] = *fldCompany
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPost, "/customers", body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runCreateVerb("customers create", "/customers", customersMutationFields, args)
 }
 
 func runCustomersUpdate(args []string) int {
-	id, rest, ok := takeID("customers update", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("customers update")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldName := fs.String("name", "", "name (string)")
-	fldEmail := fs.String("email", "", "email (string)")
-	fldCompany := fs.String("company", "", "company (string)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "name":
-			body["name"] = *fldName
-		case "email":
-			body["email"] = *fldEmail
-		case "company":
-			body["company"] = *fldCompany
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPut, "/customers/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runUpdateVerb("customers update", "/customers", customersMutationFields, args)
 }
 
 func runCustomersPatch(args []string) int {
-	id, rest, ok := takeID("customers patch", args)
-	if !ok {
-		return 2
-	}
-	args = rest
-	fs := newFlagSet("customers patch")
-	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	fldName := fs.String("name", "", "name (string)")
-	fldEmail := fs.String("email", "", "email (string)")
-	fldCompany := fs.String("company", "", "company (string)")
-	fldStatus := fs.String("status", "", "status (enum) [trialing|active|past_due|canceled]")
-	fldMrr := fs.String("mrr", "", "mrr (decimal)")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		switch name {
-		case "name":
-			body["name"] = *fldName
-		case "email":
-			body["email"] = *fldEmail
-		case "company":
-			body["company"] = *fldCompany
-		case "status":
-			body["status"] = *fldStatus
-		case "mrr":
-			body["mrr"] = *fldMrr
-		}
-		return nil
-	})
-	if code != 0 {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodPatch, "/customers/"+url.PathEscape(id), body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+	return runPatchVerb("customers patch", "/customers", customersMutationFields, args)
 }
 
 func runCustomersDelete(args []string) int {
-	id, rest, ok := takeID("customers delete", args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet("customers delete")
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/customers/"+url.PathEscape(id), nil, nil); err != nil {
-		return apiFail(err)
-	}
-	fmt.Printf("deleted %s\n", id)
-	return 0
+	return runDeleteVerb("customers delete", "/customers", args)
 }
 
-// runCustomersBatchCreate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runCustomersBatchCreate(args []string) int {
-	fs := newFlagSet("customers batch-create")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPost, "/customers/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("customers batch-create", "/customers", http.MethodPost, args)
 }
 
-// runCustomersBatchUpdate sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
 func runCustomersBatchUpdate(args []string) int {
-	fs := newFlagSet("customers batch-update")
-	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	items, code := readJSONArrayArg(*jsonBody)
-	if code != 0 {
-		return code
-	}
-	resp, code := doBatch(g, http.MethodPatch, "/customers/_batch", map[string]any{"items": items})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchJSONVerb("customers batch-update", "/customers", http.MethodPatch, args)
 }
 
-// runCustomersBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags, flag.Parse stops at the first positional,
-// so the trailing ones are collected from fs.Args().
 func runCustomersBatchDelete(args []string) int {
-	var ids []string
-	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		ids = append(ids, args[0])
-		args = args[1:]
-	}
-	fs := newFlagSet("customers batch-delete")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	for _, id := range fs.Args() {
-		if id != "" && id[0] == '-' {
-			fmt.Println(binaryName + " customers batch-delete: flags must precede trailing ids (got " + id + " after an id)")
-			return 2
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		fmt.Println("usage: " + binaryName + " customers batch-delete <id> [id...]")
-		return 2
-	}
-	resp, code := doBatch(g, http.MethodDelete, "/customers/_batch", map[string]any{"ids": ids})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
+	return runBatchDeleteVerb("customers batch-delete", "/customers", args)
 }
 
-// runCustomersWatch streams the live event feed until interrupted; each event is
-// one JSON line on stdout.
 func runCustomersWatch(args []string) int {
-	fs := newFlagSet("customers watch")
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
-	defer stop()
-	err := g.client.WatchCustomers(ctx, func(event string, data []byte) error {
-		fmt.Printf("{\"event\":%q,\"data\":%s}\n", event, data)
-		return nil
-	})
-	if err != nil && ctx.Err() == nil {
-		return apiFail(err)
-	}
-	return 0
+	return runWatchVerb("customers watch", (*client.Client).WatchCustomers, args)
 }

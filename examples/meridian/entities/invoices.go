@@ -35,12 +35,13 @@ var (
 	InvoicesUserId     = framework.NewStringColumn("user_id")
 )
 
-// Invoices include names, pass to framework.TypedQuery.Include or repo.Get(..., includes...).
+// Invoices include names: pass to framework.TypedQuery.Include or repo.Get(..., includes...).
 const (
 	InvoicesInclCustomer = "customer"
 )
 
 // InvoicesRepo is the typed repository for invoices rows.
+// Event helpers: OnInvoicesCreated/OnInvoicesUpdated/OnInvoicesDeleted in this package.
 type InvoicesRepo struct {
 	handler *framework.CrudHandler
 }
@@ -61,7 +62,7 @@ func NewInvoicesRepo(app *framework.App) *InvoicesRepo {
 	return &InvoicesRepo{handler: h}
 }
 
-// Handler returns the underlying CrudHandler, useful for advanced wiring or
+// Handler returns the underlying CrudHandler: useful for advanced wiring or
 // to feed the typed-query primitives directly.
 func (r *InvoicesRepo) Handler() *framework.CrudHandler { return r.handler }
 
@@ -211,78 +212,52 @@ func (r *InvoicesRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnInvoicesCreated subscribes to entity.created events scoped to "invoices".
 // Returns a cancel func; call it to remove the handler.
 func OnInvoicesCreated(app *framework.App, fn func(ctx context.Context, row *Invoices) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractInvoicesRecord(ev, "invoices")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Invoices](app, "invoices", framework.EntityCreated, fn)
 }
 
 // OnInvoicesUpdated subscribes to entity.updated events scoped to "invoices".
 func OnInvoicesUpdated(app *framework.App, fn func(ctx context.Context, row *Invoices) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractInvoicesRecord(ev, "invoices")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Invoices](app, "invoices", framework.EntityUpdated, fn)
 }
 
 // OnInvoicesDeleted subscribes to entity.deleted events scoped to "invoices". Callback
-// receives the deleted row's id only, by the time the event fires the row
+// receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnInvoicesDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "invoices" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "invoices", fn)
 }
 
 // extractInvoicesRecord unmarshals an event payload's "record" field into a
 // *Invoices, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractInvoicesRecord(ev framework.Event, entityName string) (*Invoices, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Invoices
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Invoices](ev, entityName)
 }
 
 // registerInvoices registers the "invoices" entity with app.
 func registerInvoices(app *framework.App) {
-	app.Entity("invoices", framework.EntityConfig{Fields: []schema.Field{
-		{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
-		{Name: "number", Type: schema.String, Required: true, Unique: true},
-		{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-		{Name: "status", Type: schema.Enum, Default: "draft", Values: []string{"draft", "open", "paid", "past_due", "void"}},
-		{Name: "issued_on", Type: schema.Date},
-		{Name: "due_on", Type: schema.Date},
-		{Name: "paid_on", Type: schema.Date},
-		{Name: "user_id", Type: schema.String, Hidden: true},
-	},
+	app.Entity("invoices", framework.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "customer_id", Type: schema.Relation, Required: true, To: "customers"},
+			{Name: "number", Type: schema.String, Required: true, Unique: true},
+			{Name: "amount", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "status", Type: schema.Enum, Default: "draft", Values: []string{"draft", "open", "paid", "past_due", "void"}},
+			{Name: "issued_on", Type: schema.Date},
+			{Name: "due_on", Type: schema.Date},
+			{Name: "paid_on", Type: schema.Date},
+			{Name: "user_id", Type: schema.String, Hidden: true},
+		},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-		}, Scope: &framework.ScopeConfig{OwnerField: "user_id"}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Invoices"},
+		},
+		Scope: &framework.ScopeConfig{
+			OwnerField: "user_id",
+		},
+		Exposure: &framework.ExposureConfig{
+			CRUD: boolPtr(true),
+			MCP:  true,
+		},
+		Properties: map[string]any{"label": "Invoices"},
 	})
 	_ = Invoices{}
 }

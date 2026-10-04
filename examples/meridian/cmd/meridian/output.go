@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"text/tabwriter"
 
@@ -19,6 +20,7 @@ import (
 type global struct {
 	ctx    context.Context
 	client *client.Client
+	stop   context.CancelFunc
 }
 
 func newFlagSet(name string) *flag.FlagSet {
@@ -28,11 +30,13 @@ func newFlagSet(name string) *flag.FlagSet {
 }
 
 // parseGlobals registers the connection flags, parses args, and builds the
-// client. Resolution order: flag > env > stored config. A nil *global means
-// don't proceed: exit 0 for --help, 2 for usage/resolution failures.
+// client. Resolution order: env > stored config (the API token never
+// rides argv: there is deliberately no --token flag, the credential
+// would sit in ps/procfs world-readable state for the whole call;
+// `login --with-token` reads it from stdin instead). A nil *global
+// means don't proceed: exit 0 for --help, 2 for usage/resolution failures.
 func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 	urlF := fs.String("url", "", "server URL (default $"+envPrefix+"_URL, then stored config)")
-	tokenF := fs.String("token", "", "API token (default $"+envPrefix+"_TOKEN, then stored config)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, 0
@@ -40,16 +44,21 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		return nil, 2
 	}
 	cfg := loadConfig()
-	base := firstNonEmpty(*urlF, os.Getenv(envPrefix+"_URL"), cfg.URL)
+	base := firstNonEmpty(*urlF, os.Getenv(envPrefix+"_URL"), cfg.URL, defaultServerURL)
 	if base == "" {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run `%s login`\n", envPrefix, binaryName)
 		return nil, 2
 	}
-	token := firstNonEmpty(*tokenF, os.Getenv(envPrefix+"_TOKEN"), cfg.Token)
+	token := firstNonEmpty(os.Getenv(envPrefix+"_TOKEN"), cfg.Token)
 	c := client.NewClient(strings.TrimRight(base, "/")+apiPrefix, nil)
 	c.Token = token
 	configureClient(c)
-	return &global{ctx: context.Background(), client: c}, 0
+	// Every verb runs under a cancellable ctx: Ctrl-C cancels the
+	// in-flight request instead of raw process death mid-write. stop is
+	// held on the global; the process exits when the verb returns, which
+	// is the signal goroutine's whole lifetime.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	return &global{ctx: ctx, client: c, stop: stop}, 0
 }
 
 func firstNonEmpty(values ...string) string {
@@ -108,7 +117,8 @@ func printListTable(headers, keys []string, rows []map[string]any) {
 // apiFail prints err and maps it to an exit code: 4 for auth failures
 // (401/403), 1 for every other API or transport error.
 func apiFail(err error) int {
-	if apiErr, ok := errors.AsType[*client.APIError](err); ok {
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
 		fmt.Fprintln(os.Stderr, apiErr.Error())
 		if apiErr.Status == 401 || apiErr.Status == 403 {
 			fmt.Fprintf(os.Stderr, "auth failed: mint a token in the app and run `%s login`\n", binaryName)
@@ -150,7 +160,7 @@ func buildBody(fs *flag.FlagSet, jsonArg string, apply func(flagName string, bod
 	var visited []string
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "url", "token", "json", "o":
+		case "url", "json", "o":
 			return
 		}
 		visited = append(visited, f.Name)
@@ -208,7 +218,7 @@ func readJSONArrayArg(v string) (json.RawMessage, int) {
 
 // doBatch sends a _batch request. The server answers a rolled-back batch
 // with 400 and the same {committed, results[]} envelope, so that case is
-// decoded and returned as a response, printBatch then surfaces it on
+// decoded and returned as a response; printBatch then surfaces it on
 // stdout and exit code 1, rather than treated as a transport error.
 func doBatch(g *global, method, path string, body any) (client.BatchResponse, int) {
 	var resp client.BatchResponse
@@ -236,7 +246,7 @@ func printBatch(resp client.BatchResponse) int {
 	return 0
 }
 
-// paramFlags collects repeatable --param key=value pairs, the escape hatch
+// paramFlags collects repeatable --param key=value pairs: the escape hatch
 // for query params the generated flags don't cover (e.g. created_at_gt on
 // timestamp-managed columns).
 type paramFlags struct {
