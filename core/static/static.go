@@ -45,6 +45,12 @@ type Config struct {
 	// paths that don't match any file will serve IndexFile instead of 404.
 	SPA bool
 
+	// NotFoundFile, when set, names a file in FS whose body answers a
+	// request that matches no file, with status 404 (a static export's
+	// "404.html"). Ignored in SPA mode, which answers misses with
+	// IndexFile. When the file itself is missing the plain 404 stands.
+	NotFoundFile string
+
 	// DirListing is reserved for a future release.
 	// When implemented, enabling it will render an HTML directory listing
 	// instead of returning 404 for directory paths that lack an index file.
@@ -159,8 +165,51 @@ func Handler(config Config) http.Handler {
 			}
 		}
 
+		if !config.SPA && config.NotFoundFile != "" && serveNotFoundFile(w, r, config) {
+			return
+		}
+
 		http.NotFound(w, r)
 	})
+}
+
+// serveNotFoundFile answers a miss with config.NotFoundFile under status
+// 404. The request loses its conditional headers so a cached ETag cannot
+// turn the miss into a 304, and the page carries no validators of its own.
+func serveNotFoundFile(w http.ResponseWriter, r *http.Request, config Config) bool {
+	r2 := r.Clone(r.Context())
+	r2.Header.Del("If-None-Match")
+	r2.Header.Del("If-Modified-Since")
+	return serveFile(&notFoundWriter{ResponseWriter: w}, r2, config, strings.TrimPrefix(config.NotFoundFile, "/"))
+}
+
+// notFoundWriter rewrites serveFile's success status to 404. An error
+// status (a 500 from a read fault) passes through unchanged.
+type notFoundWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *notFoundWriter) WriteHeader(code int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	if code == http.StatusOK {
+		h := w.Header()
+		h.Del("ETag")
+		h.Del("Last-Modified")
+		h.Set("Cache-Control", "no-cache")
+		code = http.StatusNotFound
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *notFoundWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 // serveFile attempts to serve a file from the filesystem. Returns true if

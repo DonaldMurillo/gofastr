@@ -31,6 +31,13 @@ var (
 	// ErrCriticalFeature is returned when a peer declares a critical feature
 	// the other endpoint does not support.
 	ErrCriticalFeature = errors.New("moduleproto: unsupported critical feature")
+
+	// ErrHandshakeUnanswered wraps a [Handshake] whose module.handshake call
+	// got no reply: the transport failed, the peer closed, or the deadline
+	// passed. The child crashed or hung; it did not answer wrongly, so a
+	// supervisor counts it as a crash rather than an integrity fault. An
+	// RPC error reply is an answer and does not carry it.
+	ErrHandshakeUnanswered = errors.New("moduleproto: handshake unanswered")
 )
 
 // Standard JSON-RPC 2.0 error codes (the -32xxx reserved band), plus

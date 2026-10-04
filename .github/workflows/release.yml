@@ -105,6 +105,31 @@ jobs:
         run: |
           bash scripts/release-gate.sh "$TAG" "$REPO" "$SHA" scripts/release-required-checks.txt
 
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The static export of the docs site, attached to the release so
+      # `gofastr docs serve` can download it for offline reading. Built at
+      # the root path (no --export-base): the CLI serves it on localhost.
+      # Built after the gate (a red gate builds nothing) and BEFORE the
+      # re-verify below, so the minutes this takes sit outside the
+      # re-verify-to-publish window; a failed build publishes nothing.
+      - name: Build the docs-site archive
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          go build "-ldflags=-X=main.siteVersion=${TAG#v}" -o /tmp/site ./examples/site/
+          /tmp/site --export /tmp/docs-site
+          test -f /tmp/docs-site/index.html
+          asset="gofastr-site-${TAG}.tar.gz"
+          tar -C /tmp/docs-site -czf "/tmp/$asset" .
+          (cd /tmp && sha256sum "$asset" > "$asset.sha256")
+          echo "docs site: $(du -h "/tmp/$asset" | cut -f1) compressed"
+
       # main can move (or the tag can be force-updated) while the gate waits
       # for checks, so re-verify immediately before publishing: the window
       # between the gate's last check and `gh release create` is the only
@@ -148,5 +173,6 @@ jobs:
             exit 1
           fi
           gh release create "$TAG" --verify-tag --latest \
-            --title "$TAG" --notes-file /tmp/notes.md
+            --title "$TAG" --notes-file /tmp/notes.md \
+            "/tmp/gofastr-site-${TAG}.tar.gz" "/tmp/gofastr-site-${TAG}.tar.gz.sha256"
           echo "created release for $TAG from its CHANGELOG.md section"

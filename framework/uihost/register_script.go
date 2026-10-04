@@ -3,6 +3,8 @@ package uihost
 import (
 	"fmt"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -110,6 +112,33 @@ func (ds *UIHost) registerScript(s externalScript, caller string) error {
 	}
 	ds.extraScripts = append(ds.extraScripts, s)
 	return nil
+}
+
+// ExtraScriptSrcs returns the src of every script on the extra-script
+// rail that a page of one of routes loads: every-page entries
+// (WithExtraScripts, RegisterExternalScript) always, and a
+// document-scoped entry when its scope accepts at least one of routes.
+// routes are the identities a render asks a scope about: registered
+// route patterns ("/session/:id"), or the path itself for a page no
+// screen matches. The result is deduplicated and sorted. The static
+// exporter passes the routes it rendered and ships the scripts an app
+// serves from its own router.
+func (ds *UIHost) ExtraScriptSrcs(routes []string) []string {
+	ds.scriptMu.Lock()
+	defer ds.scriptMu.Unlock()
+	seen := make(map[string]bool, len(ds.extraScripts))
+	out := make([]string, 0, len(ds.extraScripts))
+	for _, s := range ds.extraScripts {
+		if s.scope != nil && !slices.ContainsFunc(routes, s.scope) {
+			continue
+		}
+		if !seen[s.src] {
+			seen[s.src] = true
+			out = append(out, s.src)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // markServingBegun latches on the first full-shell render. It takes

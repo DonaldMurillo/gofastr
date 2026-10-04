@@ -140,6 +140,21 @@ each command to the doc that covers it.
 - `gofastr test`: run the project's tests.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` to search).
+- `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
+  offline browsing. The first run downloads the static export attached
+  to this binary's release (about 6 MB, checked against its published
+  SHA-256) into the user cache directory; later runs need no network.
+  `--release vX.Y.Z` serves another release, `--refresh` downloads
+  again (the old copy stays until the new one is in place), `--open`
+  opens a browser, `--port N` moves it, and `--dir <path>` serves an
+  export you built (`go run ./examples/site --export <path>`). Static
+  pages, navigation, theme, the command palette and the site's own 404
+  page work; server-backed demos do not. `--full` instead runs
+  `go install github.com/DonaldMurillo/gofastr/examples/site@<tag>`
+  (Go toolchain and network on first run, `--refresh` to rebuild) and
+  starts the live site, so every demo works; it needs a fixed `--port`,
+  refuses one that is already taken, and serves v0.82.0 or later. A local or `@main` build has
+  no release, so it needs `--release` or `--dir`.
 
 ## Ship
 

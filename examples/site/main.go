@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -86,12 +87,26 @@ func main() {
 	}
 	fmt.Println("━─────────────────────────────────────────────")
 	fmt.Println("  GoFastr product site (v2)")
-	fmt.Println("  http://localhost" + addr)
+	fmt.Println("  " + siteURL(addr))
 	fmt.Println("━─────────────────────────────────────────────")
 	if err := fwApp.Start(addr); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// siteURL is the browser URL for a listen address: one that binds every
+// interface (":8083", "0.0.0.0:8083", "[::]:8083") is opened as
+// localhost, any other host:port as given.
+func siteURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		return "http://" + net.JoinHostPort("localhost", port)
+	}
+	return "http://" + addr
 }
 
 // exportDir scans args for `--export <dir>` or `--export=<dir>`, returning

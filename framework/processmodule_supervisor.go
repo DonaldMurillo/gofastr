@@ -1581,8 +1581,10 @@ func isIntegrityFault(err error) bool {
 	}
 	// A child that exits mid-handshake crashed; it did not lie about
 	// itself. Its transport error restarts under the circuit breaker
-	// like any other crash.
-	if errors.Is(err, moduleproto.ErrClosed) || errors.Is(err, io.EOF) ||
+	// like any other crash, and so does a handshake call the child never
+	// answered (moduleproto marks those, deadline included).
+	if errors.Is(err, moduleproto.ErrHandshakeUnanswered) ||
+		errors.Is(err, moduleproto.ErrClosed) || errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, os.ErrClosed) {
 		return false
