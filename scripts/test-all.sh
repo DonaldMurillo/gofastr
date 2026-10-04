@@ -108,18 +108,23 @@ cli_pkg=$(printf '%s\n' "$all_pkgs" | grep -E 'gofastr/cmd/gofastr$' || true)
 LOG=$(mktemp "${TMPDIR:-/tmp}/gofastr-test-all.XXXXXX")
 trap 'rm -f "$LOG"' EXIT
 
-# go_test_selfheal ARGS...: run `go test "$@"` teeing to $LOG, then apply
-# the resource-contention self-heal described in the header. The log is
-# truncated per call, so a pass's serial retry re-runs only that pass's
+# go_test_selfheal PKGS FLAGS...: run `go test FLAGS... PKGS` teeing to
+# $LOG, then apply the resource-contention self-heal described in the
+# header. The package list travels as its own argument so the serial
+# retry carries the flags alone and runs ONLY the failed packages; the
+# log is truncated per call, so a pass's retry re-runs only that pass's
 # failures, not the earlier pass's.
 go_test_selfheal() {
+  local pkgs=$1
+  shift
   if dryrun; then
-    printf 'go test %s\n' "$*"
+    printf 'go test %s %s\n' "$*" "$pkgs"
     return 0
   fi
   : > "$LOG"
   set +e
-  go test "$@" 2>&1 | tee "$LOG"
+  # shellcheck disable=SC2086
+  go test "$@" $pkgs 2>&1 | tee "$LOG"
   local status=${PIPESTATUS[0]}
   set -e
   if [ "$status" -eq 0 ]; then
@@ -178,8 +183,7 @@ go_test_selfheal() {
 # deterministic tests stay in the parallel pass.
 if [ -n "$light_pkgs" ]; then
   echo "==> pass 1: parallel (-p $PARALLEL), non-heavy packages"
-  # shellcheck disable=SC2086
-  go_test_selfheal "${FLAGS[@]}" -p "$PARALLEL" -skip "$CLI_BROWSER_TESTS" $light_pkgs
+  go_test_selfheal "$light_pkgs" "${FLAGS[@]}" -p "$PARALLEL" -skip "$CLI_BROWSER_TESTS"
 else
   echo "==> pass 1: no non-heavy packages in scope"
 fi
@@ -187,13 +191,11 @@ fi
 # ---- Pass 2: serialized heavy pass (-p 1) ----
 if [ -n "$heavy_pkgs" ]; then
   echo "==> pass 2: serialized (-p 1), heavy browser packages"
-  # shellcheck disable=SC2086
-  go_test_selfheal "${FLAGS[@]}" -p 1 $heavy_pkgs
+  go_test_selfheal "$heavy_pkgs" "${FLAGS[@]}" -p 1
 else
   echo "==> pass 2: no heavy packages in scope"
 fi
 if [ -n "$cli_pkg" ]; then
   echo "==> pass 2: serialized (-p 1), cmd/gofastr browser tests"
-  # shellcheck disable=SC2086
-  go_test_selfheal "${FLAGS[@]}" -p 1 -run "$CLI_BROWSER_TESTS" $cli_pkg
+  go_test_selfheal "$cli_pkg" "${FLAGS[@]}" -p 1 -run "$CLI_BROWSER_TESTS"
 fi

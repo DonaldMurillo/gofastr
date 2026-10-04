@@ -251,10 +251,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   skip.** Affected heavy packages and the four `cmd/gofastr` browser
   tests run serialized at `-p 1` after the coverage floors, the local
   analog of CI's one-suite-per-runner browser isolation (#413).
-- **`ui.ParseButtonVariant`** resolves a caller-supplied variant string
-  and answers `ok=false` for an unregistered spelling; kiln's node
-  renderer, the generated resource screens and uihost's trusted node
-  renderer share it instead of three lookup tables. **`schema.FieldTypeLabel`**
+- **`ui.ParseButtonVariant`** resolves a caller-supplied variant string,
+  built-in or registered through `ui.RegisterButtonVariant`, and answers
+  `ok=false` for any other spelling; kiln's node renderer, the generated
+  resource screens and uihost's trusted node renderer share it instead
+  of three lookup tables, each of which knew only the four built-ins
+  and drew a registered variant as its default. **`schema.FieldTypeLabel`**
   is the one table behind the field-type prose in the entity llm.md
   reference and the SDK reference screens, which carried two copies
   (#417).
@@ -385,7 +387,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   or `Toc`) collapses like an empty one**, and a page with no rails
   renders one centred reading column at the prose measure, the shape
   the deleted `ui.DocLayout(ui.DocLayoutConfig{}, body)` gave blog
-  posts and standalone pages (#457).
+  posts and standalone pages. A rail collapses only when its sole child
+  is empty: a nav holding its list beside an empty outlet stays (#457).
+- **Generated CLIs write `batch-delete` usage errors to stderr.** The
+  missing-ids and flag-after-id messages went to stdout, so a script
+  reading the JSON batch result got prose; every other verb error
+  already went to stderr.
 - **The upgrade scanner's build-constraint solver matches the go
   command**, proven by a differential test against `go list`: it offers
   only GOOS/GOARCH pairs the toolchain builds (a `//go:build solaris`
