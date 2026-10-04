@@ -257,6 +257,45 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	}
 }
 
+// innerTabsState reads the nested strip's aria-selected and tabindex
+// per tab, "s0" for selected with tabindex 0 and "-1" otherwise.
+const innerTabsState = `[0,1,2].map(function(i){var t=document.getElementById('inner-tab-'+i);` +
+	`return (t.getAttribute('aria-selected')==='true'?'s':'u')+t.getAttribute('tabindex');}).join(',')`
+
+// A strip nested in a panel is its own strip: clicking, focusing and
+// arrowing the outer tabs leaves the inner tabs' selection and roving
+// tabindex alone, and the outer arrows rotate over the outer tabs only.
+func TestNestedTabsKeepTheirOwnState(t *testing.T) {
+	inner := ui.Tabs(ui.TabsConfig{SignalName: "inner", ID: "inner", Tabs: []ui.TabItem{
+		{Label: "One", Content: "1"}, {Label: "Two", Content: "2"}, {Label: "Three", Content: "3"}}})
+	outer := ui.Tabs(ui.TabsConfig{SignalName: "outer", ID: "outer", Tabs: []ui.TabItem{
+		{Label: "A", Content: inner}, {Label: "B", Content: "b"}, {Label: "C", Content: "c"}}})
+	ctx := moduleTestCtx(t, string(outer))
+	if !pollJS(ctx, moduleLoaded("headless-tabs")) {
+		t.Fatal("the tabs marker never loaded headless-tabs")
+	}
+	const want = "s0,u-1,u-1"
+	if got := evalString(ctx, innerTabsState); got != want {
+		t.Fatalf("inner strip at boot = %q, want %q", got, want)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('outer-tab-1').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalString(ctx, innerTabsState); got != want {
+		t.Errorf("after clicking outer tab B the inner strip reads %q, want %q", got, want)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){var t=document.getElementById('outer-tab-0'); t.focus();`+
+		`t.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalString(ctx, `document.activeElement.id`); got != "outer-tab-2" {
+		t.Errorf("ArrowLeft from the first outer tab focused %q, want the last outer tab \"outer-tab-2\"", got)
+	}
+	if got := evalString(ctx, innerTabsState); got != want {
+		t.Errorf("after arrowing the outer strip the inner strip reads %q, want %q", got, want)
+	}
+}
+
 // toastProbeStatus is a status variant an app registers: a runtime
 // toast carrying it wears its class and glyph, the way a server
 // Notification does.
