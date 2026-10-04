@@ -154,9 +154,21 @@
     }
     const cycle = t && t.closest && t.closest('[data-hui-theme-cycle]');
     if (cycle) {
+      // dark → light → auto, skipping a step that would leave the page
+      // looking the same: on a dark OS, auto's next step (dark) shows
+      // what auto already shows, so the click goes on to light. Every
+      // click changes the scheme the reader sees.
       const order = ['dark', 'light', 'auto'];
       const cur = currentScheme();
-      applyScheme(order[(order.indexOf(cur) + 1) % order.length], cycle.closest('[data-hui-theme-toggle]') || document);
+      const shown = resolveScheme(cur);
+      let i = order.indexOf(cur);
+      let next = cur;
+      for (let n = 0; n < order.length; n++) {
+        i = (i + 1) % order.length;
+        next = order[i];
+        if (resolveScheme(next) !== shown) break;
+      }
+      applyScheme(next, cycle.closest('[data-hui-theme-toggle]') || document);
     }
   });
 

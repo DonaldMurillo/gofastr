@@ -148,6 +148,35 @@ func TestThemeAutoWithoutBootstrapResolves(t *testing.T) {
 	}
 }
 
+// On a dark OS with no stored choice the page is dark, so the cycle
+// button's first click must show light: stepping auto to dark would
+// leave the page as it was.
+func TestThemeCycleFirstClickChangesScheme(t *testing.T) {
+	ctx := moduleTestCtx(t, colorSchemeScript(t)+string(ui.ThemeToggle(ui.ThemeToggleConfig{ID: "tt", Variant: ui.ThemeToggleIcon})),
+		prefersScheme("dark"))
+	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
+		t.Fatal("the theme toggle never loaded headless-navigation")
+	}
+	if got := evalString(ctx, schemeState); got != "dark|dark" {
+		t.Fatalf("on a dark OS the page booted as %q, want \"dark|dark\"", got)
+	}
+	seen := []string{}
+	for range 3 {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('tt').click()`, nil)); err != nil {
+			t.Fatal(err)
+		}
+		seen = append(seen, evalString(ctx, schemeState))
+	}
+	// Every click changes what the page shows.
+	prev := "dark|dark"
+	for i, s := range seen {
+		if s == prev {
+			t.Fatalf("click %d left the page at %q (states after each click: %v)", i+1, s, seen)
+		}
+		prev = s
+	}
+}
+
 // toastProbeStatus is a status variant an app registers: a runtime
 // toast carrying it wears its class and glyph, the way a server
 // Notification does.
