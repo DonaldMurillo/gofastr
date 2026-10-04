@@ -141,7 +141,11 @@ type CrudHandler struct {
 // The derived field caches are built here, single-threaded, so the request
 // path never has to fill them (see fieldcache.go).
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
-	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
+	pk := "id"
+	if ent != nil && ent.PrimaryKey != "" {
+		pk = ent.PrimaryKey
+	}
+	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: pk, JSONCase: CaseCamel, Hooks: nil}
 	ch.fcache = newFieldCache(ch)
 	ch.seats = newStreamSeatRegistry()
 	return ch

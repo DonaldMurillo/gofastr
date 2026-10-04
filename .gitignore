@@ -29,17 +29,22 @@ bin/
 gen/
 .gofastr/
 
-# Scratch package examples/meridian/blueprint_gate_test.go generates the
-# blueprint into before compiling it. Removed by the test itself; ignored so
-# a killed run never offers it up for commit.
-examples/meridian/blueprintgen/
-examples/ecommerce/blueprintgen/
-
-# Scratch packages cmd/gofastr's TestExampleBlueprintsGenerateAndCompile
-# generates EVERY examples/<name>/gofastr.yml into before compiling it. Same
-# contract as the two above, one directory per example; the distinct name keeps
-# it from colliding with those suites under `go test -p 2`.
-examples/*/blueprintbuildgen/
+# Scratch packages the blueprint gates generate into before compiling.
+# Each is removed by its own test before and after the run; these entries
+# are the backstop so a killed run never offers one up for commit.
+#
+# All four begin with "_" so that `go list ./...` and `go build ./...`
+# skip them at every moment, including the instant between creating the
+# directory and writing the first .go file into it — a window another
+# package's test binary used to fall into with "no Go files in". Go
+# still resolves an explicit import through such a directory, which is
+# what the gates' rewritten module lines rely on. The names stay
+# distinct from each other because the suites run side by side under
+# `go test -p 2` and must not share a directory.
+examples/meridian/_blueprintgen/
+examples/ecommerce/_blueprintgen/
+examples/*/_blueprintbuildgen/
+examples/*/_blueprintvetgen/
 
 # Local Ollama model cache (bind-mount target of docker-compose.yml).
 # Pulled models are ~hundreds of MB; never commit.

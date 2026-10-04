@@ -18,6 +18,7 @@ type (
 	CrudHandler     = crud.CrudHandler
 	ListResponse    = crud.ListResponse
 	ListOptions     = crud.ListOptions
+	NestedFilter    = crud.NestedFilter
 	JSONCase        = crud.JSONCase
 	IncludeNode     = crud.IncludeNode
 	ValidationError = crud.ValidationError

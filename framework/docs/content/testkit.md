@@ -10,6 +10,27 @@ database on `t.Cleanup`.
 > and are not exported. `testkit` is the stable public API for
 > host-app test code.
 
+## Harness identity: AsUser and AsTenant
+
+`framework.TestHarness(t, app)` sends requests straight through the router
+with no session. Two methods return a copy whose requests carry an identity
+in their context; each keeps whatever the other set, so they chain:
+
+```go
+ta := framework.TestHarness(t, app).
+	AsUser(struct{ ID string }{ID: "u1"}).
+	AsTenant("acme")
+ta.Post("/invoices", body).AssertStatus(t, http.StatusCreated)
+```
+
+- `AsUser(user any)` sets the request user, which passes the default
+  session gate. Use a real user type when the test also needs an owner
+  extractor or an `access.Policy` to resolve roles from it.
+- `AsTenant(t any)` sets the request tenant. A string value is also
+  stored as the tenant id, which is what `MultiTenant` entities scope by
+  and stamp on insert. A non-string value only reaches code that reads the
+  tenant object itself.
+
 ## Render failures
 
 `framework.TestHarness(t, app)` fails `t` when a component or layout

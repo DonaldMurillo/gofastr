@@ -109,11 +109,9 @@ func TestPlainRouterRenderPanicStatus(t *testing.T) {
 			if mode == "intercept" && resp.Header.Get("X-Gofastr-Overlay") == "" {
 				t.Error("intercept mode answered without X-Gofastr-Overlay — the request did not exercise the intercept path")
 			}
-			fallback := "normal-looking fallback"
-			if mode == "navigate" || mode == "fills" {
-				fallback = "Page not found"
-			}
-			if !strings.Contains(string(body), fallback) {
+			// Every arm answers with the screen's own ErrorBoundary markup:
+			// a boundary screen owns its render failure on navigations too.
+			if fallback := "normal-looking fallback"; !strings.Contains(string(body), fallback) {
 				t.Errorf("fallback body lost: %s", body)
 			}
 		})

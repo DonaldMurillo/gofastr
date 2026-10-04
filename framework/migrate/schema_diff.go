@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -42,6 +43,12 @@ type SchemaChange struct {
 	// routine boot-time convergence never silently deletes a column. This is
 	// the GORM-style "never drop by default" safety posture.
 	Destructive bool
+
+	// sqliteRebuildOf names the entity whose table this change rebuilds (a
+	// SQLite retype). ApplySchemaDiffWithOptions runs a change set holding
+	// one with foreign keys off, and GeneratePlan refuses one that a
+	// row-mutating ON DELETE action references.
+	sqliteRebuildOf string
 }
 
 // DestructiveChangeError is returned by ApplySchemaDiff when the change set
@@ -81,6 +88,18 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		}
 		tables = append(tables, ent.GetTable())
 	}
+	seenThrough := make(map[string]bool)
+	for _, ent := range ordered {
+		for _, rel := range ent.Config.Relations {
+			if rel.Type == entity.RelManyToMany && rel.Through != "" {
+				key := strings.ToLower(rel.Through)
+				if !seenThrough[key] {
+					seenThrough[key] = true
+					tables = append(tables, rel.Through)
+				}
+			}
+		}
+	}
 	liveByTable, err := ReadLiveColumnsBulk(ctx, db, tables, dialect)
 	if err != nil {
 		return nil, err
@@ -94,6 +113,38 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)
 		}
 		out = append(out, changes...)
+	}
+
+	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, pivotChanges...)
+	return out, nil
+}
+
+// diffPivotTables generates CREATE TABLE and CREATE INDEX statements for ManyToMany
+// pivot tables that do not have their own entity declaration.
+func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect, existingTables map[string]map[string]string) ([]SchemaChange, error) {
+	var out []SchemaChange
+	for ent, rel := range generatedPivots(ordered, all) {
+		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
+			continue
+		}
+		spec, err := buildPivotSpec(ent, rel, all, dialect)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, SchemaChange{
+			Summary: fmt.Sprintf("%s: create pivot table", rel.Through),
+			SQL:     spec.DDL,
+			Down:    spec.DropDDL,
+		})
+		out = append(out, SchemaChange{
+			Summary: fmt.Sprintf("%s: index %s", rel.Through, rel.ForeignKeyTarget),
+			SQL:     spec.IndexDDL,
+			Down:    spec.DropIndexDDL,
+		})
 	}
 	return out, nil
 }
@@ -131,20 +182,94 @@ func ApplySchemaDiffWithOptions(ctx context.Context, db *sql.DB, changes []Schem
 			return 0, &DestructiveChangeError{Summaries: blocked}
 		}
 	}
+	for _, c := range changes {
+		if c.sqliteRebuildOf != "" {
+			return applySQLiteRebuild(ctx, db, changes)
+		}
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
-	for i, c := range changes {
-		if _, err := tx.ExecContext(ctx, c.SQL); err != nil {
-			_ = tx.Rollback()
-			return i, fmt.Errorf("apply %q: %w", c.Summary, err)
-		}
+	if i, err := execChanges(ctx, tx, changes); err != nil {
+		_ = tx.Rollback()
+		return i, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return len(changes), nil
+}
+
+// newViolations returns the entries of after that before does not account
+// for, counting duplicates (one entry per violating row).
+func newViolations(before, after []string) []string {
+	seen := make(map[string]int, len(before))
+	for _, v := range before {
+		seen[v]++
+	}
+	var out []string
+	for _, v := range after {
+		if seen[v] > 0 {
+			seen[v]--
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// execChanges runs each change's SQL on tx, returning the index of the first
+// one that fails.
+func execChanges(ctx context.Context, tx *sql.Tx, changes []SchemaChange) (int, error) {
+	for i, c := range changes {
+		if _, err := tx.ExecContext(ctx, c.SQL); err != nil {
+			return i, fmt.Errorf("apply %q: %w", c.Summary, err)
+		}
+	}
+	return len(changes), nil
+}
+
+// applySQLiteRebuild applies a change set that rebuilds a SQLite table. The
+// rebuild's DROP TABLE would otherwise run every ON DELETE action against
+// the rows that reference the table: a generated pivot (always CASCADE)
+// lost its rows and a SET NULL child lost its link. The set runs in one
+// transaction on a connection with foreign keys off, and is rolled back if
+// PRAGMA foreign_key_check finds a dangling reference before commit.
+func applySQLiteRebuild(ctx context.Context, db *sql.DB, changes []SchemaChange) (int, error) {
+	applied := 0
+	err := withSQLiteRebuildConn(ctx, db, func(conn *sql.Conn) error {
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		// Only violations the change set introduces count: a dangling row
+		// that predates it (written while enforcement was off) is not this
+		// rebuild's to refuse.
+		before, err := foreignKeyViolations(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("verify foreign keys before the rebuild: %w", err)
+		}
+		if i, err := execChanges(ctx, tx, changes); err != nil {
+			applied = i
+			return err
+		}
+		after, err := foreignKeyViolations(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("verify foreign keys after the rebuild: %w", err)
+		}
+		if violations := newViolations(before, after); len(violations) > 0 {
+			return fmt.Errorf("the rebuild would leave %d foreign key violation(s): %s; rolled back",
+				len(violations), strings.Join(violations, ", "))
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		applied = len(changes)
+		return nil
+	})
+	return applied, err
 }
 
 func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
@@ -160,9 +285,14 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if err != nil {
 			return nil, err
 		}
+		var sqlParts []string
+		sqlParts = append(sqlParts, ddl)
+		for _, idx := range entityIndices(ent) {
+			sqlParts = append(sqlParts, indexDDL(qtable, idx))
+		}
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
-			SQL:     ddl,
+			SQL:     strings.Join(sqlParts, ";\n"),
 			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
 		}}, nil
 	}
@@ -252,6 +382,21 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 			SQL:     ddl,
 			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
 		})
+		for _, idx := range entityIndices(ent) {
+			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], f.Name) {
+				idxDDL := indexDDL(qtable, idx)
+				idxName := parseIndexName(idxDDL)
+				safeIdxName, err := query.SafeIdent(idxName)
+				if err != nil {
+					continue
+				}
+				changes = append(changes, SchemaChange{
+					Summary: fmt.Sprintf("%s: index %s", ent.GetName(), safeIdxName),
+					SQL:     idxDDL,
+					Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeIdxName),
+				})
+			}
+		}
 	}
 
 	// TYPE CHANGE for declared-and-present columns whose type drifted. A type
@@ -309,7 +454,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	}
 	sort.Strings(liveNames)
 	for _, name := range liveNames {
-		if _, ok := declared[name]; ok {
+		if _, ok := declared[strings.ToLower(name)]; ok {
 			continue
 		}
 		if isFrameworkManagedColumn(name, ent) {
@@ -461,9 +606,11 @@ type retypeCol struct {
 //     reconstruction would also double-apply the sibling ADD/DROP Downs
 //     that run around it in reverse order. The change is forward-only;
 //     SchemaChange.Down documents "empty when no safe inverse is known".
-//   - With foreign_keys on (GoFastr's driver default), DROP TABLE fails
-//     loudly when other rows still reference this table — re-export the
-//     referencing rows or settle them first.
+//   - DROP TABLE runs every ON DELETE action against the rows that
+//     reference this table while foreign keys are on. ApplySchemaDiff runs
+//     the change with them off (applySQLiteRebuild); GeneratePlan, whose
+//     file runs inside the migration runner's transaction where the pragma
+//     cannot change, refuses a rebuild a row-mutating action references.
 func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, renameOldByNew map[string]string, retypes []retypeCol) (SchemaChange, error) {
 	qtable, err := query.SafeIdent(ent.GetTable())
 	if err != nil {
@@ -541,18 +688,19 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 	}
 	fmt.Fprintf(&b, ";\nDROP TABLE %s", qtable)
 	fmt.Fprintf(&b, ";\nALTER TABLE %s RENAME TO %s", newTable, qtable)
-	for _, idx := range ent.Config.Indices {
-		if len(idx.Columns) == 0 && idx.Expression == "" {
-			continue // same no-op rule as migrateEntity's index loop
-		}
+	// The DROP took every index with it. entityIndices is the set the
+	// snapshot records (declared plus the automatic belongs_to ones), so
+	// anything less leaves an index the next plan believes exists.
+	for _, idx := range entityIndices(ent) {
 		b.WriteString(";\n")
 		b.WriteString(indexDDL(qtable, idx))
 	}
 	return SchemaChange{
 		Summary: fmt.Sprintf("%s: change column %s (destructive: SQLite cannot alter column types in place; table is rebuilt and rows are copied with affinity conversion)",
 			ent.GetName(), strings.Join(summaryParts, ", ")),
-		SQL:         b.String(),
-		Destructive: true,
+		SQL:             b.String(),
+		Destructive:     true,
+		sqliteRebuildOf: ent.GetName(),
 	}, nil
 }
 
@@ -704,4 +852,48 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		columns = append(columns, fks...)
 	}
 	return columns, nil
+}
+
+var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?([a-zA-Z0-9_]+)`)
+
+func parseIndexName(ddl string) string {
+	m := reIndexName.FindStringSubmatch(ddl)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+// entityIndices returns all declared indices on the entity plus auto-created
+// BelongsTo foreign key indices matching AutoMigrate.
+func entityIndices(ent *entity.Entity) []entity.Index {
+	if ent == nil {
+		return nil
+	}
+	var out []entity.Index
+	for _, idx := range ent.Config.Indices {
+		if len(idx.Columns) == 0 && idx.Expression == "" {
+			continue
+		}
+		out = append(out, idx)
+	}
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+			continue
+		}
+		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
+			continue
+		}
+		hasIdx := false
+		for _, idx := range ent.Config.Indices {
+			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], rel.ForeignKey) {
+				hasIdx = true
+				break
+			}
+		}
+		if !hasIdx {
+			out = append(out, entity.Index{Columns: []string{rel.ForeignKey}})
+		}
+	}
+	return out
 }

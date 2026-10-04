@@ -439,8 +439,27 @@ write-only in the admin. Do that work in `BeforeCreate`/`BeforeUpdate`
 if the column should stay editable.
 
 Relation *blocks* (the `relations:` list, distinct from a `relation`
-field) take `type` (`belongs_to`, `has_many`, `has_one`), `name`,
-`entity`, and `foreign_key`.
+field) declare how entities associate with one another:
+- `type`: `belongs_to`, `has_many`, `has_one`, or `many_to_many`.
+- `name`: the relation property name used in JSON payloads, include queries, and nested filters.
+- `entity`: the target entity name.
+- `foreign_key`: the referencing column (`belongs_to`, `has_many`, `has_one`).
+- `through`: for `many_to_many`, the intermediate pivot table name.
+- `local_key`: for `many_to_many`, the column referencing the parent entity in the pivot table.
+- `foreign_key_target`: for `many_to_many`, the column referencing the target entity in the pivot table.
+- `on_delete`: optional foreign key referential integrity action (`no_action`, `restrict`, `cascade`, `set_null`).
+- `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
+
+### Cascade Writes & Atomic Nested Mutations
+When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.
+All writes execute inside the parent's database transaction (`inTx`). If any child validation or constraint check fails, the transaction is completely rolled back, leaving zero orphaned rows.
+- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key.
+- **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
+- **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
+- **`many_to_many`**: An array of target IDs or child objects is processed. Existing IDs are verified against caller tenant/owner scope and linked in the pivot table; objects carrying new fields are created or updated.
+- **Authorization**: Each nested create or update must pass the gates the target's own route applies: owner, tenant, the signed-in session requirement, and its `access` permission. A public parent does not make its children public: an anonymous `POST` that nests a row for a session-gated child is refused, the same answer the child's route gives. `WithServerWrites` skips these checks. The in-process API (`CreateOne`, `UpdateOne`) skips only the session requirement, as it does for the parent.
+- **Events**: Child `entity.created`/`entity.updated` events publish after the parent's transaction commits. A cascade that rolls back publishes nothing. The parent's own event carries the parent row only: the HTTP response nests the children, but the event payload (live bus and outbox alike) does not, so each child arrives as its own event under its own entity. On the SSE stream that event passes the child's read gate and its AfterGet redaction. Durable outbox consumers get the child's raw row, like any other staged record, and own their masking (see [Events](events.md)).
+- **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column
 that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
