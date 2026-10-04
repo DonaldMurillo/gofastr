@@ -262,7 +262,10 @@ client-side and needs no Island; a `Repeater` whose add/remove
 re-renders the region needs `Action` plus a complete `Island`, and
 the same buttons stay named submit controls so the surrounding form
 is the no-script path; a `Toast` with a `DismissHref` needs a
-complete `Island` exactly as an `Alert`'s dismiss does; a
+complete `Island` exactly as an `Alert`'s dismiss does; a `Tag`
+dismiss is a GET that writes its href to the URL unless
+`DismissMethod` names a mutation (POST, PUT, PATCH, DELETE), which
+sends `DismissBody` as its JSON body and writes no URL; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
 the error summary after the swap. A `ToastStack` is mounted once by

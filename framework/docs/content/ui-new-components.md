@@ -199,7 +199,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **statuspill**: `framework/ui.StatusPill`, compact status pill with optional leading dot (neutral / accent tone)
 - **statusbadge**: `framework/ui.StatusBadge`, small inline pill conveying state (success / warning / danger / info / neutral)
 - **filtertoolbar**: `framework/ui.FilterToolbar`, the filter/sort control strip above a list (facet `<select>` or radio-pill groups + search + sort + Apply/Reset), a single URL-driven GET form; wraps → stacks responsively so nothing clips on mobile
-- **filterchipbar**: `framework/ui.FilterChipBar`, `role=toolbar` of removable filter chips
+- **filterchipbar**: `framework/ui.FilterChipBar`, `role=toolbar` of removable filter chips; a chip's × POSTs its `DismissBody` to `DismissPath` and the bar swaps in the response (the × is a link to `DismissPath` without script)
 - **copybutton**: `framework/ui.CopyButton`, clipboard button with SR-announced confirmation
 - **toolbar**: `framework/ui.Toolbar`, `role=toolbar` wrapper for grouped actions
 

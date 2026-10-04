@@ -45,6 +45,15 @@ type TagConfig struct {
 	// Required when Dismiss is set.
 	Island headless.Island
 
+	// DismissMethod is the method the dismissal is sent with. Empty is
+	// GET, a read whose Dismiss href the island writes to the URL after
+	// the swap; a mutation (POST, PUT, PATCH, DELETE) writes no URL.
+	DismissMethod string
+
+	// DismissBody is a static JSON body the dismissal sends
+	// (data-cui-rpc-body). Needs a DismissMethod other than GET.
+	DismissBody string
+
 	// Icon renders before the label, aria-hidden.
 	Icon render.HTML
 
@@ -127,6 +136,8 @@ func Tag(cfg TagConfig) render.HTML {
 		DismissAriaLabel: dismissLabel,
 		Href:             href,
 		Island:           cfg.Island,
+		DismissMethod:    cfg.DismissMethod,
+		DismissBody:      cfg.DismissBody,
 		ID:               cfg.ID,
 		ExtraAttrs:       headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
 		Parts:            parts,
