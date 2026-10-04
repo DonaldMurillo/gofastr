@@ -42,7 +42,9 @@ type SidebarItem struct {
 	Href string
 	// Icon is optional inline HTML before the label.
 	Icon render.HTML
-	// Active marks the current page's link.
+	// Active marks the current page's link for first paint. Every leaf
+	// carries data-cui-activelink, so the runtime's active-link module
+	// moves the mark after a client navigation.
 	Active bool
 	// Open opens a group at SSR. Inert on leaves.
 	Open bool
@@ -493,6 +495,13 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 	if it.Active {
 		own["aria-current"] = "page"
 	}
+	// Every leaf hands its current-state to the runtime's active-link
+	// sweep (src/activelink.js): the aria-current settled here is first
+	// paint only, and the sweep clears it when a client navigation
+	// moves elsewhere. Without the marker the module, loading idle,
+	// could find a navigation already done and leave the stale mark
+	// beside the fresh one.
+	Mark(own, "data-cui-activelink")
 	if it.MatchPrefix != "" {
 		// The runtime's active-link sweep (src/activelink.js) reads
 		// this value as the link's section prefix, so the highlight

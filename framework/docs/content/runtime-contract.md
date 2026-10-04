@@ -210,6 +210,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-menu-lazy` | Emitted by `framework/ui.Menu` when `MenuConfig.LazyPanel` is set: the panel's rows ship inside this inert `<template>` as the panel div's only child, so closed-menu row text, labels, and roles are invisible to live-DOM queries (host Playwright `getByText`/`getByLabel` contracts) until first open; the rows are still in the HTML source, so nothing is hidden from a crawler that parses the response. The panel `<div>` itself always renders, so `aria-controls` still resolves while closed. |
 | `data-hui-menu-trigger="<menu-id>"` | Emitted by `framework/ui.Menu` when `MenuConfig.TriggerElement` is set: the presentation wrapper (`role="presentation"`, `display: contents`) holding the caller's own button/anchor, beside the summary-less `<details data-hui-menu="<menu-id>" data-hui-disclosure>` that carries the panel. An interactive element inside `<summary>` is axe `nested-interactive` (SERIOUS), so a caller-owned trigger must not route through `TriggerHTML`. The value pairs the wrapper with the details it names so the module can wire `aria-expanded`/`aria-controls` onto the caller's trigger. |
 | `data-cui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting AND hands the link's current-state to the `activelink` module. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. A server-rendered first-paint mark on such a link is activelink-owned too: the sweep clears it when the route moves elsewhere (without the handover a stale SSR `aria-current` survived beside the new mark — two lit entries). Links with neither the handover attribute nor the module's own `.active` class (pagination, server breadcrumbs, hand-set state) keep owning their attributes. Without this attribute the runtime does exact-href matching only, and sets/clears only what it stamped. Root `/` is never a prefix match. |
+| `data-cui-activelink` | On a `<nav> <a>` link: hands the link's current-state to the `activelink` module without changing how it matches (exact href unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances; popovers are click-driven and don't deep-link. |
 | `data-hui-system-dismiss` | On the × button inside a `framework/ui.Banner` (the `headless.SystemBanner` contract): the headless module's delegated click sets `hidden` on the nearest `[data-hui-system]` ancestor, so dismissal survives partial-island swaps. The offline banner carries none — its ending is the reconnect. |
@@ -367,11 +368,15 @@ load) the idle-loaded `activelink` module walks every `nav a` with an
 ARIA-correct value for a page link, NOT `true`, so
 `[aria-current="true"]` selectors do not match it. Clearing is
 ownership-based: a link loses both when it carries the module's own
-`.active` class OR the `data-cui-match-prefix` handover — that
-attribute is the contract by which a server-rendered first-paint mark
-(`ui.Sidebar`'s `CurrentPath`, an exact-match `aria-current`) becomes
-activelink's to move, so a kept sidebar never shows two lit entries
-after a client navigation. A link with NEITHER (pagination's
+`.active` class, the `data-cui-activelink` handover or the
+`data-cui-match-prefix` handover — those attributes are the contract
+by which a server-rendered first-paint mark (`ui.Sidebar`'s
+`CurrentPath`, an exact-match `aria-current`) becomes activelink's to
+move, so a kept sidebar never shows two lit entries after a client
+navigation. `headless.Sidebar` marks every leaf `data-cui-activelink`
+because the module loads idle: a navigation can land before it ever
+stamped the old link, and only the handover tells it the stale mark is
+its own. A link with none of the three (pagination's
 `aria-current="page"`, server breadcrumbs, hand-set state) keeps
 whatever it carries: the sweep sets and clears only what it owns.
 Marking a link current also opens its closest

@@ -31,6 +31,11 @@ func activelinkHandoverPage() string {
     <a id="other" href="/other" aria-current="page" data-cui-match-prefix="/other">Other</a>
     <!-- A host-owned mark with no handover: pagination's shape. -->
     <a id="owned" href="/owned" aria-current="page">Owned</a>
+    <!-- The plain sidebar leaf: no section prefix, but its first-paint
+         mark is handed over all the same (headless.Sidebar emits
+         data-cui-activelink on every leaf). A navigation that lands
+         before the idle module loads must still clear it. -->
+    <a id="leaf" href="/leaf" aria-current="page" data-cui-activelink>Leaf</a>
   </nav>
   <main id="main">ready</main>
   <script src="/__gofastr/runtime.js"></script>
@@ -91,7 +96,7 @@ func TestActiveLinkClearsHandedOverMarks(t *testing.T) {
 	var marks map[string]string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		const g = (id) => document.getElementById(id).getAttribute('aria-current') || '';
-		return { home: g('home'), other: g('other'), owned: g('owned') };
+		return { home: g('home'), other: g('other'), owned: g('owned'), leaf: g('leaf') };
 	})()`, &marks)); err != nil {
 		t.Fatal(err)
 	}
@@ -103,5 +108,8 @@ func TestActiveLinkClearsHandedOverMarks(t *testing.T) {
 	}
 	if marks["owned"] != "page" {
 		t.Errorf("the host-owned mark was stripped (aria-current=%q): activelink must clear only what it owns or was handed", marks["owned"])
+	}
+	if marks["leaf"] != "" {
+		t.Errorf("the stale mark survived on a data-cui-activelink leaf (aria-current=%q): the sidebar hands every leaf to the sweep, prefix or not", marks["leaf"])
 	}
 }

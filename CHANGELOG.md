@@ -265,6 +265,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   full load the skew contract demands, with no bundle to pin.
 
 ### Fixed
+- **A sidebar's first-paint mark no longer survives a navigation that
+  lands before the active-link module loads.** `headless.Sidebar` marks
+  every leaf link `data-cui-activelink`, the handover by which the
+  server's `aria-current="page"` becomes the idle-loaded `activelink`
+  module's to clear. Before, the module only cleared links it had
+  stamped itself or that carried `data-cui-match-prefix`, so a click
+  made in the gap before it loaded left two lit entries (the acme-site
+  help nav e2e failed about one run in ten on Linux).
 - **A screen that panics is a logged 500, never a silent 404.** A
   render or `Load` panic on any serving path (full page with or
   without a layout, partial navigation, overlay, and the embed content

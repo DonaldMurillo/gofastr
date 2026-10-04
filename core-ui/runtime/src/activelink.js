@@ -68,15 +68,19 @@
           if (grp.tagName === 'DETAILS') grp.open = true;
           else grp.setAttribute('open', '');
         }
-      } else if (link.classList.contains('active') || link.hasAttribute('data-cui-match-prefix')) {
+      } else if (link.classList.contains('active') || link.hasAttribute('data-cui-activelink') || link.hasAttribute('data-cui-match-prefix')) {
         // Clear what this module stamped (the class is our marker) and
-        // what was HANDED to it: a data-cui-match-prefix link (the
-        // sidebar emits its MatchPath there precisely so the sweep can
-        // re-derive the item) is activelink-owned, so the SSR
-        // first-paint mark on it must not survive a navigation that
-        // moved elsewhere — two lit entries was the bug. Host-rendered
-        // navs with neither (pagination, server breadcrumbs) keep
-        // owning their attributes; a runtime sweep must not strip them.
+        // what was HANDED to it: a data-cui-activelink link (the
+        // sidebar marks every leaf so its first-paint aria-current is
+        // this sweep's to move) or a data-cui-match-prefix link (the
+        // sidebar emits its MatchPath there so the sweep can re-derive
+        // the item) is activelink-owned, so the SSR first-paint mark on
+        // it must not survive a navigation that moved elsewhere — two
+        // lit entries was the bug, and the module loads idle, so the
+        // navigation can land before it ever stamped .active on the
+        // old link. Host-rendered navs with neither (pagination, server
+        // breadcrumbs) keep owning their attributes; a runtime sweep
+        // must not strip them.
         link.removeAttribute('aria-current');
         link.classList.remove('active');
       }

@@ -235,7 +235,10 @@ var moduleAttrs = map[string][]string{
 		"data-cui-window-drag",
 	},
 	"activelink": {
-		// data-cui-activelink-skip opt-out from it.
+		// data-cui-activelink hands a link's first-paint mark to the
+		// sweep, data-cui-match-prefix adds section matching, and
+		// data-cui-activelink-skip opts out of it.
+		"data-cui-activelink",
 		"data-cui-match-prefix",
 		"data-cui-activelink-skip",
 	},

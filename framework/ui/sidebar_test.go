@@ -515,6 +515,9 @@ func TestSidebarEmitsMatchPrefixForActiveLink(t *testing.T) {
 	if strings.Contains(out, `data-cui-match-prefix="/plain"`) {
 		t.Error("an item with no MatchPath must not carry data-cui-match-prefix (exact-href matching is its contract)")
 	}
+	if strings.Count(out, `data-cui-activelink`) != 2 {
+		t.Errorf("every leaf hands its first-paint mark to activelink with data-cui-activelink, want 2 markers:\n%s", out)
+	}
 }
 
 // The standalone trigger is the SAME button the shell renders (the

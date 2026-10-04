@@ -19,12 +19,12 @@ func TestSidebarRendersShellNavGroupsAndLinks(t *testing.T) {
 		// The nav landmark is the region inside the shell; the shell is
 		// a div because a host layout wraps the sidebar in its own nav.
 		`<nav aria-label="Primary"><ul>`,
-		`<a aria-current="page" href="/"><span>Home</span></a>`,
+		`<a aria-current="page" data-cui-activelink="" href="/"><span>Home</span></a>`,
 		// Details-dialect groups are disclosures with a per-group
 		// persist key, so the user's open sections survive navigation.
 		`<details data-hui-disclosure="" data-hui-disclosure-persist="sidebar-inline-g1">`,
 		`<summary><span>Settings</span></summary>`,
-		`<a href="/settings/profile">`,
+		`<a data-cui-activelink="" href="/settings/profile">`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("sidebar missing %q:\n%s", want, h)
