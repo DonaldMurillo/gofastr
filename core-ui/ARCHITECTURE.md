@@ -166,6 +166,40 @@ The runtime understands a small set of `data-cui-*` attributes on the
 hydrated DOM. **You don't write JavaScript**. You compose these on the
 server side and the runtime does the work.
 
+### Who owns which prefix
+
+Every class and `data-*` attribute the framework emits carries the
+prefix of the tree that DEFINES it, and a lower layer never names an
+upper layer's vocabulary. The gate is `core-ui/check.LintLayerPrefixJS`
+/ `LintLayerPrefixGo`, run over the kernel and headless trees by their
+own test suites.
+
+| Prefix | Defined by | Read or written by | Examples |
+|---|---|---|---|
+| `data-cui-*`, `cui-*`, `#cui-*` | `core-ui` (the kernel: `runtime.js`, `core-ui/app`, `core-ui/widget`, `core-ui/interactive`) | anyone: the kernel reads them, every layer above emits them | `data-cui-rpc`, `data-cui-open`, `data-cui-comp`, `cui-widget`, `cui-visually-hidden`, `#cui-toast-fallback` |
+| `data-hui-*` | `framework/headless` (structure + behaviour hooks) | headless modules, the kit's sheets, and the two kernel modules that place content into headless markup (`formerrors.js` reads `data-hui-field`, `data-hui-field-error`, `data-hui-choice`; `feedback.js` clones `data-hui-toast-template`) | `data-hui-field-error`, `data-hui-copy-state`, `data-hui-toast-template` |
+| `fui-*`, `data-fui-*`, `--fui-*` | the rest of `framework/`: `framework/ui` (classes, its own modules), `framework/uihost`, `framework/pluginhost` | framework code and app sheets; never the kernel or headless | `fui-notification`, `data-fui-lightbox`, `data-fui-plugin`, `data-fui-page-loading`, `--fui-button-bg` |
+| a plugin's own prefix | the plugin repository | the plugin | `gofastr-plugins` names its attributes after itself, not `data-fui-plugin*` |
+
+What this rules out, each a shape that shipped before v0.87.0: a
+kernel module that names a kit class (`fui-notification__title`,
+`fui-field__error`, `fui-copied`), a headless module that mounts a kit
+container (`fui-toast-stack-auto`), and a kit class an app's owned
+sheet overrides. The fix shapes are a hook the lower layer declares
+(`data-hui-field-error`, `data-hui-copy-state`), a template the kit
+registers for the lower layer to clone (`registry.RegisterTemplate`,
+`preset.ToastTemplate`), or a module the kit ships itself
+(`framework/ui/searchinput.js`, `filedropzone.js`, `lightbox.js`).
+
+The `data-fui-*` keys that remain are the framework's own modules'
+and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
+lightbox module), `data-fui-dropzone-preview*` (its dropzone module),
+`data-fui-pane*` (its pane host), `data-fui-z-tier` (`ui.Sticky`'s
+sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
+(`framework/pluginhost`) and `data-fui-page-loading`
+(`framework/uihost`). Every other attribute the runtime reads is
+`data-cui-*`, in the table below.
+
 | Attribute | Purpose |
 |---|---|
 | `data-cui-rpc="<path>"` | Click on the element (or submit of a `<form data-cui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-cui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` paragraph by the headless hooks, never by a kit class: it fills a reserved `[data-hui-field-error]` node inside the `[data-hui-field]` group (`FormFieldConfig.ReserveError`) or appends a live one, and after a bare `[data-hui-choice]` label it inserts the paragraph as the next sibling; when no field matched, the `error` text is toasted (module or fallback). In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. |
