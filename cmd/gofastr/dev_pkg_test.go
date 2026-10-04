@@ -115,7 +115,11 @@ func TestBuildAndServePkgDefaultsToDir(t *testing.T) {
 
 func devPkgWaitForFile(t *testing.T, path string) {
 	t.Helper()
-	for i := 0; i < 100; i++ {
+	// The child is a freshly built binary; under a parallel test sweep its
+	// start alone can pass two seconds, so the budget is generous and the
+	// poll returns as soon as the file exists.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			return
 		}
