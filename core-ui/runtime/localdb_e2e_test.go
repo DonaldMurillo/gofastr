@@ -154,6 +154,15 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
           return 'committed';
         });
         res.afterTx = [await db.count('members'), await db.count('tags')];
+        // A body that outlives its transaction (it awaited a timer) and
+        // then writes must reject, not resolve as if both writes landed.
+        res.lateTx = await code(db.tx('members', 'readwrite', async (t) => {
+          await t.put('members', { name: 'Early', level: 2 });
+          await new Promise((r) => setTimeout(r, 30));
+          await t.put('members', { name: 'Late', level: 3 });
+          return 'done';
+        }));
+        res.afterLate = (await db.list('members')).map((r) => r.name).filter((n) => n === 'Early' || n === 'Late');
         res.kept = (await db.get('members', b)).name;
     `)}})
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
@@ -184,6 +193,8 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
 		AfterAbort      int            `json:"afterAbort"`
 		TxOK            string         `json:"txOK"`
 		AfterTx         []int          `json:"afterTx"`
+		LateTx          string         `json:"lateTx"`
+		AfterLate       []string       `json:"afterLate"`
 		Kept            string         `json:"kept"`
 	}
 	ldbRun(t, ctx, base+"/", &res)
@@ -245,6 +256,9 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
 	if res.TxOK != "committed" || len(res.AfterTx) != 2 || res.AfterTx[0] != 3 || res.AfterTx[1] != 2 {
 		t.Errorf("tx = %q, counts %v; want committed, [3 2]", res.TxOK, res.AfterTx)
 	}
+	if res.LateTx != "aborted" || strings.Join(res.AfterLate, ",") != "Early" {
+		t.Errorf("late tx = %q, landed %v; want aborted with only the write made while it was live", res.LateTx, res.AfterLate)
+	}
 	if res.Kept != "Bulbasaur" {
 		t.Errorf("record b = %q after the transactions", res.Kept)
 	}
@@ -259,6 +273,10 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
 	broken := `{"shop":{"stores":{"items":{"keyPath":"sku"}}}}`
 	// v2's by_price, redefined: rebuilt in place it would ping-pong
 	// with every tab still on v2.
+	// A new store AND a changed index: the first drift check stops at
+	// the missing store, the bump creates it, and only the re-check
+	// finds the changed index.
+	leaky := `{"shop":{"stores":{"items":{"keyPath":"id","indexes":{"by_price":{"keyPath":["price","id"]}}},"carts":{"keyPath":"id"},"extra":{"keyPath":"id"}}}}`
 	reindexed := `{"shop":{"stores":{"items":{"keyPath":"id","indexes":{"by_price":{"keyPath":["price","id"]}}},"carts":{"keyPath":"id"}}}}`
 	base := ldbServer(t, map[string][2]string{
 		"/v1": {v1, ldbScript("shop", `
@@ -276,6 +294,25 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
             await db.put('items', { id: 'c', price: 2 });
             res.after = await db.count('items');
         `)},
+		"/leak": {leaky, `
+            (async () => {
+              await __gofastr.loadModule('localdb');
+              const res = {};
+              try { await __gofastr.localdb.open('shop'); res.code = 'ok'; }
+              catch (e) { res.code = e.code; }
+              // The failed open must not leave a connection holding the
+              // database: a further upgrade has to go through.
+              const cur = await new Promise((ok) => { const r = indexedDB.open('gofastr.shop'); r.onsuccess = () => { const v = r.result.version; r.result.close(); ok(v); }; });
+              res.next = await new Promise((ok) => {
+                const r = indexedDB.open('gofastr.shop', cur + 1);
+                const timer = setTimeout(() => ok('blocked'), 3000);
+                r.onblocked = () => {};
+                r.onsuccess = () => { clearTimeout(timer); r.result.close(); ok('opened'); };
+                r.onerror = () => { clearTimeout(timer); ok('error'); };
+              });
+              window.__res = res; window.__done = true;
+            })();
+        `},
 		"/index-changed": {reindexed, `
             (async () => {
               await __gofastr.loadModule('localdb');
@@ -320,6 +357,11 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
 	if r3.Fatal != "" || r3.Count != 2 || r3.After != 3 {
 		t.Fatalf("a v1 page after the v2 upgrade = %+v; want it to read and write the newer database", r3)
 	}
+	var leak struct{ Code, Next string }
+	ldbRun(t, ctx, base+"/leak", &leak)
+	if leak.Code != "schema" || leak.Next != "opened" {
+		t.Fatalf("schema error after an upgrade = %+v; want schema and the database still upgradable (no leaked connection)", leak)
+	}
 	var r5 struct{ Code string }
 	ldbRun(t, ctx, base+"/index-changed", &r5)
 	if r5.Code != "schema" {
@@ -341,11 +383,13 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 	watcher := ldbScript("e2e", `
         window.__seen = [];
         db.watch('members', (e) => window.__seen.push(e.origin + ':' + e.changes.map((c) => c.op).join('+')));
+        window.__bulk = 0;
+        db.watch('tags', (e) => { window.__bulk += e.changes.length; });
         // Forgeries any same-origin script could post: a message that
         // mixes a declared store with an undeclared one, and one with
         // an op the module never sends. Each is dropped whole.
         const forge = new BroadcastChannel('gofastr.localdb.e2e');
-        forge.postMessage({ v: 1, changes: [{ store: 'members', op: 'put', key: 1 }, { store: 'evil', op: 'put', key: 2 }] });
+        forge.postMessage({ v: 1, changes: [{ store: 'evil', op: 'put', key: 2 }] });
         forge.postMessage({ v: 1, changes: [{ store: 'members', op: 'explode', key: 1 }] });
         forge.postMessage({ v: 2, changes: [{ store: 'members', op: 'put', key: 1 }] });
         res.ready = true;
@@ -354,6 +398,10 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
         const local = [];
         db.watch('members', (e) => local.push(e.origin));
         res.key = await db.put('members', { name: 'Mew', level: 70 });
+        // One transaction bigger than one broadcast message.
+        await db.tx('tags', 'readwrite', async (t) => {
+          for (let i = 0; i < 1001; i++) await t.put('tags', { slug: 'bulk-' + i, label: 'Bulk ' + i });
+        });
         await new Promise((r) => setTimeout(r, 50));
         res.local = local;
     `)
@@ -387,7 +435,24 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 		t.Fatalf("watcher tab never heard the write: %v", err)
 	}
 	if strings.Join(seen, ",") != "remote:put" {
-		t.Fatalf("watcher saw %v, want [remote:put] (and never the forged store)", seen)
+		t.Fatalf("watcher saw %v, want [remote:put] (and never the forged messages)", seen)
+	}
+	var bulk int
+	if err := chromedp.Run(tabA,
+		chromedp.Poll(`window.__bulk >= 1001`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`window.__bulk`, &bulk),
+	); err != nil || bulk != 1001 {
+		t.Fatalf("a 1001-write transaction reached the other tab as %d changes (%v); want all 1001", bulk, err)
+	}
+	// A tab on an older deploy hears the stores it declares even when a
+	// newer tab's message also names a store it lacks.
+	var mixed []string
+	if err := chromedp.Run(tabA,
+		chromedp.Evaluate(`window.__seen = []; new BroadcastChannel('gofastr.localdb.e2e').postMessage({ v: 1, changes: [{ store: 'members', op: 'delete', key: 'x' }, { store: 'from-a-newer-deploy', op: 'put', key: 'y' }] });`, nil),
+		chromedp.Poll(`window.__seen.length > 0`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(`window.__seen`, &mixed),
+	); err != nil || strings.Join(mixed, ",") != "remote:delete" {
+		t.Fatalf("mixed message reached the watcher as %v (%v); want the declared store's change", mixed, err)
 	}
 
 	// Tab B moves to a deploy with one more index while tab A still

@@ -39,6 +39,8 @@ var (
 		{Name: "starred", Type: schema.Bool},
 		{Name: "visible", Type: schema.Bool, Default: true},
 		{Name: "code", Type: schema.String, Pattern: `^[A-Z]{2}$`},
+		{Name: "due", Type: schema.Date},
+		{Name: "at", Type: schema.Timestamp},
 	})
 )
 
@@ -51,6 +53,8 @@ func form(ctx context.Context) render.HTML {
 		ui.Checkbox(ui.ToggleConfig{Name: "starred", Label: "Starred", ID: "f-starred", Value: "yes"}),
 		ui.Checkbox(ui.ToggleConfig{Name: "visible", Label: "Visible", ID: "f-visible", Value: "1", Checked: true}),
 		ui.TextField(ui.TextFieldConfig{Name: "code", Label: "Code", ID: "f-code"}),
+		ui.TextField(ui.TextFieldConfig{Name: "due", Label: "Due", ID: "f-due"}),
+		ui.TextField(ui.TextFieldConfig{Name: "at", Label: "At", ID: "f-at"}),
 		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
 		ui.Button(ui.ButtonConfig{Label: "Clear", Type: "reset"}),
 	))
@@ -71,6 +75,16 @@ func (fullScreen) RenderCtx(ctx context.Context) render.HTML {
 	)))
 }
 
+// partialScreen's form has no control for the Required title.
+type partialScreen struct{ component.ContextOnly }
+
+func (partialScreen) RenderCtx(ctx context.Context) render.HTML {
+	return notes.Form("partial-form", ui.Form(ui.FormConfig{Action: "/", Method: "POST", HideSubmit: true, Ctx: ctx},
+		ui.TextField(ui.TextFieldConfig{Name: "memo", Label: "Memo", ID: "p-memo"}),
+		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
+	))
+}
+
 type formOnlyScreen struct{ component.ContextOnly }
 
 func (formOnlyScreen) RenderCtx(ctx context.Context) render.HTML { return form(ctx) }
@@ -80,6 +94,7 @@ func startHost(t *testing.T) string {
 	site := uiapp.NewApp("localentity-e2e")
 	site.RegisterScreen(uiapp.NewScreen("/", &fullScreen{}), nil)
 	site.RegisterScreen(uiapp.NewScreen("/form", &formOnlyScreen{}), nil)
+	site.RegisterScreen(uiapp.NewScreen("/partial", &partialScreen{}), nil)
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "localentity-e2e"}))
 	app.Mount(uihost.New(site))
 	srv := httptest.NewServer(app.Router())
@@ -155,6 +170,87 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 	}
 	if _, has := all[0]["memo"]; has || all[0]["starred"] != false || all[0]["visible"] != false {
 		t.Fatalf("after clearing memo and unchecking both boxes: %v", all[0])
+	}
+
+	// The embed frame's navigation guard passes forms the runtime
+	// marks as script-handled; the module marks its forms so.
+	var enctype string
+	if err := chromedp.Run(tab, chromedp.Evaluate(`document.querySelector('#`+noteForm+` form').getAttribute('enctype')`, &enctype)); err != nil || enctype != "application/json" {
+		t.Fatalf("local form enctype = %q (%v), want application/json", enctype, err)
+	}
+
+	// Disabled controls are not "emptied": an edit with memo and the
+	// checked visible box disabled keeps both stored values.
+	if err := chromedp.Run(tab,
+		chromedp.Click(`[data-fui-local-item] [data-fui-local-edit] button`, chromedp.ByQuery),
+		poll(`document.querySelector('#f-title').value === '🐉🐉🐉'`),
+		chromedp.SetValue(`#f-memo`, "kept", chromedp.ByQuery),
+		chromedp.Click(`#f-visible`, chromedp.ByQuery),
+		submit(),
+		poll(`document.querySelector('#f-title').value === ''`),
+		chromedp.Click(`[data-fui-local-item] [data-fui-local-edit] button`, chromedp.ByQuery),
+		poll(`document.querySelector('#f-memo').value === 'kept'`),
+		chromedp.Evaluate(`document.querySelector('#f-memo').disabled = true; document.querySelector('#f-visible').disabled = true;`, nil),
+		chromedp.SetValue(`#f-title`, "abc", chromedp.ByQuery),
+		submit(),
+		poll(`document.querySelector('#f-title').value === ''`),
+		chromedp.Evaluate(`document.querySelector('#f-memo').disabled = false; document.querySelector('#f-visible').disabled = false;`, nil),
+	); err != nil {
+		t.Fatalf("disabled controls: %v", err)
+	}
+	if r := records(t, tab)[0]; r["title"] != "abc" || r["memo"] != "kept" || r["visible"] != true {
+		t.Fatalf("an edit with disabled controls changed them: %v", r)
+	}
+
+	// Dates must be real calendar dates; a datetime-local value is
+	// stored as RFC 3339 UTC.
+	if err := chromedp.Run(tab,
+		chromedp.Evaluate(`document.querySelector('#`+noteForm+` form').noValidate = true`, nil),
+		chromedp.SetValue(`#f-title`, "d1", chromedp.ByQuery),
+		chromedp.SetValue(`#f-due`, "2024-02-31", chromedp.ByQuery),
+		submit(),
+		poll(`!!document.querySelector('#f-due[aria-invalid="true"]')`),
+		chromedp.SetValue(`#f-due`, "2024-02-29", chromedp.ByQuery),
+		chromedp.SetValue(`#f-at`, "2024-05-01T14:30", chromedp.ByQuery),
+		submit(), countIs(2),
+	); err != nil {
+		t.Fatalf("dates: %v", err)
+	}
+	var stamp map[string]any
+	if err := chromedp.Run(tab, chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then((db) => db.list('notes')).then((all) => all.find((r) => r.title === 'd1'))`, &stamp, await)); err != nil {
+		t.Fatal(err)
+	}
+	at, _ := stamp["at"].(string)
+	if stamp["due"] != "2024-02-29" || len(at) != len("2024-05-01T14:30:00.000Z") || at[len(at)-1] != 'Z' {
+		t.Fatalf("stored due/at = %v / %v, want the date as given and the time as RFC 3339 UTC", stamp["due"], stamp["at"])
+	}
+
+	// Two submits before the first save resets the form save once.
+	if err := chromedp.Run(tab,
+		chromedp.SetValue(`#f-title`, "dup", chromedp.ByQuery),
+		chromedp.Evaluate(`(() => { const f = document.querySelector('#`+noteForm+` form'); f.requestSubmit(); f.requestSubmit(); })()`, nil),
+		countIs(3),
+		chromedp.Sleep(300*time.Millisecond),
+	); err != nil {
+		t.Fatalf("double submit: %v", err)
+	}
+	dups := 0
+	for _, r := range records(t, tab) {
+		if r["title"] == "dup" {
+			dups++
+		}
+	}
+	if dups != 1 {
+		t.Fatalf("a double submit saved %d records", dups)
+	}
+	if err := chromedp.Run(tab, chromedp.Click(`#`+noteForm+` button[type=reset]`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	// Leave one record for the steps below, as they expect.
+	if err := chromedp.Run(tab, chromedp.Evaluate(`__gofastr.localdb.open('localentity-e2e').then(async (db) => {
+		for (const r of await db.list('notes')) if (r.title !== 'abc') await db.delete('notes', r.id);
+	})`, nil, await), countIs(1)); err != nil {
+		t.Fatal(err)
 	}
 
 	// Pattern: a value the pattern refuses never saves.
@@ -233,5 +329,23 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 	}
 	if rows != 2 || empty {
 		t.Fatalf("a failed read changed the list: %d rows, empty state %v", rows, empty)
+	}
+
+	// A form with no control for a Required field cannot create.
+	partial, cancelP := chromedp.NewContext(tab)
+	defer cancelP()
+	if err := chromedp.Run(partial,
+		chromedp.Navigate(base+"/partial"),
+		chromedp.WaitVisible(`#p-memo`, chromedp.ByQuery),
+		chromedp.SetValue(`#p-memo`, "orphan", chromedp.ByQuery),
+		chromedp.Click(`#partial-form button[type=submit]`, chromedp.ByQuery),
+		poll(`document.body.textContent.includes('This field is required. (title)')`),
+	); err != nil {
+		t.Fatalf("required field without a control: %v", err)
+	}
+	for _, r := range records(t, partial) {
+		if r["memo"] == "orphan" {
+			t.Fatalf("a record without its Required title was created: %v", r)
+		}
 	}
 }

@@ -118,7 +118,9 @@ await db.tx(['members', 'tags'], 'readwrite', async (t) => {
 
 Only await `t`'s own methods inside the function. IndexedDB commits a
 transaction as soon as it has no request pending, so awaiting a `fetch`
-in the middle ends it early.
+or a timer in the middle ends it early: whatever was written before
+lands, the next `t.put` cannot, and `tx` rejects with `aborted` instead
+of resolving.
 
 ### Watching for changes
 
@@ -133,8 +135,11 @@ const stop = db.watch('members', (e) => {
 The watcher runs after the transaction commits. Other tabs hear about
 the change through a `BroadcastChannel` that carries store names, ops
 and keys only, never record values; the other tab reads the record from
-the database the tabs share. A message on that channel naming an
-undeclared store or an unknown op is ignored.
+the database the tabs share. A tab announces its writes whether or not
+it watches anything itself, and a large transaction is sent in slices
+of 1000 changes. A message with an unknown op or the wrong shape is
+ignored; a change to a store this tab does not declare (one a newer
+deploy added) is skipped while the rest of the message is delivered.
 
 ## Schema changes
 
@@ -205,8 +210,9 @@ console.
 
 - **Awaiting other work inside `tx`.** IndexedDB commits a transaction
   once no request is pending. A `fetch` or a timer awaited inside the
-  function ends it, and the next `t.put` fails with `aborted`. Do the
-  other work before or after.
+  function ends it: the next `t.put` fails and `tx` rejects with
+  `aborted`, though what was written before the await has landed. Do
+  the other work before or after.
 - **Treating a read-back record as trusted.** The visitor (or any
   script on your origin) can change it. Put values into the page with
   `textContent`, never `innerHTML`, and check types before using them.

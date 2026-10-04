@@ -111,7 +111,7 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 		// content — otherwise it is an ancestor of a slot and is left
 		// for an owner to reach.
 		var innerOwn html.Attrs
-		if !b.Filled(PartCardHeader) && len(body) == 0 && p.Footer == "" {
+		if !b.Filled(PartCardHeader) && p.TitleContent == "" && len(body) == 0 && p.Footer == "" {
 			innerOwn = Internal(nil)
 		}
 		inner := b.El("div", PartCardInner, innerOwn, kids...)

@@ -65,7 +65,11 @@ var (
 		registry.Requires("localdb"))
 	_ = registry.RegisterBehavior("localentity-form", formJS,
 		registry.Markers("[data-fui-local-form]"),
-		registry.Requires("localdb", "formerrors"))
+		registry.Requires("localdb", "formerrors"),
+		// A Save clicked while the module is still fetching is held and
+		// replayed once it loads, instead of falling through to a native
+		// POST that reloads the page and loses what was typed.
+		registry.Interactions(registry.Interaction{Event: "click", Selector: `[data-fui-local-form] [type="submit"]`}))
 )
 
 // The list and form carriers are behaviour hooks, not boxes: they lay
@@ -191,7 +195,8 @@ var typeNames = map[schema.FieldType]string{
 // by id, created_at and updated_at indexed, plus Indexed fields), so
 // name must not already be a store in db. Field names are lowercase
 // snake_case ([a-z][a-z0-9_]*, at most 61 bytes, so "by_<name>" is a
-// valid index name) and must not reuse a built-in. Every refusal is a
+// valid index name), not "constructor" or "prototype", and must not
+// reuse a built-in. An Indexed field must be Required. Every refusal is a
 // panic at startup.
 func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) *Entity {
 	if db == nil {
@@ -255,6 +260,13 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 		}
 		if def.Type == schema.Bool {
 			panic(fmt.Sprintf("localentity: %s: Bool field %q cannot be indexed", name, f))
+		}
+		// IndexedDB leaves a record out of an index when the indexed
+		// property is missing, so ordering a list by an optional field
+		// would hide every record without it while Count still counted
+		// them.
+		if !def.Required {
+			panic(fmt.Sprintf("localentity: %s: Indexed field %q must be Required: a record without it would vanish from lists ordered by it", name, f))
 		}
 		if e.index[f] {
 			continue
@@ -420,37 +432,86 @@ func (e *Entity) Count() render.HTML {
 
 func indexName(field string) string { return "by_" + field }
 
-// checkPattern refuses a Pattern the browser would read differently
-// from the server. The pattern must compile as Go (core/schema checks
-// it there) and must avoid the RE2 spellings JavaScript lacks or reads
-// otherwise: inline flags and (?P<name>) groups, \A and \z, POSIX
-// classes, \Q…\E, \C, the brace-less \pL, and \x{…}. What is left is
-// the shared subset (classes, groups, (?:…), quantifiers, ^ and $,
-// \d \w \s, \p{…}), which the behaviour compiles with the u flag.
+// checkPattern admits a Pattern only when the browser will read it the
+// way the server does. It must compile as Go (core/schema checks it
+// there), and it is scanned against the subset Go's RE2 and JavaScript's
+// u-mode regexes share: literals; classes with ranges and the escapes
+// below; groups, with (?:…) the only extension; | ^ $ . * + ?; {n},
+// {n,} and {n,m}; escapes \d \D \w \W \s \S \b \B \n \r \t \f \v, an
+// escaped metacharacter, \- inside a class, and \p{…}/\P{…} naming a
+// general category. Everything else (inline flags, (?P<name>), \A, \z,
+// \Q…\E, POSIX classes, octal and other letter escapes, a lone { } or ],
+// script names in \p{…}, a class opening with ]) is refused at startup,
+// because one side would accept what the other refuses.
 func checkPattern(p string) error {
 	if _, err := regexp.Compile(p); err != nil {
 		return fmt.Errorf("Pattern does not compile: %v", err)
 	}
+	inClass := false
 	for i := 0; i < len(p); i++ {
+		c := p[i]
 		switch {
-		case p[i] == '\\' && i+1 < len(p):
-			next := p[i+1]
+		case c == '\\':
+			if i+1 >= len(p) {
+				return fmt.Errorf("Pattern ends in a lone backslash")
+			}
+			n := p[i+1]
 			switch {
-			case next == 'A' || next == 'z' || next == 'Q' || next == 'E' || next == 'C':
-				return fmt.Errorf("Pattern uses \\%c, which JavaScript does not read the same way", next)
-			case (next == 'p' || next == 'P') && (i+2 >= len(p) || p[i+2] != '{'):
-				return fmt.Errorf("Pattern uses \\%c without braces; write \\%c{…}", next, next)
-			case next == 'x' && i+2 < len(p) && p[i+2] == '{':
-				return fmt.Errorf("Pattern uses \\x{…}; write \\u{…} or the character itself")
+			case strings.IndexByte(`dDwWsSnrtfv\/.^$*+?()[]{}|`, n) >= 0:
+			case (n == 'b' || n == 'B') && !inClass:
+			case n == '-' && inClass:
+			case n == 'p' || n == 'P':
+				end := strings.IndexByte(p[i:], '}')
+				if i+2 >= len(p) || p[i+2] != '{' || end < 0 || !generalCategory[p[i+3:i+end]] {
+					return fmt.Errorf("Pattern uses \\%c without a general category in braces (\\%c{L}, \\%c{Nd}, …)", n, n, n)
+				}
+				i += end - 1
+			default:
+				return fmt.Errorf("Pattern uses \\%c, which JavaScript and Go do not read the same way", n)
 			}
 			i++
-		case strings.HasPrefix(p[i:], "(?") && !strings.HasPrefix(p[i:], "(?:"):
+		case inClass:
+			if c == '[' && i+1 < len(p) && p[i+1] == ':' {
+				return fmt.Errorf("Pattern uses a POSIX class; JavaScript does not have them")
+			}
+			if c == ']' {
+				inClass = false
+			}
+		case c == '[':
+			inClass = true
+			if strings.HasPrefix(p[i+1:], "^") {
+				i++
+			}
+			if i+1 < len(p) && p[i+1] == ']' {
+				return fmt.Errorf("Pattern opens a class with ]; escape it as \\]")
+			}
+		case c == '(' && strings.HasPrefix(p[i:], "(?") && !strings.HasPrefix(p[i:], "(?:"):
 			return fmt.Errorf("Pattern uses %q; JavaScript has no inline flags or (?P<name>) groups", p[i:min(i+4, len(p))])
-		case strings.HasPrefix(p[i:], "[[:"):
-			return fmt.Errorf("Pattern uses a POSIX class; JavaScript does not have them")
+		case c == '{':
+			q := quantifier.FindString(p[i:])
+			if q == "" {
+				return fmt.Errorf("Pattern has a { that is not a {n,m} quantifier; escape it as \\{")
+			}
+			i += len(q) - 1
+		case c == '}' || c == ']':
+			return fmt.Errorf("Pattern has a lone %c; escape it", c)
 		}
 	}
 	return nil
+}
+
+var quantifier = regexp.MustCompile(`^\{\d+(,\d*)?\}`)
+
+// generalCategory lists the Unicode general categories both engines
+// name the same way; script names (\p{Greek}) differ and are refused.
+var generalCategory = map[string]bool{
+	"L": true, "Lu": true, "Ll": true, "Lt": true, "Lm": true, "Lo": true,
+	"M": true, "Mn": true, "Mc": true, "Me": true,
+	"N": true, "Nd": true, "Nl": true, "No": true,
+	"P": true, "Pc": true, "Pd": true, "Ps": true, "Pe": true, "Pi": true, "Pf": true, "Po": true,
+	"S": true, "Sm": true, "Sc": true, "Sk": true, "So": true,
+	"Z": true, "Zs": true, "Zl": true, "Zp": true,
+	"C": true, "Cc": true, "Cf": true, "Co": true, "Cs": true,
 }
 
 func fieldByName(fields []schema.Field, name string) (schema.Field, bool) {
@@ -462,10 +523,11 @@ func fieldByName(fields []schema.Field, name string) (schema.Field, bool) {
 	return schema.Field{}, false
 }
 
-// validField is lowercase snake_case, 1-61 bytes: "by_" + name stays a
-// valid localdb index name, and no name can spell a prototype key.
+// validField is lowercase snake_case, 1-61 bytes ("by_" + name stays a
+// valid localdb index name), and never a name an object already
+// carries on its prototype chain.
 func validField(s string) bool {
-	if s == "" || len(s) > 61 || s[0] < 'a' || s[0] > 'z' {
+	if s == "" || len(s) > 61 || s[0] < 'a' || s[0] > 'z' || s == "constructor" || s == "prototype" {
 		return false
 	}
 	for i := range len(s) {

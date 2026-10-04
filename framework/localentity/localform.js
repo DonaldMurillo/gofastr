@@ -39,14 +39,39 @@
   };
   const say = (msg, n) => String(msg || '').split('{n}').join(n === undefined ? '' : String(n));
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
+  const pad = (n) => String(n).padStart(2, '0');
+
+  // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
+  // Date does (2024-02-31 is refused, not rolled into March).
+  const day = (raw) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) return null;
+    const d = new Date(Date.UTC(+m[1], m[2] - 1, +m[3]));
+    return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === m[2] - 1 && d.getUTCDate() === +m[3] ? raw : null;
+  };
+  // stamp accepts RFC 3339 (what core/schema's Timestamp parses) or a
+  // datetime-local value, read in the visitor's time zone, and stores
+  // either as RFC 3339 in UTC, so records sort and sync as one format.
+  const stamp = (raw) => {
+    const m = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/i.exec(raw);
+    const t = m && day(m[1]) ? Date.parse(raw) : NaN;
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  };
+  // live is a field's controls the browser will submit: a disabled
+  // control (or one in a disabled fieldset) is not in FormData, so it
+  // must not read as an emptied field.
+  const live = (form, name) => {
+    const ctl = form.elements.namedItem(name);
+    return ctl ? (ctl.tagName ? [ctl] : Array.from(ctl)).filter((c) => !c.matches(':disabled')) : [];
+  };
 
   // coerce reads one field from the form and checks it against its
   // declaration. It returns {value}, {empty} (a control with nothing in
   // it: clears the field on an edit, takes the Default on a create),
-  // {absent} (no control for the field: an edit leaves it alone), or
-  // {error}.
+  // {absent} (no enabled control for the field: an edit leaves it
+  // alone), or {error}.
   function coerce(f, data, msgs, form) {
-    if (!form.elements.namedItem(f.name)) return { absent: true };
+    if (!live(form, f.name).length) return { absent: true };
     if (f.t === 'bool') {
       // A checked box submits its value (whatever it is: "true", "on",
       // "yes"); the hidden "false" twin is the unchecked half.
@@ -64,9 +89,9 @@
       return { value: v };
     }
     if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msgs.choice };
-    if ((f.t === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) ||
-        ((f.t === 'date' || f.t === 'timestamp') && !Number.isFinite(Date.parse(raw)))) {
-      return { error: msgs.date };
+    if (f.t === 'date' || f.t === 'timestamp') {
+      const v = f.t === 'date' ? day(raw) : stamp(raw);
+      return v === null ? { error: msgs.date } : { value: v };
     }
     // Lengths count code points, as core/schema counts runes: an emoji
     // is one character on both sides.
@@ -95,9 +120,12 @@
     const data = new FormData(form);
     // set: the values to write; cleared: fields an edit empties;
     // defaults: what a create writes for a field left empty or absent.
+    // missing: Required fields with no control and no Default, which a
+    // create cannot fill (an edit keeps the stored value).
     const set = [];
     const cleared = [];
     const defaults = [];
+    const missing = [];
     const errors = {};
     let failed = false;
     for (const f of spec.fields) {
@@ -108,6 +136,7 @@
       } else if (r.empty || r.absent) {
         if (r.empty) cleared.push(f.name);
         if (f.def !== undefined) defaults.push([f.name, f.def]);
+        else if (r.absent && f.req) missing.push(f.name);
       } else {
         set.push([f.name, r.value]);
       }
@@ -123,9 +152,9 @@
     const values = Object.fromEntries(set);
     const editing = wrap.getAttribute(P + 'editing');
     const now = new Date().toISOString();
-    // The cap is decided inside the transaction, but localdb re-codes
-    // every failure that leaves one, so the verdict rides a flag.
-    let full = false;
+    // Refusals decided inside the transaction ride this variable:
+    // localdb re-codes every failure that leaves one.
+    let refusal = '';
     try {
       const db = await NS.localdb.open(dbName);
       await db.tx(store, 'readwrite', async (tx) => {
@@ -139,15 +168,19 @@
           await tx.put(store, next);
           return;
         }
+        if (missing.length) {
+          refusal = msgs.required + ' (' + missing.join(', ') + ')';
+          throw new Error('missing');
+        }
         if (spec.max && (await tx.count(store)) >= spec.max) {
-          full = true;
+          refusal = say(msgs.full, spec.max);
           throw new Error('full');
         }
         await tx.put(store, Object.assign(Object.fromEntries(defaults), values, { created_at: now, updated_at: now }));
       });
     } catch (_) {
       if (typeof NS._toastOrFallback === 'function') {
-        NS._toastOrFallback({ variant: 'error', title: full ? say(msgs.full, spec.max) : msgs.failed, ttl: 6000 });
+        NS._toastOrFallback({ variant: 'error', title: refusal || msgs.failed, ttl: 6000 });
       }
       return;
     }
@@ -168,6 +201,11 @@
       const list = ctl.tagName ? [ctl] : Array.from(ctl);
       for (const c of list) {
         if (c.type === 'checkbox') c.checked = value === true;
+        else if (c.type === 'datetime-local' && Number.isFinite(Date.parse(text(value)))) {
+          const d = new Date(text(value));
+          c.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+            'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        }
         else if (c.type === 'radio') c.checked = c.value === text(value);
         else if (c.type !== 'hidden' || list.length === 1) c.value = text(value);
       }
@@ -179,15 +217,35 @@
   NS._localForm = { fill: fill };
 
   // Submit is caught in the capture phase, before the kernel's own
-  // form handling, and never reaches the network.
+  // form handling, and never reaches the network. One save at a time
+  // per form: a second submit while the first is in flight (a double
+  // click) is dropped, not saved twice.
+  const busy = new WeakSet();
   document.addEventListener('submit', (e) => {
     const form = e.target;
     const wrap = form && form.closest && form.closest(FORM);
     if (!wrap) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    save(wrap, form);
+    if (busy.has(wrap)) return;
+    busy.add(wrap);
+    form.setAttribute('aria-busy', 'true');
+    save(wrap, form).finally(() => {
+      busy.delete(wrap);
+      form.removeAttribute('aria-busy');
+    });
   }, true);
+
+  // A local form posts nowhere. enctype="application/json" is the
+  // runtime's mark for a form script handles: the embed frame's
+  // navigation guard passes it instead of reporting a blocked submit.
+  function scan(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll(FORM + ' form').forEach((f) => f.setAttribute('enctype', 'application/json'));
+  }
+  scan(document);
+  NS._moduleScanners = NS._moduleScanners || {};
+  NS._moduleScanners[NAME] = scan;
 
   document.addEventListener('reset', (e) => {
     const wrap = e.target && e.target.closest && e.target.closest(FORM);

@@ -2,17 +2,26 @@ package localentity
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 func f64(v float64) *float64 { return &v }
+
+// freshDB declares a database no other run has used, so the tests that
+// declare inside their body stay re-runnable (-count=N).
+var dbSeq atomic.Int64
+
+func freshDB() *localdb.DB { return localdb.New(fmt.Sprintf("le-test-%d", dbSeq.Add(1))) }
 
 func mustPanic(t *testing.T, want string, fn func()) {
 	t.Helper()
@@ -32,7 +41,7 @@ var (
 	testDB  = localdb.New("localentity-test")
 	members = Define(testDB, "members", []schema.Field{
 		{Name: "nickname", Type: schema.String, Required: true, Max: f64(20)},
-		{Name: "level", Type: schema.Int, Min: f64(1), Max: f64(100)},
+		{Name: "level", Type: schema.Int, Required: true, Min: f64(1), Max: f64(100)},
 		{Name: "kind", Type: schema.Enum, Values: []string{"a", "b"}, Default: "a"},
 		{Name: "shiny", Type: schema.Bool},
 	}, Indexed("level"), MaxRecords(6), WithMessages(Messages{Full: "Team full"}))
@@ -162,7 +171,7 @@ func TestListRowAndCount(t *testing.T) {
 
 // Every refusal is a startup panic naming what is wrong.
 func TestRefusals(t *testing.T) {
-	db := localdb.New("localentity-refusals")
+	db := freshDB()
 	str := []schema.Field{{Name: "name", Type: schema.String}}
 	mustPanic(t, "needs a localdb.DB", func() { Define(nil, "x", str) })
 	mustPanic(t, "at least one field", func() { Define(db, "x", nil) })
@@ -177,6 +186,9 @@ func TestRefusals(t *testing.T) {
 	mustPanic(t, "lists no Values", func() { Define(db, "x", []schema.Field{{Name: "kind", Type: schema.Enum}}) })
 	mustPanic(t, "unknown field", func() { Define(db, "x", str, Indexed("nope")) })
 	mustPanic(t, "cannot be indexed", func() { Define(db, "x", []schema.Field{{Name: "on", Type: schema.Bool}}, Indexed("on")) })
+	mustPanic(t, "must be Required", func() { Define(db, "x", []schema.Field{{Name: "level", Type: schema.Int}}, Indexed("level")) })
+	mustPanic(t, "snake_case", func() { Define(db, "x", []schema.Field{{Name: "constructor", Type: schema.String}}) })
+	mustPanic(t, "snake_case", func() { Define(db, "x", []schema.Field{{Name: "prototype", Type: schema.String}}) })
 	mustPanic(t, "must not be negative", func() { Define(db, "x", str, MaxRecords(-1)) })
 	mustPanic(t, "JSON values", func() { Define(db, "y", []schema.Field{{Name: "name", Type: schema.String, Default: func() {}}}) })
 
@@ -191,19 +203,37 @@ func TestRefusals(t *testing.T) {
 // Indexed may name the built-ins (they are indexed anyway), and a
 // Pattern must be one the browser reads the way Go does.
 func TestIndexedBuiltinsAndPatterns(t *testing.T) {
-	db := localdb.New("localentity-review")
-	Define(db, "a", []schema.Field{{Name: "name", Type: schema.String}}, Indexed("updated_at", "created_at", "name"))
+	db := freshDB()
+	Define(db, "a", []schema.Field{{Name: "name", Type: schema.String, Required: true}}, Indexed("updated_at", "created_at", "name"))
 	Define(db, "b", []schema.Field{{Name: "code", Type: schema.String, Pattern: `^(?:[A-Z]{2}|\p{Lu}\d)$`}})
 	for p, want := range map[string]string{
-		`(?i)^[a-z]+$`: "inline flags",
-		`(?P<x>a)`:     "inline flags",
-		`^a\z`:         `\z`,
-		`\Aa`:          `\A`,
-		`[[:alpha:]]`:  "POSIX",
-		`\pL`:          "without braces",
-		`\x{41}`:       `\x{`,
-		`a(`:           "does not compile",
+		`(?i)^[a-z]+$`:    "inline flags",
+		`(?P<x>a)`:        "inline flags",
+		`^a\z`:            `\z`,
+		`\Aa`:             `\A`,
+		`[[:alpha:]]`:     "POSIX",
+		`\pL`:             "general category",
+		`\x{41}`:          `\x`,
+		`^\d{3}\-\d{4}$`:  `\-`,
+		`^a\@b$`:          `\@`,
+		`^\12$`:           `\1`,
+		`^[^[:space:]]+$`: "POSIX",
+		`^\p{Greek}+$`:    "general category",
+		`a{`:              "quantifier",
+		`a]`:              "lone",
+		`[]a]`:            "opens a class",
+		`a(`:              "does not compile",
 	} {
 		mustPanic(t, want, func() { Define(db, "p", []schema.Field{{Name: "code", Type: schema.String, Pattern: p}}) })
+	}
+}
+
+// A Save clicked while the form module is still loading is held and
+// replayed by the kernel, so the registration must declare the click.
+func TestFormBehaviourRetainsSaveClicks(t *testing.T) {
+	e, ok := registry.LookupBehavior("localentity-form")
+	if !ok || len(e.Interactions) != 1 || e.Interactions[0].Event != "click" ||
+		e.Interactions[0].Selector != `[data-fui-local-form] [type="submit"]` {
+		t.Fatalf("localentity-form interactions = %+v", e)
 	}
 }

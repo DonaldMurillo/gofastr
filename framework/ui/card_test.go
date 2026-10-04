@@ -108,3 +108,17 @@ func TestCardHeadingContentRendersInTheHeadingElement(t *testing.T) {
 		t.Fatalf("HeadingContent must win over Heading: %s", both)
 	}
 }
+
+// A link card's inner wrapper is the component's own only when nothing
+// inside it came from the caller; HeadingContent is caller markup, so
+// the wrapper must not be marked internal (an owned sheet's @scope
+// stops at an internal mark).
+func TestCardLinkWithHeadingContentIsNotInternal(t *testing.T) {
+	h := string(Card(CardConfig{Href: "/x", HeadingContent: render.HTML(`<span class="mine">x</span>`)}))
+	if strings.Contains(h, "data-cui-internal") {
+		t.Fatalf("the inner wrapper of a card holding caller heading content is marked internal: %s", h)
+	}
+	if plain := string(Card(CardConfig{Href: "/x", Heading: "x"})); !strings.Contains(plain, "data-cui-internal") {
+		t.Fatalf("a link card with only its own markup lost its internal mark: %s", plain)
+	}
+}

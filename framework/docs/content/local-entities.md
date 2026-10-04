@@ -92,11 +92,29 @@ box saves `true` whatever its `value` attribute says (an unchecked one
 saves `false`), and string lengths count characters the way Go counts
 runes, so an emoji is one. When editing, an emptied optional field is
 removed from the record; a field the form has no control for is left
-as it was. `Default` applies only when creating a record. A `Pattern`
-must use syntax JavaScript and Go read the same way: `Define` refuses
-inline flags, `(?P<name>)`, `\A`, `\z`, POSIX classes and the brace-less
-`\pL` at startup, and a pattern the browser still cannot compile
-refuses every value rather than letting values through.
+as it was, and so is a field whose controls are all disabled. `Default`
+applies only when creating a record; a create from a form with no
+control for a Required field (and no Default) is refused. A `Date` must
+be a real calendar date (`2024-02-31` is refused); a `Timestamp` takes
+RFC 3339 or a `datetime-local` value, read in the visitor's time zone,
+and is stored as RFC 3339 in UTC, the formats core/schema parses. A
+second submit while a save is in flight is dropped, so a double click
+saves once.
+
+A `Pattern` must stay inside the regex syntax Go and JavaScript read the
+same way: literals, classes and ranges, groups with `(?:…)` as the only
+extension, `| ^ $ . * + ?`, `{n,m}` quantifiers, the escapes `\d \w \s
+\b` and their capitals, an escaped metacharacter, `\-` inside a class,
+and `\p{…}` naming a Unicode general category (`\p{L}`, `\p{Nd}`).
+`Define` refuses anything else at startup (inline flags, `(?P<name>)`,
+`\A`, `\z`, POSIX classes, other letter escapes, script names such as
+`\p{Greek}`). A pattern the browser still cannot compile refuses every
+value rather than letting values through.
+
+A `localentity` form works inside an [embedded surface](embed.md): the
+behaviour marks its forms `enctype="application/json"`, which the embed
+frame's navigation guard lets through. A Save clicked while the form
+behaviour is still loading is held and replayed once it loads.
 
 On submit the browser's own validation runs first (the `required`,
 `maxlength`, `min` and `max` the fields render). Then the behaviour
@@ -139,7 +157,7 @@ ui.Grid(ui.GridConfig{Min: "14rem"}, team.Render(
 
 | Piece | Does |
 | --- | --- |
-| `ListConfig.OrderBy` | `created_at` (default), `updated_at`, or a field declared `Indexed`. IndexedDB orders the rows through the index. |
+| `ListConfig.OrderBy` | `created_at` (default), `updated_at`, or a field declared `Indexed`, which must be `Required`: IndexedDB leaves a record out of an index when the field is missing, so an optional ordering field would hide records. IndexedDB orders the rows through the index. |
 | `ListConfig.Desc`, `Limit` | Reverse the order; cap the rows shown. |
 | `Row(fn)` | The row template, built once on the server. One root element; no `id` attributes, since every record clones it. |
 | `Empty(content)` | What shows when there are no records. |

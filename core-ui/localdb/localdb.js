@@ -36,6 +36,7 @@
   const PREFIX = 'gofastr.';
   const has = (o, k) => o != null && Object.prototype.hasOwnProperty.call(o, k);
   const OPS = ['put', 'add', 'delete', 'clear'];
+  const MAX_POST = 1000;
 
   const fail = (code, what) => Object.assign(new Error('localdb: ' + code + (what ? ' ' + what : '')),
     { name: 'LocalDBError', code: code });
@@ -45,6 +46,7 @@
   const CODES = {
     QuotaExceededError: 'quota', ConstraintError: 'constraint', DataError: 'invalid',
     DataCloneError: 'invalid', InvalidStateError: 'closed', VersionError: 'version', AbortError: 'aborted',
+    TransactionInactiveError: 'aborted',
   };
   const wrap = (e) => e && e.name === 'LocalDBError' ? e
     : fail(e && has(CODES, e.name) ? CODES[e.name] : 'failed', e && typeof e.name === 'string' ? e.name : '');
@@ -68,8 +70,8 @@
   });
 
   // newID mints a UUIDv7: 48-bit millisecond timestamp, version 7, a
-  // 12-bit counter (RFC 9562 method 1), variant 10, the rest from
-  // crypto.getRandomValues. The counter keeps keys minted in one
+  // 12-bit counter (RFC 9562 method 1), variant 10, and 62 random bits
+  // from crypto.getRandomValues. The counter keeps keys minted in one
   // millisecond in mint order (seeded random below 2048 so it rarely
   // overflows; on overflow the timestamp steps forward), so an AutoKey
   // store's primary order is this tab's creation order.
@@ -168,7 +170,17 @@
       db.close();
       try {
         const up = await openRaw(name, spec, db.version + 1);
-        if (!drift(up, spec)) return up;
+        // A schema error found only after the bump (a new store plus a
+        // changed index) must not leave this connection open: with no
+        // versionchange handler it would block every later upgrade.
+        let more;
+        try {
+          more = drift(up, spec);
+        } catch (e) {
+          up.close();
+          throw e;
+        }
+        if (!more) return up;
         up.close();
       } catch (e) {
         // Another tab won the race to the same version: read the new
@@ -217,8 +229,12 @@
     }
 
     // _run executes body(api) inside one transaction and resolves with
-    // its return value once the transaction COMMITS; watchers hear the
-    // change only then. A connection closed under us reopens once.
+    // its return value once the transaction COMMITS and the body has
+    // finished; watchers hear the change at the commit. A body that
+    // outlives its transaction (it awaited something that was not a
+    // request) and then fails, because its next request found the
+    // transaction gone, rejects instead of resolving with what landed
+    // before. A connection closed under us reopens once.
     _run(stores, mode, body, retried) {
       const names = [].concat(stores);
       try {
@@ -238,17 +254,21 @@
         const changes = [];
         let result;
         let failure;
-        tx.oncomplete = () => {
-          resolve(result);
-          if (changes.length) this._emit(changes, 'local');
-        };
-        tx.onabort = () => reject(failure || wrap(tx.error || { name: 'AbortError' }));
-        Promise.resolve()
+        let committed = false;
+        const settled = Promise.resolve()
           .then(() => body(this._api(tx, changes)))
           .then((r) => { result = r; }, (e) => {
-            failure = wrap(e);
+            // A request made after the commit fails as "the transaction
+            // has finished" (InvalidStateError); say what happened.
+            failure = committed ? fail('aborted', 'the transaction ended before the body') : wrap(e);
             try { tx.abort(); } catch (_) {}
           });
+        tx.oncomplete = () => {
+          committed = true;
+          if (changes.length) this._emit(changes, 'local');
+          settled.then(() => (failure ? reject(failure) : resolve(result)));
+        };
+        tx.onabort = () => reject(failure || wrap(tx.error || { name: 'AbortError' }));
       }));
     }
 
@@ -332,26 +352,31 @@
       }
       // A writing tab announces even when it watches nothing itself:
       // another tab's list must hear a save from a form-only page.
+      // Posted in slices of MAX_POST, the most a receiver accepts in one
+      // message, so a bulk transaction still reaches every tab.
       if (origin === 'local') {
         this._listen();
-        if (this._ch) {
-          try { this._ch.postMessage({ v: 1, changes: changes }); } catch (_) {}
+        for (let i = 0; this._ch && i < changes.length; i += MAX_POST) {
+          try { this._ch.postMessage({ v: 1, changes: changes.slice(i, i + MAX_POST) }); } catch (_) {}
         }
       }
     }
 
     // _listen joins the origin-wide channel for this database. Any
     // same-origin script can post on a BroadcastChannel, so a message
-    // naming an undeclared store or an unknown op is dropped whole.
+    // of the wrong shape (version, size, an unknown op) is dropped
+    // whole. A store this tab does not declare is skipped, not fatal:
+    // a tab on a newer deploy writes stores an older tab lacks, and the
+    // older tab must still hear the stores it has.
     _listen() {
       if (this._ch || typeof BroadcastChannel !== 'function') return;
       this._ch = new BroadcastChannel(PREFIX + 'localdb.' + this.name);
       this._ch.onmessage = (e) => {
         const m = e.data;
-        if (m && m.v === 1 && Array.isArray(m.changes) && m.changes.length <= 1000 &&
-            m.changes.every((c) => c && has(this._sp.stores, c.store) && OPS.includes(c.op))) {
-          this._emit(m.changes.map((c) => ({ store: c.store, op: c.op, key: c.key })), 'remote');
-        }
+        if (!m || m.v !== 1 || !Array.isArray(m.changes) || m.changes.length > MAX_POST ||
+            !m.changes.every((c) => c && typeof c.store === 'string' && OPS.includes(c.op))) return;
+        const known = m.changes.filter((c) => has(this._sp.stores, c.store));
+        if (known.length) this._emit(known.map((c) => ({ store: c.store, op: c.op, key: c.key })), 'remote');
       };
     }
 

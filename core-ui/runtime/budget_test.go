@@ -1129,8 +1129,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// outside core qualifies: it ships in a binary only when its
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
-		// core-ui/localdb's on-request API module, 3420 measured at
-		// landing (2 clearance). Not in core-ui/runtime and never
+		// core-ui/localdb's on-request API module, 3577 measured (2
+		// clearance). 3420 at landing; the second review round added
+		// the late-body rejection in tx, closing a connection a failed
+		// re-check would leak, broadcasting bulk transactions in
+		// slices, and hearing a newer deploy's mixed messages. Not in core-ui/runtime and never
 		// marker-loaded: only an app that imports core-ui/localdb
 		// carries it, and only a page that calls
 		// __gofastr.loadModule('localdb') (an app script, or
@@ -1142,7 +1145,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// with its forged-message guard, and the monotonic UUIDv7
 		// minter. Shrunk from 4211 by folding the single-op methods
 		// into one loop and dropping the error class.
-		"core-ui/localdb/localdb.js": 3422,
+		"core-ui/localdb/localdb.js": 3579,
 	}
 	sources, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
 	if err != nil {

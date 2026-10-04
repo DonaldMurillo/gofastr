@@ -99,7 +99,8 @@ func (e *BehaviorEntry) SourceHash() string { return e.sourceHash }
 type BehaviorOption func(*BehaviorEntry)
 
 // Markers declares the attribute selectors whose presence loads the
-// module. At least one is required. Each is "[data-x]" or
+// module. At least one is required, unless the module is OnRequest
+// (which takes none). Each is "[data-x]" or
 // "[data-x=\"v\"]": an attribute selector on a data- attribute, nothing
 // else, so the host can also match it in rendered HTML for preload.
 func Markers(selectors ...string) BehaviorOption {

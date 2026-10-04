@@ -34,6 +34,8 @@ var (
 		"gofastr-signals": true, "gofastr-signals-partial": true,
 		"gofastr-runtime-modules": true, "gofastr-behaviors": true,
 		"gofastr-compute-assets": true, "gofastr-catalog": true,
+		"gofastr-routes": true, "gofastr-embed-root": true,
+		"gofastr-embed-navigation-error": true,
 	}
 )
 
@@ -61,9 +63,11 @@ func RegisterDataBlock(id string, fn func() []byte) {
 }
 
 // DataBlocksHTML renders every registered data block as an inert
-// <script type="application/json"> element, sorted by id. The one
-// sequence that could end an inline script, "</", is escaped as
-// "<\/", which JSON reads back unchanged.
+// <script type="application/json"> element, sorted by id. Every "<" is
+// written as \u003c: that covers "</script>" and also "<!--", which
+// puts the HTML tokenizer into a state that swallows the rest of the
+// page. A "<" in valid JSON can only sit inside a string, where
+// \u003c reads back as the same character.
 func DataBlocksHTML() string {
 	mu.Lock()
 	blocks := make([]dataBlock, 0, len(dataBlocks))
@@ -78,7 +82,7 @@ func DataBlocksHTML() string {
 			continue
 		}
 		b.WriteString(`<script type="application/json" id="` + blk.id + `">`)
-		b.WriteString(strings.ReplaceAll(string(buf), `</`, `<\/`))
+		b.WriteString(strings.ReplaceAll(string(buf), `<`, `\u003c`))
 		b.WriteString(`</script>`)
 	}
 	return b.String()

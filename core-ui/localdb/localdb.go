@@ -36,6 +36,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
 
@@ -125,10 +126,10 @@ func KeyPath(path string) StoreOption {
 }
 
 // AutoKey makes the runtime mint a key when a record is written
-// without one: a UUIDv7 string (time-ordered, 74 random bits from
-// crypto.getRandomValues), so records created offline in two tabs
-// never collide and sort by creation. Requires a single-segment key
-// path.
+// without one: a UUIDv7 string (48-bit millisecond time, a 12-bit
+// counter that keeps one tab's keys in mint order, and 62 random bits
+// from crypto.getRandomValues), so records created in two tabs do not
+// collide and sort by creation. Requires a single-segment key path.
 func AutoKey() StoreOption {
 	return func(s *storeSpec) { s.AutoKey = true }
 }
@@ -267,22 +268,7 @@ func ManifestJSON() []byte {
 
 // validName is the name grammar shared with runtime modules and
 // compute assets: 1-64 bytes of lowercase letters, digits, '-' or '_'.
-func validName(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	for i := range len(name) {
-		c := name[i]
-		switch {
-		case c >= 'a' && c <= 'z':
-		case c >= '0' && c <= '9':
-		case c == '-' || c == '_':
-		default:
-			return false
-		}
-	}
-	return true
-}
+func validName(name string) bool { return compute.ValidName(name) }
 
 // checkKeyPath accepts dotted JavaScript identifiers ([A-Za-z_$][\w$]*
 // per segment, ASCII only), at most 128 bytes, and refuses the
