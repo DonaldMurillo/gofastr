@@ -695,6 +695,11 @@ func (b *Battery) handleWindowClosed(id string) {
 	if id == "main" {
 		return
 	}
+	// OpenWindow holds openMu until it registers the window. A close callback
+	// can arrive first during WebView startup, so wait on the same lock before
+	// removing the registration.
+	b.openMu.Lock()
+	defer b.openMu.Unlock()
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
 	delete(b.windows, id)
