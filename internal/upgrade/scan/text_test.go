@@ -2,6 +2,7 @@ package scan
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -37,4 +38,23 @@ func TestTextNeverGoOrCSS(t *testing.T) {
 		"s.css":   "/* data-cui-signal */\n",
 	}), n)
 	wantHits(t, res, n)
+}
+
+func TestTextSkipsMinifiedBundles(t *testing.T) {
+	// A vendored bundle packs a library onto one enormous line, and a
+	// .min.js name says the same thing up front. A hit in either is
+	// someone else's build: the host cannot act on it, so the matcher
+	// skips both and keeps the hand-written hit.
+	long := "var a=1;" + strings.Repeat("x", minifiedLineBytes) + "o.observe(document.body,{});\n"
+	n := &upgrade.Note{Find: upgrade.Find{Text: []upgrade.TextMatch{{
+		Glob:  "**/*.js",
+		Match: regexp.MustCompile(`\.observe\(\s*document`),
+	}}}}
+	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
+		"main.go":           "package main\n\nfunc main() {}\n",
+		"assets/map.js":     long,
+		"assets/lib.min.js": "o.observe(document.body,{});\n",
+		"assets/widget.js":  "const mo = new MutationObserver(f);\nmo.observe(document.body, {childList: true});\n",
+	}), n)
+	wantHits(t, res, n, "assets/widget.js:2:1 text \\.observe\\(\\s*document")
 }

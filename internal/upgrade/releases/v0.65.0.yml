@@ -4,9 +4,7 @@ notes:
   - change: Undeclared owner columns are auto-created
     breaking: false
     guidance: "An entity with Scope.OwnerField set but no matching field in Fields now gets a hidden read-only string column injected by entity.Define, and the next AutoMigrate adds it to the table. Before, the column never existed: creates persisted rows without an owner and scoped reads failed with no-such-column. Rows created while broken have an empty owner value and stay invisible to owner-scoped reads; backfill the column or delete them."
-    find:
-      uses:
-        - gofastr/framework/entity.ScopeConfig.OwnerField
+    nodetect: "the change bites an OwnerField with NO matching entry in Fields, an absence the scan cannot see; an OwnerField that names a declared field is the ordinary case, so a hit on every OwnerField says nothing. The next AutoMigrate adds the missing column, which is the signal to look for."
   - change: WithPublicOpenAPI() also serves /api/llm.md without a session
     breaking: false
     guidance: "The startup banner always claimed this; the route now matches it. The public route serves the full entity index, the same exposure class as the public /openapi.json. Without the option the route stays session-gated, and per-entity llm.md routes keep their own scope gates. If you enabled WithPublicOpenAPI but relied on /api/llm.md staying gated, drop the option."

@@ -180,7 +180,13 @@ hit read from a compile error is always an edit. The parser is strict:
 an unknown key, a regex that does not compile, a malformed symbol or a
 breaking `find:` note with no `hits:` fails the build's registry
 tests, never a user's upgrade. CI also refuses a `hits: review` note
-naming a symbol its own release removed.
+naming a symbol its own release removed. A review note earns its
+`find:` only when each hit is a place to decide something: a note
+whose condition is an absence (an entity declaring no posture, an
+owner field with no matching column), a fact of the database, or a
+rendering decision no spelling shows is a `nodetect:` note, because a
+hit on every ordinary use of a symbol says nothing the guidance does
+not.
 
 ```yaml
 # internal/upgrade/releases/v0.87.0.yml
@@ -289,7 +295,10 @@ Each matcher reads the code the way its language means it:
   nothing above reads (shell, JS). Go and CSS files are refused: their
   matchers read them structurally. So is a glob that would never
   match: a malformed segment, or `**` sharing a segment with other
-  characters.
+  characters. Minified builds are skipped, by name (`.min.js`,
+  `.min.css`, `.min.mjs`) and by line (a line over 1000 bytes): a hit
+  inside a vendored maplibre or monaco bundle points at code the app
+  did not write and cannot act on.
 
 When the app does not type-check against its current gofastr version
 (the `go.mod` was bumped first), the Go matchers fall back to the

@@ -249,23 +249,25 @@ func TestOldNotesOldSpellingHitsNewDoesNot(t *testing.T) {
 // their real import paths, the app uses them, and the typed matcher
 // hits — so a typo in any symbol spelling fails here.
 func TestOldGoAPINotesHitThroughStubKit(t *testing.T) {
-	t.Run("v0.29.0 App.Entity declarations", func(t *testing.T) {
-		n := oldNote(t, "v0.29.0", 0, "uses")
-		kit := map[string]string{"framework/app.go": `package framework
+	t.Run("v0.49.0 Registry.Get lookups", func(t *testing.T) {
+		// (The v0.29.0 App.Entity note this case drove became nodetect
+		// on 2026-10-04: its condition is an absence of posture, and a
+		// hit on every entity said nothing. Registry.Get is the same
+		// method-member shape.)
+		n := oldNote(t, "v0.49.0", 3, "uses")
+		kit := map[string]string{"framework/registry.go": `package framework
 
-type EntityConfig struct{ Public bool }
+type Registry struct{}
 
-type App struct{}
-
-func (a *App) Entity(name string, cfg EntityConfig) *App { return a }
+func (r *Registry) Get(name string) (any, error) { return nil, nil }
 `}
 		app := scantest.App(t, map[string]string{"main.go": `package main
 
 import "github.com/DonaldMurillo/gofastr/framework"
 
 func main() {
-	app := &framework.App{}
-	app.Entity("tasks", framework.EntityConfig{})
+	reg := &framework.Registry{}
+	_, _ = reg.Get("tasks")
 }
 `}, scantest.Options{Kit: kit})
 		res := scantest.Run(t, app, []*upgrade.Note{n}, upgrade.MarkerSinks{})
@@ -273,8 +275,8 @@ func main() {
 			t.Fatalf("app did not type-check: %v", res.Unexplained)
 		}
 		got := scantest.Hits(res, n)
-		if len(got) != 1 || !strings.HasSuffix(got[0], "framework.App.Entity") {
-			t.Fatalf("hits = %v, want framework.App.Entity", got)
+		if len(got) != 1 || !strings.HasSuffix(got[0], "framework.Registry.Get") {
+			t.Fatalf("hits = %v, want framework.Registry.Get", got)
 		}
 	})
 
@@ -495,10 +497,10 @@ func TestOldNodetectNotesJustified(t *testing.T) {
 		"v0.3.0": 6, "v0.4.0": 0, "v0.5.0": 1, "v0.6.0": 2,
 		"v0.7.0": 1, "v0.11.0": 0, "v0.12.0": 1, "v0.13.0": 2,
 		"v0.16.0": 0, "v0.21.0": 1, "v0.23.0": 0, "v0.26.0": 1,
-		"v0.27.0": 0, "v0.29.0": 1, "v0.30.0": 1, "v0.31.0": 2,
+		"v0.27.0": 0, "v0.29.0": 2, "v0.30.0": 1, "v0.31.0": 2,
 		"v0.32.0": 3, "v0.35.0": 1, "v0.36.0": 1, "v0.38.0": 0,
 		"v0.40.0": 1, "v0.43.0": 4, "v0.45.0": 5, "v0.46.0": 1,
-		"v0.47.0": 1, "v0.48.0": 5, "v0.49.0": 3, "v0.50.0": 0,
+		"v0.47.0": 1, "v0.48.0": 6, "v0.49.0": 3, "v0.50.0": 0,
 		"v0.52.0": 1, "v0.53.0": 0, "v0.54.0": 2, "v0.55.0": 5,
 	}
 	for _, rel := range reg.Releases {

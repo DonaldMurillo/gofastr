@@ -271,6 +271,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
+- **`gofastr upgrade` reports fewer review-tier hits.** Five registry
+  notes whose matcher was a bare symbol every app uses (`App.Entity`,
+  `WithReadHooks`, the field `Default`, the v0.65 owner-column and the
+  v0.68 `migrate repair` notes) now carry a `nodetect` reason instead of
+  a `find`, and the text matcher skips `*.min.*` files and lines over
+  1000 bytes, so a vendored minified bundle no longer produces hits.
 - **BREAKING: every class and attribute carries the prefix of the
   tree that defines it** (#467). The kernel's attribute vocabulary is
   `data-cui-*`: every `data-fui-*` the runtime read is renamed
