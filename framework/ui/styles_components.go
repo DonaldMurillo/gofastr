@@ -447,19 +447,26 @@ func formFieldCSS(_ style.Theme) string {
   color: var(--color-danger, #DC2626);
 }
 .fui-field__hint,
-.fui-field__error {
+.fui-field__error,
+.fui-field > [data-hui-field-error] {
   grid-column: var(--fui-field-message-column);
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
 }
 .fui-field__hint { color: var(--color-text-muted, #52525B); }
-.fui-field__error { color: var(--color-danger, #DC2626); }
+/* The hook alias dresses the paragraph the runtime's form-errors module
+   adds live to a field that shipped no error node: the module names the
+   headless hook, never this class, so the class rule alone would leave
+   a live error unstyled. */
+.fui-field__error,
+.fui-field > [data-hui-field-error] { color: var(--color-danger, #DC2626); }
 /* A reserved error node (headless.FieldProps.ReserveError) ships empty
    so a script can fill it without re-rendering. Empty, it must not
    take a grid row: the row gap under every reserved field would be
    space reserved for words that are not there. It returns the moment
    anything is written into it, because :empty stops matching. */
-.fui-field__error:empty { display: none; }
+.fui-field__error:empty,
+.fui-field > [data-hui-field-error]:empty { display: none; }
 .fui-input {
   /* Fill the field track: the control track is minmax(0, 1fr), so an
      unsized <input> otherwise keeps its intrinsic ~20ch width

@@ -439,11 +439,15 @@ func toggleCSS(_ style.Theme) string {
   justify-items: start;
 }
 .fui-choice-field__error,
-.fui-choice-field__hint {
+.fui-choice-field__hint,
+.fui-choice + [data-hui-field-error] {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
 }
-.fui-choice-field__error { color: var(--color-danger, #DC2626); }
+/* The hook alias dresses the paragraph the runtime's form-errors module
+   places after a bare choice (see the field sheet's twin). */
+.fui-choice-field__error,
+.fui-choice + [data-hui-field-error] { color: var(--color-danger, #DC2626); }
 .fui-choice-field__hint { color: var(--color-text-muted, #52525B); }
 
 /* ─── Choice groups: a real fieldset, laid out as a stack of rows. ─── */

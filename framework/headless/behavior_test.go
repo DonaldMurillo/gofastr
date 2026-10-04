@@ -246,6 +246,9 @@ var adapterHooks = map[string]string{
 }
 
 var hostHooks = map[string]string{
+	"data-hui-field":          "the field group's name for the kernel's form-errors module (core-ui/runtime/src/formerrors.js), which places a refused submission's messages by hook, never by kit class",
+	"data-hui-field-error":    "the field's error node, rendered filled or reserved, or added live by the kernel's form-errors module with the value \"live\"; the kit's sheet styles the hook",
+	"data-hui-choice":         "a bare choice's root for the kernel's form-errors module: the message lands after the label, where the errored kit render puts it",
 	"data-hui-lightbox":       "the viewer's identity on an unwired render: what a host's own viewer module resolves the open viewer by",
 	"data-hui-lightbox-nav":   "the nav opt-in on an unwired render: for a host module that steps the gallery group itself",
 	"data-hui-lightbox-image": "the zoom target on an unwired render: the image a host's own gesture handling owns, named by attribute so no class selector is needed",

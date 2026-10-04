@@ -3285,9 +3285,9 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	}
 	var hasFlash bool
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.querySelector('.kiln-panel-copy').classList.contains('fui-copied')`, &hasFlash))
+		`document.querySelector('.kiln-panel-copy').closest('[data-hui-copy]').getAttribute('data-hui-copy-state') === 'done'`, &hasFlash))
 	if !hasFlash {
-		t.Errorf("expected .fui-copied flash class on copy button after click")
+		t.Errorf("expected data-hui-copy-state=\"done\" on the copy wrapper after click")
 	}
 }
 

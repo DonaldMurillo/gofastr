@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	_ "embed"
 	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -16,8 +17,19 @@ import (
 //
 // Search input with a search icon prefix and a clear button suffix.
 // Optionally wraps in a <form role="search"> when Action is set.
-// Runtime JS (core-ui/runtime/src/searchinput.js) handles show/hide
-// of the clear button and clearing the input on click.
+// searchinput.js, registered below as this package's own behaviour,
+// shows and hides the clear button and clears the input on click or
+// Escape. It binds the component's classes, which is why it lives
+// here and not in the kernel: core-ui/runtime names no kit class.
+
+//go:embed searchinput.js
+var searchInputJS string
+
+// SearchInput has no headless counterpart by binding decision, so the
+// module that drives it is framework/ui's, the filedropzone shape: the
+// kernel demand-loads it when the marker is on the page, and the
+// component's classes stay the component's to rename.
+var _ = registry.RegisterBehavior("searchinput", searchInputJS, registry.Markers(`[data-cui-comp="ui-search-input"]`))
 
 // SearchInputConfig configures a SearchInput.
 type SearchInputConfig struct {

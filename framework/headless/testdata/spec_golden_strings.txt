@@ -104,11 +104,11 @@ without dots or arrows the track and the status are the whole contract, and the 
 
 === Choice / checkbox with a hint ===
 the label WRAPS the control, so the hit area is the whole row and there is no for/id pair left to go stale
-<label><input data-fui-internal="" name="prune" type="checkbox" value="1"><span data-fui-internal="">Prune old images<span>Keeps the last three builds.</span></span></label>
+<label data-hui-choice=""><input data-cui-internal="" name="prune" type="checkbox" value="1"><span data-cui-internal="">Prune old images<span>Keeps the last three builds.</span></span></label>
 
 === Choice / radio ===
 a real radio, so one arrow key moves through the set and the browser enforces that exactly one is chosen
-<label><input data-fui-internal="" name="policy" type="radio" value="always"><span data-fui-internal="">Always</span></label>
+<label data-hui-choice=""><input data-cui-internal="" name="policy" type="radio" value="always"><span data-cui-internal="">Always</span></label>
 
 === Cluster / default ===
 a row of controls is what the component is for, and it wraps by default — a row that cannot wrap is a row that overflows a phone
@@ -124,7 +124,7 @@ justify-between puts the destructive action at the far end from the safe one —
 
 === Color / swatch ===
 a colour input is useless alone to anyone who cannot see it, so the hex value stays beside it as text that can be read and typed — inside a Field, so the value is a labelled setting and not a bare control
-<div><label data-fui-internal="" for="color-accent">Accent colour</label><div data-hui-affix="" data-hui-color=""><input aria-label="&lt;PickColor accent&gt;" data-fui-internal="" data-hui-affix-swatch="" id="color-accent-picker" tabindex="-1" type="color" value="#10b981"><input autocapitalize="off" autocomplete="off" data-fui-internal="" data-hui-affix-input="" id="color-accent" name="accent" spellcheck="false" type="text" value="#10b981"></div></div>
+<div data-hui-field=""><label data-cui-internal="" for="color-accent">Accent colour</label><div data-hui-affix="" data-hui-color=""><input aria-label="&lt;PickColor accent&gt;" data-cui-internal="" data-hui-affix-swatch="" id="color-accent-picker" tabindex="-1" type="color" value="#10b981"><input autocapitalize="off" autocomplete="off" data-cui-internal="" data-hui-affix-input="" id="color-accent" name="accent" spellcheck="false" type="text" value="#10b981"></div></div>
 
 === Combobox / a static combobox ===
 the options are real content the server rendered, the input owns the keyboard, and no script is needed to read the list
@@ -136,7 +136,7 @@ the results region is bound to the island's signal, and the no-script path is th
 
 === ConditionalField / shown when the watched field matches ===
 rendered visible with no hidden attribute, because a field only script can reveal is a field a scriptless reader never reaches — the runtime hides it when the watched field does not match, and not before
-<label><input data-fui-internal="" name="notify" type="radio" value="webhook"><span data-fui-internal="">Webhook</span></label><div data-hui-when="notify" data-hui-when-value="webhook"><div><label data-fui-internal="" for="cond-webhook-url">Webhook URL</label><input id="cond-webhook-url" name="webhook-url" type="text"></div></div>
+<label data-hui-choice=""><input data-cui-internal="" name="notify" type="radio" value="webhook"><span data-cui-internal="">Webhook</span></label><div data-hui-when="notify" data-hui-when-value="webhook"><div data-hui-field=""><label data-cui-internal="" for="cond-webhook-url">Webhook URL</label><input id="cond-webhook-url" name="webhook-url" type="text"></div></div>
 
 === Container / reading measure ===
 the default is the measure a page of prose reads at — line length is readability, decided here once so no page has to remember to ask for it
@@ -216,35 +216,35 @@ a search that matched nothing names the absence after itself; with no explicit I
 
 === Field / hinted ===
 the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives
-<div><label data-fui-internal="" for="field-port">Port</label><input aria-describedby="field-port-hint" id="field-port" name="field-port" type="text"><p data-fui-internal="" id="field-port-hint">1–65535</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="field-port">Port</label><input aria-describedby="field-port-hint" id="field-port" name="field-port" type="text"><p data-cui-internal="" id="field-port-hint">1–65535</p></div>
 
 === Field / errored ===
 the error JOINS the hint in the description, ahead of it: the hint is the rule the value must obey and the error is the violation, so dropping the rule exactly when it was broken is dropping it when it is needed most — and the correction is read first because it comes first
-<div><label data-fui-internal="" for="field-port-bad">Port</label><input aria-describedby="field-port-bad-error field-port-bad-hint" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p data-fui-internal="" id="field-port-bad-error" role="alert">Already in use.</p><p data-fui-internal="" id="field-port-bad-hint">1–65535</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="field-port-bad">Port</label><input aria-describedby="field-port-bad-error field-port-bad-hint" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-port-bad-error" role="alert">Already in use.</p><p data-cui-internal="" id="field-port-bad-hint">1–65535</p></div>
 
 === Field / reserved error node ===
 a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout
-<div><label data-fui-internal="" for="field-token-live">Token</label><input aria-describedby="field-token-live-error" id="field-token-live" name="field-token-live" type="text"><p data-fui-internal="" id="field-token-live-error" role="alert"></p></div>
+<div data-hui-field=""><label data-cui-internal="" for="field-token-live">Token</label><input aria-describedby="field-token-live-error" id="field-token-live" name="field-token-live" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-token-live-error" role="alert"></p></div>
 
 === Field / required ===
 required is a state the parser is told about, not a red asterisk — which is a picture of a rule
-<div><label data-fui-internal="" data-required="" for="app">App name</label><input id="app" name="app" required="" type="text"></div>
+<div data-hui-field=""><label data-cui-internal="" data-required="" for="app">App name</label><input id="app" name="app" required="" type="text"></div>
 
 === FieldRow / pair ===
 two fields side by side are still two fields: the row adds layout and no semantics, so nothing here is announced
-<div><div><label data-fui-internal="" for="from">From</label><input id="from" name="from" type="text"></div><div><label data-fui-internal="" for="to">To</label><input id="to" name="to" type="text"></div></div>
+<div><div data-hui-field=""><label data-cui-internal="" for="from">From</label><input id="from" name="from" type="text"></div><div data-hui-field=""><label data-cui-internal="" for="to">To</label><input id="to" name="to" type="text"></div></div>
 
 === Fieldset / a titled group ===
 a real legend in a real fieldset names every control inside without a single aria attribute — the native group semantic a wrapper div has to fake with labels nobody checks
-<fieldset aria-describedby="fieldset-notifications-desc"><legend data-fui-internal="">Notifications</legend><p data-fui-internal="" id="fieldset-notifications-desc">How this app tells you about deploys.</p><div><div><label data-fui-internal="" for="deploy-email">Deploy email</label><input id="deploy-email" name="deploy-email" type="text"></div><div><label data-fui-internal="" for="failure-email">Failure email</label><input id="failure-email" name="failure-email" type="text"></div></div></fieldset>
+<fieldset aria-describedby="fieldset-notifications-desc"><legend data-cui-internal="">Notifications</legend><p data-cui-internal="" id="fieldset-notifications-desc">How this app tells you about deploys.</p><div><div data-hui-field=""><label data-cui-internal="" for="deploy-email">Deploy email</label><input id="deploy-email" name="deploy-email" type="text"></div><div data-hui-field=""><label data-cui-internal="" for="failure-email">Failure email</label><input id="failure-email" name="failure-email" type="text"></div></div></fieldset>
 
 === Fieldset / a group error ===
 the error that belongs to the group as a whole is wired by aria-describedby on the group, so it is read with the question and never replaces a field's own error
-<fieldset aria-describedby="fieldset-access-error"><legend data-fui-internal="">Access</legend><p data-fui-internal="" id="fieldset-access-error">Pick at least one role.</p><div><div><label data-fui-internal="" for="role-admin">Admin</label><input id="role-admin" name="role-admin" type="text"></div></div></fieldset>
+<fieldset aria-describedby="fieldset-access-error"><legend data-cui-internal="">Access</legend><p data-cui-internal="" id="fieldset-access-error">Pick at least one role.</p><div><div data-hui-field=""><label data-cui-internal="" for="role-admin">Admin</label><input id="role-admin" name="role-admin" type="text"></div></div></fieldset>
 
 === Fieldset / no title ===
 a group with no name renders as a plain div: an unlabelled fieldset is a landmark that names nothing, and a screen reader announcing an empty group label is the alternative
-<div aria-describedby="misc-desc" id="misc"><p data-fui-internal="" id="misc-desc">The remaining settings.</p><div><div><label data-fui-internal="" for="retries">Retries</label><input id="retries" name="retries" type="text"></div></div></div>
+<div aria-describedby="misc-desc" id="misc"><p data-cui-internal="" id="misc-desc">The remaining settings.</p><div><div data-hui-field=""><label data-cui-internal="" for="retries">Retries</label><input id="retries" name="retries" type="text"></div></div></div>
 
 === FileUpload / with a hint ===
 the zone is a label around a real input, so the whole target opens the picker — and the call to action is styled text, because a button inside a label swallows the label's click
@@ -252,11 +252,11 @@ the zone is a label around a real input, so the whole target opens the picker �
 
 === Form / a create form ===
 the fields land in the body and the submits in the actions row, and the method defaults to post so a create never rides a GET a browser may repeat on its own
-<form action="/apps" aria-label="Create an app" method="post"><div><div><label data-fui-internal="" for="new-app-name">App name</label><input id="new-app-name" name="app-name" type="text"></div></div><div><button type="submit">Create app</button></div></form>
+<form action="/apps" aria-label="Create an app" method="post"><div><div data-hui-field=""><label data-cui-internal="" for="new-app-name">App name</label><input id="new-app-name" name="app-name" type="text"></div></div><div><button type="submit">Create app</button></div></form>
 
 === Form / after a failed submit ===
 errors set the hook that moves focus to the summary, so a screen reader hears what went wrong instead of sitting on an unchanged-looking page
-<form action="/apps" data-hui-form-errors="" method="post" novalidate=""><div aria-labelledby="form-dup-errors-title" id="form-dup-errors" role="alert" tabindex="-1"><h2 data-fui-internal="" id="form-dup-errors-title">&lt;ThereIsAProblem&gt;</h2><ul data-fui-internal=""><li><a href="#dup-app-name">That name is taken.</a></li></ul></div><div><div><label data-fui-internal="" for="dup-app-name">App name</label><input aria-describedby="dup-app-name-error" aria-invalid="true" id="dup-app-name" name="app-name" type="text"><p data-fui-internal="" id="dup-app-name-error" role="alert">That name is taken.</p></div></div><div><button type="submit">Create app</button></div></form>
+<form action="/apps" data-hui-form-errors="" method="post" novalidate=""><div aria-labelledby="form-dup-errors-title" id="form-dup-errors" role="alert" tabindex="-1"><h2 data-cui-internal="" id="form-dup-errors-title">&lt;ThereIsAProblem&gt;</h2><ul data-cui-internal=""><li><a href="#dup-app-name">That name is taken.</a></li></ul></div><div><div data-hui-field=""><label data-cui-internal="" for="dup-app-name">App name</label><input aria-describedby="dup-app-name-error" aria-invalid="true" id="dup-app-name" name="app-name" type="text"><p data-cui-internal="" data-hui-field-error="" id="dup-app-name-error" role="alert">That name is taken.</p></div></div><div><button type="submit">Create app</button></div></form>
 
 === Form / with a file upload ===
 multipart sets the encoding a file input needs, because without it the browser submits the file's name and no contents, which looks like a server bug and is not one
@@ -272,7 +272,7 @@ a caller's href replaces the full-image fallback per item, and an unsafe one deg
 
 === Gallery / a gallery wired to a lightbox ===
 the click opens the named overlay through the widget runtime's open contract, and the anchor keeps the full-image href for a reader with no script
-<ul aria-label="Shots"><li data-fui-internal=""><figure><a data-fui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview" data-fui-lightbox-group="docs-gallery" data-fui-open="docs" href="/one.png"><img alt="The dashboard" height="150" src="/one.png" width="200"></a><figcaption>Overview</figcaption></figure></li></ul>
+<ul aria-label="Shots"><li data-cui-internal=""><figure><a data-cui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview" data-cui-open="docs" data-fui-lightbox-group="docs-gallery" href="/one.png"><img alt="The dashboard" height="150" src="/one.png" width="200"></a><figcaption>Overview</figcaption></figure></li></ul>
 
 === Grid / minimum column and gap ===
 Min is a floor — a column never gets narrower than the named step before the grid gives one up — and the name is what keeps the floor wired: the framework's Grid took a free-form Min that nothing read, so every auto-fit grid was the default width whatever its author asked
@@ -280,27 +280,27 @@ Min is a floor — a column never gets narrower than the named step before the g
 
 === Group / radio set ===
 the legend is the question the choices answer — without it a screen reader reads three labels and never says what is being decided
-<fieldset><legend data-fui-internal="">Restart policy</legend><label><input data-fui-internal="" name="policy" type="radio" value="always"><span data-fui-internal="">Always</span></label><label><input data-fui-internal="" name="policy" type="radio" value="failure"><span data-fui-internal="">On failure</span></label></fieldset>
+<fieldset><legend data-cui-internal="">Restart policy</legend><label data-hui-choice=""><input data-cui-internal="" name="policy" type="radio" value="always"><span data-cui-internal="">Always</span></label><label data-hui-choice=""><input data-cui-internal="" name="policy" type="radio" value="failure"><span data-cui-internal="">On failure</span></label></fieldset>
 
 === Group / required set ===
 the cue and the rule are two different things: data-required on the legend is what a sighted reader looks for, and the required attribute on a leaf is what the browser enforces — a group carrying only one of them is a group that either lies or looks optional
-<fieldset><legend data-fui-internal="" data-required="">Plan</legend><label><input data-fui-internal="" name="plan" required="" type="radio" value="free"><span data-fui-internal="">Free</span></label><label><input data-fui-internal="" name="plan" type="radio" value="pro"><span data-fui-internal="">Pro</span></label></fieldset>
+<fieldset><legend data-cui-internal="" data-required="">Plan</legend><label data-hui-choice=""><input data-cui-internal="" name="plan" required="" type="radio" value="free"><span data-cui-internal="">Free</span></label><label data-hui-choice=""><input data-cui-internal="" name="plan" type="radio" value="pro"><span data-cui-internal="">Pro</span></label></fieldset>
 
 === Input / described ===
 the description it is handed is written out: six of the eight text controls once accepted DescribedBy and dropped it, so the field wired a relationship to an attribute nobody rendered — here the control sits in a Field the way a page would use it, and the hint arrives through that relationship
-<div><label data-fui-internal="" for="input-port">Port</label><input aria-describedby="input-port-hint" id="input-port" name="port" type="text" value="8080"><p data-fui-internal="" id="input-port-hint">1–65535</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="input-port">Port</label><input aria-describedby="input-port-hint" id="input-port" name="port" type="text" value="8080"><p data-cui-internal="" id="input-port-hint">1–65535</p></div>
 
 === Input / invalid ===
 aria-invalid is the state; the red border is the picture of it
-<div><label data-fui-internal="" for="input-port-bad">Port</label><input aria-describedby="input-port-bad-error" aria-invalid="true" id="input-port-bad" name="port" type="text"><p data-fui-internal="" id="input-port-bad-error" role="alert">Already in use.</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="input-port-bad">Port</label><input aria-describedby="input-port-bad-error" aria-invalid="true" id="input-port-bad" name="port" type="text"><p data-cui-internal="" data-hui-field-error="" id="input-port-bad-error" role="alert">Already in use.</p></div>
 
 === InputGroup / an input with a button ===
 with no label the group is a plain div, because wrapping labelled controls in a group with a third name makes a screen reader read the group name before each one
-<div><div><label data-fui-internal="" for="jump-app">Jump to app</label><input id="jump-app" name="app" type="text" value="registry app"><p data-fui-internal="" id="jump-app-hint">Jump to an app in this cluster.</p></div><button type="submit">Go</button></div>
+<div><div data-hui-field=""><label data-cui-internal="" for="jump-app">Jump to app</label><input id="jump-app" name="app" type="text" value="registry app"><p data-cui-internal="" id="jump-app-hint">Jump to an app in this cluster.</p></div><button type="submit">Go</button></div>
 
 === InputGroup / two focusable things ===
 a group holding more than one focusable control takes a role and a name, so it appears in the landmark list as one identifiable control
-<div aria-label="Webhook URL and port" role="group"><div><label data-fui-internal="" for="hook-host">Host</label><input id="hook-host" name="host" type="text" value="app.example.com"></div><div><label data-fui-internal="" for="hook-port">Port</label><input id="hook-port" name="port" type="text" value="30000"></div></div>
+<div aria-label="Webhook URL and port" role="group"><div data-hui-field=""><label data-cui-internal="" for="hook-host">Host</label><input id="hook-host" name="host" type="text" value="app.example.com"></div><div data-hui-field=""><label data-cui-internal="" for="hook-port">Port</label><input id="hook-port" name="port" type="text" value="30000"></div></div>
 
 === JSONTree / an object tree ===
 every collection is a native details, so the tree collapses and expands with no script
@@ -320,7 +320,7 @@ the minimum a viewer is: a named image and its accessible name, nothing optional
 
 === LightboxViewer / framework wiring ===
 the binder's spellings instead of the hooks: the same identity, nav opt-in, buttons and zoom target as data-fui-lightbox*, for the framework module a styled lightbox ships — the hui twins are suppressed here; they render exactly when the host's own module is the intended binder
-<div data-fui-lightbox="photos" data-fui-lightbox-nav="true"><figure data-fui-internal=""><span data-fui-signal="alt" data-fui-signal-mode="text" id="photos-title">&lt;LightboxViewerLabel&gt;</span><img data-fui-lightbox-image="" data-fui-signal="src" data-fui-signal-attr="src" data-fui-signal-mode="attr"></figure><div><button aria-label="&lt;LightboxPrevious&gt;" data-fui-internal="" data-fui-lightbox-prev="photos" type="button"></button><button aria-label="&lt;LightboxNext&gt;" data-fui-internal="" data-fui-lightbox-next="photos" type="button"></button><a aria-label="&lt;LightboxDownload&gt;" data-fui-internal="" data-fui-signal="src" data-fui-signal-attr="href" data-fui-signal-mode="attr" download=""></a></div></div>
+<div data-fui-lightbox="photos" data-fui-lightbox-nav="true"><figure data-cui-internal=""><span data-cui-signal="alt" data-cui-signal-mode="text" id="photos-title">&lt;LightboxViewerLabel&gt;</span><img data-cui-signal="src" data-cui-signal-attr="src" data-cui-signal-mode="attr" data-fui-lightbox-image=""></figure><div><button aria-label="&lt;LightboxPrevious&gt;" data-cui-internal="" data-fui-lightbox-prev="photos" type="button"></button><button aria-label="&lt;LightboxNext&gt;" data-cui-internal="" data-fui-lightbox-next="photos" type="button"></button><a aria-label="&lt;LightboxDownload&gt;" data-cui-internal="" data-cui-signal="src" data-cui-signal-attr="href" data-cui-signal-mode="attr" download=""></a></div></div>
 
 === Menu / a summary menu ===
 the summary is a real controller and every row is a real command with no script; the module adds the keyboard contract on top
@@ -436,7 +436,7 @@ a trigger beyond every host (a toolbar above the panes) drives the host its data
 
 === Password / revealable ===
 the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class
-<div><label data-fui-internal="" for="password-token">Registry token</label><div data-hui-affix=""><input data-fui-internal="" data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="&lt;ShowPassword&gt;" aria-pressed="false" data-fui-internal="" data-hui-hide-label="&lt;HidePassword&gt;" data-hui-hide-text="&lt;RevealHide&gt;" data-hui-reveal="" data-hui-show-label="&lt;ShowPassword&gt;" data-hui-show-text="&lt;RevealShow&gt;" type="button">&lt;RevealShow&gt;</button></div></div>
+<div data-hui-field=""><label data-cui-internal="" for="password-token">Registry token</label><div data-hui-affix=""><input data-cui-internal="" data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="&lt;ShowPassword&gt;" aria-pressed="false" data-cui-internal="" data-hui-hide-label="&lt;HidePassword&gt;" data-hui-hide-text="&lt;RevealHide&gt;" data-hui-reveal="" data-hui-show-label="&lt;ShowPassword&gt;" data-hui-show-text="&lt;RevealShow&gt;" type="button">&lt;RevealShow&gt;</button></div></div>
 
 === Progress / a determinate bar ===
 the native element carries the value and the maximum; the component's whole job is the name and the clamp that keeps the fraction honest
@@ -624,7 +624,7 @@ a stack of one is still a stack: the element is the seam the second block arrive
 
 === StatCard / with a trend ===
 label before value, and the trend's direction carried by its own words — the colour the class map paints from Direction is emphasis, never the only carrier
-<div><p data-fui-internal="">Active users</p><p data-fui-internal="">12,483</p><p data-direction="up" data-fui-internal="">+12% vs. last week</p></div>
+<div><p data-cui-internal="">Active users</p><p data-cui-internal="">12,483</p><p data-cui-internal="" data-direction="up">+12% vs. last week</p></div>
 
 === StatCard / the number alone ===
 a card with no trend renders without one, and the label still arrives before the value it names
@@ -656,7 +656,7 @@ a step that is done is somewhere the reader may want to return to, and the link 
 
 === Switch / on ===
 a checkbox that says role=switch: it submits like a checkbox and is announced as on or off rather than checked or unchecked
-<label><input checked="" data-fui-internal="" name="auto" role="switch" type="checkbox"><span data-fui-internal="">Restart automatically</span></label>
+<label data-hui-choice=""><input checked="" data-cui-internal="" name="auto" role="switch" type="checkbox"><span data-cui-internal="">Restart automatically</span></label>
 
 === SystemBanner / deploy in progress ===
 a message about the system, shown by the server's own render: role=status so it waits its turn, one action, and the tone said in words as well as drawn in colour
@@ -740,7 +740,7 @@ the value is the element's text, not an attribute — which is why it is the one
 
 === Textarea / growing ===
 autogrow is the one core-runtime hook a control here renders — the behaviour belongs to the control, and the prop is the only seam that survives the prefix refusal
-<div><label data-fui-internal="" for="notes-grow">Release notes</label><textarea data-fui-autogrow="" id="notes-grow" name="notes">Grows to fit whatever is typed.</textarea></div>
+<div data-hui-field=""><label data-cui-internal="" for="notes-grow">Release notes</label><textarea data-cui-autogrow="" id="notes-grow" name="notes">Grows to fit whatever is typed.</textarea></div>
 
 === Timeline / history ===
 an event with no tone is the ordinary case and draws an untinted marker; ordered, because the order is the content: a screen reader announces the count and the position, so "3 of 7" locates you in the history without seeing the line down the left

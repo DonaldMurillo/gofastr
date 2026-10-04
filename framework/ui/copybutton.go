@@ -20,8 +20,8 @@ import (
 // The headless-feedback module's [data-hui-copy] reader performs the
 // clipboard write; this component adds:
 //
-//   - Visible label/copied-label swap driven by the `.fui-copied`
-//     class the module toggles for 1.2s.
+//   - Visible label/copied-label swap keyed on the wrapper's
+//     data-hui-copy-state="done", which the module holds for 1.2s.
 //   - A visually-hidden role="status" sibling the module populates
 //     through data-hui-copy-status on success so screen-reader users
 //     hear "Copied" without focus-loss.
@@ -165,7 +165,8 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		btnAttrs["aria-label"] = cfg.AriaLabel
 	}
 
-	// Visible labels (one shown via CSS at a time based on .fui-copied).
+	// Visible labels (CSS shows one at a time from the wrapper's
+	// data-hui-copy-state).
 	var inner []render.HTML
 	if !cfg.IconOnly {
 		inner = []render.HTML{
@@ -261,10 +262,10 @@ func copyButtonCSS(_ style.Theme) string {
 /* Success tint mixes the theme's own success color over the surface, so it
    adapts to light and dark schemes alike (--color-success-bg was never a real
    token; its light fallback always applied). */
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied .fui-copy-btn__label { display: none; }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: 6px 10px; }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: 6px 10px; }
 /* The icon glyph: one line-box tall so the aria-hidden ⧉ never stretches
    the icon-only button past the touch target the base rule sets. */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn__icon {

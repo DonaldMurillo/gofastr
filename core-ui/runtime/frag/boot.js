@@ -416,9 +416,7 @@
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-cui-autogrow]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
-    { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
-    // SearchInput: clear button visibility + input clearing.
-    { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
+    { name: 'dragdismiss', selector: '[data-cui-drag-dismiss="true"]' },
     // Dropdown: click-toggle + click-outside dismiss + Esc close.
     { name: 'dropdown',         selector: '[data-cui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.

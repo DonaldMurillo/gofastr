@@ -210,10 +210,8 @@ var fragmentAttrs = map[string][]string{
 //
 // Modules that own zero data-cui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); searchinput (triggered by its
-// data-fui-comp CSS marker, which kernel owns, and otherwise driven
-// by rpc/signals); widgetfocus and
-// widgetlinks (triggered by internal JS markers, not data-fui-* at all);
+// fragment. See fragments note); widgetfocus and
+// widgetlinks (triggered by internal JS markers, not data-cui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);
 // actionloader (triggered by the __gofastr_actions manifest global and

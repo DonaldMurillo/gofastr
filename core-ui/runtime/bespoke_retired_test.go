@@ -32,9 +32,13 @@ import (
 // 3a: scrollspy and toc with the Rail and TableOfContents move (the
 // observer is headless-rail's, the list is server-rendered), disclosure
 // and menu with the Disclosure and Menu move. The retention list grows
-// to hold searchinput (SearchInput stays a styled wrapper), shortcut
-// (Batch 3 family 3 owns its move), multiselect and filedropzone (the
-// preview enhancer framework/ui keeps).
+// to hold shortcut (Batch 3 family 3 owns its move), multiselect and
+// filedropzone (the preview enhancer framework/ui keeps). searchinput
+// left the kernel last: SearchInput is still a styled wrapper by
+// binding decision, but its module binds the component's own classes,
+// so it is framework/ui's registered behaviour now (searchinput.js
+// beside the component, the filedropzone shape) and the kernel names
+// no kit class.
 var retiredModuleNames = []string{
 	"conditionalfield", "fileupload", "dropzone",
 	"numberinput", "slider", "rangeslider", "taginput", "formrepeater",
@@ -82,17 +86,16 @@ func TestBespokeBehaviourModulesAreRetired(t *testing.T) {
 			t.Errorf("the registered behaviour %q is still live — the headless action module owns the button; delete the adapter's registration with its source", gone)
 		}
 	}
-	// The retention, held as hard as the retirement: SearchInput is a
-	// styled wrapper by binding decision, the only pattern-era module
-	// still served. Either name going missing is a silent break, not a
-	// cleanup.
-	// (filedropzone is a REGISTERED behaviour framework/ui owns, not an
-	// embedded module: this binary does not link framework/ui, so its
-	// retention is pinned where it registers — framework/ui's own
-	// behaviour tests.)
-	for _, kept := range []string{"searchinput"} {
-		if _, ok := Module(kept); !ok {
-			t.Errorf("%s is no longer served — it is retained on purpose (SearchInput is a styled wrapper); restore it or change the binding decision with it", kept)
+	// No pattern-era module is retained in the kernel any more.
+	// searchinput and filedropzone are REGISTERED behaviours
+	// framework/ui owns: Module() still serves them by name (a
+	// registered behaviour is a module from the URL down), so the pin
+	// here is that neither is an embedded kernel source, and their
+	// retention is pinned where they register, in framework/ui's own
+	// behaviour tests (TestOwnModulesAreRegistered).
+	for _, moved := range []string{"searchinput", "filedropzone"} {
+		if _, ok := embeddedModule(moved); ok {
+			t.Errorf("%s is embedded in the kernel again — framework/ui registers it beside the component it drives; the kernel names no kit class", moved)
 		}
 	}
 }

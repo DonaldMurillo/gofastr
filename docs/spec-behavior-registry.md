@@ -19,8 +19,9 @@ cutover: `headless` (the original), `headless-controls`,
 `headless-combobox`, `headless-tabs`, `headless-carousel`,
 `headless-panehost`, `headless-sidebar`. Retired with them, their
 `core-ui/runtime/src` fragments deleted: scrollspy, toc, disclosure,
-menu, combobox, tabs, carousel, panehost, sidebar (searchinput and
-multiselect stay, widgets-owned). Implements the direction
+menu, combobox, tabs, carousel, panehost, sidebar (multiselect stays,
+widgets-owned; searchinput moved to framework/ui as a registered
+behaviour with the cui/hui/fui prefix split). Implements the direction
 from the runtime exploration: the browser runtime is composed on the fly
 per page and loads its features lazily, and a component's behaviour is
 registered by the package that renders its markup, the way its

@@ -209,10 +209,11 @@ func erroredRun(run render.HTML, helpText, errText, id string) render.HTML {
 	case errText != "":
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run,
 			render.Tag("p", map[string]string{
-				"id":                id + "-error",
-				"class":             "fui-choice-field__error",
-				"role":              "alert",
-				"data-fui-internal": "",
+				"id":                   id + "-error",
+				"class":                "fui-choice-field__error",
+				"role":                 "alert",
+				"data-cui-internal":    "",
+				"data-hui-field-error": "",
 			}, render.Text(errText)))
 	case helpText != "":
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run,

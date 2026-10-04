@@ -252,8 +252,9 @@ nothing hidden submits); `ui.TextArea` is `headless.Field` +
 the control through the prop that survives the data-cui-* refusal.
 `ui.SearchInput` has no headless counterpart (the icon, the clear
 button and the role="search" wrap are its own) and keeps its own
-module; the `searchinput` and `shortcut` runtime modules stay with it
-until the Batch 3 Combobox decision — retention, not a gap.
+module, registered from framework/ui (`searchinput.js` beside the
+component) the way FileDropzone's is: it binds the component's
+classes, so it is the kit's and not the kernel's.
 
 The stateful family renders through this package the same way, and
 its Island rules are the same rule: a `TagInput` owns its chips
@@ -477,7 +478,10 @@ same way and each owning one family of the stateful controls:
 
 Two attributes are the `headless` module's own, written by it and
 rendered by no component: `data-hui-when-off` and `data-hui-drop-over`.
-One is `headless-navigation`'s: `data-hui-back-to-top-visible`.
+One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
+`headless-feedback`'s: `data-hui-copy-state="done"` on a copy control
+after a successful copy, and `data-hui-toast-leaving` on a toast item
+the moment it is dismissed; the kit's sheets style both.
 
 Two more modules of this package own the feedback and page-control
 families:

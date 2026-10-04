@@ -270,7 +270,7 @@ func widgetCSS() string {
 		).
 		Pseudo(":hover", "background", "rgba(255, 255, 255, 0.08)").
 		End()
-	ss.Rule(".kiln-panel-copy.fui-copied").
+	ss.Rule(`[data-hui-copy-state="done"] .kiln-panel-copy`).
 		Set("background", "rgba(110, 220, 150, 0.20)", "color", "rgba(140, 230, 170, 0.95)").
 		End()
 

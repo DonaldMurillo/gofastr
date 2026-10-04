@@ -32,15 +32,14 @@ var demandLoadMarkers = []demandLoadMarker{
 	// every session-bearing page carries.
 	{"data-island", "sse"},
 	{"data-hui-system-offline", "sse"},
-	{"data-fui-widget", "widgets"},
-	{"data-fui-open", "widgets"},
-	{"data-fui-autogrow", "textarea"},
-	{`data-fui-comp="ui-search-input"`, "searchinput"},
-	{"data-fui-dropdown-wrap", "dropdown"},
-	{"data-fui-reveal", "reveal"},
-	{"data-fui-animate-signal", "animate"},
-	{"data-fui-drag-dismiss", "dragdismiss"},
-	{"data-fui-poll", "poll"},
+	{"data-cui-widget", "widgets"},
+	{"data-cui-open", "widgets"},
+	{"data-cui-autogrow", "textarea"},
+	{"data-cui-dropdown-wrap", "dropdown"},
+	{"data-cui-reveal", "reveal"},
+	{"data-cui-animate-signal", "animate"},
+	{"data-cui-drag-dismiss", "dragdismiss"},
+	{"data-cui-poll", "poll"},
 	// The layout demand modules (docs/DESIGN-layout-outlets.md
 	// "### Opt-in"): transition loads on a declared cell or
 	// vocabulary. (parts has no DOM marker — it loads off the route

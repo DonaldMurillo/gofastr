@@ -87,21 +87,21 @@ server side and the runtime does the work.
 
 | Attribute | Purpose |
 |---|---|
-| `data-fui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` message in the kit's own error markup (`fui-field__error` in a `ui.FormField`, `fui-choice-field__error` after a standalone checkbox), and when no field matched, the `error` text is toasted. |
-| `data-fui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
-| `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
-| `data-fui-rpc-close` | Containing widget closes on 2xx |
-| `data-fui-rpc-reset` | Containing form resets on 2xx |
-| `data-fui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
-| `data-fui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page; the RPC mutated server state, so the destination must be fetched fresh |
-| `data-fui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
-| `data-fui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
-| `data-fui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
-| `data-fui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
-| `data-fui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
-| `data-fui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
-| `data-fui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
-| `data-fui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-fui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-fui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
+| `data-cui-rpc="<path>"` | Click / form-submit fires a request to `<path>`. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) marks each named field's control (`aria-invalid`, `aria-describedby`) and places a `role="alert"` message by the headless hooks, never by a kit class (a reserved or live `[data-hui-field-error]` node inside the `[data-hui-field]` group, or the next sibling of a bare `[data-hui-choice]` label), and when no field matched, the `error` text is toasted. |
+| `data-cui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
+| `data-cui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
+| `data-cui-rpc-close` | Containing widget closes on 2xx |
+| `data-cui-rpc-reset` | Containing form resets on 2xx |
+| `data-cui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
+| `data-cui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page; the RPC mutated server state, so the destination must be fetched fresh |
+| `data-cui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
+| `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
+| `data-cui-signal-mode="text\|html\|attr"` | How to apply the signal value (default `text`) |
+| `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr` |
+| `data-cui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
+| `data-cui-signal-inc="<name>[:<delta>]"` | Click increments the named signal by `<delta>` (default `1`; negative decrements) client-side. Used by `framework/ui.Counter`. |
+| `data-cui-signal-toggle="<name>"` | Click flips the named boolean signal client-side. Used by `framework/ui.SignalToggle` and `interactive.ToggleLocal`. |
+| `data-cui-tab-index="<n>"` | Set on `framework/ui.Tabs` buttons and panels to associate each with its zero-based index. CSS keys the active-button highlight and visible panel off the wrapper's `data-active` matching this index. When the wrapper's `data-active` attribute is updated through a signal (`data-cui-signal-mode="attr"`), the core runtime also mirrors the new index into `aria-selected` on every `[role="tab"][data-cui-tab-index]` descendant so assistive tech tracks the selection, not just the CSS highlight. |
 | `data-hui-tabs-state` | On a `framework/ui.Tabs` wrapper (`TabsConfig.StateAttrs`): the `headless-tabs` module mirrors `data-active` into `data-state="active"/"inactive"` on each `[role=tab]` button, the contract Radix-style ports pin test locators to. |
 | `data-hui-tabs-vacate` | On a `framework/ui.Tabs` wrapper (`TabsConfig.VacateHidden`): hidden panels ship empty (content in `data-hui-tabs-stash`); the `headless-tabs` module restores content on first show and moves live nodes out/in on later switches, so swapped island content survives re-show. Vacated panels are detached: document-scoped updates targeting them are dropped permanently (nothing is queued; re-show resurrects the pre-vacate nodes, and only updates arriving after re-show land). |
 | `data-hui-tabs-stash` | On the JSON `<script>` beside the panels of a `VacateHidden` strip: map of tab index → panel HTML for the panels that shipped empty. Escaped so embedded `</script>` cannot terminate it. |
@@ -147,7 +147,7 @@ server side and the runtime does the work.
 | `data-cui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
 | `data-hui-copy` | On the wrapper `framework/ui.CopyButton` renders (the button and its status span live inside it): marks a copy control. The `headless-feedback` module's delegated click reader performs the clipboard write (`navigator.clipboard.writeText` on the target's text) — no clipboard mutation is promised without script, the target stays readable and selectable. |
 | `data-hui-copy-target="<id>"` | On the same wrapper: the ELEMENT ID of the copy source (not a selector — the module resolves it with `getElementById`; a leading `#` is stripped at render). |
-| `data-hui-copy-copied` / `data-hui-copy-back` | The copied and idle label texts: on success the module swaps `data-hui-copy-copied` into the button's `[data-hui-copy-label]` span and back after ~1.2s — the same window the `.fui-copied` class rides the button. |
+| `data-hui-copy-copied` / `data-hui-copy-back` | The copied and idle label texts: on success the module swaps `data-hui-copy-copied` into the button's `[data-hui-copy-label]` span and back after ~1.2s — the same window `data-hui-copy-state="done"` sits on the wrapper, which is what the kit styles the flash from. |
 | `data-hui-copy-sentence` / `data-hui-copy-name` / `data-hui-copy-status` | The announcement contract: on success the module writes the sentence (with `{name}` substituted from `data-hui-copy-name`) into the visually-hidden `role="status"` span carrying `data-hui-copy-status`, clear then frame, so screen-reader users hear "Copied" without focus loss. |
 | `data-hui-copy-toast="<json>"` | On the button inside a `data-hui-copy` wrapper: the module dispatches its own `NS.toast(<json>)` on copy success. Use for "Copied to clipboard" notifications without per-button JS. |
 | `data-cui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |

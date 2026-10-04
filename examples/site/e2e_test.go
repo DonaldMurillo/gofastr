@@ -1089,15 +1089,16 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 		t.Fatalf("click copy: %v", err)
 	}
 
-	// The button should show a copied state (fui-copied class).
+	// The wrapper should carry the copied state the module writes and
+	// the kit's sheet styles (data-hui-copy-state="done").
 	var hasCopied bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').classList.contains('fui-copied')`, &hasCopied),
+		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').closest('[data-hui-copy]').getAttribute('data-hui-copy-state') === 'done'`, &hasCopied),
 	); err != nil {
 		t.Fatalf("read copied state: %v", err)
 	}
 	if !hasCopied {
-		t.Error("copy button should have fui-copied class after click")
+		t.Error("copy wrapper should carry data-hui-copy-state=\"done\" after click")
 	}
 }
 
