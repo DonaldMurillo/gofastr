@@ -373,6 +373,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **`textsafe.SanitizeControlBytes` dropped the continuation bytes of
+  non-ASCII text** (since v0.86.0): a rune-indexed loop skipped the bytes
+  a multi-byte character spans, so `héllo` came back as `hllo`. The loop
+  walks bytes again, and the package is under a coverage floor.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the
