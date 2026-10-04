@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -284,11 +285,12 @@ func (s *winShell) queueOnMain(id uintptr, fn, cancel func()) (<-chan struct{}, 
 }
 
 type modalOperation struct {
-	shell      *winShell
-	id         atomic.Uintptr
-	cancelled  atomic.Bool
-	finished   atomic.Bool
-	dialogHWND atomic.Uintptr
+	shell             *winShell
+	id                atomic.Uintptr
+	cancelled         atomic.Bool
+	finished          atomic.Bool
+	dialogHWND        atomic.Uintptr
+	taskDialogButtons *[36]byte // Keep the packed TASKDIALOG_BUTTON pointers on the heap.
 }
 
 func (op *modalOperation) cancel() {
@@ -406,7 +408,7 @@ type activationContext struct {
 	Module                uintptr
 }
 
-func findTaskDialogProc() (*syscall.Proc, func(), error) {
+func findTaskDialogProc() (*syscall.LazyProc, func(), error) {
 	const manifest = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity type="win32" name="gofastr.desktop" version="1.0.0.0"/>
@@ -501,7 +503,8 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	btnOnce, _ := win32.UTF16Ptr("Allow Once")
 	btnAllow, _ := win32.UTF16Ptr("Allow")
 	btnDeny, _ := win32.UTF16Ptr("Deny")
-	var buttons [36]byte
+	buttons := new([36]byte)
+	op.taskDialogButtons = buttons
 	for i, button := range []struct {
 		id   uint32
 		text *uint16
@@ -532,7 +535,7 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	}
 	defer deactivate()
 	var pressed int32
-	r, _, _ := syscall.SyscallN(proc.Addr(), uintptr(unsafe.Pointer(&cfg[0])), uintptr(unsafe.Pointer(&pressed)), 0, 0)
+	r, _, _ := proc.Call(uintptr(unsafe.Pointer(&cfg[0])), uintptr(unsafe.Pointer(&pressed)), 0, 0)
 	runtime.KeepAlive(buttons)
 	runtime.KeepAlive(cfg)
 	runtime.KeepAlive(title)
