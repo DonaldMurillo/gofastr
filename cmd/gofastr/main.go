@@ -243,14 +243,17 @@ func dispatch(args []string) {
 		return
 	}
 
-	// Global flags. --version/-v is intercepted anywhere for EVERY
-	// command (no subcommand defines its own). --help/-h is routed
+	// Global flags. --version/-v is intercepted anywhere except where a
+	// desktop builder/feed consumes --version as its own value. --help/-h is routed
 	// through to subcommands in ownsHelp, which implement it; for every
 	// other command it is intercepted anywhere in args (a side-effectful
 	// command like `dev --help` must never start a server because it
 	// lacks its own help path).
-	for _, a := range args {
+	for i, a := range args {
 		if a == "--version" || a == "-v" {
+			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
+				continue
+			}
 			fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 			return
 		}
@@ -318,6 +321,13 @@ func dispatch(args []string) {
 		printHelp()
 		osExit(1)
 	}
+}
+
+func desktopCommandOwnsVersionFlag(args []string, index int) bool {
+	if index < 2 || len(args) < 2 || args[0] != "desktop" {
+		return false
+	}
+	return args[1] == "build" || args[1] == "feed"
 }
 
 func min(vals ...int) int {

@@ -913,12 +913,10 @@ the reference).
 
 ## Deep links
 
-`Config.DeepLink` makes the app answer URLs on its own scheme. A
-desktop notes app claims `gofastr-notes`, and `gofastr-notes://notes/123` opens (or
-focuses) it on that note. The scheme is registered with the OS at
-bundle-build time, the URL itself arrives as an Apple Event while the
-app runs, and the battery turns it into the same client-side
-navigation a menu item performs.
+`Config.DeepLink` makes the app answer URLs on its own scheme. A notes
+app claims `gofastr-notes`, and `gofastr-notes://notes/123` opens or
+focuses it on that note. The battery turns the URL into the same
+client-side navigation a menu item performs.
 
 ```go
 d := native.New(desktop.Config{
@@ -934,18 +932,24 @@ menu. Pick a scheme nobody else claims: Apple's own Notes app already
 owns `notes:`, so a link on that scheme opens Apple Notes, never yours.
 Prefix it with your product name (`gofastr-notes`).
 
-Register the scheme in the bundle or the OS will hand the URL to
-somebody else:
+Build with `--scheme` so the operating system can open the app for that
+URL:
 
 ```sh
 gofastr desktop build --id dev.gofastr.notes --name Notes --scheme gofastr-notes
 ```
 
-`--scheme` writes `CFBundleURLTypes` into the bundle's Info.plist. With
-no flag, the plist carries no URL types and the app claims nothing.
-Development runs (`go run`, `gofastr desktop run`) are never
-registered; the mapping and the queue still work, only the OS handoff
-is missing.
+On macOS, `--scheme` writes `CFBundleURLTypes` into the bundle's
+Info.plist. On Windows, it embeds the scheme in the executable, and the
+app registers it under the current user's `HKCU\Software\Classes`
+whenever it starts. Windows passes each URL to the executable.
+If the app is already running, the new process forwards the URL to its
+open window. Windows refuses to replace a scheme owned by another
+per-user or machine-wide handler. The embedded scheme supplies a default
+`DeepLinkConfig` on Windows when the app has none; a custom config must
+use the same scheme. Without `--scheme`, the build claims no scheme.
+Development runs (`go run`, `gofastr desktop run`) do not register a
+scheme.
 
 ### What a link becomes
 
@@ -1005,21 +1009,20 @@ deliver the URL event before the first window finished its boot
 navigation) are queued, at most 16, oldest dropped first with a Warn,
 and replayed in arrival order right after the boot navigation.
 
-### The macOS handoff
+### Platform handoff
 
 On macOS the URL arrives as a GetURL Apple Event (class `'GURL'`, id
-`'GURL'`) whose direct object is the URL string. The darwin shell
-registers the bridge object as the handler with the shared
-`NSAppleEventManager` before the run loop starts, so a cold-launch URL
-is not missed. The handler reads the direct object, hands the raw URL
-to the battery on a goroutine, and the battery does everything above.
-The scheme check runs before anything else: an event for a scheme the
-config did not claim is dropped, so two GoFastr apps with different
-schemes stay independent even though both register the same event
-class.
+`'GURL'`). The darwin shell installs its handler before the run loop
+starts, so it receives cold-launch links too.
 
-Other hosts answer `unsupported` for now; the portable half (mapping,
-queue, the event) is host-independent and runs against the test double
+On Windows, the URL arrives as a command-line argument. A named
+per-app mutex keeps one process running; a second activation forwards
+the URL to the existing window. A cold-launch URL waits until the first
+page has completed its boot navigation. The battery validates the
+scheme before it navigates or emits the event.
+
+Linux and darwin/amd64 answer `unsupported` for now. The mapping,
+queue, and event are host-independent and run against the test double
 on every OS.
 
 ### Testing
@@ -1866,7 +1869,8 @@ WKWebView through `desktoptest.NativeMain`.
 
 | Verb | What it does |
 |---|---|
-| `build --id=<reverse.dns> [--name] [--icon=<png>] [--pkg] [--version] [--sign=<identity>|--no-sign] [--notarize] [--notary-profile] [--entitlements] [--scheme] [-o=dist]` | Cross-compiles darwin/arm64 (`-trimpath -ldflags "-s -w"`) and writes `<o>/<Name>.app`: Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG (no iconutil; the default icon is a generated flat square). Signing: ad-hoc (`codesign --force --deep --sign -`) by default when `codesign` is on PATH, `--sign` for a real identity, `--no-sign` to skip; a signing error is printed, never fatal. Notarize before distributing. |
+| `build ...` on macOS/arm64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.app`: Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
+| `build ...` on Windows/amd64 | Cross-compiles with `CGO_ENABLED=0` and writes `<o>/<Name>.exe` beside `WebView2Loader.dll`. The executable includes file and product version details, a multi-size icon from `--icon` (PNG; generated by default), and no console window. `--scheme` embeds the URL scheme; the app registers it for the current user at startup. The target machine needs the Evergreen WebView2 Runtime. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies. |
@@ -1877,15 +1881,13 @@ plist value is XML-escaped.
 
 ## What does not work yet
 
-Windows, Linux, and amd64 macOS (Rosetta included) have no native
-shell: `Run` returns the named `unsupported` error, and the tray,
-window styles, deep links, and the updater are macOS-only (the
-contracts are OS-neutral; another host answers `unsupported`, and a
-`Config.Tray` there logs a Warn). macOS notifications need a signed
-`.app` bundle (ad-hoc is enough, see above), so they never fire from
-`go run`. Notarization and the update pipeline have not been run
-against Apple's service or a real release feed. No drag-and-drop from
-the file manager.
+Linux and darwin/amd64 have no native shell yet. Windows currently
+supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
+do not include code signing or an installer. The updater is macOS-only.
+macOS notifications need a signed `.app` bundle (ad-hoc is
+enough, see above), so they never fire from `go run`. Notarization and
+the update pipeline have not been run against Apple's service or a
+real release feed. No drag-and-drop from the file manager.
 
 ## Testing a desktop app
 

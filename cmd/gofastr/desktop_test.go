@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/xml"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,6 +127,18 @@ func TestDesktopBuildRejectsBadIDBeforeBuilding(t *testing.T) {
 	}
 	if _, err := os.Stat("dist"); err == nil {
 		t.Fatal("dist/ created for an invalid --id")
+	}
+}
+
+func TestDispatchPassesDesktopBuildVersionToBuilder(t *testing.T) {
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() {
+			dispatch([]string{"desktop", "build", "--id", "no-dot", "--version", "1.2.3"})
+		})
+	})
+	if code != 1 || !strings.Contains(out, "reverse-DNS") {
+		t.Fatalf("desktop build --version was intercepted as a global flag (exit %d):\n%s", code, out)
 	}
 }
 
@@ -308,6 +323,52 @@ func parseICNS(t *testing.T, b []byte) []icnsEntryParsed {
 		p += int(length)
 	}
 	return entries
+}
+
+func TestBuildWindowsICOEmitsFourPNGFrames(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 4, 3))
+	for y := 0; y < source.Bounds().Dy(); y++ {
+		for x := 0; x < source.Bounds().Dx(); x++ {
+			source.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 40), G: uint8(y * 60), A: 0xff})
+		}
+	}
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, source); err != nil {
+		t.Fatal(err)
+	}
+	ico, err := buildWindowsICO(pngBytes.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ico) < 6 || binary.LittleEndian.Uint16(ico[0:2]) != 0 || binary.LittleEndian.Uint16(ico[2:4]) != 1 {
+		t.Fatalf("ICO header = %x", ico[:min(len(ico), 6)])
+	}
+	count := int(binary.LittleEndian.Uint16(ico[4:6]))
+	if count != 4 || len(ico) < 6+count*16 {
+		t.Fatalf("ICO frame count = %d, length = %d", count, len(ico))
+	}
+	for i, wantSize := range []int{16, 32, 48, 256} {
+		entry := 6 + i*16
+		width, height := int(ico[entry]), int(ico[entry+1])
+		if wantSize == 256 {
+			width, height = 256, 256 // zero encodes 256 in ICO directories
+		}
+		if width != wantSize || height != wantSize {
+			t.Errorf("frame %d size = %dx%d, want %dx%d", i, width, height, wantSize, wantSize)
+		}
+		length := int(binary.LittleEndian.Uint32(ico[entry+8 : entry+12]))
+		offset := int(binary.LittleEndian.Uint32(ico[entry+12 : entry+16]))
+		if length <= 0 || offset < 6+count*16 || offset+length > len(ico) {
+			t.Fatalf("frame %d has invalid payload range %d:%d in %d bytes", i, offset, offset+length, len(ico))
+		}
+		frame, err := png.Decode(bytes.NewReader(ico[offset : offset+length]))
+		if err != nil {
+			t.Fatalf("frame %d is not a PNG payload: %v", i, err)
+		}
+		if frame.Bounds().Dx() != wantSize || frame.Bounds().Dy() != wantSize {
+			t.Errorf("frame %d PNG size = %v, want %dx%d", i, frame.Bounds(), wantSize, wantSize)
+		}
+	}
 }
 
 func TestDesktopBuildDefaultsNameFromID(t *testing.T) {

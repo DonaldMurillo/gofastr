@@ -43,7 +43,7 @@ import (
 var pageJS []byte
 
 // appID is the reverse-DNS identity: it names the data directory under
-// the OS user config dir and the bundle identifier of a built .app.
+// the OS user config dir and the identifier of a built desktop app.
 const appID = "dev.gofastr.desktop-focus"
 
 var serveFlag = flag.String("serve", "", "serve the same app over HTTP at this address instead of opening a desktop window")

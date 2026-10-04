@@ -28,6 +28,14 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	if !validWindowsArtifactName(name) {
 		return fmt.Errorf("--name %q cannot be used as a Windows executable name", name)
 	}
+	if _, err := windowsVersionParts(f.version); err != nil {
+		return err
+	}
+	iconPNG, iconSource := loadIconSource(f.icon)
+	icon, err := buildWindowsICO(iconPNG)
+	if err != nil {
+		return fmt.Errorf("build Windows icon from %s: %w", iconSource, err)
+	}
 	outDir := f.out
 	if outDir == "" {
 		outDir = "dist"
@@ -61,8 +69,9 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	}
 	defer os.Remove(exeTemp)
 
+	ldflags := windowsDesktopLinkerFlags(f.scheme)
 	info("Building %s (windows/amd64, CGO_ENABLED=0)...", f.pkg)
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", exeTemp, f.pkg)
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", exeTemp, f.pkg)
 	cmd.Env = desktopBuildEnvironment(map[string]string{"CGO_ENABLED": "0", "GOOS": "windows", "GOARCH": "amd64"})
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -70,6 +79,16 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	}
 	if st, err := os.Stat(exeTemp); err != nil || st.IsDir() {
 		return fmt.Errorf("go build did not produce %s", exeTemp)
+	}
+	if err := writeWindowsVersionResource(exeTemp, windowsDesktopVersion{
+		Name:    name,
+		ID:      f.id,
+		Version: f.version,
+	}); err != nil {
+		return fmt.Errorf("embed Windows version resource: %w", err)
+	}
+	if err := writeWindowsIconResource(exeTemp, icon); err != nil {
+		return fmt.Errorf("embed Windows application icon: %w", err)
 	}
 
 	loaderPath := filepath.Join(outDir, "WebView2Loader.dll")
@@ -79,8 +98,17 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	if err := replaceArtifact(exeTemp, exePath); err != nil {
 		return fmt.Errorf("install %s: %w", exePath, err)
 	}
-	success("Wrote %s and WebView2Loader.dll", exePath)
+	success("Wrote %s with version information and an application icon, plus WebView2Loader.dll", exePath)
+	info("Icon source: %s.", iconSource)
 	return nil
+}
+
+func windowsDesktopLinkerFlags(scheme string) string {
+	flags := "-s -w -H windowsgui"
+	if scheme != "" {
+		flags += " -X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=" + scheme
+	}
+	return flags
 }
 
 func fetchWebView2Loader() ([]byte, error) {
