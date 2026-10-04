@@ -709,6 +709,9 @@ func WithMCPServer(s *mcp.Server) AppOption {
 // A registrar error fails the boot, a tool-name collision included,
 // the way a plugin Init error does.
 func WithMCPTools(register func(*mcp.Server) error) AppOption {
+	if register == nil {
+		panic("framework.WithMCPTools: nil registrar")
+	}
 	return func(a *App) {
 		a.mcpRegistrars = append(a.mcpRegistrars, register)
 	}

@@ -26,9 +26,14 @@ import (
 //   - app_routes:     list every (method, pattern) registered on the router.
 //   - app_plugins:    list registered plugins (name only).
 //   - app_batteries:  list registered batteries with deps + lifecycle status.
+//   - app_modules:    list modules with manifest metadata and enabled state.
 //   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
 //   - app_readiness:  run every registered readiness check and report results.
 //   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
+//   - app_routines:   every registered stored routine with its ledger state.
+//
+// The framework_docs_* tools are not part of this set: an app adds them
+// with WithMCPTools(mcptools.Register) from framework/docs/mcptools.
 //
 // The framework's embedded docs (framework_docs_list / framework_docs_get
 // / framework_docs_search) are a separate opt-in,

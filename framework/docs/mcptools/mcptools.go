@@ -100,7 +100,7 @@ func Register(srv *mcp.Server) error {
 func toolDocsList(_ context.Context, _ map[string]any) (any, error) {
 	topics, err := docs.List()
 	if err != nil {
-		return nil, err
+		return callerError(err), nil
 	}
 	out := make([]map[string]any, 0, len(topics))
 	for _, t := range topics {
@@ -122,7 +122,10 @@ func toolDocsGet(_ context.Context, params map[string]any) (any, error) {
 	topic, _ := params["topic"].(string)
 	body, err := docs.Get(topic)
 	if err != nil {
-		return nil, err
+		// The caller's mistake, said to the caller: a plain error would be
+		// answered as a generic internal tool error and logged at Error
+		// level, which a bad topic name must not do.
+		return callerError(err), nil
 	}
 	return map[string]any{
 		"name":     topic,
@@ -153,7 +156,7 @@ func toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
 	}
 	hits, err := docs.SearchWithLimit(term, limit)
 	if err != nil {
-		return nil, err
+		return callerError(err), nil
 	}
 	out := make([]map[string]any, 0, len(hits))
 	for _, h := range hits {
@@ -169,4 +172,12 @@ func toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
 		"hits":  out,
 		"count": len(out),
 	}, nil
+}
+
+// callerError answers a docs lookup failure to the caller as a tool
+// error result. Every failure in this package is the caller's input (an
+// unknown topic, a term under three characters): nothing here reads
+// anything but the embedded corpus, so there is no server fault to hide.
+func callerError(err error) mcp.ToolResult {
+	return mcp.ToolResult{IsError: true, Content: []mcp.Content{mcp.TextContent(err.Error())}}
 }

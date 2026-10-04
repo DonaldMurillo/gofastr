@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 )
@@ -33,10 +34,15 @@ func toolNames(app *framework.App) map[string]bool {
 // TestRegisterInstallsThreeTools pins the opt-in: the registrar alone
 // installs the docs tools, with or without introspection.
 func TestRegisterInstallsThreeTools(t *testing.T) {
-	got := toolNames(docsApp(t))
-	for _, want := range []string{"framework_docs_list", "framework_docs_get", "framework_docs_search"} {
-		if !got[want] {
-			t.Errorf("docs tool %q was not registered", want)
+	for name, opts := range map[string][]framework.AppOption{
+		"alone":              nil,
+		"with introspection": {framework.WithMCPIntrospection()},
+	} {
+		got := toolNames(docsApp(t, opts...))
+		for _, want := range []string{"framework_docs_list", "framework_docs_get", "framework_docs_search"} {
+			if !got[want] {
+				t.Errorf("%s: docs tool %q was not registered", name, want)
+			}
 		}
 	}
 }
@@ -57,7 +63,8 @@ func TestIntrospectionAloneRegistersNoDocsTools(t *testing.T) {
 }
 
 // TestFrameworkDoesNotDependOnDocs is the gate the package exists for:
-// the framework package's dependency closure must not contain
+// the framework package's dependency closure, its own tests included
+// (cmd/affected follows test imports too), must not contain
 // framework/docs, or a docs edit widens the affected set to the tree.
 func TestFrameworkDoesNotDependOnDocs(t *testing.T) {
 	if testing.Short() {
@@ -65,7 +72,7 @@ func TestFrameworkDoesNotDependOnDocs(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "list", "-f", `{{join .Deps "\n"}}`, "github.com/DonaldMurillo/gofastr/framework")
+	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-test", "-f", "{{.ImportPath}}", "github.com/DonaldMurillo/gofastr/framework")
 	cmd.Dir = "../../.."
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
@@ -74,7 +81,7 @@ func TestFrameworkDoesNotDependOnDocs(t *testing.T) {
 	}
 	for _, dep := range strings.Split(string(out), "\n") {
 		if dep == "github.com/DonaldMurillo/gofastr/framework/docs" {
-			t.Fatal("framework imports framework/docs again; every docs edit would run the whole suite (#470)")
+			t.Fatal("framework (or one of its tests) imports framework/docs again; every docs edit would run the whole suite (#470)")
 		}
 	}
 }
@@ -151,11 +158,18 @@ func TestFrameworkDocsGetReadsTopic(t *testing.T) {
 }
 
 // TestDocsGetNotFound: an unknown topic surfaces the not-found error.
+// TestDocsGetNotFound: an unknown topic is the caller's mistake and is
+// answered as a tool error result naming it, not as the generic internal
+// error a plain Go error becomes (which would also log at Error level on
+// every bad call).
 func TestDocsGetNotFound(t *testing.T) {
-	app := docsApp(t)
-	if _, err := app.MCP.CallTool(context.Background(), "framework_docs_get",
-		map[string]any{"topic": "does-not-exist-xyz"}); err == nil {
-		t.Fatal("expected not-found error")
+	res, err := toolDocsGet(context.Background(), map[string]any{"topic": "does-not-exist-xyz"})
+	if err != nil {
+		t.Fatalf("plain error %v; want a tool error result", err)
+	}
+	tr, ok := res.(mcp.ToolResult)
+	if !ok || !tr.IsError || len(tr.Content) == 0 || !strings.Contains(tr.Content[0].Text, "does-not-exist-xyz") {
+		t.Fatalf("result = %#v, want IsError naming the topic", res)
 	}
 }
 
@@ -197,7 +211,6 @@ const maxDocsSearchResponseBytes = 256 << 10
 // push the reply past the documented hard cap. The tool exists to be
 // called by agents with narrow contexts.
 func TestDocsSearchLimitIsCapped(t *testing.T) {
-	docsApp(t)
 	call := func(t *testing.T, params map[string]any) map[string]any {
 		t.Helper()
 		res, err := toolDocsSearch(context.Background(), params)
@@ -251,10 +264,16 @@ func TestDocsSearchLimitIsCapped(t *testing.T) {
 func TestGuidanceNamesEveryTool(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")
 	t.Setenv("GOFASTR_ENV", "")
-	app := docsApp(t, framework.WithMCPIntrospection(), framework.WithMCPControl())
+	// Dev-implied, not opted in: an explicit WithMCPIntrospection skips
+	// the dev-only contracts_verify / contracts_fix registration, and
+	// those two must be named too.
+	app := docsApp(t)
 	tools := app.MCP.ListTools()
-	if len(tools) == 0 {
-		t.Fatal("no tools registered")
+	names := toolNames(app)
+	for _, want := range []string{"contracts_verify", "contracts_fix", "app_module_enable", "framework_docs_search"} {
+		if !names[want] {
+			t.Fatalf("dev-implied surface lacks %q; the guidance check below would not cover it", want)
+		}
 	}
 	surfaces := map[string]string{
 		"framework/agents.md":                       "../../agents.md",
@@ -274,6 +293,11 @@ func TestGuidanceNamesEveryTool(t *testing.T) {
 		t.Fatalf("docs.Get(agent-ready): %v", err)
 	}
 	bodies["docs/content/agent-ready.md"] = string(agentReady)
+	for label, body := range bodies {
+		if !strings.Contains(body, "WithMCPTools(mcptools.Register)") {
+			t.Errorf("%s never says how the framework_docs_* tools are wired (framework.WithMCPTools(mcptools.Register))", label)
+		}
+	}
 	for _, tool := range tools {
 		for label, body := range bodies {
 			if !strings.Contains(body, tool.Name) {
