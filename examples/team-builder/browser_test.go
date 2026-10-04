@@ -116,6 +116,7 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 		addMember("Sparky", "Pikachu", "25", "1"),
 		addMember("Blaze", "Charmander", "40", "2"),
 		addMember("Snooze", "Snorlax", "12", "3"),
+		waitItems(3),
 	); err != nil {
 		t.Fatalf("add members: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 	if err := chromedp.Run(front(tab2, t), addMember("Shelly", "Squirtle", "30", "4")); err != nil {
 		t.Fatalf("add in second tab: %v", err)
 	}
-	if err := chromedp.Run(front(tab, t), waitText(`[data-fui-local-count]`, "4")); err != nil {
+	if err := chromedp.Run(front(tab, t), waitText(`[data-fui-local-count]`, "4"), waitItems(4)); err != nil {
 		t.Fatalf("first tab never saw the second tab's save: %v", err)
 	}
 	if got := strings.Join(names(tab, t), ","); got != "Blaze,Shelly,Sparky,Snooze" {
