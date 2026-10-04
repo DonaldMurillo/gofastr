@@ -209,8 +209,10 @@ out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
 are; `embed.FS` cannot carry symlinks and is unaffected. Direct: call
 `Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
-uses it for its own assets too. Start at `core/static/static.go`:
-`Handler`.
+uses it for its own assets too. `NotFoundFile` answers a miss with a
+file from the same `FS` under status 404 (a static export's
+`404.html`; `gofastr docs serve` uses it). Start at
+`core/static/static.go`: `Handler`.
 
 ## App plumbing
 
