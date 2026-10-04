@@ -32,6 +32,12 @@
 // while the narrow subpackages give plugin authors and codegen tools
 // a precise dependency graph.
 //
+// The root spelling is the public API, not a compatibility layer left
+// over from the extractions: generated code, the examples and the docs
+// write framework.EntityDeclaration, and the re-export files stay for as
+// long as the subpackages do. A new subpackage symbol that callers reach
+// for gets a re-export; nothing is removed from the root to "clean up".
+//
 // See framework/ARCHITECTURE.md for the layering rules, cycle-breaking
 // interfaces, and the recipe for extracting a new subpackage.
 package framework

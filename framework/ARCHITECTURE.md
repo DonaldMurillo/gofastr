@@ -779,7 +779,11 @@ If you add a subpackage, grep `core/` for name conflicts first.
 
 - **Do not** delete the facade re-export files. They are the seam
   that lets external code keep using `framework.X`. Removing them
-  is a breaking change for every consumer.
+  is a breaking change for every consumer. Settled 2026-10-04 (#475):
+  the root spelling is the public API, not a shim awaiting removal.
+  Generated code and the docs write `framework.EntityDeclaration`;
+  the subpackage paths are for plugin authors and codegen that want a
+  narrow dependency graph.
 
 - **Do not** bypass the `entity.Registry` / `db.Executor` interfaces
   by adding a back-import to framework root. If a subpackage needs
