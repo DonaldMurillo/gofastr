@@ -52,6 +52,7 @@
   // every bound list and count of that store; a burst of writes
   // re-renders once.
   const bound = new Map();
+  const watching = new Set();
   const pending = new Set();
   const refresh = (key) => {
     for (const el of Array.from(bound.get(key) || [])) {
@@ -69,13 +70,17 @@
     }
     pending.add(key);
   };
+  // watch installs the store's watch once; a failed open forgets the
+  // attempt (not the bound elements), so the next render retries it.
+  const watch = (t) => {
+    if (watching.has(t.key)) return;
+    watching.add(t.key);
+    open(t.db).then((db) => db.watch(t.store, () => schedule(t.key)), () => watching.delete(t.key));
+  };
   const bind = (el, t) => {
-    if (!bound.has(t.key)) {
-      bound.set(t.key, new Set());
-      open(t.db).then((db) => db.watch(t.store, () => schedule(t.key)), () => bound.delete(t.key));
-    }
+    if (!bound.has(t.key)) bound.set(t.key, new Set());
     const set = bound.get(t.key);
-    if (!set || set.has(el)) return false;
+    if (set.has(el)) return false;
     set.add(el);
     return true;
   };
@@ -89,6 +94,7 @@
   async function renderList(el) {
     const t = target(el, 'list');
     if (!t) return;
+    watch(t);
     let records;
     try {
       const q = { index: el.getAttribute(P + 'order') || undefined };
@@ -148,6 +154,7 @@
   async function renderCount(el) {
     const t = target(el, 'count');
     if (!t) return;
+    watch(t);
     try {
       el.textContent = String(await (await open(t.db)).count(t.store));
     } catch (_) {
@@ -187,7 +194,9 @@
     if (scope.matches && scope.matches(LIST + ',' + COUNT)) els.push(scope);
     for (const el of els) {
       const t = target(el, isList(el) ? 'list' : 'count');
-      if (t && bind(el, t)) render(el);
+      // A newly bound element renders; one already bound whose store
+      // has no live watch (its open failed) renders again, retrying it.
+      if (t && (bind(el, t) || !watching.has(t.key))) render(el);
     }
   }
   scan(document);

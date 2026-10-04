@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -66,7 +67,7 @@ func ldbRun(t *testing.T, ctx context.Context, url string, out any) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Poll(`window.__done === true`, nil, chromedp.WithPollingTimeout(15*time.Second)),
+		chromedp.Poll(`window.__done === true`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(15*time.Second)),
 	); err != nil {
 		t.Fatalf("chromedp %s: %v", url, err)
 	}
@@ -163,6 +164,17 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
           return 'done';
         }));
         res.afterLate = (await db.list('members')).map((r) => r.name).filter((n) => n === 'Early' || n === 'Late');
+        // A put the browser refuses synchronously (a function cannot be
+        // cloned) reaches a tx body coded, and its message does not
+        // quote the record.
+        res.syncErr = await db.tx('members', 'readwrite', async (t) => {
+          try {
+            await t.put('members', { name: 'Clone', fn() { return 'SECRET-RECORD'; } });
+            return 'no error';
+          } catch (e) {
+            return (e.code || 'raw') + '|' + (e.message.includes('SECRET-RECORD') ? 'leaked' : 'clean');
+          }
+        });
         res.kept = (await db.get('members', b)).name;
     `)}})
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
@@ -195,6 +207,7 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
 		AfterTx         []int          `json:"afterTx"`
 		LateTx          string         `json:"lateTx"`
 		AfterLate       []string       `json:"afterLate"`
+		SyncErr         string         `json:"syncErr"`
 		Kept            string         `json:"kept"`
 	}
 	ldbRun(t, ctx, base+"/", &res)
@@ -259,6 +272,9 @@ func TestLocalDBCrudOrderAndErrors(t *testing.T) {
 	if res.LateTx != "aborted" || strings.Join(res.AfterLate, ",") != "Early" {
 		t.Errorf("late tx = %q, landed %v; want aborted with only the write made while it was live", res.LateTx, res.AfterLate)
 	}
+	if res.SyncErr != "invalid|clean" {
+		t.Errorf("a synchronous refusal inside tx = %q, want invalid|clean (coded, record not quoted)", res.SyncErr)
+	}
 	if res.Kept != "Bulbasaur" {
 		t.Errorf("record b = %q after the transactions", res.Kept)
 	}
@@ -294,6 +310,18 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
             await db.put('items', { id: 'c', price: 2 });
             res.after = await db.count('items');
         `)},
+		"/late-block": {v2, `
+            (async () => {
+              await __gofastr.loadModule('localdb');
+              const res = {};
+              const block = document.getElementById('gofastr-localdb');
+              block.remove();
+              try { await __gofastr.localdb.open('shop'); res.first = 'ok'; } catch (e) { res.first = e.code; }
+              document.head.appendChild(block);
+              try { await __gofastr.localdb.open('shop'); res.second = 'ok'; } catch (e) { res.second = e.code; }
+              window.__res = res; window.__done = true;
+            })();
+        `},
 		"/leak": {leaky, `
             (async () => {
               await __gofastr.loadModule('localdb');
@@ -357,6 +385,11 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
 	if r3.Fatal != "" || r3.Count != 2 || r3.After != 3 {
 		t.Fatalf("a v1 page after the v2 upgrade = %+v; want it to read and write the newer database", r3)
 	}
+	var late struct{ First, Second string }
+	ldbRun(t, ctx, base+"/late-block", &late)
+	if late.First != "unknown-db" || late.Second != "ok" {
+		t.Fatalf("missing then present manifest = %+v; want unknown-db then ok (a failed read is not cached)", late)
+	}
 	var leak struct{ Code, Next string }
 	ldbRun(t, ctx, base+"/leak", &leak)
 	if leak.Code != "schema" || leak.Next != "opened" {
@@ -417,6 +450,17 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 
 	tabB, cancel := chromedp.NewContext(tabA)
 	defer cancel()
+	// A tab created from a test can open in the background on newer
+	// Chromium; bring each to the front before driving it.
+	front := func(ctx context.Context) {
+		t.Helper()
+		if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
+			return target.ActivateTarget(chromedp.FromContext(ctx).Target.TargetID).Do(c)
+		})); err != nil {
+			t.Fatalf("activate tab: %v", err)
+		}
+	}
+	front(tabB)
 	var rb struct {
 		Fatal string   `json:"fatal"`
 		Key   string   `json:"key"`
@@ -427,9 +471,10 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 		t.Fatalf("writer tab = %+v; want exactly one local event", rb)
 	}
 
+	front(tabA)
 	var seen []string
 	if err := chromedp.Run(tabA,
-		chromedp.Poll(`window.__seen.length > 0`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(`window.__seen.length > 0`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`window.__seen`, &seen),
 	); err != nil {
 		t.Fatalf("watcher tab never heard the write: %v", err)
@@ -439,7 +484,7 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 	}
 	var bulk int
 	if err := chromedp.Run(tabA,
-		chromedp.Poll(`window.__bulk >= 1001`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(`window.__bulk >= 1001`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`window.__bulk`, &bulk),
 	); err != nil || bulk != 1001 {
 		t.Fatalf("a 1001-write transaction reached the other tab as %d changes (%v); want all 1001", bulk, err)
@@ -449,7 +494,7 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 	var mixed []string
 	if err := chromedp.Run(tabA,
 		chromedp.Evaluate(`window.__seen = []; new BroadcastChannel('gofastr.localdb.e2e').postMessage({ v: 1, changes: [{ store: 'members', op: 'delete', key: 'x' }, { store: 'from-a-newer-deploy', op: 'put', key: 'y' }] });`, nil),
-		chromedp.Poll(`window.__seen.length > 0`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Poll(`window.__seen.length > 0`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(5*time.Second)),
 		chromedp.Evaluate(`window.__seen`, &mixed),
 	); err != nil || strings.Join(mixed, ",") != "remote:delete" {
 		t.Fatalf("mixed message reached the watcher as %v (%v); want the declared store's change", mixed, err)
@@ -461,10 +506,12 @@ func TestLocalDBCrossTabWatchAndUpgrade(t *testing.T) {
 		Fatal string `json:"fatal"`
 		Named int    `json:"named"`
 	}
+	front(tabB)
 	ldbRun(t, tabB, base+"/upgrade", &ru)
 	if ru.Fatal != "" || ru.Named < 1 {
 		t.Fatalf("upgrade tab = %+v; want the new index usable while another tab is open", ru)
 	}
+	front(tabA)
 	var count int
 	if err := chromedp.Run(tabA, chromedp.Evaluate(
 		`__gofastr.localdb.open('e2e').then((db) => db.count('members'))`, &count,

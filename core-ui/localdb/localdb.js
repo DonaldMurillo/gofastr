@@ -51,20 +51,32 @@
   const wrap = (e) => e && e.name === 'LocalDBError' ? e
     : fail(e && has(CODES, e.name) ? CODES[e.name] : 'failed', e && typeof e.name === 'string' ? e.name : '');
 
+  // specFor caches the parsed block only once a read succeeds, so a
+  // page whose first read found no block (or a bad one) retries.
   let manifest;
   const specFor = (name) => {
     if (!manifest) {
       try {
-        manifest = JSON.parse(document.getElementById('gofastr-localdb').textContent) || {};
+        manifest = JSON.parse(document.getElementById('gofastr-localdb').textContent) || undefined;
       } catch (_) {
-        manifest = {};
+        return null;
       }
     }
     const spec = has(manifest, name) && manifest[name];
     return spec && spec.stores && typeof spec.stores === 'object' ? spec : null;
   };
 
-  const request = (r) => new Promise((resolve, reject) => {
+  // request takes a function that makes the IDBRequest, so a request
+  // the browser refuses synchronously (DataError, DataCloneError, whose
+  // message can quote the record) is coded and stripped like one that
+  // fails later.
+  const request = (make) => new Promise((resolve, reject) => {
+    let r;
+    try {
+      r = make();
+    } catch (e) {
+      return reject(wrap(e));
+    }
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(wrap(r.error));
   });
@@ -292,20 +304,20 @@
           v[spec.keyPath] = newID();
         }
         const store = tx.objectStore(s);
-        return request(op === 'add' ? store.add(v) : store.put(v)).then((key) => {
+        return request(() => (op === 'add' ? store.add(v) : store.put(v))).then((key) => {
           changes.push({ store: s, op: op, key: key });
           return key;
         });
       };
-      const drop = (op, s, key) => request(op === 'clear' ? source(s).clear() : source(s).delete(key))
+      const drop = (op, s, key) => request(() => (op === 'clear' ? source(s).clear() : source(s).delete(key)))
         .then(() => { changes.push({ store: s, op: op, key: key === undefined ? null : key }); });
       return {
-        get: (s, key) => request(source(s).get(key)),
+        get: (s, key) => request(() => source(s).get(key)),
         put: (s, v) => write('put', s, v),
         add: (s, v) => write('add', s, v),
         delete: (s, key) => drop('delete', s, key),
         clear: (s) => drop('clear', s),
-        count: (s, q) => request(source(s, q).count(range(q))),
+        count: (s, q) => request(() => source(s, q).count(range(q))),
         // list reads records in key or index order. q: index, only |
         // lower/upper (+lowerOpen/upperOpen), direction, offset, limit,
         // keys (resolve primary keys instead of records).
@@ -319,7 +331,12 @@
             throw fail('invalid', 'query');
           }
           const src = source(s, q);
-          const r = q.keys ? src.openKeyCursor(range(q), dir) : src.openCursor(range(q), dir);
+          let r;
+          try {
+            r = q.keys ? src.openKeyCursor(range(q), dir) : src.openCursor(range(q), dir);
+          } catch (e) {
+            return reject(wrap(e));
+          }
           const out = [];
           r.onsuccess = () => {
             const c = r.result;

@@ -44,7 +44,7 @@ func addMember(nickname, species, level, wantCount string) chromedp.Tasks {
 
 func waitText(sel, want string) chromedp.Action {
 	return chromedp.Poll(`(document.querySelector(`+jsString(sel)+`) || {}).textContent === `+jsString(want),
-		nil, chromedp.WithPollingTimeout(10*time.Second))
+		nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(10*time.Second))
 }
 
 // front brings a tab to the foreground before driving it: a background
@@ -66,7 +66,7 @@ func front(ctx context.Context, t *testing.T) context.Context {
 // waitItems waits until the list shows n member cards.
 func waitItems(n int) chromedp.Action {
 	return chromedp.Poll(`document.querySelectorAll('[data-fui-local-item][data-fui-local-key]').length === `+strconv.Itoa(n),
-		nil, chromedp.WithPollingTimeout(10*time.Second))
+		nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(10*time.Second))
 }
 
 func jsString(s string) string { return "'" + strings.ReplaceAll(s, "'", `\'`) + "'" }
@@ -151,17 +151,18 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 		t.Fatalf("first tab team = %q after the other tab's save", got)
 	}
 
-	// Edit: Sparky's card loads into the form; saving updates in place.
+	// Edit: Blaze's card (first, highest level) loads into the form;
+	// saving updates it in place.
 	steps := []struct {
 		name string
 		do   chromedp.Action
 	}{
 		{"click edit", chromedp.Click(`[data-fui-local-item][data-fui-local-key] [data-fui-local-edit] button`, chromedp.ByQuery)}, // Blaze, first card
-		{"form filled", chromedp.Poll(`document.querySelector('#member-nickname').value === 'Blaze'`, nil, chromedp.WithPollingTimeout(5*time.Second))},
+		{"form filled", chromedp.Poll(`document.querySelector('#member-nickname').value === 'Blaze'`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(5*time.Second))},
 		{"set level", chromedp.SetValue(`#member-level`, "8", chromedp.ByQuery)},
 		{"submit", chromedp.Click(`[data-fui-local-form] button[type=submit]`, chromedp.ByQuery)},
 		{"moved last", chromedp.Poll(`document.querySelector('[data-fui-local-item]:last-child [data-fui-local-text="nickname"]').textContent === 'Blaze'`,
-			nil, chromedp.WithPollingTimeout(5*time.Second))},
+			nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(5*time.Second))},
 	}
 	for _, st := range steps {
 		if err := chromedp.Run(tab, st.do); err != nil {
@@ -187,7 +188,7 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 		chromedp.SetValue(`#member-species`, "Eevee", chromedp.ByQuery),
 		chromedp.SetValue(`#member-level`, "500", chromedp.ByQuery),
 		chromedp.Click(`[data-fui-local-form] button[type=submit]`, chromedp.ByQuery),
-		chromedp.Poll(`!!document.querySelector('#member-level[aria-invalid="true"]')`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Poll(`!!document.querySelector('#member-level[aria-invalid="true"]')`, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(5*time.Second)),
 	); err != nil {
 		t.Fatalf("validation: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 		chromedp.SetValue(`#member-level`, "3", chromedp.ByQuery),
 		chromedp.Click(`[data-fui-local-form] button[type=submit]`, chromedp.ByQuery),
 		chromedp.Poll(`document.body.textContent.includes('Your team is full: release a Pokémon first (6 at most).')`,
-			nil, chromedp.WithPollingTimeout(5*time.Second)),
+			nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(5*time.Second)),
 	); err != nil {
 		t.Fatalf("cap: %v", err)
 	}

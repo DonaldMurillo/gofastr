@@ -16,6 +16,7 @@ import (
 
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -42,6 +43,7 @@ var (
 		{Name: "due", Type: schema.Date},
 		{Name: "at", Type: schema.Timestamp},
 	})
+	pins = localentity.Define(e2eDB, "pins", []schema.Field{{Name: "label", Type: schema.String, Required: true}})
 )
 
 const noteForm = "note-form"
@@ -64,7 +66,13 @@ type fullScreen struct{ component.ContextOnly }
 
 func (fullScreen) RenderCtx(ctx context.Context) render.HTML {
 	l := notes.List(localentity.ListConfig{})
-	return ui.Stack(ui.StackConfig{}, form(ctx), notes.Count(), ui.Stack(ui.StackConfig{}, l.Render(
+	p := pins.List(localentity.ListConfig{})
+	// A pins list the test inserts later, while the database is failing.
+	late := html.Template(html.TemplateConfig{ID: "late-pins"}, ui.Stack(ui.StackConfig{}, p.Render(
+		p.Row(func(r localentity.Row) render.HTML { return ui.Card(ui.CardConfig{}, r.Text("label")) }),
+		p.Empty(ui.EmptyState(ui.EmptyStateConfig{Title: "No pins"})),
+	)))
+	return ui.Stack(ui.StackConfig{}, late, form(ctx), notes.Count(), ui.Stack(ui.StackConfig{}, l.Render(
 		l.Row(func(r localentity.Row) render.HTML {
 			return ui.Card(ui.CardConfig{HeadingContent: r.Text("title")},
 				r.Text("memo"),
@@ -116,7 +124,7 @@ func records(t *testing.T, ctx context.Context) []map[string]any {
 }
 
 func poll(js string) chromedp.Action {
-	return chromedp.Poll(js, nil, chromedp.WithPollingTimeout(10*time.Second))
+	return chromedp.Poll(js, nil, chromedp.WithPollingInterval(25*time.Millisecond), chromedp.WithPollingTimeout(10*time.Second))
 }
 
 func submit() chromedp.Action {
@@ -290,9 +298,15 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 
 	// A tab that only shows the form (it watches nothing) still
 	// reaches this tab's list.
+	front := func(ctx context.Context) chromedp.Action {
+		return chromedp.ActionFunc(func(c context.Context) error {
+			return target.ActivateTarget(chromedp.FromContext(ctx).Target.TargetID).Do(c)
+		})
+	}
 	formTab, cancel := chromedp.NewContext(tab)
 	defer cancel()
 	if err := chromedp.Run(formTab,
+		front(formTab),
 		chromedp.Navigate(base+"/form"),
 		chromedp.WaitVisible(`#f-title`, chromedp.ByQuery),
 		chromedp.SetValue(`#f-title`, "far", chromedp.ByQuery),
@@ -301,11 +315,6 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 	); err != nil {
 		t.Fatalf("form-only tab: %v", err)
 	}
-	front := func(ctx context.Context) chromedp.Action {
-		return chromedp.ActionFunc(func(c context.Context) error {
-			return target.ActivateTarget(chromedp.FromContext(ctx).Target.TargetID).Do(c)
-		})
-	}
 	if err := chromedp.Run(tab, front(tab), countIs(2)); err != nil {
 		t.Fatalf("the list tab never heard the form-only tab's save: %v", err)
 	}
@@ -313,7 +322,7 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 	// A failed read keeps the rows on screen and says so.
 	if err := chromedp.Run(tab,
 		poll(`document.querySelectorAll('[data-fui-local-item][data-fui-local-key]').length === 2`),
-		chromedp.Evaluate(`__gofastr.localdb.open = () => Promise.reject(Object.assign(new Error('x'), { code: 'closed' }));
+		chromedp.Evaluate(`window.__realOpen = __gofastr.localdb.open; __gofastr.localdb.open = () => Promise.reject(Object.assign(new Error('x'), { code: 'closed' }));
 			new BroadcastChannel('gofastr.localdb.localentity-e2e').postMessage({ v: 1, changes: [{ store: 'notes', op: 'put', key: 'x' }] });`, nil),
 		poll(`document.querySelector('[data-fui-local-list]').getAttribute('data-fui-local-state') === 'closed'`),
 	); err != nil {
@@ -331,10 +340,28 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		t.Fatalf("a failed read changed the list: %d rows, empty state %v", rows, empty)
 	}
 
+	// A list that arrives while the database will not open gets no
+	// watch. Once it opens again, the next arrival pass re-arms the
+	// watch: the list renders, and later writes refresh it.
+	pinCards := `document.querySelectorAll('[data-fui-local-list="localentity-e2e/pins"] > [data-fui-local-item][data-fui-local-key]').length`
+	if err := chromedp.Run(tab,
+		chromedp.Evaluate(`document.body.appendChild(document.getElementById('late-pins').content.cloneNode(true)); __gofastr._moduleScanners.localentity(document.body)`, nil),
+		poll(`document.querySelector('[data-fui-local-list="localentity-e2e/pins"]').getAttribute('data-fui-local-state') === 'closed'`),
+		chromedp.Evaluate(`__gofastr.localdb.open = window.__realOpen`, nil),
+		chromedp.Evaluate(`window.__realOpen('localentity-e2e').then((db) => db.put('pins', { label: 'one', created_at: '2030-01-01T00:00:00Z', updated_at: '2030-01-01T00:00:00Z' }))`, nil, await),
+		chromedp.Evaluate(`__gofastr._moduleScanners.localentity(document.body)`, nil),
+		poll(pinCards+` === 1`),
+		chromedp.Evaluate(`window.__realOpen('localentity-e2e').then((db) => db.put('pins', { label: 'two', created_at: '2030-01-02T00:00:00Z', updated_at: '2030-01-02T00:00:00Z' }))`, nil, await),
+		poll(pinCards+` === 2`),
+	); err != nil {
+		t.Fatalf("a list bound while the database failed never recovered: %v", err)
+	}
+
 	// A form with no control for a Required field cannot create.
 	partial, cancelP := chromedp.NewContext(tab)
 	defer cancelP()
 	if err := chromedp.Run(partial,
+		front(partial),
 		chromedp.Navigate(base+"/partial"),
 		chromedp.WaitVisible(`#p-memo`, chromedp.ByQuery),
 		chromedp.SetValue(`#p-memo`, "orphan", chromedp.ByQuery),
