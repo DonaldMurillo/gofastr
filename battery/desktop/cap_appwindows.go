@@ -104,6 +104,8 @@ func (b *Battery) windowsCapability() Capability {
 					if id == "main" {
 						return nil, &Error{Code: CodeInvalidInput, Message: "the main window closes through the OS, not through the page"}
 					}
+					b.openMu.Lock()
+					defer b.openMu.Unlock()
 					w, ok := b.windowByID(id)
 					if !ok {
 						return nil, &Error{Code: CodeNotFound, Message: "no window with that id"}
@@ -111,7 +113,7 @@ func (b *Battery) windowsCapability() Capability {
 					if err := w.Close(); err != nil {
 						return nil, err
 					}
-					b.handleWindowClosed(id)
+					b.handleWindowClosedLocked(id)
 					return nil, nil
 				},
 			},

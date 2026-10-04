@@ -20,6 +20,9 @@ var asyncEvalID atomic.Uint64
 
 func (w *winWindow) ID() string { return w.id }
 
+// IsClosed reports whether Windows has destroyed this window's HWND.
+func (w *winWindow) IsClosed() bool { return w.closed.Load() }
+
 func (w *winWindow) Navigate(rawURL string) error {
 	if w.closed.Load() || w.webview == 0 {
 		return errWindowClosed()
@@ -375,10 +378,14 @@ func (w *winWindow) SetSidebarWidth(points int) error {
 }
 
 func (w *winWindow) Close() error {
-	if w.hwnd == 0 || w.closed.Load() {
+	if w.closed.Load() {
 		return nil
 	}
-	return win32.PostMessage(w.hwnd, wmClose, 0, 0)
+	return w.shell.Main(func() {
+		if w.hwnd != 0 && !w.closed.Load() {
+			win32.SendMessage(w.hwnd, wmClose, 0, 0)
+		}
+	})
 }
 
 func errWindowClosed() error {

@@ -568,14 +568,18 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	}
 	if id, ok := b.winPaths[spec.Path]; ok {
 		w := b.windows[id]
-		b.windowMu.Unlock()
-		if w == nil {
-			return nil, &Error{Code: CodeInternal, Message: InternalErrorMsg}
+		if closed, known := windowClosed(w); w != nil && known && closed {
+			b.removeWindowLocked(id)
+		} else {
+			b.windowMu.Unlock()
+			if w == nil {
+				return nil, &Error{Code: CodeInternal, Message: InternalErrorMsg}
+			}
+			if err := w.Focus(); err != nil {
+				return nil, err
+			}
+			return w, nil
 		}
-		if err := w.Focus(); err != nil {
-			return nil, err
-		}
-		return w, nil
 	}
 	// Every count created from request input is capped. windows.open is
 	// UNGATED, OpenWindow de-dupes per path STRING, and
@@ -700,8 +704,35 @@ func (b *Battery) handleWindowClosed(id string) {
 	// removing the registration.
 	b.openMu.Lock()
 	defer b.openMu.Unlock()
+	b.handleWindowClosedLocked(id)
+}
+
+// handleWindowClosedLocked removes a closed window while the caller holds
+// openMu, so an id cannot be reused between lookup and cleanup.
+func (b *Battery) handleWindowClosedLocked(id string) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
+	if w := b.windows[id]; w != nil {
+		if closed, known := windowClosed(w); known && !closed {
+			// A delayed close callback may belong to an older window that
+			// reused this id. Keep the current, still-open registration.
+			return
+		}
+	}
+	b.removeWindowLocked(id)
+}
+
+func windowClosed(w Window) (closed, known bool) {
+	state, ok := w.(interface{ IsClosed() bool })
+	if !ok {
+		return false, false
+	}
+	return state.IsClosed(), true
+}
+
+// removeWindowLocked removes a registration while the caller holds
+// windowMu.
+func (b *Battery) removeWindowLocked(id string) {
 	delete(b.windows, id)
 	for p, pid := range b.winPaths {
 		if pid == id {
