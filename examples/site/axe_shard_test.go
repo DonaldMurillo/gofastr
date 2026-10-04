@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestParseAxeShard pins the shard knob's contract: empty is the whole gate,
 // "k/n" with 0 <= k < n selects a slice, and every other spelling is an
@@ -32,23 +35,45 @@ func TestParseAxeShard(t *testing.T) {
 }
 
 // TestAxeShardsPartitionTheWork proves the interleaved selection is a
-// partition: over any item count, every index lands in exactly one shard.
+// partition: over any item count, every item lands in exactly one shard.
+// A shard left with nothing (more shards than items) reports an error and
+// contributes no items; the partition still has to cover every item once.
 func TestAxeShardsPartitionTheWork(t *testing.T) {
 	for _, total := range []int{1, 2, 7, 100} {
+		items := make([]pageResult, total)
+		for i := range items {
+			items[i] = pageResult{path: fmt.Sprintf("/%d", i)}
+		}
 		for shards := 1; shards <= 4; shards++ {
-			seen := make([]int, total)
+			seen := map[string]int{}
 			for shard := 0; shard < shards; shard++ {
-				for i := 0; i < total; i++ {
-					if i%shards == shard {
-						seen[i]++
-					}
+				got, err := shardItems(items, shard, shards)
+				if err != nil {
+					continue
+				}
+				for _, it := range got {
+					seen[it.path]++
 				}
 			}
-			for i, c := range seen {
-				if c != 1 {
-					t.Fatalf("total=%d shards=%d: item %d selected %d times", total, shards, i, c)
+			for _, it := range items {
+				if seen[it.path] != 1 {
+					t.Fatalf("total=%d shards=%d: item %s selected %d times", total, shards, it.path, seen[it.path])
 				}
 			}
 		}
+	}
+}
+
+// TestShardItemsRefusesEmptySelection makes the empty-shard guard fail: one
+// item under 1/2 leaves shard 1 nothing to scan, and that is an error, not
+// a pass. Shard 0 of the same split gets the item.
+func TestShardItemsRefusesEmptySelection(t *testing.T) {
+	one := []pageResult{{path: "/"}}
+	if got, err := shardItems(one, 1, 2); err == nil {
+		t.Fatalf("shard 1/2 over one item: selected %d items and returned no error", len(got))
+	}
+	got, err := shardItems(one, 0, 2)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("shard 0/2 over one item: got %d items, err %v", len(got), err)
 	}
 }

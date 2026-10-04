@@ -225,22 +225,25 @@ trap 'rm -rf "$profdir"' EXIT
 # COVERPROFILE=<file>: measure every floor from one merged profile that an
 # earlier `go test -coverprofile=<file> <packages>` wrote (CI's Test step
 # runs every affected package that way) instead of re-running the suites
-# here. A row whose package has no statements in the file was outside that
-# run's scope and is skipped as unaffected, except under GOFASTR_TEST_ALL=1,
-# where every floor must be present and a missing one FAILS: that is the
-# full run, and a floor it cannot see is a floor nobody checks.
+# here. The affected set still decides which floors are checked (the same
+# cmd/affected walk the Test step scoped by); an affected floor with no
+# statements in the file FAILS rather than skips. The profile is evidence
+# the package was tested, and a floored package the sweep did not reach
+# (excluded, or a run that never wrote it) is a floor nobody checked.
+# Under GOFASTR_TEST_ALL=1 every floor is affected, so every one must be
+# present.
 affected=""
 if [ -n "${COVERPROFILE:-}" ]; then
   if [ ! -r "$COVERPROFILE" ]; then
     echo "FAIL  COVERPROFILE=$COVERPROFILE is not readable"; exit 2
   fi
   module_path=$(go list -m)
-elif [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
+fi
+if [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
   affected=$(go run ./cmd/affected -format dir)
 fi
 skipped=0
 is_affected() {
-  [ -n "${COVERPROFILE:-}" ] && return 0 # the profile decides, see slice_profile
   [ "${GOFASTR_TEST_ALL:-}" = "1" ] && return 0
   printf '%s\n' "$affected" | grep -Fxq -- "${1%/}"
 }
@@ -330,11 +333,7 @@ while read -r pkg floor filter; do
   if [ -n "${COVERPROFILE:-}" ]; then
     # One merged profile from the Test step; no second run of the suite.
     if ! prof=$(slice_profile "$pkg"); then
-      if [ "${GOFASTR_TEST_ALL:-}" = "1" ]; then
-        echo "FAIL  $label — no statements in COVERPROFILE on a full run (was the package tested?)"; fail=1
-      else
-        skipped=$((skipped + 1))
-      fi
+      echo "FAIL  $label — affected, but no statements in COVERPROFILE (was the package tested, or excluded from the sweep?)"; fail=1
       continue
     fi
     cov=$(bucket_cov "$prof" "$filter")
