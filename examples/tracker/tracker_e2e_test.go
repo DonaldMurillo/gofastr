@@ -22,9 +22,9 @@ import (
 // these tests pin the PRODUCT behaviours the showcase exists to show.
 
 const (
-	asideSel   = `[data-fui-outlet="l:shell#aside"]`
-	crumbsSel  = `[data-fui-area="l:shell~crumbs"]`
-	toolbarSel = `[data-fui-outlet="l:shell#toolbar"]`
+	asideSel   = `[data-cui-outlet="l:shell#aside"]`
+	crumbsSel  = `[data-cui-area="l:shell~crumbs"]`
+	toolbarSel = `[data-cui-outlet="l:shell#toolbar"]`
 	filterSel  = `#filter-search-filter`
 )
 
@@ -186,7 +186,7 @@ func TestTrackerIssueFlowE2E(t *testing.T) {
 
 	// Apply the server-side GET filter; only matching rows are rendered.
 	if err := chromedp.Run(ctx, chromedp.SendKeys(filterSel, "retry"),
-		chromedp.Click(`[data-fui-comp="ui-filter-toolbar"] button[type="submit"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-comp="ui-filter-toolbar"] button[type="submit"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#filter-search-filter[value="retry"]`, chromedp.ByQuery)); err != nil {
 		t.Fatalf("filter: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestTrackerStaticExportE2E(t *testing.T) {
 // marked current by the server on /projects/billing, and the runtime's
 // active-link sweep must KEEP it lit after a client navigation deeper
 // into the section (the item's MatchPath rides the link as
-// data-fui-match-prefix).
+// data-cui-match-prefix).
 func TestTrackerSidebarCurrentAfterNavE2E(t *testing.T) {
 	base := trackerServe(t)
 	ctx, _ := trackerTab(t, trackerBrowser(t, 1280, 800), 120*time.Second)
@@ -452,7 +452,7 @@ func TestTrackerSwapFocusRingE2E(t *testing.T) {
 	}
 	var clickOutline, clickFocused string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const cell = document.querySelector('.fui-list-detail [data-fui-layout-slot]');
+		const cell = document.querySelector('.fui-list-detail [data-cui-layout-slot]');
 		const cs = getComputedStyle(cell);
 		return JSON.stringify({
 			style: cs.outlineStyle,
@@ -496,7 +496,7 @@ func TestTrackerSwapFocusRingE2E(t *testing.T) {
 	}
 	var raw string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const cell = document.querySelector('.fui-list-detail [data-fui-layout-slot]');
+		const cell = document.querySelector('.fui-list-detail [data-cui-layout-slot]');
 		return JSON.stringify({style: getComputedStyle(cell).outlineStyle, focused: document.activeElement === cell});
 	})()`, &raw)); err != nil {
 		t.Fatalf("read focus state after Enter: %v", err)
@@ -537,7 +537,7 @@ func TestTrackerPartFillEventE2E(t *testing.T) {
 		t.Fatalf("arm recorder: %v", err)
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.Click(`[data-fui-scope="appbar"] a.brand`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-scope="appbar"] a.brand`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("click brand: %v", err)
 	}
@@ -660,14 +660,14 @@ func TestTrackerBellPopoverE2E(t *testing.T) {
 			t.Fatalf("%s: click bell: %v", tc.name, err)
 		}
 		waitForExpr(t, ctx, `(() => {
-			const w = document.querySelector('[data-fui-widget="tracker-bell"]');
+			const w = document.querySelector('[data-cui-widget="tracker-bell"]');
 			return !!w && !w.hasAttribute('hidden') &&
-				!!w.getAttribute('data-fui-popover-side');
+				!!w.getAttribute('data-cui-popover-side');
 		})()`, 10*time.Second)
 
 		var geo map[string]any
 		if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-			const w = document.querySelector('[data-fui-widget="tracker-bell"]');
+			const w = document.querySelector('[data-cui-widget="tracker-bell"]');
 			const b = document.querySelector('[data-hui-notification-bell]');
 			const r = w.getBoundingClientRect();
 			const br = b.getBoundingClientRect();
@@ -697,7 +697,7 @@ func TestTrackerBellPopoverE2E(t *testing.T) {
 			chromedp.KeyEvent(kb.Escape),
 			chromedp.Sleep(200*time.Millisecond),
 			chromedp.Evaluate(`(() => {
-				const w = document.querySelector('[data-fui-widget="tracker-bell"]');
+				const w = document.querySelector('[data-cui-widget="tracker-bell"]');
 				const b = document.querySelector('[data-hui-notification-bell]');
 				return { open: !!w && !w.hasAttribute('hidden'),
 					focusOnBell: document.activeElement === b };
@@ -717,7 +717,7 @@ func TestTrackerBellPopoverE2E(t *testing.T) {
 			t.Fatalf("%s: reopen: %v", tc.name, err)
 		}
 		waitForExpr(t, ctx, `(() => {
-			const w = document.querySelector('[data-fui-widget="tracker-bell"]');
+			const w = document.querySelector('[data-cui-widget="tracker-bell"]');
 			return !!w && !w.hasAttribute('hidden');
 		})()`, 10*time.Second)
 		if err := jsClick(ctx, `#issue-detail h2, main h1`); err != nil {
@@ -727,7 +727,7 @@ func TestTrackerBellPopoverE2E(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Sleep(200*time.Millisecond),
 			chromedp.Evaluate(`(() => {
-				const w = document.querySelector('[data-fui-widget="tracker-bell"]');
+				const w = document.querySelector('[data-cui-widget="tracker-bell"]');
 				return !!w && !w.hasAttribute('hidden');
 			})()`, &open),
 		); err != nil {
@@ -900,7 +900,7 @@ func TestTrackerAsideCollapseE2E(t *testing.T) {
 	}
 	var mid map[string]any
 	if err := chromedp.Run(ctx,
-		chromedp.Poll(`location.pathname === '/reports' && document.querySelector('[data-fui-outlet="l:shell#aside"]').textContent === ''`, nil),
+		chromedp.Poll(`location.pathname === '/reports' && document.querySelector('[data-cui-outlet="l:shell#aside"]').textContent === ''`, nil),
 		chromedp.Evaluate(`(() => {
 			const a = document.querySelector('.fui-content-row__aside');
 			return {display: getComputedStyle(a).display};
@@ -971,7 +971,7 @@ func TestTrackerPhoneCrumbsSeparatorE2E(t *testing.T) {
 		chromedp.WaitVisible("main", chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const items = document.querySelectorAll('[data-fui-area="l:shell~crumbs"] .fui-breadcrumbs__item');
+			const items = document.querySelectorAll('[data-cui-area="l:shell~crumbs"] .fui-breadcrumbs__item');
 			let firstVisible = null, visibleCount = 0;
 			for (const it of items) {
 				if (getComputedStyle(it).display !== 'none') {
@@ -1040,15 +1040,15 @@ func TestTrackerSlideTransitionSequentialE2E(t *testing.T) {
 	var frames map[string]any
 	if err := chromedp.Run(ctx,
 		chromedp.Poll(`(() => {
-			const vt = document.querySelector('.fui-list-detail [data-fui-vt]');
+			const vt = document.querySelector('.fui-list-detail [data-cui-vt]');
 			if (!vt) return false;
-			const name = vt.getAttribute('data-fui-vt');
+			const name = vt.getAttribute('data-cui-vt');
 			const anims = document.getAnimations().filter((a) =>
 				a.animationName === name + '-in' || a.animationName === name + '-out');
 			return anims.length === 2;
 		})()`, nil, chromedp.WithPollingTimeout(15*time.Second)),
 		chromedp.Evaluate(`(() => {
-			const name = document.querySelector('.fui-list-detail [data-fui-vt]').getAttribute('data-fui-vt');
+			const name = document.querySelector('.fui-list-detail [data-cui-vt]').getAttribute('data-cui-vt');
 			const out = {};
 			for (const a of document.getAnimations()) {
 				if (a.animationName !== name + '-in' && a.animationName !== name + '-out') continue;
@@ -1098,7 +1098,7 @@ func TestTrackerSlideTransitionSequentialE2E(t *testing.T) {
 	// slide leg still animates a transform at all).
 	var hasTransform bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const name = document.querySelector('.fui-list-detail [data-fui-vt]').getAttribute('data-fui-vt');
+		const name = document.querySelector('.fui-list-detail [data-cui-vt]').getAttribute('data-cui-vt');
 		for (const a of document.getAnimations()) {
 			if (a.animationName !== name + '-in') continue;
 			return a.effect.getKeyframes().some((k) => k.offset === 0 && typeof k.transform === 'string' && k.transform !== 'none');
@@ -1167,8 +1167,8 @@ func TestTrackerDrawerHeaderE2E(t *testing.T) {
 	ctx, _ := trackerTab(t, trackerBrowser(t, 390, 844), 120*time.Second)
 
 	const (
-		triggerSel = `[data-fui-scope="appbar"] .fui-sidebar__hamburger`
-		drawerSel  = `[data-fui-widget="ui-sidebar-drawer"]`
+		triggerSel = `[data-cui-scope="appbar"] .fui-sidebar__hamburger`
+		drawerSel  = `[data-cui-widget="ui-sidebar-drawer"]`
 		closeSel   = drawerSel + ` .fui-sidebar__drawer-close`
 	)
 	if err := chromedp.Run(ctx,
@@ -1349,10 +1349,10 @@ func TestTrackerMobilePaneSlideE2E(t *testing.T) {
 		chromedp.WaitVisible(filterSel, chromedp.ByQuery),
 		chromedp.Evaluate(`(() => {
 			const region = document.querySelector('.fui-list-detail');
-			const cell = document.querySelector('.fui-list-detail [data-fui-layout-slot]');
+			const cell = document.querySelector('.fui-list-detail [data-cui-layout-slot]');
 			return {region: getComputedStyle(region).viewTransitionName,
 				cell: getComputedStyle(cell).viewTransitionName,
-				regionWhen: region.getAttribute('data-fui-vt-when')};
+				regionWhen: region.getAttribute('data-cui-vt-when')};
 		})()`, &place),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
@@ -1398,7 +1398,7 @@ func TestTrackerMobilePaneSlideE2E(t *testing.T) {
 			// crossfade on purpose — the unchanged pixels behind them
 			// would blink behind a sequential one.
 			const declared = new Set();
-			for (const el of document.querySelectorAll('[data-fui-vt]')) declared.add(el.getAttribute('data-fui-vt'));
+			for (const el of document.querySelectorAll('[data-cui-vt]')) declared.add(el.getAttribute('data-cui-vt'));
 			const names = new Set();
 			for (const a of document.getAnimations()) {
 				const m = a.animationName && a.animationName.match(/^(.*)-(in|out)$/);
@@ -1407,7 +1407,7 @@ func TestTrackerMobilePaneSlideE2E(t *testing.T) {
 			const cs = (p) => parseFloat(getComputedStyle(document.documentElement, p).opacity);
 			const pairs = {};
 			for (const n of names) pairs[n] = {old: cs('::view-transition-old(' + n + ')'), fresh: cs('::view-transition-new(' + n + ')')};
-			const cell = document.querySelector('.fui-list-detail [data-fui-layout-slot]');
+			const cell = document.querySelector('.fui-list-detail [data-cui-layout-slot]');
 			return {pairs, cellName: getComputedStyle(cell).viewTransitionName,
 				regionName: getComputedStyle(document.querySelector('.fui-list-detail')).viewTransitionName};
 		})()`, &mid),
@@ -1634,7 +1634,7 @@ func crumbsProbe(t *testing.T, ctx context.Context) (state string, skeleton bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`(() => {
 		const el = document.querySelector(%q);
 		return JSON.stringify({
-			s: el.getAttribute('data-fui-loadstate') || '',
+			s: el.getAttribute('data-cui-loadstate') || '',
 			k: !!el.querySelector('.fui-skeleton-line'),
 			t: el.textContent.trim(),
 		});
@@ -1679,7 +1679,7 @@ func TestTrackerCrumbSkeletonE2E(t *testing.T) {
 	}
 	state, skeleton, _ := crumbsProbe(t, ctx)
 	if state != "shown" {
-		t.Errorf("crumbs data-fui-loadstate during slow flight = %q, want \"shown\"", state)
+		t.Errorf("crumbs data-cui-loadstate during slow flight = %q, want \"shown\"", state)
 	}
 	if !skeleton {
 		t.Error("crumbs during slow flight show no skeleton line; the area's loading content must clone in past After")
@@ -1710,7 +1710,7 @@ func TestTrackerCrumbSkeletonE2E(t *testing.T) {
 			window.__cs = { shown: 0, frames: 0, done: false };
 			const tick = () => {
 				const el = document.querySelector(%q);
-				if (el && (el.getAttribute('data-fui-loadstate') || el.querySelector('.fui-skeleton-line'))) window.__cs.shown++;
+				if (el && (el.getAttribute('data-cui-loadstate') || el.querySelector('.fui-skeleton-line'))) window.__cs.shown++;
 				window.__cs.frames++;
 				if (!window.__cs.done) requestAnimationFrame(tick);
 			};

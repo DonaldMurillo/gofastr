@@ -58,7 +58,7 @@ func TestMustRegistersAppSheetLoadAlways(t *testing.T) {
 	if entry.Load != registry.LoadAlways {
 		t.Errorf("app sheet load mode: %d", entry.Load)
 	}
-	if !strings.Contains(entry.CSSFor(style.DefaultTheme()), "@scope (:root) to ([data-fui-internal])") {
+	if !strings.Contains(entry.CSSFor(style.DefaultTheme()), "@scope (:root) to ([data-cui-internal])") {
 		t.Errorf("app wrap missing: %s", entry.CSSFor(style.DefaultTheme()))
 	}
 	_ = s
@@ -116,12 +116,12 @@ func TestScopeStampsOnlyTheScopeMarker(t *testing.T) {
 	s := Must("issuecard", KindScoped, cardCSS)
 	root := render.HTML(`<a class="card" href="/x">body</a>`)
 	got := string(s.Scope(root))
-	want := `<a class="card" href="/x" data-fui-scope="issuecard">body</a>`
+	want := `<a class="card" href="/x" data-cui-scope="issuecard">body</a>`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
-	if strings.Contains(got, "data-fui-comp") {
-		t.Fatalf("Scope stamped a loader marker; owned sheets load by data-fui-scope:\n%s", got)
+	if strings.Contains(got, "data-cui-comp") {
+		t.Fatalf("Scope stamped a loader marker; owned sheets load by data-cui-scope:\n%s", got)
 	}
 	// Same owner again is a no-op.
 	if again := string(s.Scope(render.HTML(got))); again != got {
@@ -131,14 +131,14 @@ func TestScopeStampsOnlyTheScopeMarker(t *testing.T) {
 
 func TestScopeOnKitRootKeepsCompAndGainsScope(t *testing.T) {
 	// Style.Scope(ui.Card(...)): the kit root already carries
-	// data-fui-comp="ui-card" (the kit sheet's loader marker). Scope
-	// must keep it and add only data-fui-scope — a second comp marker
+	// data-cui-comp="ui-card" (the kit sheet's loader marker). Scope
+	// must keep it and add only data-cui-scope — a second comp marker
 	// would collide with the kit's own loading.
 	ownIsolate(t)
 	s := Must("issuecard", KindScoped, cardCSS)
-	root := render.HTML(`<div class="fui-card" data-fui-comp="ui-card"><div class="fui-card__body"></div></div>`)
+	root := render.HTML(`<div class="fui-card" data-cui-comp="ui-card"><div class="fui-card__body"></div></div>`)
 	got := string(s.Scope(root))
-	want := `<div class="fui-card" data-fui-comp="ui-card" data-fui-scope="issuecard"><div class="fui-card__body"></div></div>`
+	want := `<div class="fui-card" data-cui-comp="ui-card" data-cui-scope="issuecard"><div class="fui-card__body"></div></div>`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}

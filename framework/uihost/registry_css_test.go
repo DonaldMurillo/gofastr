@@ -199,7 +199,7 @@ func TestComponentCSS_ServeIndividualSheetIsScoped(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	wantSel := `[data-fui-comp="` + st.Name() + `"] .x`
+	wantSel := `[data-cui-comp="` + st.Name() + `"] .x`
 	if !strings.Contains(body, wantSel) {
 		t.Errorf("CSS not scoped:\n%s", body)
 	}
@@ -218,10 +218,10 @@ func TestComponentCSS_BundleConcatenates(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `[data-fui-comp="`+a.Name()+`"]`) {
+	if !strings.Contains(body, `[data-cui-comp="`+a.Name()+`"]`) {
 		t.Error("bundle missing component A")
 	}
-	if !strings.Contains(body, `[data-fui-comp="`+b.Name()+`"]`) {
+	if !strings.Contains(body, `[data-cui-comp="`+b.Name()+`"]`) {
 		t.Error("bundle missing component B")
 	}
 }
@@ -243,7 +243,7 @@ func TestComponentCSS_BundleDedupesNames(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	count := strings.Count(body, `[data-fui-comp="`+a.Name()+`"]`)
+	count := strings.Count(body, `[data-cui-comp="`+a.Name()+`"]`)
 	if count != 1 {
 		t.Errorf("bundle should ship %s exactly once, got %d occurrences", a.Name(), count)
 	}
@@ -406,8 +406,8 @@ func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
 	b := registerTestStyle(t, "battr-b")
 	ds := newTestUIHostForMany(a, b)
 	body := pageBody(t, ds, "/")
-	if !strings.Contains(body, `data-fui-bundle="`) {
-		t.Errorf("bundle <link> must carry data-fui-bundle attr for runtime dedup seeding:\n%s", truncate(body, 800))
+	if !strings.Contains(body, `data-cui-bundle="`) {
+		t.Errorf("bundle <link> must carry data-cui-bundle attr for runtime dedup seeding:\n%s", truncate(body, 800))
 	}
 	// Both names must appear in the bundle attribute. Other test-
 	// registered styles (LoadAlways from earlier subtests in the

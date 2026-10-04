@@ -29,20 +29,20 @@ func TestE2E_SetSignalRejectsJavascriptHref(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		pageReady(),
 		chromedp.Evaluate(`(() => {
-            // Two anchors bound to distinct signals via data-fui-signal*
+            // Two anchors bound to distinct signals via data-cui-signal*
             // attrs. Runtime writes each signal value into the href.
             const a1 = document.createElement('a');
             a1.id = 'sig-danger';
-            a1.setAttribute('data-fui-signal', 'danger_href');
-            a1.setAttribute('data-fui-signal-mode', 'attr');
-            a1.setAttribute('data-fui-signal-attr', 'href');
+            a1.setAttribute('data-cui-signal', 'danger_href');
+            a1.setAttribute('data-cui-signal-mode', 'attr');
+            a1.setAttribute('data-cui-signal-attr', 'href');
             a1.textContent = 'danger';
             document.body.appendChild(a1);
             const a2 = document.createElement('a');
             a2.id = 'sig-benign';
-            a2.setAttribute('data-fui-signal', 'benign_href');
-            a2.setAttribute('data-fui-signal-mode', 'attr');
-            a2.setAttribute('data-fui-signal-attr', 'href');
+            a2.setAttribute('data-cui-signal', 'benign_href');
+            a2.setAttribute('data-cui-signal-mode', 'attr');
+            a2.setAttribute('data-cui-signal-attr', 'href');
             a2.textContent = 'benign';
             document.body.appendChild(a2);
             // Drive the API the test cares about.
@@ -111,7 +111,7 @@ func TestE2E_AnchorDownloadSkipsSPA(t *testing.T) {
 	}
 }
 
-// Item 3c: hovering an element with data-fui-prefetch="popover" must
+// Item 3c: hovering an element with data-cui-prefetch="popover" must
 // trigger a fetch for the popover module exactly once even when the
 // pointerover fires twice (the delegator de-dupes per element via a
 // WeakSet). The local `loadModule` is closure-bound, so we observe the
@@ -133,7 +133,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 		chromedp.Evaluate(`(() => {
             const btn = document.createElement('button');
             btn.id = 'prefetch-btn';
-            btn.setAttribute('data-fui-prefetch', 'popover');
+            btn.setAttribute('data-cui-prefetch', 'popover');
             btn.textContent = 'prefetch test';
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
@@ -155,7 +155,7 @@ func TestE2E_HoverPrefetchLoadsModule(t *testing.T) {
 	if popoverFetches == 0 {
 		var listed []string
 		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
-		t.Errorf("hover on data-fui-prefetch did not fetch popover module; urls: %v", listed)
+		t.Errorf("hover on data-cui-prefetch did not fetch popover module; urls: %v", listed)
 	}
 	if popoverFetches > 1 {
 		t.Errorf("popover fetched %d times — delegator must de-dup per element", popoverFetches)

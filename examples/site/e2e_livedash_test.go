@@ -266,12 +266,12 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 	ctx := siteBrowserCtx(t)
 
 	// The Acknowledge button is uniquely identified by its
-	// data-fui-signal-inc target. Its distinct accessible name now
+	// data-cui-signal-inc target. Its distinct accessible name now
 	// rides ButtonConfig.AriaLabel (#281), so aria-label carries
 	// "Acknowledge one incident" instead of being clobbered by the
 	// visible Label; the ackAria assertion below proves that.
-	const ackBtnSel = `button[data-fui-signal-inc="dash.incidentsAckd:1"]`
-	const ackCountSel = `[data-fui-signal="dash.incidentsAckd"]`
+	const ackBtnSel = `button[data-cui-signal-inc="dash.incidentsAckd:1"]`
+	const ackCountSel = `[data-cui-signal="dash.incidentsAckd"]`
 
 	var before, after, ackAria string
 	if err := chromedp.Run(ctx,
@@ -280,16 +280,16 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		// #281: the distinct AriaLabel reaches the rendered button
 		// instead of the visible "Acknowledge".
 		chromedp.AttributeValue(ackBtnSel, "aria-label", &ackAria, nil, chromedp.ByQuery),
-		// The data-fui-signal-inc click delegator lives in core
+		// The data-cui-signal-inc click delegator lives in core
 		// runtime.js (not a separate module). Wait for the runtime
 		// to be reachable before relying on it.
 		chromedp.Poll(`typeof (window.__gofastr || {}).setSignal === 'function'`, nil, chromedp.WithPollingInterval(50*1e6)),
 		// Confirm the bound count span is in the DOM with the SSR
 		// initial value of "0", guards against the bind regressing
-		// back to static text (no data-fui-signal attr).
+		// back to static text (no data-cui-signal attr).
 		chromedp.WaitVisible(ackCountSel, chromedp.ByQuery),
 		chromedp.Text(ackCountSel, &before, chromedp.ByQuery),
-		// Click (NOT Submit, see CLAUDE.md). data-fui-signal-inc is
+		// Click (NOT Submit, see CLAUDE.md). data-cui-signal-inc is
 		// a click delegator; no form submission is involved.
 		chromedp.Click(ackBtnSel, chromedp.ByQuery),
 		// Poll for the DOM to reflect the new signal value. The
@@ -297,7 +297,7 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		// bound span on the same tick, but a brief poll keeps the
 		// test tolerant of scheduling on slow CI runners.
 		chromedp.Poll(`(() => {
-			const el = document.querySelector('[data-fui-signal="dash.incidentsAckd"]');
+			const el = document.querySelector('[data-cui-signal="dash.incidentsAckd"]');
 			return el && el.textContent === '1';
 		})()`, nil, chromedp.WithPollingInterval(50*1e6)),
 		chromedp.Text(ackCountSel, &after, chromedp.ByQuery),
@@ -312,7 +312,7 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		t.Fatalf("acknowledged count before click = %q, want \"0\" — the bind did not stamp the SSR default", before)
 	}
 	if after != "1" {
-		t.Fatalf("acknowledged count after click = %q, want \"1\" — the Acknowledge button is inert (data-fui-signal-inc fired but no DOM node is bound to dash.incidentsAckd, or the runtime did not apply the mutation)", after)
+		t.Fatalf("acknowledged count after click = %q, want \"1\" — the Acknowledge button is inert (data-cui-signal-inc fired but no DOM node is bound to dash.incidentsAckd, or the runtime did not apply the mutation)", after)
 	}
 }
 

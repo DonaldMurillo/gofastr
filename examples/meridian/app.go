@@ -184,7 +184,7 @@ func appTheme() style.Theme {
 // inkTheme is the app palette inverted to its dark values, registered as
 // a section-level theme override (ui.Themed) so a marketing band renders
 // as dark "ink" in BOTH color schemes. The override re-declares every
-// token under a .fui-theme-<hash> class in app.css; components inside the
+// token under a .cui-theme-<hash> class in app.css; components inside the
 // wrapped subtree dereference var(--color-*) against it via the cascade.
 func inkTheme() style.Theme {
 	t := appTheme()

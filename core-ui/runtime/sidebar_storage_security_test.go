@@ -15,13 +15,13 @@ import (
 // encodeURIComponent(key), the banner.js dismissKey shape) with a one-time
 // migration of the legacy raw entry.
 //
-// Property: a storage key the runtime writes that comes from a data-fui-*
+// Property: a storage key the runtime writes that comes from a data-cui-*
 // attribute must not let injected markup write outside the namespace the
 // feature owns (banner.js already encodes; this is the parity decision).
 // Surfaces: core-ui/runtime/src/sidebar.js::setCollapsed/setup (localStorage
-// keyed by data-fui-sidebar-storage) and
+// keyed by data-cui-sidebar-storage) and
 // core-ui/runtime/src/widgethelpers.js::wirePersist (localStorage keyed by
-// data-fui-persist-storage); contrast surface src/banner.js::dismissKey
+// data-cui-persist-storage); contrast surface src/banner.js::dismissKey
 // which encodes. The sibling pin
 // sidebar_server_state_e2e_test.go::TestSidebarGroupToggleAndAutoLabelRestore
 // covers the same namespace through a server-served page (including the
@@ -31,7 +31,7 @@ import (
 // framework/headless TestE2E_SidebarStorageKeyIsEncoded owns it now
 // (the spellings are data-hui-sidebar-*, the module headless-sidebar).
 // TestPersistStorageKeyIsEncoded: an injected input whose
-// data-fui-persist-storage names another feature's key must not be able to
+// data-cui-persist-storage names another feature's key must not be able to
 // write that key — and the draft must still persist, inside the persist
 // namespace.
 func TestPersistStorageKeyIsEncoded(t *testing.T) {
@@ -54,7 +54,7 @@ func TestPersistStorageKeyIsEncoded(t *testing.T) {
 		// module scanners the added NODE, and widgethelpers' scan wires
 		// descendants of it — exactly how an island swap delivers the field.
 		chromedp.Evaluate(`document.getElementById('host').innerHTML =
-			'<div id="wrap"><textarea id="draft" data-fui-persist-storage="kiln-input-draft"></textarea></div>'; true`, nil),
+			'<div id="wrap"><textarea id="draft" data-cui-persist-storage="kiln-input-draft"></textarea></div>'; true`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		// Typing in the injected field persists the draft.
 		chromedp.Evaluate(`document.getElementById('draft').value = 'planted draft';`+
@@ -66,7 +66,7 @@ func TestPersistStorageKeyIsEncoded(t *testing.T) {
 		t.Fatal(err)
 	}
 	if foreign != "null" && foreign != "" {
-		t.Errorf("SECURITY: an attribute-borne data-fui-persist-storage value wrote "+
+		t.Errorf("SECURITY: an attribute-borne data-cui-persist-storage value wrote "+
 			"localStorage['kiln-input-draft']=%q — the key must be namespaced and encoded "+
 			"so injected markup cannot clobber any localStorage key on the origin", foreign)
 	}

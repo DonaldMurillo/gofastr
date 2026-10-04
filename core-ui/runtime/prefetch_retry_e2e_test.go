@@ -15,7 +15,7 @@ import (
 // A failed prefetch fetch must not pin the element as attempted. Marker-
 // driven modules self-heal: every SPA nav and DOM insertion re-runs
 // _scanForModules, which retries loadModule for present-but-unloaded
-// markers. `widgetfocus` has no data-fui-* scanner entry (widgets.js demand-loads it),
+// markers. `widgetfocus` has no data-cui-* scanner entry (widgets.js demand-loads it),
 // so the prefetch bridge is the ONLY loader: pin the element on failure
 // and a vacate strip's panels stay empty for the page lifetime. The
 // bridge marks an element attempted only once its fetch succeeds, so the
@@ -55,7 +55,7 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<!doctype html><html><head><title>prefetch-retry</title></head><body>
-  <div id="wrap" data-fui-prefetch="widgetfocus">strip</div>
+  <div id="wrap" data-cui-prefetch="widgetfocus">strip</div>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`))
 	})

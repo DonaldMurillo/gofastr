@@ -24,13 +24,13 @@ func collapsibleCSS(_ style.Theme) string {
 	// Token chain: --fui-* (the interactive set's host override bridge,
 	// see TestFuiBridgeChainsToColorTokens) wins when a host sets it, then
 	// the canonical adaptive --color-* theme, then the light literal.
-	return `[data-fui-comp="fui-collapsible"]{border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md,.5rem);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));overflow:hidden}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a));list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform var(--duration-fast,150ms) var(--easing-standard,ease);color:var(--fui-muted, var(--color-text-muted, #64748b))}` +
-		`[data-fui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(90deg)}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__content{padding:.75rem var(--spacing-lg, 1rem);color:var(--fui-foreground, var(--color-text, #0f172a));border-top:1px solid var(--fui-border, var(--color-border, #e2e8f0))}`
+	return `[data-cui-comp="fui-collapsible"]{border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md,.5rem);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));overflow:hidden}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a));list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform var(--duration-fast,150ms) var(--easing-standard,ease);color:var(--fui-muted, var(--color-text-muted, #64748b))}` +
+		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(90deg)}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:.75rem var(--spacing-lg, 1rem);color:var(--fui-foreground, var(--color-text, #0f172a));border-top:1px solid var(--fui-border, var(--color-border, #e2e8f0))}`
 }
 
 // ─── Collapsible ────────────────────────────────────────────────────

@@ -170,12 +170,12 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 		Guidance: "Pass Overrides.",
 		Find:     upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "p", Name: "N"}}},
 	}
-	sinks := upgrade.MarkerSinks{AttrKeys: []string{"data-fui-comp"}}
+	sinks := upgrade.MarkerSinks{AttrKeys: []string{"data-cui-comp"}}
 	stubScan(t, func(root string, notes []*upgrade.Note, gotSinks upgrade.MarkerSinks) (*scan.Result, error) {
 		if len(notes) != 1 || notes[0] != note {
 			t.Errorf("engine must receive the in-range notes, got %d", len(notes))
 		}
-		if len(gotSinks.AttrKeys) != 1 || gotSinks.AttrKeys[0] != "data-fui-comp" {
+		if len(gotSinks.AttrKeys) != 1 || gotSinks.AttrKeys[0] != "data-cui-comp" {
 			t.Errorf("engine must receive the registry's marker sinks, got %+v", gotSinks)
 		}
 		return &scan.Result{

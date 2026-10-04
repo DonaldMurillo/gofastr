@@ -74,7 +74,7 @@ type FileDropzoneConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the dropzone's root div.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* key — the drop hooks are
+	// ID), data-cui-*, and every data-hui-* key — the drop hooks are
 	// the runtime's contract, not a caller's to forge. A retargeted
 	// data-hui-drop-input would send every drop on this zone to
 	// another input.
@@ -158,7 +158,7 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	// and the prompt) is the caller's, so the mark sits on the
 	// label wrapper and not the elements inside it.
 	zone := render.Tag("label",
-		map[string]string{"for": id, "class": "fui-drop__label-wrap", "data-fui-internal": ""},
+		map[string]string{"for": id, "class": "fui-drop__label-wrap", "data-cui-internal": ""},
 		render.Tag("div", map[string]string{
 			"class": "fui-drop__zone",
 			// role=region + aria-label so AT users hear "<Label>, region"
@@ -178,13 +178,13 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			"class":              "fui-drop__list",
 			"role":               "list",
 			"data-hui-drop-list": "",
-			"data-fui-internal":  "",
+			"data-cui-internal":  "",
 		}),
 		render.Tag("span", map[string]string{
 			"class":                "fui-drop__status",
 			"role":                 "status",
 			"data-hui-drop-status": "",
-			"data-fui-internal":    "",
+			"data-cui-internal":    "",
 		}),
 	)
 	if cfg.ShowPreview {
@@ -192,18 +192,18 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			"class":                         "fui-drop__previews",
 			"data-fui-dropzone-preview-for": id,
 			"aria-live":                     "polite",
-			"data-fui-internal":             "",
+			"data-cui-internal":             "",
 		}))
 	}
 
 	if help := dropzoneHelp(cfg, ctx); help != "" {
 		children = append(children, render.Tag("p", map[string]string{
-			"id": id + "-help", "class": "fui-drop__help", "data-fui-internal": "",
+			"id": id + "-help", "class": "fui-drop__help", "data-cui-internal": "",
 		}, render.Text(help)))
 	}
 	if cfg.Error != "" {
 		children = append(children, render.Tag("p", map[string]string{
-			"id": id + "-error", "class": "fui-drop__error", "role": "alert", "data-fui-internal": "",
+			"id": id + "-error", "class": "fui-drop__error", "role": "alert", "data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
 

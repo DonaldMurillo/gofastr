@@ -32,7 +32,7 @@ type InputGroupConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the group's root wrapper
 	// div. Keys the component owns are dropped: class and id (use
-	// Class) and data-fui-*.
+	// Class) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 

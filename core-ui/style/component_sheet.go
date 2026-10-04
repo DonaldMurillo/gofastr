@@ -7,7 +7,7 @@ import (
 )
 
 // ComponentSheet builds component-scoped CSS. Every top-level selector
-// is automatically prefixed with [data-fui-comp="<name>"] at Build()
+// is automatically prefixed with [data-cui-comp="<name>"] at Build()
 // time, including ,-separated compound selectors. @keyframes pass
 // through unprefixed; rules inside @media/@container are still scoped
 // (the wrapping at-rule remains intact).
@@ -30,7 +30,7 @@ type ComponentSheet struct {
 }
 
 // NewComponentSheet creates a new scoped stylesheet bound to a theme.
-// The name becomes the value of the data-fui-comp attribute the
+// The name becomes the value of the data-cui-comp attribute the
 // framework injects on the component's outermost tag.
 func NewComponentSheet(name string, theme Theme) *ComponentSheet {
 	return &ComponentSheet{
@@ -105,11 +105,11 @@ func (cs *ComponentSheet) End() *ComponentSheet {
 }
 
 // Build serializes the stylesheet with every top-level selector
-// scoped to [data-fui-comp="<name>"]. Returns an error if any
+// scoped to [data-cui-comp="<name>"]. Returns an error if any
 // selector cannot be safely scoped (body, html, :root, *,
 // ::backdrop, ::view-transition-*).
 func (cs *ComponentSheet) Build() (string, error) {
-	prefix := `[data-fui-comp="` + cs.name + `"]`
+	prefix := `[data-cui-comp="` + cs.name + `"]`
 	if err := scopeRules(cs.inner.rules, prefix); err != nil {
 		return "", err
 	}

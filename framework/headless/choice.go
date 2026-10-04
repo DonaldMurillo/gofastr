@@ -74,7 +74,7 @@ func Choice(p ChoiceProps, s Classes) render.HTML {
 		text = append(text, El("span", s, PartHint, nil, render.Text(p.Hint)))
 	}
 
-	return El("label", s, PartRoot, nil,
+	return El("label", s, PartRoot, Mark(html.Attrs{}, "data-hui-choice"),
 		El("input", s, PartControl, Internal(input)),
 		El("span", s, PartText, Internal(nil), text...),
 	)
@@ -119,7 +119,7 @@ func Switch(p SwitchProps, s Classes) render.HTML {
 	attrsSet(input, "id", p.ID)
 	Flag(input, "checked", p.Checked)
 	Flag(input, "disabled", p.Disabled)
-	return El("label", s, PartRoot, nil,
+	return El("label", s, PartRoot, Mark(html.Attrs{}, "data-hui-choice"),
 		El("input", s, PartControl, Internal(input)),
 		// No part: the switch's text span carries no class today and
 		// PartText is left to the class map to decide.
@@ -168,6 +168,11 @@ func init() {
 	Register(Spec{
 		Name:    "Choice",
 		Anatomy: []Part{PartRoot, PartControl, PartText, PartHint},
+		// data-hui-choice is the root's name for the runtime's
+		// form-errors module: a refused submission's message for a
+		// bare choice lands after the label (a <p> may not sit inside
+		// it), where the errored kit render puts it.
+		Hooks: []string{"data-hui-choice"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -186,6 +191,7 @@ func init() {
 	Register(Spec{
 		Name:    "Switch",
 		Anatomy: []Part{PartRoot, PartControl, PartText},
+		Hooks:   []string{"data-hui-choice"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{

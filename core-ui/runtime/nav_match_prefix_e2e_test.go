@@ -18,16 +18,16 @@ import (
 func navPrefixPage(path, js string) string {
 	return fmt.Sprintf(`<!doctype html><html><head><title>%s</title></head><body>
   <nav aria-label="Primary">
-    <a id="home" href="/" data-fui-match-prefix="">Home</a>
-    <a id="docs" href="/docs" data-fui-match-prefix="">Documentation</a>
-    <a id="blog" href="/blog/" data-fui-match-prefix="">Blog</a>
-    <a id="docsold" href="/docs-old" data-fui-match-prefix="">Archive</a>
+    <a id="home" href="/" data-cui-match-prefix="">Home</a>
+    <a id="docs" href="/docs" data-cui-match-prefix="">Documentation</a>
+    <a id="blog" href="/blog/" data-cui-match-prefix="">Blog</a>
+    <a id="docsold" href="/docs-old" data-cui-match-prefix="">Archive</a>
     <!-- The sidebar shape (framework/ui.SidebarItem.MatchPath): the
          attribute's VALUE names the section the link owns, and it can
          differ from the href — an overview entry linking deep into a
          section while owning the whole section prefix. -->
-    <a id="ov" href="/projects/billing/overview" data-fui-match-prefix="/projects/billing">Billing</a>
-    <a id="other" href="/elsewhere" data-fui-match-prefix="/nope">Elsewhere</a>
+    <a id="ov" href="/projects/billing/overview" data-cui-match-prefix="/projects/billing">Billing</a>
+    <a id="other" href="/elsewhere" data-cui-match-prefix="/nope">Elsewhere</a>
   </nav>
   <main><a id="deep" href="/docs/getting-started">Getting started</a> %s</main>
   <script src="/__gofastr/runtime.js"></script>

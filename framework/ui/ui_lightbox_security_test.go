@@ -30,14 +30,14 @@ func TestLightboxCaptionStaysTextMode(t *testing.T) {
 	}
 	h := string(s.Render())
 
-	if strings.Contains(h, `data-fui-signal-mode="html"`) {
+	if strings.Contains(h, `data-cui-signal-mode="html"`) {
 		t.Errorf("SECURITY: a Lightbox deeplink-bound region uses html mode; a URL-seeded caption value would render as markup:\n%s", h)
 	}
 	// URL-bearing bindings must be exactly the guarded attrs.
-	if !strings.Contains(h, `data-fui-signal-attr="src"`) {
+	if !strings.Contains(h, `data-cui-signal-attr="src"`) {
 		t.Errorf("Lightbox image must bind its src through the guarded attr mode:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-signal-attr="href"`) {
+	if !strings.Contains(h, `data-cui-signal-attr="href"`) {
 		t.Errorf("Lightbox download anchor must bind its href through the guarded attr mode:\n%s", h)
 	}
 	// The accessible label is config-supplied but must still be escaped.

@@ -143,7 +143,7 @@ const (
 	ChromeHiddenTitle
 	// ChromeNone is borderless: no title bar, no traffic lights, no
 	// resize box. The page drags the window through
-	// data-fui-window-drag.
+	// data-cui-window-drag.
 	ChromeNone
 	// ChromeUnified is the Notes and Finder shape: a transparent title
 	// bar with a hidden title and unified page content. macOS attaches an
@@ -516,7 +516,7 @@ func unsupportedErrorf(goos, goarch string) *Error {
 // Widget builds the WindowSpec of a floating widget: a borderless,
 // non-activating, transparent panel of w x h points showing one of the
 // app's own screens, dragged by whatever the page marks
-// data-fui-window-drag. Panel implies Float, so the widget stays above
+// data-cui-window-drag. Panel implies Float, so the widget stays above
 // the app's normal windows.
 func Widget(path string, w, h int) WindowSpec {
 	return WindowSpec{

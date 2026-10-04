@@ -69,14 +69,14 @@ func ownedStyleServer(t *testing.T) *httptest.Server {
 	a := app.NewApp("owned")
 	a.RegisterScreen(app.NewScreen("/plain", &rawHTMLComp{html: `<p id="plain">plain</p><a id="goA" href="/styled/a">a</a>`}).WithTitle("Plain"), nil)
 	a.RegisterScreen(app.NewScreen("/styled/a", &rawHTMLComp{html: `<p class="owned" id="slot">slot</p>` +
-		`<div data-fui-internal><p class="owned" id="internal-own">i</p><p class="app-probe" id="internal-app">i</p></div>` +
+		`<div data-cui-internal><p class="owned" id="internal-own">i</p><p class="app-probe" id="internal-app">i</p></div>` +
 		`<p class="app-probe" id="app">app</p>` +
 		`<p class="tie" id="tie-in">tie</p><p class="tie2" id="tie2-in">tie</p>` +
 		// The kit markers sit inside the internal boundary, outside
 		// own-layout's scope: they load the kit sheets, and the probes
 		// beside them prove those sheets applied.
-		`<div data-fui-internal data-fui-comp="tie-kit"><p class="tie" id="tie-out">k</p></div>` +
-		`<div data-fui-internal data-fui-comp="a-kit"><p class="tie2" id="tie2-out">k</p></div>` +
+		`<div data-cui-internal data-cui-comp="tie-kit"><p class="tie" id="tie-out">k</p></div>` +
+		`<div data-cui-internal data-cui-comp="a-kit"><p class="tie2" id="tie2-out">k</p></div>` +
 		`<p class="dark-probe" id="dark">dark</p>` +
 		string(nested.Scope(`<section class="nest owned" id="nested-root"><p class="owned" id="nested-child">n</p></section>`)) +
 		`<a id="goB" href="/styled/b">b</a>`}).WithTitle("A"), layout)
@@ -140,7 +140,7 @@ func TestAppStyleReachesEveryHead(t *testing.T) {
 // TestOwnedStyleScopeInBrowser pins the compiled @scope's reach in
 // Chromium: the owner styles its slot content and a nested owner's
 // root, and stops at the nested owner's children and at a
-// data-fui-internal subtree; the app style covers every page except
+// data-cui-internal subtree; the app style covers every page except
 // internal subtrees; (--dark) applies only under a dark document.
 func TestOwnedStyleScopeInBrowser(t *testing.T) {
 	srv := ownedStyleServer(t)
@@ -216,7 +216,7 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 				const p = document.getElementById('lazy');
 				p.insertAdjacentHTML('afterend',
 					'<p class="tie" id="lazy-in">t</p>' +
-					'<div data-fui-internal data-fui-comp="tie-kit"><p class="tie" id="lazy-out">k</p></div>');
+					'<div data-cui-internal data-cui-comp="tie-kit"><p class="tie" id="lazy-out">k</p></div>');
 				window.__gofastr.scanAndLoadCSS(p.parentNode);
 				return 'ok';
 			})()`, nil),
@@ -238,7 +238,7 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 	})
 }
 
-// TestOwnedStylesLoadOnSoftNav pins the loader half of data-fui-scope:
+// TestOwnedStylesLoadOnSoftNav pins the loader half of data-cui-scope:
 // each client navigation loads the sheets its new markup needs, with
 // no reload. Three swaps, each a different runtime path:
 //

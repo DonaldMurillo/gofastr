@@ -7,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Own marks every top-level element of h data-fui-internal. It is for
+// Own marks every top-level element of h data-cui-internal. It is for
 // markup a component builds from its own config and hands to another
 // component as slot content: framework/ui's default banner glyph, a
 // form's submit row, a field's control. The receiving component cannot
@@ -29,7 +29,7 @@ func Own(h render.HTML) render.HTML {
 			continue
 		}
 		b.WriteString(s[last:t.end])
-		b.WriteString(` data-fui-internal=""`)
+		b.WriteString(` data-cui-internal=""`)
 		last = t.end
 	}
 	if last == 0 {
@@ -41,7 +41,7 @@ func Own(h render.HTML) render.HTML {
 
 // ownedSlot reports whether slot content is wholly the composing
 // component's: at least one top-level element, every one of them
-// marked data-fui-internal, and no top-level text. A component marks
+// marked data-cui-internal, and no top-level text. A component marks
 // the element holding such a slot, because nothing in it is the
 // caller's.
 func ownedSlot(h render.HTML) bool {
@@ -109,7 +109,7 @@ func scanTop(s string) (tags []topTag, text bool) {
 				if selfClose {
 					at = end - 1
 				}
-				tags = append(tags, topTag{end: at, marked: attrs["data-fui-internal"]})
+				tags = append(tags, topTag{end: at, marked: attrs["data-cui-internal"]})
 			}
 			i = end + 1
 			if selfClose || isVoid(name) {

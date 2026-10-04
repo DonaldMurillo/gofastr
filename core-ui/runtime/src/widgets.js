@@ -5,7 +5,7 @@
 // fui:widget-open / fui:widget-close lifecycle events (#409), and the
 // post-swap reattach that keeps app-wide roots alive across shell
 // swaps. The
-// per-widget data-fui-* primitives now live in demand-loaded sibling
+// per-widget data-cui-* primitives now live in demand-loaded sibling
 // modules: widgethelpers (charcount, persist-storage, fill-input,
 // clear-on-esc, submit-on-enter, disable-when-invalid, tick-elapsed),
 // widgetfocus (Escape + Tab focus trap), widgetlinks (deep-link
@@ -15,10 +15,10 @@
 // and sets loadedModules).
 //
 // Loads on demand:
-//   - core's marker scanner picks up [data-fui-widget] (SSR-inlined
-//     auto-mount widgets) and [data-fui-open] (click triggers) and
+//   - core's marker scanner picks up [data-cui-widget] (SSR-inlined
+//     auto-mount widgets) and [data-cui-open] (click triggers) and
 //     idle-loads this module.
-//   - core's data-fui-open click delegator awaits loadModule('widgets')
+//   - core's data-cui-open click delegator awaits loadModule('widgets')
 //     before calling openWidget.
 //   - core's auto-mount loop (the catalog fetch) awaits loadModule('widgets')
 //     before iterating mounts.
@@ -49,18 +49,18 @@
       // showcase demo whose modal was never mounted). Don't fail silently,
       // tell the visitor why nothing opened. _fallbackToast is synchronous
       // and already on NS, so no module fetch / async wait.
-      if (document.documentElement.hasAttribute('data-fui-static') && NS._fallbackToast) {
+      if (document.documentElement.hasAttribute('data-cui-static') && NS._fallbackToast) {
         NS._fallbackToast({ title: 'Needs the Go server.' });
       }
       return;
     }
     const o = opts || {};
     const params = o.params || {};
-    // #321: the open trigger may carry context (data-fui-ctx). It is
+    // #321: the open trigger may carry context (data-cui-ctx). It is
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
     // server-side.
-    const ctx = (o.btn && o.btn.getAttribute('data-fui-ctx')) || '';
+    const ctx = (o.btn && o.btn.getAttribute('data-cui-ctx')) || '';
     const cfg = entry.cfg;
     await NS._mountByName(name, ctx);
     const declared = cfg.deepLinkParams || [];
@@ -94,11 +94,11 @@
     if (!entry) return;
     if (Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name]) return; // already mounted
     const cfg = entry.cfg;
-    const existing = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
+    const existing = document.querySelector('[data-cui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
       // #321: SSR-inlined chrome is ctx-less by construction — the
       // server inlines on a deep-link URL match, where no trigger
-      // exists to carry data-fui-ctx. Hydrating it for a ctx-carrying
+      // exists to carry data-cui-ctx. Hydrating it for a ctx-carrying
       // trigger would show chrome for the wrong entity. Drop the node
       // and fall through to the (name, ctx)-keyed fetch below.
       //
@@ -213,22 +213,22 @@
     NS._widgets[cfg.name] = { cfg };
 
     // Stylesheet
-    if (!document.querySelector('link[data-fui-style="' + CSS.escape(cfg.name) + '"]')) {
+    if (!document.querySelector('link[data-cui-style="' + CSS.escape(cfg.name) + '"]')) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = cfg.stylePath;
-      link.setAttribute('data-fui-style', cfg.name);
+      link.setAttribute('data-cui-style', cfg.name);
       document.head.appendChild(link);
     }
 
     // Backdrop + chrome.
     let backdrop = null;
     if (cfg.backdrop) {
-      backdrop = document.querySelector('[data-fui-backdrop="' + CSS.escape(cfg.name) + '"]');
+      backdrop = document.querySelector('[data-cui-backdrop="' + CSS.escape(cfg.name) + '"]');
       if (!backdrop) {
         backdrop = document.createElement('div');
-        backdrop.className = 'fui-backdrop overlay-backdrop';
-        backdrop.setAttribute('data-fui-backdrop', cfg.name);
+        backdrop.className = 'cui-backdrop overlay-backdrop';
+        backdrop.setAttribute('data-cui-backdrop', cfg.name);
         NS.doc.appendBody(backdrop);
       }
     }
@@ -250,7 +250,7 @@
     reg.backdrop = backdrop;
     reg.hydrated = !!existing;
     NS.scanAndLoadCSS(w);
-    if (w.querySelector('[data-fui-fill-input],[data-fui-tick-elapsed],[data-fui-persist-storage],[data-fui-charcount-source],[data-fui-clear-on-esc],form[data-fui-submit-on-enter],form[data-fui-disable-when-invalid]')) NS.loadModule('widgethelpers');
+    if (w.querySelector('[data-cui-fill-input],[data-cui-tick-elapsed],[data-cui-persist-storage],[data-cui-charcount-source],[data-cui-clear-on-esc],form[data-cui-submit-on-enter],form[data-cui-disable-when-invalid]')) NS.loadModule('widgethelpers');
     if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
     if (cfg.deepLinkKey) NS.loadModule('widgetlinks');
 
@@ -310,7 +310,7 @@
       if (as) window.removeEventListener('scroll', as, { capture: true });
       if (at) {
         at.classList.remove('is-popover-trigger-active');
-        at.removeAttribute('data-fui-popover-trigger');
+        at.removeAttribute('data-cui-popover-trigger');
       }
       if (stop) stop();
       if (w && w.style) {
@@ -321,7 +321,7 @@
         w.style.position = '';
         w.style.removeProperty('--ui-popover-arrow-x');
         w.style.removeProperty('--ui-popover-arrow-y');
-        w.removeAttribute('data-fui-popover-side');
+        w.removeAttribute('data-cui-popover-side');
       }
       if (hydrated && w) {
         w.setAttribute('hidden', '');
@@ -378,7 +378,7 @@
     // DOM write when setSignal would be a no-op (value unchanged)
     // so bound nodes don't flash/re-layout on every tick.
     //
-    // Semantics shared with data-fui-poll (src/poll.js):
+    // Semantics shared with data-cui-poll (src/poll.js):
     //   - ±10% jitter per interval (desynchronise multi-widget polls)
     //   - pause while document.hidden; on visibilitychange → fetch
     //     immediately and resume
@@ -386,7 +386,7 @@
     //     reset to base on the next success
     if (cfg.pollMs && cfg.statePath) {
       // The poll implementation lives in the demand-loaded poll module
-      // (shared cadence/back-off/pollStatus machinery with data-fui-poll)
+      // (shared cadence/back-off/pollStatus machinery with data-cui-poll)
       // so widget-bearing pages that never poll don't ship it. _widgetPoll
       // installs pollStop/pollNow on the widget entry.
       NS.loadModule('poll').then(() => {
@@ -401,7 +401,7 @@
 
     // Widget-scoped click + submit.
     w.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-fui-rpc]');
+      const btn = e.target.closest('[data-cui-rpc]');
       if (btn && w.contains(btn) && btn.tagName !== 'FORM') {
         e.preventDefault();
         try {
@@ -410,7 +410,7 @@
         } catch (_) { NS._rpcUnavailable?.(); }
         return;
       }
-      const closeBtn = e.target.closest('[data-fui-action="close"]');
+      const closeBtn = e.target.closest('[data-cui-action="close"]');
       if (closeBtn && w.contains(closeBtn)) {
         e.preventDefault();
         dismiss();
@@ -419,16 +419,16 @@
     w.addEventListener('submit', async (e) => {
       // Same confirm gate as the document bridge (which skips widget-scoped
       // forms): submitter first, then the form, and it covers a plain
-      // native form too, not just form[data-fui-rpc].
+      // native form too, not just form[data-cui-rpc].
       const form = e.target.closest('form');
       if (!form || !w.contains(form)) return;
       const sub = e.submitter;
-      const msg = (sub && sub.getAttribute('data-fui-confirm')) || form.getAttribute('data-fui-confirm');
+      const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
       if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
         e.preventDefault();
         return;
       }
-      if (!form.hasAttribute('data-fui-rpc')) return;
+      if (!form.hasAttribute('data-cui-rpc')) return;
       e.preventDefault();
       try {
         await NS.loadModule('rpc');
@@ -446,7 +446,7 @@
       if (cfg.closeOnClick) {
         const oh = (e) => {
           if (w.contains(e.target)) return;
-          const trigger = e.target.closest('[data-fui-open="' + CSS.escape(cfg.name) + '"]');
+          const trigger = e.target.closest('[data-cui-open="' + CSS.escape(cfg.name) + '"]');
           if (trigger) return;
           dismiss();
         };
@@ -495,7 +495,7 @@
     for (const name in NS._widgets) {
       const r = NS._widgets[name];
       if (!r?.root) continue;
-      const f = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
+      const f = document.querySelector('[data-cui-widget="' + CSS.escape(name) + '"]');
       if (f && f !== r.root) {
         // The swapped-in shell SSR-inlined its own copy of this widget
         // (host layouts that nest chrome in the shell inline it on

@@ -7,7 +7,7 @@
 // second Escape clears the query, Tab closes and lets focus move),
 // pointer picks, focus auto-open, outside-click close, and the static
 // list's client-side filtering. The RPC debounce and the signal swap
-// are the kernel's data-fui-rpc contract, not reimplemented here.
+// are the kernel's data-cui-rpc contract, not reimplemented here.
 (function () {
   'use strict';
   const NAME = 'headless-combobox';
@@ -95,16 +95,16 @@
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closeListbox(input, lb);
-    // A picked option's destination rides data-fui-push-state (or the
+    // A picked option's destination rides data-cui-push-state (or the
     // anchor's own href): a same-origin pick navigates through the SPA
     // navigator, closing any enclosing widget first so the navigation
     // is not behind a backdrop.
-    const dest = opt.getAttribute('data-fui-push-state') ||
+    const dest = opt.getAttribute('data-cui-push-state') ||
       (opt.tagName === 'A' ? opt.getAttribute('href') : null);
     if (dest && (NS._originOK ? NS._originOK(dest) : sameOriginDest(dest))) {
-      const widget = opt.closest('[data-fui-widget]');
+      const widget = opt.closest('[data-cui-widget]');
       if (widget && NS.closeWidget) {
-        try { NS.closeWidget(widget.getAttribute('data-fui-widget')); } catch (_) {}
+        try { NS.closeWidget(widget.getAttribute('data-cui-widget')); } catch (_) {}
       }
       if (NS.navigate) NS.navigate(dest);
       else location.href = dest;

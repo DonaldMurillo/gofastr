@@ -336,8 +336,8 @@ func TestOverridesCannotBreakAComponent(t *testing.T) {
 		"id":            "stolen",
 		"style":         "display:none",
 		"data-hui-copy": "",
-		"data-fui-main": "",
-		"DATA-FUI-RPC":  "/evil",
+		"data-cui-main": "",
+		"DATA-CUI-RPC":  "/evil",
 		"data-behavior": "/evil.js",
 		"Data-Island":   "smuggled",
 		"class":         "mine",
@@ -361,7 +361,7 @@ func TestOverridesCannotBreakAComponent(t *testing.T) {
 			if strings.Contains(string(got), "data-hui-copy") {
 				t.Error("a caller forged a runtime hook: behaviour is now bound to an element never built for it")
 			}
-			if strings.Contains(string(got), "data-fui-main") {
+			if strings.Contains(string(got), "data-cui-main") {
 				t.Error("a caller forged a framework hook")
 			}
 			if strings.Contains(string(got), "/evil") || strings.Contains(string(got), "smuggled") {
@@ -659,7 +659,7 @@ func TestEveryComponentWithPartsRoutesABindToItsRoot(t *testing.T) {
 				bind = Bind{Signal: "probe"}
 			}
 			got := sp.WithParts(nil, Parts{Binds: Binds{PartRoot: bind}})
-			if !strings.Contains(string(got), `data-fui-signal="probe"`) {
+			if !strings.Contains(string(got), `data-cui-signal="probe"`) {
 				t.Errorf("a binding on the root never arrived: the root is rendered around the Box, "+
 					"so overrides on it are dropped the same way:\n%s", got)
 			}
@@ -742,7 +742,7 @@ func TestEveryFillablePartTakesATextBind(t *testing.T) {
 		for _, p := range sp.Fillable {
 			t.Run(sp.Name+"/"+string(p), func(t *testing.T) {
 				got := sp.WithParts(nil, Parts{Binds: Binds{p: {Signal: "probe"}}})
-				if !strings.Contains(string(got), `data-fui-signal="probe"`) {
+				if !strings.Contains(string(got), `data-cui-signal="probe"`) {
 					t.Errorf("part %q is fillable and a text Bind on it never arrived: the Box's fillable list is narrower than the spec's\n%s", p, got)
 				}
 			})

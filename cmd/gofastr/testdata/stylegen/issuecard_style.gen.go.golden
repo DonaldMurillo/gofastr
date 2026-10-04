@@ -57,7 +57,7 @@ type issuecardStyle struct {
 var Style = issuecardStyle{ownstyle.Must("issuecard", ownstyle.KindScoped, issuecardCSS)}
 
 // Root returns the :scope base class: the empty string. The scoped
-// root carries data-fui-scope, not a class; RootWith returns its
+// root carries data-cui-scope, not a class; RootWith returns its
 // variants.
 //
 // One issue: key, title, meta.

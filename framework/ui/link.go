@@ -33,9 +33,9 @@ type LinkConfig struct {
 	ID      string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <a>. Link is
-	// a wiring carrier: data-fui-* passes through, which is how a
+	// a wiring carrier: data-cui-* passes through, which is how a
 	// progressive-enhancement link ships an href fallback plus a
-	// data-fui-rpc upgrade (uinoderender's ActionRef links). Keys the
+	// data-cui-rpc upgrade (uinoderender's ActionRef links). Keys the
 	// component owns are dropped: class and id (use Class / ID) and
 	// href (use Href). on* event handlers and values with control
 	// bytes are also scrubbed (see scrubAttrs).
@@ -73,7 +73,7 @@ func Link(cfg LinkConfig) render.HTML {
 	// route ExtraAttrs through the sanitizer: scrubAttrs removes on*
 	// event handlers and control-byte values, SafeCarrierAttrs removes
 	// the keys this component owns (class, id, href) while letting
-	// data-fui-* wiring through. Both filters must survive any future
+	// data-cui-* wiring through. Both filters must survive any future
 	// refactor: on* filtering is pinned by
 	// TestLink_StripsEventHandlerExtraAttrs, href by the contract
 	// test, wiring pass-through by TestLinkExtraAttrsCarriesWiring.
@@ -93,14 +93,14 @@ func Link(cfg LinkConfig) render.HTML {
 var linkStyle = registry.RegisterStyle("ui-link", linkCSS)
 
 func linkCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-link"], .fui-link {
+	return `[data-cui-comp="ui-link"], .fui-link {
   color: var(--color-primary);
   text-decoration: none;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
-[data-fui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
-[data-fui-comp="ui-link"]:focus-visible, .fui-link:focus-visible {
+[data-cui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
+[data-cui-comp="ui-link"]:focus-visible, .fui-link:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radii-sm, 4px);

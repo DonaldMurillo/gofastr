@@ -183,7 +183,7 @@ func mustRun(t *testing.T, root string, notes ...*upgrade.Note) *Result {
 
 // testSinks are the marker sinks the stub kit offers: RegisterStyle's first
 // argument takes a component name, SidebarConfig.DrawerName holds one, and
-// data-fui-comp map values are component markers.
+// data-cui-comp map values are component markers.
 func testSinks() upgrade.MarkerSinks {
 	return upgrade.MarkerSinks{
 		Calls: []upgrade.ParamSink{{
@@ -193,6 +193,6 @@ func testSinks() upgrade.MarkerSinks {
 		Fields: []upgrade.Symbol{{
 			Pkg: "example.com/kit/ui", Name: "SidebarConfig", Member: "DrawerName",
 		}},
-		AttrKeys: []string{"data-fui-comp"},
+		AttrKeys: []string{"data-cui-comp"},
 	}
 }

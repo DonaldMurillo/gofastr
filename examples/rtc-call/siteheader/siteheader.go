@@ -11,7 +11,7 @@
 //     page measure (--size-page-width, with --size-page-gutter
 //     outside it), the column ui.Container's page width gives main;
 //   - the behaviour is the framework's: the runtime's active-link pass
-//     sets aria-current on the nav links (data-fui-match-prefix keeps
+//     sets aria-current on the nav links (data-cui-match-prefix keeps
 //     a section link lit).
 //
 // The two links fit beside the brand at phone widths, so the bar ships
@@ -30,7 +30,7 @@ import (
 type Link struct {
 	Label, Href string
 	// Section keeps the link current on every page under Href, through
-	// the runtime's data-fui-match-prefix.
+	// the runtime's data-cui-match-prefix.
 	Section bool
 }
 
@@ -48,7 +48,7 @@ func Render(cfg Config) render.HTML {
 		for _, l := range cfg.Links {
 			var attrs html.Attrs
 			if l.Section {
-				attrs = html.Attrs{"data-fui-match-prefix": ""}
+				attrs = html.Attrs{"data-cui-match-prefix": ""}
 			}
 			out = append(out, html.Link(html.LinkConfig{Href: l.Href, Text: l.Label, ExtraAttrs: attrs}))
 		}

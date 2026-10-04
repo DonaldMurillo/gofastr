@@ -133,7 +133,7 @@ func TestP2PartialPerRoute(t *testing.T) {
 		if res.Header.Get("X-Gofastr-Envelope") != "2" {
 			t.Errorf("%s: missing X-Gofastr-Envelope: 2", tc.route)
 		}
-		if !strings.Contains(body, `data-fui-fill="l:shell#aside"`) {
+		if !strings.Contains(body, `data-cui-fill="l:shell#aside"`) {
 			t.Errorf("%s: envelope must carry the degraded aside fill", tc.route)
 		}
 		if !strings.Contains(body, tc.aside) {

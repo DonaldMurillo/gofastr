@@ -167,7 +167,7 @@ desktop host is another way to reach the same `http.Handler`.
    pin, the local identity middleware, the bridge routes, and the
    runtime module (`RegisterExternalScript`, the same rail
    `experimental/webmcp` uses, so no inline script and no new
-   `data-fui-*` attribute).
+   `data-cui-*` attribute).
 3. Runs `app.Start("127.0.0.1:0")` on a goroutine. `App.Start` already
    splits bind from serve, so `OnReady(addr)` delivers the real port.
    That hook is the only place the port is read. Worktree isolation is
@@ -706,7 +706,7 @@ detection, error mapping. The generated `bridge.js` adds the typed
 namespaces on top, so the fixed module stays under the 3 KB gzip
 budget `TestRuntimeModuleSizeBudgets` enforces, and the per-app
 generated part is outside the budget (the `pluginhost.js` split). No
-new `data-fui-*` attribute, so rule 5 and the attribute table in
+new `data-cui-*` attribute, so rule 5 and the attribute table in
 `core-ui/ARCHITECTURE.md` stay untouched.
 
 ## Escape hatches (documented, tested once each)
@@ -937,7 +937,7 @@ type WindowStyle struct {
 under the title bar (`fullSizeContentView`, transparent title bar);
 `ChromeNone` is borderless. A borderless window drags through the page:
 `__gofastr.desktop.window.startDrag()` on mousedown, or the attribute
-`data-fui-window-drag` on any element (the desktop module wires the
+`data-cui-window-drag` on any element (the desktop module wires the
 listener). The drag request goes through the script message handler,
 not the HTTP bridge, because `performWindowDragWithEvent:` needs the
 current mouse-down event on the main thread; it is the ONE message the

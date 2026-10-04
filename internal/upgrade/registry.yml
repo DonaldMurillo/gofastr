@@ -17,9 +17,11 @@ through: v0.86.0
 # Where a kept `ui-*` component name is an identifier, not a class: a
 # sheet name passed to the style registry (core-ui/registry.RegisterStyle,
 # .Lookup), a drawer name (preset.Drawer's argument, SidebarConfig's and
-# SectionMenuConfig's DrawerName, the data-fui-open attribute that
-# carries it), and the data-fui-comp marker value. Each symbol exists at
-# v0.85.0 and at HEAD, so an app scanned before upgrading resolves them.
+# SectionMenuConfig's DrawerName, the data-cui-open attribute that
+# carries it), and the data-cui-comp marker value. Each symbol exists at
+# v0.85.0 and at HEAD, so an app scanned before upgrading resolves them;
+# the attribute keys carry both spellings because an app scanned before
+# crossing v0.87.0 still writes data-fui-comp and data-fui-open.
 marker_sinks:
   calls:
     - func: gofastr/core-ui/registry.RegisterStyle
@@ -31,4 +33,4 @@ marker_sinks:
   fields:
     - gofastr/framework/ui.SidebarConfig.DrawerName
     - gofastr/core-ui/interactive.SectionMenuConfig.DrawerName
-  attr_keys: [data-fui-comp, data-fui-open]
+  attr_keys: [data-cui-comp, data-cui-open, data-fui-comp, data-fui-open]

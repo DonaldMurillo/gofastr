@@ -69,7 +69,7 @@ func TestNotFoundOutletOutcome(t *testing.T) {
 		if !strings.Contains(s, "[HELP]") {
 			t.Errorf("every other outlet renders its Default:\n%s", s)
 		}
-		if !strings.Contains(s, `<div data-fui-outlet="l:shell#gone"></div>`) {
+		if !strings.Contains(s, `<div data-cui-outlet="l:shell#gone"></div>`) {
 			t.Errorf("the 404 outlet itself renders empty:\n%s", s)
 		}
 		if !strings.Contains(s, "<title>Page not found — t</title>") {

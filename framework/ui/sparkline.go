@@ -57,7 +57,7 @@ type SparklineConfig struct {
 	// analytics markers, ARIA overrides) to the chart's root element:
 	// the <svg> itself, or the "no trend data" <span> when Values has
 	// fewer than two points. Keys the component owns are dropped:
-	// class and id (use Class / ID), data-fui-*, and the sizing and
+	// class and id (use Class / ID), data-cui-*, and the sizing and
 	// naming attributes the SVG derives from config (width, height,
 	// viewBox, xmlns, role, aria-labelledby, aria-hidden).
 	ExtraAttrs html.Attrs
@@ -80,7 +80,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		if attrs == nil {
 			attrs = html.Attrs{}
 		}
-		attrs["data-fui-comp"] = "ui-sparkline"
+		attrs["data-cui-comp"] = "ui-sparkline"
 		attrs["aria-label"] = i18nui.T(ctx, i18nui.KeySparklineNoData)
 		if cfg.Class != "" {
 			attrs["class"] = cfg.Class
@@ -197,7 +197,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		body = `<path d="` + pathD.String() + `" class="fui-sparkline__line"/>`
 	}
 
-	out := `<svg ` + svgAttrs.String() + ` data-fui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
+	out := `<svg ` + svgAttrs.String() + ` data-cui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
 	return sparklineStyle.WrapHTML(render.HTML(out))
 }
 
@@ -217,19 +217,19 @@ func ftoa(f float64) string {
 var sparklineStyle = registry.RegisterStyle("ui-sparkline", sparklineCSS)
 
 func sparklineCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-sparkline"] {
+	return `[data-cui-comp="ui-sparkline"] {
   display: inline-block;
   vertical-align: middle;
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-sparkline"] .fui-sparkline__line {
+[data-cui-comp="ui-sparkline"] .fui-sparkline__line {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-[data-fui-comp="ui-sparkline"] .fui-sparkline__area {
+[data-cui-comp="ui-sparkline"] .fui-sparkline__area {
   fill: currentColor;
   opacity: 0.18;
   stroke: none;

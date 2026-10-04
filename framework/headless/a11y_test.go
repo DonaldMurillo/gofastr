@@ -16,11 +16,11 @@ func has(t *testing.T, got render.HTML, want, why string) {
 }
 
 // hasNoContract fails when got carries any framework runtime
-// attribute. data-fui-internal is left out: it is the owned-style
+// attribute. data-cui-internal is left out: it is the owned-style
 // boundary every component renders, not an island contract.
 func hasNoContract(t *testing.T, got render.HTML, why string) {
 	t.Helper()
-	hasNot(t, render.HTML(strings.ReplaceAll(string(got), ` data-fui-internal=""`, "")), "data-fui", why)
+	hasNot(t, render.HTML(strings.ReplaceAll(string(got), ` data-cui-internal=""`, "")), "data-cui", why)
 }
 
 func hasNot(t *testing.T, got render.HTML, unwanted, why string) {
@@ -175,13 +175,13 @@ func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
 	// One substring binds the three attributes to the one element
 	// that wraps the table, and the caption's id to the name that
 	// points at it: attributes render sorted, so the shape is exact.
-	has(t, got, `<div aria-labelledby="apps-caption" data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+	has(t, got, `<div aria-labelledby="apps-caption" data-cui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
 		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
 
 	unnamed := Table(TableProps{
 		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
 	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
-	has(t, unnamed, `<div data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
+	has(t, unnamed, `<div data-cui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
 }
 
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
@@ -281,7 +281,7 @@ func TestSectionLabelledByNameKeepsItsEyebrow(t *testing.T) {
 	got := Section(SectionProps{Label: "The numbers", Eyebrow: "01 / the numbers"}, nil,
 		render.HTML("<h2>The numbers</h2><p>x</p>"))
 	has(t, got, `aria-label="The numbers"`, "the section is not named by its label")
-	has(t, got, `aria-hidden="true" data-fui-internal="">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
+	has(t, got, `aria-hidden="true" data-cui-internal="">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
 	if b, h := strings.Index(string(got), "01 / the numbers"), strings.Index(string(got), "<h2"); b > h {
 		t.Errorf("the kicker renders after the heading it decorates:\n%s", got)
 	}
@@ -594,7 +594,7 @@ func TestAFailedActionHasSomewhereToSayItAndSomethingToSay(t *testing.T) {
 // the runtime rewrites exactly those attributes as the mutation moves
 // and an extra that won one would desynchronise the button from its
 // own state machine — type, data-state and aria-busy say things the
-// framework's fetch has not earned, and a forged data-fui-* or
+// framework's fetch has not earned, and a forged data-cui-* or
 // data-hui-* binds behaviour to an element never built for it.
 func TestActionExtraAttrsCannotStealTheLifecycle(t *testing.T) {
 	hostile := html.Attrs{
@@ -603,8 +603,8 @@ func TestActionExtraAttrsCannotStealTheLifecycle(t *testing.T) {
 		"data-state":                   "committed",
 		"aria-busy":                    "true",
 		"aria-pressed":                 "true",
-		"data-fui-comp":                "forged",
-		"data-fui-optimistic-endpoint": "//evil.example/x",
+		"data-cui-comp":                "forged",
+		"data-cui-optimistic-endpoint": "//evil.example/x",
 		"data-hui-action":              "forged",
 		"data-hui-toast":               "forged",
 		"class":                        "mine",

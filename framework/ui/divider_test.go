@@ -10,7 +10,7 @@ import (
 func TestDividerPlainEmitsHR(t *testing.T) {
 	h := Divider(DividerConfig{})
 	mustContain(t, h, "<hr")
-	mustContain(t, h, `data-fui-comp="ui-divider"`)
+	mustContain(t, h, `data-cui-comp="ui-divider"`)
 	if strings.Contains(string(h), `role="separator"`) {
 		t.Fatalf("plain horizontal divider should not need role=separator (native <hr>):\n%s", h)
 	}

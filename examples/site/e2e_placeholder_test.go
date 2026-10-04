@@ -42,7 +42,7 @@ type placeholderGeometry struct {
 const placeholderProbe = `(() => {
   const lqip = document.querySelector('.fui-image--placeheld .fui-image__lqip');
   if (!lqip) return {found: false};
-  const root = lqip.closest('[data-fui-comp="ui-image"]');
+  const root = lqip.closest('[data-cui-comp="ui-image"]');
   const real = root && root.querySelector('.fui-image__img');
   const a = lqip.getBoundingClientRect();
   const b = real ? real.getBoundingClientRect() : a;

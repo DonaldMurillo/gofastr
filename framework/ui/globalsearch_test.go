@@ -32,13 +32,13 @@ func TestGlobalSearchEmitsCombobox(t *testing.T) {
 		Label: "Search the site", RPCPath: "/api/search",
 		SignalName: "search-results", NoScriptAction: "/search",
 	}))
-	if !strings.Contains(h, `<form action="/search" class="fui-global-search__field" method="GET" role="none" data-fui-internal="">`) {
+	if !strings.Contains(h, `<form action="/search" class="fui-global-search__field" method="GET" role="none" data-cui-internal="">`) {
 		t.Errorf("the no-script GET form should wrap the combobox:\n%s", h)
 	}
 	if !strings.Contains(h, `id="global-search"`) {
 		t.Errorf("expected the combobox input id to surface:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-rpc="/api/search"`) {
+	if !strings.Contains(h, `data-cui-rpc="/api/search"`) {
 		t.Errorf("combobox should fire RPC to RPCPath:\n%s", h)
 	}
 }

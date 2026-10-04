@@ -15,7 +15,7 @@ import (
 // data-action, data-action-* and data-param-*. The trusted entry points skip
 // it, so a developer-authored blueprint can still wire button actions through
 // those exact attributes. attrAllowed then independently strips the
-// privileged data-fui-* family on BOTH paths, that is asserted here only for
+// privileged data-cui-* family on BOTH paths, that is asserted here only for
 // the untrusted path (the case the task names), since the code strips it
 // regardless of trust.
 //
@@ -168,18 +168,18 @@ func TestRenderNodeStripsActionAttrsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// The privileged data-fui-* family drives the runtime (signals, RPC, polling,
+// The privileged data-cui-* family drives the runtime (signals, RPC, polling,
 // navigation). It is stripped on the untrusted path by attrAllowed's
-// privilegedDataPrefixes check. Assert at least data-fui-rpc is removed.
+// privilegedDataPrefixes check. Assert at least data-cui-rpc is removed.
 func TestRenderNodeStripsPrivilegedDataFuiFamily(t *testing.T) {
 	got := string(RenderNode(node.Node{Kind: "div", Props: map[string]any{
-		"data-fui-rpc": "https://evil.example/r",
+		"data-cui-rpc": "https://evil.example/r",
 		"data-testid":  "sentinel",
 	}}))
 	if !strings.Contains(got, `data-testid="sentinel"`) {
 		t.Fatalf("element did not render at all — sentinel lost. Rendered: %s", got)
 	}
-	if strings.Contains(strings.ToLower(got), "data-fui-rpc") {
-		t.Errorf("SECURITY: untrusted RenderNode emitted privileged data-fui-rpc. Rendered: %s", got)
+	if strings.Contains(strings.ToLower(got), "data-cui-rpc") {
+		t.Errorf("SECURITY: untrusted RenderNode emitted privileged data-cui-rpc. Rendered: %s", got)
 	}
 }

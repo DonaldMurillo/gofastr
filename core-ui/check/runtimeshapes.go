@@ -638,7 +638,7 @@ var (
 	// CSS.escape(, window.CSS.escape(, this.CSS.escape(, cssEscape(.
 	reEscapeCall = regexp.MustCompile(`^(?:(?:\w+\.)*CSS\.escape|cssEscape)\s*\(`)
 	// reAnyAttrRead matches ANY DOM-attribute read: a getAttribute(
-	// call (any attribute name — data-fui-*, data-component, …) or a
+	// call (any attribute name — data-cui-*, data-component, …) or a
 	// .dataset member in either spelling. The provenance the
 	// round-3 lints fire on is broader than lint 4's reAttrRead, which
 	// requires the data- prefix.
@@ -2681,8 +2681,8 @@ func isFunctionOpener(code string, i int) bool {
 // in no try block.
 //
 // Bug class: attributes whose value is a selector BY DESIGN
-// (data-fui-copy-text-from, data-fui-fill-input,
-// data-fui-charcount-source, data-fui-shortcut-target) feed
+// (data-cui-copy-text-from, data-cui-fill-input,
+// data-cui-charcount-source, data-cui-shortcut-target) feed
 // querySelector directly; escaping is wrong for them (the whole value
 // is the selector), so the contract is containment — a malformed
 // selector must degrade to a no-op, not throw out of the delegated
@@ -2798,7 +2798,7 @@ func insideAnySpan(spans [][2]int, pos int) bool {
 //
 // Bug class: a cookie name or value built from a DOM-sourced id
 // carries the cookie grammar into the write. A crafted
-// data-fui-banner-dismiss-id like 'probe=x; Path=/' parses as cookie
+// data-cui-banner-dismiss-id like 'probe=x; Path=/' parses as cookie
 // name gofastr.banner-dismiss.probe with attacker-chosen attributes
 // (Path/Max-Age/Secure/Domain are all injectable the same way): the
 // dismissal the module meant to record is never stored under its key,
@@ -3196,16 +3196,16 @@ func regexTestDominates(code, v string, pos int) bool {
 
 // LintStorageKeyRaw fires when a Web-storage key — the first argument of
 // a localStorage/sessionStorage setItem/getItem/removeItem call, or the
-// name side of a document.cookie write — is built from a data-fui-*
+// name side of a document.cookie write — is built from a data-cui-*
 // attribute value without BOTH the namespace prefix and the component
 // encoding.
 //
-// Bug class: a key read from a data-fui-* attribute (or any dataset
+// Bug class: a key read from a data-cui-* attribute (or any dataset
 // member) and used verbatim lets markup injected after boot (island
 // swap, RPC innerHTML, SPA merge — the shape every runtime pin uses)
 // name ANY key on the origin: sidebar.js writes
-// localStorage[<data-fui-sidebar-storage>] verbatim, so a planted
-// data-fui-sidebar-storage="gofastr.planted-by-attr" plus a collapse
+// localStorage[<data-cui-sidebar-storage>] verbatim, so a planted
+// data-cui-sidebar-storage="gofastr.planted-by-attr" plus a collapse
 // click clobbers any localStorage-backed preference the app reads back.
 // Probe: TestSidebarStorageKeyIsEncoded (core-ui/runtime/
 // sidebar_storage_red_test.go, 2026-09-04 round-3; fix pending — this
@@ -3310,9 +3310,9 @@ func storageKeySites(blank, code string) []storageKeySite {
 }
 
 // reFuiAttrKey matches the runtime's trust boundary at a key: a
-// getAttribute('data-fui-…') call or any dataset member, either
+// getAttribute('data-cui-…') call or any dataset member, either
 // spelling. Non-fui attributes are deliberately absent.
-var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-fui-|\.\s*dataset\s*[.\[]`)
+var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-[cfh]ui-|\.\s*dataset\s*[.\[]`)
 
 // storageKeyUnsafe inspects one key expression and reports the
 // attribute-borne value that reaches it raw (unnamed false), or the one
@@ -3556,7 +3556,7 @@ type provCtx struct {
 	heads  []funcHead
 }
 
-// culprit reports the first data-fui-* provenance witness in expr at
+// culprit reports the first data-cui-* provenance witness in expr at
 // pos: an attribute read spelled inside it, or a free identifier that
 // provably holds one — by its deciding assignment (attrFuiAt, the
 // last-assignment rule lints 1/5/8 use), by a for…of binding whose
@@ -3657,9 +3657,9 @@ func (c *provCtx) callSiteWitness(name string, index, depth int) string {
 // ── lint 9: data-fui value decoded with no containment ─────────────────
 
 // LintDecodeURIRaw fires when a decodeURIComponent(/decodeURI( call
-// decodes a data-fui-derived value outside every try block.
+// decodes a data-cui-derived value outside every try block.
 //
-// Bug class: data-fui-deeplink (like every data-fui-* value) is
+// Bug class: data-cui-deeplink (like every data-cui-* value) is
 // markup-borne input, and decodeURIComponent('%%E0%%A4') throws
 // URIError. The eager widget-open delegator decodes AFTER its
 // preventDefault, so the throw consumes the open click and nothing
@@ -3675,7 +3675,7 @@ func (c *provCtx) callSiteWitness(name string, index, depth int) string {
 // helper's own try, the same posture.
 //
 // Provenance is the family's data-fui trust boundary (reFuiAttrKey: a
-// getAttribute('data-fui-…') read or a dataset member), traced through
+// getAttribute('data-cui-…') read or a dataset member), traced through
 // provCtx: one assignment, one for…of iterable, one same-file call
 // site per identifier.
 //
@@ -3732,7 +3732,7 @@ func LintDecodeURIRaw(roots ...string) (*Result, error) {
 				continue
 			}
 			res.add(f.Path, f.lineOf(loc[0]),
-				fmt.Sprintf("[decode-uri-raw] decodeURIComponent(%s) decodes data-fui-borne %q with no try around the call — decodeURIComponent('%%E0%%A4') throws URIError out of the delegated handler (after its preventDefault the click is consumed and nothing opens); wrap the decode in try/catch, or route it through a same-file safeDecode helper whose body does (the selector guard family's containment)", arg, w))
+				fmt.Sprintf("[decode-uri-raw] decodeURIComponent(%s) decodes data-cui-borne %q with no try around the call — decodeURIComponent('%%E0%%A4') throws URIError out of the delegated handler (after its preventDefault the click is consumed and nothing opens); wrap the decode in try/catch, or route it through a same-file safeDecode helper whose body does (the selector guard family's containment)", arg, w))
 		}
 	}
 	return res, nil
@@ -3744,7 +3744,7 @@ var reDecodeCall = regexp.MustCompile(`\bdecodeURI(?:Component)?\s*\(`)
 // ── lint 10: attribute-borne key into a bracket write ──────────────────
 
 // LintProtoKeyWrite fires when a bracket write X[key] = … uses a
-// data-fui-derived key with no reserved-key guard dominating the
+// data-cui-derived key with no reserved-key guard dominating the
 // write.
 //
 // Bug class: the kernel guards setSignal and both seed loops with
@@ -3753,10 +3753,10 @@ var reDecodeCall = regexp.MustCompile(`\bdecodeURI(?:Component)?\s*\(`)
 // — it re-parents the store through the __proto__ setter — and
 // "constructor"/"prototype" shadow Object.prototype members the read
 // paths then mis-enumerate. The animate wire() slot-creation write
-// (G._signals[name] = slot, name from data-fui-animate-signal) and the
+// (G._signals[name] = slot, name from data-cui-animate-signal) and the
 // toast registry write (NS._toastTimers[id] = rec, id from
-// data-fui-toast-id) bypass that guard: a planted
-// data-fui-animate-signal="__proto__" re-parents the shared signal
+// data-cui-toast-id) bypass that guard: a planted
+// data-cui-animate-signal="__proto__" re-parents the shared signal
 // store and signals go permanently dead client-side. Probes:
 // TestAnimateRedReservedKeyWrite, TestToastsRedReservedKeyWrite
 // (core-ui/runtime/src_animate_proto_red_test.go, 2026-09-06 round-5;
@@ -3837,7 +3837,7 @@ func LintProtoKeyWrite(roots ...string) (*Result, error) {
 				continue
 			}
 			res.add(f.Path, f.lineOf(site.pos),
-				fmt.Sprintf("[proto-key-write] %s[%s] = … writes with the data-fui-borne key %q and no reserved-key guard before it — data-fui-*=\"__proto__\" re-parents the store through the __proto__ setter (the kernel guards setSignal and both seed loops with isReservedSignalKey); reject reserved keys before the write, or key the store by Map", site.base, site.key, w))
+				fmt.Sprintf("[proto-key-write] %s[%s] = … writes with the data-cui-borne key %q and no reserved-key guard before it — data-cui-*=\"__proto__\" re-parents the store through the __proto__ setter (the kernel guards setSignal and both seed loops with isReservedSignalKey); reject reserved keys before the write, or key the store by Map", site.base, site.key, w))
 		}
 	}
 	return res, nil

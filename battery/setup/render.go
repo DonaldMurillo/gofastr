@@ -210,7 +210,7 @@ func (r *Runner) writePage(w http.ResponseWriter, body render.HTML) {
 
 // serveCSS emits the combined stylesheet: theme :root tokens + the CSS
 // for every framework/ui component used in the wizard body. Registered
-// components are scoped to [data-fui-comp="..."] so they don't collide
+// components are scoped to [data-cui-comp="..."] so they don't collide
 // with the host app's styles.
 func (r *Runner) serveCSS(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")

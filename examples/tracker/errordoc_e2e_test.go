@@ -318,7 +318,7 @@ func TestEnterErrorPageFromEveryChain(t *testing.T) {
 
 func crumbContains(s string) string {
 	return fmt.Sprintf(
-		`(() => { const c = document.querySelector('[data-fui-area="l:shell~crumbs"]'); return c && c.textContent.includes(%q); })()`, s)
+		`(() => { const c = document.querySelector('[data-cui-area="l:shell~crumbs"]'); return c && c.textContent.includes(%q); })()`, s)
 }
 
 // TestTrackerCurrentMarksFollowNavigation: after client navigations the

@@ -7,7 +7,7 @@ import (
 
 func TestSpinnerDefaultsRingMd(t *testing.T) {
 	h := Spinner(SpinnerConfig{})
-	mustContain(t, h, `data-fui-comp="ui-spinner"`)
+	mustContain(t, h, `data-cui-comp="ui-spinner"`)
 	mustContain(t, h, `role="status"`)
 	mustContain(t, h, "fui-spinner__ring")
 	mustContain(t, h, "Loading…")

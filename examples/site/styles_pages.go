@@ -82,7 +82,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 	// Pin the framework's ui-step-rail flush below the fixed header.
 	// All of the visual styling (typography, list layout, active state,
 	// meta line) ships with the component.
-	ss.Rule(`[data-fui-comp="ui-step-rail"]`).
+	ss.Rule(`[data-cui-comp="ui-step-rail"]`).
 		Set("--ui-step-rail-top", "calc(var(--nav-h) + {spacing.lg})").End()
 
 	ss.Rule(".step").
@@ -328,7 +328,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 	// interactive.SectionMenu, the unified docs/components rail + mobile
 	// sheet. Clear the sticky header, tune the sheet surface + scrim + the
 	// group-eyebrow tone to the v2 palette.
-	ss.Rule(`[data-fui-comp="fui-section-menu"]`).
+	ss.Rule(`[data-cui-comp="cui-section-menu"]`).
 		Set("--fui-section-menu-top", "calc(var(--nav-h) + {spacing.lg})",
 			"--fui-section-menu-surface", "{colors.surface}",
 			"--fui-section-menu-scrim", "rgba(0, 0, 0, 0.55)",
@@ -1063,7 +1063,7 @@ func pageComponents(ss *style.StyleSheet) {
 	// hides its heading. ui.Section owns the scroll-margin-top property and
 	// reads it from this var, so we set the var (not the property) to avoid
 	// an equal-specificity fight with the component's own rule.
-	ss.Rule(`[data-fui-comp="ui-section"]`).
+	ss.Rule(`[data-cui-comp="ui-section"]`).
 		Set("--ui-section-scroll-margin", "calc(var(--nav-h) + {spacing.md})").End()
 
 	// RPC→open-widget demo modal body.
@@ -1141,7 +1141,7 @@ func pageComponents(ss *style.StyleSheet) {
 	// rail (nothing to pin past).
 	ss.Rule(".layout-components > .layout-body > nav").
 		Set("display", "flex", "flex-direction", "column").End()
-	ss.Rule(".layout-components > .layout-body > nav > .fui-section-menu").
+	ss.Rule(".layout-components > .layout-body > nav > .cui-section-menu").
 		Set("flex", "1 1 auto", "min-height", "0").End()
 	// The components rail + mobile sheet are now interactive.SectionMenu,
 	// which ships its own sticky-rail + slide-in-sheet CSS. The site only
@@ -1390,7 +1390,7 @@ func pageCatalog(ss *style.StyleSheet) {
 	// Inside the drawer the framework already pads the overlay child
 	// (app.InterceptOverlayCSS), so drop the page padding rather than
 	// stacking the two. Same markup, two contexts, one rule.
-	ss.Rule("[data-fui-intercept-overlay] .cat-detail").
+	ss.Rule("[data-cui-intercept-overlay] .cat-detail").
 		Set("padding", "0", "max-width", "none").End()
 	ss.Rule(".cat-detail__name").
 		Set("font-size", "clamp(24px, 2.6vw, 34px)",

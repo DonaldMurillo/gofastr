@@ -10,7 +10,7 @@ import (
 )
 
 // ActionResolver turns a ui.node.v1 ActionRef into the real namespaced
-// data-fui-rpc URL the host assigned when installing the module's routes
+// data-cui-rpc URL the host assigned when installing the module's routes
 // (resolve actionRef → route id → namespaced `/…/module/<name>/…` URL).
 //
 // ok=false means the ref does not resolve to an installed route. The
@@ -25,7 +25,7 @@ type ActionResolver func(actionRef string) (rpcURL string, ok bool)
 // composing framework/ui + core-ui/html design-system primitives. It
 // implements [uinodev1.Renderer].
 //
-// Every id, class, ARIA attribute, visual variant, and data-fui-rpc URL
+// Every id, class, ARIA attribute, visual variant, and data-cui-rpc URL
 // is assigned HERE by the trusted mapping. The validated tree carries
 // none of them (that is the whole point of the closed wire type).
 type Renderer struct {
@@ -33,7 +33,7 @@ type Renderer struct {
 }
 
 // New returns a Renderer that uses resolve to turn ActionRef values into
-// real data-fui-rpc URLs. A nil resolve is permitted: it fails closed on
+// real data-cui-rpc URLs. A nil resolve is permitted: it fails closed on
 // every ActionRef (every button / action_ref link renders as an error),
 // which is the correct posture for a host that has not yet wired the
 // module's route table.
@@ -322,7 +322,7 @@ func (r *Renderer) renderButton(n uinodev1.Node) (render.HTML, error) {
 		Label:   p.Label,
 		Variant: buttonVariant(p.Variant),
 		ExtraAttrs: html.Attrs{
-			"data-fui-rpc": rpcURL,
+			"data-cui-rpc": rpcURL,
 		},
 	}), nil
 }
@@ -334,7 +334,7 @@ func (r *Renderer) renderLink(n uinodev1.Node) (render.HTML, error) {
 		// guaranteed To is a same-origin path; ui.Link scrubs it again.
 		return ui.Link(ui.LinkConfig{Href: p.To, Text: p.Text}), nil
 	}
-	// ActionRef link: resolve to the real URL and emit data-fui-rpc so
+	// ActionRef link: resolve to the real URL and emit data-cui-rpc so
 	// the runtime upgrades the click to an island RPC (with JS) while
 	// the href remains the graceful no-JS fallback to the same URL.
 	rpcURL, err := r.resolveActionRef(n.ActionRef)
@@ -345,7 +345,7 @@ func (r *Renderer) renderLink(n uinodev1.Node) (render.HTML, error) {
 		Href: rpcURL,
 		Text: p.Text,
 		ExtraAttrs: html.Attrs{
-			"data-fui-rpc": rpcURL,
+			"data-cui-rpc": rpcURL,
 		},
 	}), nil
 }

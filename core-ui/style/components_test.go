@@ -105,9 +105,9 @@ func TestComponentOptionsScopedEmission(t *testing.T) {
 	// The option lines must sit INSIDE every scope block, after the
 	// tokens they rebind against.
 	for _, probe := range []struct{ block, opener string }{
-		{"light", ".fui-theme-" + ref.Hash() + " {\n"},
-		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash() + " {\n"},
-		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + ref.Hash() + " {\n"},
+		{"light", ".cui-theme-" + ref.Hash() + " {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .cui-theme-" + ref.Hash() + " {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + ref.Hash() + " {\n"},
 	} {
 		i := strings.Index(css, probe.opener)
 		if i < 0 {

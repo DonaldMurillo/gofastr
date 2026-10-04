@@ -22,11 +22,11 @@ func TestDefaultSkeletonEscapesApostrophes(t *testing.T) {
 	}
 	out := string(defaultSkeleton(def, map[string]render.HTML{`bo'dy`: render.Text("x")}))
 	for _, want := range []string{
-		`data-fui-widget="w&#39;idget"`,
+		`data-cui-widget="w&#39;idget"`,
 		`role="ro&#39;le"`,
 		`aria-labelledby="lb&#39;l"`,
 		`aria-describedby="db&#39;y"`,
-		`fui-slot-bo&#39;dy`,
+		`cui-slot-bo&#39;dy`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("widget chrome missing escaped %q:\n%s", want, out)

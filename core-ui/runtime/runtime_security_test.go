@@ -349,7 +349,7 @@ func skipSpaceBack(s string, pos int) int {
 // moduleSrcValidatesNameShape asserts the split-module loader validates
 // its name against the shape the framework emits before building a
 // script src from it. loadModule's name arrives from the DOM: the
-// data-fui-prefetch hover/focus path (_prefetch) splits the attribute
+// data-cui-prefetch hover/focus path (_prefetch) splits the attribute
 // on whitespace and passes each token straight through, so a token like
 // ../../../evil interpolates into '/__gofastr/runtime/' + name + '.js'
 // and the browser normalizes the request to /evil.js — past the
@@ -392,7 +392,7 @@ func TestModuleSrcValidatesNameShape(t *testing.T) {
 		guardRe := regexp.MustCompile(`/\^\[([^\]/]+)\](?:\+|\{\d+(?:,\d+)?\})\$[a-z]*/\.test\(name\)`)
 		m := guardRe.FindStringSubmatch(body)
 		if m == nil {
-			t.Errorf("SECURITY: [module-src] %s: loadModule builds '/__gofastr/runtime/'+name+'.js' with no name-shape guard — data-fui-prefetch is DOM input, a ../../../evil token normalizes past the runtime serve route onto an arbitrary same-origin JS path (sibling data-behavior gate: boot.js hydrate)", rel)
+			t.Errorf("SECURITY: [module-src] %s: loadModule builds '/__gofastr/runtime/'+name+'.js' with no name-shape guard — data-cui-prefetch is DOM input, a ../../../evil token normalizes past the runtime serve route onto an arbitrary same-origin JS path (sibling data-behavior gate: boot.js hydrate)", rel)
 			continue
 		}
 		cls := m[1]
@@ -448,15 +448,15 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		where  string // human-readable surface description
 	}{
 		{"../../framework/headless/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
-		{"src/widgets.js", `link[data-fui-style="`, "widget name → style-link dedup lookup"},
-		{"runtime.js", `link[data-fui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
+		{"src/widgets.js", `link[data-cui-style="`, "widget name → style-link dedup lookup"},
+		{"runtime.js", `link[data-cui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
 		{"runtime.js", `[data-widget="${`, "closest data-component/data-widget value → hydrate lookup (composed from frag/boot.js)"},
 		// Control group: these sites escape today and must keep doing so.
 		{"src/sse.js", `'[data-island="'`, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
 		{"../../framework/headless/sortablelist.js", `data-hui-sortable-group="`, "sortable group lookup"},
-		{"src/widgets.js", `'[data-fui-widget="'`, "widget name → mounted-widget lookup"},
-		{"src/widgets.js", `'[data-fui-backdrop="'`, "widget name → backdrop lookup"},
-		{"runtime.js", `'[data-fui-signal="'`, "signal name → consumer fanout lookup"},
+		{"src/widgets.js", `'[data-cui-widget="'`, "widget name → mounted-widget lookup"},
+		{"src/widgets.js", `'[data-cui-backdrop="'`, "widget name → backdrop lookup"},
+		{"runtime.js", `'[data-cui-signal="'`, "signal name → consumer fanout lookup"},
 	}
 
 	for _, s := range surfaces {
@@ -510,8 +510,8 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 // Object.prototype.hasOwnProperty.call(reg, name).
 //
 // Surfaces: every read of these registries keyed by a DOM-attribute
-// variable (data-fui-open / data-fui-widget / data-fui-rpc-refresh /
-// data-fui-popover names). Writes keyed by cfg.name (catalog-borne)
+// variable (data-cui-open / data-cui-widget / data-cui-rpc-refresh /
+// data-cui-popover names). Writes keyed by cfg.name (catalog-borne)
 // are out of scope.
 func TestRegistryLookupsAreOwnProps(t *testing.T) {
 	// The nearby-hasOwnProperty window check this probe used to carry
@@ -725,10 +725,10 @@ func TestAttributePathSegmentsValidated(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestBannerDismissCookieEncodesId pins recordDismiss's storage boundary:
-// values concatenated into document.cookie from data-fui-* attributes are
+// values concatenated into document.cookie from data-cui-* attributes are
 // component-encoded first, so a DOM-sourced dismiss id can never
 // contribute cookie delimiters. Without the encoding, a crafted
-// data-fui-banner-dismiss-id 'probe=x; Path=' plants an
+// data-cui-banner-dismiss-id 'probe=x; Path=' plants an
 // attacker-chosen name/value pair inside the gofastr.banner-dismiss.*
 // namespace the server reads back (and the real dismissal is never stored
 // under its own key).
@@ -775,7 +775,7 @@ func TestBannerDismissCookieEncodesId(t *testing.T) {
 	}
 	for _, n := range got.Names {
 		if n != got.Want {
-			t.Errorf("SECURITY: [banner-cookie] crafted dismiss id planted cookie %q; only the encoded name %q is legitimate — recordDismiss must component-encode the data-fui-banner-dismiss-id into the cookie name so the id cannot inject cookie attributes", n, got.Want)
+			t.Errorf("SECURITY: [banner-cookie] crafted dismiss id planted cookie %q; only the encoded name %q is legitimate — recordDismiss must component-encode the data-cui-banner-dismiss-id into the cookie name so the id cannot inject cookie attributes", n, got.Want)
 		}
 	}
 }
@@ -790,15 +790,15 @@ func TestBannerDismissCookieEncodesId(t *testing.T) {
 // (the spellings are data-hui-pane-*, the module headless-panehost).
 
 // TestRpcScrollSelectorDegradesOnly pins that a post-success UI hint
-// (data-fui-rpc-scroll-to) degrades without corrupting the RPC result:
+// (data-cui-rpc-scroll-to) degrades without corrupting the RPC result:
 // the hint's querySelector runs in its own try after the response signal
 // is set, so a malformed selector can never overwrite a successful
 // response signal with the network-error object.
 func TestRpcScrollSelectorDegradesOnly(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `
-<button type="button" id="rpcbtn" data-fui-rpc="/rpcok" data-fui-rpc-method="POST"
-        data-fui-rpc-signal="result" data-fui-rpc-scroll-to="[[">go</button>
-<span id="sig" data-fui-signal="result"></span>`)
+<button type="button" id="rpcbtn" data-cui-rpc="/rpcok" data-cui-rpc-method="POST"
+        data-cui-rpc-signal="result" data-cui-rpc-scroll-to="[[">go</button>
+<span id="sig" data-cui-signal="result"></span>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
@@ -830,7 +830,7 @@ func TestRpcScrollSelectorDegradesOnly(t *testing.T) {
 		t.Fatalf("probe returned %q: %v", raw, err)
 	}
 	if got.Object && got.OK != nil && !*got.OK {
-		t.Errorf("SECURITY: [rpc-scroll-selector] successful RPC overwritten with the error object {ok:%v,status:%v,text:%q} — the data-fui-rpc-scroll-to lookup must run in its own try after the response signal is set, so a malformed selector degrades without touching the result", *got.OK, *got.Status, got.Text)
+		t.Errorf("SECURITY: [rpc-scroll-selector] successful RPC overwritten with the error object {ok:%v,status:%v,text:%q} — the data-cui-rpc-scroll-to lookup must run in its own try after the response signal is set, so a malformed selector degrades without touching the result", *got.OK, *got.Status, got.Text)
 	}
 }
 
@@ -903,7 +903,7 @@ type selectorByDesignFinding struct {
 
 // scanSelectorByDesign reports every querySelector(All) call whose bare
 // argument is an attribute-borne identifier and that does not sit inside
-// a try block. For the data-fui-* attributes whose VALUE IS a selector
+// a try block. For the data-cui-* attributes whose VALUE IS a selector
 // by design (copy-text-from, fill-input, charcount-source,
 // shortcut-target, rpc-scroll-to, scroll-bottom-on-update, btt-target,
 // infinite-items, scrollspy, scrollspy-target, toc) escaping is wrong —
@@ -958,13 +958,13 @@ func insideTryBlock(s string, pos int) bool {
 // TestSelectorByDesignLookupsGuarded enforces the degrade-don't-throw
 // contract over every selector-by-design lookup in the shipped runtime.
 // The fixes wrapped each site in try/catch (or validated) so a malformed
-// data-fui-* selector cannot abort the delegated click/keydown/wire
+// data-cui-* selector cannot abort the delegated click/keydown/wire
 // handler that carries it.
 //
 // Surfaces (drift tripwire — every anchor must keep existing):
-//   - src/widgethelpers.js   data-fui-fill-input, data-fui-charcount-source
-//   - src/rpc.js             data-fui-rpc-scroll-to
-//   - frag/signals.js        data-fui-scroll-bottom-on-update
+//   - src/widgethelpers.js   data-cui-fill-input, data-cui-charcount-source
+//   - src/rpc.js             data-cui-rpc-scroll-to
+//   - frag/signals.js        data-cui-scroll-bottom-on-update
 //
 // (scrollspy and toc are retired; their selector-by-design lookups
 // moved into framework/headless's headless-rail module, whose own
@@ -985,7 +985,7 @@ func TestSelectorByDesignLookupsGuarded(t *testing.T) {
 
 	for _, file := range jsRuntimeSourceFiles(t) {
 		for _, f := range scanSelectorByDesign(file, readSrc(t, file)) {
-			t.Errorf("SECURITY: [selector-by-design] %s:%d runs the attribute-borne selector lookup querySelector(%s) unguarded — a malformed data-fui-* selector throws a DOMException out of the delegated handler (before its preventDefault); the lookup must be wrapped in try/catch or otherwise validated so it degrades to a no-op", f.file, f.line, f.ident)
+			t.Errorf("SECURITY: [selector-by-design] %s:%d runs the attribute-borne selector lookup querySelector(%s) unguarded — a malformed data-cui-* selector throws a DOMException out of the delegated handler (before its preventDefault); the lookup must be wrapped in try/catch or otherwise validated so it degrades to a no-op", f.file, f.line, f.ident)
 		}
 	}
 
@@ -993,7 +993,7 @@ func TestSelectorByDesignLookupsGuarded(t *testing.T) {
 	// so a quiet result above means the code is clean, not that the
 	// scan went blind.
 	vsrc := "function wire(el) {\n" +
-		"  const sel = el.getAttribute('data-fui-x-target');\n" +
+		"  const sel = el.getAttribute('data-cui-x-target');\n" +
 		"  return document.querySelector(sel);\n" +
 		"}\n"
 	if got := scanSelectorByDesign("vacuity.js", vsrc); len(got) == 0 {
@@ -1134,7 +1134,7 @@ func TestCookieWritesEncodeAttrValues(t *testing.T) {
 	for _, file := range jsRuntimeSourceFiles(t) {
 		src := readSrc(t, file)
 		for _, line := range scanCookieConcat(file, src) {
-			t.Errorf("SECURITY: [cookie-concat] %s:%d writes document.cookie interpolating an attribute-borne value without encodeURIComponent — a crafted data-fui-* value can inject cookie delimiters ('; '=') and plant attacker-chosen cookie attributes or name/value pairs", file, line)
+			t.Errorf("SECURITY: [cookie-concat] %s:%d writes document.cookie interpolating an attribute-borne value without encodeURIComponent — a crafted data-cui-* value can inject cookie delimiters ('; '=') and plant attacker-chosen cookie attributes or name/value pairs", file, line)
 		}
 	}
 
@@ -1143,7 +1143,7 @@ func TestCookieWritesEncodeAttrValues(t *testing.T) {
 		"  document.cookie = 'gofastr.banner-dismiss.' + id + '=1; path=/; max-age=31536000; SameSite=Lax';\n" +
 		"}\n" +
 		"function click(btn) {\n" +
-		"  const id = btn.getAttribute('data-fui-banner-dismiss-id');\n" +
+		"  const id = btn.getAttribute('data-cui-banner-dismiss-id');\n" +
 		"  if (id) recordDismiss(id);\n" +
 		"}\n"
 	if got := scanCookieConcat("vacuity.js", vsrc); len(got) == 0 {
@@ -1206,7 +1206,7 @@ func scanModuleURLShape(file, src string) []int {
 }
 
 // TestModuleURLsGateAttrNames pins the module-URL shape: a script src
-// built from a data-fui-* attribute id carries the same anchored
+// built from a data-cui-* attribute id carries the same anchored
 // name-shape gate loadModule applies to its names — parity within one
 // runtime, the second line of defense behind the server-controlled
 // manifest.
@@ -1245,7 +1245,7 @@ func TestModuleURLsGateAttrNames(t *testing.T) {
 }
 
 // TestSelectorBareArgGuarded: a querySelector whose argument is a bare
-// identifier read from a data-fui-* attribute runs inside a try, so a
+// identifier read from a data-cui-* attribute runs inside a try, so a
 // malformed value degrades instead of throwing out of the delegated
 // handler. Property over the whole runtime; vacuity control on the
 // pre-fix copy.js spelling.
@@ -1260,7 +1260,7 @@ func TestSelectorBareArgGuarded(t *testing.T) {
 	}
 	vdir := t.TempDir()
 	vsrc := "function onClick(el) {\n" +
-		"  const sel = el.getAttribute('data-fui-copy-text-from');\n" +
+		"  const sel = el.getAttribute('data-cui-copy-text-from');\n" +
 		"  const src = document.querySelector(sel);\n" +
 		"  return src;\n}\n"
 	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
@@ -1338,7 +1338,7 @@ func TestModuleURLsGateTheirId(t *testing.T) {
 }
 
 // TestStorageKeysEncodeAttrValues: a storage key the runtime reads from
-// a data-fui-* attribute (sidebar collapse persistence, the
+// a data-cui-* attribute (sidebar collapse persistence, the
 // persist-storage widget helper) is namespaced AND component-encoded at
 // the sink — banner.js's dismissKey spelling, held for the cookie by
 // TestCookieWritesEncodeOperands above. Raw keys let markup injected
@@ -1356,7 +1356,7 @@ func TestStorageKeysEncodeAttrValues(t *testing.T) {
 	}
 	vdir := t.TempDir()
 	vsrc := "const setCollapsed = (root, collapsed) => {\n" +
-		"  const key = root.getAttribute('data-fui-sidebar-storage');\n" +
+		"  const key = root.getAttribute('data-cui-sidebar-storage');\n" +
 		"  try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}\n" +
 		"};\n"
 	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {

@@ -15,10 +15,10 @@ import (
 // (runtime.js:617/647/823/1463); the animate and toast slot-creation writes bypass it.
 // Surfaces: src/animate.js::wire — G._signals[name] = slot;
 // src/toasts.js::_initToasts — NS._toastTimers[id] = rec.
-// Finding: [animate-signal-proto-write] data-fui-animate-signal="__proto__" re-parents the
+// Finding: [animate-signal-proto-write] data-cui-animate-signal="__proto__" re-parents the
 // shared signal store via the __proto__ setter (the own-prop read at wire() does not stop the
 // write); the kernel's seed-merge then writes into the planted prototype and signals go
-// permanently dead client-side. [toasts-proto-write] data-fui-toast-id="__proto__" re-parents
+// permanently dead client-side. [toasts-proto-write] data-cui-toast-id="__proto__" re-parents
 // the toast timer registry the same way; the for-in cleanup in _initToasts then mis-enumerates
 // inherited keys and clearTimeout cancels the planted toast's own timer.
 // Fix direction: run the same reserved-key skip the kernel seed loops use (isReservedSignalKey)
@@ -32,7 +32,7 @@ import (
 // all three reserved keys, before the assignment.
 func TestAnimateRedReservedKeyWrite(t *testing.T) {
 	src := readSrc(t, "src/animate.js")
-	start := strings.Index(src, "const name = el.getAttribute('data-fui-animate-signal');")
+	start := strings.Index(src, "const name = el.getAttribute('data-cui-animate-signal');")
 	if start < 0 {
 		t.Fatalf("setup broken: could not locate wire()'s signal-name read in src/animate.js")
 	}
@@ -56,7 +56,7 @@ func TestAnimateRedReservedKeyWrite(t *testing.T) {
 		strings.Contains(region, "constructor") &&
 		strings.Contains(region, "prototype")
 	if !hasHelper && !hasInline {
-		t.Errorf("SECURITY: [animate-signal-proto-write] wire() creates G._signals[name] with no reserved-key guard — data-fui-animate-signal=\"__proto__\" re-parents the shared signal store via the __proto__ setter, the kernel's seed-merge then writes into the planted prototype, and signals go permanently dead client-side (the kernel guards setSignal and both seed loops with isReservedSignalKey; this write bypasses it). Region:\n%s", region)
+		t.Errorf("SECURITY: [animate-signal-proto-write] wire() creates G._signals[name] with no reserved-key guard — data-cui-animate-signal=\"__proto__\" re-parents the shared signal store via the __proto__ setter, the kernel's seed-merge then writes into the planted prototype, and signals go permanently dead client-side (the kernel guards setSignal and both seed loops with isReservedSignalKey; this write bypasses it). Region:\n%s", region)
 	}
 }
 

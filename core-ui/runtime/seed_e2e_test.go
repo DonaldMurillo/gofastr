@@ -37,7 +37,7 @@ func startSeedE2EServer(t *testing.T, seedJSON string) string {
   <script type="application/json" id="gofastr-signals">%s</script>
 </head>
 <body>
-  <span id="consumer" data-fui-signal="greeting">PLACEHOLDER</span>
+  <span id="consumer" data-cui-signal="greeting">PLACEHOLDER</span>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
 </body>

@@ -3,7 +3,7 @@
 // admin.New(...) generating the whole back-office with defaults.
 //
 // The admin screens hydrate with runtime.js, the list is a DataTable island
-// (paginate without a reload), delete is a data-fui-confirm button, and forms
+// (paginate without a reload), delete is a data-cui-confirm button, and forms
 // are server-rendered. There is no bespoke JavaScript anywhere in this app.
 //
 // The auth here is a deliberately tiny demo stand-in (a signed-cookie-free

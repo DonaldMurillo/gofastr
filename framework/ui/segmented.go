@@ -55,17 +55,17 @@ type SegmentedControlConfig struct {
 	// the SegmentedControl is not inside a <label> or FormField).
 	Label string
 
-	// RPCPath, when set, attaches data-fui-rpc to each radio so a change
+	// RPCPath, when set, attaches data-cui-rpc to each radio so a change
 	// POSTs to the server carrying the selected segment's name=value. The
 	// runtime serializes the form the radio belongs to (node.form), so place
 	// the SegmentedControl inside a <form> for the selection to round-trip:
 	// a radio with no enclosing form posts an empty body and the handler
-	// cannot see which segment was chosen. An explicit data-fui-rpc-body on a
+	// cannot see which segment was chosen. An explicit data-cui-rpc-body on a
 	// radio still wins over form serialization. Method is POST.
 	RPCPath string
 
 	// RPCSignal, when set, broadcasts the response as the given
-	// signal name (data-fui-rpc-signal).
+	// signal name (data-cui-rpc-signal).
 	RPCSignal string
 
 	ID    string
@@ -73,7 +73,7 @@ type SegmentedControlConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the control's root
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, role, aria-label, and data-count.
+	// (use Class / ID), data-cui-*, role, aria-label, and data-count.
 	ExtraAttrs html.Attrs
 }
 
@@ -138,10 +138,10 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			inputAttrs["disabled"] = ""
 		}
 		if cfg.RPCPath != "" {
-			inputAttrs["data-fui-rpc"] = cfg.RPCPath
-			inputAttrs["data-fui-rpc-method"] = "POST"
+			inputAttrs["data-cui-rpc"] = cfg.RPCPath
+			inputAttrs["data-cui-rpc-method"] = "POST"
 			if cfg.RPCSignal != "" {
-				inputAttrs["data-fui-rpc-signal"] = cfg.RPCSignal
+				inputAttrs["data-cui-rpc-signal"] = cfg.RPCSignal
 			}
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
@@ -154,7 +154,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			"class":             "fui-segmented__option",
 			"for":               cfg.Name + "--" + slug(o.Value),
 			"data-position":     itoaSmall(i),
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		}
 		items = append(items, render.Tag("label", flattenAttrs(labelAttrs), input, labelHTML))
 	}
@@ -162,7 +162,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	// also this component's own, not caller content.
 	items = append(items, html.Span(html.TextConfig{
 		Class:      "fui-segmented__indicator",
-		ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 	}))
 
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
@@ -192,7 +192,7 @@ func segmentedCSS(_ style.Theme) string {
 	// sliding indicator is sized to one column via the data-count
 	// attribute on the wrapper, then translated by translateX(100% *
 	// position). Math works because every column is the same width.
-	return `[data-fui-comp="ui-segmented"] {
+	return `[data-cui-comp="ui-segmented"] {
   position: relative;
   display: inline-grid;
   grid-auto-flow: column;
@@ -206,13 +206,13 @@ func segmentedCSS(_ style.Theme) string {
   vertical-align: middle;
   isolation: isolate;
 }
-:where([data-fui-comp="ui-segmented"])[data-count="2"] { min-inline-size: 16rem; }
-:where([data-fui-comp="ui-segmented"])[data-count="3"] { min-inline-size: 22rem; }
-:where([data-fui-comp="ui-segmented"])[data-count="4"] { min-inline-size: 26rem; }
-:where([data-fui-comp="ui-segmented"])[data-count="5"] { min-inline-size: 30rem; }
-:where([data-fui-comp="ui-segmented"])[data-count="6"] { min-inline-size: 34rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: 16rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: 22rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: 26rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: 30rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: 34rem; }
 
-[data-fui-comp="ui-segmented"] .fui-segmented__option {
+[data-cui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
   z-index: 1;
   display: inline-flex;
@@ -229,10 +229,10 @@ func segmentedCSS(_ style.Theme) string {
   white-space: nowrap;
   margin: 0;
 }
-[data-fui-comp="ui-segmented"] .fui-segmented__option:hover {
+[data-cui-comp="ui-segmented"] .fui-segmented__option:hover {
   color: var(--color-text, #111);
 }
-[data-fui-comp="ui-segmented"] .fui-segmented__input {
+[data-cui-comp="ui-segmented"] .fui-segmented__input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -240,15 +240,15 @@ func segmentedCSS(_ style.Theme) string {
   block-size: 0;
   margin: 0;
 }
-[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
+[data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
   color: var(--color-text, #111);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
+[data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
+[data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -256,7 +256,7 @@ func segmentedCSS(_ style.Theme) string {
 /* Sliding pill indicator. Sized to one column width via the data-count
    attribute on the wrapper; translated by (position × 100%) which is
    exact because every column is exactly 1fr wide. */
-[data-fui-comp="ui-segmented"] .fui-segmented__indicator {
+[data-cui-comp="ui-segmented"] .fui-segmented__indicator {
   position: absolute;
   z-index: 0;
   top: 4px;
@@ -270,21 +270,21 @@ func segmentedCSS(_ style.Theme) string {
   transition: transform var(--duration-medium, 200ms) var(--easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
-[data-fui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
-[data-fui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
-[data-fui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
-[data-fui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
-[data-fui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
+[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
+[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
+[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
+[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
+[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
 
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(200%); }
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(300%); }
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(400%); }
-[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(500%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(200%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(300%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(400%); }
+[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(500%); }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }
+  [data-cui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }
 }
 `
 }

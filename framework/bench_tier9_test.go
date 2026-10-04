@@ -276,7 +276,7 @@ func indexByte(p []byte, c byte) int {
 //
 // Models the production pattern: click on a sort header → fetch
 // /islands/<name>?state=X → server returns new island HTML → runtime
-// swaps just the data-fui-signal wrapper.
+// swaps just the data-cui-signal wrapper.
 func BenchmarkT9_IslandRPC(b *testing.B) {
 	rtr := newBenchRouter()
 	rtr.GetFunc("/islands/posts/state", func(w http.ResponseWriter, r *http.Request) {
@@ -284,7 +284,7 @@ func BenchmarkT9_IslandRPC(b *testing.B) {
 		// A representative island response: a small table fragment of
 		// ~10 rows. This is the wire shape an island handler returns.
 		out := render.Tag("div",
-			map[string]string{"data-fui-signal": "posts-rows", "data-fui-signal-mode": "html"},
+			map[string]string{"data-cui-signal": "posts-rows", "data-cui-signal-mode": "html"},
 			renderRows(page, 10)...,
 		)
 		render.RespondHTML(w, out)
@@ -317,7 +317,7 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 	rtr := newBenchRouter()
 	rtr.GetFunc("/islands/posts/state", func(w http.ResponseWriter, r *http.Request) {
 		out := render.Tag("div",
-			map[string]string{"data-fui-signal": "posts-rows", "data-fui-signal-mode": "html"},
+			map[string]string{"data-cui-signal": "posts-rows", "data-cui-signal-mode": "html"},
 			renderRows("1", 10)...,
 		)
 		render.RespondHTML(w, out)

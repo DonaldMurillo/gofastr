@@ -38,10 +38,10 @@ func TestQuickNoteWidgetOpensFromTrayRow(t *testing.T) {
 	page := h.Get("/widget").AssertStatus(t, http.StatusOK)
 	for _, want := range []string{
 		"Quick note",
-		`data-fui-window-drag`,
+		`data-cui-window-drag`,
 		`data-notes-widget-close`,
-		`data-fui-rpc="/api/notes"`,
-		`data-fui-rpc-reset`,
+		`data-cui-rpc="/api/notes"`,
+		`data-cui-rpc-reset`,
 		`id="widget-note-title"`,
 		`Add note`,
 	} {

@@ -70,7 +70,7 @@ type ProgressStepsConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the <nav> root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-* and aria-label (use Label).
+	// ID), data-cui-* and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -169,7 +169,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	// place it), so the mark is spliced on here.
 	list, err := registry.InjectAttribute(headless.Steps(headless.StepsProps{
 		Steps: steps,
-	}, progressStepsClasses), "data-fui-internal", "")
+	}, progressStepsClasses), "data-cui-internal", "")
 	if err != nil {
 		panic(err)
 	}
@@ -183,10 +183,10 @@ func progressStepsCheckIcon() string {
 var progressStepsStyle = registry.RegisterStyle("ui-progress-steps", progressStepsCSS)
 
 func progressStepsCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-progress-steps"] {
+	return `[data-cui-comp="ui-progress-steps"] {
   display: block;
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__list {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__list {
   display: flex;
   gap: var(--spacing-sm, 4px);
   margin: 0;
@@ -194,7 +194,7 @@ func progressStepsCSS(_ style.Theme) string {
   list-style: none;
   counter-reset: progress-steps;
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__item {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__item {
   flex: 1 1 0;
   position: relative;
   min-width: 0;
@@ -203,7 +203,7 @@ func progressStepsCSS(_ style.Theme) string {
    item except the last, behind the marker so the marker punches
    through. Tinted by the NEXT step's status — green if both complete,
    border-color otherwise. */
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__item + .fui-progress-steps__item::before {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__item + .fui-progress-steps__item::before {
   content: "";
   position: absolute;
   left: 0;
@@ -218,7 +218,7 @@ func progressStepsCSS(_ style.Theme) string {
 .fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item::before {
   background: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__row {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__row {
   position: relative;
   z-index: 1;
   display: grid;
@@ -228,16 +228,16 @@ func progressStepsCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__text {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__text {
   display: grid;
   justify-items: center;
   gap: var(--spacing-xs, 2px);
   min-width: 0;
 }
-[data-fui-comp="ui-progress-steps"] a.fui-progress-steps__row:hover {
+[data-cui-comp="ui-progress-steps"] a.fui-progress-steps__row:hover {
   text-decoration: underline;
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__marker {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__marker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -250,12 +250,12 @@ func progressStepsCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__label {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__label {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
   text-align: center;
 }
-[data-fui-comp="ui-progress-steps"] .fui-progress-steps__hint {
+[data-cui-comp="ui-progress-steps"] .fui-progress-steps__hint {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;

@@ -13,7 +13,7 @@ import (
 // real component stylesheet (served from the registry by
 // menuTriggerAxeServer), not the stylesheet's text. Issue #386: the
 // root-keyed closed-panel rule used to key [open] on whatever element
-// carried data-fui-comp, but on the TriggerElement path that root is a
+// carried data-cui-comp, but on the TriggerElement path that root is a
 // plain div, which never carries [open] — the rule matched
 // unconditionally and kept the panel display:none even while the
 // summary-less details was open. Every CSS-text test passed throughout

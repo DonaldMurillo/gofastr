@@ -38,7 +38,7 @@ linked; a print document is inert.
 
 A print document has no runtime to lazy-load component CSS, but the battery
 still renders styled components faithfully: it scans the rendered body for
-`data-fui-comp` markers and **inlines the scoped CSS** for every registered
+`data-cui-comp` markers and **inlines the scoped CSS** for every registered
 `framework/ui` component it finds. So a `Build` that
 returns, say, a `DataTable` prints with its real styling: you get tokens
 from `AppCSSURL` plus the component's own rules. What you don't get is
@@ -209,7 +209,7 @@ own `go` directive and be built/tested independently of the root module.
 - **Re-implementing PDF generation.** Don't add a Go PDF library or shell
   out yourself; set `Config.PDFRenderer` to `chromepdf.New(...)`.
 - **Making print an island or SPA route.** Print is a separate resource;
-  link to it with `PrintLink` / `target="_blank"`, not a `data-fui-rpc`
+  link to it with `PrintLink` / `target="_blank"`, not a `data-cui-rpc`
   island or a `location.href` swap.
 - **`print.Public` on per-user data.** Leaves invoices/receipts
   world-readable. Keep `RequireAuth` or use `RequireOwner`.

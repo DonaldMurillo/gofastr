@@ -30,7 +30,7 @@ func TestTabsPanelCapPanicsBeyondMax(t *testing.T) {
 		atCap[i] = ui.TabItem{Label: "T", Content: render.Text("c")}
 	}
 	h := string(ui.Tabs(ui.TabsConfig{SignalName: "t", Tabs: atCap}))
-	if !strings.Contains(h, `data-fui-tab-index="23"`) {
+	if !strings.Contains(h, `data-cui-tab-index="23"`) {
 		t.Errorf("a 24-tab strip must render all 24 panels:\n%.200s", h)
 	}
 }

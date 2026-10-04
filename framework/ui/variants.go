@@ -49,7 +49,7 @@ import (
 // plain `.fui-button--<name>` class rules, appended after the
 // sheet's built-ins, so Props override the default look by source
 // order without !important; card rules stay marker-scoped
-// (`[data-fui-comp="ui-card"].fui-card--<name>`).
+// (`[data-cui-comp="ui-card"].fui-card--<name>`).
 type VariantCSS struct {
 	// Props is the variant's base-state declarations. Required.
 	Props []string
@@ -119,7 +119,7 @@ func registerButtonClass(name string) {
 
 // RegisterCardVariant registers a custom CardVariant under name. The
 // CSS lands in the registered ui-card sheet as
-// `[data-fui-comp="ui-card"].fui-card--<name>` rules. Same rules and
+// `[data-cui-comp="ui-card"].fui-card--<name>` rules. Same rules and
 // panics as RegisterButtonVariant ("interactive" is reserved: Card
 // uses it for the Href form).
 func RegisterCardVariant(name string, css VariantCSS) CardVariant {
@@ -261,7 +261,7 @@ var formClasses = headless.Classes{
 // inputClasses dresses the single-line controls (headless.Input) a
 // field builds. The input's classes are consumed by the FIELD sheet:
 // an input only ever renders inside a field, so the field's
-// data-fui-comp marker is what fetches the sheet that styles it.
+// data-cui-comp marker is what fetches the sheet that styles it.
 var inputClasses = headless.Classes{
 	headless.PartRoot: "fui-input",
 }
@@ -551,7 +551,7 @@ func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme) st
 // wears the class matches them under any marker — Button, LinkButton,
 // ToggleAction, OptimisticAction — which is why they are plain class
 // rules rather than marker-scoped ones: the action components carry
-// the same classes under their own data-fui-comp markers, so a rule
+// the same classes under their own data-cui-comp markers, so a rule
 // scoped to ui-button could never style them, and the dual-scope
 // copies that peculiarity used to need are gone. Seals the set.
 func buttonModsCSS(t style.Theme) string {

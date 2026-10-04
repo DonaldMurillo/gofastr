@@ -13,7 +13,7 @@ import (
 )
 
 // TestSSE_IslandSwapLoadsComponentCSS pins that an SSE island update
-// whose HTML introduces a NEW [data-fui-comp] gets its component CSS
+// whose HTML introduces a NEW [data-cui-comp] gets its component CSS
 // loaded. nav / signals / poll / widgets all call scanAndLoadCSS after
 // their innerHTML swap, sse.js was the only swap path that did not, so
 // a server-pushed island bringing in a styled
@@ -45,8 +45,8 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 			fl.Flush()
 		}
 		// Push an island frame whose HTML introduces a brand-new
-		// [data-fui-comp] the page did not carry at boot.
-		fmt.Fprint(w, "event: island\ndata: {\"island\":\"live\",\"html\":\"<span data-fui-comp=\\\"sse-probe\\\">arrived</span>\"}\n\n")
+		// [data-cui-comp] the page did not carry at boot.
+		fmt.Fprint(w, "event: island\ndata: {\"island\":\"live\",\"html\":\"<span data-cui-comp=\\\"sse-probe\\\">arrived</span>\"}\n\n")
 		if fl != nil {
 			fl.Flush()
 		}
@@ -78,7 +78,7 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 		// Wait for the island swap to land (the new content appears).
 		chromedp.Poll(`document.querySelector('#live') && document.querySelector('#live').textContent.indexOf('arrived') >= 0`,
 			nil, chromedp.WithPollingTimeout(15*time.Second), chromedp.WithPollingInterval(150*time.Millisecond)),
-		chromedp.Evaluate(`!!document.querySelector('link[data-fui-style="sse-probe"]')`, &hasLink),
+		chromedp.Evaluate(`!!document.querySelector('link[data-cui-style="sse-probe"]')`, &hasLink),
 		chromedp.Evaluate(`document.querySelector('#live').textContent.indexOf('arrived') >= 0`, &swapped),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -87,7 +87,7 @@ func TestSSE_IslandSwapLoadsComponentCSS(t *testing.T) {
 		t.Fatal("island swap never landed — test is vacuous")
 	}
 	if !hasLink {
-		t.Error("SSE island swap did not load component CSS: no <link data-fui-style=\"sse-probe\"> after a swap that introduced [data-fui-comp=\"sse-probe\"] — scanAndLoadCSS is missing from the SSE swap path")
+		t.Error("SSE island swap did not load component CSS: no <link data-cui-style=\"sse-probe\"> after a swap that introduced [data-cui-comp=\"sse-probe\"] — scanAndLoadCSS is missing from the SSE swap path")
 	}
 	if cssHits.Load() == 0 {
 		t.Error("SSE island swap did not fetch /css/sse-probe.css — component CSS never requested")

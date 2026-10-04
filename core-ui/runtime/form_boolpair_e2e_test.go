@@ -49,7 +49,7 @@ func TestDispatchRPC_HiddenCheckboxPairIsScalar(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>pair</title></head><body>
-<form id="f" data-fui-rpc="/rpc/save" data-fui-rpc-method="POST">
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
   <input type="hidden" name="on" value="false">
   <input type="checkbox" id="on" name="on" value="true" checked>
   <input type="hidden" name="off" value="false">

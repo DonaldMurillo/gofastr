@@ -15,7 +15,7 @@ import (
 // serveStaticCompCSSPage serves a page in the shape the static export
 // writes: one SSR <link> per component in <head>, the component's marker in
 // the body, and the catalog the runtime resolves names through. marked
-// decides whether the SSR link carries data-fui-style, the attribute
+// decides whether the SSR link carries data-cui-style, the attribute
 // loadComponentCSS dedupes on.
 func serveStaticCompCSSPage(t *testing.T, marked bool) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
@@ -26,7 +26,7 @@ func serveStaticCompCSSPage(t *testing.T, marked bool) (*httptest.Server, *atomi
 	}
 	link := `<link rel="stylesheet" href="/css/static-probe.css?v=1">`
 	if marked {
-		link = `<link rel="stylesheet" href="/css/static-probe.css?v=1" data-fui-style="static-probe" id="fui-css-static-probe">`
+		link = `<link rel="stylesheet" href="/css/static-probe.css?v=1" data-cui-style="static-probe" id="cui-css-static-probe">`
 	}
 	mux := http.NewServeMux()
 	handleRuntimeModules(t, mux)
@@ -44,7 +44,7 @@ func serveStaticCompCSSPage(t *testing.T, marked bool) (*httptest.Server, *atomi
 		fmt.Fprint(w, `<!doctype html><html><head>`+link+
 			`<script>window.__gofastr_catalog={"static-probe":{stylePath:"/css/static-probe.css",version:"1"}};</script>`+
 			`</head><body>`+
-			`<span data-fui-comp="static-probe">styled</span>`+
+			`<span data-cui-comp="static-probe">styled</span>`+
 			`<span id="ready">ready</span>`+
 			`<script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
@@ -73,7 +73,7 @@ func countStaticProbeLinks(t *testing.T, srv *httptest.Server) int {
 
 // TestStaticPage_MarkedSSRLinkIsNotLoadedTwice pins the contract between the
 // host's SSR component links and the runtime's dedup: an SSR <link> that
-// carries data-fui-style="<name>" is the one the runtime would have written,
+// carries data-cui-style="<name>" is the one the runtime would have written,
 // so the boot scan must not append another. The static export writes one
 // such link per component; without the marker every static page loaded each
 // component stylesheet twice, the second copy after app.css, which reversed
@@ -81,7 +81,7 @@ func countStaticProbeLinks(t *testing.T, srv *httptest.Server) int {
 func TestStaticPage_MarkedSSRLinkIsNotLoadedTwice(t *testing.T) {
 	srv, cssHits := serveStaticCompCSSPage(t, true)
 	if links := countStaticProbeLinks(t, srv); links != 1 {
-		t.Fatalf("a marked SSR link was loaded %d times, want 1: the runtime's data-fui-style dedup did not see it", links)
+		t.Fatalf("a marked SSR link was loaded %d times, want 1: the runtime's data-cui-style dedup did not see it", links)
 	}
 	if hits := cssHits.Load(); hits != 1 {
 		t.Fatalf("the stylesheet was fetched %d times, want 1", hits)
@@ -96,6 +96,6 @@ func TestStaticPage_MarkedSSRLinkIsNotLoadedTwice(t *testing.T) {
 func TestStaticPage_UnmarkedSSRLinkIsLoadedAgain(t *testing.T) {
 	srv, _ := serveStaticCompCSSPage(t, false)
 	if links := countStaticProbeLinks(t, srv); links != 2 {
-		t.Fatalf("an unmarked SSR link was loaded %d times, want 2: the runtime dedupes on data-fui-style, and this page has none", links)
+		t.Fatalf("an unmarked SSR link was loaded %d times, want 2: the runtime dedupes on data-cui-style, and this page has none", links)
 	}
 }

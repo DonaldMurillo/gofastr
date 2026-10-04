@@ -13,7 +13,7 @@ import (
 // prototype at setSignal because those keys re-parent the signal store;
 // the interactive emitters have no equivalent guard, so SetLocal /
 // IncLocal / ToggleLocal / SetSignal happily emit
-// data-fui-signal-set="__proto__:1" and the click lands in the kernel's
+// data-cui-signal-set="__proto__:1" and the click lands in the kernel's
 // console.warn, a permanently dead control with no error anywhere.
 // Precedent for the fix shape is SetSignal's own double-quote panic and
 // BindAttr's refuse-rather-than-render. Property: an emitted signal name
@@ -32,8 +32,8 @@ func TestLocalMutatorsRefuseReservedSignals(t *testing.T) {
 				outs["rpc"] = OnClick(render.HTML(base), Post("/x").OnSuccess(SetSignal(name)))
 			}()
 			for kind, out := range outs {
-				if strings.Contains(string(out), `data-fui-signal-`+kind+`="`+name) ||
-					strings.Contains(string(out), `data-fui-rpc-signal="`+name+`"`) {
+				if strings.Contains(string(out), `data-cui-signal-`+kind+`="`+name) ||
+					strings.Contains(string(out), `data-cui-rpc-signal="`+name+`"`) {
 					t.Errorf("SECURITY: [interactive-reserved-signal] %s emitted reserved signal name %q verbatim — the runtime kernel refuses every write to it, shipping a permanently dead control with no error anywhere", kind, name)
 				}
 			}

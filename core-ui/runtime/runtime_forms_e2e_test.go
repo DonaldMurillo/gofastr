@@ -20,7 +20,7 @@ import (
 //     intercepted; the browser submits natively (cookies, Location
 //     follow, file uploads, password-manager UX all work).
 //   - enctype="application/json" → intercepted as JSON RPC.
-//   - data-fui-spa → intercepted with urlencoded body + SPA navigation
+//   - data-cui-spa → intercepted with urlencoded body + SPA navigation
 //     on response Location.
 
 type formRequest struct {
@@ -90,7 +90,7 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 		enctype := r.URL.Query().Get("enctype")
 		attrs := ""
 		if r.URL.Query().Get("spa") == "1" {
-			attrs += ` data-fui-spa`
+			attrs += ` data-cui-spa`
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<!doctype html>
@@ -203,7 +203,7 @@ func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
 	}
 }
 
-// TestFormIntercept_DataFuiSPAOptsIn pins that data-fui-spa on a plain
+// TestFormIntercept_DataFuiSPAOptsIn pins that data-cui-spa on a plain
 // urlencoded form opts INTO interception with urlencoded body, for
 // hosts that explicitly want SPA-style nav on a non-JSON form.
 func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
@@ -224,9 +224,9 @@ func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
 	if got == nil {
 		t.Fatal("server did not receive submit")
 	}
-	// data-fui-spa + no enctype → urlencoded body via the interceptor.
+	// data-cui-spa + no enctype → urlencoded body via the interceptor.
 	if !strings.HasPrefix(strings.ToLower(got.contentType), "application/x-www-form-urlencoded") {
-		t.Errorf("data-fui-spa should keep urlencoded body; Content-Type=%q", got.contentType)
+		t.Errorf("data-cui-spa should keep urlencoded body; Content-Type=%q", got.contentType)
 	}
 	if got.formValues["email"] != "a@b.com" {
 		t.Errorf("spa intercept form values missing: %+v", got.formValues)

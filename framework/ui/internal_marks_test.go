@@ -20,7 +20,7 @@ import (
 )
 
 // The kit-marking gate (owned styles, DESIGN-owned-styles "Kit
-// marking"). An owned style's @scope stops at [data-fui-internal], so
+// marking"). An owned style's @scope stops at [data-cui-internal], so
 // a kit component must put that attribute on the topmost element of
 // every subtree that holds no caller content, and never on an element
 // that holds some. Owners can then place a kit root and style the
@@ -33,7 +33,7 @@ import (
 // func returning render.HTML, and every part the component's headless
 // spec declares fillable — and asserts two things over the output:
 //
-//  1. no sentinel sits under a [data-fui-internal] element;
+//  1. no sentinel sits under a [data-cui-internal] element;
 //  2. every element that is not a top-level root, not a sentinel's
 //     ancestor, and not inside a sentinel is under one.
 //
@@ -211,7 +211,7 @@ func TestKitMarksInternalSubtrees(t *testing.T) {
 					t.Fatalf("render (empty slots: %v): %v", empty, err)
 				}
 				if c.content != "" {
-					if strings.Contains(string(out), "data-fui-internal") {
+					if strings.Contains(string(out), "data-cui-internal") {
 						t.Errorf("%s renders the caller's content (%s), so nothing in it may be marked internal", c.name, c.content)
 					}
 					continue
@@ -394,13 +394,13 @@ func markingViolations(html string) []string {
 	walk = func(n *tagNode, isRoot, underMarked bool) {
 		if _, ok := n.attrs[sentinelAttr]; ok {
 			if underMarked {
-				out = append(out, "slot content sits under a [data-fui-internal] element: "+n.path())
+				out = append(out, "slot content sits under a [data-cui-internal] element: "+n.path())
 			}
 			return // the slot's content is the caller's
 		}
-		_, marked := n.attrs["data-fui-internal"]
+		_, marked := n.attrs["data-cui-internal"]
 		if marked && isRoot {
-			out = append(out, "the root is marked data-fui-internal; an owner must be able to place it: "+n.path())
+			out = append(out, "the root is marked data-cui-internal; an owner must be able to place it: "+n.path())
 		}
 		// A mark inside a marked subtree is allowed: @scope stops at the
 		// outer one, so the inner one is inert. A component composing
@@ -408,7 +408,7 @@ func markingViolations(html string) []string {
 		// headless render) keeps the inner component's marks as they
 		// are rather than growing a knob to switch them off.
 		if !isRoot && !underMarked && !marked && !n.holdsSentinel() {
-			out = append(out, "internal element not marked data-fui-internal: "+n.path())
+			out = append(out, "internal element not marked data-cui-internal: "+n.path())
 			return // report the topmost only
 		}
 		for _, k := range n.kids {
@@ -806,6 +806,7 @@ var kitComponents = []kitComponent{
 	{name: "headless.Timeline", fn: headless.Timeline},
 	{name: "headless.Toast", fn: headless.Toast},
 	{name: "headless.ToastStack", fn: headless.ToastStack},
+	{name: "headless.ToastTemplate", fn: headless.ToastTemplate},
 	{name: "headless.ToggleAction", fn: headless.ToggleAction},
 	{name: "headless.Toolbar", fn: headless.Toolbar},
 	{name: "headless.ToolbarGroup", fn: headless.ToolbarGroup},

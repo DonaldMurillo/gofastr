@@ -13,7 +13,7 @@ func TestPricingCardRendersPlan(t *testing.T) {
 		Features: []string{"Seats: 10"},
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-pricing-card"`,
+		`data-cui-comp="ui-pricing-card"`,
 		"Pro",
 		"$99",
 		"/mo",

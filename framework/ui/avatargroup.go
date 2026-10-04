@@ -45,7 +45,7 @@ type AvatarGroupConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the group's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, role, and aria-label (use Label).
+	// ID), data-cui-*, role, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -141,41 +141,41 @@ func avatarGroupCSS(_ style.Theme) string {
 	// reading as one group. Stacking order (z-index via :nth-child reverse)
 	// keeps the first avatar on top, which matches the natural reading
 	// order ("Ada, then Grace, then …").
-	return `[data-fui-comp="ui-avatar-group"] {
+	return `[data-cui-comp="ui-avatar-group"] {
   display: inline-flex;
   align-items: center;
   flex-direction: row;
   isolation: isolate;
 }
-[data-fui-comp="ui-avatar-group"] > *:not(:first-child) {
+[data-cui-comp="ui-avatar-group"] > *:not(:first-child) {
   margin-inline-start: -0.25rem; /* default md: ~10% overlap on 2.5rem avatars */
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--sm > *:not(:first-child) {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--sm > *:not(:first-child) {
   margin-inline-start: -0.15rem;
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--lg > *:not(:first-child) {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--lg > *:not(:first-child) {
   margin-inline-start: -0.3rem;
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--xl > *:not(:first-child) {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--xl > *:not(:first-child) {
   margin-inline-start: -0.4rem;
 }
 /* Reverse z-index so earlier siblings sit on top of later ones — the
    first avatar is the most prominent. */
-[data-fui-comp="ui-avatar-group"] > :nth-child(1) { z-index: 6; }
-[data-fui-comp="ui-avatar-group"] > :nth-child(2) { z-index: 5; }
-[data-fui-comp="ui-avatar-group"] > :nth-child(3) { z-index: 4; }
-[data-fui-comp="ui-avatar-group"] > :nth-child(4) { z-index: 3; }
-[data-fui-comp="ui-avatar-group"] > :nth-child(5) { z-index: 2; }
-[data-fui-comp="ui-avatar-group"] > :nth-child(6) { z-index: 1; }
-[data-fui-comp="ui-avatar-group"] > *:hover,
-[data-fui-comp="ui-avatar-group"] > *:focus-within {
+[data-cui-comp="ui-avatar-group"] > :nth-child(1) { z-index: 6; }
+[data-cui-comp="ui-avatar-group"] > :nth-child(2) { z-index: 5; }
+[data-cui-comp="ui-avatar-group"] > :nth-child(3) { z-index: 4; }
+[data-cui-comp="ui-avatar-group"] > :nth-child(4) { z-index: 3; }
+[data-cui-comp="ui-avatar-group"] > :nth-child(5) { z-index: 2; }
+[data-cui-comp="ui-avatar-group"] > :nth-child(6) { z-index: 1; }
+[data-cui-comp="ui-avatar-group"] > *:hover,
+[data-cui-comp="ui-avatar-group"] > *:focus-within {
   z-index: 10; /* surface the focused/hovered chip above siblings */
 }
-[data-fui-comp="ui-avatar-group"] .fui-avatar {
+[data-cui-comp="ui-avatar-group"] .fui-avatar {
   border: 2px solid var(--color-surface, #fff);
   box-sizing: content-box;
 }
-[data-fui-comp="ui-avatar-group"] .fui-avatar-group__overflow {
+[data-cui-comp="ui-avatar-group"] .fui-avatar-group__overflow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -189,13 +189,13 @@ func avatarGroupCSS(_ style.Theme) string {
   line-height: 1;
   border: 2px solid var(--color-surface, #fff);
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--sm .fui-avatar-group__overflow {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--sm .fui-avatar-group__overflow {
   inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.65rem;
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--lg .fui-avatar-group__overflow {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--lg .fui-avatar-group__overflow {
   inline-size: 3rem; block-size: 3rem; font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-avatar-group"].fui-avatar-group--xl .fui-avatar-group__overflow {
+[data-cui-comp="ui-avatar-group"].fui-avatar-group--xl .fui-avatar-group__overflow {
   inline-size: 4rem; block-size: 4rem; font-size: var(--text-base, 1rem);
 }
 `

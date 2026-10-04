@@ -136,7 +136,7 @@ func (s worldScreen) Render() corerender.HTML {
 	// attributes; it allow-lists props and strips inline handlers/raw HTML.
 	// The marker keeps the legacy data-kiln-tool delegation scoped to this
 	// rendered world instead of trusting the entire uihost document.
-	return corerender.Tag("div", map[string]string{"data-fui-trusted": ""}, RenderNode(s.page.Tree))
+	return corerender.Tag("div", map[string]string{"data-cui-trusted": ""}, RenderNode(s.page.Tree))
 }
 
 func screenType(value string) coreapp.ScreenType {

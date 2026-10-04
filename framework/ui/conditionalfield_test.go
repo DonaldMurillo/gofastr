@@ -30,7 +30,7 @@ func TestConditionalFieldRendersVisible(t *testing.T) {
 		Children:  []render.HTML{render.Text("Pro content")},
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-conditional-field"`,
+		`data-cui-comp="ui-conditional-field"`,
 		`data-hui-when="plan"`,
 		`data-hui-when-value="pro"`,
 		"Pro content",

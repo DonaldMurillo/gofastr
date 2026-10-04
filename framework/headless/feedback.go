@@ -272,9 +272,9 @@ func init() {
 				HTML: Button(ButtonProps{
 					Label: "Restart api", Variant: "secondary",
 					Action: html.Attrs{
-						"data-fui-rpc":        "/apps/api/restart",
-						"data-fui-rpc-method": "POST",
-						"data-fui-rpc-signal": "apps",
+						"data-cui-rpc":        "/apps/api/restart",
+						"data-cui-rpc-method": "POST",
+						"data-cui-rpc-signal": "apps",
 					},
 				}, s),
 			}, {
@@ -284,7 +284,7 @@ func init() {
 					"reviewer reads them together",
 				HTML: Button(ButtonProps{
 					Label: "Add replica", Variant: "ghost",
-					Action: html.Attrs{"data-fui-signal-inc": "replicas"},
+					Action: html.Attrs{"data-cui-signal-inc": "replicas"},
 				}, s),
 			}}
 		},

@@ -81,7 +81,7 @@ func TestCardFooterPinsToBottomInGrid(t *testing.T) {
 	var cards []map[string]float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-comp="ui-card"]')).map(c => {
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-cui-comp="ui-card"]')).map(c => {
 			const f = c.querySelector('.fui-card__footer');
 			return {top: c.getBoundingClientRect().top,
 				gap: c.getBoundingClientRect().bottom - f.getBoundingClientRect().bottom};

@@ -111,7 +111,7 @@ func TestFillFallsThroughErrNoFillToDefault(t *testing.T) {
 	}
 	s := string(res.HTML)
 	// The declined toolbar candidate leaves the outlet empty.
-	if !strings.Contains(s, `<div data-fui-outlet="l:shell#toolbar"></div>`) {
+	if !strings.Contains(s, `<div data-cui-outlet="l:shell#toolbar"></div>`) {
 		t.Errorf("declined toolbar fill must render an empty outlet: %s", s)
 	}
 	if !strings.Contains(s, "[HELP]") {
@@ -182,16 +182,16 @@ func TestTreeLayoutMarkers(t *testing.T) {
 	if got := strings.Count(s, "<main"); got != 1 {
 		t.Fatalf("want exactly 1 <main>, got %d: %s", got, s)
 	}
-	if !strings.Contains(s, `<main data-fui-layout-slot="l:shell"`) {
+	if !strings.Contains(s, `<main data-cui-layout-slot="l:shell"`) {
 		t.Errorf("primary must be today's content cell: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-outlet="l:shell#toolbar"`) {
+	if !strings.Contains(s, `data-cui-outlet="l:shell#toolbar"`) {
 		t.Errorf("toolbar outlet marker missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-outlet="l:shell#aside"`) {
+	if !strings.Contains(s, `data-cui-outlet="l:shell#aside"`) {
 		t.Errorf("aside outlet marker missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-area="l:shell~crumbs"`) {
+	if !strings.Contains(s, `data-cui-area="l:shell~crumbs"`) {
 		t.Errorf("crumbs area marker missing: %s", s)
 	}
 	if !strings.Contains(s, "crumbs:/") {
@@ -229,17 +229,17 @@ func TestAreaLoadingTemplateRidesBesideCell(t *testing.T) {
 		}
 		return string(res.HTML)
 	}
-	tpl := `<template data-fui-after="150" data-fui-loading="l:shell~crumbs" data-fui-min="0">TRAIL-SKELETON</template>`
+	tpl := `<template data-cui-after="150" data-cui-loading="l:shell~crumbs" data-cui-min="0">TRAIL-SKELETON</template>`
 	s := renderPage(withLoading)
 	if !strings.Contains(s, tpl) {
 		t.Errorf("the area's loading template must ride beside the cell, addressed by its ~ address:\n%s", s)
 	}
-	if i, j := strings.Index(s, `data-fui-area="l:shell~crumbs"`), strings.Index(s, tpl); j < i {
+	if i, j := strings.Index(s, `data-cui-area="l:shell~crumbs"`), strings.Index(s, tpl); j < i {
 		t.Errorf("the loading template must follow the area cell:\n%s", s)
 	}
 
 	// Opt-out: no Loading declared, no template emitted.
-	if plain := renderPage(func() *app.Layout { l, _ := labShell(); return l }()); strings.Contains(plain, "data-fui-loading") {
+	if plain := renderPage(func() *app.Layout { l, _ := labShell(); return l }()); strings.Contains(plain, "data-cui-loading") {
 		t.Errorf("an area without a Loading declaration must emit no loading template:\n%s", plain)
 	}
 }
@@ -272,7 +272,7 @@ func TestPartialFromResultExportsKeptLayerFills(t *testing.T) {
 			t.Errorf("fill %q missing from partial result, got %v", want, addrs)
 		}
 	}
-	if strings.Contains(string(res.HTML), "data-fui-outlet") {
+	if strings.Contains(string(res.HTML), "data-cui-outlet") {
 		t.Errorf("bare content partial must carry no outlet markup: %s", res.HTML)
 	}
 	// The exported area fill carries the DESTINATION path.

@@ -111,12 +111,12 @@ func TestBlueprint_NestedEntityListRenders(t *testing.T) {
 func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 	screens := renderBlueprintScreens(websitesBlueprint())
 	// Form submits to the prefixed API via the typed interactive layer
-	// (interactive.Post), not a raw "data-fui-rpc" attribute map.
+	// (interactive.Post), not a raw "data-cui-rpc" attribute map.
 	if !strings.Contains(screens, `interactive.Post("/api/items")`) {
 		t.Error("entity_form does not submit to the /api endpoint via interactive.Post")
 	}
-	if strings.Contains(screens, `"data-fui-rpc": "/api/items"`) {
-		t.Error("entity_form still emits a raw data-fui-rpc attribute map")
+	if strings.Contains(screens, `"data-cui-rpc": "/api/items"`) {
+		t.Error("entity_form still emits a raw data-cui-rpc attribute map")
 	}
 	// Enum field renders typed SelectOptions for its declared values.
 	if !strings.Contains(screens, `Value: "draft"`) || !strings.Contains(screens, `Value: "published"`) {

@@ -144,6 +144,7 @@ boot-embed	8	r
 boot-embed	8	rect
 boot-embed	8	surfacePath
 kernel	10	n
+kernel	10	shown
 kernel	2	M
 kernel	2	_dc
 kernel	2	_locks

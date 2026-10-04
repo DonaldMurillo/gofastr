@@ -24,8 +24,8 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 	page := `<!doctype html><html><head><title>t</title>` +
 		`<script type="application/json" id="gofastr-routes">` +
 		`[{"path":"/list","layouts":["l:site"]}]</script>` +
-		`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
+		`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+		`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
 		`<h1 id="list-screen">List</h1>` +
 		`<div id="host" data-hui-pane-deeplink="pane"></div>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`

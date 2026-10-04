@@ -20,7 +20,7 @@ func TestFileUploadRequiresLabel(t *testing.T) {
 func TestFileUploadRendersInputAndZone(t *testing.T) {
 	h := FileUpload(FileUploadConfig{Name: "doc", Label: "Document"})
 	for _, want := range []string{
-		`data-fui-comp="ui-fileupload"`,
+		`data-cui-comp="ui-fileupload"`,
 		`type="file"`,
 		`name="doc"`,
 		`id="doc"`,

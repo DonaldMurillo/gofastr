@@ -266,10 +266,10 @@ const labTimelineJS = `(function () {
 		'g:/items/:items': 'item detail slot',
 	};
 	function regionName(el) {
-		var a = el.getAttribute('data-fui-outlet') || el.getAttribute('data-fui-area') ||
-			el.getAttribute('data-fui-layout-slot') || '';
+		var a = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area') ||
+			el.getAttribute('data-cui-layout-slot') || '';
 		if (a) return NAMES[a] || a;
-		var k = el.getAttribute('data-fui-layout-key') || '';
+		var k = el.getAttribute('data-cui-layout-key') || '';
 		if (k === 'g:/items/:items') return 'kept layer (items list)';
 		return k ? 'layer ' + k : 'region';
 	}
@@ -367,7 +367,7 @@ const labTimelineJS = `(function () {
 		flash(el, Math.round(performance.now() - session.t0));
 		// Contained error: the failing aside fill leaves the outlet on a
 		// fallback marker instead of failing the page.
-		if (el.getAttribute('data-fui-outlet') === 'l:shell#aside' &&
+		if (el.getAttribute('data-cui-outlet') === 'l:shell#aside' &&
 			/^(\/broken\/|\/mixfail|\/slowfail)/.test(session.target) &&
 			/ASIDE-(HELP|BOUNDARY-ERROR)/.test(text)) {
 			line('error', 'contained error \u2014 the failing aside fill fell back (' + text.slice(0, 24) + ')');
@@ -389,14 +389,14 @@ const labTimelineJS = `(function () {
 	});
 	function watchAll() {
 		var els = document.querySelectorAll(
-			'[data-fui-outlet],[data-fui-area],[data-fui-layout-slot],[data-fui-layout-key]:not([data-fui-lang])');
+			'[data-cui-outlet],[data-cui-area],[data-cui-layout-slot],[data-cui-layout-key]:not([data-cui-lang])');
 		for (var i = 0; i < els.length; i++) {
 			if (els[i].__labWatched) continue;
 			els[i].__labWatched = true;
 			mo.observe(els[i], {
 				childList: true,
 				attributes: true,
-				attributeFilter: ['aria-busy', 'data-fui-loadstate'],
+				attributeFilter: ['aria-busy', 'data-cui-loadstate'],
 			});
 		}
 	}
@@ -1071,9 +1071,9 @@ func listMarkup() render.HTML {
 		}),
 		html.Button(html.ButtonConfig{
 			Label:      "+1",
-			ExtraAttrs: html.Attrs{"id": "lab-count-btn", "data-fui-signal-inc": "lab.count:1"},
+			ExtraAttrs: html.Attrs{"id": "lab-count-btn", "data-cui-signal-inc": "lab.count:1"},
 		}),
-		html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"id": "lab-count", "data-fui-signal": "lab.count"}}, render.Text("0")),
+		html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"id": "lab-count", "data-cui-signal": "lab.count"}}, render.Text("0")),
 		ui.Stack(ui.StackConfig{Gap: ui.GapXS}, rows...),
 	)
 }

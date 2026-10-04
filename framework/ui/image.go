@@ -103,7 +103,7 @@ type OptimizedImageConfig struct {
 	// analytics markers, ARIA overrides) to the image's root wrapper
 	// (the outer <span>, in both the single-source and <picture>
 	// shapes). Keys the component owns are dropped: class and id
-	// (use Class / ID) and data-fui-*.
+	// (use Class / ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -204,7 +204,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// the topmost internal element.
 	if len(cfg.Sources) == 0 {
 		single := imgCfg
-		single.ExtraAttrs = html.MergeAttrs(imgAttrs, html.Attrs{"data-fui-internal": ""})
+		single.ExtraAttrs = html.MergeAttrs(imgAttrs, html.Attrs{"data-cui-internal": ""})
 		return imageStyle.WrapHTML(html.Span(html.TextConfig{
 			Class: cls, ID: cfg.ID,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
@@ -225,7 +225,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// own fields (Sources, a struct slice, carries no render.HTML), so
 	// picture — with no picture wrapper an owner could reach around —
 	// is the topmost internal element here.
-	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, source, html.Image(imgCfg))
+	picture := render.Tag("picture", map[string]string{"data-cui-internal": ""}, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),

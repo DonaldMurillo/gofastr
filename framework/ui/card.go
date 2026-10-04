@@ -68,7 +68,7 @@ type CardConfig struct {
 	// analytics markers, ARIA overrides) to the card's root element,
 	// whichever shape it takes (<a> or <div>). Keys the component
 	// owns are dropped: class and id (use Class / ID), style,
-	// data-fui-* and href (use Href).
+	// data-cui-* and href (use Href).
 	ExtraAttrs html.Attrs
 }
 

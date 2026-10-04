@@ -2,7 +2,7 @@
 //
 // The view-transition machinery (spike/layout-motion P11,
 // spike/layout-resolve), loaded only by a document that declares a
-// transition: a [data-fui-vt] cell or a data-fui-vt-kinds
+// transition: a [data-cui-vt] cell or a data-cui-vt-kinds
 // vocabulary, at boot or after any apply (the kernel's marker scan
 // covers both). Before it loads — and on every page that never
 // declares one — the swap applies directly, as before the layout
@@ -20,12 +20,12 @@
 //     gofastr:beforenavigate) and the prefers-reduced-motion gate;
 //   - the click-during-transition re-delivery (a running transition
 //     hit-tests every point to <html>);
-//   - the CSSOM view-transition-name mirror for every [data-fui-vt]
-//     cell, with data-fui-vt-when's media gate (a style attribute is
+//   - the CSSOM view-transition-name mirror for every [data-cui-vt]
+//     cell, with data-cui-vt-when's media gate (a style attribute is
 //     refused by the default CSP; a CSSOM write is not);
 //   - the keyed pick: the page answer carries it in
 //     X-Gofastr-Transition, validated against the document's declared
-//     vocabulary (data-fui-vt-kinds) and added to the commit's types
+//     vocabulary (data-cui-vt-kinds) and added to the commit's types
 //     beside the direction; the history record (history.state.vt)
 //     and the Back/Forward edge rule (Back mirrors the pick of the
 //     entry being LEFT).
@@ -56,7 +56,7 @@
   let _lastId = (history.state && history.state.__fui) || 0;
   let _pushed = false;
   const _vtKinds = () => new Set(
-    (document.documentElement.getAttribute('data-fui-vt-kinds') || '').split(/\s+/).filter(Boolean));
+    (document.documentElement.getAttribute('data-cui-vt-kinds') || '').split(/\s+/).filter(Boolean));
   const _withPick = (pick) => {
     _navPick = (pick && _vtKinds().has(pick)) ? pick : '';
   };
@@ -66,8 +66,8 @@
       history.replaceState(Object.assign({}, history.state, { vt: _navPick }), '', location.href);
     } catch (_) { /* a hostile URL: the state is cosmetic */ }
   };
-  // _vtNames mirrors every data-fui-vt cell onto the CSSOM
-  // view-transition-name. data-fui-vt-when gates a name on a media
+  // _vtNames mirrors every data-cui-vt cell onto the CSSOM
+  // view-transition-name. data-cui-vt-when gates a name on a media
   // condition (Transition.Narrow, the master-detail collapse): below
   // the breakpoint the REGION carries the name and the placed cell
   // must not — two live names of one spelling make the browser skip
@@ -75,10 +75,10 @@
   // mirror, so a resize across the breakpoint moves the name instead
   // of duplicating it.
   const _vtNames = () => {
-    for (const el of document.querySelectorAll('[data-fui-vt]')) {
-      const n = el.getAttribute('data-fui-vt');
+    for (const el of document.querySelectorAll('[data-cui-vt]')) {
+      const n = el.getAttribute('data-cui-vt');
       if (!n) continue;
-      const c = el.getAttribute('data-fui-vt-when');
+      const c = el.getAttribute('data-cui-vt-when');
       const on = !c || (window.matchMedia && matchMedia(c).matches);
       try { el.style.viewTransitionName = on ? n : ''; } catch (_) { /* invalid name: nothing to mirror */ }
     }
@@ -228,12 +228,12 @@
   };
   window.addEventListener('gofastr:navigate', (e) => {
     const root = e.detail && e.detail.root;
-    const c = root && (root.matches('[data-fui-vt-kinds]')
-      ? root : root.querySelector('[data-fui-vt-kinds]'));
-    const kinds = c && c.getAttribute('data-fui-vt-kinds');
+    const c = root && (root.matches('[data-cui-vt-kinds]')
+      ? root : root.querySelector('[data-cui-vt-kinds]'));
+    const kinds = c && c.getAttribute('data-cui-vt-kinds');
     // setAttribute directly: the attribute is module-owned (the
     // kernel's manifest allowlist carries no word for it).
-    if (kinds) document.documentElement.setAttribute('data-fui-vt-kinds', kinds);
+    if (kinds) document.documentElement.setAttribute('data-cui-vt-kinds', kinds);
   });
 
   (NS.loadedModules ||= {}).transition = true;

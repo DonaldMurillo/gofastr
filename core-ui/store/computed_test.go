@@ -13,9 +13,9 @@ func TestComputedEmitsWiringAttrs(t *testing.T) {
 	html := string(greeting.Bind(context.Background(), "h1", nil))
 
 	for _, want := range []string{
-		`data-fui-signal="org.greeting"`,
-		`data-fui-computed="greet"`,
-		`data-fui-computed-deps="org.companyName"`,
+		`data-cui-signal="org.greeting"`,
+		`data-cui-computed="greet"`,
+		`data-cui-computed-deps="org.companyName"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("computed bind missing %q: %s", want, html)
@@ -43,7 +43,7 @@ func TestComputedMultipleDeps(t *testing.T) {
 	_ = New("cart").Int("b", 2)
 	total := Computed[int](New("cart"), "total", "sum", "cart.a", "cart.b")
 	html := string(total.Bind(context.Background(), "span", nil))
-	if !strings.Contains(html, `data-fui-computed-deps="cart.a,cart.b"`) {
+	if !strings.Contains(html, `data-cui-computed-deps="cart.a,cart.b"`) {
 		t.Errorf("multi-dep list wrong: %s", html)
 	}
 }

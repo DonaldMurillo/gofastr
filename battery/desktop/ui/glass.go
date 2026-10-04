@@ -19,7 +19,7 @@ type GlassConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// ARIA overrides) to the surface element. Keys the component owns
-	// are dropped: class and data-fui-comp.
+	// are dropped: class and data-cui-comp.
 	ExtraAttrs html.Attrs
 }
 
@@ -59,7 +59,7 @@ func Glass(cfg GlassConfig, children ...render.HTML) render.HTML {
 var glassStyle = registry.RegisterStyle("desktopui-glass", glassCSS)
 
 func glassCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-glass"] {
+	return `[data-cui-comp="desktopui-glass"] {
   border-radius: var(--radii-lg, 12px);
   /* Translucent fill: the surface under the blur, not an opaque paint.
      measured, unverified. */
@@ -77,7 +77,7 @@ func glassCSS(_ style.Theme) string {
     0 0 0 0.5px color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
     var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.06));
 }
-[data-fui-comp="desktopui-glass"].desktopui-glass--thick {
+[data-cui-comp="desktopui-glass"].desktopui-glass--thick {
   border-radius: var(--radii-xl, 16px);
   /* Thicker material for sheets and popovers: better contrast for fine
      features (HIG Materials). measured, unverified. */
@@ -91,8 +91,8 @@ func glassCSS(_ style.Theme) string {
 /* Reduce Transparency: the shell pushes the state as a class because
    WebKit has no prefers-reduced-transparency query. Opaque Surface, no
    filter, the rim stays as the edge. */
-html.desktop-reduce-transparency [data-fui-comp="desktopui-glass"],
-html.desktop-reduce-transparency [data-fui-comp="desktopui-glass"].desktopui-glass--thick {
+html.desktop-reduce-transparency [data-cui-comp="desktopui-glass"],
+html.desktop-reduce-transparency [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
   background: var(--color-surface, #FFFFFF);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -100,15 +100,15 @@ html.desktop-reduce-transparency [data-fui-comp="desktopui-glass"].desktopui-gla
 /* Inactive window: the fill flattens toward opaque and the accent dims
    to TextMuted for the subtree, the same read a native material gives
    when its window resigns key. */
-html.desktop-inactive [data-fui-comp="desktopui-glass"],
-html.desktop-inactive [data-fui-comp="desktopui-glass"].desktopui-glass--thick {
+html.desktop-inactive [data-cui-comp="desktopui-glass"],
+html.desktop-inactive [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
   background: color-mix(in srgb, var(--color-surface, #FFFFFF) 88%, transparent);
   --color-accent: var(--color-text-muted, #52525B);
 }
 /* The shadow and the blur do not animate: HIG says avoid animating into
    and out of blurs, and there is no transition to suppress anyway. */
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="desktopui-glass"] { transition: none; }
+  [data-cui-comp="desktopui-glass"] { transition: none; }
 }
 `
 }

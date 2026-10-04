@@ -35,7 +35,7 @@ type PageHeaderConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the header's root <header>
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), style, data-fui-* and role.
+	// (use Class / ID), style, data-cui-* and role.
 	ExtraAttrs html.Attrs
 }
 
@@ -130,7 +130,7 @@ type SectionConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and the accessible-name contract (role,
+	// ID), data-cui-*, and the accessible-name contract (role,
 	// aria-label, aria-labelledby).
 	ExtraAttrs html.Attrs
 }
@@ -207,7 +207,7 @@ type FormFieldConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the field row's root <div>. Keys the
 	// component owns are dropped: class and id (use Class) and
-	// data-fui-*.
+	// data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -256,7 +256,7 @@ type FormSectionConfig struct {
 	// analytics markers) to the group's root element, whichever shape
 	// it takes (<div> without a Heading, <fieldset> with one). Keys
 	// the component owns are dropped: class and id (use Class) and
-	// data-fui-*.
+	// data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -333,11 +333,11 @@ type ButtonConfig struct {
 	Disabled bool
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <button>.
-	// Every data-fui-* key is runtime wiring and goes through the
+	// Every data-cui-* key is runtime wiring and goes through the
 	// typed Action seam (attach interactive wiring with
 	// interactive.Action.Attrs(), interactive.OpenOnClick and friends —
 	// headless.ButtonProps.Action admits exactly that vocabulary and
-	// panics on any data-fui-* key outside it, where the old carrier
+	// panics on any data-cui-* key outside it, where the old carrier
 	// contract rendered it as a dead attribute). Keys the component
 	// owns are dropped: class and id (use Class / ID), type (use
 	// Type), disabled (use Disabled) and aria-label (use AriaLabel).
@@ -410,9 +410,9 @@ type LinkButtonConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <a>. The
-	// four data-fui-* keys that make sense on a link (push-state,
+	// four data-cui-* keys that make sense on a link (push-state,
 	// prefetch, open, deeplink) go through the typed Action seam;
-	// every other data-fui-* key is refused, as it always was — a
+	// every other data-cui-* key is refused, as it always was — a
 	// link navigates, a button acts. Keys the component owns are
 	// dropped: class and id (use Class / ID) and href (use Href).
 	// With External, target and rel are owned too; without it a caller
@@ -488,7 +488,7 @@ func rootClassParts(class string) headless.Parts {
 }
 
 // splitButtonAttrs splits a Button's ExtraAttrs at the seam: every
-// data-fui-* key is runtime wiring and travels through the typed
+// data-cui-* key is runtime wiring and travels through the typed
 // Action, where headless admits exactly the wiring vocabulary and
 // panics on anything else, naming the key; everything else is
 // decoration and travels through headless's ExtraAttrs, whose Safe
@@ -509,7 +509,7 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 			panic("ui: Button ExtraAttrs carries disabled — use ButtonConfig.Disabled, the field owns the state")
 		case lk == "aria-label":
 			// Owned: use AriaLabel.
-		case strings.HasPrefix(lk, "data-fui-"):
+		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-hui-pane-"):
 			// The pane controls a Button can trigger are data-hui-*
@@ -525,8 +525,8 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 }
 
 // splitLinkAttrs is splitButtonAttrs for a link: only the four
-// data-fui-* keys that make sense on an anchor travel the Action seam;
-// every other data-fui-* key is refused as it always was, because a
+// data-cui-* keys that make sense on an anchor travel the Action seam;
+// every other data-cui-* key is refused as it always was, because a
 // link navigates and a button acts.
 func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	action, plain = html.Attrs{}, html.Attrs{}
@@ -539,10 +539,10 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
 		}
 		switch {
-		case lk == "data-fui-push-state", lk == "data-fui-prefetch",
-			lk == "data-fui-open", lk == "data-fui-deeplink":
+		case lk == "data-cui-push-state", lk == "data-cui-prefetch",
+			lk == "data-cui-open", lk == "data-cui-deeplink":
 			action[lk] = v
-		case strings.HasPrefix(lk, "data-fui-"):
+		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			// Refused, as before the seam existed.
 		default:
 			plain[lk] = v
@@ -630,7 +630,7 @@ type StatusBadgeConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the pill's root <span>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -680,7 +680,7 @@ type EmptyStateConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the empty state's root.
 	// Keys the component owns are dropped: class and id (use
-	// Class / ID), style, data-fui-*, role, aria-label and
+	// Class / ID), style, data-cui-*, role, aria-label and
 	// aria-labelledby.
 	ExtraAttrs html.Attrs
 }
@@ -720,7 +720,7 @@ type CalloutConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the callout's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// data-fui-* and role.
+	// data-cui-* and role.
 	ExtraAttrs html.Attrs
 }
 
@@ -797,7 +797,7 @@ type StatCardConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the stat card's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -889,7 +889,7 @@ type AvatarConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the avatar's root <span>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -916,15 +916,15 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Src != "" {
 		inner = append(inner, html.Image(html.ImageConfig{
 			Src: cfg.Src, Alt: cfg.Name, Class: "fui-avatar__img",
-			ExtraAttrs: html.Attrs{"data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
 		}))
 	} else {
 		inner = append(inner,
 			html.Span(html.TextConfig{
 				Class:      "fui-avatar__initials",
-				ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 			}, render.Text(initials(cfg.Name))),
-			html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+			html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 				render.Text(cfg.Name)),
 		)
 	}
@@ -947,7 +947,7 @@ func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 		ExtraAttrs: html.Attrs{
 			"role":              "img",
 			"aria-label":        label,
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		},
 	})
 }
@@ -1026,7 +1026,7 @@ type CodeBlockConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the block's root element, whichever shape
 	// it takes (a bare <pre> or a framed <div>). Keys the component
-	// owns are dropped: class and id (use Class / ID), data-fui-*, and
+	// owns are dropped: class and id (use Class / ID), data-cui-*, and
 	// the scroll contract (tabindex, aria-label) that lives on the
 	// <pre> body.
 	ExtraAttrs html.Attrs
@@ -1091,7 +1091,7 @@ var codeBlockSeq atomic.Uint64
 // LineNumbers (or pass Lines) to get the framed variant: a chrome header with
 // the filename, an optional copy button, and an optional line-number gutter.
 //
-// The wrapper element carries data-fui-comp="ui-code-block" so the runtime
+// The wrapper element carries data-cui-comp="ui-code-block" so the runtime
 // auto-loads the scoped stylesheet on first appearance.
 func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || cfg.Scroll || len(cfg.Lines) > 0
@@ -1211,7 +1211,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	// The header draws only from Filename (a string), the line count
 	// and the copy button — none of it a caller's markup — so it is
 	// always this component's own.
-	head := html.Div(html.DivConfig{Class: "fui-code-block__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, headChildren...)
+	head := html.Div(html.DivConfig{Class: "fui-code-block__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, headChildren...)
 
 	preAttrs := map[string]string{"class": "fui-code-block__body", "tabindex": "0", "aria-label": label}
 	if bodyID != "" {
@@ -1222,7 +1222,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	// from Code, a string field, so the body is this component's own
 	// whenever Lines is empty.
 	if len(cfg.Lines) == 0 {
-		preAttrs["data-fui-internal"] = ""
+		preAttrs["data-cui-internal"] = ""
 	}
 	pre := render.Tag("pre", preAttrs, body)
 	return codeBlockStyle.WrapHTML(
@@ -1408,7 +1408,7 @@ type SkipLinkConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the link's root <a>. Keys the component
-	// owns are dropped: class and id (use Class / ID), data-fui-*, and
+	// owns are dropped: class and id (use Class / ID), data-cui-*, and
 	// href (use Target).
 	ExtraAttrs html.Attrs
 }

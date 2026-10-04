@@ -177,8 +177,8 @@ const kbgateSetupJS = `(() => {
       if (cur.id) part += '#' + cur.id;
       const cls = (cur.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
       if (cls) part += '.' + cls;
-      if (cur.dataset && cur.dataset.fuiComp) part += '[fui=' + cur.dataset.fuiComp + ']';
-      if (cur.dataset && cur.dataset.fuiOpen) part += '[open=' + cur.dataset.fuiOpen + ']';
+      if (cur.dataset && cur.dataset.cuiComp) part += '[fui=' + cur.dataset.cuiComp + ']';
+      if (cur.dataset && cur.dataset.cuiOpen) part += '[open=' + cur.dataset.cuiOpen + ']';
       parts.unshift(part);
       cur = cur.parentElement; depth++;
     }

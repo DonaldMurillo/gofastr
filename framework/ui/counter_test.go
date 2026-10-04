@@ -11,13 +11,13 @@ import (
 func TestCounterBasic(t *testing.T) {
 	result := Counter(CounterConfig{SignalName: "qty"})
 	s := string(result)
-	if !strings.Contains(s, `data-fui-signal-inc="qty"`) {
+	if !strings.Contains(s, `data-cui-signal-inc="qty"`) {
 		t.Fatalf("increment button missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-signal-inc="qty:-1"`) {
+	if !strings.Contains(s, `data-cui-signal-inc="qty:-1"`) {
 		t.Fatalf("decrement button missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-signal="qty"`) {
+	if !strings.Contains(s, `data-cui-signal="qty"`) {
 		t.Fatalf("display span missing: %s", s)
 	}
 }
@@ -25,10 +25,10 @@ func TestCounterBasic(t *testing.T) {
 func TestCounterWithStep(t *testing.T) {
 	result := Counter(CounterConfig{SignalName: "score", Step: 5})
 	s := string(result)
-	if !strings.Contains(s, `data-fui-signal-inc="score:5"`) {
+	if !strings.Contains(s, `data-cui-signal-inc="score:5"`) {
 		t.Fatalf("increment should use step 5: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-signal-inc="score:-5"`) {
+	if !strings.Contains(s, `data-cui-signal-inc="score:-5"`) {
 		t.Fatalf("decrement should use step -5: %s", s)
 	}
 }
@@ -60,7 +60,7 @@ func TestCounterMissingSignalName(t *testing.T) {
 func TestCounterRegistersCSS(t *testing.T) {
 	css := counterStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-fui-comp="fui-counter"]`,
+		`[data-cui-comp="fui-counter"]`,
 		".fui-counter__btn",
 		".fui-counter__value",
 	} {
@@ -71,10 +71,10 @@ func TestCounterRegistersCSS(t *testing.T) {
 }
 
 // TestCounterCarriesCompMarker ensures the rendered output carries the
-// data-fui-comp marker the host scans for to emit the registered CSS.
+// data-cui-comp marker the host scans for to emit the registered CSS.
 func TestCounterCarriesCompMarker(t *testing.T) {
 	s := string(Counter(CounterConfig{SignalName: "qty"}))
-	if !strings.Contains(s, `data-fui-comp="fui-counter"`) {
+	if !strings.Contains(s, `data-cui-comp="fui-counter"`) {
 		t.Fatalf("counter missing comp marker: %s", s)
 	}
 }

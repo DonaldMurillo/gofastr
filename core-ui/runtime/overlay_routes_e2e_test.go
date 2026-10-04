@@ -130,7 +130,7 @@ func TestOverlayDoesNotMoveRouteSignals(t *testing.T) {
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`document.getElementById('route-title-bind')?.textContent || ''`, &bindText),
 		chromedp.Evaluate(`window.__gofastr && window.__gofastr._getSignal ? String(window.__gofastr._getSignal('route.path')) : (window.__gofastr_signals ? String(window.__gofastr_signals['route.path']) : '')`, &routePath),
-		chromedp.Evaluate(`!!document.getElementById('fui-intercept')`, &overlayOpen),
+		chromedp.Evaluate(`!!document.getElementById('cui-intercept')`, &overlayOpen),
 	); err != nil {
 		t.Fatalf("run: %v", err)
 	}

@@ -452,10 +452,10 @@ func TestDataTableIslandSortAnchorCarriesContract(t *testing.T) {
 	anchor := h[strings.Index(h, "<a class"):strings.Index(h, "</a>")]
 	for _, want := range []string{
 		`href="?dir=asc&amp;q=z&amp;sort=name"`,
-		`data-fui-rpc="/island/tbl?dir=asc&amp;q=z&amp;sort=name"`,
-		`data-fui-rpc-method="GET"`,
-		`data-fui-rpc-signal="tbl"`,
-		`data-fui-push-state="?dir=asc&amp;q=z&amp;sort=name"`,
+		`data-cui-rpc="/island/tbl?dir=asc&amp;q=z&amp;sort=name"`,
+		`data-cui-rpc-method="GET"`,
+		`data-cui-rpc-signal="tbl"`,
+		`data-cui-push-state="?dir=asc&amp;q=z&amp;sort=name"`,
 	} {
 		if !strings.Contains(anchor, want) {
 			t.Errorf("island sort anchor missing %s:\n%s", want, anchor)

@@ -6,9 +6,9 @@
 //
 // This is the host-side Renderer design §9 (issue #37) requires. It is the
 // counterpart to the closed validator: where the validator makes
-// data-fui-*, on*, Bindings/Actions, and arbitrary attribute props
+// data-cui-*, on*, Bindings/Actions, and arbitrary attribute props
 // UNREPRESENTABLE on the wire, this renderer is what actually assigns
-// every id, class, ARIA attribute, visual variant, and data-fui-rpc URL,
+// every id, class, ARIA attribute, visual variant, and data-cui-rpc URL,
 // because the module cannot (and must not) influence any of them.
 //
 // # Trust model
@@ -28,7 +28,7 @@
 //
 // The package lives under framework/uihost because that layer already
 // owns the runtime script, the strict CSP, and the trusted-channel
-// data-fui-rpc synthesis for first-party components. The renderer is a
+// data-cui-rpc synthesis for first-party components. The renderer is a
 // natural sibling: it produces the trusted HTML the runtime hydrates. It
 // imports only downward (framework/ui, core-ui/html, core-ui/uinodev1,
 // core/render), no cycle.

@@ -182,7 +182,7 @@ func TestPartResetReloadsOnceHTTP(t *testing.T) {
 		if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 			t.Errorf("%s: Cache-Control = %q, want no-store", name, cc)
 		}
-		if len(strings.TrimSpace(string(body))) > 0 && strings.Contains(string(body), "data-fui-fill") {
+		if len(strings.TrimSpace(string(body))) > 0 && strings.Contains(string(body), "data-cui-fill") {
 			t.Errorf("%s: the 409 body must carry nothing the client applies, got %q", name, body)
 		}
 	}

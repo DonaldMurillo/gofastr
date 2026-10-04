@@ -9,10 +9,10 @@
 // page reflows.
 //
 // Loads on demand:
-//   - core.js's marker scanner picks up [data-fui-popover-anchor] on
+//   - core.js's marker scanner picks up [data-cui-popover-anchor] on
 //     a page and idle-loads this module.
-//   - hover/focus prefetch via data-fui-prefetch="popover" warms it.
-//   - the data-fui-open click handler awaits loadModule('popover')
+//   - hover/focus prefetch via data-cui-prefetch="popover" warms it.
+//   - the data-cui-open click handler awaits loadModule('popover')
 //     before invoking __gofastr._anchorPopover so the very first
 //     click has no positioning flicker.
 (() => {
@@ -22,7 +22,7 @@
 
   /**
    * @param {string} name     Widget name
-   * @param {Element} trigger Element that fired the open (data-fui-open)
+   * @param {Element} trigger Element that fired the open (data-cui-open)
    * @param {string} preferred One of "top", "bottom", "left", "right",
    *                           or "auto" (= bottom-first, then top,
    *                           right, left).
@@ -36,14 +36,14 @@
     const pref = (preferred || 'auto').toLowerCase();
 
     // Measure only after the widget's own stylesheet has applied.
-    // mountWidget appends <link data-fui-style> and does NOT await
+    // mountWidget appends <link data-cui-style> and does NOT await
     // its load; a place() against unstyled chrome measures a
     // full-width root (no max-inline-size yet) and the viewport
     // clamp then pins the popover to the left margin with its arrow
     // stretched back to the trigger. The link load/error events (or
     // a sheet poll for the rare browser that fires neither) settle
     // it; a missing link needs no wait.
-    const link = document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]');
+    const link = document.querySelector('link[data-cui-style="' + CSS.escape(name) + '"]');
     if (link && !link.sheet) {
       await new Promise((resolve) => {
         let done = false;
@@ -63,7 +63,7 @@
     const prevTrigger = widget.anchorTrigger;
     if (prevTrigger && prevTrigger !== trigger) {
       prevTrigger.classList.remove('is-popover-trigger-active');
-      prevTrigger.removeAttribute('data-fui-popover-trigger');
+      prevTrigger.removeAttribute('data-cui-popover-trigger');
     }
     if (widget.anchorResize) {
       window.removeEventListener('resize', widget.anchorResize);
@@ -75,7 +75,7 @@
     }
     // Mark trigger as the currently-active source.
     trigger.classList.add('is-popover-trigger-active');
-    trigger.setAttribute('data-fui-popover-trigger', name);
+    trigger.setAttribute('data-cui-popover-trigger', name);
 
     const place = () => {
       const gap = 10; // gap >= arrow size so the pointer fits cleanly
@@ -85,8 +85,8 @@
       // border + shadow + max-inline-size are reflected in the
       // bounding rect, without this the measurement is from the
       // un-styled chrome and the placement misses by a few pixels.
-      if (!root.hasAttribute('data-fui-popover-side')) {
-        root.setAttribute('data-fui-popover-side', 'bottom');
+      if (!root.hasAttribute('data-cui-popover-side')) {
+        root.setAttribute('data-cui-popover-side', 'bottom');
       }
       // Reset overrides so we measure the widget at its natural size.
       root.style.left = '';
@@ -130,7 +130,7 @@
       root.style.top = y + 'px';
       root.style.right = 'auto';
       root.style.bottom = 'auto';
-      root.setAttribute('data-fui-popover-side', chosen);
+      root.setAttribute('data-cui-popover-side', chosen);
       // Arrow offset, distance from popover's anchored edge to the
       // center of the trigger, so the arrow always sits below the
       // originating button regardless of clamping.

@@ -55,7 +55,7 @@ type NetworkRetryBannerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the banner's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, role, aria-live, and hidden (the runtime
+	// ID), data-cui-*, role, aria-live, and hidden (the runtime
 	// un-hides the banner when connectivity degrades).
 	ExtraAttrs html.Attrs
 }
@@ -123,7 +123,7 @@ var networkRetryClasses = headless.Classes{
 }
 
 var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-network-retry-banner"] .fui-visually-hidden {
+	return `[data-cui-comp="ui-network-retry-banner"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -133,7 +133,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-fui-comp="ui-network-retry-banner"] {
+[data-cui-comp="ui-network-retry-banner"] {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -150,24 +150,24 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
 }
 /* SystemBanner's parts are the banner's own children: title over
    description in the first column, the retry link beside both. */
-[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__title {
+[data-cui-comp="ui-network-retry-banner"] .fui-network-retry-banner__title {
   grid-column: 1;
   grid-row: 1;
   margin: 0;
   font-weight: var(--font-weight-bold);
 }
-[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__desc {
+[data-cui-comp="ui-network-retry-banner"] .fui-network-retry-banner__desc {
   grid-column: 1;
   grid-row: 2;
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   opacity: 0.9;
 }
-[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__actions {
+[data-cui-comp="ui-network-retry-banner"] .fui-network-retry-banner__actions {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
-[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__retry {
+[data-cui-comp="ui-network-retry-banner"] .fui-network-retry-banner__retry {
   /* Self-contained secondary button: the link carries the button
      classes, but this sheet must not depend on ui.Button's being
      loaded — a page whose only control is the banner still shows a
@@ -188,7 +188,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   cursor: pointer;
   white-space: nowrap;
 }
-[data-fui-comp="ui-network-retry-banner"][data-state="checking"] .fui-network-retry-banner__retry {
+[data-cui-comp="ui-network-retry-banner"][data-state="checking"] .fui-network-retry-banner__retry {
   cursor: progress;
   opacity: 0.7;
 }

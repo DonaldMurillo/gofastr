@@ -77,7 +77,7 @@ body{margin:0}
 <script type="application/json" id="gofastr-catalog">
 {"ui-cmd-palette":{"stylePath":"/__gofastr/comp/ui-cmd-palette.css","version":"test","loadMode":"auto"}}
 </script>
-<button id="open" type="button" data-fui-open="command-palette">Open palette</button>
+<button id="open" type="button" data-cui-open="command-palette">Open palette</button>
 `+widget.RuntimeTag())
 		default:
 			r.ServeHTTP(w, req)
@@ -120,7 +120,7 @@ func openPalette(t *testing.T, ctx context.Context, url string, vw, vh int64) {
 		chromedp.EmulateViewport(vw, vh),
 		chromedp.WaitVisible(`#open`, chromedp.ByID),
 		chromedp.Click(`#open`, chromedp.ByID),
-		chromedp.WaitVisible(`[data-fui-comp="ui-cmd-palette"]`),
+		chromedp.WaitVisible(`[data-cui-comp="ui-cmd-palette"]`),
 	); err != nil {
 		t.Fatalf("open palette: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestCommandPaletteBoundedDialogChromium(t *testing.T) {
 				Options        int64   `json:"options"`
 			}
 			if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-				const pal = document.querySelector('[data-fui-comp="ui-cmd-palette"]');
+				const pal = document.querySelector('[data-cui-comp="ui-cmd-palette"]');
 				const r = pal.getBoundingClientRect();
 				const input = document.getElementById('command-palette-input').getBoundingClientRect();
 				const footer = pal.querySelector('.fui-cmd-palette__footer').getBoundingClientRect();
@@ -344,7 +344,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 		chromedp.Click(`.fui-cmd-palette__close`),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const w = document.querySelector('[data-fui-widget="command-palette"]');
+			const w = document.querySelector('[data-cui-widget="command-palette"]');
 			return !w || w.hidden || getComputedStyle(w).display === 'none';
 		})()`, &closed),
 		chromedp.Evaluate(`document.activeElement === document.getElementById('open')`, &focusBack),
@@ -362,10 +362,10 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	var reopened bool
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#open`, chromedp.ByID),
-		chromedp.WaitVisible(`[data-fui-comp="ui-cmd-palette"]`),
+		chromedp.WaitVisible(`[data-cui-comp="ui-cmd-palette"]`),
 		chromedp.Sleep(250*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const pal = document.querySelector('[data-fui-comp="ui-cmd-palette"]');
+			const pal = document.querySelector('[data-cui-comp="ui-cmd-palette"]');
 			return !!pal && pal.offsetParent !== null;
 		})()`, &reopened),
 	); err != nil {
@@ -381,7 +381,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 		chromedp.KeyEvent(kb.Escape),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const w = document.querySelector('[data-fui-widget="command-palette"]');
+			const w = document.querySelector('[data-cui-widget="command-palette"]');
 			return !w || w.hidden || getComputedStyle(w).display === 'none';
 		})()`, &escClosed),
 	); err != nil {
@@ -415,7 +415,7 @@ func TestCommandPaletteStaticFilteringPaintsOnlyMatchesChromium(t *testing.T) {
 	// running with no CSS at all, invisible to every other assertion.
 	var sheetRules int64
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const link = document.querySelector('link[data-fui-style="ui-cmd-palette"]');
+		const link = document.querySelector('link[data-cui-style="ui-cmd-palette"]');
 		return (link && link.sheet) ? link.sheet.cssRules.length : -1;
 	})()`, &sheetRules)); err != nil {
 		t.Fatal(err)

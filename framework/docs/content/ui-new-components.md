@@ -16,7 +16,7 @@ because each release lands the demo + the code together.
 | Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
 | Full-page composition choice          | `gofastr docs ui-composition-recipes`                           |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
-| Runtime data-fui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
+| Runtime data-cui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
 | What's coming / deferred             | [`ROADMAP.md` §2](../../../ROADMAP.md)                                  |
 
 The website's components index page lists every component with a
@@ -44,7 +44,7 @@ registration covers StatusBadge, Tag, Callout, and Notification). See
 Every component Config carries `ExtraAttrs html.Attrs`, forwarded to
 the component's root element for `data-*` test hooks, analytics
 markers, and ARIA overrides. On components following the sanitized
-contract, component-owned keys (`class`, `id`, `data-fui-*`,
+contract, component-owned keys (`class`, `id`, `data-cui-*`,
 behavior-critical attributes) are dropped; a legacy set still forwards
 raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 "Attribute pass-through" in `ui-getting-started`.
@@ -61,8 +61,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Buttons & form controls
 
-- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes, rendered through the headless structure with the `fui-button` class map. `Disabled` renders the disabled state (a `disabled` key in `ExtraAttrs` panics pointing at the field). Every `data-fui-*` key in `ExtraAttrs` is runtime wiring and travels the typed `Action` seam; a key outside the vocabulary panics naming it — under the old carrier contract it rendered as a dead attribute. The admitted vocabulary: `data-fui-rpc`, `-rpc-method`, `-rpc-body`, `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`, `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`, `-rpc-scroll-to`, `-rpc-refresh` (re-poll a widget after success), `-confirm`, `-signal-set`, `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`, `-deeplink`, `-toast`, `-pane-open`, `-pane-key` (a keyed pane's deep-link identity), `-pane-close`, `-prefetch`, `-intercept-close` — the shapes `interactive.Action.Attrs()` / `OpenOnClick` / `PaneKey` and friends produce; every other `data-fui-*` key belongs to the component that renders its own markup for it
-- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate. `External` owns `target`/`rel` (noopener). Carries the four link-legal wiring keys (`data-fui-push-state`, `-prefetch`, `-open`, `-deeplink`); every other `data-fui-*` key is refused, as always — a link navigates, a button acts
+- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes, rendered through the headless structure with the `fui-button` class map. `Disabled` renders the disabled state (a `disabled` key in `ExtraAttrs` panics pointing at the field). Every `data-cui-*` key in `ExtraAttrs` is runtime wiring and travels the typed `Action` seam; a key outside the vocabulary panics naming it — under the old carrier contract it rendered as a dead attribute. The admitted vocabulary: `data-cui-rpc`, `-rpc-method`, `-rpc-body`, `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`, `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`, `-rpc-scroll-to`, `-rpc-refresh` (re-poll a widget after success), `-confirm`, `-signal-set`, `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`, `-deeplink`, `-toast`, `-pane-open`, `-pane-key` (a keyed pane's deep-link identity), `-pane-close`, `-prefetch`, `-intercept-close` — the shapes `interactive.Action.Attrs()` / `OpenOnClick` / `PaneKey` and friends produce; every other `data-cui-*` key belongs to the component that renders its own markup for it
+- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate. `External` owns `target`/`rel` (noopener). Carries the four link-legal wiring keys (`data-cui-push-state`, `-prefetch`, `-open`, `-deeplink`); every other `data-cui-*` key is refused, as always — a link navigates, a button acts
 - **toggle**: `framework/ui.Checkbox` / `Radio` / `Switch`, labelled native inputs rendered through `headless.Choice` / `headless.Switch` — one inline run, the label wrapping the control; FieldErrors-aware, an error wrapping the run and its message in one unit
 - **checkboxgroup**: `framework/ui.CheckboxGroup` / `RadioGroup`, `headless.Group` fieldset of checkboxes / radios; the group's message (error, else hint) belongs to the group, never to each leaf
 - **colorfield**: `framework/ui.ColorField`, colour swatch beside a text input holding the same value, as one control (`headless.Color`'s affix shell); the text input is the source of truth and requires a `Name`, so values the native picker cannot represent (`transparent`, `var(--x)`) survive and mark the shell instead of degrading — the swatch falls back to black; the headless module keeps the swatch and the text one value for every value the picker can show (the short `#abc` form expands for the swatch and is pickable, not an error). Use `ColorPicker` when a swatch + label is enough
@@ -117,7 +117,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **pagination**: `framework/ui.Pagination`, numeric page pager with typed query props (`Path`, `Query url.Values`, `PageParam` default `p`) — every href is built through `net/url` with the page parameter replaced, never a `%d` pattern; `Window` sizes the page neighbourhood, `OmitPrevNext` drops the ends. The Island is optional, the Table posture: a list screen's page anchors are plain navigations the client router intercepts, and a pager inside an island region (a `DataTable` footer) carries the RPC contract beside its hrefs and the `data-hui-page` hook the table module restores focus through. `core-ui/patterns/pagination` is retired: this is the only pager
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
 - **sidebardrawertrigger**: `framework/ui.SidebarDrawerTrigger`, the sidebar's drawer toggle rendered on its own — the relocated hamburger a header row carries while the sidebar itself lives in the body; pass the SAME `SidebarConfig` the `ui.Sidebar` render uses and the pair stays one logical control (the trigger hides itself at >= md exactly like the sidebar's inline copy, so `SuppressDrawerTrigger` and a relocated trigger never draw two)
-- **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-fui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before.
+- **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-cui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before.
 - **tree**: `framework/ui.Tree`, WAI-ARIA treeview on the headless primitive: roving tabindex, arrows/Home/End/type-ahead bound by the registered `headless-tree` module; leaf hrefs are real anchors, a static branch is real markup, and a `LazyPath` branch keeps the kernel's rpc wiring on its toggle with a hidden signal-bound group (`LazySignalPrefix` names the signal)
 - **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
 - **steprail**: `framework/ui.StepRail`, vertical numbered step rail with an active step + anchor links
@@ -295,7 +295,7 @@ Three more knobs round out the contract surface:
   can mark the current section. Wrap static markup in
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state; `Footer` stays below the nav.
-- `MatchPath` rides the rendered link as `data-fui-match-prefix` (the
+- `MatchPath` rides the rendered link as `data-cui-match-prefix` (the
   value, not the href, is the prefix): the server marks the item
   current on first paint, and the runtime's active-link sweep keeps it
   lit across client navigations into the section — without it the
@@ -304,7 +304,7 @@ Three more knobs round out the contract surface:
 - `SuppressDrawerTrigger: true` plus `ui.SidebarDrawerTrigger(cfg)`
   moves the hamburger into your own chrome (the page header, left of
   the brand): the standalone button is the same trigger — same class,
-  same `data-fui-open` widget contract, same `>= md` self-hiding from
+  same `data-cui-open` widget contract, same `>= md` self-hiding from
   the component's stylesheet. `MountSidebar` still mounts the drawer
   itself, once, as always.
 - `NativeMobile: true` adds a native disclosure for browsers with scripting
@@ -469,7 +469,7 @@ helpful pre-flight read for human reviewers.
    or `e2e_new_components_interactions_test.go`, ARIA shape for
    static components, real interaction (click / type / drag) for
    runtime-driven ones.
-6. **`core-ui/ARCHITECTURE.md`**: any new `data-fui-*` attribute the
+6. **`core-ui/ARCHITECTURE.md`**: any new `data-cui-*` attribute the
    runtime reads must land in the table here OR in the drift-test
    whitelist (with a justification comment). The
    `TestRuntimeAttrsAreDocumented` gate in
@@ -481,7 +481,7 @@ helpful pre-flight read for human reviewers.
    backgrounds, scrollable regions without `tabindex="0"`.
 8. **Composition first**: before writing a new runtime module, see if
    `preset.Modal` / `preset.Popover` / `preset.Drawer` +
-   `data-fui-open` + `data-fui-deeplink` + signal-binding already
+   `data-cui-open` + `data-cui-deeplink` + signal-binding already
    covers the case. Lightbox and NotificationBell each ship without
    a runtime module by composing existing primitives.
 9. **Behaviour registers like style**: when a module is warranted, it
@@ -495,7 +495,7 @@ helpful pre-flight read for human reviewers.
    the module loads once when one appears. Keep the module contract
    (`window.__gofastr.loadedModules[name] = true` on attach, a scanner
    under `window.__gofastr._moduleScanners[name]`), bind by attribute
-   only, and use your own `data-` prefix: a `data-fui-*` marker is
+   only, and use your own `data-` prefix: a `data-cui-*` marker is
    admitted only when the attribute is already documented. The module
    is a runtime module and the runtime's source lints hold it: `const`
    and `let`, never `var`; no selector or storage key built from a raw
@@ -508,7 +508,7 @@ helpful pre-flight read for human reviewers.
 
 - **Writing a new runtime module when composition already covers it.**
   Check `preset.Modal` / `preset.Popover` / `preset.Drawer` +
-  `data-fui-open` + `data-fui-deeplink` + signal binding first.
+  `data-cui-open` + `data-cui-deeplink` + signal binding first.
   NotificationBell ships with zero new JS by composing them; the
   Lightbox composed the same primitives and then earned a module for
   the behaviour composition cannot give (gallery stepping,
@@ -527,7 +527,7 @@ helpful pre-flight read for human reviewers.
   (suite convention), and `TestAxe_AllPagesAreClean` automatically
   fails the build on any axe-core violation for every catalog page.
   Register the page and you've signed up for all three.
-- **Adding a `data-fui-*` attribute without documenting it.** The
+- **Adding a `data-cui-*` attribute without documenting it.** The
   runtime contract lives in `core-ui/ARCHITECTURE.md`; every attribute
   the runtime reads must be in its table (or an explicitly justified
   whitelist) before the change lands.
@@ -538,6 +538,6 @@ helpful pre-flight read for human reviewers.
 
 - [`docs/widgets.md`](widgets.md): widget framework (mount, deeplink, signal lifecycle).
 - [`docs/ui-getting-started.md`](ui-getting-started.md): first-time setup for the UI layer.
-- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
+- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-cui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
 - [`framework/ARCHITECTURE.md`](../../../framework/ARCHITECTURE.md): package layout + extraction rules.
 - [`ROADMAP.md` §2](../../../ROADMAP.md): deferred UI components.

@@ -87,19 +87,19 @@ func TestE2E_QuickAddModal(t *testing.T) {
 	// A dismissed widget is hidden in place when it hydrated from SSR
 	// chrome, and detached when it was lazy-mounted, both count as closed.
 	const closedJS = `(() => {
-		const w = document.querySelector('[data-fui-widget="customer-quick-add"]');
+		const w = document.querySelector('[data-cui-widget="customer-quick-add"]');
 		return !w || w.hidden;
 	})()`
 	var panelBG string
 	var closedAfterEsc, closedAfterSave, countBumped bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
-		chromedp.WaitVisible(`button[data-fui-open="customer-quick-add"]`, chromedp.ByQuery),
-		chromedp.Click(`button[data-fui-open="customer-quick-add"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
+		chromedp.Click(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#qa-name`, chromedp.ByQuery),
 		// The default centered panel must paint a surface behind the form.
 		chromedp.Evaluate(`(() => {
-			const s = document.querySelector('[data-fui-widget="customer-quick-add"] .fui-panel');
+			const s = document.querySelector('[data-cui-widget="customer-quick-add"] .cui-panel');
 			return s ? getComputedStyle(s).backgroundColor : "";
 		})()`, &panelBG),
 		// ESC dismisses…
@@ -107,14 +107,14 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(closedJS, &closedAfterEsc),
 		// …and re-opening + submitting creates the customer and closes.
-		chromedp.Click(`button[data-fui-open="customer-quick-add"]`, chromedp.ByQuery),
+		chromedp.Click(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#qa-name`, chromedp.ByQuery),
 		chromedp.SendKeys(`#qa-name`, "Modal E2E", chromedp.ByQuery),
 		chromedp.SendKeys(`#qa-email`, "modal-e2e@example.com", chromedp.ByQuery),
-		chromedp.Click(`[data-fui-widget="customer-quick-add"] button[type="submit"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-widget="customer-quick-add"] button[type="submit"]`, chromedp.ByQuery),
 		chromedp.Sleep(1200*time.Millisecond),
 		chromedp.Evaluate(closedJS, &closedAfterSave),
-		// data-fui-rpc-navigate re-rendered the list: 10 seeds + 1.
+		// data-cui-rpc-navigate re-rendered the list: 10 seeds + 1.
 		chromedp.Evaluate(`document.body.innerText.includes("11 customers")`, &countBumped),
 	); err != nil {
 		t.Fatalf("modal flow: %v", err)
@@ -191,7 +191,7 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		// paginates. Page 2 holds the last two rows. The pager is the
 		// typed one: page anchors keep their hrefs and carry the RPC
 		// contract beside them.
-		chromedp.Click(`.fui-data-table__footer a[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
+		chromedp.Click(`.fui-data-table__footer a[data-cui-rpc$="p=2"]`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`document.querySelectorAll('.fui-data-table tbody tr').length`, &rows),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),

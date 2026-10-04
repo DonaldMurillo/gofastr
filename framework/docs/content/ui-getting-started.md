@@ -346,7 +346,7 @@ refetch and keeps its scroll position.
 
 One `RenderCtx` serves both presentations; the overlay is the same render
 with drawer scaffolding around it, so there is no second code path to keep in
-sync. Put `data-fui-intercept-close` on a button inside the screen and it
+sync. Put `data-cui-intercept-close` on a button inside the screen and it
 closes the drawer when the render is an overlay, and does nothing on the
 standalone page.
 
@@ -517,7 +517,7 @@ already carries the focus, Escape and close-on-navigation contract.
 
 - Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog: see [theming](theming.md)
 - Islands (in-page state changes without a route change): the cookbook is [interactive-patterns](interactive-patterns.md) (incl. "Writing a hand-written island, end to end"); the underlying model is [runtime-contract](runtime-contract.md) "The four scenarios"
-- The full `data-fui-*` primitive table is in [runtime-contract](runtime-contract.md)
+- The full `data-cui-*` primitive table is in [runtime-contract](runtime-contract.md)
 - Component catalog (Layout, Card, Tooltip, Toggle, Spinner, …) is in [ui-new-components](ui-new-components.md)
 
 For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component demonstrated).
@@ -557,7 +557,7 @@ and click-outside.
 
 Every component `Config` carries an `ExtraAttrs html.Attrs` field that
 forwards additional attributes to the component's root element — the
-one that carries `data-fui-comp`. Use it for `data-*` test hooks,
+one that carries `data-cui-comp`. Use it for `data-*` test hooks,
 analytics markers, and ARIA overrides:
 
 ```go
@@ -568,7 +568,7 @@ ui.Card(ui.CardConfig{
 ```
 
 Keys the component owns are dropped, case-insensitively: `class` and
-`id` (use the `Class` / `ID` config fields), every `data-fui-*` key
+`id` (use the `Class` / `ID` config fields), every `data-cui-*` key
 (reserved for runtime wiring), and behavior-critical attributes the
 component derives from its config (`href` on linked roots, `type` /
 `name` on form controls). When the root shape varies by config — a
@@ -580,16 +580,16 @@ Two documented exceptions forward more than the contract's default.
 attributes, which the blueprint generator's `data-entity-form` +
 RPC-wiring pattern relies on. `ButtonConfig` and `LinkConfig` are
 *wiring carriers*: they drop their owned keys like any component but
-keep `data-fui-*` — except `data-fui-comp`, the style-scope marker,
+keep `data-cui-*` — except `data-cui-comp`, the style-scope marker,
 which drops case-insensitively — because attaching
 `interactive.Action.Attrs()` to a
 button's ExtraAttrs is the documented way to wire a click RPC (the
 resource UI and the admin battery both do it), and an ActionRef link
-ships an href fallback plus a `data-fui-rpc` upgrade the same way.
+ships an href fallback plus a `data-cui-rpc` upgrade the same way.
 
 Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
 protected...)` before forwarding — or `html.SafeCarrierAttrs` for a
-component that emits no `data-fui-*` wiring of its own and is meant to
+component that emits no `data-cui-*` wiring of its own and is meant to
 carry the interactive package's attrs. Two gates in
 `framework/ui/extraattrs_contract_test.go` enforce the contract: one
 fails on any component Config without the field, the other fails on
@@ -604,7 +604,7 @@ any new raw forwarding outside the legacy list.
   screens their own noun space (`/library`, not `/foods`).
 - **Unscoped selectors in a `ComponentSheet`.** `body`, `:root`,
   `::backdrop` and friends can't be scoped to
-  `[data-fui-comp="…"]`; `Build()` returns `style.ErrUnscopable` and
+  `[data-cui-comp="…"]`; `Build()` returns `style.ErrUnscopable` and
   `MustBuild` panics at startup. Component CSS styles the component;
   page-level rules belong in the host stylesheet or
   `style.Contribute`.

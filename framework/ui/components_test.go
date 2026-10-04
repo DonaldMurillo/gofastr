@@ -241,8 +241,11 @@ func TestFormFieldReserveErrorRendersAnEmptyWiredNode(t *testing.T) {
 		!strings.Contains(s, `role="alert" id="tok-error"></p>`) {
 		t.Errorf("the reserved node must render empty, so the stylesheet can take it out of the grid until a script fills it:\n%s", s)
 	}
-	if strings.Contains(s, "data-hui-") {
-		t.Errorf("the reserved node carries a data-hui-* hook, which belongs to a runtime module that binds it; nothing binds this one:\n%s", s)
+	if !strings.Contains(s, `data-hui-field-error=""`) {
+		t.Errorf("the reserved node must carry data-hui-field-error: the kernel's form-errors module fills it by that hook, never by class:\n%s", s)
+	}
+	if strings.Count(s, "data-hui-") != 2 {
+		t.Errorf("a FormField carries exactly two hooks, data-hui-field on the root and data-hui-field-error on the node; anything more belongs to a module that binds it:\n%s", s)
 	}
 	if !strings.Contains(s, `aria-describedby="tok-error"`) {
 		t.Errorf("the reserved node's id must ride the control's description:\n%s", s)
@@ -289,17 +292,17 @@ func TestButtonRejectsUnknownVariant(t *testing.T) {
 	Button(ButtonConfig{Label: "Save", Variant: ButtonVariant("tertiary")})
 }
 
-// Button{Variant: ButtonDanger} must emit ONE data-fui-comp marker
+// Button{Variant: ButtonDanger} must emit ONE data-cui-comp marker
 // (ui-button), not two. The legacy dangerButtonStyle was wrapping
 // the same element with its own marker, causing two scoped CSS files
 // to ship and compete via specificity. Variant class alone handles it.
 func TestButtonDangerEmitsSingleMarker(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "Delete", Variant: ButtonDanger}))
-	count := strings.Count(h, "data-fui-comp=")
+	count := strings.Count(h, "data-cui-comp=")
 	if count != 1 {
-		t.Errorf("Button{Variant: ButtonDanger} should emit exactly 1 data-fui-comp marker, got %d in:\n%s", count, h)
+		t.Errorf("Button{Variant: ButtonDanger} should emit exactly 1 data-cui-comp marker, got %d in:\n%s", count, h)
 	}
-	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-button"`) {
 		t.Errorf("Button{Variant: ButtonDanger} should mark as ui-button (not ui-button-danger):\n%s", h)
 	}
 }
@@ -336,7 +339,7 @@ func TestLinkButtonRendersAnchorWithButtonClass(t *testing.T) {
 	if !strings.Contains(h, "fui-button fui-button--primary") {
 		t.Errorf("LinkButton should default to primary variant:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-button"`) {
 		t.Errorf("LinkButton should share ui-button marker for CSS scope:\n%s", h)
 	}
 }
@@ -658,7 +661,7 @@ func TestFormSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 // typography, and a rule for that token exists in the sheet.
 func TestFormSectionLegendCarriesTheSheetHeadingClass(t *testing.T) {
 	h := FormSection(FormSectionConfig{Heading: "Access"}, render.Text("f"))
-	if !strings.Contains(string(h), `<legend class="fui-form-section__heading" data-fui-internal="">`) {
+	if !strings.Contains(string(h), `<legend class="fui-form-section__heading" data-cui-internal="">`) {
 		t.Errorf("the legend does not carry the heading class the sheet styles:\n%s", h)
 	}
 	css := formSectionCSS(style.Theme{})
@@ -708,7 +711,7 @@ func TestCodeBlockExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := CodeBlock(CodeBlockConfig{
 		Code: "x", Language: "go",
 		ExtraAttrs: map[string]string{
-			"tabindex": "9", "ARIA-LABEL": "evil", "data-fui-comp": "spoof",
+			"tabindex": "9", "ARIA-LABEL": "evil", "data-cui-comp": "spoof",
 		},
 	})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -780,33 +783,33 @@ func TestButtonDisabled(t *testing.T) {
 // seam; everything else a caller passes is still decoration.
 func TestButtonRoutesWiringThroughTheActionSeam(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "Edit", ExtraAttrs: html.Attrs{
-		"data-fui-open":              "user-edit",
-		"data-fui-deeplink":          "user_id=42",
-		"data-fui-prefetch":          "menu",
-		"data-fui-signal-inc":        "count:1",
+		"data-cui-open":              "user-edit",
+		"data-cui-deeplink":          "user_id=42",
+		"data-cui-prefetch":          "menu",
+		"data-cui-signal-inc":        "count:1",
 		"data-hui-pane-open-control": "secondary",
-		"data-fui-confirm":           "Sure?",
+		"data-cui-confirm":           "Sure?",
 		"data-site-ping":             "1",
 		"aria-pressed":               "false",
-		"data-fui-rpc":               "/__site/x",
-		"data-fui-rpc-method":        "POST",
-		"data-fui-rpc-signal":        "xsig",
-		"data-fui-push-state":        "/after",
-		"data-fui-toast":             `{"variant":"info","title":"Hi"}`,
+		"data-cui-rpc":               "/__site/x",
+		"data-cui-rpc-method":        "POST",
+		"data-cui-rpc-signal":        "xsig",
+		"data-cui-push-state":        "/after",
+		"data-cui-toast":             `{"variant":"info","title":"Hi"}`,
 		"data-hui-pane-close":        "",
-		"data-fui-rpc-close":         "true",
-		"data-fui-rpc-body":          `{"a":1}`,
-		"data-fui-rpc-navigate":      "/next",
+		"data-cui-rpc-close":         "true",
+		"data-cui-rpc-body":          `{"a":1}`,
+		"data-cui-rpc-navigate":      "/next",
 	}}))
 	for _, want := range []string{
-		`data-fui-open="user-edit"`, `data-fui-deeplink="user_id=42"`,
-		`data-fui-prefetch="menu"`, `data-fui-signal-inc="count:1"`,
-		`data-hui-pane-open-control="secondary"`, `data-fui-confirm="Sure?"`,
+		`data-cui-open="user-edit"`, `data-cui-deeplink="user_id=42"`,
+		`data-cui-prefetch="menu"`, `data-cui-signal-inc="count:1"`,
+		`data-hui-pane-open-control="secondary"`, `data-cui-confirm="Sure?"`,
 		`data-site-ping="1"`, `aria-pressed="false"`,
-		`data-fui-rpc="/__site/x"`, `data-fui-rpc-method="POST"`,
-		`data-fui-rpc-signal="xsig"`, `data-fui-push-state="/after"`,
-		`data-fui-toast="{&quot;variant&quot;`, `data-hui-pane-close=""`,
-		`data-fui-rpc-close="true"`, `data-fui-rpc-body="{&quot;a&quot;`, `data-fui-rpc-navigate="/next"`,
+		`data-cui-rpc="/__site/x"`, `data-cui-rpc-method="POST"`,
+		`data-cui-rpc-signal="xsig"`, `data-cui-push-state="/after"`,
+		`data-cui-toast="{&quot;variant&quot;`, `data-hui-pane-close=""`,
+		`data-cui-rpc-close="true"`, `data-cui-rpc-body="{&quot;a&quot;`, `data-cui-rpc-navigate="/next"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in:\n%s", want, h)
@@ -814,11 +817,11 @@ func TestButtonRoutesWiringThroughTheActionSeam(t *testing.T) {
 	}
 }
 
-// A data-fui-* key outside the wiring vocabulary used to render as a
+// A data-cui-* key outside the wiring vocabulary used to render as a
 // dead attribute under the old carrier contract; now it panics naming
 // the key and the seam it should have used.
 func TestButtonPanicsOnAWiringKeyOutsideTheVocabulary(t *testing.T) {
-	for _, k := range []string{"data-fui-comp", "data-fui-optimistic-endpoint", "data-fui-toggle-group", "data-fui-anything-else"} {
+	for _, k := range []string{"data-cui-comp", "data-cui-optimistic-endpoint", "data-cui-toggle-group", "data-cui-anything-else"} {
 		func() {
 			defer func() {
 				r := recover()
@@ -833,24 +836,24 @@ func TestButtonPanicsOnAWiringKeyOutsideTheVocabulary(t *testing.T) {
 	}
 }
 
-// A link carries exactly the four data-fui-* keys that make sense on
+// A link carries exactly the four data-cui-* keys that make sense on
 // an anchor; the rest are refused as they always were, because a link
 // navigates and a button acts.
 func TestLinkButtonWiringVocabulary(t *testing.T) {
 	h := string(LinkButton(LinkButtonConfig{Label: "Docs", Href: "/docs", ExtraAttrs: html.Attrs{
-		"data-fui-push-state": "/docs", "data-fui-prefetch": "menu",
-		"data-fui-open": "help", "data-fui-deeplink": "topic=ssh",
-		"data-fui-rpc": "/x", "data-fui-signal-inc": "count", "data-fui-toast": `{"a":1}`,
+		"data-cui-push-state": "/docs", "data-cui-prefetch": "menu",
+		"data-cui-open": "help", "data-cui-deeplink": "topic=ssh",
+		"data-cui-rpc": "/x", "data-cui-signal-inc": "count", "data-cui-toast": `{"a":1}`,
 	}}))
 	for _, want := range []string{
-		`data-fui-push-state="/docs"`, `data-fui-prefetch="menu"`,
-		`data-fui-open="help"`, `data-fui-deeplink="topic=ssh"`,
+		`data-cui-push-state="/docs"`, `data-cui-prefetch="menu"`,
+		`data-cui-open="help"`, `data-cui-deeplink="topic=ssh"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("a link-legal wiring key was refused:\n%s", h)
 		}
 	}
-	for _, banned := range []string{"data-fui-rpc", "data-fui-signal-inc", "data-fui-toast"} {
+	for _, banned := range []string{"data-cui-rpc", "data-cui-signal-inc", "data-cui-toast"} {
 		if strings.Contains(h, banned) {
 			t.Errorf("%s rode an anchor — a link navigates, a button acts:\n%s", banned, h)
 		}
@@ -882,18 +885,18 @@ func TestButtonAriaLabelOverridesVisibleLabel(t *testing.T) {
 func TestButtonExtraAttrsCarriesWiring(t *testing.T) {
 	// Button is the documented carrier for interactive wiring
 	// (interactive-patterns.md attaches Action.Attrs() via ExtraAttrs):
-	// data-fui-* must pass through, unlike components that own their
+	// data-cui-* must pass through, unlike components that own their
 	// own wiring. framework/ui/resource and battery/admin depend on it.
 	h := Button(ButtonConfig{Label: "Delete", ExtraAttrs: map[string]string{
-		"data-fui-rpc":        "/api/items/42",
-		"data-fui-rpc-method": "DELETE",
-		"data-fui-confirm":    "Delete this item?",
+		"data-cui-rpc":        "/api/items/42",
+		"data-cui-rpc-method": "DELETE",
+		"data-cui-confirm":    "Delete this item?",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	for _, want := range []string{
-		`data-fui-rpc="/api/items/42"`,
-		`data-fui-rpc-method="DELETE"`,
-		`data-fui-confirm="Delete this item?"`,
+		`data-cui-rpc="/api/items/42"`,
+		`data-cui-rpc-method="DELETE"`,
+		`data-cui-confirm="Delete this item?"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("wiring attr %s dropped from carrier button:\n%s", want, root)
@@ -959,7 +962,7 @@ func TestLinkButtonExternalOwnsTargetAndRel(t *testing.T) {
 // casings is refused rather than resolved by map order.
 func TestButtonExtraAttrsRefuseTwoSpellings(t *testing.T) {
 	for _, attrs := range []html.Attrs{
-		{"data-fui-open": "a", "DATA-FUI-OPEN": "b"},
+		{"data-cui-open": "a", "DATA-CUI-OPEN": "b"},
 		{"data-test": "a", "Data-Test": "b"},
 	} {
 		func() {

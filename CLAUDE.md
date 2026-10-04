@@ -42,7 +42,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   going from `/a` to `/b`.
 - **In-page state changes are islands**: a click fires an RPC, the
   server returns new island HTML, the runtime swaps just that island.
-- **Passive freshness is polled, not pushed**: `data-fui-poll` /
+- **Passive freshness is polled, not pushed**: `data-cui-poll` /
   `widget Builder.Poll` for dashboards/counters/statuses. No held
   connection, no fanout dependency.
 - **Server-pushed updates** (SSE, the single `/__gofastr/sse` bus) are
@@ -64,9 +64,9 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
    `framework/dev` livereload and kiln's build-mode reload ships its
    own, and that's the whole exception class), and is reserved for
    presence/collab/sub-second semantics. Passive freshness polls
-   instead (`data-fui-poll`).
+   instead (`data-cui-poll`).
 4. Never add `location.href = …` or full reloads as a "fix".
-5. Never add new `data-fui-*` attributes without updating
+5. Never add new `data-cui-*` attributes without updating
    `core-ui/ARCHITECTURE.md` and the runtime test suite.
 6. Never expose an entity holding per-user data via auto-CRUD without
    setting `EntityConfig.Scope.OwnerField`. See
@@ -309,7 +309,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   in `core-ui/check/runtimeshapes.go` to eight: `storagekeyraw` fires
   when a Web-storage key (`localStorage`/`sessionStorage`
   setItem/getItem/removeItem, or a `document.cookie` write) uses a
-  data-fui-* attribute value raw — injected markup then writes or
+  data-cui-* attribute value raw — injected markup then writes or
   clobbers any key on the origin; the fix is namespace AND component-
   encode spelled at the sink (`PREFIX + encodeURIComponent(v)`,
   banner.js's dismissKey shape; encoding alone leaves dots and hyphens
@@ -374,10 +374,10 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   instantiations (Named.Origin), the blind spot that hid
   StateChannel's host-callback dispatch. The runtimeshapes JS lint
   family in core-ui/check grew to ten: `decodeuriraw`
-  (decodeURIComponent of a data-fui-* value outside every try —
+  (decodeURIComponent of a data-cui-* value outside every try —
   decodeURIComponent('%E0%A4') throws URIError out of the delegated
   handler; wrap it, or route through a same-file safeDecode helper)
-  and `protokey` (a bracket write keyed by a data-fui-* value with
+  and `protokey` (a bracket write keyed by a data-cui-* value with
   no reserved-key guard — reject __proto__/constructor/prototype
   first, or key the store by Map). Two gates landed with them: the
   docs corpus gate runs the contracts security rules (GOFASTR1404

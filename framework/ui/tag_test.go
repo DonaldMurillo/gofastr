@@ -17,7 +17,7 @@ func TestTagRequiresLabel(t *testing.T) {
 
 func TestTagDefaultVariantIsNeutral(t *testing.T) {
 	h := Tag(TagConfig{Label: "design"})
-	mustContain(t, h, `data-fui-comp="ui-tag"`)
+	mustContain(t, h, `data-cui-comp="ui-tag"`)
 	mustContain(t, h, "fui-tag--neutral")
 	mustContain(t, h, "design")
 }
@@ -48,7 +48,7 @@ func TestTagDismissAddsRPCButton(t *testing.T) {
 	h := Tag(TagConfig{Label: "design", Dismiss: "/filters/remove",
 		Island: headless.Island{Endpoint: "/filters/remove", Signal: "filters"}})
 	mustContain(t, h, `href="/filters/remove"`)
-	mustContain(t, h, `data-fui-rpc="/filters/remove"`)
+	mustContain(t, h, `data-cui-rpc="/filters/remove"`)
 	mustContain(t, h, `aria-label="Remove design"`)
 	mustContain(t, h, "fui-tag__dismiss")
 }

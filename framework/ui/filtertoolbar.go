@@ -153,7 +153,7 @@ type FilterToolbarConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the toolbar's root <form>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and the form contract (method, action, role,
+	// ID), data-cui-*, and the form contract (method, action, role,
 	// aria-label) — the sanitized Action is never overridable.
 	ExtraAttrs html.Attrs
 }
@@ -245,7 +245,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	}
 	controls = append(controls, html.Div(html.DivConfig{
 		Class:      "fui-filter-toolbar__actions",
-		ExtraAttrs: html.Attrs{"data-fui-internal": ""},
+		ExtraAttrs: html.Attrs{"data-cui-internal": ""},
 	}, actionsKids...))
 
 	formAttrs := html.Attrs{
@@ -282,7 +282,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	for _, o := range f.Options {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
-	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
 }
 
@@ -304,7 +304,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == cfg.SortValue})
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort",
-		ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		Select(SelectConfig{Name: name, Label: sortLabel, Options: opts}))
 }
 
@@ -322,7 +322,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 		extra["aria-label"] = s.Label
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search",
-		ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		SearchInput(SearchInputConfig{
 			Name:        s.Name,
 			ID:          "filter-search-" + slug(s.Name),
@@ -410,7 +410,7 @@ func cls(base, extra string) string {
 var filterToolbarStyle = registry.RegisterStyle("ui-filter-toolbar", filterToolbarCSS)
 
 func filterToolbarCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-filter-toolbar"] {
+	return `[data-cui-comp="ui-filter-toolbar"] {
   container-type: inline-size;
   display: flex;
   flex-wrap: wrap;
@@ -425,14 +425,14 @@ func filterToolbarCSS(_ style.Theme) string {
    row; min-inline-size:0 lets it shrink below content width so a wide
    <select> or search box never forces horizontal overflow of a narrow
    ancestor (the bug both eval apps shipped). */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet {
   flex: 1 1 12rem;
   min-inline-size: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search {
   flex: 2 1 14rem;
 }
 /* Pill facets prefer their natural one-line width: max-content basis
@@ -442,11 +442,11 @@ func filterToolbarCSS(_ style.Theme) string {
    flex-wrap) only kicks in when a single group is wider than the whole
    toolbar. The ≤32rem container query below overrides flex-basis to
    100%, so the mobile stack is unaffected. */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pills {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pills {
   flex: 0 1 max-content;
 }
 /* ui.SearchInput / ui.Select fill their facet cell. */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search [data-fui-comp="ui-search-input"] {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search [data-cui-comp="ui-search-input"] {
   display: flex;
   inline-size: 100%;
 }
@@ -454,31 +454,31 @@ func filterToolbarCSS(_ style.Theme) string {
 /* Actions cluster: pushed to the trailing edge on a wide row; wraps to
    its own line and stretches full width on a narrow one. Always stays
    on-screen and tappable — never clipped. */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-button {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-button {
   min-block-size: var(--spacing-touch-target, 44px);
 }
 
 /* Pill facet — fieldset reset + legend as a field label. */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
   padding: 0;
   margin-block-end: var(--spacing-xs, 2px);
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-group {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -498,12 +498,12 @@ func filterToolbarCSS(_ style.Theme) string {
               color var(--duration-fast, 150ms) var(--easing-standard, ease),
               border-color var(--duration-fast, 150ms) var(--easing-standard, ease);
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
   color: var(--color-text, #18181B);
   border-color: var(--color-text-muted, #a1a1aa);
 }
 /* Visually hide the radio; the pill label is the visible control. */
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-input {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-input {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -514,13 +514,13 @@ func filterToolbarCSS(_ style.Theme) string {
   white-space: nowrap;
   border: 0;
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:checked) {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:checked) {
   background: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
@@ -530,22 +530,22 @@ func filterToolbarCSS(_ style.Theme) string {
    control, and the whole actions cluster, goes full width and Apply
    stretches so it stays an obvious, reachable tap target. */
 @container (max-width: 32rem) {
-  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet,
-  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet,
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
     flex-basis: 100%;
     margin-inline-start: 0;
   }
-  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-filter-toolbar__apply {
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-filter-toolbar__apply {
     flex: 1 1 auto;
   }
 }
 @container (min-width: 18rem) {
-  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__search { flex: 1 1 0; }
-  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions { flex: 0 0 auto; }
-  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
+  [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__search { flex: 1 1 0; }
+  [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions { flex: 0 0 auto; }
+  [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill { transition: none; }
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill { transition: none; }
 }`
 }

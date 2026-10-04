@@ -90,7 +90,7 @@ func TestBindAttrLeavesNonURLAttrsAlone(t *testing.T) {
 // emit the binding beats warning about it after it shipped, and it costs
 // the runtime no bytes.
 func TestSignalAttrModeDeniesSrcdoc(t *testing.T) {
-	denied := []string{"srcdoc", "style", "data-behavior", "onclick", "OnClick", "data-fui-rpc", "sandbox"}
+	denied := []string{"srcdoc", "style", "data-behavior", "onclick", "OnClick", "data-cui-rpc", "sandbox"}
 	for _, attr := range denied {
 		resetForTest()
 		s := New("t").String("u", "PAYLOAD")
@@ -108,7 +108,7 @@ func TestSignalAttrModeDeniesSrcdoc(t *testing.T) {
 		resetForTest()
 		s := New("t").String("u", "ok")
 		html := string(s.BindAttr(context.Background(), "a", attr, nil))
-		if !strings.Contains(html, `data-fui-signal-attr="`+attr+`"`) {
+		if !strings.Contains(html, `data-cui-signal-attr="`+attr+`"`) {
 			t.Errorf("BindAttr refused the legitimate attribute %q: %s", attr, html)
 		}
 	}
@@ -119,7 +119,7 @@ func TestSignalAttrModeDeniesSrcdoc(t *testing.T) {
 // _isUnsafeSignalUrl allow-list exactly". Both layers must name the
 // same five attributes AND both must fold case before matching, because
 // the runtime reads the attribute name back from the SSR-emitted
-// data-fui-signal-attr value and HTML parsers treat attribute names
+// data-cui-signal-attr value and HTML parsers treat attribute names
 // case-insensitively: a case-sensitive list on either side turns
 // `HREF="javascript:…"` into a one-sided gap (guarded at SSR, live on
 // client updates, or the reverse).
@@ -146,7 +146,7 @@ func TestSignalURLGuardMirrorsRuntimeAttrs(t *testing.T) {
 		}
 		// The binding itself must survive: refusing the variant entirely
 		// would strand every developer who spells an attr in caps.
-		if !strings.Contains(html, `data-fui-signal-attr="`+attr+`"`) {
+		if !strings.Contains(html, `data-cui-signal-attr="`+attr+`"`) {
 			t.Errorf("BindAttr refused the legitimate case variant %q: %s", attr, html)
 		}
 	}
@@ -183,7 +183,7 @@ func TestSignalURLGuardMirrorsRuntimeAttrs(t *testing.T) {
 // and aria- names reach render.Tag as map keys. A name carrying a
 // quote (`aria-label" onclick="alert(1)`) must not smuggle a second,
 // live attribute into the tag: render.Attr drops keys outside the
-// attribute-name grammar, and the data-fui-signal-attr value is
+// attribute-name grammar, and the data-cui-signal-attr value is
 // entity-escaped. The runtime side is inert by construction,
 // setAttribute with a quote-bearing name creates no handler.
 func TestBindAttrAttrNameStaysInert(t *testing.T) {
@@ -198,7 +198,7 @@ func TestBindAttrAttrNameStaysInert(t *testing.T) {
 		html := string(s.BindAttr(context.Background(), "span", attr, nil))
 		// A breakout manifests as a NEW attribute (handler name followed
 		// by a RAW quote) or raw markup. The same names entity-escaped
-		// inside the data-fui-signal-attr value are inert text.
+		// inside the data-cui-signal-attr value are inert text.
 		for _, live := range []string{`onclick="`, `onmouseover="`, `onerror="`, `<img`, `<svg`} {
 			if strings.Contains(strings.ToLower(html), live) {
 				t.Errorf("SECURITY: [signal-attr-name] BindAttr attr name %q smuggled live markup %q into the tag: %s", attr, live, html)
@@ -207,7 +207,7 @@ func TestBindAttrAttrNameStaysInert(t *testing.T) {
 		// The binding marker must carry the name escaped, not dropped
 		// silently (the developer still needs the failure to be visible
 		// in the emitted markup).
-		if !strings.Contains(html, `data-fui-signal-attr="`) {
+		if !strings.Contains(html, `data-cui-signal-attr="`) {
 			t.Errorf("BindAttr dropped the binding marker entirely for %q: %s", attr, html)
 		}
 	}

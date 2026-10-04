@@ -119,7 +119,7 @@ code.
 | `GOFASTR1806` | error | `var(--name)` naming a token neither the theme nor a `*.tokens.css` declares (in a `*.style.css`, reported once, by the owned-style check; a `var()` fallback does not waive it there) |
 | `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem` |
 | `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, text or duration token at a value the theme does not declare |
-| `GOFASTR1810` | error | a selector naming a kit class (`.fui-*`) or a `[data-fui-*]` attribute |
+| `GOFASTR1810` | error | a selector naming a kit class (`.fui-*`) or a `[data-cui-*]` attribute |
 | `GOFASTR1811` | error | `!important` |
 | `GOFASTR1812` | error | a raw width in `@media` (`min-width: 768px`); write `(--above-md)` or `(--below-lg)`. Raw widths stay legal in `@container` |
 | `GOFASTR1813` | warn | `animation` with no `@media (--reduced-motion)` block for the same selector |

@@ -8,7 +8,7 @@
 // error state flip, hidden swapped between the two label parts,
 // aria-busy and disabled while pending, and an event at each step.
 // Attribute names are the owner's business: an adapter reads its own
-// markup and calls bind with a spec, so this module reads no data-fui-*
+// markup and calls bind with a spec, so this module reads no data-cui-*
 // attribute at all and scans nothing.
 //
 // It has no marker, so nothing loads it on its own: a module that

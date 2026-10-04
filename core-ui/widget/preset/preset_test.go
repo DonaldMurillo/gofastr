@@ -1,10 +1,13 @@
 package preset
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestModalDefaults(t *testing.T) {
@@ -77,7 +80,7 @@ func TestBannerDefaults(t *testing.T) {
 }
 
 func TestToastStackSlotEscapesName(t *testing.T) {
-	// The stack name is rendered into the data-fui-toast-stack
+	// The stack name is rendered into the data-cui-toast-stack
 	// attribute. If unescaped, a name containing `"` breaks out of
 	// the attribute (and via " onload=… could execute on browsers
 	// that load this attr lazily).
@@ -106,5 +109,35 @@ func TestBottomSheetDefaults(t *testing.T) {
 	}
 	if !d.CloseOnEscape || !d.CloseOnClickOutside {
 		t.Errorf("BottomSheet must close on ESC + click-outside")
+	}
+}
+
+func TestToastSlotRendersTheRegisteredTemplate(t *testing.T) {
+	registry.IsolateForTest(t)
+	bare := string(ToastSlotHTML(context.Background(), "ts"))
+	if strings.Contains(bare, "<template") || strings.Contains(bare, "class=") {
+		t.Fatalf("with no template registered the slot must be the bare container:\n%s", bare)
+	}
+	registry.RegisterTemplate(ToastTemplate, func(context.Context) render.HTML {
+		return render.HTML(`<template data-hui-toast-template=""><div class="kit-row"></div></template>`)
+	})
+	got := string(ToastSlotHTML(context.Background(), "ts"))
+	want := `<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="ts"><template data-hui-toast-template=""><div class="kit-row"></div></template></div>`
+	if got != want {
+		t.Fatalf("slot with a registered template:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestIsToastStackRecognisesOnlyThisPackagesStack(t *testing.T) {
+	stack := ToastStack("ts").Build()
+	if !IsToastStack(&stack) {
+		t.Fatal("IsToastStack is false for preset.ToastStack's own build")
+	}
+	other := Modal("m").Build()
+	if IsToastStack(&other) {
+		t.Fatal("IsToastStack is true for a modal")
+	}
+	if IsToastStack(nil) {
+		t.Fatal("IsToastStack is true for nil")
 	}
 }

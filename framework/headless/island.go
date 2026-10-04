@@ -13,7 +13,7 @@ import (
 // therefore says nothing. Here the request is a prop on the component
 // that fires it, so a table that turns its own pages says so in its
 // props, in one place, and the attributes cannot be forged through
-// ExtraAttrs — Safe drops every data-fui-* key on purpose.
+// ExtraAttrs — Safe drops every data-cui-* key on purpose.
 //
 // The framework's first hard rule is that an in-page state change is
 // never a route: no link that merely navigates for a new page of rows,
@@ -25,7 +25,7 @@ type Island struct {
 	// Endpoint is the RPC path the region's next rendering comes
 	// from: same-origin, starting with "/".
 	Endpoint string
-	// Signal is the data-fui-signal the region is bound to; the
+	// Signal is the data-cui-signal the region is bound to; the
 	// response replaces it.
 	Signal string
 }
@@ -40,7 +40,7 @@ func (i Island) check() {
 	}
 	checkSameOrigin("an Island", "Endpoint", i.Endpoint)
 	if i.Signal == "" {
-		panic("headless: an Island needs a Signal — the data-fui-signal the region is bound to")
+		panic("headless: an Island needs a Signal — the data-cui-signal the region is bound to")
 	}
 	checkSignalName(i.Signal)
 }

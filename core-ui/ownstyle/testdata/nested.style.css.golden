@@ -1,1 +1,1 @@
-@scope ([data-fui-scope="nested"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){.card{color:var(--color-text);&:hover{color:var(--color-primary)}.b &{color:var(--color-text)}@media (min-width: 768px){padding:var(--spacing-md)}}}
+@scope ([data-cui-scope="nested"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){.card{color:var(--color-text);&:hover{color:var(--color-primary)}.b &{color:var(--color-text)}@media (min-width: 768px){padding:var(--spacing-md)}}}

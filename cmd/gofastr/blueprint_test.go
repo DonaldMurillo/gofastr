@@ -1344,13 +1344,13 @@ func runBrowserUIE2E(t *testing.T, baseURL, wantEntityTitle string) {
 		chromedp.Evaluate(`!!document.querySelector('[data-widget="save_button"]')`, &hasWidget),
 		// The entity_list is server-rendered into a ui.DataTable on first paint
 		// (no client fetch / refresh button); the CRUD rows are already in the DOM.
-		chromedp.WaitVisible(`[data-fui-comp="ui-data-table"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-cui-comp="ui-data-table"]`, chromedp.ByQuery),
 		chromedp.Text(`[data-action-result]`, &before, chromedp.ByQuery),
 		chromedp.Click(`#save-action`, chromedp.ByID),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Text(`[data-action-result]`, &after, chromedp.ByQuery),
 		chromedp.Evaluate(`document.body.getAttribute('data-blueprint-clicked') || ''`, &clicked),
-		chromedp.Text(`[data-fui-comp="ui-data-table"]`, &entityListBody, chromedp.ByQuery),
+		chromedp.Text(`[data-cui-comp="ui-data-table"]`, &entityListBody, chromedp.ByQuery),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()`, &backgroundToken),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim()`, &primaryToken),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim()`, &textToken),

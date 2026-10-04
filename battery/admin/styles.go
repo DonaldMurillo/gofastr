@@ -25,10 +25,10 @@ var _ = registry.RegisterStyle("ui-admin", adminCSS)
 
 // shell wraps a screen root in a fresh element carrying the `ui-admin` marker
 // so ui-admin.css loads. We can't reuse WrapHTML here because the screen root
-// (a ui.Container) already carries its own data-fui-comp marker, and a tag
+// (a ui.Container) already carries its own data-cui-comp marker, and a tag
 // can only advertise one component.
 func (b *Battery) shell(root render.HTML) render.HTML {
-	return render.Tag("div", map[string]string{"data-fui-comp": "ui-admin", "class": "admin-root"}, root)
+	return render.Tag("div", map[string]string{"data-cui-comp": "ui-admin", "class": "admin-root"}, root)
 }
 
 func adminCSS(_ style.Theme) string {
@@ -77,7 +77,7 @@ func adminCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   margin-block-end: var(--spacing-lg, 16px);
 }
-.admin-toolbar [data-fui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: 26rem; }
+.admin-toolbar [data-cui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: 26rem; }
 .admin-toolbar .fui-search,
 .admin-toolbar .fui-search__form { inline-size: 100%; }
 

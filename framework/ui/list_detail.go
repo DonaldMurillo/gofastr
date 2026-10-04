@@ -49,7 +49,7 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 	}
 	attrs := html.SafeCarrierAttrs(cfg.ExtraAttrs)
 	for key := range attrs {
-		if strings.HasPrefix(strings.ToLower(key), "data-fui-") && key != "data-fui-vt" && key != "data-fui-vt-when" {
+		if lk := strings.ToLower(key); (strings.HasPrefix(lk, "data-cui-") || strings.HasPrefix(lk, "data-fui-")) && key != "data-cui-vt" && key != "data-cui-vt-when" {
 			delete(attrs, key)
 		}
 	}
@@ -73,7 +73,7 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 		}
 		backAttrs := html.Attrs{}
 		if cfg.Detail != "" {
-			backAttrs["data-fui-internal"] = ""
+			backAttrs["data-cui-internal"] = ""
 		}
 		back = html.Div(html.DivConfig{Class: "fui-list-detail__back", ExtraAttrs: backAttrs}, LinkButton(LinkButtonConfig{
 			Href: cfg.BackHref, Label: label, Variant: ButtonGhost, Icon: "chevron-left",
@@ -81,11 +81,11 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 	}
 	listAttrs := map[string]string{"class": "fui-list-detail__list", "aria-label": cfg.ListLabel, "tabindex": "0"}
 	if cfg.List == "" {
-		listAttrs["data-fui-internal"] = ""
+		listAttrs["data-cui-internal"] = ""
 	}
 	detailAttrs := html.Attrs{}
 	if cfg.Detail == "" {
-		detailAttrs["data-fui-internal"] = ""
+		detailAttrs["data-cui-internal"] = ""
 	}
 	return listDetailStyle.WrapHTML(html.Div(html.DivConfig{Class: class, ExtraAttrs: attrs},
 		render.Tag("nav", listAttrs, cfg.List),

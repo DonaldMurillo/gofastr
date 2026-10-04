@@ -311,7 +311,7 @@ func TestP13LoadingShowsOutsideTransition(t *testing.T) {
 		VT      bool `json:"vt"`
 	}
 	labJSON(t, tctx, `JSON.stringify({
-		loading: !!document.querySelector('[data-fui-loadstate="shown"]'),
+		loading: !!document.querySelector('[data-cui-loadstate="shown"]'),
 		vt: !!document.activeViewTransition,
 	})`, &flight)
 	if !flight.Loading {
@@ -404,7 +404,7 @@ func TestP13SupersededNavDoesNotPoisonCache(t *testing.T) {
 	); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if got := labRead(t, tctx, `main[data-fui-layout-slot="l:shell"]`); !strings.Contains(got, "SCREEN-MIX") || strings.Contains(got, "SCREEN-INBOX") {
+	if got := labRead(t, tctx, `main[data-cui-layout-slot="l:shell"]`); !strings.Contains(got, "SCREEN-MIX") || strings.Contains(got, "SCREEN-INBOX") {
 		t.Errorf("main slot after Back to /mix = %q; want SCREEN-MIX and NOT the origin's SCREEN-INBOX (the superseded nav poisoned the cache entry)", got)
 	}
 }

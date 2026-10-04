@@ -62,7 +62,7 @@ type FormProps struct {
 	Island Island
 
 	// Request is what the form DOES when the host framework's runtime
-	// is on the page: its data-fui-rpc contract — the endpoint the
+	// is on the page: its data-cui-rpc contract — the endpoint the
 	// submit posts to, a method that may differ from the native one
 	// (a form that natively POSTs for no-script may PUT over RPC),
 	// the success effects (a signal to land in, a page to navigate
@@ -70,7 +70,7 @@ type FormProps struct {
 	// generated form carries (data-action-mount, the compiled action
 	// that populates its relation selects). It is a seam of its own
 	// rather than a use of ExtraAttrs for the same reason Button's
-	// Action is: Safe drops every data-fui-* and data-action-* key, so
+	// Action is: Safe drops every data-cui-* and data-action-* key, so
 	// wiring through extras would render a plain form that posts
 	// natively. A key outside the request vocabulary panics at render,
 	// naming the key and the seam.
@@ -168,7 +168,7 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 // same-origin, methods must be ones the runtime sends, the debounce
 // must be a number, values that name things must name them.
 //
-// data-fui-rpc-body is refused with its own message: a form
+// data-cui-rpc-body is refused with its own message: a form
 // serializes itself, and a static body would drop every field on the
 // floor while the form sat there looking submitted.
 func formRequestAttrs(a html.Attrs) html.Attrs {
@@ -181,60 +181,60 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Form Request repeats " + k + " under two spellings")
 		}
 		switch k {
-		case "data-fui-rpc":
+		case "data-cui-rpc":
 			if v == "" {
-				panic("headless: Form Request carries an empty data-fui-rpc — a request with no endpoint")
+				panic("headless: Form Request carries an empty data-cui-rpc — a request with no endpoint")
 			}
-			checkSameOrigin("a Form Request", "data-fui-rpc", v)
+			checkSameOrigin("a Form Request", "data-cui-rpc", v)
 			out[k] = v
-		case "data-fui-rpc-method":
+		case "data-cui-rpc-method":
 			switch v {
 			case "GET", "POST", "PUT", "PATCH", "DELETE":
 			default:
-				panic("headless: Form Request carries data-fui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
+				panic("headless: Form Request carries data-cui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
 			}
 			out[k] = v
-		case "data-fui-rpc-signal":
+		case "data-cui-rpc-signal":
 			if v == "" {
-				panic("headless: Form Request carries an empty data-fui-rpc-signal — a success with nowhere to land")
+				panic("headless: Form Request carries an empty data-cui-rpc-signal — a success with nowhere to land")
 			}
 			checkSignalName(v)
 			out[k] = v
-		case "data-fui-rpc-navigate":
+		case "data-cui-rpc-navigate":
 			if v == "" {
-				panic("headless: Form Request carries an empty data-fui-rpc-navigate — a success with nowhere to go")
+				panic("headless: Form Request carries an empty data-cui-rpc-navigate — a success with nowhere to go")
 			}
-			checkSameOrigin("a Form Request", "data-fui-rpc-navigate", v)
+			checkSameOrigin("a Form Request", "data-cui-rpc-navigate", v)
 			out[k] = v
-		case "data-fui-rpc-open", "data-fui-rpc-refresh":
+		case "data-cui-rpc-open", "data-cui-rpc-refresh":
 			// open names the widget that opens on success; refresh
 			// names the one the runtime re-polls. Both name things.
 			if v == "" {
 				panic("headless: Form Request carries an empty " + k + " — it names a widget, and empty names nothing")
 			}
 			out[k] = v
-		case "data-fui-rpc-close", "data-fui-rpc-reset":
+		case "data-cui-rpc-close", "data-cui-rpc-reset":
 			// Presence is the value: close the enclosing widget,
 			// reset the form's own fields.
 			out[k] = v
-		case "data-fui-rpc-trigger":
+		case "data-cui-rpc-trigger":
 			if v != "input" {
-				panic("headless: Form Request carries data-fui-rpc-trigger " + strconv.Quote(v) + " — \"input\" is the only trigger a form's runtime reads")
+				panic("headless: Form Request carries data-cui-rpc-trigger " + strconv.Quote(v) + " — \"input\" is the only trigger a form's runtime reads")
 			}
 			out[k] = v
-		case "data-fui-rpc-debounce-ms":
+		case "data-cui-rpc-debounce-ms":
 			if v == "" {
-				panic("headless: Form Request carries an empty data-fui-rpc-debounce-ms — say the window or leave it to the default")
+				panic("headless: Form Request carries an empty data-cui-rpc-debounce-ms — say the window or leave it to the default")
 			}
 			for i := range len(v) {
 				if v[i] < '0' || v[i] > '9' {
-					panic("headless: Form Request carries data-fui-rpc-debounce-ms " + strconv.Quote(v) + ", which is not a number of milliseconds")
+					panic("headless: Form Request carries data-cui-rpc-debounce-ms " + strconv.Quote(v) + ", which is not a number of milliseconds")
 				}
 			}
 			out[k] = v
-		case "data-fui-confirm":
+		case "data-cui-confirm":
 			if v == "" {
-				panic("headless: Form Request carries an empty data-fui-confirm — a confirmation with no message confirms nothing")
+				panic("headless: Form Request carries an empty data-cui-confirm — a confirmation with no message confirms nothing")
 			}
 			out[k] = v
 		case "data-action-mount":
@@ -251,8 +251,8 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 				}
 			}
 			out[k] = v
-		case "data-fui-rpc-body":
-			panic("headless: Form Request carries data-fui-rpc-body — a form serializes itself; a static body would drop every field")
+		case "data-cui-rpc-body":
+			panic("headless: Form Request carries data-cui-rpc-body — a form serializes itself; a static body would drop every field")
 		default:
 			panic("headless: Form Request carries " + k + ", which is not a request attribute a form admits (the wiring vocabulary lives on FormProps.Request; decoration belongs in ExtraAttrs)")
 		}

@@ -180,10 +180,10 @@ func TestE2E_HeadlessLanding_WrapperClassesDiffer(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+landingRoutePath("default")),
 		pageReady(),
-		chromedp.Evaluate(`(document.querySelector('main div[class^="fui-theme-"]')||{}).className||''`, &defClass),
+		chromedp.Evaluate(`(document.querySelector('main div[class^="cui-theme-"]')||{}).className||''`, &defClass),
 		chromedp.Navigate(base+landingRoutePath("dense")),
 		pageReady(),
-		chromedp.Evaluate(`(document.querySelector('main div[class^="fui-theme-"]')||{}).className||''`, &denseClass),
+		chromedp.Evaluate(`(document.querySelector('main div[class^="cui-theme-"]')||{}).className||''`, &denseClass),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -257,7 +257,7 @@ func TestE2E_HeadlessLanding_OptionsTwinKeepsPalette(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`(() => {
   const sec = document.getElementById('hl-options');
-  const twin = sec.querySelector('div[class^="fui-theme-"]');
+  const twin = sec.querySelector('div[class^="cui-theme-"]');
   const ps = getComputedStyle(sec.querySelector('.fui-button--primary'));
   const ts = getComputedStyle(twin.querySelector('.fui-button--primary'));
   return {
@@ -359,17 +359,17 @@ func TestE2E_HeadlessLanding_ColdLoadAutoSheet(t *testing.T) {
 		pageReady(),
 		// Before: the LoadAuto sheet is not on the page and the region
 		// holds its initial copy.
-		chromedp.Evaluate(`document.querySelector('link[data-fui-style="ui-callout"]') === null`, &absentBefore),
+		chromedp.Evaluate(`document.querySelector('link[data-cui-style="ui-callout"]') === null`, &absentBefore),
 		// Click: the button fetches the fragment, the signal region
 		// swaps, and the runtime must scan the insertion for
-		// data-fui-comp and fetch the sheet. Condition waits, not a
+		// data-cui-comp and fetch the sheet. Condition waits, not a
 		// fixed sleep: the fragment arriving and the sheet landing are
 		// the two facts under test.
 		chromedp.Click(`#hl-late-button`, chromedp.ByQuery),
 		waitModule(`!!document.getElementById('hl-late-fragment')`),
-		waitModule(`!!document.querySelector('link[data-fui-style="ui-callout"]')`),
+		waitModule(`!!document.querySelector('link[data-cui-style="ui-callout"]')`),
 		chromedp.Evaluate(`!!document.getElementById('hl-late-fragment')`, &fragmentAfter),
-		chromedp.Evaluate(`!!document.querySelector('link[data-fui-style="ui-callout"]')`, &presentAfter),
+		chromedp.Evaluate(`!!document.querySelector('link[data-cui-style="ui-callout"]')`, &presentAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -381,7 +381,7 @@ func TestE2E_HeadlessLanding_ColdLoadAutoSheet(t *testing.T) {
 		t.Fatal("the late fragment never arrived in the signal region")
 	}
 	if !presentAfter {
-		t.Error("no <link data-fui-style=\"ui-callout\"> after the insertion — demand loading of the LoadAuto sheet did not fire")
+		t.Error("no <link data-cui-style=\"ui-callout\"> after the insertion — demand loading of the LoadAuto sheet did not fire")
 	}
 	if errs := sink.errors(); len(errs) > 0 {
 		t.Errorf("cold load produced console/CSP errors:\n  %s", strings.Join(errs, "\n  "))

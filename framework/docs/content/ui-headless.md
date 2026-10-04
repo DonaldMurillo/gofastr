@@ -45,7 +45,7 @@ value on the props, with three maps keyed by part:
   fillable. Most list none: a slot exists only where the component
   composes something no prop can express.
 - **Attrs** add attributes to a part, through a sanitiser that
-  refuses `id`, `style`, every `data-hui-*` hook, every `data-fui-*`
+  refuses `id`, `style`, every `data-hui-*` hook, every `data-cui-*`
   key and the runtime's privileged unprefixed keys (`data-behavior`,
   `data-island`, `data-action` and their family), stores names folded
   the way the browser reads them, refuses one name under two
@@ -117,8 +117,8 @@ client router intercepts when script is present, because changing the
 address bar IS changing the list's state; an Island enters only for a
 table or pager embedded in a region whose page turn must not
 navigate the document, and then the SAME anchors carry the framework's
-RPC contract (`data-fui-rpc`, `data-fui-rpc-method`, `data-fui-rpc-signal`,
-`data-fui-push-state`) beside their hrefs. First paint is the page;
+RPC contract (`data-cui-rpc`, `data-cui-rpc-method`, `data-cui-rpc-signal`,
+`data-cui-push-state`) beside their hrefs. First paint is the page;
 hydration makes it the island; the region is swapped in place and the
 address bar still follows, written by the runtime through
 `pushState` rather than by a navigation.
@@ -170,7 +170,7 @@ so the page and the island answer the same question. State keys (page,
 sort, filter) belong in the href and nowhere else: when the endpoint
 carries a key the href also carries, both values survive, the endpoint's
 first, and a handler that reads `Query().Get` sees the endpoint's stale
-one. `data-fui-push-state` is rendered only for a GET
+one. `data-cui-push-state` is rendered only for a GET
 with a href to write; a mutation's URL is the server's to set through
 `X-Gofastr-Push-State`.
 
@@ -197,7 +197,7 @@ and the class names are the same under every theme — a theme never
 picks classes, it declares option variables that the component's
 stylesheet consumes (see [theming](theming.md) → "Component
 options"). Discovery and styling stay separate there too: the
-`data-fui-comp="ui-button"` marker is what fetches the sheet; the
+`data-cui-comp="ui-button"` marker is what fetches the sheet; the
 classes are what the sheet matches. A bare headless button beside a
 styled one on the same page stays unstyled — that pair is one of the
 fixtures below.
@@ -206,14 +206,14 @@ The plain-markup form family renders through headless the same way:
 `ui.Form`, `ui.FormField` (whose `Input` is a builder receiving the
 field's wiring — the id, the described-by chain, the invalid state,
 the required flag), `ui.FormSection`, the typed fields, `ui.Select`
-(which carries its own `data-fui-comp="ui-select"` marker on the
+(which carries its own `data-cui-comp="ui-select"` marker on the
 control beside the field's marker, so both sheets load wherever it
 renders), `ui.ValidationSummary` and `ui.InputGroup`. `ui.Control` is
 the styled native input for the types the typed fields do not name,
 built inside a FormField builder from the wiring the field hands it.
 `ui.Form` routes its island wiring through `headless.FormProps.Request`,
 the typed request seam (what Button's `Action` is to a click): the
-`data-fui-rpc` contract, a method that may differ from the native
+`data-cui-rpc` contract, a method that may differ from the native
 one, the success effects, and the generator's `data-action-mount`
 hook, each checked for what it deserves.
 
@@ -249,11 +249,12 @@ matches (a field only a script can reveal is a field a scriptless
 reader never reaches — the module also disables what it hides, so
 nothing hidden submits); `ui.TextArea` is `headless.Field` +
 `headless.Textarea` the way `ui.Select` is, with `Autogrow` reaching
-the control through the prop that survives the data-fui-* refusal.
+the control through the prop that survives the data-cui-* refusal.
 `ui.SearchInput` has no headless counterpart (the icon, the clear
 button and the role="search" wrap are its own) and keeps its own
-module; the `searchinput` and `shortcut` runtime modules stay with it
-until the Batch 3 Combobox decision — retention, not a gap.
+module, registered from framework/ui (`searchinput.js` beside the
+component) the way FileDropzone's is: it binds the component's
+classes, so it is the kit's and not the kernel's.
 
 The stateful family renders through this package the same way, and
 its Island rules are the same rule: a `TagInput` owns its chips
@@ -265,11 +266,17 @@ complete `Island` exactly as an `Alert`'s dismiss does; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
 the error summary after the swap. A `ToastStack` is mounted once by
-the layout: it carries the framework's `data-fui-toast-stack` name
+the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
 SSR rows inside it are visible with no script, and it is the live
-region toasts announce by arriving in.
+region toasts announce by arriving in. The rows the module builds at
+runtime wear no class of this package's: `ToastTemplate` renders an
+inert `<template>` the kit dresses with its own class map and
+registers under `preset.ToastTemplate` (`registry.RegisterTemplate`,
+a renderer that takes the request context), `preset.ToastSlotHTML`
+ships it inside every stack, and `headless-feedback` clones a row
+from it. A page with no template gets the same row bare.
 
 The action buttons (`OptimisticAction`, `ToggleAction`, `Button`
 with an `Action`) keep the button contract: with no script they do
@@ -344,8 +351,8 @@ Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
-Repeater, Toast, ToastStack, NotificationBell, StepWizard and
-BackToTop. The navigation-behaviour members: Rail, TableOfContents,
+Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
+StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
 Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
 SidebarRegion, and the two pure-render trees JSONTree and Gallery.
 
@@ -369,7 +376,7 @@ The parts the navigation members draw beyond the shared vocabulary:
   `sidebar-group-list`, and `icon` with a `--fallback` variant (the
   label's initial, for rail states). `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
-  runtime's `data-fui-open` / `data-fui-deeplink` /
+  runtime's `data-cui-open` / `data-cui-deeplink` /
   `data-fui-lightbox-group` trigger family on every item anchor.
 
 ## The behaviour module
@@ -477,21 +484,27 @@ same way and each owning one family of the stateful controls:
 
 Two attributes are the `headless` module's own, written by it and
 rendered by no component: `data-hui-when-off` and `data-hui-drop-over`.
-One is `headless-navigation`'s: `data-hui-back-to-top-visible`.
+One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
+`headless-feedback`'s: `data-hui-copy-state="done"` on a copy control
+after a successful copy, and `data-hui-toast-leaving` on a toast item
+the moment it is dismissed; the kit's sheets style both.
 
 Two more modules of this package own the feedback and page-control
 families:
 
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
-  and `[data-fui-toast-stack]`, `[data-hui-notification-bell]`,
+  and `[data-cui-toast-stack]`, `[data-hui-notification-bell]`,
   `[data-hui-network-retry]`): the copy control (no clipboard mutation
   without script — the words travel on the wrapper from `Strings`),
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
-  this module now), the bell's spoken count re-said when a signal
-  changes it, and the offline banner's retry link. It replaced the
-  retired `copy`, `toasts` and `networkretrybanner` runtime modules.
+  this module now; a row is cloned from the stack's `ToastTemplate` and
+  the module names no class and mounts no stack — with no stack on the
+  page it returns `null` and the kernel's fallback region takes the
+  toast), the bell's spoken count re-said when a signal changes it,
+  and the offline banner's retry link. It replaced the retired `copy`,
+  `toasts` and `networkretrybanner` runtime modules.
 - **headless-navigation** (`[data-hui-back-to-top]`,
   `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
   the document, the visibility mark, the focus return) and the theme
@@ -572,7 +585,7 @@ class maps, and a bare headless render stays unstyled.
   allowed plain posture: its state is the URL's, and the Island is
   for the pager embedded in a region.
 - **Smuggling a request through `ExtraAttrs` or an Override.** Both
-  drop every `data-fui-*` key. A request is `ButtonProps.Action`, a
+  drop every `data-cui-*` key. A request is `ButtonProps.Action`, a
   signal is a `Bind`, a region's refresh is an `Island`.
 - **One attribute under two spellings.** `NAME` and `name` are one
   attribute to the browser, which keeps the first it reads. Both ways in

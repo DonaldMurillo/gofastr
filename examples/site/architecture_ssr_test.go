@@ -39,14 +39,14 @@ func archFetch(t *testing.T, base, path string) string {
 
 // CONTRACT: A hidden click-to-open widget is NOT inlined into the
 // page response. The runtime fetches its chrome lazily on first
-// data-fui-open click. Saves bytes per page; the trigger must do
+// data-cui-open click. Saves bytes per page; the trigger must do
 // the work the user expects without a guaranteed-loaded chrome.
 func TestArchSSR_HiddenWidgetNotInlined(t *testing.T) {
 	base := archStartServer(t)
 	page := archFetch(t, base, "/components/modal")
 
 	// site-demo-modal is registered Hidden, must not appear in the bare page.
-	if strings.Contains(page, `data-fui-widget="site-demo-modal"`) {
+	if strings.Contains(page, `data-cui-widget="site-demo-modal"`) {
 		t.Error("contract violation: hidden widget 'site-demo-modal' must NOT be inlined into the page response; runtime fetches chrome lazily")
 	}
 	if strings.Contains(page, "site-demo-modal-heading") {
@@ -63,7 +63,7 @@ func TestArchSSR_DeepLinkWidgetInlined(t *testing.T) {
 	// site-demo-modal is configured DeepLink("modal","user-edit") + DeepLinkParam("user_id").
 	page := archFetch(t, base, "/components/modal?modal=user-edit&user_id=42")
 
-	if !strings.Contains(page, `data-fui-widget="site-demo-modal"`) {
+	if !strings.Contains(page, `data-cui-widget="site-demo-modal"`) {
 		t.Error("contract violation: deep-link-matched widget must be SSR-inlined; was absent from the page response")
 	}
 	if !strings.Contains(page, `role="dialog"`) {
@@ -83,7 +83,7 @@ func TestArchSSR_AutoMountWidgetInlined(t *testing.T) {
 	// should appear on every page.
 	for _, path := range []string{"/", "/get-started", "/components/", "/components/modal"} {
 		page := archFetch(t, base, path)
-		if !strings.Contains(page, `data-fui-widget="site-toasts"`) {
+		if !strings.Contains(page, `data-cui-widget="site-toasts"`) {
 			t.Errorf("contract violation: auto-mount toast stack must be inlined on %s", path)
 		}
 	}
@@ -97,7 +97,7 @@ func TestArchSSR_DeepLinkWidgetIsOpen(t *testing.T) {
 	page := archFetch(t, base, "/components/modal?modal=user-edit&user_id=42")
 
 	// Find the site-demo-modal widget's outermost tag and assert no `hidden`.
-	idx := strings.Index(page, `data-fui-widget="site-demo-modal"`)
+	idx := strings.Index(page, `data-cui-widget="site-demo-modal"`)
 	if idx < 0 {
 		t.Fatal("widget not in page; can't check hidden state")
 	}
@@ -120,9 +120,9 @@ func TestArchSSR_BareURLHasNoHiddenWidgets(t *testing.T) {
 	page := archFetch(t, base, "/components/modal")
 
 	for _, hidden := range []string{
-		`data-fui-widget="site-demo-modal"`,
-		`data-fui-widget="site-demo-drawer"`,
-		`data-fui-widget="site-demo-bottomsheet"`,
+		`data-cui-widget="site-demo-modal"`,
+		`data-cui-widget="site-demo-drawer"`,
+		`data-cui-widget="site-demo-bottomsheet"`,
 	} {
 		if strings.Contains(page, hidden) {
 			t.Errorf("contract violation: hidden widget %q was inlined into bare /components/modal", hidden)
@@ -141,7 +141,7 @@ func TestArchSSR_ScopedWidgetsAbsentFromOtherPages(t *testing.T) {
 	// On /components/drawer it should be absent from BOTH the page
 	// HTML and the catalog endpoint.
 	drawerPage := archFetch(t, base, "/components/drawer")
-	if strings.Contains(drawerPage, `data-fui-widget="site-demo-modal"`) {
+	if strings.Contains(drawerPage, `data-cui-widget="site-demo-modal"`) {
 		t.Error("scoped widget site-demo-modal leaked onto /components/drawer SSR")
 	}
 	catalog := archFetch(t, base, "/__gofastr/widgets?page=/components/drawer")
@@ -152,14 +152,14 @@ func TestArchSSR_ScopedWidgetsAbsentFromOtherPages(t *testing.T) {
 	// site-demo-drawer is scoped to /components/drawer. Absent on
 	// /components/modal.
 	modalPage := archFetch(t, base, "/components/modal")
-	if strings.Contains(modalPage, `data-fui-widget="site-demo-drawer"`) {
+	if strings.Contains(modalPage, `data-cui-widget="site-demo-drawer"`) {
 		t.Error("scoped widget site-demo-drawer leaked onto /components/modal SSR")
 	}
 
 	// site-toasts is global, appears on every page.
 	for _, page := range []string{"/", "/get-started", "/components/modal", "/components/drawer"} {
 		body := archFetch(t, base, page)
-		if !strings.Contains(body, `data-fui-widget="site-toasts"`) {
+		if !strings.Contains(body, `data-cui-widget="site-toasts"`) {
 			t.Errorf("global widget site-toasts missing from %s", page)
 		}
 	}
@@ -173,7 +173,7 @@ func TestArchSSR_InlineLocationIsBeforeBodyClose(t *testing.T) {
 	base := archStartServer(t)
 	page := archFetch(t, base, "/components/modal?modal=user-edit&user_id=42")
 
-	widgetIdx := strings.Index(page, `data-fui-widget="site-demo-modal"`)
+	widgetIdx := strings.Index(page, `data-cui-widget="site-demo-modal"`)
 	bodyClose := strings.LastIndex(page, "</body>")
 	if widgetIdx < 0 || bodyClose < 0 {
 		t.Fatal("either widget or </body> missing — page malformed")

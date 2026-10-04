@@ -20,8 +20,8 @@ func TestLayoutKeyOverridesLayerIdentity(t *testing.T) {
 	a.Register("/es", &stubComp{html: "ES"}, app.BareShell("docs").WithKey("docs-es"))
 
 	for _, tc := range []struct{ path, wantKey string }{
-		{"/en", `data-fui-layout-key="l:docs-en"`},
-		{"/es", `data-fui-layout-key="l:docs-es"`},
+		{"/en", `data-cui-layout-key="l:docs-en"`},
+		{"/es", `data-cui-layout-key="l:docs-es"`},
 	} {
 		res, err := a.RenderPageResult(context.Background(), tc.path)
 		if err != nil {
@@ -31,9 +31,9 @@ func TestLayoutKeyOverridesLayerIdentity(t *testing.T) {
 		if !strings.Contains(s, tc.wantKey) {
 			t.Errorf("%s: key %q missing:\n%s", tc.path, tc.wantKey, s)
 		}
-		// The name is untouched: it still drives data-fui-layout and the
+		// The name is untouched: it still drives data-cui-layout and the
 		// wrapper class, so the layout's CSS contract is stable across keys.
-		if !strings.Contains(s, `data-fui-layout="docs"`) || !strings.Contains(s, `class="layout-docs"`) {
+		if !strings.Contains(s, `data-cui-layout="docs"`) || !strings.Contains(s, `class="layout-docs"`) {
 			t.Errorf("%s: name contract changed by WithKey:\n%s", tc.path, s)
 		}
 	}
@@ -63,10 +63,10 @@ func TestGroupLayerKeyUsesDeclaredKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(res.HTML)
-	if !strings.Contains(s, `data-fui-layout-key="g:/es/:docs-es"`) {
+	if !strings.Contains(s, `data-cui-layout-key="g:/es/:docs-es"`) {
 		t.Errorf("group layer must embed the declared key:\n%s", s)
 	}
-	if !strings.Contains(s, `data-fui-layout="docs"`) {
+	if !strings.Contains(s, `data-cui-layout="docs"`) {
 		t.Errorf("group layer name contract must not change:\n%s", s)
 	}
 }

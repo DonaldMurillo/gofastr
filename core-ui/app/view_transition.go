@@ -3,8 +3,8 @@ package app
 // view transitions.
 //
 // The transition demand module (runtime src/transition.js, loaded when
-// the document declares a transition: a [data-fui-vt] cell or a
-// data-fui-vt-kinds vocabulary) wraps a client navigation's DOM swap
+// the document declares a transition: a [data-cui-vt] cell or a
+// data-cui-vt-kinds vocabulary) wraps a client navigation's DOM swap
 // in document.startViewTransition({update, types}) with types
 // 'forward' | 'back' | 'reload'; a document that declares none swaps
 // directly, as before the layout work. What the transition LOOKS
@@ -154,15 +154,15 @@ func cssDur(d time.Duration) string {
 func (tr Transition) animCSS(name string) string {
 	var b strings.Builder
 	if tr.Narrow == "" {
-		fmt.Fprintf(&b, "[data-fui-vt=%q] { view-transition-name: %s; }\n", name, name)
+		fmt.Fprintf(&b, "[data-cui-vt=%q] { view-transition-name: %s; }\n", name, name)
 	} else {
 		// Narrow: the name is breakpoint-conditional — the placed cell
 		// above it, the build's VTRegion element below (one pane on a
 		// phone). Both rules key on the when-attribute so exactly one
-		// element matches at any width; a bare [data-fui-vt] selector
+		// element matches at any width; a bare [data-cui-vt] selector
 		// would name both and the browser would skip the transition.
-		fmt.Fprintf(&b, "@media (width >= %s) { [data-fui-vt=%q][data-fui-vt-when=\"(width >= %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
-		fmt.Fprintf(&b, "@media (width < %s) { [data-fui-vt=%q][data-fui-vt-when=\"(width < %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
+		fmt.Fprintf(&b, "@media (width >= %s) { [data-cui-vt=%q][data-cui-vt-when=\"(width >= %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
+		fmt.Fprintf(&b, "@media (width < %s) { [data-cui-vt=%q][data-cui-vt-when=\"(width < %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
 	}
 	leg := func(a Anim, newSnap bool) {
 		if a.kind == 0 {
@@ -284,22 +284,22 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 	switch preset {
 	case "fade":
 		return `/* gofastr view-transition preset "fade" (root) */
-::view-transition-old(root) { animation: fui-vt-fade-out .18s ease both; }
-::view-transition-new(root) { animation: fui-vt-fade-in .18s ease both; }
-@keyframes fui-vt-fade-out { to { opacity: 0; } }
-@keyframes fui-vt-fade-in { from { opacity: 0; } }
+::view-transition-old(root) { animation: cui-vt-fade-out .18s ease both; }
+::view-transition-new(root) { animation: cui-vt-fade-in .18s ease both; }
+@keyframes cui-vt-fade-out { to { opacity: 0; } }
+@keyframes cui-vt-fade-in { from { opacity: 0; } }
 `, nil
 	case "slide":
 		return `/* gofastr view-transition preset "slide" (root); forward = new page
    from the right, back = new page from the left. */
-::view-transition-old(root) { animation: fui-vt-slide-out .22s ease both; }
-::view-transition-new(root) { animation: fui-vt-slide-in .22s ease both; }
-:root:active-view-transition-type(back) ::view-transition-old(root) { animation-name: fui-vt-slide-out-b; }
-:root:active-view-transition-type(back) ::view-transition-new(root) { animation-name: fui-vt-slide-in-b; }
-@keyframes fui-vt-slide-in { from { transform: translateX(100%); } }
-@keyframes fui-vt-slide-out { to { transform: translateX(-24%); opacity: .6; } }
-@keyframes fui-vt-slide-in-b { from { transform: translateX(-100%); } }
-@keyframes fui-vt-slide-out-b { to { transform: translateX(24%); opacity: .6; } }
+::view-transition-old(root) { animation: cui-vt-slide-out .22s ease both; }
+::view-transition-new(root) { animation: cui-vt-slide-in .22s ease both; }
+:root:active-view-transition-type(back) ::view-transition-old(root) { animation-name: cui-vt-slide-out-b; }
+:root:active-view-transition-type(back) ::view-transition-new(root) { animation-name: cui-vt-slide-in-b; }
+@keyframes cui-vt-slide-in { from { transform: translateX(100%); } }
+@keyframes cui-vt-slide-out { to { transform: translateX(-24%); opacity: .6; } }
+@keyframes cui-vt-slide-in-b { from { transform: translateX(-100%); } }
+@keyframes cui-vt-slide-out-b { to { transform: translateX(24%); opacity: .6; } }
 `, nil
 	case "none":
 		return `/* gofastr view-transition preset "none" (root) */

@@ -441,11 +441,11 @@ func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 //
 // decodeBody (processmodule_proxy.go) validates a ui.node.v1 body through
 // uinodev1.Validate and renders it host-side as text/html, with the host
-// assigning every id, class, ARIA attribute and data-fui-rpc. A validation or
+// assigning every id, class, ARIA attribute and data-cui-rpc. A validation or
 // render failure is fail-safe: it surfaces as a buffered 503 and the module's
 // content never reaches the wire.
 //
-//   - DEMO_FORGE_DATAFUI: the child returns a tree smuggling a data-fui-rpc
+//   - DEMO_FORGE_DATAFUI: the child returns a tree smuggling a data-cui-rpc
 //     prop. Validate whole-tree rejects it, so /hello is a 503 and the forged
 //     attribute never reaches the response body. The /tree route returns the
 //     SAME bytes as a json body, which the proxy passes through, showing the
@@ -463,14 +463,14 @@ func TestGate_UIContainment(t *testing.T) {
 	registerEnableReady(t, forgeSup, dForged, framework.ApprovedGrants{"articles:read"})
 
 	// /hello (ui.node.v1): the render path validates the tree before rendering,
-	// so a forged data-fui-* prop whole-tree rejects → served-safe 503; the
+	// so a forged data-cui-* prop whole-tree rejects → served-safe 503; the
 	// forged attribute must NEVER appear in the response body.
 	helloRec := proxyGet(t, forgeSup, dForged.Name, "hello", "")
 	if helloRec.Code != http.StatusServiceUnavailable {
 		t.Errorf("forged /hello: status = %d, want 503 (validator rejected, served-safe)", helloRec.Code)
 	}
-	if strings.Contains(helloRec.Body.String(), "data-fui-rpc") {
-		t.Errorf("forged /hello: data-fui-rpc leaked into the response body: %q", helloRec.Body.String())
+	if strings.Contains(helloRec.Body.String(), "data-cui-rpc") {
+		t.Errorf("forged /hello: data-cui-rpc leaked into the response body: %q", helloRec.Body.String())
 	}
 
 	// /tree returns the forged bytes as json (passes through). The closed

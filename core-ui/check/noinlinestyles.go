@@ -52,7 +52,7 @@ var (
 	// whitespace, or `/` (the HTML5 tokenizer treats a solidus between
 	// attributes as whitespace, so `<img/src=x/style=…>` applies the
 	// style exactly like a space-separated twin) so prefixes like
-	// `data-fui-style=`, `font-style=`, `text-style=` (CSS,
+	// `data-cui-style=`, `font-style=`, `text-style=` (CSS,
 	// data-attributes, custom-named props) don't trigger false
 	// positives. The value is quoted, or an UNQUOTED run containing a
 	// `:` (a CSS declaration shape, `style=color:red`): unquoted

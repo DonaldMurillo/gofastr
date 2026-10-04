@@ -18,11 +18,11 @@ func TestFloatingToolbarComposesUIToolbar(t *testing.T) {
 		Groups: []ui.ToolbarGroup{{Children: []render.HTML{plain(`<button>Start</button>`)}}},
 	}))
 	for _, w := range []string{
-		`data-fui-comp="desktopui-floating-toolbar"`,
-		`data-fui-comp="ui-toolbar"`,
+		`data-cui-comp="desktopui-floating-toolbar"`,
+		`data-cui-comp="ui-toolbar"`,
 		`role="toolbar"`,
 		`aria-label="Timer actions"`,
-		`data-fui-comp="desktopui-glass"`,
+		`data-cui-comp="desktopui-glass"`,
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("floating toolbar missing %q:\n%s", w, out)
@@ -38,10 +38,10 @@ func TestFloatingToolbarComposesUIToolbar(t *testing.T) {
 func TestFloatingToolbarCSS(t *testing.T) {
 	css := componentCSS(t, "desktopui-floating-toolbar")
 	for _, w := range []string{
-		`[data-fui-comp="desktopui-floating-toolbar"] {`,
+		`[data-cui-comp="desktopui-floating-toolbar"] {`,
 		"position: sticky",
 		"var(--z-sticky",
-		`[data-fui-comp="desktopui-floating-toolbar"] [data-fui-comp="ui-toolbar"]`,
+		`[data-cui-comp="desktopui-floating-toolbar"] [data-cui-comp="ui-toolbar"]`,
 		"background: transparent",
 		"border: none",
 		"border-radius: var(--radii-full",
@@ -62,12 +62,12 @@ func TestInspectorComposesDetailList(t *testing.T) {
 		},
 	}))
 	for _, w := range []string{
-		`data-fui-comp="desktopui-inspector"`,
-		`data-fui-comp="desktopui-glass"`,
+		`data-cui-comp="desktopui-inspector"`,
+		`data-cui-comp="desktopui-glass"`,
 		`role="region"`,
 		`aria-label="Task details"`,
 		`>Write the brief</h2>`,
-		`data-fui-comp="ui-detail-list"`,
+		`data-cui-comp="ui-detail-list"`,
 		`<dt`,
 	} {
 		if !strings.Contains(out, w) {
@@ -101,8 +101,8 @@ func TestSheetSurface(t *testing.T) {
 		Footer: plain(`<button>Discard</button>`),
 	}, plain(`<p>The draft is unsaved.</p>`)))
 	for _, w := range []string{
-		`data-fui-comp="desktopui-sheet"`,
-		`data-fui-comp="desktopui-glass"`,
+		`data-cui-comp="desktopui-sheet"`,
+		`data-cui-comp="desktopui-glass"`,
 		`desktopui-glass--thick`,
 		`role="dialog"`,
 		`aria-label="Discard draft?"`,
@@ -135,7 +135,7 @@ func TestPopoverSurface(t *testing.T) {
 		Title: "Quick actions",
 	}, plain(`<p>Pick one.</p>`)))
 	for _, w := range []string{
-		`data-fui-comp="desktopui-popover"`,
+		`data-cui-comp="desktopui-popover"`,
 		`desktopui-glass--thick`,
 		`role="dialog"`,
 		`aria-label="Quick actions"`,
@@ -173,7 +173,7 @@ func TestInspectorSplitTrailingColumn(t *testing.T) {
 	out := string(desktopui.InspectorSplit(plain(`<p>body</p>`), plain(`<aside>facts</aside>`)))
 	body := strings.Index(out, "<p>body</p>")
 	facts := strings.Index(out, "<aside>facts</aside>")
-	if !strings.Contains(out, `data-fui-comp="desktopui-inspector-split"`) || body < 0 || facts < body {
+	if !strings.Contains(out, `data-cui-comp="desktopui-inspector-split"`) || body < 0 || facts < body {
 		t.Fatalf("split must render content then inspector under its marker:\n%s", out)
 	}
 	if strings.Contains(out, "style=") {
@@ -202,7 +202,7 @@ func TestPanelRulesMatchMarkedElement(t *testing.T) {
 		{"popover", string(desktopui.Popover(desktopui.PopoverConfig{Title: "More"}))},
 	}
 	for _, c := range cases {
-		marker := `data-fui-comp="desktopui-` + c.name + `"`
+		marker := `data-cui-comp="desktopui-` + c.name + `"`
 		i := strings.Index(c.out, marker)
 		if i < 0 {
 			t.Fatalf("%s: no marker:\n%s", c.name, c.out)
@@ -212,7 +212,7 @@ func TestPanelRulesMatchMarkedElement(t *testing.T) {
 			t.Fatalf("%s: marker is not on the panel element:\n%s", c.name, c.out)
 		}
 		css := componentCSS(t, "desktopui-"+c.name)
-		if !strings.Contains(css, `[data-fui-comp="desktopui-`+c.name+`"].desktopui-`+c.name+` {`) {
+		if !strings.Contains(css, `[data-cui-comp="desktopui-`+c.name+`"].desktopui-`+c.name+` {`) {
 			t.Errorf("%s: panel rule does not target the marked element:\n%s", c.name, css)
 		}
 	}

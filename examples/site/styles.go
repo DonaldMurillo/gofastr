@@ -385,9 +385,9 @@ func tagsAndButtons(ss *style.StyleSheet) {
 	// The status pill (.tag / .tag.accent / .dot) is now ui.StatusPill, which
 	// ships its own CSS. The site only retunes the accent border/bg to the v2
 	// tokens via the component's --ui-status-pill-* vars.
-	ss.Rule(`[data-fui-comp="ui-status-pill"]`).
+	ss.Rule(`[data-cui-comp="ui-status-pill"]`).
 		Set("border-color", "var(--line-faint)").End()
-	ss.Rule(`[data-fui-comp="ui-status-pill"].fui-status-pill--accent`).
+	ss.Rule(`[data-cui-comp="ui-status-pill"].fui-status-pill--accent`).
 		Set("--ui-status-pill-accent-border", "var(--accent-dim)").End()
 
 	// Spacing utilities used in place of inline style="margin-bottom:…"
@@ -419,7 +419,7 @@ func codeBlockStyles(ss *style.StyleSheet) {
 	// ui.CodeBlock, which ships its own framed CSS + the framework CopyButton.
 	// The site only retunes the green status dot to the v2 string-token colour
 	// and supplies the mono font scale via the component's vars.
-	ss.Rule(`[data-fui-comp="ui-code-block"].fui-code-block--framed`).
+	ss.Rule(`[data-cui-comp="ui-code-block"].fui-code-block--framed`).
 		Set("font-family", "{fonts.mono}",
 			"font-size", "var(--t-sm)",
 			"line-height", "1.65",
@@ -718,7 +718,7 @@ func agentsLayout(ss *style.StyleSheet) {
 	// The terminal mock (.term / .term__head / .term__body) is now
 	// ui.TerminalBlock, which ships its own CSS. The site only retunes the
 	// header rule + success colour to the v2 tokens via the component vars.
-	ss.Rule(`[data-fui-comp="ui-terminal-block"]`).
+	ss.Rule(`[data-cui-comp="ui-terminal-block"]`).
 		Set("--ui-terminal-block-head-border", "var(--line-faint)",
 			"--ui-terminal-block-ok-color", "var(--tk-str)").End()
 }

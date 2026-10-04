@@ -247,7 +247,7 @@ sitefooter` copy the canonical packages into the app as owned code
 (Go, owned sheet, generated class methods, tests); `examples/acme-site`
 keeps customised copies of the same packages as a worked example. The
 header has the brand, a nav whose Help link stays lit on every page
-under `/help` (`data-fui-match-prefix`), a call to action, a theme
+under `/help` (`data-cui-match-prefix`), a call to action, a theme
 toggle, and a phone menu that works without JavaScript. Its chromium
 test checks that the brand and the call to action sit on the page
 column at 1440 and 390 px.

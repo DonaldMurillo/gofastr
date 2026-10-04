@@ -10,7 +10,7 @@ import (
 func TestCardRendersHeadingAndBody(t *testing.T) {
 	h := Card(CardConfig{Heading: "Recent activity"}, render.Text("BODY"))
 	for _, want := range []string{
-		`data-fui-comp="ui-card"`,
+		`data-cui-comp="ui-card"`,
 		"fui-card__heading",
 		"Recent activity",
 		"BODY",
@@ -62,7 +62,7 @@ func TestCardWithoutHeadingFallsBackToDiv(t *testing.T) {
 	if strings.Contains(string(h), "aria-labelledby") {
 		t.Fatalf("no Heading must not emit aria-labelledby:\n%s", h)
 	}
-	if !strings.Contains(string(h), `data-fui-comp="ui-card"`) {
+	if !strings.Contains(string(h), `data-cui-comp="ui-card"`) {
 		t.Fatalf("expected ui-card marker:\n%s", h)
 	}
 }
@@ -83,7 +83,7 @@ func TestCardExtraAttrsOnEveryRootShape(t *testing.T) {
 
 func TestCardExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := Card(CardConfig{Href: "/real", Class: "mine", ExtraAttrs: map[string]string{
-		"Class": "evil", "href": "javascript:alert(1)", "data-fui-comp": "spoof",
+		"Class": "evil", "href": "javascript:alert(1)", "data-cui-comp": "spoof",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	for _, banned := range []string{"evil", "javascript:", "spoof"} {

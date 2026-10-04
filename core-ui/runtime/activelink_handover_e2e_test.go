@@ -1,7 +1,7 @@
 package runtime
 
 // The activelink ownership handover: a link carrying
-// data-fui-match-prefix (ui.Sidebar emits its MatchPath there) is
+// data-cui-match-prefix (ui.Sidebar emits its MatchPath there) is
 // activelink's to mark AND CLEAR — a server-rendered first-paint
 // aria-current on it must not survive a navigation that moved
 // elsewhere, or a kept sidebar shows two lit entries. A link with
@@ -25,12 +25,17 @@ func activelinkHandoverPage() string {
   <nav aria-label="Primary">
     <!-- The kept-sidebar shape: the STALE first-paint mark sits on a
          link the live route is NOT at, beside the handover attribute
-         (ui.Sidebar emits data-fui-match-prefix). Landing on /, the
+         (ui.Sidebar emits data-cui-match-prefix). Landing on /, the
          sweep must clear Other's inherited mark while marking Home. -->
-    <a id="home" href="/" data-fui-match-prefix="/">Home</a>
-    <a id="other" href="/other" aria-current="page" data-fui-match-prefix="/other">Other</a>
+    <a id="home" href="/" data-cui-match-prefix="/">Home</a>
+    <a id="other" href="/other" aria-current="page" data-cui-match-prefix="/other">Other</a>
     <!-- A host-owned mark with no handover: pagination's shape. -->
     <a id="owned" href="/owned" aria-current="page">Owned</a>
+    <!-- The plain sidebar leaf: no section prefix, but its first-paint
+         mark is handed over all the same (headless.Sidebar emits
+         data-cui-activelink on every leaf). A navigation that lands
+         before the idle module loads must still clear it. -->
+    <a id="leaf" href="/leaf" aria-current="page" data-cui-activelink>Leaf</a>
   </nav>
   <main id="main">ready</main>
   <script src="/__gofastr/runtime.js"></script>
@@ -69,7 +74,7 @@ func activelinkHandoverServer(t *testing.T) *httptest.Server {
 
 // TestActiveLinkClearsHandedOverMarks: the load-time sweep marks the
 // current link and clears the STALE first-paint mark a kept layer
-// carries (the sidebar shape: aria-current + data-fui-match-prefix),
+// carries (the sidebar shape: aria-current + data-cui-match-prefix),
 // while a host-owned mark with no handover attribute keeps its own
 // aria-current untouched. Mutation it catches: reverting the clear
 // branch to the module's own .active class only leaves the stale SSR
@@ -91,7 +96,7 @@ func TestActiveLinkClearsHandedOverMarks(t *testing.T) {
 	var marks map[string]string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		const g = (id) => document.getElementById(id).getAttribute('aria-current') || '';
-		return { home: g('home'), other: g('other'), owned: g('owned') };
+		return { home: g('home'), other: g('other'), owned: g('owned'), leaf: g('leaf') };
 	})()`, &marks)); err != nil {
 		t.Fatal(err)
 	}
@@ -103,5 +108,8 @@ func TestActiveLinkClearsHandedOverMarks(t *testing.T) {
 	}
 	if marks["owned"] != "page" {
 		t.Errorf("the host-owned mark was stripped (aria-current=%q): activelink must clear only what it owns or was handed", marks["owned"])
+	}
+	if marks["leaf"] != "" {
+		t.Errorf("the stale mark survived on a data-cui-activelink leaf (aria-current=%q): the sidebar hands every leaf to the sweep, prefix or not", marks["leaf"])
 	}
 }

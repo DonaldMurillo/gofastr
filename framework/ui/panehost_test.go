@@ -57,7 +57,7 @@ func TestPaneHostPanicsWithoutPrimary(t *testing.T) {
 
 func TestPaneHostRootEmitsMarkerAttrs(t *testing.T) {
 	h := string(PaneHost(PaneHostConfig{Primary: render.Text("P")}))
-	mustContain(t, render.HTML(h), `data-fui-comp="ui-pane-host"`)
+	mustContain(t, render.HTML(h), `data-cui-comp="ui-pane-host"`)
 	mustContain(t, render.HTML(h), `data-hui-panehost=""`)
 	mustContain(t, render.HTML(h), `data-hui-pane="primary"`)
 	mustContain(t, render.HTML(h), ">P<")

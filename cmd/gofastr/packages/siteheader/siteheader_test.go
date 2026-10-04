@@ -31,7 +31,7 @@ func TestRenderBarLandmarks(t *testing.T) {
 	html := string(siteheader.Render(full()))
 	for _, want := range []string{
 		// The banner landmark, owned by this package's style.
-		"<header", `role="banner"`, `data-fui-scope="siteheader"`,
+		"<header", `role="banner"`, `data-cui-scope="siteheader"`,
 		// The bar and its regions.
 		`class="bar"`, `class="brand"`, `class="links"`, `class="end"`,
 		`aria-label="Primary"`,
@@ -73,10 +73,10 @@ func TestRenderSectionLinkMarking(t *testing.T) {
 	// runtime's active-link pass reads, in the bar's nav and again in
 	// the phone menu's.
 	i := strings.Index(html, `href="/help"`)
-	if i < 0 || !strings.Contains(html[:i], "data-fui-match-prefix") {
-		t.Errorf("the section link should carry data-fui-match-prefix before its href:\n%s", html)
+	if i < 0 || !strings.Contains(html[:i], "data-cui-match-prefix") {
+		t.Errorf("the section link should carry data-cui-match-prefix before its href:\n%s", html)
 	}
-	if n := strings.Count(html, "data-fui-match-prefix"); n != 2 {
+	if n := strings.Count(html, "data-cui-match-prefix"); n != 2 {
 		t.Errorf("the section link should be marked in the bar and the phone menu, found %d markers", n)
 	}
 }

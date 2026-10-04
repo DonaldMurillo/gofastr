@@ -37,7 +37,7 @@ func TestFanout_ProducerUpdatesConsumersWithoutPerConsumerRequests(t *testing.T)
 	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/rename", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&renameHits, 1)
-		// The response body becomes the new signal value (data-fui-rpc-signal).
+		// The response body becomes the new signal value (data-cui-rpc-signal).
 		fmt.Fprint(w, "NewCo")
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -64,9 +64,9 @@ func TestFanout_ProducerUpdatesConsumersWithoutPerConsumerRequests(t *testing.T)
 		fmt.Fprint(w, `<!doctype html><html><head>
   <script type="application/json" id="gofastr-signals">{"org.company":"Acme"}</script>
 </head><body>
-  <span id="c1" data-fui-signal="org.company">Acme</span>
-  <strong id="c2" data-fui-signal="org.company">Acme</strong>
-  <button id="producer" data-fui-rpc="/rename" data-fui-rpc-method="POST" data-fui-rpc-signal="org.company">Rename</button>
+  <span id="c1" data-cui-signal="org.company">Acme</span>
+  <strong id="c2" data-cui-signal="org.company">Acme</strong>
+  <button id="producer" data-cui-rpc="/rename" data-cui-rpc-method="POST" data-cui-rpc-signal="org.company">Rename</button>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)

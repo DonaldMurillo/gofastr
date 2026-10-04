@@ -90,16 +90,16 @@ func (s *Sheet) buildCSS(t style.Theme) string {
 	return out
 }
 
-// Scope stamps the owner's root with data-fui-scope="<name>": the
+// Scope stamps the owner's root with data-cui-scope="<name>": the
 // compiled @scope's bound AND the loader marker (slice 3 widens the
-// SSR and runtime marker scans to [data-fui-scope]). It stamps ONLY
+// SSR and runtime marker scans to [data-cui-scope]). It stamps ONLY
 // that attribute — a kit-rooted element (Style.Scope(ui.Card(...)))
-// already carries data-fui-comp="ui-card", and a second loader marker
+// already carries data-cui-comp="ui-card", and a second loader marker
 // on the same element would collide with the kit's own loading; the
 // kit marker is left exactly as it is.
 //
 // Stamping the same name again is a no-op. A root that already carries
-// a DIFFERENT data-fui-scope panics: two owners on one element cannot
+// a DIFFERENT data-cui-scope panics: two owners on one element cannot
 // both be right (the outer scope's lower bound stops at the inner's
 // root); nest the owners on separate elements instead. Also panics on
 // the app sheet — the app owner has no root element; its scope is
@@ -109,7 +109,7 @@ func (s *Sheet) Scope(root render.HTML) render.HTML {
 	if s.kind == KindApp {
 		panic("ownstyle: (*Sheet).Scope on the app sheet: the app owner has no root element; its scope is :root")
 	}
-	if v, ok, err := registry.Attribute(root, "data-fui-scope"); err != nil {
+	if v, ok, err := registry.Attribute(root, "data-cui-scope"); err != nil {
 		panic(err)
 	} else if ok {
 		if v == s.name {
@@ -119,7 +119,7 @@ func (s *Sheet) Scope(root render.HTML) render.HTML {
 			"ownstyle: this element is already scoped to %q; two owned styles cannot share one root (the outer scope stops at the inner's boundary). Nest the owners on separate elements instead.",
 			v))
 	}
-	out, err := registry.InjectAttribute(root, "data-fui-scope", s.name)
+	out, err := registry.InjectAttribute(root, "data-cui-scope", s.name)
 	if err != nil {
 		panic(err)
 	}

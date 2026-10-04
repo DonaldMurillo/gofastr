@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// injectMarker splices ` data-fui-comp="<name>"` into the first
+// injectMarker splices ` data-cui-comp="<name>"` into the first
 // opening tag of html. No HTML parser: a small state machine finds
 // the end of the opening tag (the `>` that is not inside an attribute
 // quote) and inserts the attribute just before it.
@@ -60,16 +60,16 @@ func injectMarker(html, name string) (render.HTML, error) {
 		return render.HTML(html), fmt.Errorf("registry: component %q produced an unterminated open tag", name)
 	}
 
-	// If the outermost tag already carries data-fui-comp (e.g. the
+	// If the outermost tag already carries data-cui-comp (e.g. the
 	// caller is composing a component wrapped by another Style, or
 	// WrapHTML was already applied), leave the html alone. Double-
 	// marker would inflate Scan output and emit a stray <link>.
 	openTag := html[i:end]
-	if hasAttribute(openTag, "data-fui-comp") {
+	if hasAttribute(openTag, "data-cui-comp") {
 		return render.HTML(html), nil
 	}
 
-	return render.HTML(spliceAttr(html, i, end, "data-fui-comp", name)), nil
+	return render.HTML(spliceAttr(html, i, end, "data-cui-comp", name)), nil
 }
 
 // attrNameOK validates an attribute name: a letter or underscore (or
@@ -100,7 +100,7 @@ func attrNameOK(name string) bool {
 //
 // Idempotent: when the first tag already carries the attribute, src is
 // returned unchanged — the same posture injectMarker takes for
-// data-fui-comp, so a caller composing wrappers keeps the first stamp.
+// data-cui-comp, so a caller composing wrappers keeps the first stamp.
 //
 // Errors when src does not begin with an element open tag (after
 // leading whitespace and comments) or the tag is unterminated.
@@ -160,10 +160,10 @@ func spliceAttr(html string, i, end int, name, value string) string {
 
 // hasAttribute reports whether the given opening-tag slice already
 // contains the named attribute. Quote-aware: matches inside quoted
-// attribute values (e.g. `class="x data-fui-comp x"`) don't count.
+// attribute values (e.g. `class="x data-cui-comp x"`) don't count.
 // Boundary before the attr name must be whitespace; boundary after
 // must be `=`, whitespace, `/`, or `>` so we don't match prefix
-// collisions like `data-fui-comp-extra`.
+// collisions like `data-cui-comp-extra`.
 func hasAttribute(openTag, name string) bool {
 	var quote byte
 	for at := 0; at+len(name) <= len(openTag); at++ {
@@ -319,8 +319,8 @@ func Attribute(src render.HTML, name string) (string, bool, error) {
 
 // attrAt reports whether openTag[at:] starts the attribute name at a
 // name boundary on BOTH sides: whitespace before, and '=', whitespace,
-// '/' or the tag's end after (so data-fui-scopey is not
-// data-fui-scope).
+// '/' or the tag's end after (so data-cui-scopey is not
+// data-cui-scope).
 func attrAt(openTag string, at int, name string) bool {
 	rest := openTag[at:]
 	if !strings.HasPrefix(rest, name) {

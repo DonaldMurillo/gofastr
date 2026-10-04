@@ -28,6 +28,6 @@ func EmptyValue() render.HTML {
 var mutedStyle = registry.RegisterStyle("ui-muted", mutedCSS)
 
 func mutedCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-muted"] { color: var(--color-text-muted, #64748b); }
+	return `[data-cui-comp="ui-muted"] { color: var(--color-text-muted, #64748b); }
 `
 }

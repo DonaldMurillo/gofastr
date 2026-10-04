@@ -16,8 +16,8 @@ import (
 // A <select> change is delivered as an `input` event in every modern
 // browser, so a hand-written island can drive a select-triggered RPC with
 // the documented recipe, wrap the control in
-// `<form data-fui-rpc data-fui-rpc-trigger="input">`, WITHOUT any dedicated
-// data-fui-rpc-trigger="change". This test is the empirical proof behind the
+// `<form data-cui-rpc data-cui-rpc-trigger="input">`, WITHOUT any dedicated
+// data-cui-rpc-trigger="change". This test is the empirical proof behind the
 // recipe in framework/docs/content/interactive-patterns.md: it selects an
 // option and asserts the runtime posted the control's `name` as the JSON key.
 func TestInputTrigger_SelectFiresRPC(t *testing.T) {
@@ -48,8 +48,8 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 		// debounce-ms=1 keeps the test fast; the select still rides the
 		// `input` event the same as any keystroke would.
 		fmt.Fprint(w, `<!doctype html><html><head><title>select-trigger</title></head><body>
-  <form data-fui-rpc="/filter" data-fui-rpc-method="POST"
-        data-fui-rpc-trigger="input" data-fui-rpc-debounce-ms="1">
+  <form data-cui-rpc="/filter" data-cui-rpc-method="POST"
+        data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
     <select id="cat" name="category">
       <option value="all">All</option>
       <option value="tools">Tools</option>
@@ -120,8 +120,8 @@ func TestInputTrigger_DivCarrierSendsControls(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>div-carrier</title></head><body>
-  <div data-fui-rpc="/search" data-fui-rpc-method="POST"
-       data-fui-rpc-trigger="input" data-fui-rpc-debounce-ms="1">
+  <div data-cui-rpc="/search" data-cui-rpc-method="POST"
+       data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
     <input id="q" name="q" type="text" autocomplete="off">
   </div>
   <script src="/__gofastr/runtime.js"></script>

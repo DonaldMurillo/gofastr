@@ -58,7 +58,7 @@ type SpinnerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the spinner's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and role — the live-region contract is the
+	// style, data-cui-* and role — the live-region contract is the
 	// primitive's.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the loading label.
@@ -81,7 +81,7 @@ var spinnerClasses = headless.Classes{
 
 // Spinner renders a loading indicator on headless.Spinner.
 //
-// Pair with data-fui-rpc lifecycle to surface pending state on
+// Pair with data-cui-rpc lifecycle to surface pending state on
 // island-side updates: the runtime adds `aria-busy="true"` to the
 // containing form / button while the RPC is in flight, so a CSS
 // rule can switch a sibling Spinner from `visibility:hidden` to

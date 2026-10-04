@@ -27,7 +27,7 @@ type SignOutConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the control's root <form>.
 	// Keys the component owns are dropped: class (use Class),
-	// data-fui-*, method, and action.
+	// data-cui-*, method, and action.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the sign-out label.
 	// When nil, English fallbacks apply.
@@ -68,14 +68,14 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	var b strings.Builder
 	// csrf-exempt: battery/auth's logout handler enforces same-origin requests,
 	// and auth.WithBFFPosture exempts only this route from its global CSRF gate.
-	b.WriteString(`<form data-fui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `"`)
+	b.WriteString(`<form data-cui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `"`)
 	// Caller extras land after the owned attributes. render.Attr
 	// validates the key and escapes the value, matching render.Tag.
 	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")))
 	b.WriteString(`>`)
 	if cfg.Next != "" {
 		// Built entirely from cfg.Next, a string, never caller markup.
-		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `" data-fui-internal>`)
+		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `" data-cui-internal>`)
 	}
 	// The button is built entirely from typed SignOutConfig fields,
 	// never caller markup; it never marks its own root (an owner must
@@ -87,7 +87,7 @@ func SignOut(cfg SignOutConfig) render.HTML {
 }
 
 var signOutStyle = registry.RegisterStyle("ui-sign-out", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-sign-out"] { display: inline-flex; margin: 0; }`
+	return `[data-cui-comp="ui-sign-out"] { display: inline-flex; margin: 0; }`
 })
 
 var _ = signOutStyle

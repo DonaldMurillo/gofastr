@@ -134,15 +134,15 @@ func TestOutlet404FromOtherChainAndRepair(t *testing.T) {
 		// FULL document; the server answers 404 + the not-found page.
 		chromedp.Click(`#cross-gone`, chromedp.ByID),
 		chromedp.WaitVisible(`#nf-body`, chromedp.ByID),
-		chromedp.Evaluate(`document.querySelector('[data-fui-layout]').getAttribute('data-fui-layout')`, &layout),
+		chromedp.Evaluate(`document.querySelector('[data-cui-layout]').getAttribute('data-cui-layout')`, &layout),
 		chromedp.Evaluate(`location.pathname`, &url),
-		chromedp.Evaluate(`!document.querySelector('[data-fui-layout-key="l:site"]')`, &siteShellGone),
+		chromedp.Evaluate(`!document.querySelector('[data-cui-layout-key="l:site"]')`, &siteShellGone),
 
 		// The repair round-trips: home is cross-chain from the help
 		// shell too, and its 200 full document swaps the shell back.
 		chromedp.Click(`#to-home`, chromedp.ByID),
 		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
-		chromedp.Evaluate(`document.querySelector('[data-fui-layout]').getAttribute('data-fui-layout')`, &homeBack),
+		chromedp.Evaluate(`document.querySelector('[data-cui-layout]').getAttribute('data-cui-layout')`, &homeBack),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}

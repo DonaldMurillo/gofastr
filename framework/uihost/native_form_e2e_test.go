@@ -18,7 +18,7 @@ import (
 
 // TestNativeForm_UnadornedFormSubmitsNatively pins the canonical
 // "host writes a plain form, the framework gets out of the way" case.
-// A form with NO enctype attribute and NO data-fui-spa MUST submit
+// A form with NO enctype attribute and NO data-cui-spa MUST submit
 // browser-native (urlencoded), the server's Set-Cookie MUST stick,
 // and the server's 303 redirect MUST be followed by the browser.
 //

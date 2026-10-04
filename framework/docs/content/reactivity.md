@@ -6,7 +6,7 @@ reach for the next one only when the lower one cannot do the job.
 
 | Rung | What it is | When it fits |
 |---|---|---|
-| **Client signal** | A string value held in the runtime signal store, mutated by `data-fui-signal-set/inc/toggle`. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
+| **Client signal** | A string value held in the runtime signal store, mutated by `data-cui-signal-set/inc/toggle`. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
 | **RPC** | A `fetch` to a server handler. The server reads from the DB and returns HTML or a value; the runtime swaps the region or sets a signal. | Anything the user triggered. The default for data. |
 | **Polling** | The runtime re-fetches a region on an interval. | Passive freshness for a counter, a status, or a dashboard, without holding a connection. |
 | **SSE push** | One long-lived `/__gofastr/sse` connection per page. The server pushes when state changes. | Semantics that need the connection: presence, collaborative editing, sub-second internal dashboards. |
@@ -20,11 +20,11 @@ Three click-time primitives mutate it:
 
 | Attribute | Effect |
 |---|---|
-| `data-fui-signal-set="name:value"` | Sets `name` to `value` |
-| `data-fui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
-| `data-fui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
+| `data-cui-signal-set="name:value"` | Sets `name` to `value` |
+| `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
+| `data-cui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
 
-Any element with `data-fui-signal="<name>"` re-renders when the value changes.
+Any element with `data-cui-signal="<name>"` re-renders when the value changes.
 For typed, shared, SSR-seeded state, wrap signals with `core-ui/store` (see
 [Signal store](signal-store.md)).
 
@@ -55,15 +55,15 @@ initiating RPC's response; it is part of this rung, not a fifth one. It
 only reaches the tab that made the request; other tabs that need the
 fresh value are the polling rung's job, and SSE is never a
 cache-invalidation transport. For the *current* screen, use
-`data-fui-rpc-navigate` (or return island HTML); eviction alone never
+`data-cui-rpc-navigate` (or return island HTML); eviction alone never
 re-renders anything.
 
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 
 The headless controls ride the rungs rather than adding to them. A
-`headless.Counter`'s value is a client signal (`data-fui-signal` /
-`data-fui-signal-inc`, rung 1); a `headless.Repeater`'s add and
+`headless.Counter`'s value is a client signal (`data-cui-signal` /
+`data-cui-signal-inc`, rung 1); a `headless.Repeater`'s add and
 remove are named submit buttons, and when the result swaps the
 region the same buttons carry the RPC contract (rung 2); a
 `headless.StepWizard`'s submit is a plain form POST that becomes a
@@ -84,14 +84,14 @@ no fanout, no shared infrastructure, and no held connection.
 **Page level.** Add two attributes to the region you want to refresh:
 
 ```html
-<div data-fui-poll="30s" data-fui-poll-src="/islands/orders/today">
+<div data-cui-poll="30s" data-cui-poll-src="/islands/orders/today">
   …initial SSR content…
 </div>
 ```
 
-- `data-fui-poll` is a Go duration string (`30s`, `5m`, `1h`). Five seconds is
+- `data-cui-poll` is a Go duration string (`30s`, `5m`, `1h`). Five seconds is
   the floor.
-- `data-fui-poll-src` is the URL the runtime fetches. The response body
+- `data-cui-poll-src` is the URL the runtime fetches. The response body
   replaces the region's `innerHTML`, exactly like an RPC signal swap.
 - The interval is jittered so a fleet of tabs does not synchronize on a wall
   clock.
@@ -132,8 +132,8 @@ accident. For `Builder.Poll` widgets, declare the terminal condition
 with `Builder.PollTerminal(func() bool)`; the `/state` handler emits
 the header automatically once the predicate returns true. A poll whose
 region is swapped out entirely (an island swap that replaces the
-`data-fui-poll` element, or a replacement carrying
-`data-fui-poll="off"`/`"0"`) is not re-wired either, so removing the
+`data-cui-poll` element, or a replacement carrying
+`data-cui-poll="off"`/`"0"`) is not re-wired either, so removing the
 marker also ends the poll.
 
 ### 4. SSE push
@@ -296,7 +296,7 @@ request to whichever replica the load balancer picks.
 
 ## See also
 
-- [Interactive patterns](interactive-patterns.md): the full `data-fui-*`
+- [Interactive patterns](interactive-patterns.md): the full `data-cui-*`
   vocabulary, including the RPC and signal primitives summarized above.
 - [Widgets](widgets.md): `Builder.Poll` and the widget builder.
 - [Presence](presence.md): the canonical SSE push case.
@@ -306,7 +306,7 @@ request to whichever replica the load balancer picks.
 - [Scaling](scaling.md): multi-replica delivery, `WithFanout`, and the
   session-token checklist.
 - [Runtime contract](runtime-contract.md): the SSR / hydration / island / SSE
-  boundary and the `data-fui-*` attribute reference.
+  boundary and the `data-cui-*` attribute reference.
 
 ## Common mistakes
 
@@ -321,7 +321,7 @@ request to whichever replica the load balancer picks.
 - **Holding widget or island state in process RAM.** A request landing on a
   different replica cannot read it. Move the state to the DB or redesign the
   handler to reconstruct.
-- **Polling a path that mutates.** `data-fui-poll-src` should be a read. Polls
+- **Polling a path that mutates.** `data-cui-poll-src` should be a read. Polls
   fire on a timer; a poll that writes would write on every tab, on every
   interval, in every browser.
 - **Treating a reconnected WebSocket as recovered application state.**

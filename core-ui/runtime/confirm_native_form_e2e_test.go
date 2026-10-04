@@ -11,9 +11,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Issue #279: data-fui-confirm used to be read only inside dispatchRPC, so a
-// plain native POST form carrying the attribute (no data-fui-rpc, no
-// data-fui-spa, urlencoded enctype) submitted on the first click with no
+// Issue #279: data-cui-confirm used to be read only inside dispatchRPC, so a
+// plain native POST form carrying the attribute (no data-cui-rpc, no
+// data-cui-spa, urlencoded enctype) submitted on the first click with no
 // prompt — the admin battery's module-disable and capability-revoke forms
 // were the reported cases. The document submit bridge now runs the gate on
 // every submit it sees, before the RPC/SPA/native branching; the submitter
@@ -31,7 +31,7 @@ func confirmStubJS(answer bool) string {
 }
 
 // TestConfirmNativeFormCancelBlocks: a plain native POST form whose submit
-// button carries data-fui-confirm must prompt, and a declined prompt must
+// button carries data-cui-confirm must prompt, and a declined prompt must
 // keep the form from reaching the server. The handler-hit count is the
 // assertion that matters: counting confirm calls alone would pass even if
 // the form submitted anyway.
@@ -39,7 +39,7 @@ func TestConfirmNativeFormCancelBlocks(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
 <form id="f" method="post" action="/act">
-<button id="b" type="submit" data-fui-confirm="Really?">Go</button>
+<button id="b" type="submit" data-cui-confirm="Really?">Go</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
 		"/act": func(w http.ResponseWriter, _ *http.Request) {
@@ -76,7 +76,7 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
 <form id="f" method="post" action="/act">
-<button id="b" type="submit" data-fui-confirm="Really?">Go</button>
+<button id="b" type="submit" data-cui-confirm="Really?">Go</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
 		"/act": func(w http.ResponseWriter, _ *http.Request) {
@@ -111,7 +111,7 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 func TestConfirmFormLevelMsgGates(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/act" data-fui-confirm="form-msg">
+<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
 <button id="b" type="submit">Go</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
@@ -145,13 +145,13 @@ func TestConfirmFormLevelMsgGates(t *testing.T) {
 }
 
 // TestConfirmSubmitterBeatsFormMsg: when both the form and the submit button
-// carry data-fui-confirm, the button's message is the one prompted with. A
+// carry data-cui-confirm, the button's message is the one prompted with. A
 // form can carry several submit buttons of different destructive weight.
 func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/act" data-fui-confirm="form-msg">
-<button id="b" type="submit" data-fui-confirm="button-msg">Go</button>
+<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
+<button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
 		"/act": func(w http.ResponseWriter, _ *http.Request) {
@@ -183,16 +183,16 @@ func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
 	}
 }
 
-// TestConfirmRPCFormPromptsOnce: a data-fui-rpc form submit must prompt
+// TestConfirmRPCFormPromptsOnce: a data-cui-rpc form submit must prompt
 // exactly once. The bridge gates, then dispatches with opts.confirmed so
 // dispatchRPC does not prompt again from the form's own attribute. The form
-// carries data-fui-confirm too, so a dropped opts would surface as a second
+// carries data-cui-confirm too, so a dropped opts would surface as a second
 // prompt with the form's message.
 func TestConfirmRPCFormPromptsOnce(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/rpc/echo" data-fui-rpc="/rpc/echo" data-fui-confirm="form-msg">
-<button id="b" type="submit" data-fui-confirm="button-msg">Go</button>
+<form id="f" method="post" action="/rpc/echo" data-cui-rpc="/rpc/echo" data-cui-confirm="form-msg">
+<button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
 		"/rpc/echo": func(w http.ResponseWriter, _ *http.Request) {
@@ -244,7 +244,7 @@ func TestConfirmWidgetPlainFormGated(t *testing.T) {
 		},
 		"/core-ui/widget/boxer/chrome": func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="boxer"><form id="f" method="post" action="/act"><button id="b" type="submit" data-fui-confirm="Really?">Go</button></form></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="boxer"><form id="f" method="post" action="/act"><button id="b" type="submit" data-cui-confirm="Really?">Go</button></form></div>`)
 		},
 		"/core-ui/widget/boxer/style.css": func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/css")

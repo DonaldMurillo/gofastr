@@ -26,7 +26,7 @@ func TestBindEmitsAttrAndValue(t *testing.T) {
 	resetForTest()
 	name := New("org").String("companyName", "Acme Corp")
 	html := string(name.Bind(context.Background(), "span", map[string]string{"class": "site-name"}))
-	if !strings.Contains(html, `data-fui-signal="org.companyName"`) {
+	if !strings.Contains(html, `data-cui-signal="org.companyName"`) {
 		t.Errorf("missing binding attr: %s", html)
 	}
 	if !strings.Contains(html, `class="site-name"`) {
@@ -54,7 +54,7 @@ func TestBindStampsIntValue(t *testing.T) {
 	resetForTest()
 	cnt := New("cart").Int("count", 7)
 	html := string(cnt.Bind(context.Background(), "strong", nil))
-	if !strings.Contains(html, `data-fui-signal="cart.count"`) || !strings.Contains(html, ">7<") {
+	if !strings.Contains(html, `data-cui-signal="cart.count"`) || !strings.Contains(html, ">7<") {
 		t.Errorf("int bind wrong: %s", html)
 	}
 }
@@ -64,9 +64,9 @@ func TestBindAttrMode(t *testing.T) {
 	logo := New("org").String("companyName", "Acme")
 	html := string(logo.BindAttr(context.Background(), "img", "alt", map[string]string{"src": "/logo.png"}))
 	for _, want := range []string{
-		`data-fui-signal="org.companyName"`,
-		`data-fui-signal-mode="attr"`,
-		`data-fui-signal-attr="alt"`,
+		`data-cui-signal="org.companyName"`,
+		`data-cui-signal-mode="attr"`,
+		`data-cui-signal-attr="alt"`,
 		`alt="Acme"`,
 		`src="/logo.png"`,
 	} {
@@ -122,11 +122,11 @@ func TestInvalidNamePanics(t *testing.T) {
 
 func TestScanReferencedFindsAllForms(t *testing.T) {
 	resetForTest()
-	html := `<span data-fui-signal="a">x</span>` +
-		`<button data-fui-signal-set="b:1">s</button>` +
-		`<button data-fui-signal-inc="c:2">+</button>` +
-		`<button data-fui-signal-toggle="d">t</button>` +
-		`<h1 data-fui-computed="e">e</h1>`
+	html := `<span data-cui-signal="a">x</span>` +
+		`<button data-cui-signal-set="b:1">s</button>` +
+		`<button data-cui-signal-inc="c:2">+</button>` +
+		`<button data-cui-signal-toggle="d">t</button>` +
+		`<h1 data-cui-computed="e">e</h1>`
 	got := ScanReferenced(html)
 	want := map[string]bool{"a": true, "b": true, "c": true, "d": true, "e": true}
 	if len(got) != len(want) {
@@ -142,7 +142,7 @@ func TestScanReferencedFindsAllForms(t *testing.T) {
 func TestScanIgnoresAttrInTextContent(t *testing.T) {
 	resetForTest()
 	// A literal mention inside text/code must not be treated as a binding.
-	html := `<pre>data-fui-signal="ghost"</pre><span data-fui-signal="real">x</span>`
+	html := `<pre>data-cui-signal="ghost"</pre><span data-cui-signal="real">x</span>`
 	got := ScanReferenced(html)
 	for _, n := range got {
 		if n == "ghost" {

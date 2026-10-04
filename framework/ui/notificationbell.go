@@ -86,7 +86,7 @@ type NotificationBellConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the bell's root <button>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-* (the popover wiring), type, aria-label (use
+	// ID), data-cui-* (the popover wiring), type, aria-label (use
 	// Label), and aria-describedby (the unread-count announcement).
 	ExtraAttrs html.Attrs
 }
@@ -126,7 +126,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	}
 	// The trigger IS the headless NotificationBell: the primitive
 	// renders the anchor (href, the spoken count, the count hooks)
-	// and, through Opens, the widget's data-fui-open wiring — the
+	// and, through Opens, the widget's data-cui-open wiring — the
 	// Island precedent of typed kernel attrs from a prop, refused
 	// when the name is not a key.
 	var unreadBind *headless.Bind
@@ -199,8 +199,8 @@ func (s *notificationBellSlot) Render() render.HTML {
 	// runtime swaps replace it wholesale (mode=html).
 	listAttrs := map[string]string{"class": "fui-notification-bell__body"}
 	if s.signalList != "" {
-		listAttrs["data-fui-signal"] = s.signalList
-		listAttrs["data-fui-signal-mode"] = "html"
+		listAttrs["data-cui-signal"] = s.signalList
+		listAttrs["data-cui-signal-mode"] = "html"
 	}
 	return render.Tag("div", map[string]string{"class": "fui-notification-bell__panel"},
 		html.Heading(html.HeadingConfig{
@@ -266,7 +266,7 @@ var _ component.Component = (*notificationBellSlot)(nil)
 var notificationBellStyle = registry.RegisterStyle("ui-notification-bell", notificationBellCSS)
 
 func notificationBellCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-notification-bell"] {
+	return `[data-cui-comp="ui-notification-bell"] {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -279,7 +279,7 @@ func notificationBellCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-notification-bell"]:hover:not(.is-popover-trigger-active) {
+[data-cui-comp="ui-notification-bell"]:hover:not(.is-popover-trigger-active) {
   background: var(--color-surface-soft, #F4F4F5);
 }
 /* Open: the runtime's generic trigger highlight (.is-popover-trigger-active,
@@ -287,15 +287,15 @@ func notificationBellCSS(_ style.Theme) string {
    Without it the hover rule above won the background while the generic
    rule won the colour: a white glyph on light grey (dark: near-black on
    dark grey) the moment the popover opened under the pointer. */
-[data-fui-comp="ui-notification-bell"].is-popover-trigger-active {
+[data-cui-comp="ui-notification-bell"].is-popover-trigger-active {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
 }
-[data-fui-comp="ui-notification-bell"]:focus-visible {
+[data-cui-comp="ui-notification-bell"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-notification-bell"] .fui-notification-bell__icon {
+[data-cui-comp="ui-notification-bell"] .fui-notification-bell__icon {
   /* The badge's containing block: anchoring it to the GLYPH's
      top-end corner (not the 44px button's) keeps the count from
      covering the bell — a badge pinned to the button covered about
@@ -304,7 +304,7 @@ func notificationBellCSS(_ style.Theme) string {
   display: inline-flex;
   line-height: 0;
 }
-[data-fui-comp="ui-notification-bell"] .fui-notification-bell__badge {
+[data-cui-comp="ui-notification-bell"] .fui-notification-bell__badge {
   position: absolute;
   /* Outward from the glyph's top-end corner: a single digit covers
      ~15% of the 20px glyph, a two-digit count ~24% (≤ a quarter),
@@ -330,7 +330,7 @@ func notificationBellCSS(_ style.Theme) string {
   border: 2px solid var(--color-surface, #FFFFFF);
 }
 /* Hide the badge when its bound signal value is empty. */
-[data-fui-comp="ui-notification-bell"] .fui-notification-bell__badge:empty {
+[data-cui-comp="ui-notification-bell"] .fui-notification-bell__badge:empty {
   display: none;
 }
 

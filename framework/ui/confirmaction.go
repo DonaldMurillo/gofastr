@@ -67,11 +67,11 @@ type ConfirmActionConfig struct {
 	// RPCMethod defaults to "POST".
 	RPCMethod string
 
-	// SuccessSignal, when set, emits data-fui-rpc-signal="<name>" on
+	// SuccessSignal, when set, emits data-cui-rpc-signal="<name>" on
 	// the Confirm button. On a 2xx response the runtime broadcasts
 	// the response body (typically the fresh authoritative list HTML)
 	// into the named signal: pair it with a
-	// data-fui-signal="<name>" data-fui-signal-mode="html" region to
+	// data-cui-signal="<name>" data-cui-signal-mode="html" region to
 	// swap in that HTML (e.g. the shorter list after a delete). On a
 	// non-2xx response html-mode regions are left unchanged (the
 	// optimistic-UI invariant: a failed delete leaves the row/list
@@ -81,7 +81,7 @@ type ConfirmActionConfig struct {
 	//
 	// The name MUST match ^[A-Za-z0-9_-]+$: ConfirmAction panics
 	// otherwise. The runtime interpolates the value into a CSS
-	// attribute selector (querySelectorAll '[data-fui-signal="…"]'),
+	// attribute selector (querySelectorAll '[data-cui-signal="…"]'),
 	// so any other shape is either an invalid selector (silently
 	// drops the broadcast) or a selector-injection footgun.
 	SuccessSignal string
@@ -100,7 +100,7 @@ type ConfirmActionConfig struct {
 	// (the ui-confirm-action panel; the modal chrome is widget
 	// machinery, and the trigger is a plain ui.Button — render a
 	// Button yourself for trigger-level extras). Keys the component
-	// owns are dropped: class, id, and data-fui-*.
+	// owns are dropped: class, id, and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -156,7 +156,7 @@ func buildConfirmTrigger(name, label, variant string) render.HTML {
 		Label:   label,
 		Variant: parseButtonVariant(variant),
 		ExtraAttrs: html.Attrs{
-			"data-fui-open": name,
+			"data-cui-open": name,
 		},
 	})
 }
@@ -173,9 +173,9 @@ func parseButtonVariant(v string) ButtonVariant {
 }
 
 // validSuccessSignalName returns true iff name is a safe identifier
-// for use as a data-fui-rpc-signal / data-fui-signal value. The runtime
+// for use as a data-cui-rpc-signal / data-cui-signal value. The runtime
 // interpolates the name verbatim into the CSS attribute selector
-// `[data-fui-signal="<name>"]`; values outside [A-Za-z0-9_-] are either
+// `[data-cui-signal="<name>"]`; values outside [A-Za-z0-9_-] are either
 // invalid selectors (the broadcast silently no-ops) or selector-injection
 // (a `"` or `]` breaks out of the attribute matcher). Keep this in sync
 // with the same shape used by interactive.SetSignal and the CSS.escape
@@ -229,20 +229,20 @@ type confirmDialogSlot struct {
 
 func (s *confirmDialogSlot) Render() render.HTML {
 	cancelAttrs := html.Attrs{
-		"data-fui-rpc-close": "",
+		"data-cui-rpc-close": "",
 	}
 	confirmAttrs := html.Attrs{
-		"data-fui-rpc-close": "",
+		"data-cui-rpc-close": "",
 	}
 	if s.rpcPath != "" {
 		// A dialog with no endpoint is a plain confirmation: the
 		// confirm button renders without the request wiring rather
-		// than carrying a dead data-fui-rpc="".
-		confirmAttrs["data-fui-rpc"] = s.rpcPath
-		confirmAttrs["data-fui-rpc-method"] = s.rpcMethod
+		// than carrying a dead data-cui-rpc="".
+		confirmAttrs["data-cui-rpc"] = s.rpcPath
+		confirmAttrs["data-cui-rpc-method"] = s.rpcMethod
 	}
 	if s.successSignal != "" {
-		confirmAttrs["data-fui-rpc-signal"] = s.successSignal
+		confirmAttrs["data-cui-rpc-signal"] = s.successSignal
 	}
 	// Only the OPT-IN case carries an autofocus attribute. Cancel is
 	// rendered first in DOM order so the Modal preset's "focus the
@@ -281,26 +281,26 @@ var confirmActionStyle = registry.RegisterStyle("ui-confirm-action", confirmActi
 
 func confirmActionCSS(_ style.Theme) string {
 	// No background / padding / border-radius here: the widget chrome's
-	// centered panel (`.fui-pos-center > .fui-panel`, core-ui/widget)
+	// centered panel (`.cui-pos-center > .cui-panel`, core-ui/widget)
 	// paints the panel surface for every modal body. This component
 	// only constrains its own width and lays out its internals:
 	// duplicating the panel props would double-pad the dialog.
-	return `[data-fui-comp="ui-confirm-action"] {
+	return `[data-cui-comp="ui-confirm-action"] {
   display: block;
   max-inline-size: 28rem;
 }
-[data-fui-comp="ui-confirm-action"] .fui-confirm-action__title {
+[data-cui-comp="ui-confirm-action"] .fui-confirm-action__title {
   margin: 0 0 var(--spacing-sm, 4px) 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #111);
 }
-[data-fui-comp="ui-confirm-action"] .fui-confirm-action__body {
+[data-cui-comp="ui-confirm-action"] .fui-confirm-action__body {
   margin: 0 0 var(--spacing-lg, 16px) 0;
   color: var(--color-text-muted, #4b5563);
   line-height: 1.45;
 }
-[data-fui-comp="ui-confirm-action"] .fui-confirm-action__actions {
+[data-cui-comp="ui-confirm-action"] .fui-confirm-action__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);

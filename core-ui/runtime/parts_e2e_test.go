@@ -81,7 +81,7 @@ func (s *partsSite) totalParts() int {
 // (0 parks immediately; a huge value never shows). /a declares
 // preload:hover: the preload module only fires on a real pointerover,
 // and every other test clicks via evaluate, so it stays dormant.
-// withVT, when true, declares a data-fui-vt-kinds vocabulary on the
+// withVT, when true, declares a data-cui-vt-kinds vocabulary on the
 // document: view transitions are opt-in (the corrected Opt-in table),
 // so the one test that asserts transition behavior must opt the rig
 // in; the default rig stays plain and covers the module-absent
@@ -109,20 +109,20 @@ func newPartsSite(t *testing.T, afterMs int, withVT ...bool) *partsSite {
 		`]</script>`
 	vtAttr := ""
 	if len(withVT) > 0 && withVT[0] {
-		vtAttr = ` data-fui-vt-kinds="fade"`
+		vtAttr = ` data-cui-vt-kinds="fade"`
 	}
 	shell := func(inner string) string {
 		return `<!doctype html><html` + vtAttr + `><head><title>parts</title>` + routes +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			// The nav links live in the SHELL (outside the swapped slot),
 			// so tests can click them after any navigation.
 			`<nav><a id="goA" href="/a">A</a> <a id="goB" href="/b">B</a> <a id="goC" href="/c">C</a></nav>` +
-			`<div data-fui-outlet="l:site#aside" id="aside">OLD-ASIDE<button id="in-aside">b</button></div>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` + inner + `</main>` +
-			`<div data-fui-outlet="l:site#rail" id="rail">OLD-RAIL</div>` +
+			`<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE<button id="in-aside">b</button></div>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
+			`<div data-cui-outlet="l:site#rail" id="rail">OLD-RAIL</div>` +
 			`</div>` +
-			`<template data-fui-loading="l:site#aside" data-fui-after="` + fmt.Sprint(afterMs) + `" data-fui-min="0"><span>CLIENT-SKELETON</span></template>` +
-			`<template data-fui-loading="l:site#rail" data-fui-after="` + fmt.Sprint(afterMs) + `" data-fui-min="0"><span>CLIENT-RAIL-SKELETON</span></template>` +
+			`<template data-cui-loading="l:site#aside" data-cui-after="` + fmt.Sprint(afterMs) + `" data-cui-min="0"><span>CLIENT-SKELETON</span></template>` +
+			`<template data-cui-loading="l:site#rail" data-cui-after="` + fmt.Sprint(afterMs) + `" data-cui-min="0"><span>CLIENT-RAIL-SKELETON</span></template>` +
 			`<script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	home := shell(`HOME`)
@@ -150,14 +150,14 @@ func newPartsSite(t *testing.T, afterMs int, withVT ...bool) *partsSite {
 		w.Header().Set("X-Gofastr-Swap", "l:site")
 		w.Header().Set("X-Gofastr-Envelope", "2")
 		var b strings.Builder
-		fmt.Fprintf(&b, `<template data-fui-fill="l:site">%s</template>`, primary)
+		fmt.Fprintf(&b, `<template data-cui-fill="l:site">%s</template>`, primary)
 		for _, f := range fills {
-			fmt.Fprintf(&b, `<template data-fui-fill="l:site#%s">SERVER-%s-SKELETON</template>`, f, f)
+			fmt.Fprintf(&b, `<template data-cui-fill="l:site#%s">SERVER-%s-SKELETON</template>`, f, f)
 		}
 		fmt.Fprint(w, b.String())
 	}
 	partBody := func(addr, body string) string {
-		return fmt.Sprintf(`<template data-fui-fill="l:site#%s">%s</template>`, addr, body)
+		return fmt.Sprintf(`<template data-cui-fill="l:site#%s">%s</template>`, addr, body)
 	}
 
 	pageHandler := func(path, primary string, fills ...string) http.HandlerFunc {
@@ -215,7 +215,7 @@ func newPartsSite(t *testing.T, afterMs int, withVT ...bool) *partsSite {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "Home")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<template data-fui-fill="l:site">HOME-PARTIAL</template>`)
+			fmt.Fprint(w, `<template data-cui-fill="l:site">HOME-PARTIAL</template>`)
 			return
 		}
 		s.bump("doc", "/")
@@ -407,7 +407,7 @@ func TestPartsAreSeparateRequestsWithBodies(t *testing.T) {
 			t.Errorf("part %s: Network.getResponseBody: %v (the DevTools body must survive)", r.partAddr, err)
 			continue
 		}
-		if !strings.Contains(body, `data-fui-fill="l:site#`+r.partAddr+`"`) {
+		if !strings.Contains(body, `data-cui-fill="l:site#`+r.partAddr+`"`) {
 			t.Errorf("part %s body = %q, want its fill template", r.partAddr, body)
 		}
 		bodies = append(bodies, r.partAddr+":"+body)
@@ -538,7 +538,7 @@ func TestPartFailureContained(t *testing.T) {
 	s := newPartsSite(t, 10000)
 	s.setPartResp("/a|aside", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<template data-fui-fill="l:site#aside">CONTAINED-FALLBACK</template>`)
+		fmt.Fprint(w, `<template data-cui-fill="l:site#aside">CONTAINED-FALLBACK</template>`)
 	})
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	if err := chromedp.Run(ctx,
@@ -553,7 +553,7 @@ func TestPartFailureContained(t *testing.T) {
 	waitContains(t, ctx, `#rail`, "PART-A-RAIL")
 	var toast bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`!!document.querySelector('.fui-nav-toast.is-visible')`, &toast)); err != nil {
+		`!!document.querySelector('.cui-nav-toast.is-visible')`, &toast)); err != nil {
 		t.Fatal(err)
 	}
 	if toast {
@@ -747,7 +747,7 @@ func TestFailedPartNotCached(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<template data-fui-fill="l:site#aside">PART-A-ASIDE</template>`)
+		fmt.Fprint(w, `<template data-cui-fill="l:site#aside">PART-A-ASIDE</template>`)
 	})
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
@@ -835,8 +835,8 @@ func TestCacheClearedOnSessionChange(t *testing.T) {
 		w.Header().Set("X-Gofastr-Title", "Page")
 		w.Header().Set("X-Gofastr-Swap", "l:site")
 		w.Header().Set("X-Gofastr-Envelope", "2")
-		fmt.Fprint(w, `<template data-fui-fill="l:site">B-PRIMARY</template>`+
-			`<template data-fui-fill="l:site#aside">SERVER-aside-SKELETON</template>`)
+		fmt.Fprint(w, `<template data-cui-fill="l:site">B-PRIMARY</template>`+
+			`<template data-cui-fill="l:site#aside">SERVER-aside-SKELETON</template>`)
 	})
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
@@ -877,7 +877,7 @@ func TestPartResetWaitsForThePage(t *testing.T) {
 		w.Header().Set("X-Gofastr-Swap", "l:site")
 		w.Header().Set("X-Gofastr-Envelope", "2")
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `<template data-fui-fill="l:site">ERROR-PAGE</template>`)
+		fmt.Fprint(w, `<template data-cui-fill="l:site">ERROR-PAGE</template>`)
 	}
 	reset := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Gofastr-Part-Reset", "1")

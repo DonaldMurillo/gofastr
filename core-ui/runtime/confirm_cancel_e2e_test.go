@@ -46,8 +46,8 @@ func TestDispatchRPC_ConfirmCancelDoesNotAbortInFlight(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>cc</title></head><body>
-<button id="b" data-fui-rpc="/rpc/slow" data-fui-rpc-signal="sig" data-fui-confirm="Sure?">Go</button>
-<span id="out" data-fui-signal="sig"></span>
+<button id="b" data-cui-rpc="/rpc/slow" data-cui-rpc-signal="sig" data-cui-confirm="Sure?">Go</button>
+<span id="out" data-cui-signal="sig"></span>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`)

@@ -373,7 +373,7 @@ func TestFormHideSubmitOmitsButton(t *testing.T) {
 
 // ─── The request seam ─────────────────────────────────────────────
 //
-// Form's ExtraAttrs routes every data-fui-* and data-action-* key
+// Form's ExtraAttrs routes every data-cui-* and data-action-* key
 // through the typed Request seam (the way Button's Action does), so
 // the wiring survives headless's Safe instead of rendering a plain
 // form that posts natively.
@@ -389,9 +389,9 @@ func TestFormRequestNewsletterShape(t *testing.T) {
 				OnSuccess(interactive.SetSignal("hl-subscribe")).Attrs()),
 	}, FormField(FormFieldConfig{Label: "Email", For: "e", Input: testControl("e")})))
 	for _, want := range []string{
-		`data-fui-rpc="/__site/headless/subscribe"`,
-		`data-fui-rpc-method="POST"`,
-		`data-fui-rpc-signal="hl-subscribe"`,
+		`data-cui-rpc="/__site/headless/subscribe"`,
+		`data-cui-rpc-method="POST"`,
+		`data-cui-rpc-signal="hl-subscribe"`,
 		// The native method and action stay for no script.
 		`method="POST"`, `action="/__site/headless/subscribe"`,
 		// novalidate is decoration and passes through.
@@ -412,10 +412,10 @@ func TestFormRequestResourcePUTShape(t *testing.T) {
 		ExtraAttrs: interactive.Put("/api/customers/42").
 			OnSuccess(interactive.Navigate("/app/customers/42")).Attrs(),
 	}, FormField(FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")})))
-	if !strings.Contains(h, `data-fui-rpc-method="PUT"`) {
+	if !strings.Contains(h, `data-cui-rpc-method="PUT"`) {
 		t.Errorf("the RPC method must be independent of the native one:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-rpc-navigate="/app/customers/42"`) {
+	if !strings.Contains(h, `data-cui-rpc-navigate="/app/customers/42"`) {
 		t.Errorf("the navigate effect is missing:\n%s", h)
 	}
 	if !strings.Contains(h, `method="POST"`) {
@@ -440,7 +440,7 @@ func TestFormRequestGeneratorShape(t *testing.T) {
 				OnSuccess(interactive.ResetForm()).Attrs()),
 	}, FormField(FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")})))
 	for _, want := range []string{
-		`data-fui-rpc-reset`,
+		`data-cui-rpc-reset`,
 		`data-action-mount="productFormMount"`,
 		// The entity markers are plain data attrs and survive.
 		`data-entity-form="products"`, `data-entity-mode="create"`,
@@ -459,13 +459,13 @@ func TestFormRequestRefusesUnknownKeys(t *testing.T) {
 			t.Fatal("expected a panic for an unknown wiring key")
 		}
 		msg := r.(string)
-		if !strings.Contains(msg, "data-fui-rpc-body") || !strings.Contains(msg, "Request") {
+		if !strings.Contains(msg, "data-cui-rpc-body") || !strings.Contains(msg, "Request") {
 			t.Fatalf("the panic should name the key and the seam, got: %v", r)
 		}
 	}()
 	Form(FormConfig{
 		Action:     "/x",
-		ExtraAttrs: html.Attrs{"data-fui-rpc-body": `{"a":1}`},
+		ExtraAttrs: html.Attrs{"data-cui-rpc-body": `{"a":1}`},
 	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")}))
 }
 
@@ -479,14 +479,14 @@ func TestFormRequestAdmitsCloseOpenRefreshTrigger(t *testing.T) {
 			html.Attrs{
 				// The refresh pair has no typed constructor; the raw
 				// keys ride the seam and take their checks there.
-				"data-fui-rpc-refresh":     "panel",
-				"data-fui-rpc-trigger":     "input",
-				"data-fui-rpc-debounce-ms": "150",
+				"data-cui-rpc-refresh":     "panel",
+				"data-cui-rpc-trigger":     "input",
+				"data-cui-rpc-debounce-ms": "150",
 			}),
 	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
 	for _, want := range []string{
-		"data-fui-rpc-close", "data-fui-rpc-reset", `data-fui-rpc-open="results"`,
-		`data-fui-rpc-refresh="panel"`, `data-fui-rpc-trigger="input"`, `data-fui-rpc-debounce-ms="150"`,
+		"data-cui-rpc-close", "data-cui-rpc-reset", `data-cui-rpc-open="results"`,
+		`data-cui-rpc-refresh="panel"`, `data-cui-rpc-trigger="input"`, `data-cui-rpc-debounce-ms="150"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)

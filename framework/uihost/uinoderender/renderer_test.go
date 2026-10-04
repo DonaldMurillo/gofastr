@@ -46,7 +46,7 @@ func TestRenderStackMapsToLayoutPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-layout"`)
+	mustContain(t, h, `data-cui-comp="ui-layout"`)
 	mustContain(t, h, "fui-stack")
 }
 
@@ -121,7 +121,7 @@ func TestRenderCardMapsToCardPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-card"`)
+	mustContain(t, h, `data-cui-comp="ui-card"`)
 	mustContain(t, h, ">C<")
 }
 
@@ -131,7 +131,7 @@ func TestRenderDividerMapsToDividerPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-divider"`)
+	mustContain(t, h, `data-cui-comp="ui-divider"`)
 }
 
 func TestRenderHeadingUsesHtmlHeading(t *testing.T) {
@@ -203,7 +203,7 @@ func TestRenderDetailListMapsToPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-detail-list"`)
+	mustContain(t, h, `data-cui-comp="ui-detail-list"`)
 	mustContain(t, h, ">Name<")
 	mustContain(t, h, ">Ada<")
 }
@@ -218,7 +218,7 @@ func TestRenderKeyValueReusesDetailList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-detail-list"`)
+	mustContain(t, h, `data-cui-comp="ui-detail-list"`)
 	mustContain(t, h, ">K<")
 	mustContain(t, h, ">V<")
 }
@@ -231,7 +231,7 @@ func TestRenderStatCardMapsToPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-stat-card"`)
+	mustContain(t, h, `data-cui-comp="ui-stat-card"`)
 	mustContain(t, h, ">MRR<")
 	mustContain(t, h, ">$1k USD<")
 	mustContain(t, h, "fui-stat-card__trend--up")
@@ -261,7 +261,7 @@ func TestRenderDataTableMapsToPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-comp="ui-data-table"`)
+	mustContain(t, h, `data-cui-comp="ui-data-table"`)
 	mustContain(t, h, ">Name<")
 	mustContain(t, h, ">Ada<")
 }
@@ -306,7 +306,7 @@ func TestRenderButtonActionRefResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-rpc="/m/mod/save"`)
+	mustContain(t, h, `data-cui-rpc="/m/mod/save"`)
 	mustContain(t, h, "fui-button--primary")
 }
 
@@ -320,7 +320,7 @@ func TestRenderLinkActionRefResolvedToRpcURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, `data-fui-rpc="/m/mod/act"`)
+	mustContain(t, h, `data-cui-rpc="/m/mod/act"`)
 	mustContain(t, h, `href="/m/mod/act"`)
 }
 
@@ -331,8 +331,8 @@ func TestRenderLinkToPropIsHostRelativeHref(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	mustContain(t, h, `href="/home"`)
-	if strings.Contains(string(h), "data-fui-rpc") {
-		t.Fatalf("a To-prop link must NOT carry data-fui-rpc (pure nav):\n%s", h)
+	if strings.Contains(string(h), "data-cui-rpc") {
+		t.Fatalf("a To-prop link must NOT carry data-cui-rpc (pure nav):\n%s", h)
 	}
 }
 
@@ -366,12 +366,12 @@ func TestRenderNilResolverFailsClosed(t *testing.T) {
 // --- Full round trip: no module-supplied attribute survives -------------
 
 func TestRoundTripRejectsForgedAttrs(t *testing.T) {
-	// A module tries to forge data-fui-rpc + onclick + id. Validate
+	// A module tries to forge data-cui-rpc + onclick + id. Validate
 	// rejects the whole tree (DisallowUnknownFields), so Render is never
 	// reached. This is the core §9 property: forged attrs are
 	// unrepresentable, not merely dropped.
 	bad := []string{
-		`{"component":"heading","props":{"level":1,"text":"x","data-fui-rpc":"/evil"}}`,
+		`{"component":"heading","props":{"level":1,"text":"x","data-cui-rpc":"/evil"}}`,
 		`{"component":"button","props":{"label":"x","onclick":"evil()"},"action_ref":"a"}`,
 		`{"component":"divider","id":"evil","class":"evil"}`,
 	}
@@ -411,24 +411,24 @@ func TestRoundTripNoModuleAttrInOutput(t *testing.T) {
 	for _, banned := range []string{
 		"onclick", // on* handlers
 		"onload",
-		"data-fui-", // the only legit data-fui-rpc comes from our resolver;
-		// presence of OTHER data-fui-* would be a forge, but our output
-		// legitimately has data-fui-comp (component markers) and the one
-		// data-fui-rpc we assigned. We assert the FORGED value is absent
+		"data-cui-", // the only legit data-cui-rpc comes from our resolver;
+		// presence of OTHER data-cui-* would be a forge, but our output
+		// legitimately has data-cui-comp (component markers) and the one
+		// data-cui-rpc we assigned. We assert the FORGED value is absent
 		// below instead.
 		"javascript:",
 	} {
 		if strings.Contains(out, banned) {
-			// data-fui-comp / data-fui-rpc are host-emitted; only flag
+			// data-cui-comp / data-cui-rpc are host-emitted; only flag
 			// truly forged keys. Re-check precisely:
-			if banned == "data-fui-" {
+			if banned == "data-cui-" {
 				continue // handled by the precise checks below
 			}
 			t.Fatalf("output must not contain %q:\n%s", banned, out)
 		}
 	}
-	// The one data-fui-rpc present must be OUR assigned URL, nothing else.
-	if !strings.Contains(out, `data-fui-rpc="/m/mod/x"`) {
+	// The one data-cui-rpc present must be OUR assigned URL, nothing else.
+	if !strings.Contains(out, `data-cui-rpc="/m/mod/x"`) {
 		t.Fatalf("the button's action_ref must resolve to the host URL:\n%s", out)
 	}
 	// No module-supplied id leaked (ids in output are host-derived from

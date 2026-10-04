@@ -82,7 +82,7 @@ func TestCompileBelowCustomMedia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	want := `@scope ([data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal])` +
+	want := `@scope ([data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal])` +
 		`{@media (max-width: 767.98px){.a{color:red}}}`
 	if out != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
@@ -154,9 +154,9 @@ func TestCompileDarkSplit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	wantAttr := `@scope ([data-color-scheme="dark"] [data-fui-scope="board"]) to (:scope [data-fui-scope]>*,[data-fui-internal])` +
+	wantAttr := `@scope ([data-color-scheme="dark"] [data-cui-scope="board"]) to (:scope [data-cui-scope]>*,[data-cui-internal])` +
 		`{.column{background:var(--color-surface)}}`
-	wantMedia := `@media (prefers-color-scheme: dark){@scope (:root:not([data-color-scheme="light"]) [data-fui-scope="board"]) to (:scope [data-fui-scope]>*,[data-fui-internal])` +
+	wantMedia := `@media (prefers-color-scheme: dark){@scope (:root:not([data-color-scheme="light"]) [data-cui-scope="board"]) to (:scope [data-cui-scope]>*,[data-cui-internal])` +
 		`{.column{background:var(--color-surface)}}}`
 	if !strings.Contains(out, wantAttr) {
 		t.Fatalf("attribute variant missing:\n%s", out)
@@ -165,7 +165,7 @@ func TestCompileDarkSplit(t *testing.T) {
 		t.Fatalf("prefers-color-scheme variant missing:\n%s", out)
 	}
 	// No empty main scope block: the sheet had nothing but the dark rule.
-	if strings.Contains(out, `to (:scope [data-fui-scope]>*,[data-fui-internal]){}`) {
+	if strings.Contains(out, `to (:scope [data-cui-scope]>*,[data-cui-internal]){}`) {
 		t.Fatalf("empty main block emitted:\n%s", out)
 	}
 }
@@ -176,10 +176,10 @@ func TestCompileDarkSplitAppRoots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	if !strings.Contains(out, `@scope (:root[data-color-scheme="dark"]) to ([data-fui-internal]){.a{color:red}}`) {
+	if !strings.Contains(out, `@scope (:root[data-color-scheme="dark"]) to ([data-cui-internal]){.a{color:red}}`) {
 		t.Fatalf("app attribute variant missing:\n%s", out)
 	}
-	if !strings.Contains(out, `@scope (:root:not([data-color-scheme="light"])) to ([data-fui-internal]){.a{color:red}}`) {
+	if !strings.Contains(out, `@scope (:root:not([data-color-scheme="light"])) to ([data-cui-internal]){.a{color:red}}`) {
 		t.Fatalf("app media variant missing:\n%s", out)
 	}
 }
@@ -190,7 +190,7 @@ func TestCompileAppWrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	want := `@scope (:root) to ([data-fui-internal]){.figure{letter-spacing:-0.01em}}`
+	want := `@scope (:root) to ([data-cui-internal]){.figure{letter-spacing:-0.01em}}`
 	if out != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
 	}
@@ -235,7 +235,7 @@ func TestCompileMinifySeparators(t *testing.T) {
 			t.Errorf("%q: %v", tc.src, err)
 			continue
 		}
-		want := `@scope ([data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){` + tc.want + `}`
+		want := `@scope ([data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){` + tc.want + `}`
 		if out != want {
 			t.Errorf("%q:\n got %s\nwant %s", tc.src, out, want)
 		}
@@ -285,7 +285,7 @@ func TestCompileNestedRulesKeepDeclTerminators(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The `;` before the first nested rule is load-bearing.
-	want := `@scope ([data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal])` +
+	want := `@scope ([data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal])` +
 		`{.a{color:var(--color-text);&:hover{color:var(--color-primary)}.b &{color:var(--color-text)}}}`
 	if out != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
@@ -312,8 +312,8 @@ func TestCompileDarkNestedInsideMediaLeavesNoJunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `@media (min-width: 768px){@scope ([data-color-scheme="dark"] [data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){.a{color:red}}}` +
-		`@media (prefers-color-scheme: dark) and (min-width: 768px){@scope (:root:not([data-color-scheme="light"]) [data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){.a{color:red}}}`
+	want := `@media (min-width: 768px){@scope ([data-color-scheme="dark"] [data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){.a{color:red}}}` +
+		`@media (prefers-color-scheme: dark) and (min-width: 768px){@scope (:root:not([data-color-scheme="light"]) [data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){.a{color:red}}}`
 	if out != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
 	}
@@ -356,8 +356,8 @@ func TestCompileNoCustomMediaSurvives(t *testing.T) {
 
 func TestCompileDarkNestedInStyleRule(t *testing.T) {
 	tokens := style.ThemeToTokens(style.DefaultTheme())
-	attr := `@scope ([data-color-scheme="dark"] [data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal])`
-	mediaInner := `@scope (:root:not([data-color-scheme="light"]) [data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal])`
+	attr := `@scope ([data-color-scheme="dark"] [data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal])`
+	mediaInner := `@scope (:root:not([data-color-scheme="light"]) [data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal])`
 
 	// Directly inside a style rule: the declarations apply to .a under
 	// both dark roots, and nothing is silently dropped.
@@ -454,7 +454,7 @@ func TestCompileNonEmptyRulesNeverVanish(t *testing.T) {
 
 func TestCompileDarkChainKeepsSelectorLists(t *testing.T) {
 	tokens := style.ThemeToTokens(style.DefaultTheme())
-	attr := `@scope ([data-color-scheme="dark"] [data-fui-scope="x"]) to (:scope [data-fui-scope]>*,[data-fui-internal])`
+	attr := `@scope ([data-color-scheme="dark"] [data-cui-scope="x"]) to (:scope [data-cui-scope]>*,[data-cui-internal])`
 	compile := func(t *testing.T, src string) string {
 		t.Helper()
 		out, err := Compile(mustParse(t, src), "x", KindScoped, tokens)

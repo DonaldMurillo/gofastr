@@ -105,12 +105,12 @@ func extraAttrsOpeningTag(t *testing.T, h string, tag string) string {
 
 // ExtraAttrs land on the <input> but never override what the component
 // owns (#262): step/value/min/max (and the other owned keys) keep their
-// framework values; class/id/data-fui-* case-variants are dropped.
+// framework values; class/id/data-cui-* case-variants are dropped.
 func TestNumberInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(NumberInput(NumberInputConfig{
 		Name: "qty", Label: "Quantity", Min: 1, Max: 9, Step: 2, Value: 4, Class: "mine",
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "step": "evil", "Class": "evil", "data-fui-comp": "spoof",
+			"data-test": "hook", "step": "evil", "Class": "evil", "data-cui-comp": "spoof",
 		},
 	}))
 	// Extras land on the root and the input's own attributes cannot

@@ -22,7 +22,7 @@ func TestToastToneWordAndDismiss(t *testing.T) {
 	}
 	has(t, got, `data-hui-toast-ttl-ms="8000"`, "the module's timer bound did not travel")
 	has(t, got, `aria-label="Dismiss: Connection lost"`, "the dismiss control does not name what it dismisses")
-	has(t, got, `data-fui-rpc="/island/toasts"`, "the dismiss link does not carry the island contract beside its href")
+	has(t, got, `data-cui-rpc="/island/toasts"`, "the dismiss link does not carry the island contract beside its href")
 }
 
 func TestToastRefusesBrokenConfigurations(t *testing.T) {
@@ -46,7 +46,7 @@ func TestToastStackCarriesBothContracts(t *testing.T) {
 	got := ToastStack(ToastStackProps{Label: "Notifications", Max: 4}, nil)
 	has(t, got, `aria-label="Notifications"`, "the stack is not a named region")
 	has(t, got, `role="region"`, "the stack does not claim to be a region")
-	has(t, got, `data-fui-toast-stack="Notifications"`, "the kernel's stack name is missing")
+	has(t, got, `data-cui-toast-stack="Notifications"`, "the kernel's stack name is missing")
 	has(t, got, `data-hui-toast-stack=""`, "the module's stack hook is missing")
 	has(t, got, `data-hui-toast-max="4"`, "the capacity did not travel")
 
@@ -74,7 +74,7 @@ func TestNotificationBellSpeaksItsCount(t *testing.T) {
 
 	bound := NotificationBell(NotificationBellProps{Href: "/notifications", Label: "N",
 		UnreadBind: &Bind{Signal: "unread"}}, nil)
-	has(t, bound, `data-fui-signal="unread"`, "the bound count does not follow its signal")
+	has(t, bound, `data-cui-signal="unread"`, "the bound count does not follow its signal")
 }
 
 func TestNotificationBellRefusesBrokenTriggers(t *testing.T) {

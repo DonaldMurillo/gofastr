@@ -45,7 +45,7 @@ type TimePickerConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the input element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* hook.
+	// ID), data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 }
 
@@ -127,16 +127,16 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 var timePickerStyle = registry.RegisterStyle("ui-time-picker", timePickerCSS)
 
 func timePickerCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-time-picker"] {
+	return `[data-cui-comp="ui-time-picker"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-time-picker"] .fui-time-picker__label {
+[data-cui-comp="ui-time-picker"] .fui-time-picker__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-time-picker"] .fui-time-picker__input {
+[data-cui-comp="ui-time-picker"] .fui-time-picker__input {
   min-block-size: var(--spacing-touch-target, 44px);
   padding: 0 var(--spacing-sm, 4px);
   border: 1px solid var(--color-border, #E4E4E7);
@@ -145,19 +145,19 @@ func timePickerCSS(_ style.Theme) string {
   font: inherit;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-time-picker"] .fui-time-picker__input:focus-visible {
+[data-cui-comp="ui-time-picker"] .fui-time-picker__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-time-picker"].is-error .fui-time-picker__input {
+[data-cui-comp="ui-time-picker"].is-error .fui-time-picker__input {
   border-color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-time-picker"] .fui-time-picker__help {
+[data-cui-comp="ui-time-picker"] .fui-time-picker__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-time-picker"] .fui-time-picker__error {
+[data-cui-comp="ui-time-picker"] .fui-time-picker__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);

@@ -238,17 +238,17 @@ func lintBytes(rel string, body []byte) []finding {
 		// untyped-fui-wiring: the blueprint generator and admin battery
 		// EMIT island wiring, so they must teach the typed
 		// core-ui/interactive layer (interactive.OnClick/OnSubmit or
-		// Action.Attrs()), never a raw "data-fui-rpc" attribute literal.
+		// Action.Attrs()), never a raw "data-cui-rpc" attribute literal.
 		// Scoped narrowly because examples/site legitimately renders raw
-		// data-fui-* attrs in doc copy shown to visitors, and the
-		// pattern data-fui-rpc" matches only the bare rpc attribute
+		// data-cui-* attrs in doc copy shown to visitors, and the
+		// pattern data-cui-rpc" matches only the bare rpc attribute
 		// (not -method/-body/-close/-reset/-navigate/-signal).
-		if isUntypedFUIWiringScope(rel) && strings.Contains(line, `data-fui-rpc"`) {
+		if isUntypedFUIWiringScope(rel) && strings.Contains(line, `data-cui-rpc"`) {
 			out = append(out, finding{
 				File:    rel,
 				Line:    i + 1,
 				Rule:    "untyped-fui-wiring",
-				Message: `emit RPC wiring via core-ui/interactive (interactive.OnClick/OnSubmit or Action.Attrs()), not a raw "data-fui-rpc" attribute literal`,
+				Message: `emit RPC wiring via core-ui/interactive (interactive.OnClick/OnSubmit or Action.Attrs()), not a raw "data-cui-rpc" attribute literal`,
 			})
 		}
 		if isBuildScript(rel) && strings.Contains(line, ".pi/worktrees/roadmap") {
@@ -536,8 +536,8 @@ func isBuildScript(rel string) bool {
 // isUntypedFUIWiringScope reports whether rel is a non-test Go file under
 // the blueprint generator or a battery, the code that EMITS island wiring
 // and so must use the typed core-ui/interactive layer instead of raw
-// "data-fui-rpc" attribute literals. Examples and docs are deliberately
-// excluded: the showcase renders raw data-fui-* attributes in copy shown
+// "data-cui-rpc" attribute literals. Examples and docs are deliberately
+// excluded: the showcase renders raw data-cui-* attributes in copy shown
 // to visitors.
 func isUntypedFUIWiringScope(rel string) bool {
 	if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {

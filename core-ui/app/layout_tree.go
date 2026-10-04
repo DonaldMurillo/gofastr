@@ -34,7 +34,7 @@ type LayoutSpec struct {
 	// . The zero value does neither.
 	Primary PrimaryConfig
 	// Outlets are the layer's non-primary outlets, as typed handles.
-	// Each renders a data-fui-outlet cell addressed "<layer
+	// Each renders a data-cui-outlet cell addressed "<layer
 	// key>#<name>"; what it shows when no fill targets it is the
 	// handle's fallback.
 	Outlets []*Outlet
@@ -45,7 +45,7 @@ type LayoutSpec struct {
 	Areas []AreaSpec
 	// Style is the layout's owned style (a generated handle from a
 	// <name>.style.css file). The layout root carries
-	// data-fui-scope="<name>", so the style covers the build output
+	// data-cui-scope="<name>", so the style covers the build output
 	// and stops at the root of any nested owner (a styled screen or
 	// component). Nil means no style. The app style panics here: pass
 	// it to App.WithStyle.
@@ -97,7 +97,7 @@ type OutletSpec struct {
 	// disagree about what an unfilled outlet is.
 	Fallback OutletFallback
 	// Transition (, is this outlet cell's view
-	// transition. The cell renders data-fui-vt="<name>" (the author's
+	// transition. The cell renders data-cui-vt="<name>" (the author's
 	// raw Name, or a generated one); the runtime mirrors it to a CSSOM
 	// view-transition-name before a navigation's snapshots, and
 	// Layout.TransitionCSS generates the animation rules. The zero
@@ -138,7 +138,7 @@ type OutletSpec struct {
 
 // AreaSpec declares one route area (LayoutSpec.Areas): its name and,
 // optionally, its view transition (). The area CELL (the element
-// carrying data-fui-area) persists across navigations — fills replace
+// carrying data-cui-area) persists across navigations — fills replace
 // its innerHTML — so the transition rides the cell exactly like a
 // placed outlet's does.
 type AreaSpec struct {
@@ -146,7 +146,7 @@ type AreaSpec struct {
 	// '-', '_'); RouteArea addresses it "<layer key>~<name>".
 	Name string
 	// Transition is the area cell's view transition; the cell renders
-	// data-fui-vt="<name>" (the author's raw Name, or a generated
+	// data-cui-vt="<name>" (the author's raw Name, or a generated
 	// vt-<layout>-<area> one) and Layout.TransitionCSS generates the
 	// rules. FadeThrough is the fit for text the root crossfade would
 	// ghost over itself (breadcrumbs); the zero value transitions
@@ -159,7 +159,7 @@ type AreaSpec struct {
 	Policy Policy
 	// Loading declares what the area shows while a navigation that
 	// will change it is in flight: the server renders an inert
-	// <template data-fui-loading="<addr>"> beside the area cell, and
+	// <template data-cui-loading="<addr>"> beside the area cell, and
 	// the loading module parks and restores it exactly like an
 	// outlet's (2026-09-26, DESIGN-layout-outlets.md Open). nil (or
 	// nil Show) keeps the busy dim only, as before.
@@ -327,7 +327,7 @@ type LayoutTree struct {
 	outermost bool
 }
 
-// vtNameAttr returns the data-fui-vt attribute value for a spec
+// vtNameAttr returns the data-cui-vt attribute value for a spec
 // transition, or ok=false when it configures nothing. Names are
 // validated at NewLayout; generated ones are safe by construction.
 func (t *LayoutTree) vtNameAttr(tr Transition, slot string) (string, bool) {
@@ -353,9 +353,9 @@ func (t *LayoutTree) vtCellAttrs(tr Transition, slot string) html.Attrs {
 	if !ok {
 		return nil
 	}
-	attrs := html.Attrs{"data-fui-vt": name}
+	attrs := html.Attrs{"data-cui-vt": name}
 	if tr.Narrow != "" {
-		attrs["data-fui-vt-when"] = "(width >= " + tr.Narrow + ")"
+		attrs["data-cui-vt-when"] = "(width >= " + tr.Narrow + ")"
 	}
 	return attrs
 }
@@ -375,13 +375,13 @@ func (t *LayoutTree) VTRegion() html.Attrs {
 	}
 	name, _ := t.vtNameAttr(tr, keyedSlotName("primary", t.primaryPickName()))
 	return html.Attrs{
-		"data-fui-vt":      name,
-		"data-fui-vt-when": "(width < " + tr.Narrow + ")",
+		"data-cui-vt":      name,
+		"data-cui-vt-when": "(width < " + tr.Narrow + ")",
 	}
 }
 
 // Primary renders the layer's primary outlet: today's content cell
-// (data-fui-layout-slot="<layer key>"), the runtime's swap target.
+// (data-cui-layout-slot="<layer key>"), the runtime's swap target.
 // Layer 0 renders the page's single <main id="main-content">; inner
 // layers render the .layout-content div. A spec-declared Transition
 // () marks the cell with its view-transition name; a spec
@@ -392,7 +392,7 @@ func (t *LayoutTree) Primary() render.HTML {
 	}
 	slotAttrs := html.Attrs{}
 	if t.key != "" {
-		slotAttrs["data-fui-layout-slot"] = t.key
+		slotAttrs["data-cui-layout-slot"] = t.key
 	}
 	for k, v := range t.vtCellAttrs(t.primaryTransition(), keyedSlotName("primary", t.primaryPickName())) {
 		slotAttrs[k] = v
@@ -440,7 +440,7 @@ func (t *LayoutTree) primaryPickName() string {
 }
 
 // Place renders the non-primary outlet o, addressed
-// data-fui-outlet="<layer key>#<name>", carrying the resolved fill. A
+// data-cui-outlet="<layer key>#<name>", carrying the resolved fill. A
 // spec-declared Transition () marks the cell with its
 // view-transition name; a spec-declared Loading () carries its
 // inert template as a SIBLING of the cell (fill application replaces
@@ -456,7 +456,7 @@ func (t *LayoutTree) Place(o *Outlet) render.HTML {
 		return ""
 	}
 	addr := t.key + "#" + o.Name()
-	attrs := html.Attrs{"data-fui-outlet": addr}
+	attrs := html.Attrs{"data-cui-outlet": addr}
 	for k, v := range t.vtCellAttrs(o.Transition, o.Name()) {
 		attrs[k] = v
 	}
@@ -473,7 +473,7 @@ func (t *LayoutTree) Place(o *Outlet) render.HTML {
 }
 
 // RouteArea renders a declared route area, addressed
-// data-fui-area="<layer key>~<name>". fn runs on EVERY render the layer
+// data-cui-area="<layer key>~<name>". fn runs on EVERY render the layer
 // is part of, kept or not: on a partial a kept layer's area fn runs in
 // collect mode and its HTML travels as a fill instead of markup. A
 // spec-declared AreaSpec.Transition () marks the cell with its
@@ -512,7 +512,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	if t.collect {
 		return ""
 	}
-	attrs := html.Attrs{"data-fui-area": addr}
+	attrs := html.Attrs{"data-cui-area": addr}
 	var ld *Loading
 	if t.spec != nil {
 		for _, a := range t.spec.Areas {
@@ -563,7 +563,7 @@ func containedBuild(ctx context.Context, build LayoutFunc, t *LayoutTree) (out r
 
 // wrapTreeLayer renders one tree-layout layer of a chain: it runs the
 // build around the content accumulated so far and emits the layer's
-// wrapper (data-fui-layout / data-fui-layout-key, doc markers on the
+// wrapper (data-cui-layout / data-cui-layout-key, doc markers on the
 // frame root), so the runtime's chain walk is identical for template
 // and tree layers.
 func (l *Layout) wrapTreeLayer(ctx context.Context, chain []LayoutLayer, i, from int, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
@@ -586,13 +586,13 @@ func (l *Layout) wrapTreeLayer(ctx context.Context, chain []LayoutLayer, i, from
 	}
 	attrs := html.Attrs{}
 	if l.Name != "" {
-		attrs["data-fui-layout"] = l.Name
+		attrs["data-cui-layout"] = l.Name
 	}
 	if key != "" {
-		attrs["data-fui-layout-key"] = key
+		attrs["data-cui-layout-key"] = key
 	}
 	if l.spec != nil && l.spec.Style != nil {
-		attrs["data-fui-scope"] = l.spec.Style.OwnedSheet().Name()
+		attrs["data-cui-scope"] = l.spec.Style.OwnedSheet().Name()
 	}
 	if i == from {
 		for k, v := range docShellAttrs(ctx) {
@@ -627,17 +627,17 @@ func checkBuildInventory(l *Layout, key string, i int, body, primary render.HTML
 		return fmt.Errorf("app: layout %q (layer key %q): the build emitted %d <main> elements, want %d — only the outermost layer's Primary owns the document's <main>", l.Name, key, n, wantMain)
 	}
 	if key != "" {
-		if n := count(`data-fui-layout-slot="` + key + `"`); n != 1 {
+		if n := count(`data-cui-layout-slot="` + key + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed its primary slot %d times, want exactly 1", l.Name, key, n)
 		}
 	}
 	for _, o := range l.spec.Outlets {
-		if n := count(`data-fui-outlet="` + key + "#" + o.Name() + `"`); n != 1 {
+		if n := count(`data-cui-outlet="` + key + "#" + o.Name() + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed outlet %q %d times, want exactly 1 — a duplicated outlet marker makes the region's fill address ambiguous", l.Name, key, o.Name(), n)
 		}
 	}
 	for _, a := range l.spec.Areas {
-		if n := count(`data-fui-area="` + key + "~" + a.Name + `"`); n != 1 {
+		if n := count(`data-cui-area="` + key + "~" + a.Name + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed route area %q %d times, want exactly 1", l.Name, key, a.Name, n)
 		}
 	}

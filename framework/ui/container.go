@@ -73,7 +73,7 @@ type ContainerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the wrapper element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-fui-*.
+	// ID), style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -131,7 +131,7 @@ func containerCSS(_ style.Theme) string {
 	// site that wants a 1240px wide cap sets
 	//   t.Layout.WideWidth.Value = "1240px"
 	// on its theme.
-	return `[data-fui-comp="ui-container"] {
+	return `[data-cui-comp="ui-container"] {
   display: block;
   inline-size: 100%;
   max-inline-size: var(--size-content-width, 1080px);
@@ -140,27 +140,27 @@ func containerCSS(_ style.Theme) string {
   box-sizing: border-box;
 }
 @media (min-width: 720px) {
-  [data-fui-comp="ui-container"] {
+  [data-cui-comp="ui-container"] {
     padding-inline: var(--spacing-lg, 16px);
   }
 }
 @media (min-width: 1080px) {
-  [data-fui-comp="ui-container"] {
+  [data-cui-comp="ui-container"] {
     padding-inline: var(--spacing-xl, 24px);
   }
 }
 
-:where([data-fui-comp="ui-container"]).fui-container--narrow { max-inline-size: var(--size-narrow-width, 640px); }
-:where([data-fui-comp="ui-container"]).fui-container--wide { max-inline-size: var(--size-wide-width, 1280px); }
+:where([data-cui-comp="ui-container"]).fui-container--narrow { max-inline-size: var(--size-narrow-width, 640px); }
+:where([data-cui-comp="ui-container"]).fui-container--wide { max-inline-size: var(--size-wide-width, 1280px); }
 /* The page measure follows the header/footer band model: the CONTENT
    box is the measure and the gutter sits outside it, so main's text
    starts on the same edge as the band's brand at every width. */
-:where([data-fui-comp="ui-container"]).fui-container--page {
+:where([data-cui-comp="ui-container"]).fui-container--page {
   --ui-layout-gutter: var(--size-page-gutter, clamp(20px, 5vw, 32px));
   max-inline-size: calc(var(--size-page-width, 66rem) + 2 * var(--ui-layout-gutter));
   padding-inline: var(--ui-layout-gutter);
 }
-:where([data-fui-comp="ui-container"]).fui-container--full { max-inline-size: none; }
-[data-fui-comp="ui-container"].fui-container--pad-page { padding-block: var(--ui-container-pad-start, clamp(40px, 6vw, 64px)) var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }
-[data-fui-comp="ui-container"].fui-container--pad-end { padding-block-end: var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }`
+:where([data-cui-comp="ui-container"]).fui-container--full { max-inline-size: none; }
+[data-cui-comp="ui-container"].fui-container--pad-page { padding-block: var(--ui-container-pad-start, clamp(40px, 6vw, 64px)) var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }
+[data-cui-comp="ui-container"].fui-container--pad-end { padding-block-end: var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }`
 }

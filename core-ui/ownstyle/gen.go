@@ -309,7 +309,7 @@ func (g *fileGen) render() string {
 func (g *fileGen) renderRoot(b *strings.Builder) {
 	r := g.model.Root
 	writeDoc(b,
-		"Root returns the :scope base class: the empty string. The scoped\nroot carries data-fui-scope, not a class; RootWith returns its\nvariants.",
+		"Root returns the :scope base class: the empty string. The scoped\nroot carries data-cui-scope, not a class; RootWith returns its\nvariants.",
 		r.Doc)
 	fmt.Fprintf(b, "func (s %s) Root() string { return \"\" }\n\n", g.handle)
 

@@ -30,8 +30,8 @@ func TestE2E_Select_BasicRenders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-select"]').length`, &count),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-form-field"] label.fui-field__label') !== null`, &hasLabel),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-select"]').length`, &count),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-form-field"] label.fui-field__label') !== null`, &hasLabel),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -51,7 +51,7 @@ func TestE2E_Select_HasOptions(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('select[data-fui-comp="ui-select"] option').length`, &optCount),
+		chromedp.Evaluate(`document.querySelectorAll('select[data-cui-comp="ui-select"] option').length`, &optCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -69,7 +69,7 @@ func TestE2E_Select_CustomArrow(t *testing.T) {
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var sel = document.querySelector('select[data-fui-comp="ui-select"]');
+			var sel = document.querySelector('select[data-cui-comp="ui-select"]');
 			return sel ? getComputedStyle(sel).backgroundImage : '';
 		})()`, &bgImage),
 	)
@@ -90,7 +90,7 @@ func TestE2E_AspectRatio_RendersBoxes(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/aspectratio"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-aspect-ratio"]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-aspect-ratio"]').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -108,7 +108,7 @@ func TestE2E_AspectRatio_CSSAppliesAspectRatio(t *testing.T) {
 		chromedp.Navigate(base+"/components/aspectratio"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var el = document.querySelector('[data-fui-comp="ui-aspect-ratio"]');
+			var el = document.querySelector('[data-cui-comp="ui-aspect-ratio"]');
 			return el ? getComputedStyle(el).aspectRatio : '';
 		})()`, &ar),
 	)
@@ -129,8 +129,8 @@ func TestE2E_SkipLink_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/skiplink"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('a[data-fui-comp="ui-skip-link"]')?.getAttribute('href') || ''`, &href),
-		chromedp.Evaluate(`document.querySelector('a[data-fui-comp="ui-skip-link"]')?.textContent || ''`, &text),
+		chromedp.Evaluate(`document.querySelector('a[data-cui-comp="ui-skip-link"]')?.getAttribute('href') || ''`, &href),
+		chromedp.Evaluate(`document.querySelector('a[data-cui-comp="ui-skip-link"]')?.textContent || ''`, &text),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -151,7 +151,7 @@ func TestE2E_SkipLink_HiddenByDefault(t *testing.T) {
 		chromedp.Navigate(base+"/components/skiplink"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var link = document.querySelector('a[data-fui-comp="ui-skip-link"]');
+			var link = document.querySelector('a[data-cui-comp="ui-skip-link"]');
 			if (!link) return false;
 			var rect = link.getBoundingClientRect();
 			return rect.left < -100 || (rect.width === 0 && rect.height === 0);
@@ -212,7 +212,7 @@ func TestE2E_Sticky_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sticky"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-sticky"]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-sticky"]').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -230,7 +230,7 @@ func TestE2E_Sticky_TopHasStickyCSS(t *testing.T) {
 		chromedp.Navigate(base+"/components/sticky"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var el = document.querySelector('[data-fui-comp="ui-sticky"].fui-sticky--top');
+			var el = document.querySelector('[data-cui-comp="ui-sticky"].fui-sticky--top');
 			return el ? getComputedStyle(el).position : 'none';
 		})()`, &pos),
 	)

@@ -51,7 +51,7 @@ type LineChartConfig struct {
 	// analytics markers, ARIA overrides) to the chart's root <svg>
 	// element, or to the shared zero-data placeholder when there is
 	// nothing to draw. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, and the geometry / accessibility
+	// (use Class / ID), data-cui-*, and the geometry / accessibility
 	// keys the chart derives (width, height, viewBox, xmlns, role,
 	// aria-labelledby, aria-hidden).
 	ExtraAttrs html.Attrs
@@ -138,7 +138,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
-	sb.WriteString(` data-fui-comp="ui-line-chart"`)
+	sb.WriteString(` data-cui-comp="ui-line-chart"`)
 	sb.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "width", "height",
 		"viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
 	sb.WriteString(`>`)
@@ -288,11 +288,11 @@ func LineChart(cfg LineChartConfig) render.HTML {
 var lineChartStyle = registry.RegisterStyle("ui-line-chart", lineChartCSS)
 
 func lineChartCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-line-chart"] {
+	return `[data-cui-comp="ui-line-chart"] {
   display: block;
   max-inline-size: 100%;
 }
-[data-fui-comp="ui-line-chart"] .fui-line-chart__line {
+[data-cui-comp="ui-line-chart"] .fui-line-chart__line {
   fill: none;
   stroke-width: 1.5;
   stroke-linejoin: round;
@@ -304,18 +304,18 @@ func lineChartCSS(_ style.Theme) string {
 .fui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
 .fui-line-chart__line--danger  { stroke: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-line-chart"] .fui-line-chart__area { opacity: 0.18; stroke: none; }
+[data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: 0.18; stroke: none; }
 .fui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
 .fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
 .fui-line-chart__area--success { fill: var(--color-success, #16A34A); }
 .fui-line-chart__area--warning { fill: var(--color-warning, #D97706); }
 .fui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-line-chart"] .fui-line-chart__label {
+[data-cui-comp="ui-line-chart"] .fui-line-chart__label {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-line-chart"] .fui-line-chart__legend {
+[data-cui-comp="ui-line-chart"] .fui-line-chart__legend {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text, #18181B);
   font-weight: var(--font-weight-medium);

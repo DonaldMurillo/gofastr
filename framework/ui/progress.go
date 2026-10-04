@@ -68,16 +68,16 @@ func Progress(cfg ProgressConfig) render.HTML {
 var progressStyle = registry.RegisterStyle("ui-progress", progressCSS)
 
 func progressCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-progress"] {
+	return `[data-cui-comp="ui-progress"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-progress"] .fui-progress__label {
+[data-cui-comp="ui-progress"] .fui-progress__label {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #1F2937);
   font-weight: var(--font-weight-medium);
 }
-[data-fui-comp="ui-progress"] .fui-progress__bar {
+[data-cui-comp="ui-progress"] .fui-progress__bar {
   appearance: none;
   -webkit-appearance: none;
   inline-size: 100%;
@@ -87,25 +87,25 @@ func progressCSS(_ style.Theme) string {
   background: var(--color-border, #E5E7EB);
   overflow: hidden;
 }
-[data-fui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-bar {
+[data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-bar {
   background: var(--color-border, #E5E7EB);
   border-radius: var(--radii-full, 9999px);
 }
-[data-fui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value {
+[data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value {
   background: var(--color-primary, #4F46E5);
   border-radius: var(--radii-full, 9999px);
   transition: inline-size 200ms ease;
 }
-[data-fui-comp="ui-progress"] .fui-progress__bar::-moz-progress-bar {
+[data-cui-comp="ui-progress"] .fui-progress__bar::-moz-progress-bar {
   background: var(--color-primary, #4F46E5);
   border-radius: var(--radii-full, 9999px);
 }
-[data-fui-comp="ui-progress"] .fui-progress__desc {
+[data-cui-comp="ui-progress"] .fui-progress__desc {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #6B7280);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value { transition: none; }
+  [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value { transition: none; }
 }`
 }

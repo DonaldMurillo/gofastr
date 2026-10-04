@@ -8,7 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Render renders the component and injects data-fui-comp="<name>"
+// Render renders the component and injects data-cui-comp="<name>"
 // onto its outermost tag. Panics on malformed component output with
 // a message that tells the author how to fix it.
 //
@@ -20,7 +20,7 @@ import (
 //   - the client runtime (which scans newly inserted DOM and calls
 //     loadComponentCSS for each marker).
 //
-// Both paths dedup on the link's data-fui-style attribute, so a
+// Both paths dedup on the link's data-cui-style attribute, so a
 // component never re-fetches across the SSR + hydration handoff or
 // across page-to-page navigations.
 func (s *Style) Render(c component.Component) render.HTML {
@@ -47,17 +47,17 @@ func (s *Style) WrapHTML(html render.HTML) render.HTML {
 }
 
 // markerRe matches the two loader markers in rendered HTML:
-// data-fui-comp="<name>" on a kit component root and
-// data-fui-scope="<name>" on an owned style's root. The name is
+// data-cui-comp="<name>" on a kit component root and
+// data-cui-scope="<name>" on an owned style's root. The name is
 // captured. The leading boundary class restricts matches to attribute
 // positions inside an open tag (preceded by whitespace), so stray
 // mentions inside <pre>/<code>/text content don't trigger
 // false-positive SSR links. A name outside the charset never matches,
 // so it never reaches a /__gofastr/comp/<name>.css URL.
-var markerRe = regexp.MustCompile(`[\s/]data-fui-(?:comp|scope)="([a-zA-Z0-9_:.-]+)"`)
+var markerRe = regexp.MustCompile(`[\s/]data-cui-(?:comp|scope)="([a-zA-Z0-9_:.-]+)"`)
 
 // Scan returns the sorted, deduped list of sheet names referenced by
-// data-fui-comp and data-fui-scope attributes in html. Used by the SSR
+// data-cui-comp and data-cui-scope attributes in html. Used by the SSR
 // host to decide which <link> tags to emit in <head>.
 func Scan(html string) []string {
 	matches := markerRe.FindAllStringSubmatch(html, -1)

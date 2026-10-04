@@ -40,13 +40,13 @@ func TestPreferencesScreenRendersEveryDeclaredField(t *testing.T) {
 	}
 	// The form is an island form to the battery's route that navigates
 	// back to the mount path, the resource engine's landing shape.
-	if !strings.Contains(body, `data-fui-rpc="/__gofastr/desktop/preferences"`) {
+	if !strings.Contains(body, `data-cui-rpc="/__gofastr/desktop/preferences"`) {
 		t.Fatal("the form does not submit through the runtime's intercept")
 	}
-	if !strings.Contains(body, `data-fui-rpc-navigate="/settings"`) {
+	if !strings.Contains(body, `data-cui-rpc-navigate="/settings"`) {
 		t.Fatal("the form does not navigate back to the mount path on save")
 	}
-	if !strings.Contains(body, `data-fui-comp`) {
+	if !strings.Contains(body, `data-cui-comp`) {
 		t.Fatal("the screen carries no design-system component markup")
 	}
 	if strings.Contains(body, "<style") || strings.Contains(body, `style="`) {

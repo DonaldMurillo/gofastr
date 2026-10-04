@@ -28,7 +28,7 @@ func TestOptimisticInitialMarkup(t *testing.T) {
 		Endpoint: "/follow", IdleLabel: "Follow", SuccessLabel: "Following",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-optimistic-action"`,
+		`data-cui-comp="ui-optimistic-action"`,
 		`data-state="idle"`,
 		`data-hui-action-endpoint="/follow"`,
 		`data-hui-action=""`,

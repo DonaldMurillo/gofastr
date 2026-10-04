@@ -37,7 +37,7 @@ type FilterChip struct {
 	DismissPath string
 
 	// DismissBody is an optional static JSON body sent with the
-	// dismiss request (data-fui-rpc-body). When empty, the server
+	// dismiss request (data-cui-rpc-body). When empty, the server
 	// is expected to deduce the filter from DismissPath alone.
 	DismissBody string
 
@@ -71,8 +71,8 @@ type FilterChipBarConfig struct {
 	RPCSignal string
 
 	// SignalName, when set, is also placed on the wrapper as
-	// data-fui-signal so the runtime can swap the entire bar from
-	// the RPC response. Pair with data-fui-signal-mode="html" on
+	// data-cui-signal so the runtime can swap the entire bar from
+	// the RPC response. Pair with data-cui-signal-mode="html" on
 	// the parent container.
 	SignalName string
 
@@ -86,7 +86,7 @@ type FilterChipBarConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the toolbar's root div.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, role, and aria-label (use Label).
+	// ID), data-cui-*, role, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -121,8 +121,8 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		wrapAttrs["id"] = cfg.ID
 	}
 	if cfg.SignalName != "" {
-		wrapAttrs["data-fui-signal"] = cfg.SignalName
-		wrapAttrs["data-fui-signal-mode"] = "html"
+		wrapAttrs["data-cui-signal"] = cfg.SignalName
+		wrapAttrs["data-cui-signal-mode"] = "html"
 	}
 
 	items := make([]render.HTML, 0, len(cfg.Filters)+1)
@@ -163,10 +163,10 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 			"href":                cfg.ClearAllPath,
 			"class":               "fui-filter-bar__clear",
 			"aria-label":          clearLabel,
-			"data-fui-rpc":        cfg.ClearAllPath,
-			"data-fui-rpc-method": "POST",
-			"data-fui-rpc-signal": signal,
-			"data-fui-internal":   "",
+			"data-cui-rpc":        cfg.ClearAllPath,
+			"data-cui-rpc-method": "POST",
+			"data-cui-rpc-signal": signal,
+			"data-cui-internal":   "",
 		}, render.Text(clearLabel)))
 	}
 
@@ -176,15 +176,15 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 var filterChipBarStyle = registry.RegisterStyle("ui-filter-bar", filterChipBarCSS)
 
 func filterChipBarCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-filter-bar"] {
+	return `[data-cui-comp="ui-filter-bar"] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) 0;
 }
-[data-fui-comp="ui-filter-bar"]:empty { display: none; }
-[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear {
+[data-cui-comp="ui-filter-bar"]:empty { display: none; }
+[data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear {
   display: inline-flex;
   align-items: center;
   min-height: var(--spacing-touch-target, 44px);
@@ -198,10 +198,10 @@ func filterChipBarCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
 }
-[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:hover {
+[data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear:hover {
   background: var(--color-surface-soft, #f1f1f3);
 }
-[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
+[data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }

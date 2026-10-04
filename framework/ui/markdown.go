@@ -35,7 +35,7 @@ type MarkdownConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the prose container's
 	// root <div>. Keys the component owns are dropped: class and id
-	// (use Class / ID) and data-fui-*.
+	// (use Class / ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -252,7 +252,7 @@ func markdownCSS(_ style.Theme) string {
 	// larger gap above and bind tightly to the content below, lists and code
 	// get their own measure. Leading is 1.7: light-on-dark text reads lighter
 	// and wants extra line-height (the canonical site theme is dark-first).
-	return `[data-fui-comp="ui-markdown"] {
+	return `[data-cui-comp="ui-markdown"] {
   display: block;
   color: var(--color-text, #18181B);
   font-size: var(--text-base, 1rem);
@@ -261,48 +261,48 @@ func markdownCSS(_ style.Theme) string {
 }
 
 /* Flow rhythm — comfortable paragraph spacing, no leading gap. */
-[data-fui-comp="ui-markdown"] > * { margin-block: 0; }
-[data-fui-comp="ui-markdown"] > * + * { margin-block-start: 1.15em; }
-[data-fui-comp="ui-markdown"] > :first-child { margin-block-start: 0; }
+[data-cui-comp="ui-markdown"] > * { margin-block: 0; }
+[data-cui-comp="ui-markdown"] > * + * { margin-block-start: 1.15em; }
+[data-cui-comp="ui-markdown"] > :first-child { margin-block-start: 0; }
 
 /* Headings — generous space ABOVE (section separation, scaled by level),
    tight space BELOW (the heading binds to the text it introduces). */
-[data-fui-comp="ui-markdown"] h1,
-[data-fui-comp="ui-markdown"] h2,
-[data-fui-comp="ui-markdown"] h3,
-[data-fui-comp="ui-markdown"] h4 {
+[data-cui-comp="ui-markdown"] h1,
+[data-cui-comp="ui-markdown"] h2,
+[data-cui-comp="ui-markdown"] h3,
+[data-cui-comp="ui-markdown"] h4 {
   color: var(--color-text, #18181B);
   line-height: 1.25;
   text-wrap: balance;
 }
-[data-fui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: -0.014em; margin-block: 0 0.5em; }
-[data-fui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
-[data-fui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
-[data-fui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
+[data-cui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: -0.014em; margin-block: 0 0.5em; }
+[data-cui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
+[data-cui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
+[data-cui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
 /* A heading straight after another heading shouldn't double the gap. */
-[data-fui-comp="ui-markdown"] h2 + h3,
-[data-fui-comp="ui-markdown"] h3 + h4 { margin-block-start: 0.9em; }
-[data-fui-comp="ui-markdown"] > :first-child:is(h1,h2,h3,h4) { margin-block-start: 0; }
+[data-cui-comp="ui-markdown"] h2 + h3,
+[data-cui-comp="ui-markdown"] h3 + h4 { margin-block-start: 0.9em; }
+[data-cui-comp="ui-markdown"] > :first-child:is(h1,h2,h3,h4) { margin-block-start: 0; }
 
-[data-fui-comp="ui-markdown"] a {
+[data-cui-comp="ui-markdown"] a {
   color: var(--color-primary, #4F46E5);
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;
 }
-[data-fui-comp="ui-markdown"] strong { font-weight: 650; color: var(--color-text, #18181B); }
+[data-cui-comp="ui-markdown"] strong { font-weight: 650; color: var(--color-text, #18181B); }
 
 /* Lists — hang the marker, give items room, tighten nested levels. */
-[data-fui-comp="ui-markdown"] ul,
-[data-fui-comp="ui-markdown"] ol { padding-inline-start: 1.5em; }
-[data-fui-comp="ui-markdown"] li { margin-block: 0; }
-[data-fui-comp="ui-markdown"] li + li { margin-block-start: 0.4em; }
-[data-fui-comp="ui-markdown"] li > ul,
-[data-fui-comp="ui-markdown"] li > ol { margin-block-start: 0.4em; }
-[data-fui-comp="ui-markdown"] li::marker { color: var(--color-text-subtle, #71717A); }
+[data-cui-comp="ui-markdown"] ul,
+[data-cui-comp="ui-markdown"] ol { padding-inline-start: 1.5em; }
+[data-cui-comp="ui-markdown"] li { margin-block: 0; }
+[data-cui-comp="ui-markdown"] li + li { margin-block-start: 0.4em; }
+[data-cui-comp="ui-markdown"] li > ul,
+[data-cui-comp="ui-markdown"] li > ol { margin-block-start: 0.4em; }
+[data-cui-comp="ui-markdown"] li::marker { color: var(--color-text-subtle, #71717A); }
 
 /* Inline code — a quiet chip, not a button. */
-[data-fui-comp="ui-markdown"] code {
+[data-cui-comp="ui-markdown"] code {
   font-family: var(--font-mono, ui-monospace, monospace);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
@@ -314,11 +314,11 @@ func markdownCSS(_ style.Theme) string {
 /* Fenced code blocks are upgraded to framed ui.CodeBlock surfaces (syntax
    highlighting + copy button) by enrichCodeBlocks — they bring their own
    chrome; we only give them a little extra room above. */
-:where([data-fui-comp="ui-markdown"]) > [data-fui-comp="ui-code-block"] {
+:where([data-cui-comp="ui-markdown"]) > [data-cui-comp="ui-code-block"] {
   margin-block-start: 1.5em;
 }
 /* Any RAW <pre> that slipped through unframed (no class) still reads well. */
-[data-fui-comp="ui-markdown"] pre:not([class]) {
+[data-cui-comp="ui-markdown"] pre:not([class]) {
   margin-block-start: 1.5em;
   padding: var(--spacing-lg, 1rem) 1.1rem;
   background: var(--color-code-surface, #18181B);
@@ -331,7 +331,7 @@ func markdownCSS(_ style.Theme) string {
   line-height: 1.65;
   tab-size: 2;
 }
-[data-fui-comp="ui-markdown"] pre:not([class]) code {
+[data-cui-comp="ui-markdown"] pre:not([class]) code {
   background: transparent;
   color: inherit;
   padding: 0;
@@ -340,43 +340,43 @@ func markdownCSS(_ style.Theme) string {
 
 /* Blockquote — tinted panel with a full hairline border. Deliberately NOT a
    thick left accent stripe (that pattern reads as templated). */
-[data-fui-comp="ui-markdown"] blockquote {
+[data-cui-comp="ui-markdown"] blockquote {
   padding: 0.85em 1.1em;
   background: var(--color-surface-soft, #F4F4F5);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-markdown"] blockquote > :first-child { margin-block-start: 0; }
+[data-cui-comp="ui-markdown"] blockquote > :first-child { margin-block-start: 0; }
 
-[data-fui-comp="ui-markdown"] hr {
+[data-cui-comp="ui-markdown"] hr {
   border: 0;
   border-block-start: 1px solid var(--color-border, #E4E4E7);
   margin-block: 2.75em;
 }
 
 /* Tables — quiet header, roomy cells, hairline row rules. */
-[data-fui-comp="ui-markdown"] table {
+[data-cui-comp="ui-markdown"] table {
   border-collapse: collapse;
   width: 100%;
   margin-block-start: 1.5em;
   font-size: 0.95em;
 }
-[data-fui-comp="ui-markdown"] th,
-[data-fui-comp="ui-markdown"] td {
+[data-cui-comp="ui-markdown"] th,
+[data-cui-comp="ui-markdown"] td {
   padding: 0.5em 0.85em;
   border-block-end: 1px solid var(--color-border, #E4E4E7);
   text-align: start;
   vertical-align: top;
 }
-[data-fui-comp="ui-markdown"] thead th {
+[data-cui-comp="ui-markdown"] thead th {
   font-weight: 650;
   color: var(--color-text, #18181B);
   border-block-end-width: 2px;
 }
-[data-fui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }
+[data-cui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }
 
-[data-fui-comp="ui-markdown"] img { max-width: 100%; height: auto; border-radius: var(--radii-md, 8px); }
+[data-cui-comp="ui-markdown"] img { max-width: 100%; height: auto; border-radius: var(--radii-md, 8px); }
 
 /* Compact variant — tighter rhythm for inline previews. */
 .fui-markdown.fui-markdown--compact { line-height: 1.6; }

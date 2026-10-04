@@ -46,7 +46,7 @@ type ResponsiveConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the swap's root element.
 	// Keys the component owns are dropped: class (use Class) and
-	// data-fui-*.
+	// data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -62,11 +62,11 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 	}
 	desktopAttrs := html.Attrs{}
 	if desktop == "" {
-		desktopAttrs["data-fui-internal"] = ""
+		desktopAttrs["data-cui-internal"] = ""
 	}
 	mobileAttrs := html.Attrs{}
 	if mobile == "" {
-		mobileAttrs["data-fui-internal"] = ""
+		mobileAttrs["data-cui-internal"] = ""
 	}
 	return responsiveStyle.WrapHTML(html.Div(html.DivConfig{
 		Class:      cls,

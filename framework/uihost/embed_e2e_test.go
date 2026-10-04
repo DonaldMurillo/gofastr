@@ -38,7 +38,7 @@ func (c *tallEmbedComp) RenderCtx(ctx context.Context) render.HTML {
 	// frame started attaching the grant to every same-origin fetch. Polls fire
 	// on a timer, so this needs no click and works across the origin boundary
 	// where chromedp cannot reach into the frame.
-	b.WriteString(`<div data-fui-poll="5s" data-fui-poll-src="/polled">waiting</div>`)
+	b.WriteString(`<div data-cui-poll="5s" data-cui-poll-src="/polled">waiting</div>`)
 	for i := range 40 {
 		fmt.Fprintf(&b, "<p>row %d</p>", i)
 	}
@@ -225,9 +225,9 @@ func TestEmbedRefusesToRenderUnframed(t *testing.T) {
 	var state string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/__gofastr/embed/reports"),
-		chromedp.Poll(`document.getElementById('gofastr-embed-root').getAttribute('data-fui-embed-state') === 'error'`,
+		chromedp.Poll(`document.getElementById('gofastr-embed-root').getAttribute('data-cui-embed-state') === 'error'`,
 			nil, chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Evaluate(`document.getElementById('gofastr-embed-root').getAttribute('data-fui-embed-state')`, &state),
+		chromedp.Evaluate(`document.getElementById('gofastr-embed-root').getAttribute('data-cui-embed-state')`, &state),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}

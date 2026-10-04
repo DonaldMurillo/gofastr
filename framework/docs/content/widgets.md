@@ -13,7 +13,14 @@ Examples of widgets the framework already supports:
 
 - **FloatingPanel**: corner-anchored chat / devtools / agent panel
 - **Modal**: center dialog with backdrop, ESC + click-outside dismiss
-- **Toast**: ephemeral bottom notifications
+- **Toast**: ephemeral notifications. `preset.ToastStack(name)` mounts
+  the region; `framework/uihost` mounts one named
+  `uihost.DefaultToastStack` at boot when the app mounted none, so an
+  `X-Gofastr-Toast` header always lands somewhere. The rows a toast
+  builds are cloned from the row template the kit registers
+  (`preset.ToastTemplate`, via `registry.RegisterTemplate`), which
+  `preset.ToastSlotHTML` renders inside the stack; `preset.IsToastStack`
+  tells a host whether a widget definition is one.
 - **Drawer**: edge-mounted sliding panel
 - **Banner**: top strip for build progress, version warnings, etc.
 - **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
@@ -40,11 +47,11 @@ widget.Mount(router, &panel)
 ```
 
 To open a widget from the page, wire any element with
-`data-fui-open="<widget-name>"`; the runtime handles the click, shows
+`data-cui-open="<widget-name>"`; the runtime handles the click, shows
 the widget, and (for modals) moves focus in:
 
 ```html
-<button data-fui-open="my-panel">Open panel</button>
+<button data-cui-open="my-panel">Open panel</button>
 ```
 
 Widgets built with `.Hidden()` (and click-to-open presets like
@@ -82,7 +89,7 @@ fills them in idiomatically.
 
 Slots are named content regions. The framework renders the widget
 chrome (positioning, focus management, backdrop) and embeds each
-slot's component at the matching `<div class="fui-slot fui-slot-<name>">`
+slot's component at the matching `<div class="cui-slot cui-slot-<name>">`
 placeholder.
 
 ```go
@@ -111,7 +118,7 @@ component owns only its internal content and layout. Per position:
 - **Anchored popovers**: the widget root paints the surface, border,
   radius, shadow, size caps, and the directional arrow.
 - **Centered modals** (`Center`): the chrome groups every slot inside
-  a single `.fui-panel` element and paints the default panel on it:
+  a single `.cui-panel` element and paints the default panel on it:
   `var(--color-surface)` background, border, radius, padding, shadow,
   `min/max-inline-size` caps, and `overflow: auto` so tall content
   scrolls inside the dialog. A modal using `header`, `body`, and
@@ -126,18 +133,18 @@ transparent container with no background, border, padding, or shadow.
 `framework/ui.Lightbox` is the canonical bare body: it centers the
 image directly on the backdrop, no card.
 
-Two rules govern the opt-out (the selector is `.fui-pos-center >
-.fui-panel:not(:has(> .fui-slot > …))`):
+Two rules govern the opt-out (the selector is `.cui-pos-center >
+.cui-panel:not(:has(> .cui-slot > …))`):
 
 1. **The marker must be on the slot content's ROOT element**: the
-   direct child of `.fui-slot`. The marker is `.fui-slot-bare` —
+   direct child of `.cui-slot`. The marker is `.cui-slot-bare` —
    `framework/ui.Lightbox` and `framework/ui.CommandPalette` put it
-   on their slot roots. A wrapper `<div>` between `.fui-slot` and
-   the marker defeats it: `.fui-slot > <div> > .fui-slot-bare` does
-   NOT match `:has(> .fui-slot > .fui-slot-bare)`, so the panel
+   on their slot roots. A wrapper `<div>` between `.cui-slot` and
+   the marker defeats it: `.cui-slot > <div> > .cui-slot-bare` does
+   NOT match `:has(> .cui-slot > .cui-slot-bare)`, so the panel
    re-paints.
 2. **One bare slot opts the WHOLE panel out.** The opt-out sits on the
-   `.fui-panel`, which wraps every slot, so a single bare slot drops
+   `.cui-panel`, which wraps every slot, so a single bare slot drops
    the panel chrome for the header and footer too. Bare means "this
    body owns all the chrome"; if you need a card around some slots
    but not others, paint that surface inside the bare slot rather
@@ -146,7 +153,7 @@ Two rules govern the opt-out (the selector is `.fui-pos-center >
 ### Signals
 
 A **signal** is a named server-side value the runtime keeps in sync
-with `[data-fui-signal="<name>"]` DOM nodes. The widget framework
+with `[data-cui-signal="<name>"]` DOM nodes. The widget framework
 fetches the current values from `/<basePath>/state` on mount and on
 each RPC response that names the signal. Polling (`Poll`, below)
 re-fetches `/state` on a cadence; an RPC handler can change the
@@ -163,13 +170,13 @@ panel := widget.New("p").
 In your slot HTML:
 
 ```html
-<span data-fui-signal="count">0</span>
+<span data-cui-signal="count">0</span>
 ```
 
 The runtime updates `textContent` whenever the signal changes.
-For HTML content, use `data-fui-signal-mode="html"`. For attribute
-values, use `data-fui-signal-mode="attr"` plus
-`data-fui-signal-attr="value"` (or whichever attr).
+For HTML content, use `data-cui-signal-mode="html"`. For attribute
+values, use `data-cui-signal-mode="attr"` plus
+`data-cui-signal-attr="value"` (or whichever attr).
 
 ### Polling
 
@@ -187,7 +194,7 @@ panel := preset.FloatingPanel("ops-panel").
 On each interval the runtime re-fetches the widget's `/state` endpoint
 and re-applies the signals that changed, the same code path an RPC
 signal update uses. The interval is a `time.Duration`. Unlike the
-page-level `data-fui-poll` attribute (which clamps to a 5-second
+page-level `data-cui-poll` attribute (which clamps to a 5-second
 floor because page markup is cheap to typo), the widget path
 trusts Go callers: `Builder.Poll` records the interval verbatim and the
 browser runtime clamps it to a 100ms floor, so a dev-tool panel can poll
@@ -222,20 +229,20 @@ A button or form click can invoke a server handler:
 ```
 
 The response is routed to a signal by the trigger's
-`data-fui-rpc-signal` attribute, not by the registration; name the
+`data-cui-rpc-signal` attribute, not by the registration; name the
 target signal there.
 
-Slot HTML wires it via `data-fui-rpc`:
+Slot HTML wires it via `data-cui-rpc`:
 
 ```html
-<button data-fui-rpc="/api/inc" data-fui-rpc-signal="count">+1</button>
+<button data-cui-rpc="/api/inc" data-cui-rpc-signal="count">+1</button>
 ```
 
 The runtime POSTs to the path; on success the response (parsed as
 JSON if `content-type: application/json`, else as text) flows into the
 named signal.
 
-For forms, set `data-fui-rpc` on the `<form>` itself; the runtime
+For forms, set `data-cui-rpc` on the `<form>` itself; the runtime
 serializes inputs into a JSON body.
 
 For RPCs that don't update a signal, drop the `…WithSignal` suffix:
@@ -246,41 +253,41 @@ For RPCs that don't update a signal, drop the `…WithSignal` suffix:
 
 ### Custom request body
 
-Override the JSON body the runtime sends with `data-fui-rpc-body`:
+Override the JSON body the runtime sends with `data-cui-rpc-body`:
 
 ```html
 <button
-  data-fui-rpc="/kiln/panel/approve_plan"
-  data-fui-rpc-body='{"plan_id":"p1"}'
-  data-fui-rpc-signal="chat_html"
+  data-cui-rpc="/kiln/panel/approve_plan"
+  data-cui-rpc-body='{"plan_id":"p1"}'
+  data-cui-rpc-signal="chat_html"
 >Approve</button>
 ```
 
 ### Close action
 
-Any element with `data-fui-action="close"` dismisses the widget:
+Any element with `data-cui-action="close"` dismisses the widget:
 
 ```html
-<button data-fui-action="close">×</button>
+<button data-cui-action="close">×</button>
 ```
 
 Through `ui.Button` the same attribute rides `ExtraAttrs`, which hands
-every `data-fui-*` key to the typed Action seam; `close` is the only
+every `data-cui-*` key to the typed Action seam; `close` is the only
 value the runtime reads, so any other value is refused at render, and so
-is a close beside a `data-fui-rpc` (the runtime fires the request and
-never reaches the close; after a request, use `data-fui-rpc-close`):
+is a close beside a `data-cui-rpc` (the runtime fires the request and
+never reaches the close; after a request, use `data-cui-rpc-close`):
 
 ```go
 ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonGhost,
-    ExtraAttrs: html.Attrs{"data-fui-action": "close"}})
+    ExtraAttrs: html.Attrs{"data-cui-action": "close"}})
 ```
 
 ### Recipe: a form inside a modal
 
 Forms inside a widget are **owned by the widget runtime, not the page
 runtime**. The core dispatcher deliberately skips any click or submit
-inside `[data-fui-widget]`; each mounted widget installs its own
-scoped handler that intercepts `form[data-fui-rpc]`, prevents the
+inside `[data-cui-widget]`; each mounted widget installs its own
+scoped handler that intercepts `form[data-cui-rpc]`, prevents the
 native submit, and does the RPC round-trip (`fetch` with the form
 serialized to JSON by input `name`, or multipart when a file input is
 present). A widget form therefore never navigates the page; the modal
@@ -289,13 +296,13 @@ success path:
 
 | Attribute | On | Effect after a 2xx response |
 |---|---|---|
-| `data-fui-rpc-close` | the form (or any RPC trigger) | Dismisses the widget |
-| `data-fui-rpc-reset` | the `<form>` only | Calls `form.reset()`, clearing the fields for the next open |
+| `data-cui-rpc-close` | the form (or any RPC trigger) | Dismisses the widget |
+| `data-cui-rpc-reset` | the `<form>` only | Calls `form.reset()`, clearing the fields for the next open |
 
 Both are boolean attributes (presence, no value) and both only fire on
 success; a non-2xx response leaves the modal open and untouched, and
 writes `{ok: false, status, text}` into the form's
-`data-fui-rpc-signal` so an error node can display it. A network
+`data-cui-rpc-signal` so an error node can display it. A network
 failure writes `{ok: false, status: 0, text: "Network error — please
 try again"}` to the same signal.
 
@@ -303,12 +310,12 @@ End to end:
 
 ```go
 form := render.HTML(`
-  <form data-fui-rpc="/api/notes" data-fui-rpc-close data-fui-rpc-reset
-        data-fui-rpc-signal="note-error">
+  <form data-cui-rpc="/api/notes" data-cui-rpc-close data-cui-rpc-reset
+        data-cui-rpc-signal="note-error">
     <label>Title <input name="title" required></label>
-    <div data-fui-signal="note-error"></div>
+    <div data-cui-signal="note-error"></div>
     <button type="submit">Save</button>
-    <button type="button" data-fui-action="close">Cancel</button>
+    <button type="button" data-cui-action="close">Cancel</button>
   </form>`)
 
 modal := preset.Modal("new-note").
@@ -321,32 +328,32 @@ widget.Mount(router, &modal)
 
 ```html
 <!-- anywhere on the page -->
-<button data-fui-open="new-note">New note</button>
+<button data-cui-open="new-note">New note</button>
 ```
 
 Details worth knowing:
 
 - The centered modal chrome already paints the dialog panel (surface,
-  border, padding on the `.fui-panel` that wraps the slots; see the
+  border, padding on the `.cui-panel` that wraps the slots; see the
   slot surface contract above), so the form goes straight into the
   `body` slot with no wrapper card. Full-bleed bodies opt out with
-  `fui-slot-bare`.
-- While the RPC is in flight the form gets the `fui-loading` class and
+  `cui-slot-bare`.
+- While the RPC is in flight the form gets the `cui-loading` class and
   `aria-busy="true"`.
 - The dispatch sends `X-FUI-Widget: <name>` and forwards the page's
   `<meta name="csrf-token">` as `X-CSRF-Token`, so `auth.CSRF`-guarded
   handlers work without a hidden `_csrf` field.
 - On success the handler can additionally steer the UI:
-  `data-fui-rpc-open="<widget>"` opens another widget (save in a
-  drawer → open a results sheet), `data-fui-rpc-navigate="/path"` does
+  `data-cui-rpc-open="<widget>"` opens another widget (save in a
+  drawer → open a results sheet), `data-cui-rpc-navigate="/path"` does
   an SPA navigation (cache-bypassing, and it re-renders even when the
   path is the page the widget floats over, so a quick-add modal can
   refresh the list it inserts into), an `X-Gofastr-Toast` response
   header shows a toast, and an `X-Gofastr-Invalidate` header (set via
   `ui.InvalidateScreens`) evicts other screens from the SPA cache,
-  applied before `data-fui-rpc-navigate` runs, so the destination is
+  applied before `data-cui-rpc-navigate` runs, so the destination is
   fetched fresh.
-- `data-fui-rpc-close` also works on a plain button RPC: "Confirm →
+- `data-cui-rpc-close` also works on a plain button RPC: "Confirm →
   do the thing → dismiss" needs no form at all (that's how
   `ui.ConfirmAction` is built).
 
@@ -373,7 +380,7 @@ document.addEventListener('fui:widget-open', (e) => {
 | Field | Meaning |
 |---|---|
 | `name` | The widget's registered name |
-| `root` | The `[data-fui-widget]` element itself (safe to query and bind into) |
+| `root` | The `[data-cui-widget]` element itself (safe to query and bind into) |
 | `hydrated` | `true` when SSR-inlined chrome was hydrated in place, `false` for fetched chrome |
 | `reinserted` | `true` only when a SPA shell swap re-inserted an already-mounted root |
 
@@ -439,7 +446,7 @@ RPC routes too. SSR-inlined chrome honors the same verdict
 page its endpoints would refuse. See
 [Security](security.md) → "Widget signal exposure".
 
-## Chrome context (`data-fui-ctx`)
+## Chrome context (`data-cui-ctx`)
 
 One widget definition is one chrome. Before #321 a per-entity dialog — a
 confirm modal whose body is
@@ -451,8 +458,8 @@ registered N widgets, one per entity.
 The open trigger now carries the context:
 
 ```html
-<button data-fui-open="layout-remove" data-fui-ctx="inv-42">Remove…</button>
-<button data-fui-open="layout-remove" data-fui-ctx="inv-99">Remove…</button>
+<button data-cui-open="layout-remove" data-cui-ctx="inv-42">Remove…</button>
+<button data-cui-open="layout-remove" data-cui-ctx="inv-99">Remove…</button>
 ```
 
 The runtime forwards it as `?ctx=` on the chrome fetch
@@ -502,13 +509,13 @@ because "the page put it there" — the page runs in the visitor's browser.
 
 Notes:
 
-- `data-fui-ctx` rides on `data-fui-open` triggers; emit it from Go with
+- `data-cui-ctx` rides on `data-cui-open` triggers; emit it from Go with
   any attribute-injection surface (e.g. `html` element `ExtraAttrs`).
   `interactive.OpenOnClick` covers the plain no-ctx case.
 - SSR-inlined chrome always renders with no ctx — `""`. Non-`Hidden`
   widgets inline on every page; a `Hidden().DeepLink(...)` widget —
   the per-entity dialog shape — inlines when the URL matches its deep
-  link, and arrival by URL has no trigger to carry `data-fui-ctx`. The
+  link, and arrival by URL has no trigger to carry `data-cui-ctx`. The
   runtime accounts for that: a ctx-carrying open drops the inlined
   node and fetches the per-ctx chrome rather than hydrating it, so
   only the deep-link arrival paint itself is ctx-less.
@@ -572,22 +579,22 @@ encoding.
   shows up, the page is missing the runtime: `framework/uihost` pages
   get it injected; bare hosts must call `widget.MountRuntime(r)` and
   embed `widget.RuntimeTag()` themselves.
-- **Forgetting `data-fui-rpc-signal`.** The RPC fires and succeeds,
+- **Forgetting `data-cui-rpc-signal`.** The RPC fires and succeeds,
   but the response goes nowhere; no DOM update. Name the target
-  signal on the trigger (`data-fui-rpc-signal="count"`). This is the
+  signal on the trigger (`data-cui-rpc-signal="count"`). This is the
   only way to route an RPC response; there is no registration-side
   binding.
 - **Inline `style=` / `onclick=` in slot HTML.** The default CSP
   blocks both. Use theme-token class names for styling and the
-  `data-fui-*` attributes (`data-fui-rpc`, `data-fui-action="close"`)
+  `data-cui-*` attributes (`data-cui-rpc`, `data-cui-action="close"`)
   for behavior; `kiln/render` strips the dangerous attrs server-side
   anyway.
 - **Expecting the page runtime to handle a widget's form.** The core
-  dispatcher skips everything inside `[data-fui-widget]`; the widget's
-  own scoped handler owns `form[data-fui-rpc]`. A plain `<form
-  action=…>` inside a modal (no `data-fui-rpc`) does a native
-  full-page submit; put `data-fui-rpc` on the form and use
-  `data-fui-rpc-close` / `data-fui-rpc-reset` for the success path
+  dispatcher skips everything inside `[data-cui-widget]`; the widget's
+  own scoped handler owns `form[data-cui-rpc]`. A plain `<form
+  action=…>` inside a modal (no `data-cui-rpc`) does a native
+  full-page submit; put `data-cui-rpc` on the form and use
+  `data-cui-rpc-close` / `data-cui-rpc-reset` for the success path
   (see the form-in-a-modal recipe above).
 - **Building in-page content as a widget.** Widgets are overlays that
   float above any page. A sortable table, a form section, or anything

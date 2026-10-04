@@ -13,7 +13,7 @@ import (
 )
 
 // bareStub is a minimal Component whose rendered HTML is the slot's
-// root element, used to plant .fui-slot-bare / data-fui-comp markers
+// root element, used to plant .cui-slot-bare / data-cui-comp markers
 // on the body root for the panel opt-out rendered-DOM tests.
 type bareStub struct{ html string }
 
@@ -28,7 +28,7 @@ const bareProbeSurface = "rgb(123, 45, 6)"
 // mountBarePage builds a centered Modal whose body root is bodyHTML,
 // generates its resolved stylesheet via widgetCSS, renders the chrome,
 // and serves a page that assigns --color-surface a sentinel color and
-// embeds the chrome. The .fui-panel computed background reports whether
+// embeds the chrome. The .cui-panel computed background reports whether
 // the :not(:has(...)) opt-out selector matched.
 func mountBarePage(t *testing.T, bodyHTML string) string {
 	t.Helper()
@@ -58,14 +58,14 @@ func barePanelBackgroundRGB(t *testing.T, ctx context.Context, url string) strin
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#r`, chromedp.ByID),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-panel')).backgroundColor`, &bg),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-panel')).backgroundColor`, &bg),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	return bg
 }
 
-// TestCenterPanelBareOptOutRendered: the .fui-slot-bare opt-out is
+// TestCenterPanelBareOptOutRendered: the .cui-slot-bare opt-out is
 // only string-matched in slot_surface_test.go; this renders real DOM
 // and reads the panel's computed background to prove the :has()
 // selector ACTUALLY matches (not just that the selector text exists).
@@ -79,23 +79,23 @@ func TestCenterPanelBareOptOutRendered(t *testing.T) {
 		t.Fatalf("plain body panel background = %q, want %q — CSS not applied; opt-out assertions below would be vacuous", bg, bareProbeSurface)
 	}
 
-	// (a) .fui-slot-bare on the body's ROOT element suppresses the
+	// (a) .cui-slot-bare on the body's ROOT element suppresses the
 	// panel surface, bare means the body owns every pixel.
-	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div class="fui-slot-bare">bare</div>`)); bg == bareProbeSurface {
-		t.Errorf("bare-root panel painted the surface %q — .fui-slot-bare must opt the panel out of its background", bg)
+	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div class="cui-slot-bare">bare</div>`)); bg == bareProbeSurface {
+		t.Errorf("bare-root panel painted the surface %q — .cui-slot-bare must opt the panel out of its background", bg)
 	}
 
-	// The bare marker must be the DIRECT child of .fui-slot. A wrapper
-	// <div> around it defeats the :has(> .fui-slot > .fui-slot-bare)
+	// The bare marker must be the DIRECT child of .cui-slot. A wrapper
+	// <div> around it defeats the :has(> .cui-slot > .cui-slot-bare)
 	// selector, so the panel re-paints, pins the single-root rule
 	// the docs state.
-	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div><div class="fui-slot-bare">bare</div></div>`)); bg != bareProbeSurface {
-		t.Errorf("wrapped .fui-slot-bare panel did NOT paint %q — a wrapper div must defeat the opt-out (marker not a direct child of .fui-slot); got %q", bareProbeSurface, bg)
+	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div><div class="cui-slot-bare">bare</div></div>`)); bg != bareProbeSurface {
+		t.Errorf("wrapped .cui-slot-bare panel did NOT paint %q — a wrapper div must defeat the opt-out (marker not a direct child of .cui-slot); got %q", bareProbeSurface, bg)
 	}
 }
 
 // TestCenterPanelNamesNoComponentMarker: the opt-out selector is the
-// generic .fui-slot-bare case alone, so a component marker on the
+// generic .cui-slot-bare case alone, so a component marker on the
 // body root without the class must PAINT — the shrunk selector names
 // no framework/ui component, and the real palette opts out through
 // the class its own root carries (asserted in framework/ui).
@@ -105,9 +105,9 @@ func TestCenterPanelNamesNoComponentMarker(t *testing.T) {
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div>plain</div>`)); bg != bareProbeSurface {
 		t.Fatalf("plain body panel background = %q, want %q — CSS not applied", bg, bareProbeSurface)
 	}
-	// A palette-marked root without .fui-slot-bare paints: the marker
+	// A palette-marked root without .cui-slot-bare paints: the marker
 	// is no longer an opt-out.
-	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div data-fui-comp="ui-cmd-palette">palette</div>`)); bg != bareProbeSurface {
-		t.Errorf("cmd-palette-marked panel background = %q, want %q — a component marker must not opt the panel out; only .fui-slot-bare does", bg, bareProbeSurface)
+	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div data-cui-comp="ui-cmd-palette">palette</div>`)); bg != bareProbeSurface {
+		t.Errorf("cmd-palette-marked panel background = %q, want %q — a component marker must not opt the panel out; only .cui-slot-bare does", bg, bareProbeSurface)
 	}
 }

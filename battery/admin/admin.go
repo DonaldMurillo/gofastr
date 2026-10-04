@@ -695,7 +695,7 @@ func (b *Battery) writePage(w http.ResponseWriter, title, pageName string, body 
 		b.navHTML(pageName), header, body)
 	shell := render.Tag("div", map[string]string{
 		"class":         "layout-admin",
-		"data-fui-comp": "ui-admin",
+		"data-cui-comp": "ui-admin",
 	}, render.Raw(inner))
 	fmt.Fprintf(w, `<!doctype html>
 <html lang="en">

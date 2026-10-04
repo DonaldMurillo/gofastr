@@ -38,7 +38,7 @@ type RepeaterConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the repeater's root
 	// element. Keys the component owns are dropped: class, id,
-	// data-fui-*, and every data-hui-* hook.
+	// data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve i18n strings
@@ -136,14 +136,14 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 var repeaterStyle = registry.RegisterStyle("ui-repeater", repeaterCSS)
 
 func repeaterCSS(t style.Theme) string {
-	return `[data-fui-comp="ui-repeater"] { display: flex; flex-direction: column; gap: var(--spacing-sm); }
-[data-fui-comp="ui-repeater"] .fui-repeater__items { display: flex; flex-direction: column; gap: var(--spacing-md); }
-[data-fui-comp="ui-repeater"] .fui-repeater__item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radii-md); }
-[data-fui-comp="ui-repeater"] .fui-repeater__item-fields { flex: 1; display: grid; gap: var(--spacing-sm); }
-[data-fui-comp="ui-repeater"] .fui-repeater__add { align-self: flex-start; }
+	return `[data-cui-comp="ui-repeater"] { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+[data-cui-comp="ui-repeater"] .fui-repeater__items { display: flex; flex-direction: column; gap: var(--spacing-md); }
+[data-cui-comp="ui-repeater"] .fui-repeater__item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radii-md); }
+[data-cui-comp="ui-repeater"] .fui-repeater__item-fields { flex: 1; display: grid; gap: var(--spacing-sm); }
+[data-cui-comp="ui-repeater"] .fui-repeater__add { align-self: flex-start; }
 /* Scoped copy of the visually-hidden recipe: the status live region
    must not be seen on a page that loads only this sheet. */
-[data-fui-comp="ui-repeater"] .fui-visually-hidden {
+[data-cui-comp="ui-repeater"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

@@ -1,5 +1,5 @@
 // Package interactive provides declarative interactivity primitives for
-// GoFastr components. It wraps arbitrary render.HTML with data-fui-*
+// GoFastr components. It wraps arbitrary render.HTML with data-cui-*
 // attributes the runtime understands, RPC calls, signal bindings, widget
 // chaining, without writing any JavaScript.
 //
@@ -10,8 +10,8 @@
 //	)
 //
 // The package only emits attributes the runtime already handles
-// (data-fui-rpc, data-fui-signal, data-fui-open, etc.) plus new ones
-// added for chaining (data-fui-rpc-open, data-fui-rpc-signal).
+// (data-cui-rpc, data-cui-signal, data-cui-open, etc.) plus new ones
+// added for chaining (data-cui-rpc-open, data-cui-rpc-signal).
 package interactive
 
 import (
@@ -30,14 +30,14 @@ import (
 // ─── Actions ────────────────────────────────────────────────────────
 //
 // An Action describes what happens on a user interaction (click or
-// submit). It maps 1:1 to data-fui-rpc attributes on the HTML element.
+// submit). It maps 1:1 to data-cui-rpc attributes on the HTML element.
 
 // Action describes an RPC call triggered by click or submit.
 type Action struct {
 	method  string // GET, POST, PUT, DELETE, PATCH
 	path    string // URL path
 	confirm string // pre-flight window.confirm message (empty = none)
-	body    string // static JSON body for non-form RPCs (data-fui-rpc-body); empty = none
+	body    string // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
 	effects []Effect
 }
 
@@ -96,7 +96,7 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 // drivable by tests), reach for framework/ui.ConfirmAction instead, it
 // renders a themed alertdialog whose Confirm button carries the RPC.
 //
-// Maps to data-fui-confirm="message".
+// Maps to data-cui-confirm="message".
 func (a Action) WithConfirm(message string) Action {
 	a.confirm = message
 	return a
@@ -104,7 +104,7 @@ func (a Action) WithConfirm(message string) Action {
 
 // WithBody attaches a static JSON body to the action, the payload sent
 // for a non-form RPC (a button click that isn't inside a <form>).
-// Maps to data-fui-rpc-body="<json>". The runtime sends it verbatim as
+// Maps to data-cui-rpc-body="<json>". The runtime sends it verbatim as
 // the request body with Content-Type: application/json.
 //
 // Panics if json is not valid JSON (json.Valid), so a malformed body
@@ -122,16 +122,16 @@ func (a Action) WithBody(body string) Action {
 // ─── Effects ────────────────────────────────────────────────────────
 //
 // Effects describe what happens after an RPC succeeds or fails.
-// They map to data-fui-rpc-* attributes.
+// They map to data-cui-rpc-* attributes.
 
 // Effect is something that happens after an RPC response.
 type Effect interface {
-	// rpcAttrs returns data-fui-rpc-* attributes to set on the element.
+	// rpcAttrs returns data-cui-rpc-* attributes to set on the element.
 	rpcAttrs() map[string]string
 }
 
 // SetSignal pushes the RPC response into a named client-side signal.
-// Maps to data-fui-rpc-signal="name". Panics if name contains a double
+// Maps to data-cui-rpc-signal="name". Panics if name contains a double
 // quote or is a reserved signal name.
 func SetSignal(name string) Effect {
 	if strings.ContainsRune(name, '"') {
@@ -158,11 +158,11 @@ func refuseReservedSignalName(name string) {
 type signalEffect struct{ name string }
 
 func (e signalEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-signal": e.name}
+	return map[string]string{"data-cui-rpc-signal": e.name}
 }
 
 // OpenWidget opens a named widget when the RPC succeeds.
-// Maps to data-fui-rpc-open="name".
+// Maps to data-cui-rpc-open="name".
 func OpenWidget(name string) Effect {
 	return openWidgetEffect{name: name}
 }
@@ -170,11 +170,11 @@ func OpenWidget(name string) Effect {
 type openWidgetEffect struct{ name string }
 
 func (e openWidgetEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-open": e.name}
+	return map[string]string{"data-cui-rpc-open": e.name}
 }
 
 // CloseWidget closes the enclosing widget on RPC success.
-// Maps to data-fui-rpc-close="true".
+// Maps to data-cui-rpc-close="true".
 func CloseWidget() Effect {
 	return closeWidgetEffect{}
 }
@@ -182,11 +182,11 @@ func CloseWidget() Effect {
 type closeWidgetEffect struct{}
 
 func (e closeWidgetEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-close": "true"}
+	return map[string]string{"data-cui-rpc-close": "true"}
 }
 
 // ResetForm resets the enclosing form on RPC success.
-// Maps to data-fui-rpc-reset="true".
+// Maps to data-cui-rpc-reset="true".
 func ResetForm() Effect {
 	return resetFormEffect{}
 }
@@ -194,11 +194,11 @@ func ResetForm() Effect {
 type resetFormEffect struct{}
 
 func (e resetFormEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-reset": "true"}
+	return map[string]string{"data-cui-rpc-reset": "true"}
 }
 
 // Navigate does an SPA navigation on RPC success.
-// Maps to data-fui-rpc-navigate="path".
+// Maps to data-cui-rpc-navigate="path".
 func Navigate(path string) Effect {
 	return navigateEffect{path: path}
 }
@@ -206,13 +206,13 @@ func Navigate(path string) Effect {
 type navigateEffect struct{ path string }
 
 func (e navigateEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-navigate": e.path}
+	return map[string]string{"data-cui-rpc-navigate": e.path}
 }
 
 // AfterText replaces the trigger element's text content with text on 2xx RPC
 // success. One-shot, subsequent re-clicks are idempotent via
-// data-fui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.
-// Maps to data-fui-rpc-after-text="text".
+// data-cui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.
+// Maps to data-cui-rpc-after-text="text".
 func AfterText(text string) Effect {
 	return afterTextEffect{text: text}
 }
@@ -220,13 +220,13 @@ func AfterText(text string) Effect {
 type afterTextEffect struct{ text string }
 
 func (e afterTextEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-after-text": e.text}
+	return map[string]string{"data-cui-rpc-after-text": e.text}
 }
 
 // AfterDisable permanently disables the trigger element on 2xx RPC success
 // (sets aria-disabled="true" and, for buttons/inputs, disabled=true). Use
 // with AfterText for "Saved ✓" / "Revealed ✓" feedback. Maps to the boolean
-// attribute data-fui-rpc-after-disable.
+// attribute data-cui-rpc-after-disable.
 func AfterDisable() Effect {
 	return afterDisableEffect{}
 }
@@ -234,12 +234,12 @@ func AfterDisable() Effect {
 type afterDisableEffect struct{}
 
 func (e afterDisableEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-after-disable": ""}
+	return map[string]string{"data-cui-rpc-after-disable": ""}
 }
 
 // ScrollTo smooth-scrolls the element matching selector into view on 2xx RPC
 // success. Use to direct the user's eye at newly-inserted content.
-// Maps to data-fui-rpc-scroll-to="selector".
+// Maps to data-cui-rpc-scroll-to="selector".
 func ScrollTo(selector string) Effect {
 	return scrollToEffect{selector: selector}
 }
@@ -247,13 +247,13 @@ func ScrollTo(selector string) Effect {
 type scrollToEffect struct{ selector string }
 
 func (e scrollToEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-rpc-scroll-to": e.selector}
+	return map[string]string{"data-cui-rpc-scroll-to": e.selector}
 }
 
 // PushState applies a URL update via history.pushState after 2xx RPC success
 // without triggering a fetch. The server-supplied X-Gofastr-Push-State header
 // takes precedence over this attribute when both are present.
-// Maps to data-fui-push-state="path".
+// Maps to data-cui-push-state="path".
 func PushState(path string) Effect {
 	return pushStateEffect{path: path}
 }
@@ -261,7 +261,7 @@ func PushState(path string) Effect {
 type pushStateEffect struct{ path string }
 
 func (e pushStateEffect) rpcAttrs() map[string]string {
-	return map[string]string{"data-fui-push-state": e.path}
+	return map[string]string{"data-cui-push-state": e.path}
 }
 
 // ─── Wrapper functions ──────────────────────────────────────────────
@@ -286,22 +286,22 @@ func OnSubmit(html render.HTML, action Action) render.HTML {
 // If debounceMs is 0, a default of 300ms is used.
 func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	wrapped := wrapWithAction(form, action)
-	wrapped = injectAttr(wrapped, "data-fui-rpc-trigger", "input")
+	wrapped = injectAttr(wrapped, "data-cui-rpc-trigger", "input")
 	ms := debounceMs
 	if ms == 0 {
 		ms = 300
 	}
-	wrapped = injectAttr(wrapped, "data-fui-rpc-debounce-ms", fmt.Sprintf("%d", ms))
+	wrapped = injectAttr(wrapped, "data-cui-rpc-debounce-ms", fmt.Sprintf("%d", ms))
 	return wrapped
 }
 
 // ─── Scroll-triggered reveal ────────────────────────────────────────
 
 // revealStyle ships the CSS for the scroll-reveal animation. Without it
-// the reveal.js classes (fui-hidden / fui-revealed / fui-reveal-<type>)
+// the reveal.js classes (cui-hidden / cui-revealed / cui-reveal-<type>)
 // have no visual effect. The host loads it when a page carries the
-// data-fui-comp="fui-reveal" marker Reveal stamps below.
-var revealStyle = registry.RegisterStyle("fui-reveal", revealCSS)
+// data-cui-comp="cui-reveal" marker Reveal stamps below.
+var revealStyle = registry.RegisterStyle("cui-reveal", revealCSS)
 
 // Reveal wraps an element so it animates in when it enters the viewport.
 // The animationType determines the direction ("fade-up", "fade-in",
@@ -312,23 +312,23 @@ func Reveal(html render.HTML, animationType string) render.HTML {
 	if animationType == "" {
 		animationType = "fade-in"
 	}
-	out := injectAttr(html, "data-fui-reveal", animationType)
+	out := injectAttr(html, "data-cui-reveal", animationType)
 	return revealStyle.WrapHTML(out)
 }
 
 func revealCSS(_ style.Theme) string {
 	// While hidden, the direction transform is keyed off the
-	// data-fui-reveal ATTRIBUTE (present the whole time), reveal.js only
-	// adds the fui-reveal-<type> CLASS at reveal time, too late to style
-	// the from-state. On reveal, fui-hidden is removed and fui-revealed
+	// data-cui-reveal ATTRIBUTE (present the whole time), reveal.js only
+	// adds the cui-reveal-<type> CLASS at reveal time, too late to style
+	// the from-state. On reveal, cui-hidden is removed and cui-revealed
 	// adds the transition back to the resting state.
-	return `[data-fui-comp="fui-reveal"]{opacity:1}` +
-		`[data-fui-comp="fui-reveal"].fui-hidden{opacity:0}` +
-		`[data-fui-comp="fui-reveal"][data-fui-reveal="fade-up"].fui-hidden{transform:translateY(24px)}` +
-		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-left"].fui-hidden{transform:translateX(24px)}` +
-		`[data-fui-comp="fui-reveal"][data-fui-reveal="slide-right"].fui-hidden{transform:translateX(-24px)}` +
-		`[data-fui-comp="fui-reveal"].fui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
-		`@media (prefers-reduced-motion:reduce){[data-fui-comp="fui-reveal"].fui-hidden{opacity:1;transform:none}[data-fui-comp="fui-reveal"].fui-revealed{transition:none}}`
+	return `[data-cui-comp="cui-reveal"]{opacity:1}` +
+		`[data-cui-comp="cui-reveal"].cui-hidden{opacity:0}` +
+		`[data-cui-comp="cui-reveal"][data-cui-reveal="fade-up"].cui-hidden{transform:translateY(24px)}` +
+		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-left"].cui-hidden{transform:translateX(24px)}` +
+		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-right"].cui-hidden{transform:translateX(-24px)}` +
+		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
+		`@media (prefers-reduced-motion:reduce){[data-cui-comp="cui-reveal"].cui-hidden{opacity:1;transform:none}[data-cui-comp="cui-reveal"].cui-revealed{transition:none}}`
 }
 
 // ─── Client-side signal mutations (no RPC) ──────────────────────────
@@ -341,7 +341,7 @@ func revealCSS(_ style.Theme) string {
 // signalName is a reserved signal name.
 func SetLocal(html render.HTML, signalName, value string) render.HTML {
 	refuseReservedSignalName(signalName)
-	return injectAttr(html, "data-fui-signal-set", signalName+":"+value)
+	return injectAttr(html, "data-cui-signal-set", signalName+":"+value)
 }
 
 // IncLocal wraps an HTML element so clicking it increments a numeric
@@ -353,7 +353,7 @@ func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 	if delta != 1 {
 		val = fmt.Sprintf("%s:%d", signalName, delta)
 	}
-	return injectAttr(html, "data-fui-signal-inc", val)
+	return injectAttr(html, "data-cui-signal-inc", val)
 }
 
 // ToggleLocal wraps an HTML element so clicking it toggles a boolean
@@ -361,16 +361,16 @@ func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 // name.
 func ToggleLocal(html render.HTML, signalName string) render.HTML {
 	refuseReservedSignalName(signalName)
-	return injectAttr(html, "data-fui-signal-toggle", signalName)
+	return injectAttr(html, "data-cui-signal-toggle", signalName)
 }
 
 // ─── Dropdown ──────────────────────────────────────────────────────
 //
 // Dropdown wraps a trigger element and a panel into a click-toggle
-// dropdown. The trigger gets data-fui-dropdown, aria-expanded="false",
-// and aria-haspopup="true". The panel gets data-fui-dropdown-panel and
+// dropdown. The trigger gets data-cui-dropdown, aria-expanded="false",
+// and aria-haspopup="true". The panel gets data-cui-dropdown-panel and
 // is initially hidden. Both are wrapped in a container with
-// data-fui-dropdown-wrap.
+// data-cui-dropdown-wrap.
 //
 // The runtime module (dropdown.js) handles click-toggle, click-outside
 // dismiss, and Escape-to-close.
@@ -378,22 +378,22 @@ func ToggleLocal(html render.HTML, signalName string) render.HTML {
 //	trigger := render.Tag("button", nil, render.Text("Menu"))
 //	panel := render.Tag("div", nil, render.Text("Dropdown content"))
 //	html := interactive.Dropdown(trigger, panel)
-var dropdownStyle = registry.RegisterStyle("fui-dropdown", dropdownCSS)
+var dropdownStyle = registry.RegisterStyle("cui-dropdown", dropdownCSS)
 
 func Dropdown(trigger, panel render.HTML) render.HTML {
 	triggerAttrs := map[string]string{
-		"data-fui-dropdown": "",
+		"data-cui-dropdown": "",
 		"aria-expanded":     "false",
 		"aria-haspopup":     "true",
 	}
 	panelAttrs := map[string]string{
-		"data-fui-dropdown-panel": "",
+		"data-cui-dropdown-panel": "",
 		"hidden":                  "",
 	}
 	wrappedTrigger := injectAttrs(trigger, triggerAttrs)
 	wrappedPanel := injectAttrs(panel, panelAttrs)
 	wrap := render.Tag("div", map[string]string{
-		"data-fui-dropdown-wrap": "",
+		"data-cui-dropdown-wrap": "",
 	}, wrappedTrigger, wrappedPanel)
 	return dropdownStyle.WrapHTML(wrap)
 }
@@ -403,11 +403,11 @@ func dropdownCSS(_ style.Theme) string {
 	// links/buttons are styled as menu items. Without this the panel
 	// renders as a flat, full-width, unstyled strip (functional but not a
 	// dropdown).
-	return `[data-fui-comp="fui-dropdown"]{position:relative;display:inline-block}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:hover,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9))}` +
-		`[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] a:focus-visible,[data-fui-comp="fui-dropdown"] [data-fui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}`
+	return `[data-cui-comp="cui-dropdown"]{position:relative;display:inline-block}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:hover,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9))}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}`
 }
 
 // AnimateOnSignal wraps an element so it gets a CSS class when a signal
@@ -422,8 +422,8 @@ func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML 
 	if cssClass == "" {
 		panic("interactive: AnimateOnSignal cssClass must not be empty")
 	}
-	html = injectAttr(html, "data-fui-animate-signal", signalName)
-	html = injectAttr(html, "data-fui-animate-class", cssClass)
+	html = injectAttr(html, "data-cui-animate-signal", signalName)
+	html = injectAttr(html, "data-cui-animate-class", cssClass)
 	return html
 }
 
@@ -490,7 +490,7 @@ func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 	return render.Tag("button", attrs, idleSpan, successSpan)
 }
 
-// injectAttr adds a single data-fui-* attribute to the first HTML tag.
+// injectAttr adds a single data-cui-* attribute to the first HTML tag.
 func injectAttr(html render.HTML, key, value string) render.HTML {
 	s := string(html)
 	a := render.Attr(key, value)
@@ -591,14 +591,14 @@ func (a Action) attrs() map[string]string {
 		return nil
 	}
 	m := map[string]string{
-		"data-fui-rpc":        a.path,
-		"data-fui-rpc-method": a.method,
+		"data-cui-rpc":        a.path,
+		"data-cui-rpc-method": a.method,
 	}
 	if a.confirm != "" {
-		m["data-fui-confirm"] = a.confirm
+		m["data-cui-confirm"] = a.confirm
 	}
 	if a.body != "" {
-		m["data-fui-rpc-body"] = a.body
+		m["data-cui-rpc-body"] = a.body
 	}
 	for _, e := range a.effects {
 		maps.Copy(m, e.rpcAttrs())
@@ -606,7 +606,7 @@ func (a Action) attrs() map[string]string {
 	return m
 }
 
-// Attrs returns the data-fui-* attributes this Action would inject, as a
+// Attrs returns the data-cui-* attributes this Action would inject, as a
 // plain map[string]string. It is the same map [OnClick]/[OnSubmit] splice
 // into the opening tag, exported so a call site can merge it into an
 // existing attribute map (an [render.Tag] attrs map or a ui.*Config
@@ -626,11 +626,11 @@ func (a Action) Attrs() map[string]string {
 // ─── Widget open triggers ───────────────────────────────────────────
 
 // OpenOnClick wraps an HTML element so clicking it opens a registered
-// widget surface. Maps to data-fui-open="<widget>". This is the
+// widget surface. Maps to data-cui-open="<widget>". This is the
 // click-to-open trigger, distinct from [OpenWidget], which opens a
-// widget only after a successful RPC (data-fui-rpc-open).
+// widget only after a successful RPC (data-cui-rpc-open).
 func OpenOnClick(html render.HTML, widget string) render.HTML {
-	return injectAttr(html, "data-fui-open", widget)
+	return injectAttr(html, "data-cui-open", widget)
 }
 
 // ─── Toasts ─────────────────────────────────────────────────────────
@@ -645,17 +645,17 @@ type Toast struct {
 	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
 	Title   string `json:"title,omitempty"`   // required by the runtime, a toast with no title is dropped
 	Body    string `json:"body,omitempty"`    // optional supporting copy
-	Stack   string `json:"stack,omitempty"`   // named [data-fui-toast-stack] container; empty → the auto stack
+	Stack   string `json:"stack,omitempty"`   // named [data-cui-toast-stack] container; empty → the auto stack
 	TTLMs   int    `json:"ttl,omitempty"`     // auto-dismiss delay in ms; 0 → persistent (manual dismiss only)
 }
 
 // ToastOnClick wraps an HTML element so clicking it fires a toast with
-// the given config. Maps to data-fui-toast="<json>". The JSON is
+// the given config. Maps to data-cui-toast="<json>". The JSON is
 // compact (no whitespace) with HTML escaping disabled, matching what
 // call sites hand-write today; render.Attr then escapes the value for
 // the attribute context.
 func ToastOnClick(html render.HTML, t Toast) render.HTML {
-	return injectAttr(html, "data-fui-toast", marshalToast(t))
+	return injectAttr(html, "data-cui-toast", marshalToast(t))
 }
 
 // marshalToast encodes a Toast as compact JSON with HTML escaping off
@@ -741,37 +741,37 @@ func PaneKey(html render.HTML, key string) render.HTML {
 // ─── Signal display bindings ───────────────────────────────────────
 //
 // These wrap an island content region so its text/HTML/attribute is
-// driven by a named client signal. They inject data-fui-signal plus a
-// data-fui-signal-mode. The names mirror core-ui/store's Slice.Bind*
+// driven by a named client signal. They inject data-cui-signal plus a
+// data-cui-signal-mode. The names mirror core-ui/store's Slice.Bind*
 // methods (the typed, seeded-signal counterpart): reach for a store
 // Slice when the signal is seeded server-side and read by other typed
 // code; reach for these wrappers when you are binding an island's HTML
 // region to a signal an RPC writes (typically via [SetSignal]).
 
 // BindHTML wraps an HTML region whose innerHTML is replaced with the
-// signal value (the trusted-HTML path). Injects data-fui-signal and
-// data-fui-signal-mode="html". Use for an island slot an RPC re-renders
+// signal value (the trusted-HTML path). Injects data-cui-signal and
+// data-cui-signal-mode="html". Use for an island slot an RPC re-renders
 // server-side and returns as a fragment.
 func BindHTML(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "html", "")
 }
 
 // BindText wraps an HTML element whose textContent tracks a signal
-// (HTML-escaped). Injects data-fui-signal and data-fui-signal-mode="text".
-// This is the default mode, a bare data-fui-signal with no mode behaves
+// (HTML-escaped). Injects data-cui-signal and data-cui-signal-mode="text".
+// This is the default mode, a bare data-cui-signal with no mode behaves
 // identically, but emitting the mode explicitly documents intent.
 func BindText(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "text", "")
 }
 
 // BindAttr wraps an HTML element whose attribute tracks a signal.
-// Injects data-fui-signal, data-fui-signal-mode="attr", and
-// data-fui-signal-attr="<attr>". Use when a signal should drive a single
+// Injects data-cui-signal, data-cui-signal-mode="attr", and
+// data-cui-signal-attr="<attr>". Use when a signal should drive a single
 // attribute (e.g. aria-expanded, data-active) rather than text content.
 func BindAttr(html render.HTML, signal, attr string) render.HTML {
 	// An attribute outside the allow-list executes regardless of the
 	// value bound to it (srcdoc, style, data-behavior, on*, the
-	// privileged data-fui-* family), so the binding is refused rather
+	// privileged data-cui-* family), so the binding is refused rather
 	// than emitted. See SignalAttrAllowed.
 	if !SignalAttrAllowed(attr) {
 		return html
@@ -780,14 +780,14 @@ func BindAttr(html render.HTML, signal, attr string) render.HTML {
 }
 
 // bindSignal injects the signal attribute pair (plus the attr name for
-// mode="attr") in sorted order: data-fui-signal, then data-fui-signal-attr,
-// then data-fui-signal-mode. Appending in that order keeps the output
+// mode="attr") in sorted order: data-cui-signal, then data-cui-signal-attr,
+// then data-cui-signal-mode. Appending in that order keeps the output
 // byte-identical to a sorted render.Tag attrs map.
 func bindSignal(html render.HTML, signal, mode, attr string) render.HTML {
-	out := injectAttr(html, "data-fui-signal", signal)
+	out := injectAttr(html, "data-cui-signal", signal)
 	if attr != "" {
-		out = injectAttr(out, "data-fui-signal-attr", attr)
+		out = injectAttr(out, "data-cui-signal-attr", attr)
 	}
-	out = injectAttr(out, "data-fui-signal-mode", mode)
+	out = injectAttr(out, "data-cui-signal-mode", mode)
 	return out
 }

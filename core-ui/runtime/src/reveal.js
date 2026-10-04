@@ -3,19 +3,19 @@
 // the element stays visible.
 //
 // Setup:
-//   - Elements with [data-fui-reveal] get class "fui-hidden" immediately
-//   - When the element intersects the viewport, "fui-hidden" is removed
-//     and "fui-revealed" + "fui-reveal-<type>" are added
-//   - The attribute value is the animation type: data-fui-reveal="fade-up"
-//     adds class "fui-reveal-fade-up"
+//   - Elements with [data-cui-reveal] get class "cui-hidden" immediately
+//   - When the element intersects the viewport, "cui-hidden" is removed
+//     and "cui-revealed" + "cui-reveal-<type>" are added
+//   - The attribute value is the animation type: data-cui-reveal="fade-up"
+//     adds class "cui-reveal-fade-up"
 //
-// Loaded on-demand when a [data-fui-reveal] element appears.
+// Loaded on-demand when a [data-cui-reveal] element appears.
 (() => {
   'use strict';
 
-  const REVEAL_ATTR = 'data-fui-reveal';
-  const HIDDEN_CLASS = 'fui-hidden';
-  const REVEALED_CLASS = 'fui-revealed';
+  const REVEAL_ATTR = 'data-cui-reveal';
+  const HIDDEN_CLASS = 'cui-hidden';
+  const REVEALED_CLASS = 'cui-revealed';
 
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -25,7 +25,7 @@
 
       el.classList.remove(HIDDEN_CLASS);
       el.classList.add(REVEALED_CLASS);
-      el.classList.add('fui-reveal-' + type);
+      el.classList.add('cui-reveal-' + type);
 
       observer.unobserve(el);
     }
@@ -33,8 +33,8 @@
 
   const setupOne = (el) => {
     if (el.classList.contains(REVEALED_CLASS)) return; // already revealed
-    if (el.dataset._fuiRevealObserved) return;         // idempotent
-    el.dataset._fuiRevealObserved = '1';
+    if (el.dataset._cuiRevealObserved) return;         // idempotent
+    el.dataset._cuiRevealObserved = '1';
 
     el.classList.add(HIDDEN_CLASS);
     observer.observe(el);

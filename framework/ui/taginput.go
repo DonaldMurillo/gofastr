@@ -46,7 +46,7 @@ type TagInputConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the field's root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* hook.
+	// ID), data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 }
 
@@ -97,16 +97,16 @@ func TagInput(cfg TagInputConfig) render.HTML {
 var tagInputStyle = registry.RegisterStyle("ui-tag-input", tagInputCSS)
 
 func tagInputCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-tag-input"] {
+	return `[data-cui-comp="ui-tag-input"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__label {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__zone {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__zone {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
@@ -117,15 +117,15 @@ func tagInputCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__zone:focus-within {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__zone:focus-within {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__list {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__list {
   display: contents;
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__chip {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__chip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -136,7 +136,7 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -151,10 +151,10 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   line-height: 1;
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__chip-remove:hover {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove:hover {
   background: color-mix(in srgb, var(--color-primary-fg, #FFFFFF) 25%, transparent);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__field {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__field {
   flex: 1 1 8rem;
   border: 0;
   outline: 0;
@@ -165,7 +165,7 @@ func tagInputCSS(_ style.Theme) string {
   min-block-size: 28px;
   padding: 0;
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__add {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -179,25 +179,25 @@ func tagInputCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__add:hover {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__add:hover {
   background: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__add:focus-visible {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__add:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-tag-input"] .fui-tag-input__help {
+[data-cui-comp="ui-tag-input"] .fui-tag-input__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-tag-input"].is-disabled .fui-tag-input__zone {
+[data-cui-comp="ui-tag-input"].is-disabled .fui-tag-input__zone {
   opacity: 0.6;
   cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the status live region
    must not be seen on a page that loads only this sheet. */
-[data-fui-comp="ui-tag-input"] .fui-visually-hidden {
+[data-cui-comp="ui-tag-input"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

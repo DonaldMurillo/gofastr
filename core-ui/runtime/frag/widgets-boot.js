@@ -27,7 +27,7 @@
   // Widget catalog fetch. The live endpoint is session-gated and per-page
   // scoped (?page= filters widgets to the current route). A serverless
   // export never composes widgets-boot, the `static` composition omits it
-  // and rpc-stub intercepts data-fui-open clicks, so this fetch only ever
+  // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
   fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
@@ -36,7 +36,7 @@
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime now ships as a split module. Make sure it's
       // loaded before iterating mounts, covers the case where no
-      // [data-fui-widget] marker is present in initial HTML (the
+      // [data-cui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but server-side
       // registration says there are widgets to mount.
       if (list.length > 0) {
@@ -79,7 +79,7 @@
     .catch(() => { _wcr(); });
 
   // === EAGER WIDGET DELEGATORS =========================================
-  // The data-fui-open click handler, data-fui-toast click handler, and
+  // The data-cui-open click handler, data-cui-toast click handler, and
   // popstate listener used to live inside the /__gofastr/widgets
   // catalog fetch's .then() callback. That meant on a slow network the
   // very first click on an open trigger had no handler to receive it,
@@ -95,26 +95,26 @@
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
     document.addEventListener('click', (e) => {
-      // Toast trigger: data-fui-toast='<json>' fires a client toast.
-      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
+      // Toast trigger: data-cui-toast='<json>' fires a client toast.
+      const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
       if (toastBtn) {
         e.preventDefault();
         window.__gofastr.loadModule('headless-feedback').then(() => {
           try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
             window.__gofastr.toast(cfg);
           } catch (_) {}
         }).catch(() => {});
         return;
       }
-      const btn = e.target.closest && e.target.closest('[data-fui-open]');
+      const btn = e.target.closest && e.target.closest('[data-cui-open]');
       if (!btn) return;
       // The live catalog path mounts the widget module; RPC controls inside
       // the mounted chrome await src/rpc.js in their scoped listeners.
-      const name = btn.getAttribute('data-fui-open');
+      const name = btn.getAttribute('data-cui-open');
       if (!name) return;
       e.preventDefault();
-      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const raw = btn.getAttribute('data-cui-deeplink') || '';
       const overrides = {};
       if (raw) {
         // Degrade-don't-throw: a malformed percent escape throws URIError
@@ -130,7 +130,7 @@
           } catch (_) {}
         }
       }
-      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
+      const anchorPref = btn.getAttribute('data-cui-popover-anchor');
       (async () => {
         // The widgets module + catalog must both be ready before
         // openWidget can find the entry. Awaiting both here keeps the
@@ -138,7 +138,7 @@
         // clicked faster than /__gofastr/widgets returned.
         await window.__gofastr.loadModule('widgets').catch(() => {});
         await _wready;
-        // btn rides along so openWidget can read data-fui-ctx (#321):
+        // btn rides along so openWidget can read data-cui-ctx (#321):
         // the trigger's context keys the chrome fetch + cache. Read in
         // the module, not here: core bytes are the scarce ones.
         await window.__gofastr.openWidget(name, { params: overrides, pushUrl: true, btn });

@@ -110,7 +110,7 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 				count: imgs.length,
 				alts: imgs.map((i) => i.alt),
 				srcs: imgs.map((i) => i.src.slice(0, 10)),
-				list: (document.querySelector('[data-fui-comp="ui-dropzone"] [data-hui-drop-list]') || {textContent: ''}).textContent,
+				list: (document.querySelector('[data-cui-comp="ui-dropzone"] [data-hui-drop-list]') || {textContent: ''}).textContent,
 				// Anything parsed out of the name would land here, and
 				// the canary fires if an onerror ever runs.
 				stray: (document.querySelector('[data-fui-dropzone-preview-for]') || {querySelectorAll: () => []}).querySelectorAll('img[src="x"], script, iframe').length,

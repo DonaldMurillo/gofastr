@@ -163,7 +163,7 @@ type Screen struct {
 	// it resolve as full document loads instead of soft navigations. For
 	// hosts whose pages bind behavior at script load (legacy page-runtimes)
 	// a soft swap never re-runs them, so every handler on the destination
-	// dies. Screen-level granular alternative to per-link data-fui-nav=off.
+	// dies. Screen-level granular alternative to per-link data-cui-nav=off.
 	NoSPA bool
 
 	// Intercept, when set, makes this screen present as an overlay for
@@ -182,7 +182,7 @@ type Screen struct {
 	// registered via group.Screen. Nil for screens registered directly
 	// on the router. When set, the renderer composes all parent group
 	// layouts (innermost→outermost), each wrapped in a
-	// data-fui-screen-group marker so the runtime can preserve the
+	// data-cui-screen-group marker so the runtime can preserve the
 	// matching layout shell during sibling-screen navigation.
 	group *ScreenGroup
 

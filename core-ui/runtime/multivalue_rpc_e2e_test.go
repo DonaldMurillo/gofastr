@@ -13,7 +13,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// TestDispatchRPC_MultiValueFormKeys pins that a data-fui-rpc form with
+// TestDispatchRPC_MultiValueFormKeys pins that a data-cui-rpc form with
 // repeated field names (checkbox group, multi-select) preserves EVERY
 // value in the JSON body. The old encoding `obj[k] = v` was last-wins,
 // silently dropping all but the last value. The fix emits an array when
@@ -47,7 +47,7 @@ func TestDispatchRPC_MultiValueFormKeys(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>mv</title></head><body>
-<form id="f" data-fui-rpc="/rpc/save" data-fui-rpc-method="POST">
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
   <input name="single" value="x">
   <input name="constructor" value="admin">
   <input type="checkbox" name="tag" value="a" checked>

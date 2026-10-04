@@ -40,7 +40,7 @@ func TestPartSessionResetRetriesOnce(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<template data-fui-fill="l:site#aside">PART-A-ASIDE-RETRY</template>`)
+		fmt.Fprint(w, `<template data-cui-fill="l:site#aside">PART-A-ASIDE-RETRY</template>`)
 	})
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))

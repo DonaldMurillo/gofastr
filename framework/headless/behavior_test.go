@@ -207,7 +207,7 @@ var sheetHooks = map[string]string{
 // host writing its own viewer behaviour against a zero Wiring, and the
 // hooks render exactly there — the wired render carries the
 // data-fui-lightbox* family for framework/ui's module instead (a
-// ui-owned module binds data-fui-* hooks only). The reasons describe
+// ui-owned module binds data-cui-* hooks only). The reasons describe
 // the unwired host-direct path and stake no in-tree claim: what the
 // framework's binder reads is pinned where it lives, in framework/ui's
 // own tests. Same discipline as sheetHooks: the reason is mandatory,
@@ -246,6 +246,9 @@ var adapterHooks = map[string]string{
 }
 
 var hostHooks = map[string]string{
+	"data-hui-field":          "the field group's name for the kernel's form-errors module (core-ui/runtime/src/formerrors.js), which places a refused submission's messages by hook, never by kit class",
+	"data-hui-field-error":    "the field's error node, rendered filled or reserved, or added live by the kernel's form-errors module with the value \"live\"; the kit's sheet styles the hook",
+	"data-hui-choice":         "a bare choice's root for the kernel's form-errors module: the message lands after the label, where the errored kit render puts it",
 	"data-hui-lightbox":       "the viewer's identity on an unwired render: what a host's own viewer module resolves the open viewer by",
 	"data-hui-lightbox-nav":   "the nav opt-in on an unwired render: for a host module that steps the gallery group itself",
 	"data-hui-lightbox-image": "the zoom target on an unwired render: the image a host's own gesture handling owns, named by attribute so no class selector is needed",
@@ -466,7 +469,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+			"[data-cui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
 		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
@@ -504,7 +507,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+			"[data-cui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
 		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
@@ -519,16 +522,16 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 			if _, ok := adapterHooks[hook]; ok {
 				known = true
 			}
-			if hook == "data-fui-toast-stack" {
+			if hook == "data-cui-toast-stack" {
 				// The kernel's own stack name: documented in
-				// core-ui/ARCHITECTURE.md's data-fui-* table, the one
+				// core-ui/ARCHITECTURE.md's data-cui-* table, the one
 				// data-fui spelling a registered marker may carry.
 				known = true
 			}
 			if !known {
 				t.Errorf("%s's marker %s is a hook no Spec declares: the kernel would load it for markup this package cannot render", tc.name, m)
 			}
-			if !read[hook] && hook != "data-fui-toast-stack" {
+			if !read[hook] && hook != "data-cui-toast-stack" {
 				t.Errorf("%s's marker %s is read by no module source in this package: a marker nothing binds is a fetch for a behaviour that does not exist", tc.name, m)
 			}
 		}

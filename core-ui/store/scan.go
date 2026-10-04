@@ -6,13 +6,13 @@ import (
 	"sort"
 )
 
-// refRe matches a signal-referencing data-fui-* attribute in an opening
+// refRe matches a signal-referencing data-cui-* attribute in an opening
 // tag and captures the bare slice name (the part before any ":value").
 // The leading [\s/] boundary restricts matches to attribute positions
 // (preceded by whitespace or a self-closing slash), so a literal mention
 // inside <pre>/<code>/text content never registers a false reference,
 // mirrors registry.markerRe in core-ui/registry/render.go.
-var refRe = regexp.MustCompile(`[\s/]data-fui-(?:signal-set|signal-inc|signal-toggle|signal|computed)="([^":]+)`)
+var refRe = regexp.MustCompile(`[\s/]data-cui-(?:signal-set|signal-inc|signal-toggle|signal|computed)="([^":]+)`)
 
 // ScanReferenced returns the unique, sorted slice names referenced by
 // signal/computed attributes in the rendered HTML.
@@ -67,7 +67,7 @@ func ResolveSeed(ctx context.Context, names []string) map[string]any {
 //
 // every DECLARED route.* name joins the
 // full-page seed as well. A route value can be named ONLY inside a
-// data-fui-computed-deps list (route.path in a breadcrumb computed),
+// data-cui-computed-deps list (route.path in a breadcrumb computed),
 // which the scan reads as one comma-joined name it cannot decompose;
 // without the unconditional inclusion the boot recompute of such a
 // computed finds no value and clobbers the correct SSR stamp.
@@ -77,7 +77,7 @@ func SeedFor(ctx context.Context, html string) map[string]any {
 	if routeSeedDue(ctx, html) {
 		// Every DECLARED route.* name joins the full-page seed as well.
 		// A route value can be named ONLY inside a
-		// data-fui-computed-deps list (route.path in a breadcrumb
+		// data-cui-computed-deps list (route.path in a breadcrumb
 		// computed), which the scan reads as one comma-joined name it
 		// cannot decompose; without the unconditional inclusion the
 		// boot recompute of such a computed finds no value and
@@ -91,7 +91,7 @@ func SeedFor(ctx context.Context, html string) map[string]any {
 // decision, 2026-09-26): the names join a seed only when the render
 // READ a route slice (the bag tracker Bind/BindAttr set), the chain
 // carries a RouteArea (MarkRouteArea, whose markup may bind anything),
-// or the html names one inside a data-fui-computed-deps list the
+// or the html names one inside a data-cui-computed-deps list the
 // reference scan cannot decompose. A render that did none of that — a
 // marketing page, a blog — seeds no route.* at all.
 func routeSeedDue(ctx context.Context, html string) bool {
@@ -110,7 +110,7 @@ func routeSeedDue(ctx context.Context, html string) bool {
 // slice. The attribute is comma-joined signal names (applyComputed),
 // so "a,route.path" matches and "aroute.path" does not: the prefix is
 // anchored on a comma or the opening quote.
-var routeDepRe = regexp.MustCompile(`data-fui-computed-deps="(?:[^"]*?,)?route\.`)
+var routeDepRe = regexp.MustCompile(`data-cui-computed-deps="(?:[^"]*?,)?route\.`)
 
 // MarkRouteArea marks the request's chain as carrying a RouteArea: the
 // area re-renders on every navigation the layer survives and its

@@ -25,7 +25,7 @@ func TestTabsZeroValueOutputPinned(t *testing.T) {
 			{Label: "B", Content: render.Text("beta")},
 		},
 	}))
-	want := `<div class="fui-tabs" data-active="0" data-fui-signal="t" data-fui-signal-attr="data-active" data-fui-signal-mode="attr" data-hui-tabs="" data-fui-comp="fui-tabs"><nav class="fui-tabs-nav" data-fui-internal="" role="tablist"><a aria-controls="t-panel-0" aria-selected="true" class="fui-tab" data-fui-signal-set="t:0" data-fui-tab-index="0" href="#t-panel-0" id="t-tab-0" role="tab" tabindex="0">A</a><a aria-controls="t-panel-1" aria-selected="false" class="fui-tab" data-fui-signal-set="t:1" data-fui-tab-index="1" href="#t-panel-1" id="t-tab-1" role="tab" tabindex="-1">B</a></nav><div class="fui-tabs-content"><div aria-labelledby="t-tab-0" class="fui-tab-panel" data-fui-tab-index="0" id="t-panel-0" role="tabpanel" tabindex="0">alpha</div><div aria-labelledby="t-tab-1" class="fui-tab-panel" data-fui-tab-index="1" id="t-panel-1" role="tabpanel" tabindex="0">beta</div></div></div>`
+	want := `<div class="fui-tabs" data-active="0" data-cui-signal="t" data-cui-signal-attr="data-active" data-cui-signal-mode="attr" data-hui-tabs="" data-cui-comp="fui-tabs"><nav class="fui-tabs-nav" data-cui-internal="" role="tablist"><a aria-controls="t-panel-0" aria-selected="true" class="fui-tab" data-cui-signal-set="t:0" data-cui-tab-index="0" href="#t-panel-0" id="t-tab-0" role="tab" tabindex="0">A</a><a aria-controls="t-panel-1" aria-selected="false" class="fui-tab" data-cui-signal-set="t:1" data-cui-tab-index="1" href="#t-panel-1" id="t-tab-1" role="tab" tabindex="-1">B</a></nav><div class="fui-tabs-content"><div aria-labelledby="t-tab-0" class="fui-tab-panel" data-cui-tab-index="0" id="t-panel-0" role="tabpanel" tabindex="0">alpha</div><div aria-labelledby="t-tab-1" class="fui-tab-panel" data-cui-tab-index="1" id="t-panel-1" role="tabpanel" tabindex="0">beta</div></div></div>`
 	if got != want {
 		t.Errorf("zero-value Tabs output changed:\ngot:  %s\nwant: %s", got, want)
 	}
@@ -47,11 +47,11 @@ func TestTabsStateAttrsOnAndOff(t *testing.T) {
 			{Label: "C", Content: render.Text("c")},
 		},
 	}))
-	if !strings.Contains(on, `data-fui-tab-index="0" data-state="active" href="#s-panel-0" id="s-tab-0" role="tab"`) {
+	if !strings.Contains(on, `data-cui-tab-index="0" data-state="active" href="#s-panel-0" id="s-tab-0" role="tab"`) {
 		t.Errorf("active tab must carry data-state=active:\n%s", on)
 	}
 	for _, i := range []string{"1", "2"} {
-		if !strings.Contains(on, `data-fui-tab-index="`+i+`" data-state="inactive" href="#s-panel-`+i+`" id="s-tab-`+i+`" role="tab"`) {
+		if !strings.Contains(on, `data-cui-tab-index="`+i+`" data-state="inactive" href="#s-panel-`+i+`" id="s-tab-`+i+`" role="tab"`) {
 			t.Errorf("inactive tab %s must carry data-state=inactive:\n%s", i, on)
 		}
 	}
@@ -69,7 +69,7 @@ func TestTabsStateAttrsOnAndOff(t *testing.T) {
 	if strings.Contains(off, "data-state") {
 		t.Errorf("zero-value Tabs must not emit data-state:\n%s", off)
 	}
-	if strings.Contains(off, "data-hui-tabs-state") || strings.Contains(off, "data-fui-prefetch") {
+	if strings.Contains(off, "data-hui-tabs-state") || strings.Contains(off, "data-cui-prefetch") {
 		t.Errorf("zero-value Tabs must not emit the tabs module markers:\n%s", off)
 	}
 }
@@ -162,7 +162,7 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 	// three knobs at once, and the runtime e2e fixtures hand-write
 	//  into their HTML — so none of them can observe
 	// the component failing to emit it.
-	if !strings.Contains(out, `data-fui-tab-index="0" id="v-panel-0" role="tabpanel" tabindex="0">alpha-body<`) {
+	if !strings.Contains(out, `data-cui-tab-index="0" id="v-panel-0" role="tabpanel" tabindex="0">alpha-body<`) {
 		t.Errorf("active panel content must ship in the DOM:\n%s", out)
 	}
 	if strings.Contains(out, "beta-body") && !strings.Contains(out, `data-hui-tabs-stash`) {
@@ -170,7 +170,7 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 	}
 	// Inactive panels are EMPTY shells.
 	for _, i := range []string{"1", "2"} {
-		if !strings.Contains(out, `data-fui-tab-index="`+i+`" id="v-panel-`+i+`" role="tabpanel" tabindex="0"></div>`) {
+		if !strings.Contains(out, `data-cui-tab-index="`+i+`" id="v-panel-`+i+`" role="tabpanel" tabindex="0"></div>`) {
 			t.Errorf("inactive panel %s must ship empty:\n%s", i, out)
 		}
 	}
@@ -265,7 +265,7 @@ func TestTabsContractKnobsCompose(t *testing.T) {
 	if !strings.Contains(out, `aria-controls="allthree-panel-1"`) {
 		t.Errorf("aria-controls must survive vacate:\n%s", out)
 	}
-	if !strings.Contains(out, `data-fui-tab-index="1" data-state="inactive" href="#allthree-panel-1" id="allthree-tab-1"`) {
+	if !strings.Contains(out, `data-cui-tab-index="1" data-state="inactive" href="#allthree-panel-1" id="allthree-tab-1"`) {
 		t.Errorf("data-state must survive vacate:\n%s", out)
 	}
 }
