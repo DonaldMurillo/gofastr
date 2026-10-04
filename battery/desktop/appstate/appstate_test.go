@@ -383,3 +383,37 @@ func TestFlushRacingTimerWholeFile(t *testing.T) {
 		t.Fatal("the raced file lost page.k0")
 	}
 }
+
+func TestFailedWriteRetriedOnFlush(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	setDelay(t, 20*time.Millisecond)
+	dir := t.TempDir()
+	lg := new(logBuffer)
+	s := Open(filepath.Join(dir, "state.json"), lg.logger())
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	if err := s.Set("page.x", 42); err != nil {
+		t.Fatal(err)
+	}
+	// The debounced write fails against the read-only directory.
+	waitFor(t, "the failed debounced write", func() bool {
+		return strings.Contains(lg.String(), "creating the temp state file failed")
+	})
+	// While the directory stays read-only, the quit flush reports it.
+	if err := s.Flush(); err == nil {
+		t.Fatal("Flush over a read-only directory returned nil")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush after restoring the directory: %v", err)
+	}
+	if f := readFile(t, s.Path()); string(f.Entries["page.x"]) != "42" {
+		t.Fatalf("flushed file holds %s, want page.x = 42", f.Entries["page.x"])
+	}
+}
