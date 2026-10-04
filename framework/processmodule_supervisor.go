@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -1602,6 +1603,7 @@ func isTransportFailure(err error) bool {
 	return errors.Is(err, moduleproto.ErrClosed) ||
 		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, os.ErrClosed) ||
 		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 

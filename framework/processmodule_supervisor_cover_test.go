@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -298,6 +299,28 @@ func TestIsIntegrityFault_HandshakeTransportFailureIsACrash(t *testing.T) {
 		if isIntegrityFault(err) {
 			t.Errorf("%s: a handshake transport failure classified as integrity (terminal): %v", name, err)
 		}
+	}
+}
+
+// Main's twin of the test above (PR #477 fixed the same classifier in
+// parallel): each transport cause wrapped the way the handshake wraps
+// it, and a wrapped mismatch that must stay terminal.
+func TestPeerGoneMidHandshakeIsCrash(t *testing.T) {
+	for _, cause := range []error{
+		moduleproto.ErrClosed,
+		io.EOF,
+		io.ErrUnexpectedEOF,
+		syscall.EPIPE,
+		os.ErrClosed,
+	} {
+		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", cause))
+		if isIntegrityFault(err) {
+			t.Errorf("%v classed as an integrity fault", err)
+		}
+	}
+	mismatch := fmt.Errorf("handshake: %w", &moduleproto.HandshakeMismatchError{Field: "x", Want: "a", Got: "b"})
+	if !isIntegrityFault(mismatch) {
+		t.Error("a wrapped handshake mismatch must stay terminal")
 	}
 }
 

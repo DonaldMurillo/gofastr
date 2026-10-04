@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,6 +52,11 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("headless-Chrome axe scan skipped in -short")
 	}
+	// The scan records coverage in the axe manifest, which defaults to the
+	// module root: this repo's own .gofastr/. A one-page manifest there
+	// makes every example's strict boot panic in the dev-loop e2e.
+	covDir := t.TempDir()
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", covDir)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<!DOCTYPE html>
@@ -82,6 +89,9 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 	}
 	if !strings.Contains(report, "https://") {
 		t.Errorf("report should include the axe help URL, got:\n%s", report)
+	}
+	if _, err := os.Stat(filepath.Join(covDir, ".gofastr", "axe-coverage.json")); err != nil {
+		t.Errorf("coverage manifest not written under the test's dir: %v", err)
 	}
 }
 

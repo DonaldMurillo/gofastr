@@ -719,7 +719,7 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, screenContent, `type HomeScreen struct{ component.ContextOnly }`)
 	assertContains(t, screenContent, `func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {`)
 	assertContains(t, screenContent, `html.Heading(html.HeadingConfig{Level: 1`)
-	assertContains(t, screenContent, `html.Link(html.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
+	assertContains(t, screenContent, `ui.Link(ui.LinkConfig{Href: "/docs/", Text: "Docs", Class: "docs-link"})`)
 	assertContains(t, screenContent, `ui.Section(ui.SectionConfig{`)
 	assertContains(t, screenContent, `island.NewIsland("live_status"`)
 	assertContains(t, screenContent, `component.NewWidget("save_button"`)
