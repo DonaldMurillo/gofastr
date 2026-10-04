@@ -326,6 +326,28 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`. The server strips invisible/bidi codepoints — `core/textsafe` — from the screen title before this header and the full page's `<title>` element, so a title computed from loaded data cannot reorder or salt the tab readout.) |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders; never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 
+**Deploy skew: `X-Gofastr-Markup`.** Every navigation request the
+runtime makes (the click's partial fetch, the envelope navigator,
+prefetch, intercepted overlays) names the markup generation its kernel
+reads in `X-Gofastr-Markup` (`window.__gofastr._markup`,
+`runtime.MarkupVersion` in Go: 2 is the `data-cui-*` spelling, 1 the
+`data-fui-*` one through v0.86). A tab opened before a deploy keeps its
+runtime, and markup that kernel cannot read leaves every interactive
+marker dead: a `data-cui-rpc` form submits as a native GET with its
+fields in the URL. When a browser script fetch (`Sec-Fetch-Mode` of
+`cors`, `same-origin` or `no-cors`) names another generation or none,
+uihost answers 409 with an HTML partial at the swap key the live DOM
+holds, carrying a `<meta http-equiv="refresh">` to the destination and
+a reload link. Every runtime applies an HTML partial the same way, so
+inserting it starts the browser's own navigation and the destination
+loads whole with the current runtime. A request without Fetch Metadata
+(curl, a Go test, a browser older than Safari 16.4) gets the ordinary
+partial. An old runtime's cross-chain navigation fetches the whole
+document with no navigate header, which the server cannot tell from app
+code fetching a page, so it is not covered. Bump the generation in
+`frag/kernel.js` and `core-ui/runtime/markup.go` together when the
+attribute vocabulary changes again.
+
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
 so back/forward is instant. Eviction never re-renders the visible page;

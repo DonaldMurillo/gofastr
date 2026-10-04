@@ -605,8 +605,11 @@
 
       // Partial fetch. X-Gofastr-From names the origin route so the
       // server renders only the layers the two routes do NOT share and
-      // echoes the swap boundary in X-Gofastr-Swap.
-      const hdrs = { 'X-Gofastr-Navigate': '1' };
+      // echoes the swap boundary in X-Gofastr-Swap. X-Gofastr-Markup is
+      // the kernel's _markup, spelled as a literal here (it costs fewer
+      // gzip bytes than the property read; TestKernelMarkupMatchesGo
+      // holds both spellings to runtime.MarkupVersion).
+      const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2' };
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       const resp = await fetch(path, { headers: hdrs });
