@@ -83,7 +83,7 @@ func TestRunBootsAndGatesThePage(t *testing.T) {
 	if !strings.HasPrefix(h.URL("/x"), "http://127.0.0.1:") {
 		t.Fatalf("URL = %q, want a loopback origin", h.URL("/x"))
 	}
-	if c := h.SessionCookie(); c.Name != "__gofastr_desktop" || c.Value == "" {
+	if c := h.SessionCookie(); !strings.HasPrefix(c.Name, "__gofastr_desktop_") || c.Value == "" {
 		t.Fatalf("session cookie = %+v", c)
 	}
 
