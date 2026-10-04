@@ -85,6 +85,8 @@ type CopyButtonConfig struct {
 	// Copy/Copied/clipboard labels. When nil, English fallbacks apply.
 	Ctx context.Context
 
+	// ID lands on the button, so an aria-describedby or a test hook can
+	// name it. The wrapper span carries no id.
 	ID    string
 	Class string
 
@@ -197,7 +199,10 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		}
 	}
 
-	btn := render.Tag("button", flattenAttrs(html.MergeAttrs(html.Attrs{"class": cls, "id": cfg.ID}, btnAttrs)),
+	if cfg.ID != "" {
+		btnAttrs["id"] = cfg.ID
+	}
+	btn := render.Tag("button", flattenAttrs(html.MergeAttrs(html.Attrs{"class": cls}, btnAttrs)),
 		inner...)
 
 	// The wrapper holds the button AND the SR-only status span so the
@@ -223,9 +228,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	}
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
 		wrapAttrs[k] = v
-	}
-	if cfg.ID != "" {
-		wrapAttrs["id"] = cfg.ID
 	}
 	return copyButtonStyle.WrapHTML(html.Span(html.TextConfig{
 		Class:      "fui-copy-btn-wrap",

@@ -109,6 +109,21 @@ func TestCopyButtonTargetRefusesSelector(t *testing.T) {
 	}
 }
 
+func TestCopyButtonIDOnButtonOnly(t *testing.T) {
+	out := string(CopyButton(CopyButtonConfig{Target: "code", ID: "x"}))
+	if n := strings.Count(out, `id="x"`); n != 1 {
+		t.Fatalf("id=\"x\" appears %d times, want once on the button:\n%s", n, out)
+	}
+	btn := out[strings.Index(out, "<button"):]
+	btn = btn[:strings.Index(btn, ">")+1]
+	if !strings.Contains(btn, `id="x"`) {
+		t.Errorf(`id="x" is not on the button: %s`, btn)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "code"})); strings.Contains(out, ` id=`) {
+		t.Errorf("no ID set, yet an id attribute rendered:\n%s", out)
+	}
+}
+
 func TestCopyButtonTargetAcceptsID(t *testing.T) {
 	for _, target := range []string{"code-1", "#code-1"} {
 		out := string(CopyButton(CopyButtonConfig{Target: target}))
