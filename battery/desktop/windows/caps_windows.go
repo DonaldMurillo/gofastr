@@ -81,6 +81,7 @@ type notifyIconData struct {
 	BalloonIcon uintptr
 }
 
+//go:uintptrescapes
 func callWindows(dll *syscall.LazyDLL, name string, args ...uintptr) (uintptr, uintptr, error) {
 	p := dll.NewProc(name)
 	if err := p.Find(); err != nil {
@@ -257,26 +258,26 @@ func (s *winShell) Prompt(ctx context.Context, req desktop.PermissionRequest) (d
 	return decision, nil
 }
 
-func (s *winShell) queueOnMain(id uintptr, fn func()) (<-chan struct{}, error) {
+func (s *winShell) queueOnMain(id uintptr, fn, cancel func()) (<-chan struct{}, error) {
 	done := make(chan struct{})
 	if win32.CurrentThreadID() == s.uiThreadID && s.uiThreadID != 0 {
 		defer close(done)
 		fn()
 		return done, nil
 	}
-	s.mu.RLock()
-	hwnd, running := s.hwnd, s.running
-	s.mu.RUnlock()
-	if hwnd == 0 || !running {
-		return nil, errors.New("desktop/windows: UI thread is not running")
+	entry := mainWork{
+		run: func() {
+			defer close(done)
+			fn()
+		},
+		cancel: func() {
+			if cancel != nil {
+				cancel()
+			}
+			close(done)
+		},
 	}
-	s.workMu.Lock()
-	s.work[id] = func() { defer close(done); fn() }
-	s.workMu.Unlock()
-	if err := win32.PostMessage(hwnd, wmRunOnMain, id, 0); err != nil {
-		s.workMu.Lock()
-		delete(s.work, id)
-		s.workMu.Unlock()
+	if err := s.enqueueWork(id, entry); err != nil {
 		return nil, err
 	}
 	return done, nil
@@ -309,6 +310,16 @@ func (op *modalOperation) cancel() {
 	}
 }
 
+func (s *winShell) closePermissionDialog(owner uintptr, op *modalOperation) {
+	hwnd := op.dialogHWND.Load()
+	if hwnd == 0 {
+		hwnd = win32.FindOwnedWindow(owner, "#32770", "Permission required")
+	}
+	if hwnd != 0 {
+		_ = win32.PostMessage(hwnd, wmClose, 0, 0)
+	}
+}
+
 func (s *winShell) runNativeModal(ctx context.Context, fn func(*modalOperation) error) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -337,6 +348,9 @@ func (s *winShell) runNativeModal(ctx context.Context, fn func(*modalOperation) 
 			return
 		}
 		modalErr = fn(op)
+	}, func() {
+		op.cancelled.Store(true)
+		op.finished.Store(true)
 	})
 	if err != nil {
 		close(stopWatcher)
@@ -347,7 +361,7 @@ func (s *winShell) runNativeModal(ctx context.Context, fn func(*modalOperation) 
 	case <-done:
 		close(stopWatcher)
 		<-watcherDone
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || op.cancelled.Load() {
 			return desktop.ErrCancelled
 		}
 		return modalErr
@@ -379,6 +393,101 @@ var taskDialogCallback = syscall.NewCallback(func(hwnd, notification, _, _, data
 	}
 	return 0
 })
+
+type activationContext struct {
+	Size                  uint32
+	Flags                 uint32
+	Source                *uint16
+	ProcessorArchitecture uint16
+	Language              uint16
+	AssemblyDirectory     *uint16
+	ResourceName          *uint16
+	ApplicationName       *uint16
+	Module                uintptr
+}
+
+func findTaskDialogProc() (*syscall.Proc, func(), error) {
+	const manifest = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="gofastr.desktop" version="1.0.0.0"/>
+  <dependency><dependentAssembly>
+    <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+  </dependentAssembly></dependency>
+</assembly>`
+	file, err := os.CreateTemp("", "gofastr-comctl-v6-*.manifest")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create common-controls manifest: %w", err)
+	}
+	manifestPath := file.Name()
+	removeManifest := func() { _ = os.Remove(manifestPath) }
+	if _, err := file.WriteString(manifest); err != nil {
+		_ = file.Close()
+		removeManifest()
+		return nil, nil, fmt.Errorf("write common-controls manifest: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		removeManifest()
+		return nil, nil, fmt.Errorf("close common-controls manifest: %w", err)
+	}
+	source, err := win32.UTF16Ptr(manifestPath)
+	if err != nil {
+		removeManifest()
+		return nil, nil, err
+	}
+	ctx := activationContext{Size: uint32(unsafe.Sizeof(activationContext{})), Source: source}
+	handle, _, callErr := callWindows(capKernel, "CreateActCtxW", uintptr(unsafe.Pointer(&ctx)))
+	runtime.KeepAlive(ctx)
+	runtime.KeepAlive(source)
+	if handle == ^uintptr(0) {
+		removeManifest()
+		if callErr != nil {
+			return nil, nil, fmt.Errorf("create common-controls activation context: %w", callErr)
+		}
+		return nil, nil, errors.New("desktop/windows: create common-controls activation context failed")
+	}
+	var cookie uintptr
+	activated, _, activateErr := callWindows(capKernel, "ActivateActCtx", handle, uintptr(unsafe.Pointer(&cookie)))
+	if activated == 0 {
+		_, _, _ = callWindows(capKernel, "ReleaseActCtx", handle)
+		removeManifest()
+		if activateErr != nil {
+			return nil, nil, fmt.Errorf("activate common-controls context: %w", activateErr)
+		}
+		return nil, nil, errors.New("desktop/windows: activate common-controls context failed")
+	}
+	cleanup := func() {
+		_, _, _ = callWindows(capKernel, "DeactivateActCtx", 0, cookie)
+		_, _, _ = callWindows(capKernel, "ReleaseActCtx", handle)
+		removeManifest()
+	}
+	proc := capComDlg.NewProc("TaskDialogIndirect")
+	if err := proc.Find(); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return proc, cleanup, nil
+}
+
+func showPermissionMessageBox(owner uintptr, instruction string, op *modalOperation) (desktop.Decision, error) {
+	if op.cancelled.Load() {
+		return desktop.DecisionDeny, desktop.ErrCancelled
+	}
+	message := instruction + "\n\nSelect Yes to Allow, No to Allow Once, or Cancel to Deny."
+	result := win32.MessageBox(owner, message, "Permission required", 0x3|0x20|0x2000)
+	if op.cancelled.Load() {
+		return desktop.DecisionDeny, desktop.ErrCancelled
+	}
+	switch result {
+	case 6: // IDYES
+		return desktop.DecisionAllow, nil
+	case 7: // IDNO
+		return desktop.DecisionAllowOnce, nil
+	case 2: // IDCANCEL: deny and fail closed
+		return desktop.DecisionDeny, nil
+	default:
+		return desktop.DecisionDeny, errors.New("desktop/windows: permission dialog could not be shown")
+	}
+}
 
 func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *modalOperation) (desktop.Decision, error) {
 	instruction := "Allow this app to use " + req.Capability + "."
@@ -415,10 +524,13 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	binary.LittleEndian.PutUint64(cfg[148:156], uint64(op.id.Load()))
 	activePermissionPrompts.Store(op.id.Load(), op)
 	defer activePermissionPrompts.Delete(op.id.Load())
-	proc := capComDlg.NewProc("TaskDialogIndirect")
-	if err := proc.Find(); err != nil {
-		return desktop.DecisionDeny, fmt.Errorf("desktop/windows: permission dialog is unavailable: %w", err)
+	op.shell.registerModalCancel(op.id.Load(), func() { op.shell.closePermissionDialog(owner, op) })
+	defer op.shell.unregisterModalCancel(op.id.Load())
+	proc, deactivate, err := findTaskDialogProc()
+	if err != nil {
+		return showPermissionMessageBox(owner, instruction, op)
 	}
+	defer deactivate()
 	var pressed int32
 	r, _, _ := syscall.SyscallN(proc.Addr(), uintptr(unsafe.Pointer(&cfg[0])), uintptr(unsafe.Pointer(&pressed)), 0, 0)
 	runtime.KeepAlive(buttons)
@@ -430,7 +542,7 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	runtime.KeepAlive(btnAllow)
 	runtime.KeepAlive(btnDeny)
 	if int32(r) < 0 {
-		return desktop.DecisionDeny, fmt.Errorf("desktop/windows: show permission dialog: %w", win32.HRESULTError(int32(r)))
+		return showPermissionMessageBox(owner, instruction, op)
 	}
 	if op.cancelled.Load() {
 		return desktop.DecisionDeny, desktop.ErrCancelled

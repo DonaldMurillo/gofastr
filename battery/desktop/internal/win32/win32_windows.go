@@ -8,6 +8,7 @@ package win32
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -69,6 +70,7 @@ var (
 	kernel32 = syscall.NewLazyDLL(kernel32Name)
 )
 
+//go:uintptrescapes
 func call(dll *syscall.LazyDLL, name string, args ...uintptr) (uintptr, uintptr, error) {
 	p := dll.NewProc(name)
 	if err := p.Find(); err != nil {
@@ -305,9 +307,8 @@ func GetMessage(m *Message) (bool, error) {
 }
 
 func TranslateDispatch(m *Message) {
-	ptr := uintptr(unsafe.Pointer(m))
-	_, _, _ = call(user32, "TranslateMessage", ptr)
-	_, _, _ = call(user32, "DispatchMessageW", ptr)
+	_, _, _ = call(user32, "TranslateMessage", uintptr(unsafe.Pointer(m)))
+	_, _, _ = call(user32, "DispatchMessageW", uintptr(unsafe.Pointer(m)))
 }
 
 func PostQuitMessage(code int)         { _, _, _ = call(user32, "PostQuitMessage", uintptr(code)) }
@@ -330,14 +331,17 @@ func CreatePopupMenu() (uintptr, error) {
 }
 func AppendMenu(menu uintptr, flags uint32, idOrSubmenu uintptr, title string) error {
 	var p uintptr
+	var wide *uint16
 	if title != "" {
-		w, err := UTF16(title)
+		var err error
+		wide, err = UTF16(title)
 		if err != nil {
 			return err
 		}
-		p = uintptr(unsafe.Pointer(w))
+		p = uintptr(unsafe.Pointer(wide))
 	}
 	r, _, callErr := call(user32, "AppendMenuW", menu, uintptr(flags), idOrSubmenu, p)
+	runtime.KeepAlive(wide)
 	if r == 0 {
 		return fmt.Errorf("AppendMenuW: %w", lastError(callErr))
 	}
@@ -521,6 +525,25 @@ func FindWindowEx(parent uintptr, className string, title *uint16) uintptr {
 	class, _ := UTF16(className)
 	r, _, _ := call(user32, "FindWindowExW", parent, 0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)))
 	return r
+}
+
+// FindOwnedWindow returns a top-level window with the requested identity only
+// when Windows reports the supplied HWND as its owner.
+func FindOwnedWindow(owner uintptr, className, title string) uintptr {
+	class, _ := UTF16(className)
+	caption, _ := UTF16(title)
+	var after uintptr
+	for {
+		hwnd, _, _ := call(user32, "FindWindowExW", 0, after, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(caption)))
+		if hwnd == 0 {
+			return 0
+		}
+		windowOwner, _, _ := call(user32, "GetWindow", hwnd, 4 /* GW_OWNER */)
+		if windowOwner == owner {
+			return hwnd
+		}
+		after = hwnd
+	}
 }
 
 func ClickWindow(hwnd uintptr) {

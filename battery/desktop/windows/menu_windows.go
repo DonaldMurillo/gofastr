@@ -158,13 +158,18 @@ func (s *winShell) invokeEditorCommand(selector string) {
 	w := s.windowsByID[desktop.MainWindowID]
 	s.mu.RUnlock()
 	if w != nil {
-		if err := w.Focus(); err != nil {
-			return
-		}
-		if w.controller != 0 {
-			_, _ = win32.COMCall(w.controller, 12, 0 /* COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC */)
-		}
-		_ = win32.SendKeyboardShortcut(key, 0x11 /* VK_CONTROL */)
+		_ = s.Main(func() {
+			if w.closed.Load() || w.hwnd == 0 {
+				return
+			}
+			if err := w.Focus(); err != nil {
+				return
+			}
+			if w.controller != 0 {
+				_, _ = win32.COMCall(w.controller, 12, 0 /* COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC */)
+			}
+			_ = win32.SendKeyboardShortcut(key, 0x11 /* VK_CONTROL */)
+		})
 	}
 }
 
@@ -229,14 +234,25 @@ func (s *winShell) ScriptPrompts(ds ...desktop.Decision) {
 }
 
 func (s *winShell) ClickPrompt(button string) error {
-	name, _ := win32.UTF16Ptr(button)
+	names := []string{button}
+	switch strings.ToLower(button) {
+	case "allow":
+		names = append(names, "Yes")
+	case "allow once":
+		names = append(names, "No")
+	case "deny":
+		names = append(names, "Cancel")
+	}
 	for i := 0; i < 100; i++ {
 		dlg := win32.FindWindow("#32770", "Permission required")
 		if dlg != 0 {
-			child := win32.FindWindowEx(dlg, "Button", name)
-			if child != 0 {
-				win32.ClickWindow(child)
-				return nil
+			for _, name := range names {
+				buttonName, _ := win32.UTF16Ptr(name)
+				child := win32.FindWindowEx(dlg, "Button", buttonName)
+				if child != 0 {
+					win32.ClickWindow(child)
+					return nil
+				}
 			}
 		}
 		waitWindows(50)

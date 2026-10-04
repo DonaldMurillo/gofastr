@@ -61,6 +61,11 @@ type nccalcSizeParams struct {
 	WindowPos uintptr
 }
 
+type mainWork struct {
+	run    func()
+	cancel func()
+}
+
 const (
 	iidCreateEnvironmentHandler = "4E8A3389-C9D8-4BD2-B6B5-124FEE6CC14D"
 	iidCreateControllerHandler  = "6C4819F3-C9B7-4260-8127-C9F5BDE7F68C"
@@ -123,7 +128,7 @@ type winShell struct {
 
 	workMu sync.Mutex
 	workID atomic.Uintptr
-	work   map[uintptr]func()
+	work   map[uintptr]mainWork
 }
 
 type winWindow struct {
@@ -190,7 +195,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.windowsByID = make(map[string]*winWindow)
 	s.windowsHWND = make(map[uintptr]*winWindow)
 	s.menuActions = make(map[uint16]menuAction)
-	s.work = make(map[uintptr]func())
+	s.work = make(map[uintptr]mainWork)
 	s.mu.Unlock()
 
 	if err := win32.RegisterWindowClass(win32.WindowClass{WndProc: windowProc, ClassName: windowClassName, Cursor: win32.LoadCursor(32512)}); err != nil {
@@ -303,6 +308,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	env := s.environment
 	s.environment = 0
 	s.mu.Unlock()
+	s.cancelPendingWork()
 	for _, w := range wins {
 		s.destroyWebView(w)
 	}
@@ -375,26 +381,19 @@ func (s *winShell) Main(fn func()) error {
 		fn()
 		return nil
 	}
-	s.mu.RLock()
-	hwnd, running := s.hwnd, s.running
-	s.mu.RUnlock()
-	if !running || hwnd == 0 {
-		return errors.New("desktop/windows: UI thread is not running")
-	}
 	id := s.workID.Add(1)
 	done := make(chan struct{})
-	s.workMu.Lock()
-	s.work[id] = func() { defer close(done); fn() }
-	s.workMu.Unlock()
-	if err := win32.PostMessage(hwnd, wmRunOnMain, id, 0); err != nil {
-		s.workMu.Lock()
-		delete(s.work, id)
-		s.workMu.Unlock()
+	var workErr error
+	entry := mainWork{
+		run:    func() { defer close(done); fn() },
+		cancel: func() { workErr = errors.New("desktop/windows: UI thread stopped before operation ran"); close(done) },
+	}
+	if err := s.enqueueWork(id, entry); err != nil {
 		return err
 	}
 	select {
 	case <-done:
-		return nil
+		return workErr
 	case <-time.After(15 * time.Second):
 		s.workMu.Lock()
 		delete(s.work, id)
@@ -405,11 +404,45 @@ func (s *winShell) Main(fn func()) error {
 
 func (s *winShell) dispatch(id uintptr) {
 	s.workMu.Lock()
-	fn := s.work[id]
+	entry := s.work[id]
 	delete(s.work, id)
 	s.workMu.Unlock()
-	if fn != nil {
-		fn()
+	if entry.run != nil {
+		entry.run()
+	}
+}
+
+func (s *winShell) enqueueWork(id uintptr, entry mainWork) error {
+	// Hold the shell read lock until the work is posted. Run takes the write
+	// lock before draining pending work, so it cannot miss a newly queued job.
+	s.mu.RLock()
+	hwnd, running := s.hwnd, s.running
+	if hwnd == 0 || !running {
+		s.mu.RUnlock()
+		return errors.New("desktop/windows: UI thread is not running")
+	}
+	s.workMu.Lock()
+	s.work[id] = entry
+	s.workMu.Unlock()
+	err := win32.PostMessage(hwnd, wmRunOnMain, id, 0)
+	if err != nil {
+		s.workMu.Lock()
+		delete(s.work, id)
+		s.workMu.Unlock()
+	}
+	s.mu.RUnlock()
+	return err
+}
+
+func (s *winShell) cancelPendingWork() {
+	s.workMu.Lock()
+	pending := s.work
+	s.work = make(map[uintptr]mainWork)
+	s.workMu.Unlock()
+	for _, entry := range pending {
+		if entry.cancel != nil {
+			entry.cancel()
+		}
 	}
 }
 
@@ -861,7 +894,13 @@ func (s *winShell) createController(w *winWindow, env uintptr) error {
 				win32.Release(c2)
 			}
 		}
-		s.enableWebViewChrome(w)
+		if err := s.enableWebViewChrome(w); err != nil {
+			s.windowInitializationFailed(w, err)
+			return 0
+		}
+		if w.closed.Load() {
+			return 0
+		}
 		w.resizeWebView()
 		_, _ = win32.COMCall(controller, 4, 1)
 		s.installBootstrap(w)
@@ -881,9 +920,9 @@ func (s *winShell) createController(w *winWindow, env uintptr) error {
 	return nil
 }
 
-func (s *winShell) enableWebViewChrome(w *winWindow) {
+func (s *winShell) enableWebViewChrome(w *winWindow) error {
 	if w.webview == 0 || w.style.Chrome == desktop.ChromeDefault {
-		return
+		return nil
 	}
 	var settings uintptr
 	_, settingsErr := win32.COMCall(w.webview, 3 /* get_Settings */, uintptr(unsafe.Pointer(&settings)))
@@ -918,15 +957,15 @@ func (s *winShell) enableWebViewChrome(w *winWindow) {
 		return 0
 	})
 	if err != nil {
-		s.windowInitializationFailed(w, err)
-		return
+		return fmt.Errorf("desktop/windows: create chrome message handler: %w", err)
 	}
 	var token int64
 	_, addErr := win32.COMCall(w.webview, 34 /* add_WebMessageReceived */, cb, uintptr(unsafe.Pointer(&token)))
 	win32.Release(cb)
 	if addErr != nil {
-		s.windowInitializationFailed(w, addErr)
+		return fmt.Errorf("desktop/windows: register chrome message handler: %w", addErr)
 	}
+	return nil
 }
 
 func (s *winShell) installBootstrap(w *winWindow) {

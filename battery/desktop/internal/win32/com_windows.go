@@ -146,6 +146,10 @@ func Release(obj uintptr) {
 }
 
 // COMCall invokes an IUnknown-style interface method at vtable slot.
+// The directive keeps uintptr arguments that originated as pointers alive
+// across the wrapper's argument-slice allocation and native call.
+//
+//go:uintptrescapes
 func COMCall(obj uintptr, slot int, args ...uintptr) (uintptr, error) {
 	if obj == 0 {
 		return 0, fmt.Errorf("COM call on nil interface")
