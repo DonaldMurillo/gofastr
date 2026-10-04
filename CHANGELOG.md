@@ -373,6 +373,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A process module that dies mid-handshake restarts instead of
+  failing for good.** The supervisor classed any error whose text held
+  `handshake:` as an integrity fault, so a child that crashed while the
+  host was still writing the handshake (broken pipe, EOF, peer closed)
+  went to terminal `Failed` with no restart and no circuit-breaker
+  charge. Transport errors are crashes now; a handshake mismatch, a
+  failed negotiation or an executable SHA mismatch is still terminal.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the

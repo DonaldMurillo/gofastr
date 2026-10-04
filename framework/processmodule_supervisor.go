@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
@@ -1575,6 +1578,14 @@ func isIntegrityFault(err error) bool {
 	}
 	if _, ok := errors.AsType[*ExecutableSHAMismatchError](err); ok {
 		return true
+	}
+	// A child that exits mid-handshake crashed; it did not lie about
+	// itself. Its transport error restarts under the circuit breaker
+	// like any other crash.
+	if errors.Is(err, moduleproto.ErrClosed) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, os.ErrClosed) {
+		return false
 	}
 	// A handshake-stage error (round-trip mismatch surfaced as a wrapped
 	// error) is integrity; the spawn-stage error (exec failed) is not.
