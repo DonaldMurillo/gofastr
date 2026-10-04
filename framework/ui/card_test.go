@@ -93,3 +93,20 @@ func TestCardExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	mustContain(t, h, `href="/real"`)
 }
+
+// HeadingContent puts composed markup inside the card's own heading
+// element, so a heading filled in the browser keeps the heading's
+// class and level instead of arriving through a filled header.
+func TestCardHeadingContentRendersInTheHeadingElement(t *testing.T) {
+	h := string(Card(CardConfig{HeadingLevel: 2, HeadingContent: render.HTML(`<span data-slot="x"></span>`)}, render.Text("BODY")))
+	want := `<h2 class="fui-card__heading"><span data-slot="x"></span></h2>`
+	if !strings.Contains(h, want) {
+		t.Fatalf("card = %s\nwant it to contain %s", h, want)
+	}
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(r.(string), "one heading, one source") {
+			t.Fatalf("Heading plus HeadingContent must panic, got %v", r)
+		}
+	}()
+	Card(CardConfig{Heading: "x", HeadingContent: render.HTML("<b>y</b>")})
+}

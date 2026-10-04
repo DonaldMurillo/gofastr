@@ -257,6 +257,10 @@ framework/
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
+├── localentity/     Records kept in the visitor's browser: Define over a
+│                    core-ui/localdb store, Form/List/Count helpers that
+│                    wrap ui components, and the `localentity` (lists)
+│                    and `localentity-form` (forms) behaviours.
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
@@ -384,7 +388,8 @@ L4  crud                                     (uses entity, hook, event, db,
                                               crud within L4)
 L4+ ui, uihost, and the packages             (the UI stack: same direction
     composing them: ui/resource, static,      rule; uihost never imports
-    gallery, sdkdocs, pluginhost              ui. Edges listed below)
+    gallery, sdkdocs, pluginhost,             ui. Edges listed below)
+    localentity
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
@@ -402,7 +407,7 @@ one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
 tenant`, `ui/resource → crud + filter + ui`, `static → ui + uihost`,
-`gallery → ui + image + agentsinv`, `sdkdocs → ui + sdk + entity +
+`gallery → ui + image + agentsinv`, `localentity → agentsinv` (plus core-ui/localdb, html and registry), `sdkdocs → ui + sdk + entity +
 internal/casing`, and `pluginhost → uihost`. `uihost/uinoderender → ui` is a separate
 package on purpose: the host itself never links `framework/ui`. The
 node renderer that needs the component catalog sits above it.)

@@ -73,7 +73,11 @@ type fragmentDef struct {
 // The ws module also owns zero data-cui-* attributes and has no marker
 // at all: it is a pure API module an application loads explicitly with
 // __gofastr.loadModule('ws') (connectWebSocket /
-// createSequencedReducer). Nothing scans the DOM for it.
+// createSequencedReducer). Nothing scans the DOM for it. The localdb
+// module is the same shape: __gofastr.loadModule('localdb'), loaded by
+// app scripts and by framework/localentity's behaviours through
+// Requires("localdb"); its schema rides the inert #gofastr-localdb
+// block, not a data-cui-* attribute.
 // boot-embed depends on kernel. RPC requests inside an embed route through
 // boot's delegation bridge and load src/rpc.js at interaction time. It also
 // relies on boot's mutation observer to hydrate injected content, but boot is

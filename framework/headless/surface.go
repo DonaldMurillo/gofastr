@@ -26,6 +26,13 @@ type CardProps struct {
 	// header when Desc is empty too — an empty header is a stripe of
 	// padding that looks like a mistake.
 	Title string
+	// TitleContent renders as the heading's content in place of
+	// Title's text, for a heading whose words are composed rather than
+	// known at render: a client-filled value (a local entity's text
+	// slot, a signal binding) inside the card's own heading element,
+	// which a filled header would lose. Setting both is a panic: one
+	// heading, one source.
+	TitleContent render.HTML
 	// TitleTag is the heading level, "h3" by default. A card does not
 	// know how deep in the outline it sits, so a page that nests cards
 	// under an h2 says so here rather than letting every card claim
@@ -70,14 +77,21 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 	// a card may have its content rewritten.
 	b := p.Parts.Box(s, PartCardHeader)
 	kids := make([]render.HTML, 0, 3)
-	if p.Title != "" || p.Desc != "" || b.Filled(PartCardHeader) {
+	if p.Title != "" && p.TitleContent != "" {
+		panic("headless: Card carries both Title and TitleContent — one heading, one source")
+	}
+	if p.Title != "" || p.TitleContent != "" || p.Desc != "" || b.Filled(PartCardHeader) {
 		head := make([]render.HTML, 0, 2)
-		if p.Title != "" {
+		if p.Title != "" || p.TitleContent != "" {
 			tag := orDefault(p.TitleTag, "h3")
 			if len(tag) != 2 || tag[0] != 'h' || tag[1] < '1' || tag[1] > '6' {
 				panic("headless: Card TitleTag must be h1 to h6, not " + strconv.Quote(tag))
 			}
-			head = append(head, b.El(tag, PartTitle, nil, render.Text(p.Title)))
+			title := p.TitleContent
+			if p.Title != "" {
+				title = render.Text(p.Title)
+			}
+			head = append(head, b.El(tag, PartTitle, nil, title))
 		}
 		if p.Desc != "" {
 			head = append(head, b.El("p", PartDesc, nil, render.Text(p.Desc)))

@@ -293,7 +293,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 |---|---|---|
 | `core/` | Stdlib-only primitives: router, query, schema, render, mcp, openapi, migrate. Each usable on its own. | you want plain Go building blocks, no framework. |
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
-| `core-ui/` | Server-driven UI runtime: `html` primitives, `patterns`, `widget` islands, signals, the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
+| `core-ui/` | Server-driven UI runtime: `html` primitives, `patterns`, `widget` islands, signals, `localdb` (IndexedDB databases declared in Go, records kept in the visitor's browser), the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
 | `battery/` | Opt-in infrastructure: admin, auth, cache, email, semantic, log, notify, print, queue, relay, rtc, search, setup, storage, webhook, and desktop (experimental: the app in the OS WebView, pure Go). Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI: `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |

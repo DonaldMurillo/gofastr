@@ -2132,6 +2132,12 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			headClose.WriteString(compute)
 			headClose.WriteByte('\n')
 		}
+		// The localdb manifest is the declared IndexedDB schema, small
+		// and static per deploy, inline like compute's.
+		if ldb := widget.LocalDBManifestScript(); ldb != "" {
+			headClose.WriteString(ldb)
+			headClose.WriteByte('\n')
+		}
 	} else {
 		// Export mode: static pages and the PWA offline shell must be
 		// self-contained files, so the inline blocks stay.

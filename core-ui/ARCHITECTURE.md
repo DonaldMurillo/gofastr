@@ -194,7 +194,7 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
 lightbox module), `data-fui-dropzone-preview*` (its dropzone module),
-`data-fui-pane*` (its pane host), `data-fui-z-tier` (`ui.Sticky`'s
+`data-fui-pane*` (its pane host), `data-fui-local-*` (`framework/localentity`'s `localentity` and `localentity-form` behaviours: the list, form and count carriers, their row/empty templates, the `-text`/`-delete`/`-edit` hooks inside a row, and the `-item`/`-key`/`-editing`/`-state` marks the module writes), `data-fui-z-tier` (`ui.Sticky`'s
 sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 (`framework/pluginhost`) and `data-fui-page-loading`
 (`framework/uihost`). Every other attribute the runtime reads is
@@ -850,6 +850,52 @@ A new generation invalidates only generation-bound work; which state
 survives a reconnect is the application's decision. WebSocket recovery
 proves nothing about media protocols layered on top (WebRTC and
 friends); those resynchronize through these hooks.
+
+### Browser-local databases (`__gofastr.localdb`)
+
+The `localdb` demand module (`runtime/src/localdb.js`) is the browser
+half of `core-ui/localdb`: IndexedDB databases declared in Go, stored in
+the visitor's browser, never on the server. Like `ws` it has no DOM
+marker; a caller loads it with `__gofastr.loadModule('localdb')`
+(`framework/localentity`'s two behaviours declare `Requires("localdb")`).
+
+The schema rides an inert `<script type="application/json"
+id="gofastr-localdb">` block that `framework/uihost` puts in every page
+head (live and export mode) when any database is declared. Only
+declared databases, stores and indexes are reachable; anything else
+rejects with a coded error. The browser-side IndexedDB name is
+`gofastr.<name>`.
+
+| Call | Does |
+| --- | --- |
+| `localdb.open(name)` | Resolves the database handle. The first open reconciles the stored schema with the declaration (below). |
+| `db.get/put/add/delete/clear/count/list(store, …)` | One transaction each, resolved when it COMMITS. `put` on an `AutoKey` store mints a UUIDv7 key when the record has none. |
+| `db.list(store, {index, only \| lower/upper, direction, offset, limit, keys})` | Reads in key or index order through a cursor. Ordering is IndexedDB's, never page script sorting an array. |
+| `db.tx(stores, mode, fn)` | One transaction over several stores, all-or-nothing: a throw inside `fn` aborts it and nothing lands. |
+| `db.watch(store, fn)` | `fn({db, store, origin, changes})` after every committed write, from this tab (`origin: "local"`) or another tab of the origin (`"remote"`). Returns the unsubscribe. |
+| `localdb.persist()` / `persisted()` / `estimate()` | The `navigator.storage` eviction request and usage figures. `false` and `null` are answers, not errors. |
+| `localdb.newID()` | The UUIDv7 minter `AutoKey` uses: monotonic within a tab. |
+
+Schema changes are **additive and automatic**. A page whose declaration
+names a store or index the stored database lacks bumps the IndexedDB
+version itself and creates it; an index whose definition changed is
+rebuilt (index contents are derived, so nothing is lost). Nothing is
+ever deleted: a tab still running the previous deploy may need what the
+new one dropped, and an older page opening a newer database finds a
+superset and works. A store whose primary key path changed cannot be
+migrated in place and rejects `schema`. When another tab upgrades, this
+tab's connection closes on `versionchange` and the next operation
+reopens it; `document` sees a `gofastr:localdb` event
+(`detail: {type, db}`, type `versionchange`, `close` or `blocked`).
+
+Cross-tab notification rides one `BroadcastChannel` per database
+carrying store names, ops and keys, never record values; the receiver
+re-reads what it needs. Any same-origin script can post on that
+channel, so a message naming an undeclared store or an unknown op is
+dropped whole. Errors carry a stable `code` (`unsupported`,
+`unknown-db`, `unknown-store`, `unknown-index`, `invalid`,
+`constraint`, `quota`, `schema`, `version`, `closed`, `aborted`,
+`failed`) and drop the browser's message; the module never logs.
 
 ### WebRTC rooms (`__gofastr.connectRoom`)
 

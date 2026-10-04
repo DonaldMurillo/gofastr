@@ -1068,6 +1068,20 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// plus the core-side hint channel. Before that: 1183 measured
 		// after the re-delivery's pointer-modality hint.
 		"transition": 1395,
+		// localdb 3420 measured at its first landing (2 clearance).
+		// It is an API module, not a marker module: only a page that
+		// calls __gofastr.loadModule('localdb') (an app script, or
+		// framework/localentity's behaviours) downloads it. It carries
+		// the whole IndexedDB adapter in one unit because every caller
+		// needs all of it on first open: the additive schema
+		// reconciler (drift + upgrade + the version race), the
+		// transaction wrapper that resolves on COMMIT, the cursor
+		// reader, and the cross-tab channel with its forged-message
+		// guard, and the monotonic UUIDv7 minter. Shrunk from 4211
+		// by folding the single-op methods into one loop and dropping
+		// the error class; the next cut would remove a guard or a
+		// query option.
+		"localdb": 3422,
 	}
 	const coreOverride = 0
 
