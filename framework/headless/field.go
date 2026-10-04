@@ -133,7 +133,7 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 		// failed submit has to interrupt, and the element is inserted
 		// rather than updated in place.
 		kids = append(kids, b.El("p", PartError,
-			Internal(Attrs(map[string]string{"id": errID, "role": "alert"})),
+			Mark(Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), "data-hui-field-error"),
 			render.Text(p.Error)))
 	} else if reserved {
 		// The same paragraph, empty, found by its id. An empty alert
@@ -148,14 +148,18 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 		// while it is empty, so a reserved field is not a field with a
 		// blank row under it.
 		kids = append(kids, b.El("p", PartError,
-			Internal(Attrs(map[string]string{"id": errID, "role": "alert"}))))
+			Mark(Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), "data-hui-field-error")))
 	}
 	if p.Hint != "" {
 		kids = append(kids, b.El("p", PartHint,
 			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Hint)))
 	}
 
-	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
+	// data-hui-field names the group to the runtime's form-errors
+	// module, which places a refused submission's messages into the
+	// error node ([data-hui-field-error]: rendered, reserved or added
+	// live) without knowing what the kit called either element.
+	own := Mark(Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), "data-hui-field")
 	return b.El("div", PartRoot, own, kids...)
 }
 
@@ -361,6 +365,7 @@ func init() {
 	Register(Spec{
 		Name:    "Field",
 		Anatomy: []Part{PartRoot, PartLabel, PartHint, PartError},
+		Hooks:   []string{"data-hui-field", "data-hui-field-error"},
 		// Nothing is fillable. Every part a field draws is half of a
 		// relationship built from the same id as the control: a slot
 		// here would let a page replace the hint with markup that has

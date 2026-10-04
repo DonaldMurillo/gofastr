@@ -77,7 +77,7 @@ func TestConfigListUsesFrameworkComponentsAndConfiguredFormatting(t *testing.T) 
 	}
 
 	html := string(cfg.List(context.Background()))
-	for _, want := range []string{"data-fui-comp=\"ui-page-header\"", "data-fui-comp=\"ui-data-table\"", "Past Due", "$1,234.50", "New Order"} {
+	for _, want := range []string{"data-cui-comp=\"ui-page-header\"", "data-cui-comp=\"ui-data-table\"", "Past Due", "$1,234.50", "New Order"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("List output missing %q:\n%s", want, html)
 		}
@@ -177,7 +177,7 @@ func TestConfigWithIslandRendersTableRPCAndRejectsAnonymousCalls(t *testing.T) {
 	}.WithIsland("/api/tables/customers").WithActions(render.Text("Quick add"))
 
 	html := string(cfg.List(context.Background()))
-	for _, want := range []string{"Quick add", "data-fui-signal=\"table-customers\"", "data-fui-rpc=\"/api/tables/customers"} {
+	for _, want := range []string{"Quick add", "data-cui-signal=\"table-customers\"", "data-cui-rpc=\"/api/tables/customers"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("island list missing %q:\n%s", want, html)
 		}

@@ -50,7 +50,7 @@ func TestHandleResolvesInsideGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(res.HTML)
-	if !strings.Contains(s, `data-fui-outlet="g:/help/:docs#toc"`) {
+	if !strings.Contains(s, `data-cui-outlet="g:/help/:docs#toc"`) {
 		t.Errorf("a group layer's outlet must carry its group-resolved address:\n%s", s)
 	}
 	if !strings.Contains(s, "TOC-FILL") {

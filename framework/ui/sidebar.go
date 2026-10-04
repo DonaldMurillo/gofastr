@@ -305,7 +305,7 @@ type SidebarConfig struct {
 	// analytics markers) to the sidebar's root element. Keys the
 	// component owns are dropped: class and id, aria-label (the
 	// navigation landmark's name comes from NavLabel), data-collapsed,
-	// and every data-fui-*/data-hui-* wiring key (the sidebar marker
+	// and every data-cui-*/data-hui-* wiring key (the sidebar marker
 	// and collapse-storage contract).
 	ExtraAttrs html.Attrs
 }
@@ -366,7 +366,7 @@ var rolesExtractor func(ctx context.Context) []string
 // own, for hosts that place it in their own chrome — the page header —
 // and pass SidebarConfig.SuppressDrawerTrigger so the sidebar itself
 // draws no second copy. Same button, class, and widget contract as the
-// trigger Sidebar renders (data-fui-open names the MountSidebar
+// trigger Sidebar renders (data-cui-open names the MountSidebar
 // drawer), and the same >= md self-hiding from the component's own
 // stylesheet: at widths where the inline column shows, the header
 // trigger disappears on its own. The drawer widget still has to be
@@ -575,7 +575,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 				Collapsible(CollapsibleConfig{Summary: cfg.navLabel()},
 					// The mobile disclosure sits OUTSIDE the marked
 					// inline root, so it carries its own marker: the
-					// sheet's [data-fui-comp]-scoped rules (link
+					// sheet's [data-cui-comp]-scoped rules (link
 					// styling, the compact variants) must reach it.
 					sidebarStyle.WrapHTML(sidebarBodyRegion(ctx, cfg, cfg.DrawerName+"-mobile", "fui-sidebar__body")))),
 		)
@@ -611,7 +611,7 @@ func sidebarNavItems(cfg SidebarConfig) []headless.SidebarItem {
 		for _, it := range items {
 			mapped := headless.SidebarItem{
 				Label: it.Label, Href: it.Href, Icon: it.Icon,
-				// MatchPath rides the leaf as data-fui-match-prefix so
+				// MatchPath rides the leaf as data-cui-match-prefix so
 				// the runtime's active-link sweep keeps the item lit on
 				// sub-paths after a client navigation (the server owns
 				// only first paint).
@@ -713,7 +713,7 @@ func sidebarHasActiveDescendant(it SidebarItem, currentPath string) bool {
 
 // sidebarDrawerSlot renders the drawer's body: same content as the
 // inline sidebar minus the hamburger button. Wraps in
-// data-fui-comp="ui-sidebar" so the sidebar stylesheet applies
+// data-cui-comp="ui-sidebar" so the sidebar stylesheet applies
 // inside the drawer too (the framework's per-component CSS scoping
 // keys on that marker).
 type sidebarDrawerSlot struct{ cfg SidebarConfig }
@@ -744,7 +744,7 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 
 // sidebarDrawerHeader renders the drawer's header row: the app's
 // brand (DrawerTitle, falling back to Title) beside a 44px close
-// button that rides the widget runtime's data-fui-action="close"
+// button that rides the widget runtime's data-cui-action="close"
 // contract — the same dismiss path the backdrop and Escape take, and
 // dismiss returns focus to the trigger that opened the drawer.
 type sidebarDrawerHeader struct{ title string }
@@ -762,7 +762,7 @@ func (h sidebarDrawerHeader) Render() render.HTML {
 			"type":            "button",
 			"class":           "fui-sidebar__drawer-close",
 			"aria-label":      "Close navigation",
-			"data-fui-action": "close",
+			"data-cui-action": "close",
 		}, render.Text("×")),
 	))
 }
@@ -821,15 +821,15 @@ type WidgetMounter interface {
 func sidebarCSS(_ style.Theme) string {
 	return `.fui-sidebar-native { min-inline-size: 0; }
 .fui-sidebar-native__mobile { display: none; }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-primary); border-inline-start-color: var(--color-primary); }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__item + .fui-sidebar__item > .fui-sidebar__group { margin-block-start: var(--spacing-sm); }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { padding: var(--spacing-sm); font-size: var(--text-xs); }
-[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__list { gap: 0; }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-primary); border-inline-start-color: var(--color-primary); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__item + .fui-sidebar__item > .fui-sidebar__group { margin-block-start: var(--spacing-sm); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { padding: var(--spacing-sm); font-size: var(--text-xs); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__list { gap: 0; }
 @media (scripting: none) { .fui-sidebar__hamburger.fui-sidebar__hamburger--native { display: none; } }
 @media (max-width: 47.99rem) and (scripting: none) {
   .fui-sidebar-native:not(.fui-sidebar-native--drawer-below-lg) > .fui-sidebar-native__mobile { display: block; }
@@ -841,7 +841,7 @@ func sidebarCSS(_ style.Theme) string {
   .fui-sidebar-native--drawer-below-lg > .fui-sidebar-native__mobile { display: block; }
   .fui-sidebar-native--drawer-below-lg .fui-sidebar__hamburger { display: none; }
 }
-:where([data-fui-comp="ui-sidebar"]).fui-sidebar {
+:where([data-cui-comp="ui-sidebar"]).fui-sidebar {
   display: contents;
 }
 .fui-sidebar__hamburger {
@@ -860,7 +860,7 @@ func sidebarCSS(_ style.Theme) string {
 }
 .fui-sidebar__hamburger--labelled { width: 100%; justify-content: flex-start; gap: var(--spacing-md); padding-inline: var(--spacing-md); font-size: var(--text-sm); }
 .fui-sidebar__hamburger--labelled::after { content: attr(aria-label); }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__collapse {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__collapse {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -874,35 +874,35 @@ func sidebarCSS(_ style.Theme) string {
   cursor: pointer;
   font-size: var(--text-xl, 1.25rem);
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
   display: none;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__inline {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__inline {
   display: grid;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
   min-width: 220px;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__title {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__title {
   font-size: var(--text-sm, 0.875rem);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted, #52525B);
   margin: 0;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__list,
-[data-fui-comp="ui-sidebar"] .fui-sidebar__sublist {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__list,
+[data-cui-comp="ui-sidebar"] .fui-sidebar__sublist {
   list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__sublist {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__sublist {
   margin-inline-start: var(--spacing-lg, 16px);
 }
 /* Button-dialect group containers carry the hidden attribute when
@@ -913,17 +913,17 @@ func sidebarCSS(_ style.Theme) string {
 /* Button-dialect group headers: strip the UA button chrome so the
    toggle renders like the <summary> it replaces (the shared
    .fui-sidebar__link rule supplies layout, color, hover, focus). */
-[data-fui-comp="ui-sidebar"] .fui-sidebar__group-toggle {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__group-toggle {
   width: 100%;
   border: none;
   background: none;
   font: inherit;
   cursor: pointer;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__sublist[hidden] {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__sublist[hidden] {
   display: none;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__link {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__link {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -934,11 +934,11 @@ func sidebarCSS(_ style.Theme) string {
   min-height: var(--spacing-touch-target, 44px);
   cursor: pointer;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__link:hover,
-[data-fui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__link:hover,
+[data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   /* Visible focus ring on BOTH the default and the active
      (primary-background) link. The previous background-only signal was
      invisible on the active link: the [aria-current="page"] rule below
@@ -948,7 +948,7 @@ func sidebarCSS(_ style.Theme) string {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__link[aria-current="page"] {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__link[aria-current="page"] {
   /* Use the primary + primary-fg token pair so contrast is guaranteed
      AA regardless of theme. The previous 12%-primary tinted bg + raw
      primary text failed contrast for some primary hues. */
@@ -956,40 +956,40 @@ func sidebarCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__group > summary {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__group > summary::-webkit-details-marker {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary::-webkit-details-marker {
   display: none;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__footer {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__footer {
   margin-top: auto;
   padding-top: var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__prepend {
+[data-cui-comp="ui-sidebar"] .fui-sidebar__prepend {
   padding-bottom: var(--spacing-md, 8px);
   border-bottom: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
   min-width: 64px;
   width: 64px;
   padding-inline: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__collapse {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__collapse {
   justify-self: center;
   transform: rotate(180deg);
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__title,
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend,
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__footer,
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__sublist {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__footer,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__sublist {
   display: none;
 }
 /* Labels go visually-hidden (clip), NOT display:none — the links and
    disclosure summaries stay focusable in the collapsed rail, so their
    only accessible name must survive for AT (WCAG 4.1.2). */
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__label {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__label {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -1000,14 +1000,14 @@ func sidebarCSS(_ style.Theme) string {
   white-space: nowrap;
   border: 0;
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__link {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__link {
   justify-content: center;
   padding-inline: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__icon--fallback {
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__icon--fallback {
   display: inline-flex;
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--off-canvas .fui-sidebar__inline {
+[data-cui-comp="ui-sidebar"].fui-sidebar--off-canvas .fui-sidebar__inline {
   display: none;
 }
 /* Viewport behaviour: < md collapses to the hamburger; ≥ md the
@@ -1017,12 +1017,12 @@ func sidebarCSS(_ style.Theme) string {
    (and the standalone trigger's own button), and the md rules scope
    themselves with :not() so the two postures never both apply. */
 @media (max-width: 47.99rem) {
-  [data-fui-comp="ui-sidebar"]:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__inline { display: none; }
-  [data-fui-comp="ui-sidebar"].fui-sidebar--compact:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
+  [data-cui-comp="ui-sidebar"]:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__inline { display: none; }
+  [data-cui-comp="ui-sidebar"].fui-sidebar--compact:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
 }
 @media (max-width: 63.99rem) {
-  [data-fui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg .fui-sidebar__inline { display: none; }
-  [data-fui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg.fui-sidebar--compact .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
+  [data-cui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg .fui-sidebar__inline { display: none; }
+  [data-cui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg.fui-sidebar--compact .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
 }
 /* Auto-hide variant: icon rail at rest, full column on :hover OR
    :focus-within. The focus-within half is load-bearing, not a
@@ -1031,7 +1031,7 @@ func sidebarCSS(_ style.Theme) string {
    visually-hidden label clip mirror the collapsible collapsed rail;
    the reveal restores the persistent column's sizing. The framework
    ships this styling (one styling surface — hosts write no CSS). */
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline {
   min-width: 64px;
   width: 64px;
   padding-inline: var(--spacing-sm, 4px);
@@ -1039,8 +1039,8 @@ func sidebarCSS(_ style.Theme) string {
     min-width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     padding-inline var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:hover .fui-sidebar__inline,
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:focus-within .fui-sidebar__inline {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:hover .fui-sidebar__inline,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:focus-within .fui-sidebar__inline {
   min-width: 220px;
   width: 220px;
   padding-inline: var(--spacing-lg, 16px);
@@ -1048,13 +1048,13 @@ func sidebarCSS(_ style.Theme) string {
 /* Rest-state chrome rules apply only while NOT revealed: on hover
    or focus-within they stop matching and the base (expanded) styles
    take over, so the reveal needs no mirrored overrides. */
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__title,
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__prepend,
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__footer,
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__sublist {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__footer,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__sublist {
   display: none;
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__label {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__label {
   /* Same visually-hidden clip as the collapsed rail: the links stay
      focusable, so their accessible name must survive (WCAG 4.1.2). */
   position: absolute;
@@ -1067,11 +1067,11 @@ func sidebarCSS(_ style.Theme) string {
   white-space: nowrap;
   border: 0;
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__link {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__link {
   justify-content: center;
   padding-inline: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__icon--fallback {
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__icon--fallback {
   display: inline-flex;
 }
 /* The MountSidebar drawer's header row: the app's brand beside a
@@ -1124,7 +1124,7 @@ func sidebarCSS(_ style.Theme) string {
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline { transition: none; }
+  [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline { transition: none; }
 }
 @media (min-width: 48rem) {
   .fui-sidebar__hamburger--persistent:not(.fui-sidebar__hamburger--drawer-below-lg),

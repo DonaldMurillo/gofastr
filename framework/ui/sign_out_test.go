@@ -8,7 +8,7 @@ import (
 func TestSignOutRendersFormAndButton(t *testing.T) {
 	h := string(SignOut(SignOutConfig{}))
 	for _, want := range []string{
-		`data-fui-comp="ui-sign-out"`,
+		`data-cui-comp="ui-sign-out"`,
 		`method="post"`,
 		`action="/auth/logout"`,
 		`type="submit"`,

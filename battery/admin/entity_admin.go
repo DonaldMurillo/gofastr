@@ -2,7 +2,7 @@ package admin
 
 // Entity CRUD admin, rendered THROUGH the app's mounted UI host so the screens
 // hydrate with runtime.js: the list is a DataTable island (sort/paginate via
-// RPC, no reload), delete is a `data-fui-confirm` + `data-fui-rpc` button, and
+// RPC, no reload), delete is a `data-cui-confirm` + `data-cui-rpc` button, and
 // forms are server-rendered. Every read/write is an in-process call into the
 // entity's OWN CrudHandler with the caller's context forwarded, so validation,
 // owner/tenant scoping, hooks, and events all apply exactly as on the JSON API.

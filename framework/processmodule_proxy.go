@@ -320,9 +320,9 @@ func decodeBody(b *moduleproto.HTTPResponseBody, renderer *uinoderender.Renderer
 		return b.Value, "text/plain; charset=utf-8", nil
 	case moduleproto.BodyKindUINodeV1:
 		// The module returned a ui.node.v1 tree, never markup. Validate it
-		// through the closed validator (unknown component / forged data-fui-*
+		// through the closed validator (unknown component / forged data-cui-*
 		// / bad URL / size bomb → whole-tree reject) and render it host-side,
-		// with the host assigning every id/class/ARIA/data-fui-rpc. Any
+		// with the host assigning every id/class/ARIA/data-cui-rpc. Any
 		// failure is fail-safe: an error here surfaces as a buffered 503, the
 		// forged content never reaching the wire.
 		if renderer == nil {

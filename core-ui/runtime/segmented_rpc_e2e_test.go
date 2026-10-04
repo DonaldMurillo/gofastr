@@ -23,12 +23,12 @@ import (
 // attributes. rpc.js is the unit under test here, not the component.
 const segmentedRadio = `
 <input type="radio" name="%s" value="%s" class="fui-segmented__input" id="%s--%s"
-       data-fui-rpc="%s" data-fui-rpc-method="POST"%s>`
+       data-cui-rpc="%s" data-cui-rpc-method="POST"%s>`
 
 func segmentedPage(form bool, extraInputAttrs, signalSpan string) string {
 	var signalAttr string
 	if signalSpan != "" {
-		signalAttr = ` data-fui-rpc-signal="` + signalSpan + `"`
+		signalAttr = ` data-cui-rpc-signal="` + signalSpan + `"`
 	}
 	radio := func(val string) string {
 		return fmt.Sprintf(segmentedRadio, "plan", val, "plan", val, "/plan/set", signalAttr+extraInputAttrs)
@@ -48,7 +48,7 @@ func segmentedPage(form bool, extraInputAttrs, signalSpan string) string {
     <label class="fui-segmented__option" for="plan--unlimited" data-position="1">%s<span>Unlimited machines</span></label>
   </div>
 %s
-<p>Chosen: <span id="echo" data-fui-signal="plan-echo" data-fui-signal-mode="text">%s</span></p>
+<p>Chosen: <span id="echo" data-cui-signal="plan-echo" data-cui-signal-mode="text">%s</span></p>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`, open, radio("single"), radio("unlimited"), closeTag, echo)
@@ -142,7 +142,7 @@ func TestSegmentedControl_RPCPostsSelectedValue(t *testing.T) {
 }
 
 // TestSegmentedControl_RPCExplicitBodyWins pins the precedence contract:
-// an explicit data-fui-rpc-body must still win over form serialization so
+// an explicit data-cui-rpc-body must still win over form serialization so
 // existing callers that hand-craft a JSON body are not regressed. This test
 // passes before AND after the fix, it is a regression guard for the
 // precedence the fix must preserve.
@@ -164,9 +164,9 @@ func TestSegmentedControl_RPCExplicitBodyWins(t *testing.T) {
 	mux.HandleFunc("/plan/set", planSetHandler(t, &mu, &recorded, &hits))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		// data-fui-rpc-body on the radio; the form also carries a plan field
+		// data-cui-rpc-body on the radio; the form also carries a plan field
 		// whose value differs, so the assertion can tell which source won.
-		fmt.Fprint(w, segmentedPage(true, ` data-fui-rpc-body='{"plan":"override"}'`, ""))
+		fmt.Fprint(w, segmentedPage(true, ` data-cui-rpc-body='{"plan":"override"}'`, ""))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -187,7 +187,7 @@ func TestSegmentedControl_RPCExplicitBodyWins(t *testing.T) {
 		t.Fatalf("plan RPC hit %d time(s), want 1", hits)
 	}
 	if recorded["plan"] != "override" {
-		t.Errorf("plan=%q, want \"override\" — explicit data-fui-rpc-body must win over form serialization", recorded["plan"])
+		t.Errorf("plan=%q, want \"override\" — explicit data-cui-rpc-body must win over form serialization", recorded["plan"])
 	}
 }
 
@@ -222,15 +222,15 @@ func TestSegmentedControl_RPCNoFormDoesNotError(t *testing.T) {
 <script>window.__pageErrors=[];window.addEventListener('error',function(e){window.__pageErrors.push(e.message||String(e));});</script>
 <div class="fui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
   <label class="fui-segmented__option" for="plan--single" data-position="0">
-    <input type="radio" name="plan" value="single" class="fui-segmented__input" id="plan--single" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo" checked>
+    <input type="radio" name="plan" value="single" class="fui-segmented__input" id="plan--single" data-cui-rpc="/plan/set" data-cui-rpc-method="POST" data-cui-rpc-signal="plan-echo" checked>
     <span>Single machine</span>
   </label>
   <label class="fui-segmented__option" for="plan--unlimited" data-position="1">
-    <input type="radio" name="plan" value="unlimited" class="fui-segmented__input" id="plan--unlimited" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo">
+    <input type="radio" name="plan" value="unlimited" class="fui-segmented__input" id="plan--unlimited" data-cui-rpc="/plan/set" data-cui-rpc-method="POST" data-cui-rpc-signal="plan-echo">
     <span>Unlimited machines</span>
   </label>
 </div>
-<span id="echo" data-fui-signal="plan-echo" data-fui-signal-mode="text">single</span>
+<span id="echo" data-cui-signal="plan-echo" data-cui-signal-mode="text">single</span>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`)

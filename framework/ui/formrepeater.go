@@ -44,7 +44,7 @@ type FormRepeaterConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the repeater's
 	// root div. Keys the component owns are dropped: class and id
-	// (use Class), data-fui-*, aria-label, and aria-live.
+	// (use Class), data-cui-*, aria-label, and aria-live.
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve i18n labels
@@ -117,15 +117,15 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 }
 
 func formRepeaterCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-form-repeater"] {
+	return `[data-cui-comp="ui-form-repeater"] {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__items {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__items {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__item {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__item {
   display: grid;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-md, 8px);
@@ -133,15 +133,15 @@ func formRepeaterCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__item-fields {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__item-fields {
   display: grid;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__item-actions {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__item-actions {
   display: flex;
   justify-content: flex-end;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__remove {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -156,18 +156,18 @@ func formRepeaterCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__remove:hover:not(:disabled) {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
   outline: 2px solid var(--color-danger, #DC2626);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__add {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -183,21 +183,21 @@ func formRepeaterCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__add:hover:not(:disabled) {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:hover:not(:disabled) {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
+[data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the group label and the
    status live region must not be seen on a page that loads only this
    sheet. */
-[data-fui-comp="ui-form-repeater"] .fui-visually-hidden {
+[data-cui-comp="ui-form-repeater"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

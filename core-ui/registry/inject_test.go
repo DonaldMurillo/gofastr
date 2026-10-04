@@ -12,7 +12,7 @@ func TestInjectIntoSimpleDiv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `<div data-fui-comp="modal">`) {
+	if !strings.Contains(string(got), `<div data-cui-comp="modal">`) {
 		t.Errorf("got %s", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestInjectIntoDivWithAttrs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `data-fui-comp="modal"`) {
+	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
 		t.Errorf("got %s", got)
 	}
 	if !strings.Contains(string(got), `class="x"`) {
@@ -35,7 +35,7 @@ func TestInjectIntoSelfClosingTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `data-fui-comp="logo"`) {
+	if !strings.Contains(string(got), `data-cui-comp="logo"`) {
 		t.Errorf("got %s", got)
 	}
 	if !strings.Contains(string(got), `/>`) {
@@ -48,7 +48,7 @@ func TestInjectIntoSemanticTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `<section role="banner" data-fui-comp="page-header">`
+	want := `<section role="banner" data-cui-comp="page-header">`
 	if !strings.Contains(string(got), want) {
 		t.Errorf("got %s want substring %q", got, want)
 	}
@@ -59,7 +59,7 @@ func TestInjectIntoFragmentLeadingWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `data-fui-comp="modal"`) {
+	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
 		t.Errorf("got %s", got)
 	}
 }
@@ -69,7 +69,7 @@ func TestInjectSkipsLeadingComment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `data-fui-comp="modal"`) {
+	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
 		t.Errorf("got %s", got)
 	}
 }
@@ -90,7 +90,7 @@ func TestInjectRespectsAttrQuotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), `data-fui-comp="modal"`) {
+	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
 		t.Errorf("got %s", got)
 	}
 	if !strings.Contains(string(got), `title="a > b"`) {
@@ -106,7 +106,7 @@ func TestInjectRejectsEmptyName(t *testing.T) {
 }
 
 func TestInjectIdempotentWhenAlreadyMarked(t *testing.T) {
-	in := `<div data-fui-comp="modal" class="x">hi</div>`
+	in := `<div data-cui-comp="modal" class="x">hi</div>`
 	out, err := injectMarker(in, "modal")
 	if err != nil {
 		t.Fatal(err)
@@ -114,15 +114,15 @@ func TestInjectIdempotentWhenAlreadyMarked(t *testing.T) {
 	if string(out) != in {
 		t.Errorf("idempotent re-injection altered html:\nin:  %s\nout: %s", in, out)
 	}
-	count := strings.Count(string(out), `data-fui-comp=`)
+	count := strings.Count(string(out), `data-cui-comp=`)
 	if count != 1 {
-		t.Errorf("got %d data-fui-comp attrs, want 1", count)
+		t.Errorf("got %d data-cui-comp attrs, want 1", count)
 	}
 }
 
 // TestInjectSelfClosingPreservesSpace asserts that a self-closing
 // tag with a space before /> retains that space after marker
-// injection, otherwise `<br />` becomes `<br data-fui-comp="…"/>`
+// injection, otherwise `<br />` becomes `<br data-cui-comp="…"/>`
 // which is technically valid but visually inconsistent and
 // regression-prone for downstream HTML normalizers.
 func TestInjectSelfClosingPreservesSpace(t *testing.T) {
@@ -134,7 +134,7 @@ func TestInjectSelfClosingPreservesSpace(t *testing.T) {
 	if !strings.Contains(s, " />") {
 		t.Errorf("self-closing space lost: got %q", s)
 	}
-	if !strings.Contains(s, `data-fui-comp="spacer"`) {
+	if !strings.Contains(s, `data-cui-comp="spacer"`) {
 		t.Errorf("marker not injected: got %q", s)
 	}
 }
@@ -151,7 +151,7 @@ func TestInjectAttrWithEmbeddedGreaterThan(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	if !strings.Contains(s, `data-fui-comp="tip"`) {
+	if !strings.Contains(s, `data-cui-comp="tip"`) {
 		t.Errorf("marker not injected: %q", s)
 	}
 	// Marker must be inside the opening tag, BEFORE the > that closes
@@ -160,24 +160,24 @@ func TestInjectAttrWithEmbeddedGreaterThan(t *testing.T) {
 	if endOfOpen < 0 {
 		t.Fatalf("element body misaligned: %q", s)
 	}
-	markerIdx := strings.Index(s, `data-fui-comp`)
+	markerIdx := strings.Index(s, `data-cui-comp`)
 	if markerIdx >= endOfOpen {
 		t.Errorf("marker spliced AFTER the real `>` — embedded `>` confused tag-end detector: %q", s)
 	}
 }
 
 // TestInjectIgnoresAttrNameInsideQuotedValue guards against a false-positive
-// in the idempotence check: if "data-fui-comp" appears inside a quoted
+// in the idempotence check: if "data-cui-comp" appears inside a quoted
 // attribute value, hasAttribute() must NOT treat it as already-present,
 // otherwise injectMarker silently skips marker injection.
 func TestInjectIgnoresAttrNameInsideQuotedValue(t *testing.T) {
 	cases := []string{
 		// Substring in class="..." value
-		`<div class="x data-fui-comp x">hi</div>`,
+		`<div class="x data-cui-comp x">hi</div>`,
 		// Substring in title="..." value
-		`<div title="data-fui-comp inside">hi</div>`,
+		`<div title="data-cui-comp inside">hi</div>`,
 		// Single-quoted attr value
-		`<div data-foo='data-fui-comp'>hi</div>`,
+		`<div data-foo='data-cui-comp'>hi</div>`,
 	}
 	for _, in := range cases {
 		out, err := injectMarker(in, "modal")
@@ -185,36 +185,36 @@ func TestInjectIgnoresAttrNameInsideQuotedValue(t *testing.T) {
 			t.Errorf("input %q: unexpected error %v", in, err)
 			continue
 		}
-		count := strings.Count(string(out), `data-fui-comp="modal"`)
+		count := strings.Count(string(out), `data-cui-comp="modal"`)
 		if count != 1 {
-			t.Errorf("input %q: expected exactly 1 data-fui-comp=\"modal\" attr, got %d in output:\n%s", in, count, out)
+			t.Errorf("input %q: expected exactly 1 data-cui-comp=\"modal\" attr, got %d in output:\n%s", in, count, out)
 		}
 	}
 }
 
 // TestInjectIdempotentAcrossLineBreaks guards against the bug where
-// the idempotence check only matched ` data-fui-comp` or `\tdata-fui-comp`,
-// missing `\ndata-fui-comp` / `\rdata-fui-comp`. Multi-line opening
+// the idempotence check only matched ` data-cui-comp` or `\tdata-cui-comp`,
+// missing `\ndata-cui-comp` / `\rdata-cui-comp`. Multi-line opening
 // tags (common in handwritten templates) would get a duplicate marker.
 func TestInjectIdempotentAcrossLineBreaks(t *testing.T) {
 	cases := []string{
 		// Bare newline / CR directly before the attribute, no space
 		// indent, so only an \n / \r boundary distinguishes the attr.
-		"<div\ndata-fui-comp=\"modal\"\nclass=\"x\">hi</div>",
-		"<div\rdata-fui-comp=\"modal\"\rclass=\"x\">hi</div>",
+		"<div\ndata-cui-comp=\"modal\"\nclass=\"x\">hi</div>",
+		"<div\rdata-cui-comp=\"modal\"\rclass=\"x\">hi</div>",
 		// And the indented cases that already work, keep them as a
 		// regression net.
-		"<div\n  data-fui-comp=\"modal\"\n  class=\"x\">hi</div>",
-		"<div\r\n  data-fui-comp=\"modal\"\r\n  class=\"x\">hi</div>",
+		"<div\n  data-cui-comp=\"modal\"\n  class=\"x\">hi</div>",
+		"<div\r\n  data-cui-comp=\"modal\"\r\n  class=\"x\">hi</div>",
 	}
 	for i, in := range cases {
 		out, err := injectMarker(in, "modal")
 		if err != nil {
 			t.Fatalf("case %d: %v", i, err)
 		}
-		count := strings.Count(string(out), `data-fui-comp=`)
+		count := strings.Count(string(out), `data-cui-comp=`)
 		if count != 1 {
-			t.Errorf("case %d: got %d data-fui-comp attrs, want 1 (multi-line opening tag should be idempotent)", i, count)
+			t.Errorf("case %d: got %d data-cui-comp attrs, want 1 (multi-line opening tag should be idempotent)", i, count)
 		}
 	}
 }
@@ -225,9 +225,9 @@ func TestInjectSkipsWhenWrappedByDifferentName(t *testing.T) {
 	// existing-marker guard we conservatively don't inject again.
 	// (Authors should compose at the Style.Render level, not double-
 	// wrap pre-rendered HTML.)
-	in := `<div data-fui-comp="inner">hi</div>`
+	in := `<div data-cui-comp="inner">hi</div>`
 	out, _ := injectMarker(in, "outer")
-	if strings.Count(string(out), `data-fui-comp=`) != 1 {
+	if strings.Count(string(out), `data-cui-comp=`) != 1 {
 		t.Errorf("double-wrap should leave 1 marker; got %s", out)
 	}
 }
@@ -244,37 +244,37 @@ func TestInjectAttribute(t *testing.T) {
 		{
 			name:  "basic",
 			html:  `<div class="x">body</div>`,
-			attr:  "data-fui-scope",
+			attr:  "data-cui-scope",
 			value: "board",
-			want:  `<div class="x" data-fui-scope="board">body</div>`,
+			want:  `<div class="x" data-cui-scope="board">body</div>`,
 		},
 		{
 			name:  "no attributes yet",
 			html:  `<main></main>`,
-			attr:  "data-fui-comp",
+			attr:  "data-cui-comp",
 			value: "issuecard",
-			want:  `<main data-fui-comp="issuecard"></main>`,
+			want:  `<main data-cui-comp="issuecard"></main>`,
 		},
 		{
 			name:  "self-closing keeps spacing",
 			html:  `<br />`,
-			attr:  "data-fui-comp",
+			attr:  "data-cui-comp",
 			value: "i",
-			want:  `<br data-fui-comp="i" />`,
+			want:  `<br data-cui-comp="i" />`,
 		},
 		{
 			name:  "self-closing tight",
 			html:  `<br/>`,
-			attr:  "data-fui-comp",
+			attr:  "data-cui-comp",
 			value: "i",
-			want:  `<br data-fui-comp="i"/>`,
+			want:  `<br data-cui-comp="i"/>`,
 		},
 		{
 			name:  "leading comment skipped",
 			html:  `<!-- c --><div>x</div>`,
-			attr:  "data-fui-scope",
+			attr:  "data-cui-scope",
 			value: "b",
-			want:  `<!-- c --><div data-fui-scope="b">x</div>`,
+			want:  `<!-- c --><div data-cui-scope="b">x</div>`,
 		},
 		{
 			name:  "value escaped",
@@ -285,36 +285,36 @@ func TestInjectAttribute(t *testing.T) {
 		},
 		{
 			name:  "idempotent",
-			html:  `<div data-fui-scope="b" class="x"></div>`,
-			attr:  "data-fui-scope",
+			html:  `<div data-cui-scope="b" class="x"></div>`,
+			attr:  "data-cui-scope",
 			value: "other",
-			want:  `<div data-fui-scope="b" class="x"></div>`,
+			want:  `<div data-cui-scope="b" class="x"></div>`,
 		},
 		{
 			name:  "quoted mentions do not count as present",
-			html:  `<div class="x data-fui-scope x"></div>`,
-			attr:  "data-fui-scope",
+			html:  `<div class="x data-cui-scope x"></div>`,
+			attr:  "data-cui-scope",
 			value: "b",
-			want:  `<div class="x data-fui-scope x" data-fui-scope="b"></div>`,
+			want:  `<div class="x data-cui-scope x" data-cui-scope="b"></div>`,
 		},
 		{
 			name:    "fragment",
 			html:    `hello`,
-			attr:    "data-fui-scope",
+			attr:    "data-cui-scope",
 			value:   "b",
 			wantErr: "must begin with an element open tag",
 		},
 		{
 			name:    "closing tag",
 			html:    `</div>`,
-			attr:    "data-fui-scope",
+			attr:    "data-cui-scope",
 			value:   "b",
 			wantErr: "must begin with an element open tag",
 		},
 		{
 			name:    "unterminated",
 			html:    `<div class="x`,
-			attr:    "data-fui-scope",
+			attr:    "data-cui-scope",
 			value:   "b",
 			wantErr: "unterminated open tag",
 		},
@@ -354,16 +354,16 @@ func TestAttribute(t *testing.T) {
 		wantOK  bool
 		wantErr string
 	}{
-		{"double quoted", `<div data-fui-scope="board" class="x"></div>`, "data-fui-scope", "board", true, ""},
-		{"single quoted", `<div data-fui-scope='board'></div>`, "data-fui-scope", "board", true, ""},
-		{"unquoted", `<div data-fui-scope=board></div>`, "data-fui-scope", "board", true, ""},
-		{"absent", `<div class="x"></div>`, "data-fui-scope", "", false, ""},
-		{"mention in value only", `<div class="data-fui-scope" data-x="1"></div>`, "data-fui-scope", "", false, ""},
-		{"prefix collision", `<div data-fui-scopey="1"></div>`, "data-fui-scope", "", false, ""},
-		{"valueless", `<div data-fui-scope></div>`, "data-fui-scope", "", true, ""},
-		{"after leading comment", `<!-- c --><div data-fui-scope="b"></div>`, "data-fui-scope", "b", true, ""},
-		{"fragment", `hello`, "data-fui-scope", "", false, "must begin with an element open tag"},
-		{"unterminated", `<div class="x`, "data-fui-scope", "", false, "unterminated open tag"},
+		{"double quoted", `<div data-cui-scope="board" class="x"></div>`, "data-cui-scope", "board", true, ""},
+		{"single quoted", `<div data-cui-scope='board'></div>`, "data-cui-scope", "board", true, ""},
+		{"unquoted", `<div data-cui-scope=board></div>`, "data-cui-scope", "board", true, ""},
+		{"absent", `<div class="x"></div>`, "data-cui-scope", "", false, ""},
+		{"mention in value only", `<div class="data-cui-scope" data-x="1"></div>`, "data-cui-scope", "", false, ""},
+		{"prefix collision", `<div data-cui-scopey="1"></div>`, "data-cui-scope", "", false, ""},
+		{"valueless", `<div data-cui-scope></div>`, "data-cui-scope", "", true, ""},
+		{"after leading comment", `<!-- c --><div data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
+		{"fragment", `hello`, "data-cui-scope", "", false, "must begin with an element open tag"},
+		{"unterminated", `<div class="x`, "data-cui-scope", "", false, "unterminated open tag"},
 		{"bad name", `<div></div>`, `a"b`, "", false, "not a valid attribute name"},
 	}
 	for _, tc := range cases {

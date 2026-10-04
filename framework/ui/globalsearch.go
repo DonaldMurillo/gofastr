@@ -156,7 +156,7 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 		// this component's own.
 		children = append(children, html.Span(html.TextConfig{
 			Class:      "fui-global-search__hint",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		}, render.Tag("kbd", map[string]string{"class": "fui-global-search__chord"}, render.Text(shortcut))))
 	}
 	boxWrapped := html.Div(html.DivConfig{ExtraAttrs: wrapAttrs}, children...)
@@ -166,20 +166,20 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 var globalSearchStyle = registry.RegisterStyle("ui-global-search", globalSearchCSS)
 
 func globalSearchCSS(_ style.Theme) string {
-	return `:where([data-fui-comp="ui-global-search"]).fui-global-search {
+	return `:where([data-cui-comp="ui-global-search"]).fui-global-search {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-:where([data-fui-comp="ui-global-search"]).fui-global-search--sticky {
+:where([data-cui-comp="ui-global-search"]).fui-global-search--sticky {
   position: sticky;
   inset-block-start: var(--spacing-md, 8px);
   z-index: var(--z-sticky, 50);
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__field {
+[data-cui-comp="ui-global-search"] .fui-global-search__field {
   flex: 1;
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__input {
+[data-cui-comp="ui-global-search"] .fui-global-search__input {
   width: 100%;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
@@ -189,11 +189,11 @@ func globalSearchCSS(_ style.Theme) string {
   font: inherit;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__input:focus-visible {
+[data-cui-comp="ui-global-search"] .fui-global-search__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__listbox {
+[data-cui-comp="ui-global-search"] .fui-global-search__listbox {
   margin: 0;
   padding: var(--spacing-xs, 2px);
   list-style: none;
@@ -202,7 +202,7 @@ func globalSearchCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__option {
+[data-cui-comp="ui-global-search"] .fui-global-search__option {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm, 4px);
@@ -211,14 +211,14 @@ func globalSearchCSS(_ style.Theme) string {
   cursor: pointer;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__option.is-active {
+[data-cui-comp="ui-global-search"] .fui-global-search__option.is-active {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__hint {
+[data-cui-comp="ui-global-search"] .fui-global-search__hint {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-global-search"] .fui-global-search__chord {
+[data-cui-comp="ui-global-search"] .fui-global-search__chord {
   font-family: var(--font-mono, monospace);
   font-size: var(--text-xs, 0.75rem);
   border: 1px solid var(--color-border, #E4E4E7);

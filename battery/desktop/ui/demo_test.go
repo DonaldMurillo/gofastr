@@ -67,13 +67,13 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 
 	// The page rendered through the desktop layout with the sidebar.
 	for _, w := range []string{
-		`data-fui-layout="desktop"`,
-		`data-fui-comp="desktopui-sourcelist"`,
-		`data-fui-comp="desktopui-glass"`,
-		`data-fui-comp="desktopui-floating-toolbar"`,
-		`data-fui-comp="desktopui-inspector"`,
-		`data-fui-comp="desktopui-sheet"`,
-		`data-fui-comp="desktopui-popover"`,
+		`data-cui-layout="desktop"`,
+		`data-cui-comp="desktopui-sourcelist"`,
+		`data-cui-comp="desktopui-glass"`,
+		`data-cui-comp="desktopui-floating-toolbar"`,
+		`data-cui-comp="desktopui-inspector"`,
+		`data-cui-comp="desktopui-sheet"`,
+		`data-cui-comp="desktopui-popover"`,
 	} {
 		if !strings.Contains(body, w) {
 			t.Errorf("demo page missing %q", w)
@@ -137,11 +137,11 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 // bundleLists reports whether the page's comp-bundle link names the
 // component.
 func bundleLists(body, name string) bool {
-	i := strings.Index(body, "data-fui-bundle=\"")
+	i := strings.Index(body, "data-cui-bundle=\"")
 	if i == -1 {
 		return false
 	}
-	rest := body[i+len(`data-fui-bundle="`):]
+	rest := body[i+len(`data-cui-bundle="`):]
 	j := strings.Index(rest, "\"")
 	if j == -1 {
 		return false

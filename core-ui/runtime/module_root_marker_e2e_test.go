@@ -14,7 +14,7 @@ import (
 
 // A lazily-mounted widget's chrome is appended to <body> as a single
 // root element that itself carries the module marker (e.g.
-// data-fui-drag-dismiss="true" on a BottomSheet root emitted by
+// data-cui-drag-dismiss="true" on a BottomSheet root emitted by
 // defaultSkeleton). The MutationObserver hands that root node to
 // _scanForModules, which must match the node ITSELF, not just its
 // descendants, otherwise root-marker modules (dragdismiss) never load
@@ -62,10 +62,10 @@ func TestModuleLoadsForRootMarkerNode(t *testing.T) {
 		// widget root and carries the marker attribute itself.
 		chromedp.Evaluate(`(() => {
             const el = document.createElement('div');
-            el.className = 'fui-widget fui-pos-bottom';
-            el.setAttribute('data-fui-widget', 'probe-sheet');
-            el.setAttribute('data-fui-drag-dismiss', 'true');
-            el.innerHTML = '<div class="fui-widget-drag-handle" data-fui-drag-handle="true"></div>';
+            el.className = 'cui-widget cui-pos-bottom';
+            el.setAttribute('data-cui-widget', 'probe-sheet');
+            el.setAttribute('data-cui-drag-dismiss', 'true');
+            el.innerHTML = '<div class="cui-widget-drag-handle" data-cui-drag-handle="true"></div>';
             document.body.appendChild(el);
         })()`, nil),
 		chromedp.Sleep(600*time.Millisecond),

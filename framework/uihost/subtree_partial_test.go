@@ -54,7 +54,7 @@ func TestSubtreePartialRendersOnlyDelta(t *testing.T) {
 	if !strings.Contains(body, "DOCS_NAV") {
 		t.Errorf("diverging docs layer must be rendered: %s", body)
 	}
-	if !strings.Contains(body, `data-fui-layout-slot="g:/docs/:docs"`) {
+	if !strings.Contains(body, `data-cui-layout-slot="g:/docs/:docs"`) {
 		t.Errorf("rendered layer must carry its slot marker: %s", body)
 	}
 	if strings.Contains(body, "<main") {
@@ -72,7 +72,7 @@ func TestSubtreePartialSiblingIsBare(t *testing.T) {
 		t.Fatalf("X-Gofastr-Swap = %q, want g:/docs/:docs", got)
 	}
 	body := w.Body.String()
-	if strings.Contains(body, "DOCS_NAV") || strings.Contains(body, "data-fui-layout-key") {
+	if strings.Contains(body, "DOCS_NAV") || strings.Contains(body, "data-cui-layout-key") {
 		t.Errorf("fully-shared chain must yield bare content: %s", body)
 	}
 }
@@ -107,7 +107,7 @@ func TestSubtreePartialForgedFromDegrades(t *testing.T) {
 // injects classic <script src>, and a rel=modulepreload response is not
 // reusable for a classic request (double fetch).
 func TestModuleHintIsClassicPreload(t *testing.T) {
-	links := runtimeModulePreloadLinks(`<div data-fui-widget="w1"></div>`)
+	links := runtimeModulePreloadLinks(`<div data-cui-widget="w1"></div>`)
 	if links == "" {
 		t.Fatal("expected a preload hint for the widgets module")
 	}

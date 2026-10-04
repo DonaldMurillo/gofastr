@@ -86,7 +86,7 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
 					axetest.Prepare(scheme),
 					chromedp.Sleep(100*time.Millisecond),
 					chromedp.Evaluate(`(() => {
-  const root = document.querySelector('[data-fui-comp="ui-record-summary"]');
+  const root = document.querySelector('[data-cui-comp="ui-record-summary"]');
   const title = root.querySelector('.fui-record-summary__title');
   const actions = root.querySelector('.fui-record-summary__actions');
   const actionCluster = actions.querySelector('.fui-cluster');
@@ -102,11 +102,11 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
     const statusRect = avatar.querySelector('.fui-avatar__status').getBoundingClientRect();
     return Math.min(avatarRect.right - statusRect.right, avatarRect.bottom - statusRect.bottom);
   });
-  const band = root.querySelector('[data-fui-comp="ui-metric-band"]');
+  const band = root.querySelector('[data-cui-comp="ui-metric-band"]');
   const lastMetric = band.querySelector('.fui-metric-band__item:last-child');
   const layout = document.querySelector('.layout-components .fui-content-row');
   const content = layout.querySelector('.layout-content');
-  const doc = document.querySelector('[data-fui-scope="docsite-docpage"]');
+  const doc = document.querySelector('[data-cui-scope="docsite-docpage"]');
   const docStyle = getComputedStyle(doc);
   const widestDocChild = [...doc.children].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
   const descendants = [root, ...root.querySelectorAll('*')];

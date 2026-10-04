@@ -38,7 +38,7 @@ type HeroConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the hero's root <section>.
 	// Keys the component owns are dropped: class and id (use Class),
-	// data-fui-*, and aria-label (use AriaLabel).
+	// data-cui-*, and aria-label (use AriaLabel).
 	ExtraAttrs html.Attrs
 }
 
@@ -52,9 +52,9 @@ func Hero(cfg HeroConfig) render.HTML {
 	// unmarked to avoid marking twice inside the same subtree.
 	var copyOwn, partsOwn html.Attrs
 	if len(cfg.Actions) > 0 {
-		partsOwn = html.Attrs{"data-fui-internal": ""}
+		partsOwn = html.Attrs{"data-cui-internal": ""}
 	} else {
-		copyOwn = html.Attrs{"data-fui-internal": ""}
+		copyOwn = html.Attrs{"data-cui-internal": ""}
 	}
 	copyParts := make([]render.HTML, 0, 4)
 	if cfg.Eyebrow != "" {
@@ -106,21 +106,21 @@ func Hero(cfg HeroConfig) render.HTML {
 var heroStyle = registry.RegisterStyle("ui-hero", heroCSS)
 
 func heroCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-hero"] { display: flex; }
-:where([data-fui-comp="ui-hero"]).fui-hero--split {
+	return `[data-cui-comp="ui-hero"] { display: flex; }
+:where([data-cui-comp="ui-hero"]).fui-hero--split {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: var(--spacing-2xl, 32px);
   align-items: center;
 }
-[data-fui-comp="ui-hero"] .fui-hero__copy {
+[data-cui-comp="ui-hero"] .fui-hero__copy {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-lg, 16px);
   max-width: 42rem;
 }
-[data-fui-comp="ui-hero"] .fui-hero__title {
+[data-cui-comp="ui-hero"] .fui-hero__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
   font-size: clamp(2.5rem, 6vw, 4rem);
@@ -129,26 +129,26 @@ func heroCSS(_ style.Theme) string {
   font-weight: var(--font-weight-bold);
   color: var(--color-text, inherit);
 }
-[data-fui-comp="ui-hero"] .fui-hero__lede {
+[data-cui-comp="ui-hero"] .fui-hero__lede {
   margin: 0;
   font-size: clamp(1.125rem, 2.2vw, 1.375rem);
   line-height: 1.5;
   color: var(--color-text-muted, inherit);
   max-width: 46ch;
 }
-[data-fui-comp="ui-hero"] .fui-hero__actions {
+[data-cui-comp="ui-hero"] .fui-hero__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-md, 8px);
   margin-top: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-hero"] .fui-hero__media img {
+[data-cui-comp="ui-hero"] .fui-hero__media img {
   inline-size: 100%;
   height: auto;
   border-radius: var(--radii-lg, 12px);
 }
 @media (max-width: 980px) {
-  :where([data-fui-comp="ui-hero"]).fui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
+  :where([data-cui-comp="ui-hero"]).fui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
 }
 `
 }

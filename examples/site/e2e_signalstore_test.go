@@ -242,13 +242,13 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		var triggerStyled bool
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/dropdown"),
-			chromedp.WaitReady(`[data-fui-dropdown]`, chromedp.ByQuery),
-			chromedp.Evaluate(`(()=>{const c=getComputedStyle(document.querySelector('[data-fui-dropdown]'));return c.backgroundColor!=='rgba(0, 0, 0, 0)'||c.borderStyle!=='none'})()`, &triggerStyled),
-			chromedp.Click(`[data-fui-dropdown]`, chromedp.ByQuery),
+			chromedp.WaitReady(`[data-cui-dropdown]`, chromedp.ByQuery),
+			chromedp.Evaluate(`(()=>{const c=getComputedStyle(document.querySelector('[data-cui-dropdown]'));return c.backgroundColor!=='rgba(0, 0, 0, 0)'||c.borderStyle!=='none'})()`, &triggerStyled),
+			chromedp.Click(`[data-cui-dropdown]`, chromedp.ByQuery),
 			chromedp.Sleep(150*time.Millisecond),
-			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-dropdown-panel]')).position`, &pos),
-			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-dropdown-panel]')).boxShadow`, &shadow),
-			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-dropdown-panel]')).backgroundColor`, &bg),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).position`, &pos),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).boxShadow`, &shadow),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).backgroundColor`, &bg),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -268,7 +268,7 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		// its own center (a frame with overflow:hidden would clip it).
 		var lastItemVisible bool
 		if err := chromedp.Run(ctx, chromedp.Evaluate(`(()=>{
-			const items=[...document.querySelectorAll('[data-fui-dropdown-panel] a')];
+			const items=[...document.querySelectorAll('[data-cui-dropdown-panel] a')];
 			const el=items[items.length-1]; const r=el.getBoundingClientRect();
 			const top=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
 			return top===el||el.contains(top);
@@ -290,16 +290,16 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		var panelBg string
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/dropdown"),
-			chromedp.WaitReady(`[data-fui-dropdown]`, chromedp.ByQuery),
+			chromedp.WaitReady(`[data-cui-dropdown]`, chromedp.ByQuery),
 			chromedp.Evaluate(`document.documentElement.setAttribute('data-color-scheme','dark')`, nil),
-			chromedp.Click(`[data-fui-dropdown]`, chromedp.ByQuery),
+			chromedp.Click(`[data-cui-dropdown]`, chromedp.ByQuery),
 			chromedp.Sleep(120*time.Millisecond),
-			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-dropdown-panel]')).backgroundColor`, &panelBg),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).backgroundColor`, &panelBg),
 			chromedp.Evaluate(`(()=>{
 				const L=s=>{const m=/oklch\(([\d.]+)/.exec(s);if(m)return parseFloat(m[1]);
 					const n=/rgb[a]?\((\d+), (\d+), (\d+)/.exec(s);return n?(+n[1]+ +n[2]+ +n[3])/765:null;};
 				const pg=L(getComputedStyle(document.body).backgroundColor);
-				const pn=L(getComputedStyle(document.querySelector('[data-fui-dropdown-panel]')).backgroundColor);
+				const pn=L(getComputedStyle(document.querySelector('[data-cui-dropdown-panel]')).backgroundColor);
 				if(pg==null||pn==null)return false;
 				return (pg<0.5)===(pn<0.5); // same light/dark mode
 			})()`, &sameMode),
@@ -335,7 +335,7 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 			chromedp.Navigate(base+"/components/toggle"),
 			chromedp.WaitReady(`.fui-toggle__thumb`, chromedp.ByQuery),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-toggle__thumb')).transform`, &offT),
-			chromedp.Click(`[data-fui-comp="fui-toggle"]`, chromedp.ByQuery),
+			chromedp.Click(`[data-cui-comp="fui-toggle"]`, chromedp.ByQuery),
 			chromedp.Sleep(300*time.Millisecond),
 			chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-toggle__thumb')).transform`, &onT),
 		); err != nil {
@@ -363,9 +363,9 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 	var scrollY, sectionTop, headerBottom, innerH float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-store"),
-		chromedp.WaitReady(`[data-fui-scope="docsite-docpage"] .crumbs`, chromedp.ByQuery),
+		chromedp.WaitReady(`[data-cui-scope="docsite-docpage"] .crumbs`, chromedp.ByQuery),
 		// The category crumb is the breadcrumb link whose href has a #.
-		chromedp.Click(`[data-fui-scope="docsite-docpage"] .crumbs a[href*="#"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-scope="docsite-docpage"] .crumbs a[href*="#"]`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond), // SPA nav + scroll + rAF re-correct
 		chromedp.Evaluate(`location.hash`, &hash),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),
@@ -394,7 +394,7 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 
 // TestE2E_ScrollRevealAnimates proves the framework Reveal CSS: the box is
 // opacity:0 (hidden) on load and animates to opacity:1 after it scrolls
-// into view. Without the registered fui-reveal CSS the box never hides and
+// into view. Without the registered cui-reveal CSS the box never hides and
 // the reveal does nothing.
 func TestE2E_ScrollRevealAnimates(t *testing.T) {
 	if testing.Short() {
@@ -407,24 +407,24 @@ func TestE2E_ScrollRevealAnimates(t *testing.T) {
 	var revealedClasses string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/scroll-reveal"),
-		chromedp.WaitReady(`[data-fui-reveal]`, chromedp.ByQuery),
-		chromedp.Sleep(300*time.Millisecond), // reveal.js adds fui-hidden
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-reveal]')).opacity`, &hiddenOpacity),
-		chromedp.Evaluate(`(()=>{document.querySelector('[data-fui-reveal]').scrollIntoView({block:'center'});return true})()`, nil),
+		chromedp.WaitReady(`[data-cui-reveal]`, chromedp.ByQuery),
+		chromedp.Sleep(300*time.Millisecond), // reveal.js adds cui-hidden
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-reveal]')).opacity`, &hiddenOpacity),
+		chromedp.Evaluate(`(()=>{document.querySelector('[data-cui-reveal]').scrollIntoView({block:'center'});return true})()`, nil),
 		chromedp.Sleep(900*time.Millisecond), // IntersectionObserver + transition
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-reveal]')).opacity`, &revealedOpacity),
-		chromedp.Evaluate(`document.querySelector('[data-fui-reveal]').className`, &revealedClasses),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-reveal]')).opacity`, &revealedOpacity),
+		chromedp.Evaluate(`document.querySelector('[data-cui-reveal]').className`, &revealedClasses),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if hiddenOpacity != "0" {
-		t.Errorf("reveal box should start hidden (opacity 0), got %q — fui-reveal CSS missing?", hiddenOpacity)
+		t.Errorf("reveal box should start hidden (opacity 0), got %q — cui-reveal CSS missing?", hiddenOpacity)
 	}
 	if revealedOpacity != "1" {
 		t.Errorf("reveal box should be opacity 1 after scroll, got %q", revealedOpacity)
 	}
-	if !strings.Contains(revealedClasses, "fui-revealed") {
-		t.Errorf("reveal box missing fui-revealed class after scroll: %q", revealedClasses)
+	if !strings.Contains(revealedClasses, "cui-revealed") {
+		t.Errorf("reveal box missing cui-revealed class after scroll: %q", revealedClasses)
 	}
 }
 
@@ -443,7 +443,7 @@ func TestE2E_SignalAnimateExpands(t *testing.T) {
 		chromedp.Navigate(base+"/components/signal-animate"),
 		chromedp.WaitReady(`.demo-animate-panel`, chromedp.ByQuery),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.demo-animate-panel')).maxHeight`, &collapsedMaxH),
-		chromedp.Click(`[data-fui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
 		chromedp.Sleep(200*time.Millisecond),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.demo-animate-panel')).maxHeight`, &expandedMaxH),
 	); err != nil {

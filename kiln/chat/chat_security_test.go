@@ -23,7 +23,7 @@ import (
 
 // Property 1: model-authored plan IDs are attacker-controlled strings, and
 // the plan card interpolates them into a SINGLE-quoted attribute
-// (data-fui-rpc-body='{"plan_id":"…"}'). escAttr escapes " < > & but not ',
+// (data-cui-rpc-body='{"plan_id":"…"}'). escAttr escapes " < > & but not ',
 // so a plan_id containing ' breaks out of the attribute and injects real
 // attributes onto the Approve/Reject buttons, the exact UI a human uses to
 // gate destructive ops. propose_plan accepts any non-empty unique plan_id
@@ -62,7 +62,7 @@ func TestPlanCardAttrBreakoutIsNeutralized(t *testing.T) {
 	var b strings.Builder
 	renderPlanCard(&b, &journal.Plan{PlanID: `p" onclick="alert(1)`, ProposedAt: time.Now()}, true)
 	out := b.String()
-	const marker = `data-fui-rpc-body='`
+	const marker = `data-cui-rpc-body='`
 	_, after, ok := strings.Cut(out, marker)
 	if !ok {
 		t.Fatalf("rpc-body attribute missing:\n%s", out)

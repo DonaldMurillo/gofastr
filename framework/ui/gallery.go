@@ -25,7 +25,7 @@ import (
 // tab as the no-JS fallback):
 //
 //   - Lightbox:  name of a paired framework/ui.Lightbox. Each item
-//                emits data-fui-open + data-fui-deeplink so clicking
+//                emits data-cui-open + data-cui-deeplink so clicking
 //                opens the overlay with the matching image.
 //   - HrefFn:    a function returning a per-item URL the anchor
 //                navigates to. Use for "click photo → detail page".
@@ -91,7 +91,7 @@ type GalleryConfig struct {
 	Gap Gap
 	// Lightbox, when non-empty, is the Name of a paired
 	// framework/ui.Lightbox. Each item becomes a trigger for that
-	// lightbox via data-fui-open + data-fui-deeplink.
+	// lightbox via data-cui-open + data-cui-deeplink.
 	Lightbox string
 	// HrefFn, when set, returns a per-item destination URL. Ignored
 	// when Lightbox is set.
@@ -104,7 +104,7 @@ type GalleryConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the gallery's root <ul>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and aria-label (use Label).
+	// ID), data-cui-*, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -234,7 +234,7 @@ func Gallery(cfg GalleryConfig) render.HTML {
 var galleryStyle = registry.RegisterStyle("ui-gallery", galleryCSS)
 
 func galleryCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-gallery"] {
+	return `[data-cui-comp="ui-gallery"] {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -242,11 +242,11 @@ func galleryCSS(_ style.Theme) string {
   --ui-gallery-min: 9.5rem;
   --ui-gallery-gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__row {
+[data-cui-comp="ui-gallery"] .fui-gallery__row {
   margin: 0;
   padding: 0;
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__item {
+[data-cui-comp="ui-gallery"] .fui-gallery__item {
   display: block;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
@@ -257,25 +257,25 @@ func galleryCSS(_ style.Theme) string {
   cursor: zoom-in;
   transition: border-color 120ms ease, transform 120ms ease;
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__item:hover {
+[data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
+[data-cui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__figure {
+[data-cui-comp="ui-gallery"] .fui-gallery__figure {
   margin: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__thumb {
+[data-cui-comp="ui-gallery"] .fui-gallery__thumb {
   display: block;
   inline-size: 100%;
   block-size: auto;
   object-fit: cover;
 }
-[data-fui-comp="ui-gallery"] .fui-gallery__caption {
+[data-cui-comp="ui-gallery"] .fui-gallery__caption {
   margin: 0;
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
@@ -283,31 +283,31 @@ func galleryCSS(_ style.Theme) string {
 }
 
 /* Gap presets. */
-[data-fui-comp="ui-gallery"].fui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
-[data-fui-comp="ui-gallery"].fui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-gallery"].fui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-gallery"].fui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
 
 /* Columns presets — 1..12. */
-[data-fui-comp="ui-gallery"].fui-gallery--cols-1 { --ui-gallery-cols: 1; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-2 { --ui-gallery-cols: 2; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-3 { --ui-gallery-cols: 3; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-4 { --ui-gallery-cols: 4; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-5 { --ui-gallery-cols: 5; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-6 { --ui-gallery-cols: 6; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-7 { --ui-gallery-cols: 7; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-8 { --ui-gallery-cols: 8; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-9 { --ui-gallery-cols: 9; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-10 { --ui-gallery-cols: 10; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-11 { --ui-gallery-cols: 11; }
-[data-fui-comp="ui-gallery"].fui-gallery--cols-12 { --ui-gallery-cols: 12; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-1 { --ui-gallery-cols: 1; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-2 { --ui-gallery-cols: 2; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-3 { --ui-gallery-cols: 3; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-4 { --ui-gallery-cols: 4; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-5 { --ui-gallery-cols: 5; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-6 { --ui-gallery-cols: 6; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-7 { --ui-gallery-cols: 7; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-8 { --ui-gallery-cols: 8; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-9 { --ui-gallery-cols: 9; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-10 { --ui-gallery-cols: 10; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-11 { --ui-gallery-cols: 11; }
+[data-cui-comp="ui-gallery"].fui-gallery--cols-12 { --ui-gallery-cols: 12; }
 
 /* ── Grid variant (default) ──
    --ui-gallery-cols is a MAXIMUM: the calc() term sizes tracks for exactly
    that many columns, and the max() floor (--ui-gallery-min) makes auto-fill
    wrap to fewer columns when tracks would get narrower — responsive with no
    media queries. */
-[data-fui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
+[data-cui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
   gap: var(--ui-gallery-gap);

@@ -278,7 +278,7 @@ Each matcher reads the code the way its language means it:
   custom property; `match` a regex, the last resort.
 - `css`: `.css` files through the CSS tokenizer. `classes` matches a
   class selector, `properties` a custom property, and `selectors` a
-  whole compound selector such as `.fui-pos-center > .fui-slot`
+  whole compound selector such as `.cui-pos-center > .cui-slot`
   (whitespace around combinators does not matter). Escapes decode
   first: `.ui\2d button` is `.ui-button`.
 - `config`: `gofastr.yml` keys (`*` matches any one key or list item),
@@ -311,7 +311,7 @@ of the report.
 identifier, not a class: `calls` (a function or method argument
 position), `fields` (a struct field), `attr_keys` (a map-literal key).
 A `strings.classes` value that only reaches marker sinks is not a hit,
-so registered sheet names and `data-fui-comp` markers stay silent.
+so registered sheet names and `data-cui-comp` markers stay silent.
 A prose argument of a `testing` method (`t.Fatal`, `t.Errorf`, `t.Log`,
 `t.Skip`, and `t.Run`'s subtest name) is never markup the app renders,
 so no string matcher reads it; `t.Setenv` hands its arguments to the
@@ -323,7 +323,7 @@ class read from the database) never appears there, but the rendered
 HTML can't hide it. So in Go test binaries and under `gofastr dev`, the
 framework scans each markup response it serves (pages, island RPC
 answers, widget chrome, HTML carried in JSON signal values) for the
-registry's retired classes and `data-fui-*` attributes, read the way a
+registry's retired classes and `data-cui-*` attributes, read the way a
 browser reads them (nothing inside comments or raw-text elements such
 as `script`, `iframe` and `noscript`; character references decoded;
 the first of duplicate attributes only):

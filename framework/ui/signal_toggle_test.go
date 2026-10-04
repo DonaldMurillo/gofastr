@@ -10,10 +10,10 @@ import (
 func TestSignalToggleBasic(t *testing.T) {
 	s := string(SignalToggle(SignalToggleConfig{SignalName: "dark"}))
 	for _, want := range []string{
-		`data-fui-signal-toggle="dark"`,
-		`data-fui-signal="dark"`,
-		`data-fui-signal-mode="attr"`,
-		`data-fui-signal-attr="aria-checked"`,
+		`data-cui-signal-toggle="dark"`,
+		`data-cui-signal="dark"`,
+		`data-cui-signal-mode="attr"`,
+		`data-cui-signal-attr="aria-checked"`,
 		`role="switch"`,
 		`aria-checked="false"`,
 	} {
@@ -75,12 +75,12 @@ func TestSignalTogglePanicsMissingSignal(t *testing.T) {
 }
 
 // TestSignalToggleRegistersCSS guards that SignalToggle ships its own
-// scoped CSS: it stamps data-fui-comp="fui-toggle" but had no
+// scoped CSS: it stamps data-cui-comp="fui-toggle" but had no
 // registered style, so the track/thumb rendered unstyled.
 func TestSignalToggleRegistersCSS(t *testing.T) {
 	css := signalToggleStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-fui-comp="fui-toggle"]`,
+		`[data-cui-comp="fui-toggle"]`,
 		".fui-toggle__track",
 		".fui-toggle__thumb",
 	} {
@@ -94,7 +94,7 @@ func TestSignalToggleRegistersCSS(t *testing.T) {
 // component to emit its CSS.
 func TestSignalToggleCarriesCompMarker(t *testing.T) {
 	s := string(SignalToggle(SignalToggleConfig{SignalName: "x"}))
-	if !strings.Contains(s, `data-fui-comp="fui-toggle"`) {
+	if !strings.Contains(s, `data-cui-comp="fui-toggle"`) {
 		t.Fatalf("toggle missing comp marker: %s", s)
 	}
 }

@@ -19,14 +19,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
 
-// attrPattern matches a full data-fui-* attribute token. It is greedy on
-// the name body, so a comment that wraps mid-name (`data-fui-foo-` at the
+// attrPattern matches a full data-cui-* attribute token. It is greedy on
+// the name body, so a comment that wraps mid-name (`data-cui-foo-` at the
 // end of a line) yields a trailing-dash token; such artifacts are dropped
 // below. Real attributes never end in a dash.
-var attrPattern = regexp.MustCompile(`data-fui-[a-z0-9-]+`)
+var attrPattern = regexp.MustCompile(`data-cui-[a-z0-9-]+`)
 
 // privilegedAttrs are runtime-read attributes that do NOT carry the
-// data-fui- prefix, so attrPattern cannot see them. Every one of them
+// data-cui- prefix, so attrPattern cannot see them. Every one of them
 // changes what code runs, data-behavior is a <script src> sink,
 // data-widget/data-component select hydration behaviour, data-bind
 // writes into the state store, which makes them exactly the set Hard
@@ -41,10 +41,10 @@ var privilegedAttrs = []string{
 	"data-bind",
 }
 
-// runtimeJSAttrs returns every data-fui-* attribute literally referenced in
+// runtimeJSAttrs returns every data-cui-* attribute literally referenced in
 // the runtime sources: the bundled runtime.js, every on-demand src/*.js
 // module, and every frag/*.js fragment. Comments are intentionally included:
-// several attributes (e.g. data-fui-rpc-after-done) are read through the
+// several attributes (e.g. data-cui-rpc-after-done) are read through the
 // camelCase `dataset` API in code and only appear as a literal hyphenated
 // token inside a documenting comment.
 //
@@ -53,8 +53,8 @@ var privilegedAttrs = []string{
 // attribute introduced by a fragment that composition omits, boot-embed,
 // rpc-stub, widgets-boot-static, appeared in no scanned file and was
 // invisible to the ownership and documentation gates below. Permanently: the
-// gate could never fail for it. data-fui-embed-state shipped that way.
-// registeredBehaviorAttrs is the data-fui-* attributes read by every
+// gate could never fail for it. data-cui-embed-state shipped that way.
+// registeredBehaviorAttrs is the data-cui-* attributes read by every
 // registered behaviour's source in the tree, found through the
 // //go:embed beside each RegisterBehavior call (check.RegisteredBehaviorSources),
 // so a module that lives beside its Go package is held to the same
@@ -73,7 +73,7 @@ func registeredBehaviorAttrs(t *testing.T) []string {
 		}
 		for _, m := range attrPattern.FindAllString(string(raw), -1) {
 			m = strings.TrimRight(m, "-")
-			if m == "data-fui" {
+			if m == "data-cui" {
 				continue
 			}
 			set[m] = struct{}{}
@@ -111,7 +111,7 @@ func runtimeJSAttrs(t *testing.T) []string {
 		}
 		for _, m := range attrPattern.FindAllString(string(raw), -1) {
 			m = strings.TrimRight(m, "-") // drop comment line-wrap artifacts
-			if m == "data-fui" {
+			if m == "data-cui" {
 				continue
 			}
 			set[m] = struct{}{}
@@ -125,7 +125,7 @@ func runtimeJSAttrs(t *testing.T) []string {
 	return out
 }
 
-// documentedAttrs returns the set of data-fui-* attributes named anywhere in
+// documentedAttrs returns the set of data-cui-* attributes named anywhere in
 // core-ui/ARCHITECTURE.md (the attribute table is the source of truth).
 func documentedAttrs(t *testing.T) map[string]struct{} {
 	t.Helper()
@@ -141,7 +141,7 @@ func documentedAttrs(t *testing.T) map[string]struct{} {
 }
 
 // goInteractiveAttrs scans the Go source files in core-ui/interactive for
-// literal "data-fui-*" string constants that the package emits as HTML
+// literal "data-cui-*" string constants that the package emits as HTML
 // attributes. These are the names the Go side promises to the runtime contract
 // and must match exactly what the runtime JS reads.
 //
@@ -156,8 +156,8 @@ func goInteractiveAttrs(t *testing.T) []string {
 		t.Fatalf("read interactive dir: %v", err)
 	}
 
-	// goStringLiteral matches a double-quoted Go string containing a data-fui-* attr name.
-	goStringLiteral := regexp.MustCompile(`"(data-fui-[a-z0-9-]+)"`)
+	// goStringLiteral matches a double-quoted Go string containing a data-cui-* attr name.
+	goStringLiteral := regexp.MustCompile(`"(data-cui-[a-z0-9-]+)"`)
 
 	set := map[string]struct{}{}
 	for _, e := range entries {
@@ -168,12 +168,12 @@ func goInteractiveAttrs(t *testing.T) []string {
 		if err != nil {
 			t.Fatalf("read %s: %v", e.Name(), err)
 		}
-		// Strip single-line comments before scanning so stale "// (data-fui-rpc-signals)"
+		// Strip single-line comments before scanning so stale "// (data-cui-rpc-signals)"
 		// references in package doc-comments don't appear as emitted attributes.
 		stripped := stripGoLineComments(string(raw))
 		for _, m := range goStringLiteral.FindAllStringSubmatch(stripped, -1) {
 			name := strings.TrimRight(m[1], "-")
-			if name == "data-fui" {
+			if name == "data-cui" {
 				continue
 			}
 			set[name] = struct{}{}
@@ -227,12 +227,12 @@ func stripGoLineComments(src string) string {
 	return out.String()
 }
 
-// TestGoInteractiveAttrsMatchRuntime is the M4 cross-check: every data-fui-*
+// TestGoInteractiveAttrsMatchRuntime is the M4 cross-check: every data-cui-*
 // attribute emitted by the Go core-ui/interactive package must be literally
 // present somewhere in runtime.js or a src/*.js module.
 //
 // This permanently catches the F3 class of bug (Go emitted
-// "data-fui-rpc-debounce", runtime read "data-fui-rpc-debounce-ms") by
+// "data-cui-rpc-debounce", runtime read "data-cui-rpc-debounce-ms") by
 // failing CI the moment a Go-side attribute name diverges from the JS side.
 //
 // CSS-only attributes (comp markers, CSS-selector-only targets) that are never
@@ -242,7 +242,7 @@ func stripGoLineComments(src string) string {
 func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 	cssOnlyAttrs := map[string]bool{
 		// Marks which styled component a DOM node belongs to.
-		// The runtime's CSS scanner reads data-fui-comp values (for loadComponentCSS),
+		// The runtime's CSS scanner reads data-cui-comp values (for loadComponentCSS),
 		// but the attribute itself is emitted by Go as a plain string label.
 		// It IS present in the JS (scanner reads it), so it passes the check,
 		// listed here only for documentation.
@@ -270,7 +270,7 @@ func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Errorf("%d data-fui-* attribute(s) emitted by core-ui/interactive Go source "+
+		t.Errorf("%d data-cui-* attribute(s) emitted by core-ui/interactive Go source "+
 			"but NOT present anywhere in the runtime JS — this is the F3-class bug "+
 			"(Go name ≠ runtime-read name).\nCheck attribute spelling against runtime.js:\n  %s\n"+
 			"If the attribute is CSS-only (never getAttribute'd by JS), add it to cssOnlyAttrs.",
@@ -284,18 +284,18 @@ func TestGoInteractiveAttrsMatchRuntime(t *testing.T) {
 // broken.
 //
 // We don't actually reintroduce a mismatched name here (that would be
-// circular). Instead we assert directly: "data-fui-rpc-debounce" (the old
+// circular). Instead we assert directly: "data-cui-rpc-debounce" (the old
 // wrong name from F3) must NOT appear in the Go interactive source.
 func TestGoInteractiveAttrs_F3NameAbsent(t *testing.T) {
 	for _, a := range goInteractiveAttrs(t) {
-		if a == "data-fui-rpc-debounce" {
-			t.Error(`data-fui-rpc-debounce (F3 wrong name) found in core-ui/interactive — ` +
-				`must be data-fui-rpc-debounce-ms to match the runtime`)
+		if a == "data-cui-rpc-debounce" {
+			t.Error(`data-cui-rpc-debounce (F3 wrong name) found in core-ui/interactive — ` +
+				`must be data-cui-rpc-debounce-ms to match the runtime`)
 		}
 	}
 }
 
-// TestRuntimeAttrsAreDocumented enforces hard rule 5: every data-fui-*
+// TestRuntimeAttrsAreDocumented enforces hard rule 5: every data-cui-*
 // attribute the runtime JS references must appear in the core-ui/ARCHITECTURE.md
 // attribute table. This makes the doc the source of truth and fails the build
 // the moment a new runtime attribute ships without a doc entry, preventing the
@@ -316,7 +316,7 @@ func TestRuntimeAttrsAreDocumented(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Errorf("%d data-fui-* attribute(s) used by the runtime JS but missing "+
+		t.Errorf("%d data-cui-* attribute(s) used by the runtime JS but missing "+
 			"from the core-ui/ARCHITECTURE.md attribute table (hard rule 5):\n  %s\n"+
 			"Add a row for each to the attribute table.",
 			len(missing), strings.Join(missing, "\n  "))
@@ -324,9 +324,9 @@ func TestRuntimeAttrsAreDocumented(t *testing.T) {
 }
 
 // TestPrivilegedAttrsAreDocumented extends hard rule 5 past the
-// data-fui- prefix.
+// data-cui- prefix.
 //
-// The parity gate matched only `data-fui-*`, so the runtime's single
+// The parity gate matched only `data-cui-*`, so the runtime's single
 // most privileged attribute, `data-behavior`, which becomes a
 // `<script src>`, appeared zero times in ARCHITECTURE.md and nobody
 // noticed. Same for data-widget / data-component / data-bind. The rule
@@ -363,7 +363,7 @@ func TestPrivilegedAttrsStillRead(t *testing.T) {
 //
 // The four tests below extend this file's parity mechanism to the
 // attribute→fragment map declared in fragments.go. Together they enforce
-// that every data-fui-* attribute in the runtime sources has exactly one
+// that every data-cui-* attribute in the runtime sources has exactly one
 // declared owner (a core fragment or an on-demand module), that the
 // declared set never drifts ahead of the source, and that the fragment
 // dependency graph is well-formed. This is the build-time half of Hard
@@ -375,7 +375,7 @@ func TestPrivilegedAttrsStillRead(t *testing.T) {
 // doc-parity tests above use) so there is one definition of "what
 // attributes exist", not two.
 
-// TestFragmentMapComplete is gate item 1: every data-fui-* attribute the
+// TestFragmentMapComplete is gate item 1: every data-cui-* attribute the
 // runtime JS references must have a declared owning fragment or module in
 // fragments.go. A new attribute that ships without an entry here fails the
 // build, which is the point: composition cannot serve an attribute whose
@@ -389,7 +389,7 @@ func TestFragmentMapComplete(t *testing.T) {
 		}
 	}
 	if len(unowned) > 0 {
-		t.Errorf("%d data-fui-* attribute(s) referenced by the runtime sources have "+
+		t.Errorf("%d data-cui-* attribute(s) referenced by the runtime sources have "+
 			"no owning fragment or module in fragments.go (runtime-composer gate):\n  %s\n"+
 			"Assign each to the fragment (fragmentAttrs) or src/*.js module (moduleAttrs) "+
 			"that implements its handler — see the ownership rule in fragments.go.",
@@ -433,7 +433,7 @@ func TestFragmentMapNoDuplicate(t *testing.T) {
 	seen := make(map[string]string) // attr -> first owner
 	record := func(owner, attr string) {
 		if prev, ok := seen[attr]; ok {
-			t.Errorf("attribute %q is assigned to BOTH %q and %q — each data-fui-* attribute "+
+			t.Errorf("attribute %q is assigned to BOTH %q and %q — each data-cui-* attribute "+
 				"has exactly one owner; pick the fragment/module that implements its handler.",
 				attr, prev, owner)
 		}
@@ -539,7 +539,7 @@ func TestFragmentModulesValid(t *testing.T) {
 
 // TestDocumentedAttrsHaveAnOwner is the doc→owner direction the existing
 // parity gates deliberately skip (TestRuntimeAttrsAreDocumented asserts only
-// runtime→doc, and only for attributes the runtime references). A data-fui-*
+// runtime→doc, and only for attributes the runtime references). A data-cui-*
 // attribute documented in ARCHITECTURE.md must be backed by SOMETHING real:
 // either the runtime JS reads it, or Go source emits it as an HTML attribute.
 // An attribute that is documented but neither read nor emitted is stale doc,
@@ -589,16 +589,16 @@ func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
 	}
 	sort.Strings(drift)
 	if len(drift) > 0 {
-		t.Errorf("doc/code drift: %d data-fui-* attribute(s) are documented in "+
+		t.Errorf("doc/code drift: %d data-cui-* attribute(s) are documented in "+
 			"ARCHITECTURE.md but neither read by the runtime JS nor emitted by any "+
 			"Go component — remove the stale doc row or implement the surface:\n  %s",
 			len(drift), strings.Join(drift, "\n  "))
 	}
 }
 
-// goEmittedAttrs scans the Go source that emits data-fui-* HTML attributes,
+// goEmittedAttrs scans the Go source that emits data-cui-* HTML attributes,
 // core-ui/{interactive,html,widget,app} and framework/ui, for
-// literal "data-fui-*" string constants, in non-comment, non-test source. It
+// literal "data-cui-*" string constants, in non-comment, non-test source. It
 // generalizes goInteractiveAttrs (which covers core-ui/interactive alone) so
 // the doc→owner gate can see attributes emitted outside the interactive
 // package, e.g. framework/ui.FileDropzone's preview hooks.
@@ -620,7 +620,7 @@ func goEmittedAttrs(t *testing.T) []string {
 		// doc→owner gate must still see them as emitted.
 		filepath.Join("..", "..", "framework", "pluginhost"),
 		// uihost emits attributes of its own beside the component trees:
-		// the data-fui-doc markers on registered document scripts and,
+		// the data-cui-doc markers on registered document scripts and,
 		// since spike/layout-loading, the data-fui-page-loading wrapper
 		// div (WithPageLoading).
 		filepath.Join("..", "..", "framework", "uihost"),
@@ -643,11 +643,11 @@ func goEmittedAttrs(t *testing.T) []string {
 			}
 			stripped := stripGoLineComments(string(raw))
 			// attrPattern over stripped whole source catches valueless boolean
-			// attributes (data-fui-menu-panel) and concat-built markers
+			// attributes (data-cui-menu-panel) and concat-built markers
 			// (data-fui-plugin-docid) that the quote-requiring form misses.
 			for _, m := range attrPattern.FindAllString(stripped, -1) {
 				name := strings.TrimRight(m, "-")
-				if name == "data-fui" {
+				if name == "data-cui" {
 					continue
 				}
 				set[name] = struct{}{}
@@ -667,7 +667,7 @@ func goEmittedAttrs(t *testing.T) []string {
 }
 
 // A registered behaviour (registry.RegisterBehavior) owns its own
-// prefix; the seam admits a data-fui-* marker only when the attribute
+// prefix; the seam admits a data-cui-* marker only when the attribute
 // is already in the documented table, so hard rule 5 holds through the
 // registry as well as through the sources. undocumentedBehaviorMarkers
 // is the check; the test exercises it against a fixture in isolation,
@@ -680,7 +680,7 @@ func undocumentedBehaviorMarkers(doc map[string]struct{}) []string {
 			if i := strings.Index(name, "="); i >= 0 {
 				name = name[:i]
 			}
-			if strings.HasPrefix(name, "data-fui-") {
+			if strings.HasPrefix(name, "data-cui-") {
 				if _, ok := doc[name]; !ok {
 					out = append(out, e.Name+": "+m)
 				}
@@ -694,20 +694,20 @@ func undocumentedBehaviorMarkers(doc map[string]struct{}) []string {
 func TestRegisteredBehaviorDataFuiMarkersAreDocumented(t *testing.T) {
 	doc := documentedAttrs(t)
 	// The live registry first, whatever this binary links: nothing may
-	// carry an undocumented data-fui-* marker.
+	// carry an undocumented data-cui-* marker.
 	if got := undocumentedBehaviorMarkers(doc); len(got) != 0 {
-		t.Fatalf("registered behaviours carry undocumented data-fui-* markers (hard rule 5): %v", got)
+		t.Fatalf("registered behaviours carry undocumented data-cui-* markers (hard rule 5): %v", got)
 	}
 	registry.IsolateForTest(t)
 	registry.RegisterBehavior("own-prefix", "(()=>{})()", registry.Markers("[data-hui-probe]"))
-	registry.RegisterBehavior("documented", "(()=>{})()", registry.Markers("[data-fui-rpc]"))
+	registry.RegisterBehavior("documented", "(()=>{})()", registry.Markers("[data-cui-rpc]"))
 	if got := undocumentedBehaviorMarkers(doc); len(got) != 0 {
-		t.Fatalf("an own-prefix marker and a documented data-fui-* marker were reported: %v", got)
+		t.Fatalf("an own-prefix marker and a documented data-cui-* marker were reported: %v", got)
 	}
-	registry.RegisterBehavior("undocumented", "(()=>{})()", registry.Markers("[data-fui-not-in-the-table-probe]"))
+	registry.RegisterBehavior("undocumented", "(()=>{})()", registry.Markers("[data-cui-not-in-the-table-probe]"))
 	got := undocumentedBehaviorMarkers(doc)
 	if len(got) != 1 || !strings.HasPrefix(got[0], "undocumented:") {
-		t.Fatalf("the undocumented data-fui-* marker was not reported: %v", got)
+		t.Fatalf("the undocumented data-cui-* marker was not reported: %v", got)
 	}
 }
 
@@ -882,11 +882,11 @@ func interactionsInSource(src string) (specs []registry.Interaction, nonLiteral 
 	return specs, nonLiteral
 }
 
-// interactionAttrNames lists the data-fui-* attributes an interaction
+// interactionAttrNames lists the data-cui-* attributes an interaction
 // selector names. The grammar accepts more than a marker's (combinators,
 // :not([attr]), comma lists), so the walk is a token scan of the
 // bracketed attribute names rather than MarkerSubstring's exact rewrite.
-var interactionAttr = regexp.MustCompile(`\[(data-fui-[a-z0-9-]+)`)
+var interactionAttr = regexp.MustCompile(`\[(data-cui-[a-z0-9-]+)`)
 
 func interactionAttrNames(specs []registry.Interaction) []string {
 	set := map[string]struct{}{}
@@ -908,7 +908,7 @@ func interactionAttrNames(specs []registry.Interaction) []string {
 // TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs is the
 // hard-rule-5 gate for the interaction half of a descriptor: a click's
 // node selector and a keydown's scope selector name attributes the
-// bridge hands straight to querySelector, so a data-fui-* among them
+// bridge hands straight to querySelector, so a data-cui-* among them
 // is runtime vocabulary and belongs in the documented table exactly as
 // a marker does. The prose contract existed from the interaction
 // descriptor layer (2026-09-20) with no client to check; the lightbox
@@ -962,7 +962,7 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 		}
 	}
 	if len(missing) != 0 {
-		t.Fatalf("interaction selectors in the tree name data-fui-* attributes not in core-ui/ARCHITECTURE.md's table (hard rule 5): %v", missing)
+		t.Fatalf("interaction selectors in the tree name data-cui-* attributes not in core-ui/ARCHITECTURE.md's table (hard rule 5): %v", missing)
 	}
 	// The walk itself, on fixtures: a composite literal is read field
 	// by field, a non-literal field and an unknown field are refused
@@ -970,15 +970,15 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	// the same one the markers gate checks.
 	const head = "package p\nimport \"" + registryImportPath + "\"\n"
 	src := head + `var b = registry.RegisterBehavior("x", js, registry.Markers("[data-hui-p]"), registry.Interactions(
-		registry.Interaction{Event: "click", Selector: "[data-fui-rpc],[data-fui-not-in-the-table-probe]"},
-		registry.Interaction{Event: "keydown", Scope: "[data-fui-widget]:not([hidden]) [data-hui-p]", Keys: []string{"ArrowLeft"}},
+		registry.Interaction{Event: "click", Selector: "[data-cui-rpc],[data-cui-not-in-the-table-probe]"},
+		registry.Interaction{Event: "keydown", Scope: "[data-cui-widget]:not([hidden]) [data-hui-p]", Keys: []string{"ArrowLeft"}},
 	))`
 	got, non := interactionsInSource(src)
 	if len(non) != 0 || len(got) != 2 {
 		t.Fatalf("fixture walk: specs %v nonLiteral %v, want 2 specs and none unreadable", got, non)
 	}
 	attrs := interactionAttrNames(got)
-	want := []string{"data-fui-not-in-the-table-probe", "data-fui-rpc", "data-fui-widget"}
+	want := []string{"data-cui-not-in-the-table-probe", "data-cui-rpc", "data-cui-widget"}
 	if !reflect.DeepEqual(attrs, want) {
 		t.Fatalf("fixture attrs = %v, want %v", attrs, want)
 	}
@@ -988,7 +988,7 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 			undoc = append(undoc, a)
 		}
 	}
-	if len(undoc) != 1 || undoc[0] != "data-fui-not-in-the-table-probe" {
+	if len(undoc) != 1 || undoc[0] != "data-cui-not-in-the-table-probe" {
 		t.Fatalf("the check missed the undocumented attribute or flagged a documented one: %v", undoc)
 	}
 	// A field the bridge grows is refused rather than skipped.
@@ -998,7 +998,7 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	}
 }
 
-// undocumentedDataFuiMarkers reports the data-fui-* attributes among
+// undocumentedDataFuiMarkers reports the data-cui-* attributes among
 // the selectors that are not in the documented table.
 func undocumentedDataFuiMarkers(selectors []string, doc map[string]struct{}) []string {
 	var out []string
@@ -1007,7 +1007,7 @@ func undocumentedDataFuiMarkers(selectors []string, doc map[string]struct{}) []s
 		if i := strings.Index(name, "="); i >= 0 {
 			name = name[:i]
 		}
-		if strings.HasPrefix(name, "data-fui-") {
+		if strings.HasPrefix(name, "data-cui-") {
 			if _, ok := doc[name]; !ok {
 				out = append(out, sel)
 			}
@@ -1022,7 +1022,7 @@ func undocumentedDataFuiMarkers(selectors []string, doc map[string]struct{}) []s
 // binary links: it reads every registry.Markers(...) call in the
 // module's Go source (framework/ui and the hosts sit above this
 // package and can never be linked into its test binary), and refuses
-// a data-fui-* marker whose attribute is not in the documented table.
+// a data-cui-* marker whose attribute is not in the documented table.
 // A behaviour's own prefix is never in question.
 func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	doc := documentedAttrs(t)
@@ -1066,21 +1066,21 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 		t.Fatalf("registry.Markers called with arguments that are not string literals, which this gate cannot read; declare markers as literals:\n  %s", strings.Join(nonLiteral, "\n  "))
 	}
 	if got := undocumentedDataFuiMarkers(selectors, doc); len(got) != 0 {
-		t.Fatalf("registered behaviours in the tree carry data-fui-* markers not in core-ui/ARCHITECTURE.md's table (hard rule 5): %v", got)
+		t.Fatalf("registered behaviours in the tree carry data-cui-* markers not in core-ui/ARCHITECTURE.md's table (hard rule 5): %v", got)
 	}
 	// The scan itself, on fixtures: the plain import, an alias, a dot
 	// import, a same-named function from another package (ignored), a
 	// constant argument (refused as unreadable), and the documented
-	// versus undocumented data-fui-* markers.
-	const head = "package p\nimport (\n\t%s \"" + registryImportPath + "\"\n\tother \"example.com/other\"\n)\nconst k = \"[data-fui-k]\"\n"
+	// versus undocumented data-cui-* markers.
+	const head = "package p\nimport (\n\t%s \"" + registryImportPath + "\"\n\tother \"example.com/other\"\n)\nconst k = \"[data-cui-k]\"\n"
 	cases := []struct {
 		name, src           string
 		wantSel, wantNonLit int
 	}{
-		{"plain", fmt.Sprintf(head, "registry") + "var b = registry.RegisterBehavior(\"x\", js, registry.Markers(\"[data-hui-probe]\", `[data-fui-rpc]`, \"[data-fui-not-in-the-table-probe]\"))", 3, 0},
+		{"plain", fmt.Sprintf(head, "registry") + "var b = registry.RegisterBehavior(\"x\", js, registry.Markers(\"[data-hui-probe]\", `[data-cui-rpc]`, \"[data-cui-not-in-the-table-probe]\"))", 3, 0},
 		{"alias", fmt.Sprintf(head, "reg") + "var b = reg.RegisterBehavior(\"x\", js, reg.Markers(\"[data-hui-probe]\"))", 1, 0},
 		{"dot", fmt.Sprintf(head, ".") + "var b = RegisterBehavior(\"x\", js, Markers(\"[data-hui-probe]\"))", 1, 0},
-		{"other package", fmt.Sprintf(head, "registry") + "var b = other.Markers(\"[data-fui-not-ours]\")", 0, 0},
+		{"other package", fmt.Sprintf(head, "registry") + "var b = other.Markers(\"[data-cui-not-ours]\")", 0, 0},
 		{"constant", fmt.Sprintf(head, "registry") + "var b = registry.RegisterBehavior(\"x\", js, registry.Markers(k, \"[data-hui-probe]\"))", 1, 1},
 	}
 	for _, c := range cases {
@@ -1091,7 +1091,7 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	}
 	sel, _ := markerSelectorsInSource(cases[0].src)
 	got := undocumentedDataFuiMarkers(sel, doc)
-	if len(got) != 1 || got[0] != "[data-fui-not-in-the-table-probe]" {
+	if len(got) != 1 || got[0] != "[data-cui-not-in-the-table-probe]" {
 		t.Fatalf("the check missed the undocumented marker or flagged a documented one: %v", got)
 	}
 }

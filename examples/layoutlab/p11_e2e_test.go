@@ -175,7 +175,7 @@ func TestViewTransitionWrapperE2E(t *testing.T) {
 
 // TestViewTransitionMirrorE2E pins the CSP-safe name assignment: after
 // a navigation into the /items group the detail primary's cell (marked
-// data-fui-vt="vt-items-primary" by the server, P11-B generated name)
+// data-cui-vt="vt-items-primary" by the server, P11-B generated name)
 // carries the CSSOM view-transition-name, the marker itself is in the
 // SSR bytes, and the generated rules ship in app.css.
 func TestViewTransitionMirrorE2E(t *testing.T) {
@@ -194,8 +194,8 @@ func TestViewTransitionMirrorE2E(t *testing.T) {
 	}
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if !strings.Contains(string(body), `data-fui-vt="vt-items-primary"`) {
-		t.Errorf("SSR /items/1 missing data-fui-vt=\"vt-items-primary\"")
+	if !strings.Contains(string(body), `data-cui-vt="vt-items-primary"`) {
+		t.Errorf("SSR /items/1 missing data-cui-vt=\"vt-items-primary\"")
 	}
 	cssRes, err := http.Get(base + "/__gofastr/app.css")
 	if err != nil {
@@ -204,7 +204,7 @@ func TestViewTransitionMirrorE2E(t *testing.T) {
 	css, _ := io.ReadAll(cssRes.Body)
 	cssRes.Body.Close()
 	for _, want := range []string{
-		`[data-fui-vt="vt-items-primary"]`,
+		`[data-cui-vt="vt-items-primary"]`,
 		`:root:active-view-transition-type(back) ::view-transition-new(vt-items-primary)`,
 	} {
 		if !strings.Contains(string(css), want) {
@@ -230,7 +230,7 @@ func TestViewTransitionMirrorE2E(t *testing.T) {
 	}
 	var name string
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`(() => { const el = document.querySelector('[data-fui-vt="vt-items-primary"]'); return el ? el.getAttribute('data-fui-vt') + '=' + el.style.viewTransitionName : '!missing'; })()`, &name)); err != nil {
+		`(() => { const el = document.querySelector('[data-cui-vt="vt-items-primary"]'); return el ? el.getAttribute('data-cui-vt') + '=' + el.style.viewTransitionName : '!missing'; })()`, &name)); err != nil {
 		t.Fatalf("mirror read: %v", err)
 	}
 	if name != "vt-items-primary=vt-items-primary" {

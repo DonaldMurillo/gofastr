@@ -64,7 +64,7 @@ func TestSSGEmitsCatalogAndPerComponentCSS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("comp/%s.css missing: %v", name, err)
 	}
-	wantSel := `[data-fui-comp="` + name + `"] .x`
+	wantSel := `[data-cui-comp="` + name + `"] .x`
 	if !strings.Contains(string(cssBody), wantSel) {
 		t.Errorf("comp CSS not scoped: %s", cssBody)
 	}

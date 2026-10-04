@@ -13,18 +13,18 @@
   const validityWired = new WeakSet();
   // Persist keys are namespaced and component-encoded (the banner-dismiss
   // cookie's shape): "gofastr.persist." + encodeURIComponent(key). An
-  // attribute-borne data-fui-persist-storage value can therefore only ever
+  // attribute-borne data-cui-persist-storage value can therefore only ever
   // name an entry inside this module's own namespace, never another
   // feature's localStorage key; a value stored under the pre-namespace raw
   // spelling is not read.
   const PERSIST_PREFIX = 'gofastr.persist.';
 
   document.addEventListener('click', function (e) {
-    const btn = e.target.closest && e.target.closest('[data-fui-fill-input]');
+    const btn = e.target.closest && e.target.closest('[data-cui-fill-input]');
     if (!btn) return;
-    const sel = btn.getAttribute('data-fui-fill-input');
-    const widget = btn.closest('[data-fui-widget]');
-    // data-fui-fill-input is a selector by design: a malformed value
+    const sel = btn.getAttribute('data-cui-fill-input');
+    const widget = btn.closest('[data-cui-widget]');
+    // data-cui-fill-input is a selector by design: a malformed value
     // degrades to a no-op instead of throwing out of the delegated click
     // handler before its preventDefault.
     let target = null;
@@ -33,7 +33,7 @@
     } catch (_) { target = null; }
     if (!target) return;
     e.preventDefault();
-    const explicit = btn.getAttribute('data-fui-fill-text');
+    const explicit = btn.getAttribute('data-cui-fill-text');
     target.value = explicit !== null ? explicit : btn.textContent.trim();
     target.dispatchEvent(new Event('input', { bubbles: true }));
     try { target.focus(); target.select?.(); } catch (_) {}
@@ -43,8 +43,8 @@
     if (ticking) return;
     ticking = true;
     const tick = function () {
-      document.querySelectorAll('[data-fui-tick-elapsed]').forEach(function (el) {
-        const start = parseInt(el.getAttribute('data-fui-tick-elapsed'), 10);
+      document.querySelectorAll('[data-cui-tick-elapsed]').forEach(function (el) {
+        const start = parseInt(el.getAttribute('data-cui-tick-elapsed'), 10);
         if (!start) return;
         const ms = Date.now() - start;
         el.textContent = ms < 1000 ? ms + 'ms' : ms < 10000 ? (ms / 1000).toFixed(1) + 's' : Math.round(ms / 1000) + 's';
@@ -57,7 +57,7 @@
   function wirePersist(el) {
     if (persistWired.has(el)) return;
     persistWired.add(el);
-    const key = el.getAttribute('data-fui-persist-storage');
+    const key = el.getAttribute('data-cui-persist-storage');
     if (!key) return;
     try {
       // Namespaced and component-encoded at every sink; a draft stored
@@ -80,7 +80,7 @@
   function wireCount(el) {
     if (countWired.has(el)) return;
     countWired.add(el);
-    const sel = el.getAttribute('data-fui-charcount-source');
+    const sel = el.getAttribute('data-cui-charcount-source');
     // Selector by design (see fill-input): malformed degrades to a no-op.
     let src = null;
     try { src = sel && document.querySelector(sel); } catch (_) { src = null; }
@@ -138,12 +138,12 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    if (scope.querySelector('[data-fui-tick-elapsed]')) startTicker();
-    scope.querySelectorAll('[data-fui-persist-storage]').forEach(wirePersist);
-    scope.querySelectorAll('[data-fui-charcount-source]').forEach(wireCount);
-    scope.querySelectorAll('[data-fui-clear-on-esc]').forEach(wireClear);
-    scope.querySelectorAll('form[data-fui-submit-on-enter]').forEach(wireEnter);
-    scope.querySelectorAll('form[data-fui-disable-when-invalid]').forEach(wireValidity);
+    if (scope.querySelector('[data-cui-tick-elapsed]')) startTicker();
+    scope.querySelectorAll('[data-cui-persist-storage]').forEach(wirePersist);
+    scope.querySelectorAll('[data-cui-charcount-source]').forEach(wireCount);
+    scope.querySelectorAll('[data-cui-clear-on-esc]').forEach(wireClear);
+    scope.querySelectorAll('form[data-cui-submit-on-enter]').forEach(wireEnter);
+    scope.querySelectorAll('form[data-cui-disable-when-invalid]').forEach(wireValidity);
   }
 
   scan(document);

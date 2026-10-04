@@ -274,7 +274,7 @@ use the `route.` prefix; it is reserved.
 
 **Highlighting the current nav item needs none of this.** The runtime's
 active-link sweep marks `aria-current="page"` on every `nav a` whose
-href matches the path (exact match; `data-fui-match-prefix` opts a link
+href matches the path (exact match; `data-cui-match-prefix` opts a link
 into segment-boundary prefix matching, which `ui.Sidebar` emits for
 `MatchPath` items), and opens the closest sidebar group or `<details>`
 ancestor of the current link. A static sidebar therefore keeps its
@@ -595,7 +595,7 @@ site.WithStyle(AppStyle) // app.style.css
 ```
 
 - `LayoutSpec.Style` scopes the sheet to the layout. The layout root
-  carries `data-fui-scope="<name>"`, and the rules reach everything the
+  carries `data-cui-scope="<name>"`, and the rules reach everything the
   build renders: the chrome, the screens in its primary, the fills in
   its outlets.
 - `Screen.WithStyle` scopes the sheet to one screen's content. The
@@ -655,13 +655,13 @@ Rules the code enforces, each failing loudly instead of silently:
 
 ## What the server renders
 
-Every layer wraps in a div carrying `data-fui-layout="<name>"` and
-`data-fui-layout-key="<key>"` (the layer's identity: `l:<identity>` for
+Every layer wraps in a div carrying `data-cui-layout="<name>"` and
+`data-cui-layout-key="<key>"` (the layer's identity: `l:<identity>` for
 a plain layout, `g:<prefix>:<identity>` for a group layer, with
 resolved param values substituted into `<prefix>`). The primary cell
-carries `data-fui-layout-slot="<key>"` — `<main id="main-content">` at
+carries `data-cui-layout-slot="<key>"` — `<main id="main-content">` at
 the root, a div below it. Other outlets render
-`data-fui-outlet="<key>#<name>"`, areas `data-fui-area="<key>~<name>"`;
+`data-cui-outlet="<key>#<name>"`, areas `data-cui-area="<key>~<name>"`;
 those addresses are derived from the chain, never written by hand.
 
 The route manifest carries each route's chain as the `layouts` array of
@@ -684,7 +684,7 @@ updates every region that follows the route.
 One difference between routes always overrides the chain comparison:
 document-lifetime scripts. A script registered with
 `uihost.RegisterDocumentScript(src, scope)` ships only on pages the
-scope accepts, tagged `data-fui-doc`; the runtime compares the
+scope accepts, tagged `data-cui-doc`; the runtime compares the
 destination's set against the live document's tags at every soft-nav
 entry, and a difference is a real navigation, never a partial swap,
 because removing a script tag does not uninstall what the script

@@ -54,7 +54,7 @@
   // scroll listener.
   function ensureSentinel() {
     if (sentinel && sentinel.isConnected) return;
-    sentinel = NS.doc.singleton('fui-backtotop-sentinel', function () {
+    sentinel = NS.doc.singleton('cui-backtotop-sentinel', function () {
       const s = document.createElement('div');
       s.setAttribute('aria-hidden', 'true');
       // Pinned to the document's top and taken out of flow: an

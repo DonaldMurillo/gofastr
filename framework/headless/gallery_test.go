@@ -113,9 +113,9 @@ func TestGalleryLightboxWiring(t *testing.T) {
 		{Src: "/one.png", Alt: "The dashboard", Caption: "Overview"},
 	}})
 	for _, want := range []string{
-		`data-fui-open="docs"`,
+		`data-cui-open="docs"`,
 		`data-fui-lightbox-group="docs-gallery"`, // derived: Group empty
-		`data-fui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview"`,
+		`data-cui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview"`,
 		`href="/one.png"`, // the no-script path stays the full image
 	} {
 		if !strings.Contains(h, want) {

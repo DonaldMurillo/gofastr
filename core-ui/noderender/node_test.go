@@ -37,13 +37,13 @@ func TestRenderNodeDropsDangerousAttrs(t *testing.T) {
 		"style":         "color:red",
 		"onclick":       "alert(1)",
 		"data-behavior": "/evil.js",
-		"data-fui-rpc":  "/evil",
+		"data-cui-rpc":  "/evil",
 		"data-testid":   "ok",
 	}}))
 	if strings.Contains(got, "style=") || strings.Contains(got, "onclick") {
 		t.Errorf("dangerous attrs leaked: %q", got)
 	}
-	if strings.Contains(got, "data-behavior") || strings.Contains(got, "data-fui-rpc") {
+	if strings.Contains(got, "data-behavior") || strings.Contains(got, "data-cui-rpc") {
 		t.Errorf("runtime-privileged data attr leaked: %q", got)
 	}
 	if !strings.Contains(got, "data-testid") {

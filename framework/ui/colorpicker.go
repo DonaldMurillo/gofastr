@@ -36,7 +36,7 @@ type ColorPickerConfig struct {
 	// analytics markers, ARIA overrides) to the picker's root element
 	// (the wrapper div, not the <input>). Keys the component owns
 	// are dropped: class, id (the wrapper id derives from ID / Name),
-	// and data-fui-*.
+	// and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -95,28 +95,28 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 	// (exempt) root.
 	return colorPickerStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
-		render.Tag("div", map[string]string{"class": "fui-color-picker__row", "data-fui-internal": ""}, row...),
+		render.Tag("div", map[string]string{"class": "fui-color-picker__row", "data-cui-internal": ""}, row...),
 	))
 }
 
 var colorPickerStyle = registry.RegisterStyle("ui-color-picker", colorPickerCSS)
 
 func colorPickerCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-color-picker"] {
+	return `[data-cui-comp="ui-color-picker"] {
   display: grid;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__row {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__row {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__label {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__input {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__input {
   appearance: none;
   -webkit-appearance: none;
   width: var(--spacing-touch-target, 44px);
@@ -127,22 +127,22 @@ func colorPickerCSS(_ style.Theme) string {
   background: transparent;
   cursor: pointer;
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch-wrapper {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch-wrapper {
   padding: 0;
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch {
   border: 0;
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-moz-color-swatch {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__input::-moz-color-swatch {
   border: 0;
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
-[data-fui-comp="ui-color-picker"] .fui-color-picker__input:focus-visible {
+[data-cui-comp="ui-color-picker"] .fui-color-picker__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {
+[data-cui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {
   opacity: 0.6;
   cursor: not-allowed;
 }`

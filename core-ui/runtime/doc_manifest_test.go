@@ -38,8 +38,8 @@ func docManifest(t *testing.T) map[string][]string {
 // manifest. Rows look like:
 //
 //	| `<html>` attr | `aria-busy` | ... |
-//	| `<body>` class | `fui-sse-up` | ... |
-//	| `<body>` singleton | `fui-nav-toast` | ... |
+//	| `<body>` class | `cui-sse-up` | ... |
+//	| `<body>` singleton | `cui-nav-toast` | ... |
 func architectureDocTable(t *testing.T) map[string][]string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "ARCHITECTURE.md"))

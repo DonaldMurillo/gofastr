@@ -8,7 +8,7 @@ package main
 //   - The primary pane is a support queue (a list of ticket rows).
 //   - Clicking a row opens the secondary pane AND fires a GET RPC that
 //     returns the ticket's detail HTML, which the runtime swaps into a
-//     data-fui-signal="ws-ticket" (mode=html) region inside that pane.
+//     data-cui-signal="ws-ticket" (mode=html) region inside that pane.
 //   - "View customer" inside the detail opens the tertiary pane and
 //     loads the customer HTML the same way, a link filling a pane
 //     instead of navigating.
@@ -24,7 +24,7 @@ package main
 // address the state worth sharing, leave the rest as in-page state.
 //
 // PaneHost owns only the pane lifecycle; the content-fill is the
-// ordinary data-fui-rpc + data-fui-rpc-signal rail (see
+// ordinary data-cui-rpc + data-cui-rpc-signal rail (see
 // framework/docs/content/pane-host.md). The GET handlers live in
 // setupServer (main.go) under /__site/workspace/*.
 
@@ -165,7 +165,7 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 // workspaceRow is one clickable ticket row. A semantic <button> (not an
 // <a>, so there's no navigation to intercept) carrying two independent
 // delegated behaviors: data-hui-pane-open-control reveals the secondary pane and
-// data-fui-rpc GETs the detail into the ws-ticket signal region.
+// data-cui-rpc GETs the detail into the ws-ticket signal region.
 // The ticket pane is addressable, so its rows carry a pane key: clicking
 // one writes ?pane=secondary:<id>, and Back replays it by re-clicking
 // this same button, which re-runs the RPC and refills the region.

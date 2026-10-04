@@ -13,7 +13,7 @@ import (
 )
 
 // Slice is a typed handle to one declared shared-state value. It is a
-// renderer first: its binding helpers emit both the data-fui-signal
+// renderer first: its binding helpers emit both the data-cui-signal
 // attribute AND the resolved initial value, so the SSR DOM and the
 // seeded client store can never drift.
 type Slice[T any] struct {
@@ -81,7 +81,7 @@ func (sl *Slice[T]) resolve(ctx context.Context) T {
 // mode, stamping the resolved value as its text content.
 func (sl *Slice[T]) Bind(ctx context.Context, tag string, attrs map[string]string) render.HTML {
 	a := cloneAttrs(attrs)
-	a["data-fui-signal"] = sl.name
+	a["data-cui-signal"] = sl.name
 	sl.applyComputed(a)
 	return renderEl(tag, a, render.Text(valueString(any(sl.resolve(ctx)))))
 }
@@ -93,8 +93,8 @@ func (sl *Slice[T]) applyComputed(a map[string]string) {
 	if sl.comp == nil {
 		return
 	}
-	a["data-fui-computed"] = sl.comp.reducer
-	a["data-fui-computed-deps"] = strings.Join(sl.comp.deps, ",")
+	a["data-cui-computed"] = sl.comp.reducer
+	a["data-cui-computed-deps"] = strings.Join(sl.comp.deps, ",")
 }
 
 // BindAttr binds the slice value to an HTML attribute (attr mode),
@@ -113,9 +113,9 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 		// binding degrades to static markup.
 		return renderEl(tag, a)
 	}
-	a["data-fui-signal"] = sl.name
-	a["data-fui-signal-mode"] = "attr"
-	a["data-fui-signal-attr"] = htmlAttr
+	a["data-cui-signal"] = sl.name
+	a["data-cui-signal-mode"] = "attr"
+	a["data-cui-signal-attr"] = htmlAttr
 	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(any(sl.resolve(ctx))))
 	return renderEl(tag, a)
 }
@@ -180,8 +180,8 @@ func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]s
 		panic("store: route slices are text-only; BindHTML on " + sl.name + " would render user-influenced route state as markup")
 	}
 	a := cloneAttrs(attrs)
-	a["data-fui-signal"] = sl.name
-	a["data-fui-signal-mode"] = "html"
+	a["data-cui-signal"] = sl.name
+	a["data-cui-signal-mode"] = "html"
 	return renderEl(tag, a, render.HTML(valueString(any(sl.resolve(ctx)))))
 }
 

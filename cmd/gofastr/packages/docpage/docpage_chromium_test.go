@@ -137,7 +137,7 @@ func TestDocPageLayoutPromises(t *testing.T) {
 	browser := axetest.NewBrowser(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const d='[data-fui-scope="docpage"]';
+const d='[data-cui-scope="docpage"]';
 const root=document.querySelector(d);
 const nav=document.querySelector(d+' .nav');
 const toc=document.querySelector(d+' .toc');

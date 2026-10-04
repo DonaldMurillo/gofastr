@@ -2,7 +2,7 @@
 // Registered beside the Go that renders the markup it binds
 // (registry.RegisterBehavior in lightbox.go), served as the runtime
 // module "lightbox", and bound — like every module this package owns —
-// to data-fui-* hooks only, never to a class and never to a data-hui-*
+// to data-cui-* hooks only, never to a class and never to a data-hui-*
 // hook (those are the headless anatomy's, for a host writing its own
 // viewer module).
 //
@@ -15,7 +15,7 @@
 //
 //   2. Prev/Next button click → step the index and re-open the widget
 //      with the sibling's deeplink params, so the existing
-//      data-fui-open + signal pipeline swaps src/alt/caption.
+//      data-cui-open + signal pipeline swaps src/alt/caption.
 //
 //   3. ArrowLeft / ArrowRight while the modal is open → same.
 //
@@ -29,7 +29,7 @@
 //      lives here, keyed on the attribute the component owns.
 //
 // The widget surface it depends on (openWidget, the signal store, the
-// triggers' data-fui-deeplink) is declared on the registration as
+// triggers' data-cui-deeplink) is declared on the registration as
 // Requires("widgets"). Loaded on demand when a [data-fui-lightbox]
 // marker is in the DOM; its prev/next clicks and arrow keys are
 // retained through its own cold-cache fetch by the interaction bridge,
@@ -50,7 +50,7 @@
   NS.loadedModules[NAME] = true;
 
   // Per-instance open state, keyed by the lightbox's modal element
-  // ([data-fui-widget]). The previous single module-scoped `state` plus
+  // ([data-cui-widget]). The previous single module-scoped `state` plus
   // a first-match findViewer() made two Lightbox widgets on one page
   // cross-talk: Prev/Next on widget B resolved to whichever viewer came
   // first in DOM order (often closed widget A), leaving B's nav dead.
@@ -74,7 +74,7 @@
   }
 
   function modalOf(viewer) {
-    return viewer && viewer.closest('[data-fui-widget]');
+    return viewer && viewer.closest('[data-cui-widget]');
   }
 
   function isOpen(modal) {
@@ -110,7 +110,7 @@
     });
   }
 
-  // data-fui-deeplink pairs are markup-borne input: a malformed percent
+  // data-cui-deeplink pairs are markup-borne input: a malformed percent
   // escape makes decodeURIComponent throw URIError out of step()'s
   // click/keydown handlers and recordOpen's MutationObserver, killing
   // gallery nav. Degrade to '' / skip the pair (the selector-guard
@@ -121,9 +121,9 @@
 
 
   function srcOf(anchor) {
-    // The trigger's data-fui-deeplink has src=…&alt=…&caption=…&group=…
+    // The trigger's data-cui-deeplink has src=…&alt=…&caption=…&group=…
     // Pull the src value directly without round-tripping signals.
-    const dl = anchor.getAttribute('data-fui-deeplink') || '';
+    const dl = anchor.getAttribute('data-cui-deeplink') || '';
     for (const pair of dl.split('&')) {
       const eq = pair.indexOf('=');
       if (eq < 0) continue;
@@ -170,10 +170,10 @@
     // setSignal for each declared DeepLinkParam, which is exactly
     // what we want: src / alt / caption / group signals update in
     // place, the bound <img src> swaps via the signal pipeline.
-    const dl = state.siblings[i].getAttribute('data-fui-deeplink') || '';
+    const dl = state.siblings[i].getAttribute('data-cui-deeplink') || '';
     const params = parseDeeplink(dl);
     const ns = window.__gofastr;
-    const widgetName = state.modal.getAttribute('data-fui-widget');
+    const widgetName = state.modal.getAttribute('data-cui-widget');
     if (ns && typeof ns.openWidget === 'function' && widgetName) {
       ns.openWidget(widgetName, { params: params, pushUrl: false });
     }
@@ -186,7 +186,7 @@
     if (!viewer) { states.delete(modal); return; }
 
     // group signal is mirrored into a hidden element via
-    // data-fui-signal="group", but we read directly from the global
+    // data-cui-signal="group", but we read directly from the global
     // signal store for resilience.
     const ns = window.__gofastr || {};
     const groupSig = ns._signals && ns._signals.group ? ns._signals.group.value : '';
@@ -212,11 +212,11 @@
   }
 
   // Watch for modal open / close. The widget runtime toggles `hidden`
-  // on the [data-fui-widget] element when the user opens / closes,
+  // on the [data-cui-widget] element when the user opens / closes,
   // so a MutationObserver on `hidden` attr is the canonical hook.
   function watch(modal) {
-    if (!modal || modal.dataset.fuiLightboxWatched === '1') return;
-    modal.dataset.fuiLightboxWatched = '1';
+    if (!modal || modal.dataset.cuiLightboxWatched === '1') return;
+    modal.dataset.cuiLightboxWatched = '1';
     new MutationObserver(function (records) {
       for (const r of records) {
         if (r.attributeName === 'hidden') {
@@ -243,7 +243,7 @@
   }
 
   // Prev/Next button clicks, scoped to the lightbox the clicked button
-  // lives in (its [data-fui-widget] modal), so two Lightbox widgets on
+  // lives in (its [data-cui-widget] modal), so two Lightbox widgets on
   // one page cannot cross-talk. State may be missing when the modal
   // mounted catalog-lazily after this module's initial scan; bootstrap
   // on-demand by calling recordOpen(modal) before stepping.
@@ -439,8 +439,8 @@
       const scope = root && root.querySelectorAll ? root : document;
       scope.querySelectorAll('[data-fui-lightbox]').forEach((v) => {
         const m = modalOf(v);
-        if (!m || m.dataset.fuiLightboxPinchWatched === '1') return;
-        m.dataset.fuiLightboxPinchWatched = '1';
+        if (!m || m.dataset.cuiLightboxPinchWatched === '1') return;
+        m.dataset.cuiLightboxPinchWatched = '1';
         new MutationObserver((records) => {
           for (const r of records) {
             if (r.attributeName === 'hidden') resetAllOnClose(m);

@@ -52,7 +52,7 @@ type PieChartConfig struct {
 	// analytics markers, ARIA overrides) to the chart's <svg> root,
 	// or to the shared zero-data placeholder when there is nothing to
 	// draw. Keys the component owns are dropped: class and
-	// id (use Class / ID), data-fui-*, and the sizing and naming
+	// id (use Class / ID), data-cui-*, and the sizing and naming
 	// attributes the SVG derives from config (width, height, viewBox,
 	// xmlns, role, aria-labelledby, aria-hidden).
 	ExtraAttrs html.Attrs
@@ -127,7 +127,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
-	sb.WriteString(` data-fui-comp="ui-pie-chart"`)
+	sb.WriteString(` data-cui-comp="ui-pie-chart"`)
 	sb.WriteString(serializeExtraAttrs(extra))
 	sb.WriteString(`>`)
 
@@ -280,11 +280,11 @@ func escapeXML(s string) string {
 var pieChartStyle = registry.RegisterStyle("ui-pie-chart", pieChartCSS)
 
 func pieChartCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-pie-chart"] {
+	return `[data-cui-comp="ui-pie-chart"] {
   display: inline-block;
   vertical-align: middle;
 }
-[data-fui-comp="ui-pie-chart"] .fui-pie-chart__slice {
+[data-cui-comp="ui-pie-chart"] .fui-pie-chart__slice {
   stroke: var(--color-background, #FFFFFF);
   stroke-width: 1;
 }
@@ -294,12 +294,12 @@ func pieChartCSS(_ style.Theme) string {
 .fui-pie-chart__slice--warning { fill: var(--color-warning, #D97706); }
 .fui-pie-chart__slice--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-label {
+[data-cui-comp="ui-pie-chart"] .fui-pie-chart__center-label {
   font-size: var(--text-xl, 1.25rem);
   font-weight: var(--font-weight-bold);
   fill: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-sub {
+[data-cui-comp="ui-pie-chart"] .fui-pie-chart__center-sub {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }`

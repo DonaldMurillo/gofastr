@@ -11,7 +11,7 @@ import (
 // The counter: a value between a decrement and an increment button,
 // all three owned by one group. The value lives in a client signal —
 // the kernel's signals module is the one increment path, through the
-// data-fui-signal / data-fui-signal-inc contracts this component
+// data-cui-signal / data-cui-signal-inc contracts this component
 // renders — so no module of this package owns the number. What this
 // package adds is the animation presentation (AnimateFrom), which
 // never mutates the value: the final number is SSR text, and a reader
@@ -109,7 +109,7 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	// The kernel's increment spelling, unchanged: name alone means
 	// +1, name:n means ±n. The decrement always spells its negative —
 	// "name:-0" is how a zero-step button would read.
-	inc := "data-fui-signal-inc"
+	inc := "data-cui-signal-inc"
 	dec := html.Attrs{inc: p.Signal + ":" + strconv.Itoa(-step)}
 	plus := html.Attrs{inc: p.Signal}
 	if step != 1 {
@@ -127,13 +127,13 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"step":                 strconv.Itoa(step),
 			"value":                strconv.Itoa(p.Value),
 			"aria-label":           label,
-			"data-fui-signal":      p.Signal,
-			"data-fui-signal-attr": "value",
+			"data-cui-signal":      p.Signal,
+			"data-cui-signal-attr": "value",
 		}))
 	} else {
 		value = b.El("span", PartCounterValue, Internal(html.Attrs{
 			"aria-live":       "polite",
-			"data-fui-signal": p.Signal,
+			"data-cui-signal": p.Signal,
 		}), render.Text(strconv.Itoa(p.Value)))
 	}
 

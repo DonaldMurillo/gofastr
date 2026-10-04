@@ -201,7 +201,7 @@ func TestE2E_BehaviorRegistry_SPANavLoadsBehavior(t *testing.T) {
 	}
 }
 
-// Hovering the demo button's data-fui-prefetch="site-ping" (rendered on
+// Hovering the demo button's data-cui-prefetch="site-ping" (rendered on
 // the demo page next to the marker) warms the module. The home page has
 // no such element, so a synthetic one proves the prefetch path works
 // for a registered name without waiting for the marker scan.
@@ -221,7 +221,7 @@ func TestE2E_BehaviorRegistry_HoverPrefetch(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`(() => {
             const btn = document.createElement('button');
-            btn.setAttribute('data-fui-prefetch', 'site-ping');
+            btn.setAttribute('data-cui-prefetch', 'site-ping');
             btn.textContent = 'prefetch site-ping';
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
@@ -231,7 +231,7 @@ func TestE2E_BehaviorRegistry_HoverPrefetch(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if u := fetchedModuleURL(urls); u == "" {
-		t.Errorf("pointerover on data-fui-prefetch=site-ping should fetch the module; runtime urls observed: %v", listedURLs(urls))
+		t.Errorf("pointerover on data-cui-prefetch=site-ping should fetch the module; runtime urls observed: %v", listedURLs(urls))
 	}
 }
 
@@ -261,7 +261,7 @@ func TestE2E_BehaviorRegistry_OtherPagesCarryNoMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"data-site-ping", `data-fui-prefetch="site-ping"`, "Registered behaviour"} {
+	for _, bad := range []string{"data-site-ping", `data-cui-prefetch="site-ping"`, "Registered behaviour"} {
 		if strings.Contains(string(body), bad) {
 			t.Errorf("/components/datatable carries %q; the section is meant for the Button page only", bad)
 		}

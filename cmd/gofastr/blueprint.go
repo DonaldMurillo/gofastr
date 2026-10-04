@@ -6393,7 +6393,7 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 				}
 				if isEntityFormBlock(block) {
 					// Entity forms compose ui.Form with the typed fields,
-					// with the data-fui-rpc wiring built via
+					// with the data-cui-rpc wiring built via
 					// interactive.*.Attrs(); a field none of them names
 					// builds ui.Control inside a FormField builder.
 					needs.ui = true
@@ -6483,7 +6483,7 @@ func screenActions(screen BlueprintScreen, entityMap map[string]framework.Entity
 			case isEntityFormBlock(block):
 				// Only forms with relation fields need a mount action to
 				// fetch <select> options; submission itself is wired via
-				// data-fui-rpc on the form element (no component action).
+				// data-cui-rpc on the form element (no component action).
 				if blueprintFormHasRelation(block, entityMap) {
 					actions = append(actions, BlueprintAction{
 						Name:     blueprintEntityFormActionName(screen, block, blockPath),
@@ -7125,7 +7125,7 @@ func blueprintFormInputType(fieldType string) string {
 
 // blueprintEntityFormExpr emits a ui.Form for a create/edit form, composing
 // ui.FormField per entity field. The framework owns the form/field CSS, so this
-// ships no bespoke styling. The form is an island: data-fui-rpc-* (on the form
+// ships no bespoke styling. The form is an island: data-cui-rpc-* (on the form
 // via ExtraAttrs) makes the runtime JSON-encode the body to the CRUD endpoint;
 // relation <select>s are populated on mount via data-action-mount.
 func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path []int, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
@@ -7153,7 +7153,7 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 	// the RPC wiring. Build the RPC attrs via the typed interactive layer
 	// and merge them into the markers map so render.Tag's sorted writer
 	// places every attribute in one consistent order, byte-for-byte the
-	// same <form> the raw data-fui-rpc map produced before.
+	// same <form> the raw data-cui-rpc map produced before.
 	markerParts := []string{
 		fmt.Sprintf("\"data-entity-form\": %q", entity),
 		fmt.Sprintf("\"data-entity-mode\": %q", mode),

@@ -9,7 +9,7 @@ import (
 
 // externalScript is one entry on the extra-script rail. scope != nil
 // marks a DOCUMENT-lifetime script (RegisterDocumentScript): emitted
-// only on pages the scope accepts, tagged data-fui-doc, and carried in
+// only on pages the scope accepts, tagged data-cui-doc, and carried in
 // the route manifest so the client runtime loads a real document when a
 // navigation crosses the scope edge. scope == nil is the every-page
 // lifetime (RegisterExternalScript, WithExtraScripts).
@@ -48,7 +48,7 @@ func (ds *UIHost) RegisterExternalScript(src string) error {
 
 // RegisterDocumentScript adds an external same-origin <script src> to
 // the rail with a DOCUMENT lifetime: the tag ships only on pages the
-// scope predicate accepts and carries the data-fui-doc marker; every
+// scope predicate accepts and carries the data-cui-doc marker; every
 // other page omits it entirely.
 //
 // Use it for scripts that install capabilities into the document

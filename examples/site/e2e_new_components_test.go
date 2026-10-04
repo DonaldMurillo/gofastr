@@ -50,8 +50,8 @@ func TestE2E_NewComponents_AvatarGroupOverflow(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/avatargroup"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-avatar-group"] .fui-avatar').length`, &visibleCount),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-avatar-group"] .fui-avatar-group__overflow')?.textContent || ''`, &overflow),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-avatar-group"] .fui-avatar').length`, &visibleCount),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-avatar-group"] .fui-avatar-group__overflow')?.textContent || ''`, &overflow),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -72,7 +72,7 @@ func TestE2E_NewComponents_ShortcutHintRendersChips(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/shortcuthint"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-shortcut-hint"]').length`, &kbdCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-shortcut-hint"]').length`, &kbdCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -125,7 +125,7 @@ func TestE2E_NewComponents_FilterChipBarToolbarRole(t *testing.T) {
 		chromedp.Navigate(base+"/components/filterchipbar"),
 		pageReady(),
 		// Site demo has 2 chips (Open + Mine), no toolbar wrapper id
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-filter-bar"] .fui-tag').length`, &chipCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-filter-bar"] .fui-tag').length`, &chipCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -186,7 +186,7 @@ func TestE2E_NewComponents_BannerVariantsAndRoles(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/banner"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-banner"]').length`, &banners),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-banner"]').length`, &banners),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -203,7 +203,7 @@ func TestE2E_NewComponents_TimelineItems(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/timeline"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-timeline"] .fui-timeline__item').length`, &items),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-timeline"] .fui-timeline__item').length`, &items),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -221,8 +221,8 @@ func TestE2E_NewComponents_RatingRadioGroup(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rating"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-rating"]')?.getAttribute('role') || ''`, &role),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-rating"] input[type=radio]').length`, &radios),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-rating"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-rating"] input[type=radio]').length`, &radios),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -243,8 +243,8 @@ func TestE2E_NewComponents_ColorPickerNativeInput(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/colorpicker"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-color-picker"] input[type=color]').length`, &inputs),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-color-picker"] input[type=color]')?.value || ''`, &value),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-color-picker"] input[type=color]').length`, &inputs),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-color-picker"] input[type=color]')?.value || ''`, &value),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -282,7 +282,7 @@ func TestE2E_Container_RendersDivWithMaxWidth(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/container"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-container"]').length`, &count),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-container"]').length`, &count),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -299,10 +299,10 @@ func TestE2E_Disclosure_OpenAndKeyboard(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="fui-collapsible"]').hasAttribute('open')`, &openBefore),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="fui-collapsible"] .fui-collapsible__summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open')`, &openBefore),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"] .fui-collapsible__summary').click()`, nil),
 		chromedp.Sleep(100*1e6),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="fui-collapsible"]').hasAttribute('open')`, &openAfter),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="fui-collapsible"]').hasAttribute('open')`, &openAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -320,8 +320,8 @@ func TestE2E_TimePicker_NativeInputAndLabel(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/timepicker"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-time-picker"] input[type=time]').length`, &inputs),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-time-picker"] label')?.getAttribute('for') || ''`, &labelFor),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-time-picker"] input[type=time]').length`, &inputs),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-time-picker"] label')?.getAttribute('for') || ''`, &labelFor),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -341,7 +341,7 @@ func TestE2E_Toolbar_RoleAndGroups(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/toolbar"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-toolbar"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-toolbar"]')?.getAttribute('role') || ''`, &role),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -358,8 +358,8 @@ func TestE2E_Sparkline_RendersSVGPath(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sparkline"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-sparkline"]').length`, &sparks),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-sparkline"] path').length`, &paths),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-sparkline"]').length`, &sparks),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-sparkline"] path').length`, &paths),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -379,7 +379,7 @@ func TestE2E_PieChart_RendersSlices(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/piechart"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-pie-chart"]').length`, &pies),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-pie-chart"]').length`, &pies),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -396,7 +396,7 @@ func TestE2E_BarChart_RendersBars(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/barchart"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-bar-chart"] rect.fui-bar-chart__bar').length`, &bars),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-bar-chart"] rect.fui-bar-chart__bar').length`, &bars),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -413,7 +413,7 @@ func TestE2E_LineChart_SeriesAndLegend(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/linechart"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-line-chart"] path.fui-line-chart__line').length`, &lines),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-line-chart"] path.fui-line-chart__line').length`, &lines),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -430,7 +430,7 @@ func TestE2E_JSONViewer_DetailsNodes(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/jsonviewer"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-json-viewer"] details.fui-json-viewer__node').length`, &nodes),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-json-viewer"] details.fui-json-viewer__node').length`, &nodes),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -447,7 +447,7 @@ func TestE2E_DiffViewer_UnifiedPresent(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/diffviewer"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-diff-viewer"]').length`, &unified),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-diff-viewer"]').length`, &unified),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -464,7 +464,7 @@ func TestE2E_Markdown_RendersHeadings(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/markdown"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-markdown"] h1').length`, &headings),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-markdown"] h1').length`, &headings),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -481,7 +481,7 @@ func TestE2E_TOC_PageLoads(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/toc"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-toc"]').length`, &navCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-toc"]').length`, &navCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

@@ -1,7 +1,7 @@
 package app_test
 
 // PROTOTYPE (spike/layout-motion, P11-B): unit tests for the typed
-// transition spec (Transition / Anim), the data-fui-vt markers it
+// transition spec (Transition / Anim), the data-cui-vt markers it
 // renders, the CSS Layout.TransitionCSS generates, and the root
 // presets.
 
@@ -38,15 +38,15 @@ func TestTypedTransitionMarkersRender(t *testing.T) {
 	}
 	s := string(res.HTML)
 	for _, want := range []string{
-		`data-fui-vt="vt-shell-primary"`,  // generated from layout+slot
-		`data-fui-vt="vt-shell-toolbar"`,  // generated for the outlet
-		`data-fui-outlet="l:shell#aside"`, // unnamed outlet carries no marker
+		`data-cui-vt="vt-shell-primary"`,  // generated from layout+slot
+		`data-cui-vt="vt-shell-toolbar"`,  // generated for the outlet
+		`data-cui-outlet="l:shell#aside"`, // unnamed outlet carries no marker
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("rendered page missing %s:\n%s", want, s)
 		}
 	}
-	if strings.Contains(s, `data-fui-outlet="l:shell#aside" data-fui-vt`) {
+	if strings.Contains(s, `data-cui-outlet="l:shell#aside" data-cui-vt`) {
 		t.Errorf("unnamed aside outlet must not carry a vt marker:\n%s", s)
 	}
 }
@@ -64,13 +64,13 @@ func TestTypedTransitionRawNameEscapeHatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := string(res.HTML); !strings.Contains(s, `data-fui-vt="detail"`) {
+	if s := string(res.HTML); !strings.Contains(s, `data-cui-vt="detail"`) {
 		t.Errorf("raw Name must land verbatim in the marker:\n%s", s)
 	}
 	// Name-only generates exactly the assignment rule; the author's CSS
 	// owns the animation.
 	css := shell.TransitionCSS()
-	if !strings.Contains(css, `[data-fui-vt="detail"] { view-transition-name: detail; }`) {
+	if !strings.Contains(css, `[data-cui-vt="detail"] { view-transition-name: detail; }`) {
 		t.Errorf("Name-only CSS must assign the name and nothing else:\n%s", css)
 	}
 	if strings.Contains(css, "@keyframes") {
@@ -84,7 +84,7 @@ func TestTransitionCSSGeneratesSlideAndBackVariant(t *testing.T) {
 	}, func(ctx context.Context, l *app.LayoutTree) render.HTML { return l.Primary() })
 	css := l.TransitionCSS()
 	for _, want := range []string{
-		`[data-fui-vt="vt-items-primary"] { view-transition-name: vt-items-primary; }`,
+		`[data-cui-vt="vt-items-primary"] { view-transition-name: vt-items-primary; }`,
 		`::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms ease both; }`,
 		`@keyframes vt-items-primary-in { 0%, 50% { transform: translateX(var(--spacing-xl, 24px)); opacity: 0; } }`,
 		`:root:active-view-transition-type(back) ::view-transition-new(vt-items-primary) { animation-name: vt-items-primary-in-back; }`,
@@ -134,7 +134,7 @@ func TestTransitionCSSZeroAndOutlet(t *testing.T) {
 		Outlets: []*app.Outlet{app.NewOutlet("toolbar", app.OutletOptions{Transition: app.Crossfade(120 * time.Millisecond)})},
 	}, func(ctx context.Context, l *app.LayoutTree) render.HTML { return l.Primary() })
 	css := l.TransitionCSS()
-	if !strings.Contains(css, `[data-fui-vt="vt-shell-toolbar"]`) || !strings.Contains(css, "@keyframes vt-shell-toolbar-in { from { opacity: 0; } }") {
+	if !strings.Contains(css, `[data-cui-vt="vt-shell-toolbar"]`) || !strings.Contains(css, "@keyframes vt-shell-toolbar-in { from { opacity: 0; } }") {
 		t.Errorf("outlet transition CSS wrong:\n%s", css)
 	}
 }
@@ -195,12 +195,12 @@ func TestAreaTransitionMarkerAndCSS(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The marker rides the area cell, beside its address.
-	if s := string(res.HTML); !strings.Contains(s, `data-fui-area="l:shell~crumbs" data-fui-vt="vt-shell-crumbs"`) {
+	if s := string(res.HTML); !strings.Contains(s, `data-cui-area="l:shell~crumbs" data-cui-vt="vt-shell-crumbs"`) {
 		t.Errorf("area cell must carry its generated vt name:\n%s", s)
 	}
 	css := shell.TransitionCSS()
 	for _, want := range []string{
-		`[data-fui-vt="vt-shell-crumbs"] { view-transition-name: vt-shell-crumbs; }`,
+		`[data-cui-vt="vt-shell-crumbs"] { view-transition-name: vt-shell-crumbs; }`,
 		// FadeThrough: sequential legs, no nudge (transform must not
 		// appear in either keyframe block).
 		`@keyframes vt-shell-crumbs-in { 0%, 50% { opacity: 0; } }`,
@@ -255,9 +255,9 @@ func TestNarrowRegionMarkersRender(t *testing.T) {
 	for _, want := range []string{
 		// The region carries the name BELOW the breakpoint (attr values
 		// arrive HTML-escaped; the browser reads them back unescaped).
-		`data-fui-vt="vt-project-primary" data-fui-vt-when="(width &lt; 920px)"`,
+		`data-cui-vt="vt-project-primary" data-cui-vt-when="(width &lt; 920px)"`,
 		// The placed cell carries it AT and above.
-		`data-fui-vt="vt-project-primary" data-fui-vt-when="(width &gt;= 920px)"`,
+		`data-cui-vt="vt-project-primary" data-cui-vt-when="(width &gt;= 920px)"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("SSR missing %s:\n%s", want, s)
@@ -265,8 +265,8 @@ func TestNarrowRegionMarkersRender(t *testing.T) {
 	}
 	css := shell.TransitionCSS()
 	for _, want := range []string{
-		`@media (width >= 920px) { [data-fui-vt="vt-project-primary"][data-fui-vt-when="(width >= 920px)"] { view-transition-name: vt-project-primary; } }`,
-		`@media (width < 920px) { [data-fui-vt="vt-project-primary"][data-fui-vt-when="(width < 920px)"] { view-transition-name: vt-project-primary; } }`,
+		`@media (width >= 920px) { [data-cui-vt="vt-project-primary"][data-cui-vt-when="(width >= 920px)"] { view-transition-name: vt-project-primary; } }`,
+		`@media (width < 920px) { [data-cui-vt="vt-project-primary"][data-cui-vt-when="(width < 920px)"] { view-transition-name: vt-project-primary; } }`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("Narrow CSS missing %s:\n%s", want, css)
@@ -274,7 +274,7 @@ func TestNarrowRegionMarkersRender(t *testing.T) {
 	}
 	// No unconditional assignment: it would name BOTH elements at the
 	// matching width and the browser would skip the whole transition.
-	if strings.Contains(css, `[data-fui-vt="vt-project-primary"] {`) {
+	if strings.Contains(css, `[data-cui-vt="vt-project-primary"] {`) {
 		t.Errorf("Narrow must not emit an unconditional name assignment:\n%s", css)
 	}
 }
@@ -297,7 +297,7 @@ func TestVTRegionNilWithoutNarrow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := string(res.HTML); strings.Contains(s, "data-fui-vt-when") {
+	if s := string(res.HTML); strings.Contains(s, "data-cui-vt-when") {
 		t.Errorf("an unconditional transition must carry no when-attribute:\n%s", s)
 	}
 }

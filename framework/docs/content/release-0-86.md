@@ -92,11 +92,11 @@ What this changes for an app:
   its markers, the modules it needs first (`registry.Requires`) and the
   clicks or keys to hold while it loads (`registry.Interactions`). The
   kernel loads it when a marker appears. The old kernel modules are
-  retired (listed below), and their `data-fui-*` hooks became
+  retired (listed below), and their `data-cui-*` hooks became
   `data-hui-*`.
 - **Wiring is typed.** `ui.Button`'s `Action` and `ui.Form`'s `Request`
-  admit a fixed set of `data-fui-*` keys and check each value. Any other
-  `data-fui-*` key in `ExtraAttrs` panics at render and names the key.
+  admit a fixed set of `data-cui-*` keys and check each value. Any other
+  `data-cui-*` key in `ExtraAttrs` panics at render and names the key.
   Build wiring with `interactive.Post(...).OnSuccess(...).Attrs()`.
 - **Words are typed.** `headless.Strings` holds one field per sentence a
   component says. `ui.StringsFor(ctx)` fills it from the `i18nui` catalog
@@ -147,19 +147,19 @@ The hooks moved with the modules. A few that apps wrote by hand:
 
 | Old | New |
 | --- | --- |
-| `data-fui-menu-*`, `data-fui-tabs`, `data-fui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
-| `data-fui-disclosure`, `data-fui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
+| `data-cui-menu-*`, `data-cui-tabs`, `data-cui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
+| `data-cui-disclosure`, `data-cui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
 | `data-fui-pane-open`, `-close`, `-key`, `-swap` | `data-hui-pane-open-control`, `-close`, `-key`, `-swap` |
-| `data-fui-pane-deeplink`, `data-fui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
-| `data-fui-sidebar*`, `data-fui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
-| `data-fui-tree-toggle`, `data-fui-multiselect*`, `data-fui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
+| `data-fui-pane-deeplink`, `data-cui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
+| `data-cui-sidebar*`, `data-cui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
+| `data-cui-tree-toggle`, `data-cui-multiselect*`, `data-cui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
 | `data-when-name`, `data-when-value` | `data-hui-when`, `data-hui-when-value` |
 
 ### Components whose markup or config changed
 
 | Component | What changed |
 | --- | --- |
-| `ui.Button`, `ui.LinkButton` | `disabled` is `ButtonConfig.Disabled`; an unknown `data-fui-*` key panics. A link takes only `-push-state`, `-prefetch`, `-open` and `-deeplink` |
+| `ui.Button`, `ui.LinkButton` | `disabled` is `ButtonConfig.Disabled`; an unknown `data-cui-*` key panics. A link takes only `-push-state`, `-prefetch`, `-open` and `-deeplink` |
 | `ui.Form` | `ExtraAttrs` wiring goes through `Request`; an action the anchor policy refuses panics (it used to become `#`); with `Errors` set it needs `ID` |
 | `FormConfig.Summary` | A row inside `ui.ValidationSummary`, rendered even when `Errors` is empty (it was a Callout's whole body) |
 | `ui.ValidationSummary` | `ID` is required |
@@ -193,8 +193,8 @@ The hooks moved with the modules. A few that apps wrote by hand:
 Every class the kit emits starts with `fui-`: `fui-button`, `fui-card`,
 `fui-form`, `fui-data-table`, `fui-hero`, and so on through the catalog.
 Two things keep their old names: the registered sheet names, and the
-`data-fui-comp="ui-*"` markers that load those sheets. A card carries
-`data-fui-comp="ui-card"` and `class="fui-card"`.
+`data-cui-comp="ui-*"` markers that load those sheets. A card carries
+`data-cui-comp="ui-card"` and `class="fui-card"`.
 
 Hand-written markup on an old class renders unstyled. Call the
 component instead of copying its markup. CSS that selected `.ui-*`
@@ -304,8 +304,8 @@ An owned sheet works like this:
   `x.Style.Scope(root)` for a component root, or `App.WithStyle` for the
   one `app.style.css` that covers every page.
 - The compiled sheet is wrapped in `@scope` from the owner's
-  `data-fui-scope` root. The scope stops at a nested owner and at kit
-  markup marked `data-fui-internal`, so an owner styles the content it
+  `data-cui-scope` root. The scope stops at a nested owner and at kit
+  markup marked `data-cui-internal`, so an owner styles the content it
   passes into a component and never the component's insides.
 - Kit rules that place a component's root (margin, size, display, grid
   and flex placement) are lowered with `:where()`. An owned rule aimed at

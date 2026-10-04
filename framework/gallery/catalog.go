@@ -1146,7 +1146,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen, without a full page reload. The server owns the state; the browser just displays the latest value."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("Put data-fui-rpc on a button and data-fui-rpc-signal on the same element. Add a data-fui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
+					render.Text("Put data-cui-rpc on a button and data-cui-rpc-signal on the same element. Add a data-cui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Like")),
@@ -1163,7 +1163,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 							html.Div(html.DivConfig{Class: "demo-row"},
 								btn,
 								interactive.BindText(render.Tag("span", map[string]string{
-									"data-fui-flash-on-update": "",
+									"data-cui-flash-on-update": "",
 									"class":                    "demo-signal-out",
 								}, render.Text("0")), "demo-counter"),
 							),
@@ -1183,7 +1183,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				effect:     interactive.OpenWidget,
 				effectArg:  "demo-result-modal",
 				why:        "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
-				how:        "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
+				how:        "Add data-cui-rpc-open=\"widget-name\" alongside data-cui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Confirm")),
     interactive.Post("/api/action").
@@ -1215,7 +1215,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					render.Text("A comment form, a search box, a quick-add field: submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
 				),
 				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("Put data-fui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-fui-rpc-reset to clear the form after success so the user can submit again."),
+					render.Text("Put data-cui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-cui-rpc-reset to clear the form after success so the user can submit again."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnSubmit(
     render.Tag("form", nil,
@@ -1255,7 +1255,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				effect:     interactive.Navigate,
 				effectArg:  "/components/button",
 				why:        "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
-				how:        "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
+				how:        "Add data-cui-rpc-navigate=\"/path\" alongside data-cui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Create Project")),
     interactive.Post("/api/projects").
@@ -1391,7 +1391,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"modal", "Modal", "Overlays", "Center-mounted dialog: backdrop, focus trap, Escape, URL deeplinking.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open modal", Variant: ui.ButtonPrimary}), "site-demo-modal"),
-			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-fui-deeplink": "user_id=42"}}), "site-demo-modal"),
+			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-cui-deeplink": "user_id=42"}}), "site-demo-modal"),
 		)
 	}},
 	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel: same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
@@ -1400,7 +1400,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},
-	{"toast", "Toast", "Feedback", "Stacked notifications: client (data-fui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
+	{"toast", "Toast", "Feedback", "Stacked notifications: client (data-cui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary}), interactive.Toast{Variant: "success", Title: "Saved", Body: "Triggered from JS, no round-trip.", TTLMs: 5000}),
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary}), interactive.Toast{Variant: "info", Title: "FYI", Body: "Body text + five-second TTL.", TTLMs: 5000}),
@@ -1655,17 +1655,17 @@ widget.MountBuilder(r, preset.Modal("user-edit").
     Hidden().DeepLink("modal", "user-edit").DeepLinkParam("user_id").
     Slot("body", &UserEditBody{}))
 // Trigger anywhere:
-<button data-fui-open="user-edit" data-fui-deeplink="user_id=42">Edit</button>`,
+<button data-cui-open="user-edit" data-cui-deeplink="user_id=42">Edit</button>`,
 
 	"drawer": `widget.MountBuilder(r, preset.Drawer("filters").Hidden().Slot("body", &FilterForm{}))
-<button data-fui-open="filters">Open drawer</button>`,
+<button data-cui-open="filters">Open drawer</button>`,
 
 	"bottomsheet": `widget.MountBuilder(r, preset.BottomSheet("share").Hidden().Slot("body", shareBody{}))
-<button data-fui-open="share">Share</button>`,
+<button data-cui-open="share">Share</button>`,
 
-	"toast": `// Client: any element carries data-fui-toast="<json>".
-<button data-fui-toast='{"variant":"success","title":"Saved"}'>Save</button>
-// Server: any data-fui-rpc handler attaches the header on 2xx.
+	"toast": `// Client: any element carries data-cui-toast="<json>".
+<button data-cui-toast='{"variant":"success","title":"Saved"}'>Save</button>
+// Server: any data-cui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
 
 	"sortablelist": `ui.SortableList(ui.SortableListConfig{

@@ -83,7 +83,7 @@ func TestButtonVariantCSSInSheet(t *testing.T) {
 }
 
 func TestCustomVariantStylesToggleAction(t *testing.T) {
-	// ToggleAction's root is data-fui-comp="ui-toggle-action" wearing
+	// ToggleAction's root is data-cui-comp="ui-toggle-action" wearing
 	// the button's own classes. Registered variant rules are plain
 	// class rules emitted once, so they must match under that marker
 	// exactly as they do under ui-button's.
@@ -92,7 +92,7 @@ func TestCustomVariantStylesToggleAction(t *testing.T) {
 		Endpoint: "/x", IdleLabel: "A", CommittedLabel: "B",
 		Variant: testBrandVariant, Size: testHeroSize,
 	}))
-	if !strings.Contains(h, `data-fui-comp="ui-toggle-action"`) ||
+	if !strings.Contains(h, `data-cui-comp="ui-toggle-action"`) ||
 		!strings.Contains(h, "fui-button--brand") {
 		t.Fatalf("ToggleAction markup missing marker/variant class:\n%s", h)
 	}
@@ -105,7 +105,7 @@ func TestCustomVariantStylesToggleAction(t *testing.T) {
 		}
 	}
 	// The marker-scoped dual copies are gone: one rule, one spelling.
-	if strings.Contains(css, `[data-fui-comp="ui-toggle-action"].fui-button--brand`) {
+	if strings.Contains(css, `[data-cui-comp="ui-toggle-action"].fui-button--brand`) {
 		t.Error("the toggle-action dual scope still ships; the plain class rule already matches it")
 	}
 }
@@ -229,7 +229,7 @@ func TestCardRegisteredVariantRenders(t *testing.T) {
 	mustContain(t, h, "fui-card--promo")
 	css := cardCSS(style.DefaultTheme())
 	for _, want := range []string{
-		`[data-fui-comp="ui-card"].fui-card--promo`,
+		`[data-cui-comp="ui-card"].fui-card--promo`,
 		".fui-card--promo:hover",
 	} {
 		if !strings.Contains(css, want) {
@@ -260,11 +260,11 @@ func TestStatusVariantCSSInAllSheets(t *testing.T) {
 		css   string
 		want  string
 	}{
-		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].fui-badge--beta`},
+		{"ui-badge", statusBadgeCSS(th), `[data-cui-comp="ui-badge"].fui-badge--beta`},
 		{"ui-badge", statusBadgeCSS(th), "color-mix(in oklab, var(--color-primary) 15%"},
-		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].fui-tag--beta`},
+		{"ui-tag", tagCSS(th), `[data-cui-comp="ui-tag"].fui-tag--beta`},
 		{"ui-callout", calloutCSS(th), "--ui-callout-accent: var(--color-primary)"},
-		{"ui-notification", notificationCSS(th), `[data-fui-comp="ui-notification"].fui-notification--beta`},
+		{"ui-notification", notificationCSS(th), `[data-cui-comp="ui-notification"].fui-notification--beta`},
 	}
 	for _, c := range cases {
 		if !strings.Contains(c.css, c.want) {

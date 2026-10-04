@@ -16,12 +16,12 @@ import (
 // widget-scoped RPC path must honor every primitive the global
 // dispatchRPC does, because both now call ONE implementation exposed
 // on window.__gofastr.dispatchRPC. The widget path historically
-// forked and drifted, data-fui-confirm was silently ignored (a
+// forked and drifted, data-cui-confirm was silently ignored (a
 // destructive delete in a drawer fired unconfirmed) and a GET-method
 // form serialized a JSON body, which fetch(GET, body) rejects.
 
 // widgetConfirmerCatalog is a non-hidden widget whose chrome carries a
-// data-fui-confirm RPC button.
+// data-cui-confirm RPC button.
 func widgetConfirmerCatalog() string {
 	b, _ := json.Marshal([]map[string]any{{
 		"hidden": false,
@@ -35,7 +35,7 @@ func widgetConfirmerCatalog() string {
 	return string(b)
 }
 
-// TestWidgetRPC_ConfirmHonored: inside a widget, a data-fui-confirm
+// TestWidgetRPC_ConfirmHonored: inside a widget, a data-cui-confirm
 // button MUST call window.confirm and ABORT on cancel. Before the
 // shared-dispatch fix the widget's local dispatchRPC ignored the
 // attribute entirely, so a destructive RPC fired unconfirmed.
@@ -51,7 +51,7 @@ func TestWidgetRPC_ConfirmHonored(t *testing.T) {
 		},
 		"/core-ui/widget/confirmer/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="confirmer"><button id="del" data-fui-rpc="/rpc/del" data-fui-confirm="Delete this?">Delete</button></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="confirmer"><button id="del" data-cui-rpc="/rpc/del" data-cui-confirm="Delete this?">Delete</button></div>`)
 		},
 		"/core-ui/widget/confirmer/style.css": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
@@ -83,7 +83,7 @@ func TestWidgetRPC_ConfirmHonored(t *testing.T) {
 	h := delHits
 	mu.Unlock()
 	if confirmCalls != 1 {
-		t.Errorf("cancel: window.confirm called %d time(s), want 1 — data-fui-confirm not consulted inside widget", confirmCalls)
+		t.Errorf("cancel: window.confirm called %d time(s), want 1 — data-cui-confirm not consulted inside widget", confirmCalls)
 	}
 	if h != 0 {
 		t.Errorf("cancel: destructive /rpc/del fired (%d hit(s)) despite confirm returning false — confirm ignored inside widget", h)
@@ -135,7 +135,7 @@ func TestWidgetRPC_GetFormEncodesToQuery(t *testing.T) {
 		},
 		"/core-ui/widget/getter/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="getter"><form id="gf" data-fui-rpc="/rpc/get" data-fui-rpc-method="GET"><input name="q" value="hello"><button type="submit" id="go">Go</button></form></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="getter"><form id="gf" data-cui-rpc="/rpc/get" data-cui-rpc-method="GET"><input name="q" value="hello"><button type="submit" id="go">Go</button></form></div>`)
 		},
 		"/core-ui/widget/getter/style.css": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/css")

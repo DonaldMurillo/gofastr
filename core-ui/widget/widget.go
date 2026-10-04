@@ -43,7 +43,7 @@ const (
 
 // SignalSource produces JSON-serializable values that flow to the
 // browser as named signals. The runtime polls (or receives via SSE)
-// and pushes new values into [data-fui-signal="<name>"] html.
+// and pushes new values into [data-cui-signal="<name>"] html.
 type SignalSource interface {
 	Read() (any, error)
 }
@@ -56,7 +56,7 @@ func (f SignalFunc) Read() (any, error) { return f() }
 // RPCEndpoint is a server-side HTTP handler the widget can invoke
 // from the client (typically via a button click or form submit). The
 // runtime POSTs to Path. (Routing the response body into a named signal is
-// done client-side via the data-fui-rpc-signal DOM attribute on the trigger,
+// done client-side via the data-cui-rpc-signal DOM attribute on the trigger,
 // not via this struct.)
 type RPCEndpoint struct {
 	Method  string // "POST" by default
@@ -157,7 +157,7 @@ type Definition struct {
 	DescribedBy string
 
 	// Hidden=true means the widget is registered but NOT auto-mounted
-	// on page load. A button with data-fui-open="<name>" calls
+	// on page load. A button with data-cui-open="<name>" calls
 	// __gofastr.openWidget(name) to mount it on demand. Use for
 	// modals + drawers that should appear in response to user action.
 	Hidden bool
@@ -169,7 +169,7 @@ type Definition struct {
 	// pushState so refresh/share/back-button all stay consistent.
 	//
 	// Empty (the default) disables deep-linking, the widget remains
-	// purely click-driven via data-fui-open.
+	// purely click-driven via data-cui-open.
 	//
 	// Only meaningful for Hidden widgets (modal / drawer). Toasts and
 	// dropdowns intentionally do NOT support deep links.
@@ -243,7 +243,7 @@ type Definition struct {
 // (Position, Slots, RPCs, Skeleton, polling, etc.). The newer
 // core-ui/registry handles per-component CSS for plain styled
 // components and is fetched by the runtime as
-// window.__gofastr_catalog. Both share the data-fui-style="<name>"
+// window.__gofastr_catalog. Both share the data-cui-style="<name>"
 // link dedup key on the client, so a widget and a registered component
 // can't collide on names.
 //
@@ -458,7 +458,7 @@ func (b *Builder) LabelledBy(id string) *Builder { b.def.LabelledBy = id; return
 func (b *Builder) DescribedBy(id string) *Builder { b.def.DescribedBy = id; return b }
 
 // Hidden marks the widget as registered-but-not-auto-mounted. Open
-// it from a button with data-fui-open="<name>".
+// it from a button with data-cui-open="<name>".
 func (b *Builder) Hidden() *Builder { b.def.Hidden = true; return b }
 
 // Pages scopes the widget to exact path matches. The widget is

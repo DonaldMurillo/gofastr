@@ -10,7 +10,7 @@ import (
 func TestStatusPillRendersLabelAndMarker(t *testing.T) {
 	h := StatusPill(StatusPillConfig{Label: "Get started · v0.0.4"})
 	for _, want := range []string{
-		`data-fui-comp="ui-status-pill"`,
+		`data-cui-comp="ui-status-pill"`,
 		"Get started · v0.0.4",
 	} {
 		if !strings.Contains(string(h), want) {
@@ -75,7 +75,7 @@ func TestStatusPillHonorsHidden(t *testing.T) {
 	css := statusPillCSS(style.Theme{})
 	// The plain hidden state is display: none; hidden="until-found"
 	// stays out of the rule so the UA's revealable state survives.
-	if !strings.Contains(css, `[data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
+	if !strings.Contains(css, `[data-cui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
   display: none;
 }`) {
 		t.Fatalf("status pill CSS has no [hidden] rule that spares until-found:\n%s", css)

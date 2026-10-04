@@ -14,7 +14,7 @@ import (
 // reference scan cannot decompose. A marketing page or a blog ships
 // no route.* seed at all.
 func TestRouteSeedDueGatesTheWriters(t *testing.T) {
-	plainHTML := `<span data-fui-signal="cart.n">0</span>`
+	plainHTML := `<span data-cui-signal="cart.n">0</span>`
 
 	ctx := WithValues(context.Background())
 	for k := range SeedFor(ctx, plainHTML) {
@@ -33,7 +33,7 @@ func TestRouteSeedDueGatesTheWriters(t *testing.T) {
 	}
 
 	// The computed-deps mention.
-	htmlComputed := `<span data-fui-computed="crumbs" data-fui-computed-deps="route.path,cart.n">x</span>`
+	htmlComputed := `<span data-cui-computed="crumbs" data-cui-computed-deps="route.path,cart.n">x</span>`
 	if _, ok := SeedFor(ctx, htmlComputed)["route.path"]; !ok {
 		t.Error("seed missing route.path for a computed naming it in its deps list")
 	}

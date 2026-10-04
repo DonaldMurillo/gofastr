@@ -31,7 +31,7 @@ import (
 //
 // SSR shape (the headless action contract):
 //
-//	<button data-fui-comp="ui-optimistic-action"
+//	<button data-cui-comp="ui-optimistic-action"
 //	        data-hui-action="" data-hui-action-endpoint="/follow"
 //	        data-hui-action-failed="…"
 //	        data-state="idle"
@@ -82,7 +82,7 @@ type OptimisticActionConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the button's root
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-* (endpoint and method wiring),
+	// (use Class / ID), data-cui-* (endpoint and method wiring),
 	// type, and data-state — the optimistic lifecycle contract.
 	ExtraAttrs html.Attrs
 
@@ -148,20 +148,20 @@ var optimisticActionClasses = headless.Classes{
 }
 
 var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-optimistic-action"] {
+	return `[data-cui-comp="ui-optimistic-action"] {
   /* Inherits .fui-button base; override only what the optimistic flip needs. */
   position: relative;
   transition: background-color 120ms ease, color 120ms ease;
 }
 /* Committed state — slightly darker background to signal "done". */
-[data-fui-comp="ui-optimistic-action"][data-state="committed"] {
+[data-cui-comp="ui-optimistic-action"][data-state="committed"] {
   background: var(--color-success, #16A34A);
   color: var(--color-primary-fg, #FFFFFF);
   border-color: var(--color-success, #16A34A);
 }
 /* Pending state — same look as committed (optimistic) plus a subtle
    busy cursor while the RPC is in flight. */
-[data-fui-comp="ui-optimistic-action"][data-state="pending"] {
+[data-cui-comp="ui-optimistic-action"][data-state="pending"] {
   cursor: progress;
   background: var(--color-success, #16A34A);
   color: var(--color-primary-fg, #FFFFFF);
@@ -169,7 +169,7 @@ var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(
 }
 /* Roll-back animation: a tiny shake when the server rejects the
    action. Pure CSS, respects prefers-reduced-motion. */
-[data-fui-comp="ui-optimistic-action"][data-state="error"] {
+[data-cui-comp="ui-optimistic-action"][data-state="error"] {
   animation: ui-optimistic-action-shake 0.4s ease-in-out;
 }
 @keyframes ui-optimistic-action-shake {
@@ -180,7 +180,7 @@ var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(
   80% { transform: translateX(3px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-optimistic-action"][data-state="error"] { animation: none; }
+  [data-cui-comp="ui-optimistic-action"][data-state="error"] { animation: none; }
 }
 `
 })

@@ -29,7 +29,7 @@ For every interactive element you find on every page you visit:
   once or ten times? Did a button stay disabled? Did a modal flicker open
   and closed?
 - **Double-click**: does double-clicking a "Submit" button submit twice?
-  Does a `data-fui-rpc` button double-fire its RPC?
+  Does a `data-cui-rpc` button double-fire its RPC?
 - **Drag-without-target**: start a drag on text, table cells, draggable
   elements. Does the page leak a phantom drag-over state?
 - **Click during navigation**: fire a SPA link, then within 100ms click
@@ -50,7 +50,7 @@ something breaks or you're confident nothing breaks. Suggested walk:
    links. Take screenshots when something looks wrong.
 2. Walk through the main routes (about, framework-ui, components,
    customers). On each, rage-click every button, link, form control.
-3. Wherever you find a `data-fui-rpc` element, spam it. Use
+3. Wherever you find a `data-cui-rpc` element, spam it. Use
    `browser_evaluate` to count how many actual network requests fired
    (`performance.getEntries().filter(e => e.entryType === 'resource')`).
 4. Wherever you find a `<details>` or dropdown, spam-toggle it. Watch

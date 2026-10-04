@@ -1,6 +1,6 @@
 # Interactive patterns
 
-The runtime ships client-side interactive behavior through `data-fui-*`
+The runtime ships client-side interactive behavior through `data-cui-*`
 attributes on regular HTML elements. No JavaScript is required from the
 application author. The runtime's click delegation, IntersectionObserver,
 and module system handle everything.
@@ -9,7 +9,7 @@ This doc catalogs every interactive pattern the framework provides, grouped
 by whether the behavior is **client-only** (no server round-trip) or
 **RPC-backed** (fires a fetch, updates the page).
 
-Writing the `data-fui-*` attributes by hand instead of using a wrapper
+Writing the `data-cui-*` attributes by hand instead of using a wrapper
 helper? Jump to [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
 It walks a complete example and calls out the four things that trip up
 almost everyone the first time (endpoint registration, the `name`→JSON-key
@@ -28,13 +28,13 @@ provides three mutation primitives triggered by click:
 
 | Attribute | Effect |
 |---|---|
-| `data-fui-signal-set="name:value"` | Sets signal `name` to `value` |
-| `data-fui-signal-inc="name"` | Increments signal `name` by 1, or use `"name:delta"` for another step |
-| `data-fui-signal-toggle="name"` | Flips signal `name` between `"true"` and `"false"` |
+| `data-cui-signal-set="name:value"` | Sets signal `name` to `value` |
+| `data-cui-signal-inc="name"` | Increments signal `name` by 1, or use `"name:delta"` for another step |
+| `data-cui-signal-toggle="name"` | Flips signal `name` between `"true"` and `"false"` |
 
-Any element carrying a `data-fui-signal` attribute renders the current
+Any element carrying a `data-cui-signal` attribute renders the current
 value of that signal as its text content. The runtime updates it on
-mutation and flashes a brief `.fui-flash` highlight (skipped when
+mutation and flashes a brief `.cui-flash` highlight (skipped when
 `prefers-reduced-motion: reduce` is active).
 
 Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
@@ -43,7 +43,7 @@ Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
 ### Counter
 
 `framework/ui.Counter` renders a numeric counter with +/− buttons.
-Uses `data-fui-signal-inc`. Configurable `Step` for
+Uses `data-cui-signal-inc`. Configurable `Step` for
 non-unit increments.
 
 ### Tabs
@@ -126,7 +126,7 @@ caret where the reader left it.
 
 `framework/ui.TextArea` accepts `Autogrow: true`. The runtime module
 (`textarea.js`) listens for input and resizes the textarea to fit its
-content. Triggered by the `data-fui-autogrow` attribute.
+content. Triggered by the `data-cui-autogrow` attribute.
 
 ### Toast notifications
 
@@ -168,8 +168,8 @@ updates.
 fires an RPC. The `Action` specifies the HTTP method, path, and
 optional effects (set signal, open widget, navigate).
 
-Attributes injected: `data-fui-rpc`, `data-fui-rpc-method`,
-`data-fui-rpc-signal`.
+Attributes injected: `data-cui-rpc`, `data-cui-rpc-method`,
+`data-cui-rpc-signal`.
 
 ### OnSubmit (form → server → signal)
 
@@ -177,8 +177,8 @@ Attributes injected: `data-fui-rpc`, `data-fui-rpc-method`,
 fires via `fetch()` instead of a full-page reload. The response body
 writes into the named signal.
 
-Attributes injected: `data-fui-rpc` (on the form element),
-`data-fui-rpc-trigger="submit"`.
+Attributes injected: `data-cui-rpc` (on the form element),
+`data-cui-rpc-trigger="submit"`.
 
 ### Live Search (debounced input → RPC)
 
@@ -186,8 +186,8 @@ Attributes injected: `data-fui-rpc` (on the form element),
 so typing fires debounced RPCs. The input event triggers the fetch
 after the specified debounce interval (default 300ms).
 
-Attributes injected: `data-fui-rpc-trigger="input"`,
-`data-fui-rpc-debounce-ms` (milliseconds; default 300).
+Attributes injected: `data-cui-rpc-trigger="input"`,
+`data-cui-rpc-debounce-ms` (milliseconds; default 300).
 
 ### Optimistic Update (immediate visual + background RPC)
 
@@ -232,8 +232,8 @@ button renders; see [runtime-contract](runtime-contract.md).
 
 `interactive.EditToggle(html, signalName)` and
 `interactive.CancelEdit(html, signalName)` provide semantic wrappers
-for click-to-edit patterns. `EditToggle` uses `data-fui-signal-toggle`
-to enter edit mode; `CancelEdit` uses `data-fui-signal-set="name:false"`
+for click-to-edit patterns. `EditToggle` uses `data-cui-signal-toggle`
+to enter edit mode; `CancelEdit` uses `data-cui-signal-set="name:false"`
 to close it. The actual save uses `interactive.OnSubmit`.
 
 ### Navigate (button → server → SPA page change)
@@ -257,7 +257,7 @@ func createOrder(w http.ResponseWriter, r *http.Request) {
 ```
 
 The two compose: `InvalidateScreens` evicts, `Navigate` (or
-`data-fui-rpc-navigate`) fetches the destination fresh. Eviction alone
+`data-cui-rpc-navigate`) fetches the destination fresh. Eviction alone
 never re-renders the visible page. Selector rules and scope are in
 [the runtime contract](runtime-contract.md).
 
@@ -275,14 +275,14 @@ interactive.OnClick(deleteBtn,
 )
 ```
 
-Attribute injected: `data-fui-confirm="message"`.
+Attribute injected: `data-cui-confirm="message"`.
 
 The runtime honors the attribute on any form submit (native POST, SPA, or
 RPC) and on RPC triggers; on a form, a submit button's message takes
 precedence over the form's.
 
 Menu items have the same gate as a config field: `ui.MenuItem.Confirm`
-emits `data-fui-confirm` alongside the item's RPC wiring (ignored on
+emits `data-cui-confirm` alongside the item's RPC wiring (ignored on
 non-RPC items — the gate covers form submits and RPC triggers, and a
 plain menu link is neither).
 
@@ -308,14 +308,14 @@ interactive.OnClick(saveBtn,
 )
 ```
 
-Attribute injected: `data-fui-rpc-after-text="text"`.
+Attribute injected: `data-cui-rpc-after-text="text"`.
 
 ### AfterDisable (permanently disable trigger on success)
 
 `interactive.AfterDisable()` sets `aria-disabled="true"` and `disabled` on
 the trigger after a 2xx response. Use with `AfterText` to prevent re-submission.
 
-Attribute injected: `data-fui-rpc-after-disable` (boolean).
+Attribute injected: `data-cui-rpc-after-disable` (boolean).
 
 ### ScrollTo (scroll to newly-added content on success)
 
@@ -331,7 +331,7 @@ interactive.OnClick(addBtn,
 )
 ```
 
-Attribute injected: `data-fui-rpc-scroll-to="selector"`.
+Attribute injected: `data-cui-rpc-scroll-to="selector"`.
 
 ### PushState (update URL without re-fetch on success)
 
@@ -350,7 +350,7 @@ interactive.OnClick(page2Btn,
 )
 ```
 
-Attribute injected: `data-fui-push-state="path"`.
+Attribute injected: `data-cui-push-state="path"`.
 
 
 ---
@@ -366,14 +366,14 @@ using the same code path an RPC signal swap uses.
 Two attributes on the region you want to refresh:
 
 ```html
-<div data-fui-poll="30s" data-fui-poll-src="/islands/orders/today">
+<div data-cui-poll="30s" data-cui-poll-src="/islands/orders/today">
   …initial SSR content…
 </div>
 ```
 
-- `data-fui-poll` is a Go duration (`30s`, `5m`, `1h`). Five seconds
+- `data-cui-poll` is a Go duration (`30s`, `5m`, `1h`). Five seconds
   is the floor.
-- `data-fui-poll-src` is the URL the runtime fetches; the response
+- `data-cui-poll-src` is the URL the runtime fetches; the response
   body replaces the region's `innerHTML`.
 - The interval is jittered, pauses while the tab is hidden, and
   doubles the interval on a failed fetch (capped at 5x the base, reset on the next success).
@@ -507,7 +507,7 @@ server's message when available) for screen-reader users.
 ## Writing a hand-written island, end to end
 
 The wrapper helpers above cover the common cases, but sometimes you write the
-`data-fui-*` attributes by hand: a bespoke widget, a generated screen, a
+`data-cui-*` attributes by hand: a bespoke widget, a generated screen, a
 one-off control. The runtime is happy to drive raw attributes, but four
 things trip up almost everyone the first time. This section walks a complete
 example and calls each one out.
@@ -517,10 +517,10 @@ via an RPC (an in-page state change: an island, **not** a route).
 
 ### 1. Register the endpoint yourself
 
-`data-fui-rpc` is just a string the runtime POSTs to. **Nothing registers
+`data-cui-rpc` is just a string the runtime POSTs to. **Nothing registers
 that route for you.** The auto-wiring you may have seen belongs to
 `widget.Mount` / `widget.MountBuilder`, which register a widget's
-`/style.css`, `/state`, and `/chrome` routes. A *hand-written* `data-fui-rpc`
+`/style.css`, `/state`, and `/chrome` routes. A *hand-written* `data-cui-rpc`
 path has no widget behind it, so you add the handler on the app router:
 
 ```go
@@ -528,7 +528,7 @@ app.Router().Post("/islands/products/filter", http.HandlerFunc(filterProducts))
 ```
 
 Forget this and the click fires a request that 404s, with no compile error
-and nothing in the page to hint at the missing route. If a `data-fui-rpc`
+and nothing in the page to hint at the missing route. If a `data-cui-rpc`
 button "does nothing", check the server log for a 404 first.
 
 ### 2. The JSON key is the input's `name`, not its `id`
@@ -540,8 +540,8 @@ out as `application/json`; see the forms note in
 CSS/labels and never appears in the body.
 
 ```html
-<form data-fui-rpc="/islands/products/filter" data-fui-rpc-method="POST"
-      data-fui-rpc-trigger="input" data-fui-rpc-debounce-ms="1">
+<form data-cui-rpc="/islands/products/filter" data-cui-rpc-method="POST"
+      data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
   <select id="cat" name="category">   <!-- key is "category" (name), not "cat" (id) -->
     <option value="all">All</option>
     <option value="tools">Tools</option>
@@ -565,16 +565,16 @@ in a browser, not just the endpoint in isolation.
 
 ### 3. A `<select>` (or checkbox/radio) needs no `change` trigger
 
-There is deliberately **no `data-fui-rpc-trigger="change"`.** Selects,
+There is deliberately **no `data-cui-rpc-trigger="change"`.** Selects,
 checkboxes, and radios all emit an `input` event on commit in every modern
-browser, so `data-fui-rpc-trigger="input"` already fires for them. Wrap the
-control in a `<form data-fui-rpc … data-fui-rpc-trigger="input">` (as above)
+browser, so `data-cui-rpc-trigger="input"` already fires for them. Wrap the
+control in a `<form data-cui-rpc … data-cui-rpc-trigger="input">` (as above)
 and you're done. Adding a second `change` trigger would be redundant behavior
 for a control the `input` trigger already covers, and the core runtime is
 gzip-budget-locked, so the framework does not ship one.
 
 For a `<select>` the `input`/`change` distinction doesn't matter (both fire
-once, on selection), so set a small debounce, `data-fui-rpc-debounce-ms="1"`,
+once, on selection), so set a small debounce, `data-cui-rpc-debounce-ms="1"`,
 to fire promptly instead of waiting out the 250 ms default meant for
 keystroke typeahead. This recipe is covered end-to-end by
 `TestInputTrigger_SelectFiresRPC` in `core-ui/runtime`.
@@ -622,8 +622,8 @@ design-system **alertdialog** instead: a modal that matches your theme
 and is drivable by tests.
 
 It's the same island contract you already know, composed from two existing
-primitives: the trigger carries `data-fui-open` (open the modal), and the
-modal's Confirm button carries the real `data-fui-rpc`. Cancel just closes;
+primitives: the trigger carries `data-cui-open` (open the modal), and the
+modal's Confirm button carries the real `data-cui-rpc`. Cancel just closes;
 only Confirm dispatches. No new runtime attributes, no core JS.
 
 ```go
@@ -679,7 +679,7 @@ ui.AvatarGroup(ui.AvatarGroupConfig{
 
 To make the roster **live**, feed the group's HTML through a signal,
 the same pattern NotificationBell uses: render the `AvatarGroup` inside
-a `data-fui-signal="…"` `data-fui-signal-mode="html"` region and push
+a `data-cui-signal="…"` `data-cui-signal-mode="html"` region and push
 new HTML when the roster changes (via an RPC response signal or an
 island re-render). The status values are just data you supply.
 
@@ -753,14 +753,14 @@ search := interactive.LiveSearch(
 
 `.WithBody(json)` attaches a static JSON body to a non-form RPC (a button
 click with no surrounding `<form>`). It validates the JSON at build time.
-Attributes injected: `data-fui-rpc-body`.
+Attributes injected: `data-cui-rpc-body`.
 
 ```go
 interactive.OnClick(btn,
     interactive.Post("/api/transition/42").WithBody(`{"status":"shipped"}`))
 ```
 
-`.Attrs()` returns the `data-fui-*` attributes an `Action` would inject, as a
+`.Attrs()` returns the `data-cui-*` attributes an `Action` would inject, as a
 `map[string]string`. Use it to merge RPC wiring into an existing attribute map
 (a `render.Tag`/`ExtraAttrs` map) so the renderer's sorted output stays
 byte-identical. Prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
@@ -782,11 +782,11 @@ del := ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger,
 ### Click-to-open triggers and toasts
 
 `OpenOnClick` opens a registered widget on click (no RPC). Attributes
-injected: `data-fui-open`. Distinct from the `OpenWidget` effect, which opens
-a widget only after a successful RPC (`data-fui-rpc-open`).
+injected: `data-cui-open`. Distinct from the `OpenWidget` effect, which opens
+a widget only after a successful RPC (`data-cui-rpc-open`).
 
 `ToastOnClick` fires a toast on click. Attributes injected:
-`data-fui-toast` (compact JSON of the non-zero `Toast` fields: `variant`,
+`data-cui-toast` (compact JSON of the non-zero `Toast` fields: `variant`,
 `title`, `body`, `stack`, `ttl`).
 
 <!-- gofastr:compile
@@ -814,8 +814,8 @@ presence). Attributes injected: `data-hui-pane-open-control`
 
 `BindHTML`, `BindText`, and `BindAttr` wrap an island content region so its
 content is driven by a named client signal (the value an RPC writes via
-`SetSignal`). They inject `data-fui-signal` plus `data-fui-signal-mode`
-(`html` / `text` / `attr`); `BindAttr` also injects `data-fui-signal-attr`.
+`SetSignal`). They inject `data-cui-signal` plus `data-cui-signal-mode`
+(`html` / `text` / `attr`); `BindAttr` also injects `data-cui-signal-attr`.
 The names mirror `core-ui/store`'s typed `Slice.Bind*` methods: reach for a
 `store.Slice` when the signal is seeded server-side and read by typed code;
 reach for these wrappers when binding an island HTML region to an RPC signal.
@@ -834,14 +834,14 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   rollback vs authoritative refresh, and the seven composed recipes.
 - [`docs/ui-new-components.md`](ui-new-components.md): full component catalog.
 - [`docs/widgets.md`](widgets.md): widget framework (Modal, Drawer, Popover mounts).
-- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-fui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
+- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-cui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
 - [`docs/ui-getting-started.md`](ui-getting-started.md): first-time UI setup.
 
 ## Common mistakes
 
-- **Assuming a hand-written `data-fui-rpc` route is auto-registered.**
+- **Assuming a hand-written `data-cui-rpc` route is auto-registered.**
   Only `widget.Mount` wires routes automatically (for a widget's own
-  style/state/chrome). A raw `data-fui-rpc="/x"` you write by hand needs
+  style/state/chrome). A raw `data-cui-rpc="/x"` you write by hand needs
   its own `app.Router().Post("/x", …)`. Otherwise the click 404s silently.
   See [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
 - **Decoding the RPC body by the input's `id`.** The runtime keys the JSON
@@ -856,15 +856,15 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   returned HTML. Duplicated math drifts from the server's the first
   time either changes.
 - **Treating signals as typed values.** Signals are strings stored in
-  the DOM: `data-fui-signal-toggle` flips between the strings `"true"`
-  and `"false"`, and `data-fui-signal-inc` parses-then-stringifies.
+  the DOM: `data-cui-signal-toggle` flips between the strings `"true"`
+  and `"false"`, and `data-cui-signal-inc` parses-then-stringifies.
   Compare against string values (in CSS attribute selectors too), not
   booleans or numbers.
 - **Using SSE to deliver an action's response.** SSE is push-only.
   It carries background events for *other* clients. The result of a user action
-  arrives in the RPC response itself (`data-fui-rpc-signal`, island
+  arrives in the RPC response itself (`data-cui-rpc-signal`, island
   swap), never via the event stream.
-- **Inventing a new `data-fui-*` attribute without updating the
+- **Inventing a new `data-cui-*` attribute without updating the
   contract.** Every attribute the runtime reads must land in
   `core-ui/ARCHITECTURE.md` and the runtime test suite. Undocumented
   attributes are drift the next author can't discover.

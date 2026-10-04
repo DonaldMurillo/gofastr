@@ -8,11 +8,11 @@ import (
 )
 
 func TestTextGlobCrossesDirs(t *testing.T) {
-	top := "// data-fui-signal\n"
-	deep := "var x = 'data-fui-signal'\n"
+	top := "// data-cui-signal\n"
+	deep := "var x = 'data-cui-signal'\n"
 	n := &upgrade.Note{Find: upgrade.Find{Text: []upgrade.TextMatch{{
 		Glob:  "**/*.js",
-		Match: regexp.MustCompile(`data-fui-signal`),
+		Match: regexp.MustCompile(`data-cui-signal`),
 	}}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
 		"main.go":           "package main\n\nfunc main() {}\n",
@@ -21,8 +21,8 @@ func TestTextGlobCrossesDirs(t *testing.T) {
 	}), n)
 	// Line-start column: the matcher matches a line, not a position.
 	wantHits(t, res, n,
-		"scripts/deep/r.js:1:1 text data-fui-signal",
-		"top.js:1:1 text data-fui-signal")
+		"scripts/deep/r.js:1:1 text data-cui-signal",
+		"top.js:1:1 text data-cui-signal")
 }
 
 func TestTextNeverGoOrCSS(t *testing.T) {
@@ -30,11 +30,11 @@ func TestTextNeverGoOrCSS(t *testing.T) {
 	// matcher never scans either kind, whatever the glob says.
 	n := &upgrade.Note{Find: upgrade.Find{Text: []upgrade.TextMatch{{
 		Glob:  "**/*",
-		Match: regexp.MustCompile(`data-fui-signal`),
+		Match: regexp.MustCompile(`data-cui-signal`),
 	}}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
-		"main.go": "package main\n\n// data-fui-signal\nfunc main() {}\n",
-		"s.css":   "/* data-fui-signal */\n",
+		"main.go": "package main\n\n// data-cui-signal\nfunc main() {}\n",
+		"s.css":   "/* data-cui-signal */\n",
 	}), n)
 	wantHits(t, res, n)
 }

@@ -36,7 +36,7 @@ type Link struct {
 	Label, Href string
 	// Section keeps the link current on every page under Href (Help
 	// stays lit on /help/billing), through the runtime's
-	// data-fui-match-prefix.
+	// data-cui-match-prefix.
 	Section bool
 }
 
@@ -73,7 +73,7 @@ func Render(cfg Config) render.HTML {
 		for _, l := range cfg.Links {
 			var attrs html.Attrs
 			if l.Section {
-				attrs = html.Attrs{"data-fui-match-prefix": ""}
+				attrs = html.Attrs{"data-cui-match-prefix": ""}
 			}
 			out = append(out, html.Link(html.LinkConfig{Href: l.Href, Text: l.Label, ExtraAttrs: attrs}))
 		}

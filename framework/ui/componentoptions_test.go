@@ -215,9 +215,9 @@ func TestCompilerEmitsOptionsInsideScopeBlocks(t *testing.T) {
 	// Light and both dark scope blocks each re-declare the options:
 	// every boundary is where the var() references must compute.
 	for _, probe := range []struct{ block, opener string }{
-		{"light", ".fui-theme-" + ref.Hash() + " {\n"},
-		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash() + " {\n"},
-		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + ref.Hash() + " {\n"},
+		{"light", ".cui-theme-" + ref.Hash() + " {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .cui-theme-" + ref.Hash() + " {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + ref.Hash() + " {\n"},
 	} {
 		i := strings.Index(css, probe.opener)
 		if i < 0 {

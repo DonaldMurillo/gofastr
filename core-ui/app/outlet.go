@@ -63,7 +63,7 @@ type OutletOptions struct {
 
 // validOutletName reports whether name is a legal outlet name:
 // letters, digits, '-' and '_' (DESIGN "API"). The name lands in a
-// data-fui-* attribute value and a "#" address, so spaces, '#' and
+// data-cui-* attribute value and a "#" address, so spaces, '#' and
 // '~' are refused outright rather than escaped.
 func validOutletName(name string) bool {
 	if name == "" {

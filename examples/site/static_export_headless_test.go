@@ -7,8 +7,8 @@ package main
 // option variables — at :root (the floor) and inside every theme scope.
 //
 // The newsletter POST is a server-backed action: on the export the page is
-// static-mode (data-fui-static on <html>), where the runtime answers a
-// data-fui-rpc submit with the framework's "needs the Go server" notice
+// static-mode (data-cui-static on <html>), where the runtime answers a
+// data-cui-rpc submit with the framework's "needs the Go server" notice
 // instead of a dead request. The test pins both halves of that contract:
 // the static marker is present, and the form's island wiring is what the
 // notice keys on.
@@ -45,14 +45,14 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 			if !strings.Contains(html, c.ref) {
 				t.Errorf("exported %s page does not carry its theme wrapper class %s", c.seg, c.ref)
 			}
-			if !strings.Contains(html, `data-fui-static`) {
-				t.Error("exported page is not in static mode: no data-fui-static marker, so server-backed actions would fire dead requests")
+			if !strings.Contains(html, `data-cui-static`) {
+				t.Error("exported page is not in static mode: no data-cui-static marker, so server-backed actions would fire dead requests")
 			}
 			if !strings.Contains(html, landingSubscribePath) {
 				t.Errorf("exported page lost the newsletter island wiring for %s — the runtime's \"needs the server\" notice keys on it", landingSubscribePath)
 			}
-			if !strings.Contains(html, `data-fui-rpc`) {
-				t.Error("exported page carries no data-fui-rpc marker — without it the static-mode runtime cannot recognize the form as an RPC and show the \"needs the server\" notice")
+			if !strings.Contains(html, `data-cui-rpc`) {
+				t.Error("exported page carries no data-cui-rpc marker — without it the static-mode runtime cannot recognize the form as an RPC and show the \"needs the server\" notice")
 			}
 			// Under --export-base /gofastr every root-absolute URL the
 			// page references is rewritten to resolve under the mount.
@@ -114,7 +114,7 @@ func withoutOptionLines(block string) string {
 	return strings.Join(keep, "\n")
 }
 
-// scopedCSSBlock extracts the `{ … }` body of the first `.fui-theme-<ref>`
+// scopedCSSBlock extracts the `{ … }` body of the first `.cui-theme-<ref>`
 // selector block in a stylesheet. A flat brace scan is enough here: the
 // theme emitter writes flat blocks (no nested braces).
 func scopedCSSBlock(sheet, ref string) string {

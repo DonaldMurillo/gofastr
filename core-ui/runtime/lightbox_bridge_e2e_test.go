@@ -169,9 +169,9 @@ func TestLightboxClickBeforeModuleLoadIsReplayed(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head>`+block+`</head><body>
-<div id="viewer" data-fui-widget="viewer"></div>
-<a data-fui-lightbox-group="photos" data-fui-deeplink="src=one.jpg&group=photos">one</a>
-<a data-fui-lightbox-group="photos" data-fui-deeplink="src=two.jpg&group=photos">two</a>
+<div id="viewer" data-cui-widget="viewer"></div>
+<a data-fui-lightbox-group="photos" data-cui-deeplink="src=one.jpg&group=photos">one</a>
+<a data-fui-lightbox-group="photos" data-cui-deeplink="src=two.jpg&group=photos">two</a>
 <script src="/__gofastr/runtime.js"></script>
 <script>
 window.__gofastr.loadedModules.widgets = true;
@@ -192,7 +192,7 @@ document.addEventListener('click', function (e) {
   }
 });
 document.getElementById('viewer').innerHTML =
-  '<div data-fui-comp="ui-lightbox" data-fui-lightbox="viewer" data-fui-lightbox-nav="true">' +
+  '<div data-cui-comp="ui-lightbox" data-fui-lightbox="viewer" data-fui-lightbox-nav="true">' +
   '<button id="next" type="button" data-fui-lightbox-next>Next</button></div>';
 </script>
 </body></html>`)

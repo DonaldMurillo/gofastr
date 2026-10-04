@@ -46,7 +46,7 @@ func TestBellBadgeCoversAtMostAQuarterOfTheGlyph(t *testing.T) {
 	// of the svg's area, and whether the badge escapes the button.
 	const measure = `(() => {
 	const out = [];
-	for (const b of document.querySelectorAll('[data-fui-comp="ui-notification-bell"]')) {
+	for (const b of document.querySelectorAll('[data-cui-comp="ui-notification-bell"]')) {
 		const svg = b.querySelector('svg').getBoundingClientRect();
 		const badge = b.querySelector('.fui-notification-bell__badge').getBoundingClientRect();
 		const btn = b.getBoundingClientRect();
@@ -126,7 +126,7 @@ func TestBellOpenUnderPointerKeepsGlyphContrast(t *testing.T) {
 
 		const measure = `(() => {
 	const lum = s => { const [r, g, b] = s.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-	const b = document.querySelector('[data-fui-comp="ui-notification-bell"]');
+	const b = document.querySelector('[data-cui-comp="ui-notification-bell"]');
 	const c = getComputedStyle(b);
 	let bg = c.backgroundColor;
 	if (/rgba\(.*, 0\)$/.test(bg) || bg === 'transparent') bg = getComputedStyle(document.body).backgroundColor;
@@ -140,7 +140,7 @@ func TestBellOpenUnderPointerKeepsGlyphContrast(t *testing.T) {
 				chromedp.Navigate(srv.URL),
 				chromedp.EmulateViewport(1280, 800),
 				chromedp.Evaluate(`document.documentElement.setAttribute('data-color-scheme', '`+scheme+`')`, nil),
-				chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-notification-bell"]').classList.add('is-popover-trigger-active')`, nil),
+				chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-notification-bell"]').classList.add('is-popover-trigger-active')`, nil),
 				chromedp.ActionFunc(func(ctx context.Context) error {
 					return input.DispatchMouseEvent(input.MouseMoved, 46, 46).Do(ctx)
 				}),

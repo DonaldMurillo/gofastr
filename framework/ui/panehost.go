@@ -8,9 +8,9 @@ package ui
 // lock + ESC-to-close) instead of an inline grid column.
 //
 // It does NOT fetch pane content. Loading a link's content into a pane
-// uses the EXISTING rails: a trigger carries data-fui-rpc + a
-// data-fui-rpc-signal that broadcasts into a data-fui-signal +
-// data-fui-signal-mode="html" region inside the pane. Pane open/close
+// uses the EXISTING rails: a trigger carries data-cui-rpc + a
+// data-cui-rpc-signal that broadcasts into a data-cui-signal +
+// data-cui-signal-mode="html" region inside the pane. Pane open/close
 // is in-page state, never a URL route (Hard Rule 1).
 //
 // A host can still round-trip that state through the URL: set
@@ -94,7 +94,7 @@ type PaneHostConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the host's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-* (the pane-host marker and deep-link wiring).
+	// ID) and data-cui-* (the pane-host marker and deep-link wiring).
 	ExtraAttrs html.Attrs
 }
 
@@ -191,38 +191,38 @@ func PaneDeepLink(q url.Values, param string) (slot, key string, ok bool) {
 var paneHostStyle = registry.RegisterStyle("ui-pane-host", paneHostCSS)
 
 func paneHostCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-pane-host"] {
+	return `[data-cui-comp="ui-pane-host"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--fui-pane-host-gap, var(--spacing-lg, 16px));
   align-items: start;
   position: relative;
 }
-[data-fui-comp="ui-pane-host"] .fui-pane-host__pane { min-width: 0; }
+[data-cui-comp="ui-pane-host"] .fui-pane-host__pane { min-width: 0; }
 /* hidden must win over any pane display rule so a closed pane never
    claims a grid track or paints at first paint. */
-[data-fui-comp="ui-pane-host"] [data-hui-pane][hidden] { display: none; }
+[data-cui-comp="ui-pane-host"] [data-hui-pane][hidden] { display: none; }
 
 /* Column count keys off the open-state HOOK the runtime module
    maintains ([data-hui-pane-open], a space-separated list, matched
    token-wise with ~=), so a pane opened in the browser changes the
    columns; the open modifier classes ride along as the first-paint
    spelling. Never inline style (strict CSP, Hard Rule 9b). */
-[data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open,
-[data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"] {
+[data-cui-comp="ui-pane-host"].fui-pane-host--secondary-open,
+[data-cui-comp="ui-pane-host"][data-hui-pane-open~="secondary"] {
   grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-secondary-w, 360px);
 }
-[data-fui-comp="ui-pane-host"].fui-pane-host--tertiary-open:not(.fui-pane-host--secondary-open),
-[data-fui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"]:not([data-hui-pane-open~="secondary"]) {
+[data-cui-comp="ui-pane-host"].fui-pane-host--tertiary-open:not(.fui-pane-host--secondary-open),
+[data-cui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"]:not([data-hui-pane-open~="secondary"]) {
   grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-tertiary-w, 300px);
 }
-[data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
-[data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
+[data-cui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
+[data-cui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
   grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-secondary-w, 360px) var(--fui-pane-host-tertiary-w, 300px);
 }
 
-[data-fui-comp="ui-pane-host"] .fui-pane-host__pane--secondary,
-[data-fui-comp="ui-pane-host"] .fui-pane-host__pane--tertiary {
+[data-cui-comp="ui-pane-host"] .fui-pane-host__pane--secondary,
+[data-cui-comp="ui-pane-host"] .fui-pane-host__pane--tertiary {
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
   border-radius: var(--radii-md, 8px);
@@ -236,13 +236,13 @@ func paneHostCSS(_ style.Theme) string {
    breakpoint literal here MUST match the MQ in
    framework/headless/panehost.js. */
 @media (max-width: 768px) {
-  [data-fui-comp="ui-pane-host"],
-  [data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open,
-  [data-fui-comp="ui-pane-host"].fui-pane-host--tertiary-open,
-  [data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
-  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"],
-  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"],
-  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
+  [data-cui-comp="ui-pane-host"],
+  [data-cui-comp="ui-pane-host"].fui-pane-host--secondary-open,
+  [data-cui-comp="ui-pane-host"].fui-pane-host--tertiary-open,
+  [data-cui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
+  [data-cui-comp="ui-pane-host"][data-hui-pane-open~="secondary"],
+  [data-cui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"],
+  [data-cui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -119,13 +119,13 @@ func TestE2E_Optimistic_Create_AppendsAndPersists(t *testing.T) {
 	sink := &consoleErrSink{}
 	sink.listen(ctx)
 
-	const listItemCount = `document.querySelectorAll('[data-fui-signal="opt-create-list"] [data-opt-id]').length`
+	const listItemCount = `document.querySelectorAll('[data-cui-signal="opt-create-list"] [data-opt-id]').length`
 	// lastID reads the server-assigned id from the NEWEST row (the
 	// last <li> in the list region). Create is an APPEND, so the FIRST
 	// row's id is unaffected by the click; the meaningful signal is
 	// that the newest row carries a fresh server id (n4, n5, …) that
 	// did not exist before the RPC resolved.
-	const lastID = `(()=>{const rows=document.querySelectorAll('[data-fui-signal="opt-create-list"] [data-opt-id]');const el=rows[rows.length-1];return el?el.getAttribute('data-opt-id')||'':'';})()`
+	const lastID = `(()=>{const rows=document.querySelectorAll('[data-cui-signal="opt-create-list"] [data-opt-id]');const el=rows[rows.length-1];return el?el.getAttribute('data-opt-id')||'':'';})()`
 
 	var before, after, afterReload int
 	var lastBefore, lastAfter string
@@ -138,7 +138,7 @@ func TestE2E_Optimistic_Create_AppendsAndPersists(t *testing.T) {
 		chromedp.Evaluate(lastID, &lastBefore),
 		// Click Add. interactive.OnClick fires the POST and swaps the
 		// list region's innerHTML with the response on 2xx.
-		chromedp.Click(`button[data-fui-rpc="/__site/optimistic/create"]`, chromedp.ByQuery),
+		chromedp.Click(`button[data-cui-rpc="/__site/optimistic/create"]`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(lastID, &lastAfter),
@@ -196,9 +196,9 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 	sink := &consoleErrSink{}
 	sink.listen(ctx)
 
-	const listItemCount = `document.querySelectorAll('[data-fui-signal="opt-delete-list"] [data-opt-id]').length`
-	const n1Present = `!!document.querySelector('[data-fui-signal="opt-delete-list"] [data-opt-id="n1"]')`
-	const trigger = `document.querySelector('button[data-fui-open="opt-delete-n1"]')`
+	const listItemCount = `document.querySelectorAll('[data-cui-signal="opt-delete-list"] [data-opt-id]').length`
+	const n1Present = `!!document.querySelector('[data-cui-signal="opt-delete-list"] [data-opt-id="n1"]')`
+	const trigger = `document.querySelector('button[data-cui-open="opt-delete-n1"]')`
 
 	var before, after int
 	var n1Before, n1After bool
@@ -213,9 +213,9 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 		// Click the row's Delete trigger, opens the ConfirmAction modal.
 		chromedp.Evaluate(trigger+`.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-n1"]')`, &dialogVisible),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="opt-delete-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-widget="opt-delete-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(n1Present, &n1After),
@@ -380,10 +380,10 @@ func TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged(t *testing.T) {
 	sink := &consoleErrSink{}
 	sink.listen(ctx)
 
-	const listHTML = `document.querySelector('[data-fui-signal="opt-delete-list"]').innerHTML`
-	const listItemCount = `document.querySelectorAll('[data-fui-signal="opt-delete-list"] [data-opt-id]').length`
-	const n1Present = `!!document.querySelector('[data-fui-signal="opt-delete-list"] [data-opt-id="n1"]')`
-	const trigger = `document.querySelector('button[data-fui-open="opt-delete-fail-n1"]')`
+	const listHTML = `document.querySelector('[data-cui-signal="opt-delete-list"]').innerHTML`
+	const listItemCount = `document.querySelectorAll('[data-cui-signal="opt-delete-list"] [data-opt-id]').length`
+	const n1Present = `!!document.querySelector('[data-cui-signal="opt-delete-list"] [data-opt-id="n1"]')`
+	const trigger = `document.querySelector('button[data-cui-open="opt-delete-fail-n1"]')`
 
 	var beforeHTML, afterHTML string
 	var beforeCount, afterCount int
@@ -400,9 +400,9 @@ func TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged(t *testing.T) {
 		// Open the dedicated "will fail" ConfirmAction modal.
 		chromedp.Evaluate(trigger+`.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-fail-n1"]')`, &dialogVisible),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="opt-delete-fail-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-fail-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-widget="opt-delete-fail-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + (no) swap
 		chromedp.Evaluate(listHTML, &afterHTML),
 		chromedp.Evaluate(listItemCount, &afterCount),

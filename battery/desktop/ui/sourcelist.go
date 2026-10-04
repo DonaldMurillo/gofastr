@@ -146,7 +146,7 @@ func SourceList(cfg SourceListConfig) render.HTML {
 var sourceListStyle = registry.RegisterStyle("desktopui-sourcelist", sourceListCSS)
 
 func sourceListCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-sourcelist"] {
+	return `[data-cui-comp="desktopui-sourcelist"] {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg, 16px);
@@ -160,12 +160,12 @@ func sourceListCSS(_ style.Theme) string {
   background: transparent;
   --desktop-sourcelist-row: 28px;
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__section {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__header {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__header {
   /* HIG caption size (Caption 1/2 are 10pt), uppercase is not the Mac
      idiom; the size and the muted color carry the hierarchy. */
   font-size: var(--text-xs, 0.75rem);
@@ -174,7 +174,7 @@ func sourceListCSS(_ style.Theme) string {
   margin: 0;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__list {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -182,7 +182,7 @@ func sourceListCSS(_ style.Theme) string {
   flex-direction: column;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -200,27 +200,27 @@ func sourceListCSS(_ style.Theme) string {
   text-decoration: none;
   cursor: pointer;
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__label {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__label {
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__count {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__count {
   margin-inline-start: auto;
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:hover {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:hover {
   background: color-mix(in srgb, var(--color-text, #18181B) 3%, transparent);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
   /* Keyboard focus ring in the accent, the Mac focus-ring read. */
   outline: 2px solid var(--color-accent, #7C3AED);
   outline-offset: var(--spacing-xs, 2px);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
   /* Soft selection, measured on the native capture: #EFEFEF over a
      #F9F9F9 light sidebar and #2F2F2F over a #212121 dark one, both
      within a couple of points of a 5% mix of the text color. The text
@@ -228,19 +228,19 @@ func sourceListCSS(_ style.Theme) string {
      focus ring, not the row. */
   background: color-mix(in srgb, var(--color-text, #18181B) 5%, transparent);
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__icon {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__icon {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
 }
-[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__footer {
+[data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__footer {
   margin-block-start: auto;
   padding: var(--spacing-md, 8px);
 }
 /* Inactive window: the selection washes out, the read a native source
    list gives when its window resigns key. The runtime module sets the
    class; the page never guesses. */
-html.desktop-inactive [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
+html.desktop-inactive [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
   background: color-mix(in srgb, var(--color-text-muted, #52525B) 3%, transparent);
 }
 `

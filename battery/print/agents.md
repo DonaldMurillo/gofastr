@@ -75,7 +75,7 @@ link absolute on the PDF path). The battery never derives this from the
 request `Host` header (that would be an SSRF vector).
 
 **Component styles render in print:** the shell scans the body for
-`data-fui-comp` markers and inlines the scoped CSS for every registered
+`data-cui-comp` markers and inlines the scoped CSS for every registered
 `framework/ui` component, so styled components print
 correctly. Interactivity (hydration/RPC) does NOT apply. Print pages are
 inert.

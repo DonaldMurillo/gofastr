@@ -16,8 +16,8 @@ func TestRegisterThemeOverrideIdempotent(t *testing.T) {
 	if a.Class() != b.Class() {
 		t.Errorf("same content must name the same class: %q vs %q", a.Class(), b.Class())
 	}
-	if !strings.HasPrefix(a.Class(), "fui-theme-") {
-		t.Errorf("Class should be fui-theme-<hash>: %q", a.Class())
+	if !strings.HasPrefix(a.Class(), "cui-theme-") {
+		t.Errorf("Class should be cui-theme-<hash>: %q", a.Class())
 	}
 }
 
@@ -26,7 +26,7 @@ func TestThemeOverrideCSSWrapsInClass(t *testing.T) {
 	th.Colors.Primary = Color{Name: "primary", Value: "#FF00FF"}
 	ref := RegisterThemeOverride(th)
 	css := ThemeOverrideCSS(ref.Hash(), th)
-	if !strings.Contains(css, ".fui-theme-"+ref.Hash()+" {") {
+	if !strings.Contains(css, ".cui-theme-"+ref.Hash()+" {") {
 		t.Errorf("CSS should open with class selector: %q", css)
 	}
 	if !strings.Contains(css, "--color-primary: #FF00FF;") {
@@ -57,8 +57,8 @@ func TestRegisterThemeOverrideDoesNotHash(t *testing.T) {
 	RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults)
 
 	class := ref.Class()
-	if !strings.HasPrefix(class, "fui-theme-") {
-		t.Errorf("Class() = %q, want fui-theme-<hash>", class)
+	if !strings.HasPrefix(class, "cui-theme-") {
+		t.Errorf("Class() = %q, want cui-theme-<hash>", class)
 	}
 	// Hashing is compiler-independent (the flat options join the
 	// token CSS), so even the first use of the handle leaves the hook

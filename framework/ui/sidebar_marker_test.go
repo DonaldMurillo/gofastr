@@ -8,7 +8,7 @@ import (
 )
 
 // TestSidebarNativeMobileWrapsMarkerOnce pins the NativeMobile branch's
-// marker scoping: the inline root carries data-fui-comp="ui-sidebar"
+// marker scoping: the inline root carries data-cui-comp="ui-sidebar"
 // (its display:contents rule and the sheet's scoped selectors key on
 // it), the native mobile region carries its own (it sits outside the
 // inline root and needs the sheet's link styling), and the neutral
@@ -20,7 +20,7 @@ func TestSidebarNativeMobileWrapsMarkerOnce(t *testing.T) {
 		NativeMobile: true,
 		Items:        []SidebarItem{{Label: "Home", Href: "/"}},
 	})))
-	const marker = `data-fui-comp="ui-sidebar"`
+	const marker = `data-cui-comp="ui-sidebar"`
 	if n := strings.Count(out, marker); n != 2 {
 		t.Fatalf("NativeMobile sidebar carries %d %s markers, want exactly 2 (inline root + mobile region):\n%.400s", n, marker, out)
 	}

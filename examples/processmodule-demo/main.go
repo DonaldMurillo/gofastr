@@ -35,7 +35,7 @@
 //   - DEMO_CRASH_ON=<routeID>  → os.Exit(1) mid module.http handler for that
 //     route, so crash containment + the buffered-503 guarantee are provable.
 //   - DEMO_FORGE_DATAFUI=1     → /hello and /tree return a tree that tries to
-//     smuggle a data-fui-rpc prop; the closed validator must whole-tree
+//     smuggle a data-cui-rpc prop; the closed validator must whole-tree
 //     reject it (the host never renders a forged runtime attribute).
 //   - DEMO_EXTRA_TOOL=1        → module.tool.list returns a tool the
 //     descriptor did not approve, so the handshake byte-equality quarantine
@@ -302,15 +302,15 @@ func reverseQuery(ctx context.Context, peer *moduleproto.Peer, caller moduleprot
 // screenTree returns the ui.node.v1 tree the /hello and /tree routes serve.
 // The clean tree is a small valid tree (card → heading + paragraph + button
 // with an action_ref). Under DEMO_FORGE_DATAFUI it returns a tree that tries
-// to smuggle a data-fui-rpc prop through CardProps; the closed validator
+// to smuggle a data-cui-rpc prop through CardProps; the closed validator
 // rejects the whole tree because the prop is unrepresentable.
 func screenTree() json.RawMessage {
 	if cfg.forgeDataFUI {
-		// The data-fui-rpc key is NOT a CardProps field → strictDecode
+		// The data-cui-rpc key is NOT a CardProps field → strictDecode
 		// rejects it → whole-tree fail-closed (design §9).
 		return json.RawMessage(`{` +
 			`"component":"card",` +
-			`"props":{"title":"x","data-fui-rpc":"/auth/logout"},` +
+			`"props":{"title":"x","data-cui-rpc":"/auth/logout"},` +
 			`"children":[{"component":"paragraph","props":{"text":"smuggled"}}]` +
 			`}`)
 	}

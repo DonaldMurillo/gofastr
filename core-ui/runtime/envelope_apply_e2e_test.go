@@ -66,9 +66,9 @@ func newEnvelopeApplyRig(t *testing.T, markers string) *envelopeApplyRig {
 	page := func(inner string) string {
 		return `<!doctype html><html lang="en"><head><title>apply</title>` +
 			`<script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/a","layouts":["l:site"]}]</script>` +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a></nav>` + markers +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` + inner + `</main>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux := http.NewServeMux()
@@ -118,10 +118,10 @@ func newEnvelopeApplyRig(t *testing.T, markers string) *envelopeApplyRig {
 // half-applied); the containment scan treats it like any other miss
 // and the runtime full-loads the destination.
 func TestNestedTargetsFullLoads(t *testing.T) {
-	rig := newEnvelopeApplyRig(t, `<div data-fui-area="l:site~wrap" id="wrap"><div data-fui-outlet="l:site#aside" id="aside">HOME-ASIDE</div></div>`)
-	rig.envelope = `<template data-fui-fill="l:site">A-CONTENT</template>` +
-		`<template data-fui-fill="l:site~wrap"><div data-fui-outlet="l:site#aside" id="aside">WRAP-OUTER</div></template>` +
-		`<template data-fui-fill="l:site#aside">INNER-ASIDE</template>`
+	rig := newEnvelopeApplyRig(t, `<div data-cui-area="l:site~wrap" id="wrap"><div data-cui-outlet="l:site#aside" id="aside">HOME-ASIDE</div></div>`)
+	rig.envelope = `<template data-cui-fill="l:site">A-CONTENT</template>` +
+		`<template data-cui-fill="l:site~wrap"><div data-cui-outlet="l:site#aside" id="aside">WRAP-OUTER</div></template>` +
+		`<template data-cui-fill="l:site#aside">INNER-ASIDE</template>`
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 
 	var mainTxt, asideTxt string
@@ -155,9 +155,9 @@ func TestNestedTargetsFullLoads(t *testing.T) {
 // the primary must never half-apply; the destination arrives through a
 // full-document load.
 func TestEnvelopeMissingTargetFullLoads(t *testing.T) {
-	rig := newEnvelopeApplyRig(t, `<div data-fui-outlet="l:site#aside" id="aside">HOME-ASIDE</div>`)
-	rig.envelope = `<template data-fui-fill="l:site">A-CONTENT</template>` +
-		`<template data-fui-fill="l:site#ghost">GHOST</template>`
+	rig := newEnvelopeApplyRig(t, `<div data-cui-outlet="l:site#aside" id="aside">HOME-ASIDE</div>`)
+	rig.envelope = `<template data-cui-fill="l:site">A-CONTENT</template>` +
+		`<template data-cui-fill="l:site#ghost">GHOST</template>`
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 
 	var mainTxt, asideTxt string
@@ -188,9 +188,9 @@ func TestEnvelopeMissingTargetFullLoads(t *testing.T) {
 // innerHTML, so a <script> in a fill lands as a (present) inert node
 // and never executes; an onerror handler with no src never fires.
 func TestEnvelopeScriptsDoNotRun(t *testing.T) {
-	rig := newEnvelopeApplyRig(t, `<div data-fui-outlet="l:site#aside" id="aside">HOME-ASIDE</div>`)
-	rig.envelope = `<template data-fui-fill="l:site">A-CONTENT</template>` +
-		`<template data-fui-fill="l:site#aside"><script>window.__pwned=1</script><img onerror="window.__imgPwned=1"><span id="fill-body">FILL</span></template>`
+	rig := newEnvelopeApplyRig(t, `<div data-cui-outlet="l:site#aside" id="aside">HOME-ASIDE</div>`)
+	rig.envelope = `<template data-cui-fill="l:site">A-CONTENT</template>` +
+		`<template data-cui-fill="l:site#aside"><script>window.__pwned=1</script><img onerror="window.__imgPwned=1"><span id="fill-body">FILL</span></template>`
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 
 	var pwned, imgPwned, hasScript bool

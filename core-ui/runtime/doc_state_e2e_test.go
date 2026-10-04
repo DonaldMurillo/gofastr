@@ -13,7 +13,7 @@ import (
 
 // startDocStateServer serves runtime.js plus a minimal page for
 // exercising the __gofastr.doc global-document-state module. The page
-// carries one SSR-provided singleton element (#fui-toast-fallback) so
+// carries one SSR-provided singleton element (#cui-toast-fallback) so
 // the "adopt existing element, don't re-create" path is covered.
 func startDocStateServer(t *testing.T) string {
 	t.Helper()
@@ -33,7 +33,7 @@ func startDocStateServer(t *testing.T) string {
 <html>
 <head><title>doc state e2e</title></head>
 <body>
-  <div id="fui-toast-fallback" data-ssr="1"></div>
+  <div id="cui-toast-fallback" data-ssr="1"></div>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
 </body>
@@ -100,16 +100,16 @@ func TestDocSingletonSemantics(t *testing.T) {
 			const out = [];
 			let made = 0;
 			const factory = () => { made++; const d = document.createElement('div'); return d; };
-			const a = D.singleton('fui-nav-toast', factory);
-			const b = D.singleton('fui-nav-toast', factory);
+			const a = D.singleton('cui-nav-toast', factory);
+			const b = D.singleton('cui-nav-toast', factory);
 			out.push(String(a === b));                       // same node
 			out.push(String(made));                          // factory ran once
 			out.push(String(a.parentElement === document.body));
-			out.push(String(document.querySelectorAll('#fui-nav-toast').length));
+			out.push(String(document.querySelectorAll('#cui-nav-toast').length));
 
 			// SSR-provided element is adopted, factory NOT called.
 			let ssrMade = 0;
-			const s = D.singleton('fui-toast-fallback', () => { ssrMade++; return document.createElement('div'); });
+			const s = D.singleton('cui-toast-fallback', () => { ssrMade++; return document.createElement('div'); });
 			out.push(String(s.getAttribute('data-ssr')));    // the SSR node
 			out.push(String(ssrMade));
 
@@ -122,7 +122,7 @@ func TestDocSingletonSemantics(t *testing.T) {
 			// singleton() on a detached created element also re-adopts it
 			// instead of minting a duplicate.
 			a.remove();
-			const c = D.singleton('fui-nav-toast', factory);
+			const c = D.singleton('cui-nav-toast', factory);
 			out.push(String(c === a && made === 1 && a.isConnected));
 			return out.join('|');
 		})()`, &got),
@@ -151,12 +151,12 @@ func TestDocManifestGuardWarns(t *testing.T) {
 			const orig = console.warn;
 			console.warn = (...a) => warns.push(a.join(' '));
 			try {
-				D.setHtmlAttr('data-fui-os', 'other');       // manifest → silent
-				D.bodyClass('fui-sse-up', true);             // manifest → silent
+				D.setHtmlAttr('data-cui-os', 'other');       // manifest → silent
+				D.bodyClass('cui-sse-up', true);             // manifest → silent
 				const before = warns.length;
-				D.setHtmlAttr('data-fui-rogue', '1');        // NOT in manifest
+				D.setHtmlAttr('data-cui-rogue', '1');        // NOT in manifest
 				D.bodyClass('fui-rogue-class', true);        // NOT in manifest
-				D.removeHtmlAttr('data-fui-rogue');
+				D.removeHtmlAttr('data-cui-rogue');
 				return [
 					String(before),
 					String(warns.length),

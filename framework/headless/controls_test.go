@@ -18,16 +18,16 @@ import (
 // negative.
 func TestCounterRendersTheKernelIncrementContract(t *testing.T) {
 	got := Counter(CounterProps{Signal: "qty", Label: "Quantity", Value: 2}, nil)
-	has(t, got, `data-fui-signal-inc="qty:-1"`, "the decrement did not spell its negative step")
-	has(t, got, `data-fui-signal-inc="qty"`, "a step of one did not render the bare signal name")
-	has(t, got, `data-fui-signal="qty"`, "the display did not follow the signal")
+	has(t, got, `data-cui-signal-inc="qty:-1"`, "the decrement did not spell its negative step")
+	has(t, got, `data-cui-signal-inc="qty"`, "a step of one did not render the bare signal name")
+	has(t, got, `data-cui-signal="qty"`, "the display did not follow the signal")
 	has(t, got, ">2</span>", "the SSR text is not the true count")
 
 	stepped := Counter(CounterProps{Signal: "qty", Label: "Quantity", Step: 5}, nil)
-	has(t, stepped, `data-fui-signal-inc="qty:5"`, "a step above one did not spell it")
+	has(t, stepped, `data-cui-signal-inc="qty:5"`, "a step above one did not spell it")
 
 	named := Counter(CounterProps{Signal: "seats", Label: "Seats", Name: "seats", Value: 4}, nil)
-	has(t, named, `data-fui-signal-attr="value"`, "a named counter's input does not follow the signal through its value attribute")
+	has(t, named, `data-cui-signal-attr="value"`, "a named counter's input does not follow the signal through its value attribute")
 	has(t, named, `name="seats"`, "a named counter did not render a submittable field")
 }
 
@@ -136,7 +136,7 @@ func TestNumberInputScrubsControlBytes(t *testing.T) {
 func TestSliderOutputAndEdges(t *testing.T) {
 	got := Slider(SliderProps{Name: "cpu", Label: "CPU share", Value: 40,
 		ShowValue: true, ShowEdgeLabels: true}, nil)
-	has(t, got, `<output data-fui-internal="" data-hui-slider-output="" for="cpu">40</output>`, "the output is not a form output carrying its hook with the true value")
+	has(t, got, `<output data-cui-internal="" data-hui-slider-output="" for="cpu">40</output>`, "the output is not a form output carrying its hook with the true value")
 	has(t, got, ">0</span>", "the min edge label is missing")
 	has(t, got, ">100</span>", "the max edge label is missing")
 

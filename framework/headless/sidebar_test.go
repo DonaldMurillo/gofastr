@@ -19,12 +19,12 @@ func TestSidebarRendersShellNavGroupsAndLinks(t *testing.T) {
 		// The nav landmark is the region inside the shell; the shell is
 		// a div because a host layout wraps the sidebar in its own nav.
 		`<nav aria-label="Primary"><ul>`,
-		`<a aria-current="page" href="/"><span>Home</span></a>`,
+		`<a aria-current="page" data-cui-activelink="" href="/"><span>Home</span></a>`,
 		// Details-dialect groups are disclosures with a per-group
 		// persist key, so the user's open sections survive navigation.
 		`<details data-hui-disclosure="" data-hui-disclosure-persist="sidebar-inline-g1">`,
 		`<summary><span>Settings</span></summary>`,
-		`<a href="/settings/profile">`,
+		`<a data-cui-activelink="" href="/settings/profile">`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("sidebar missing %q:\n%s", want, h)
@@ -108,12 +108,12 @@ func TestSidebarCollapseContract(t *testing.T) {
 	// opening the widget the caller mounts.
 	drawer := renderSidebar(SidebarProps{NavLabel: "N", DrawerName: "nav-drawer",
 		DrawerLabel: "Open navigation", Items: []SidebarItem{{Label: "One", Href: "/1"}}})
-	if !strings.Contains(drawer, `aria-label="Open navigation" data-fui-internal="" data-fui-open="nav-drawer"`) {
+	if !strings.Contains(drawer, `aria-label="Open navigation" data-cui-internal="" data-cui-open="nav-drawer"`) {
 		t.Errorf("the drawer trigger must open the widget and carry its label:\n%s", drawer)
 	}
 	hidden := renderSidebar(SidebarProps{NavLabel: "N", DrawerName: "nav-drawer",
 		HideDrawerTrigger: true, Items: []SidebarItem{{Label: "One", Href: "/1"}}})
-	if strings.Contains(hidden, "data-fui-open") {
+	if strings.Contains(hidden, "data-cui-open") {
 		t.Errorf("HideDrawerTrigger must suppress the trigger:\n%s", hidden)
 	}
 }
@@ -125,15 +125,15 @@ func TestSidebarRegionRendersNoShellHooks(t *testing.T) {
 			{Label: "Two", Children: []SidebarItem{{Label: "A", Href: "/a"}}},
 		}}, nil))
 	for _, want := range []string{
-		`<h2 data-fui-internal="">Docs</h2>`,
-		`<nav aria-label="Sections" data-fui-internal="">`,
+		`<h2 data-cui-internal="">Docs</h2>`,
+		`<nav aria-label="Sections" data-cui-internal="">`,
 		`data-hui-disclosure-persist="panel-g1"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("region missing %q:\n%s", want, h)
 		}
 	}
-	for _, banned := range []string{"data-hui-sidebar", "data-hui-sidebar-toggle", "data-fui-open"} {
+	for _, banned := range []string{"data-hui-sidebar", "data-hui-sidebar-toggle", "data-cui-open"} {
 		if strings.Contains(h, banned) {
 			t.Errorf("the region must not carry the shell hook %q:\n%s", banned, h)
 		}

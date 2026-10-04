@@ -11,7 +11,7 @@
 // props reach HTML attributes through its extraAttrs passthrough, which
 // drops only style, srcdoc, and on* and forwards everything else verbatim.
 // That lets a third party forge the exact trusted-runtime attributes
-// (data-fui-rpc, data-fui-*) that runtime.js acts on, a trusted-channel
+// (data-cui-rpc, data-cui-*) that runtime.js acts on, a trusted-channel
 // forgery that CSP does not catch (design §9).
 //
 // This package's wire type makes the attack UNREPRESENTABLE rather than
@@ -33,7 +33,7 @@
 // The HOST RENDERER owns (deliberately out of scope for this package):
 //   - Mapping components to framework/ui + core-ui/html primitives,
 //   - Assigning every id / class / ARIA attribute itself (modules cannot),
-//   - Resolving ActionRef values to real data-fui-rpc URLs against the
+//   - Resolving ActionRef values to real data-cui-rpc URLs against the
 //     module descriptor's installed routes (see [Renderer]).
 //
 // ActionRef values are OPAQUE STRINGS here. The validator checks only their
@@ -62,7 +62,7 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 //     Modules cannot influence these, there are no such fields on any prop
 //     struct by design.
 //
-//   - It resolves every [Node.ActionRef] to a real data-fui-rpc URL by
+//   - It resolves every [Node.ActionRef] to a real data-cui-rpc URL by
 //     looking the ref up in the module descriptor's installed route table.
 //     An ActionRef that does not resolve to an installed route MUST be
 //     rejected, never improvised.

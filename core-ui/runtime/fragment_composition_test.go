@@ -325,7 +325,7 @@ func TestRPCIsDemandLoaded(t *testing.T) {
 		t.Fatalf("read boot fragment: %v", err)
 	}
 	body := string(boot)
-	if !strings.Contains(body, `{ name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' }`) {
+	if !strings.Contains(body, `{ name: 'rpc', selector: '[data-cui-rpc],[data-kiln-tool]' }`) {
 		t.Error("boot marker scanner does not eagerly prefetch rpc for RPC and kiln controls")
 	}
 	if !strings.Contains(body, "document.__fuiStaticDispatch") {
@@ -460,7 +460,7 @@ func TestKernelAppendsVersionWithTheRightSeparator(t *testing.T) {
 }
 
 // A click on an element carrying BOTH a signal-mutation attribute and
-// data-fui-rpc must do the signal mutation only. One delegator used to own
+// data-cui-rpc must do the signal mutation only. One delegator used to own
 // both branches and returned after the signal, so RPC was never consulted.
 // Splitting them across signals.js and boot.js made two listeners fire on
 // the same click; the bridge has to reproduce the original precedence.
@@ -480,7 +480,7 @@ func TestSignalMutationTakesPrecedenceOverRPC(t *testing.T) {
 		end = len(body) - idx
 	}
 	click := body[idx : idx+end]
-	if !strings.Contains(click, "data-fui-signal-set") {
+	if !strings.Contains(click, "data-cui-signal-set") {
 		t.Error("the RPC bridge does not skip signal-mutation elements — a node with both attributes would fire the signal AND dispatch an RPC")
 	}
 }
@@ -488,7 +488,7 @@ func TestSignalMutationTakesPrecedenceOverRPC(t *testing.T) {
 // Every site that prevents the default action and THEN awaits the rpc
 // module has to recover when the module never arrives, or it eats the
 // user's click in silence. The document bridge in boot.js does this, and
-// deliberately skips anything inside [data-fui-widget], so the
+// deliberately skips anything inside [data-cui-widget], so the
 // widget-scoped listeners in src/widgets.js cannot be covered by it and
 // must handle their own failure. They shipped with a bare `catch (_) {}`,
 // which is exactly the swallow the bridge was written to prevent.

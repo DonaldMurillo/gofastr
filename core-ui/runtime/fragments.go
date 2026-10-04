@@ -8,7 +8,7 @@ package runtime
 // Nothing in this file changes runtime.js or src/*.js. It is pure
 // declaration; the gate that enforces it lives in attrdoc_test.go.
 //
-// Hard rule 5 (CLAUDE.md) already forbids shipping a new data-fui-*
+// Hard rule 5 (CLAUDE.md) already forbids shipping a new data-cui-*
 // attribute without updating ARCHITECTURE.md and the runtime test suite.
 // This map extends that obligation: a new attribute must also declare an
 // owning fragment here, or the build fails.
@@ -20,7 +20,7 @@ import "slices"
 // The distinction is the whole safety story for composition (spec §"Two
 // classes of behavior"):
 //
-//   - marker: behavior is triggered by a data-fui-* marker in the DOM. The
+//   - marker: behavior is triggered by a data-cui-* marker in the DOM. The
 //     kernel scanner demand-loads src/*.js modules, including rpc. Core signal
 //     behavior is marker-class but remains composed in every bundle.
 //
@@ -57,20 +57,20 @@ type fragmentDef struct {
 // These are the names the attribute map and the composition table (full /
 // static / embed) may use, nothing else.
 //
-// sse owns zero data-fui-* attributes: it is triggered by push-target
+// sse owns zero data-cui-* attributes: it is triggered by push-target
 // markers (any [data-island] region, the offline banner's
-// [data-hui-system-offline]) rather than by a data-fui-* attribute; the
+// [data-hui-system-offline]) rather than by a data-cui-* attribute; the
 // privileged <meta name="gofastr-sse"> is availability, never "open".
 // boot-embed is triggered by <meta name="gofastr-embed"> and owns one
-// attribute, data-fui-embed-state, which reports the frame's lifecycle.
+// attribute, data-cui-embed-state, which reports the frame's lifecycle.
 //
 // The action module is the same shape reached the other way: no
-// marker, no data-fui-* attribute (the adapters that bind through it
+// marker, no data-cui-* attribute (the adapters that bind through it
 // read their own), loaded because a registered behaviour declared
 // Requires("action") and the loader honours the declaration on every
 // path. It is also a public API, window.__gofastr.action.
 //
-// The ws module also owns zero data-fui-* attributes and has no marker
+// The ws module also owns zero data-cui-* attributes and has no marker
 // at all: it is a pure API module an application loads explicitly with
 // __gofastr.loadModule('ws') (connectWebSocket /
 // createSequencedReducer). Nothing scans the DOM for it.
@@ -88,9 +88,9 @@ var fragments = map[string]fragmentDef{
 	"nav":          {name: "nav", class: bootClass, deps: []string{"kernel", "signals"}},
 	"widgets-boot": {name: "widgets-boot", class: bootClass, deps: []string{"kernel"}},
 	// widgets-boot-static is the static-mode counterpart of widgets-boot
-	// (MUTUALLY EXCLUSIVE, never compose both). It owns NO data-fui-*
-	// attributes of its own: it cross-references data-fui-open /
-	// data-fui-toast / data-fui-deeplink, whose owner stays widgets-boot
+	// (MUTUALLY EXCLUSIVE, never compose both). It owns NO data-cui-*
+	// attributes of its own: it cross-references data-cui-open /
+	// data-cui-toast / data-cui-deeplink, whose owner stays widgets-boot
 	// (the gate treats cross-references as non-transferable, and
 	// TestFragmentMapNoDuplicate forbids a second assignment). Same
 	// shape as rpc-stub and sse, both absent from fragmentAttrs.
@@ -100,7 +100,7 @@ var fragments = map[string]fragmentDef{
 	"boot-embed":          {name: "boot-embed", class: bootClass, deps: []string{"kernel"}},
 }
 
-// fragmentAttrs maps each CORE fragment to the data-fui-* attributes whose
+// fragmentAttrs maps each CORE fragment to the data-cui-* attributes whose
 // runtime behavior it OWNS.
 //
 // Ownership rule (applied to every attribute, including the ~55 that appear
@@ -111,96 +111,96 @@ var fragments = map[string]fragmentDef{
 //
 //   - dispatchRPC owns the rpc-* family (read inside the RPC dispatch path).
 //   - setSignal + the click-delegator's signal branch own the signal/flash/
-//     tab-index family. data-fui-tab-index lives here because it is read
+//     tab-index family. data-cui-tab-index lives here because it is read
 //     inside setSignal's attr-mode branch (aria-selected mirroring).
-//   - The <a>-click hijack owns the nav markers; data-fui-layout /
-//     data-fui-screen-group decide shell-vs-<main> swaps on navigation.
-//   - kernel owns the CSS scanner (data-fui-comp / data-fui-scope / data-fui-style), the
-//     boot-mode read (data-fui-static), the module-prefetch bridge
-//     (data-fui-prefetch), and the module-load-failure safety net
-//     (data-fui-toast-fallback, created by window.__gofastr._fallbackToast).
+//   - The <a>-click hijack owns the nav markers; data-cui-layout /
+//     data-cui-screen-group decide shell-vs-<main> swaps on navigation.
+//   - kernel owns the CSS scanner (data-cui-comp / data-cui-scope / data-cui-style), the
+//     boot-mode read (data-cui-static), the module-prefetch bridge
+//     (data-cui-prefetch), and the module-load-failure safety net
+//     (data-cui-toast-fallback, created by window.__gofastr._fallbackToast).
 //   - widgets-boot owns the eager open/toast delegators that must exist
-//     before the /__gofastr/widgets catalog resolves (data-fui-open,
-//     data-fui-toast, data-fui-deeplink). These are boot-class even though
+//     before the /__gofastr/widgets catalog resolves (data-cui-open,
+//     data-cui-toast, data-cui-deeplink). These are boot-class even though
 //     they respond to clicks: the LISTENER INSTALLATION is what cannot
 //     self-heal, per the spec's class definition.
 //
 // Attributes whose behavior lives in an on-demand src/*.js module are NOT
-// here. See moduleAttrs. Together the two tables assign every data-fui-*
+// here. See moduleAttrs. Together the two tables assign every data-cui-*
 // attribute in the runtime sources to exactly one owner; attrdoc_test.go
 // asserts the assignment is complete and drift-free.
 var fragmentAttrs = map[string][]string{
 	"kernel": {
-		"data-fui-os",
-		"data-fui-bundle",
-		"data-fui-trusted",
-		"data-fui-comp",
-		"data-fui-scope",
-		"data-fui-style",
-		"data-fui-static",
-		"data-fui-prefetch",
-		"data-fui-toast-fallback",
+		"data-cui-os",
+		"data-cui-bundle",
+		"data-cui-trusted",
+		"data-cui-comp",
+		"data-cui-scope",
+		"data-cui-style",
+		"data-cui-static",
+		"data-cui-prefetch",
+		"data-cui-toast-fallback",
 	},
 	"signals": {
-		"data-fui-signal",
-		"data-fui-signal-mode",
-		"data-fui-signal-attr",
-		"data-fui-signal-set",
-		"data-fui-signal-inc",
-		"data-fui-signal-toggle",
-		"data-fui-flash-on-update",
-		"data-fui-flash-duration-ms",
-		"data-fui-scroll-bottom-on-update",
-		"data-fui-tab-index",
+		"data-cui-signal",
+		"data-cui-signal-mode",
+		"data-cui-signal-attr",
+		"data-cui-signal-set",
+		"data-cui-signal-inc",
+		"data-cui-signal-toggle",
+		"data-cui-flash-on-update",
+		"data-cui-flash-duration-ms",
+		"data-cui-scroll-bottom-on-update",
+		"data-cui-tab-index",
 	},
 	"nav": {
-		"data-fui-spa",
-		// data-fui-nav="off" is read on the anchor at click time: nav
+		"data-cui-spa",
+		// data-cui-nav="off" is read on the anchor at click time: nav
 		// declines the soft navigation and lets the browser do a full
 		// document load.
-		"data-fui-nav",
-		// data-fui-layout is emit-only since the chain rewrite (CSS/debug
+		"data-cui-nav",
+		// data-cui-layout is emit-only since the chain rewrite (CSS/debug
 		// contract); nav's swap decisions read the -key/-slot pair.
-		"data-fui-layout",
-		"data-fui-layout-key",
-		"data-fui-layout-slot",
-		// data-fui-doc marks a document-lifetime script (uihost's
+		"data-cui-layout",
+		"data-cui-layout-key",
+		"data-cui-layout-slot",
+		// data-cui-doc marks a document-lifetime script (uihost's
 		// RegisterDocumentScript rail): the live set of these srcs is
 		// the document's capability identity, compared against the
 		// destination route's manifest docScripts at every soft-nav
 		// entry point. A difference is a hard document load.
-		"data-fui-doc",
-		// data-fui-lang / data-fui-skip-label ride the outermost layer
+		"data-cui-doc",
+		// data-cui-lang / data-cui-skip-label ride the outermost layer
 		// the server renders (App.LangForPath / SkipLabelForPath): the
 		// runtime copies them onto documentElement.lang and the skip link
 		// after every swap, they live outside the shell it replaces.
-		"data-fui-lang",
-		"data-fui-skip-label",
-		"data-fui-screen-group",
+		"data-cui-lang",
+		"data-cui-skip-label",
+		"data-cui-screen-group",
 		// The fills-envelope, view-transition and loading-content
 		// families moved to their demand modules with the opt-in split
 		// (see moduleAttrs: envelope, transition, loading). nav keeps
 		// only the layout-chain spine the plain navigator needs.
 	},
 	"widgets-boot": {
-		"data-fui-open",
-		"data-fui-toast",
-		"data-fui-deeplink",
+		"data-cui-open",
+		"data-cui-toast",
+		"data-cui-deeplink",
 	},
 	"boot-embed": {
 		// Set on the embed root as the frame moves through loading → ready
 		// (content injected) or → error (no parent, refused handshake, failed
 		// content fetch). Read by tests and available to a host page's own
 		// styling; nothing in the runtime branches on it.
-		"data-fui-embed-state",
+		"data-cui-embed-state",
 	},
 	"compute": {
-		"data-fui-compute",
+		"data-cui-compute",
 	},
 }
 
 // moduleAttrs maps each on-demand runtime module (src/<name>.js) to the
-// data-fui-* attributes whose behavior it owns.
+// data-cui-* attributes whose behavior it owns.
 //
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
@@ -208,12 +208,10 @@ var fragmentAttrs = map[string][]string{
 // companion attributes ride along. A module not listed here still loads,
 // this is the attribute-ownership map, not the module registry.
 //
-// Modules that own zero data-fui-* attributes are absent ON PURPOSE:
+// Modules that own zero data-cui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); searchinput (triggered by its
-// data-fui-comp CSS marker, which kernel owns, and otherwise driven
-// by rpc/signals); widgetfocus and
-// widgetlinks (triggered by internal JS markers, not data-fui-* at all);
+// fragment. See fragments note); widgetfocus and
+// widgetlinks (triggered by internal JS markers, not data-cui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);
 // actionloader (triggered by the __gofastr_actions manifest global and
@@ -234,46 +232,49 @@ var moduleAttrs = map[string][]string{
 		// (performWindowDragWithEvent: through the script message
 		// channel), which is why the listener is here and not in the
 		// widget/dismiss modules.
-		"data-fui-window-drag",
+		"data-cui-window-drag",
 	},
 	"activelink": {
-		// data-fui-activelink-skip opt-out from it.
-		"data-fui-match-prefix",
-		"data-fui-activelink-skip",
+		// data-cui-activelink hands a link's first-paint mark to the
+		// sweep, data-cui-match-prefix adds section matching, and
+		// data-cui-activelink-skip opts out of it.
+		"data-cui-activelink",
+		"data-cui-match-prefix",
+		"data-cui-activelink-skip",
 	},
 	"animate": {
-		"data-fui-animate-signal",
-		"data-fui-animate-class",
+		"data-cui-animate-signal",
+		"data-cui-animate-class",
 	},
 	// carousel is retired: the carousel is headless.Carousel's (bound
 	// by the headless-carousel registered module through data-hui-*
 	// hooks; the deferred-slide virtual scroll went with its reader).
 	// combobox is retired: the combobox anatomy is headless.Combobox's
 	// (framework/headless, bound by headless-combobox through
-	// data-hui-* hooks). data-fui-static-options went with it.
+	// data-hui-* hooks). data-cui-static-options went with it.
 	"computed": {
-		"data-fui-computed",
-		"data-fui-computed-deps",
+		"data-cui-computed",
+		"data-cui-computed-deps",
 	},
 	// disclosure and menu are retired: the disclosure anatomy is
 	// headless.Disclosure's (framework/headless, bound by the
 	// headless-disclosure and headless-menu modules through
 	// data-hui-* hooks).
 	"dragdismiss": {
-		"data-fui-drag-dismiss",
-		"data-fui-drag-handle",
-		"data-fui-dragging",
+		"data-cui-drag-dismiss",
+		"data-cui-drag-handle",
+		"data-cui-dragging",
 	},
 	"dropdown": {
-		"data-fui-dropdown-wrap",
-		"data-fui-dropdown",
-		"data-fui-dropdown-open",
-		"data-fui-dropdown-panel",
+		"data-cui-dropdown-wrap",
+		"data-cui-dropdown",
+		"data-cui-dropdown-open",
+		"data-cui-dropdown-panel",
 	},
 	"intercept": {
-		"data-fui-intercept-overlay",
-		"data-fui-intercept-as",
-		"data-fui-intercept-close",
+		"data-cui-intercept-overlay",
+		"data-cui-intercept-as",
+		"data-cui-intercept-close",
 	},
 	// Lightbox's wiring (data-fui-lightbox*, data-fui-zoomed) moved to
 	// framework/ui/lightbox.js, a registered behaviour: its attributes
@@ -285,81 +286,81 @@ var moduleAttrs = map[string][]string{
 	// OptimisticAction's wiring is the kernel's action primitive
 	// (data-hui-action*, bound by the headless module): nothing in
 	// this package reads it, so it has no row here. The
-	// data-fui-optimistic-* hooks and framework/ui/optimisticaction.js
+	// data-cui-optimistic-* hooks and framework/ui/optimisticaction.js
 	// are retired.
 	// panehost is retired: the pane host is headless.PaneHost's (bound
 	// by the headless-panehost registered module through data-hui-*
 	// hooks; the trigger controls are core-ui/interactive's
 	// data-hui-pane-open-control/-close/-swap/-key).
 	"poll": {
-		"data-fui-poll",
-		"data-fui-poll-src",
+		"data-cui-poll",
+		"data-cui-poll-src",
 	},
 	// The layout demand modules (docs/DESIGN-layout-outlets.md "Opt-in"
 	// table): each loads on its marker and owns its family.
 	"envelope": {
 		// The fills-envelope family the envelope module
-		// parses the <template data-fui-fill> envelope, resolves the targets by
-		// data-fui-outlet / data-fui-area address, and applies every fill. It
+		// parses the <template data-cui-fill> envelope, resolves the targets by
+		// data-cui-outlet / data-cui-area address, and applies every fill. It
 		// also owns the scroll-anchor records (keyed off whatever identity the
 		// content carries) and, once loaded, the navigator itself.
-		"data-fui-fill",
-		"data-fui-outlet",
-		"data-fui-area",
+		"data-cui-fill",
+		"data-cui-outlet",
+		"data-cui-area",
 	},
 	"loading": {
 		// The loading-content family the module
-		// clones the inert <template data-fui-loading="<addr>"> the server
+		// clones the inert <template data-cui-loading="<addr>"> the server
 		// renders beside an outlet, area, or slot cell into the region after
-		// data-fui-after ms of in-flight wait, parks the old nodes, restores
-		// them on failure, and marks the region data-fui-loadstate="shown"
-		// (data-fui-min is the no-flash hold the apply honors).
-		"data-fui-loading",
-		"data-fui-after",
-		"data-fui-min",
-		"data-fui-loadstate",
+		// data-cui-after ms of in-flight wait, parks the old nodes, restores
+		// them on failure, and marks the region data-cui-loadstate="shown"
+		// (data-cui-min is the no-flash hold the apply honors).
+		"data-cui-loading",
+		"data-cui-after",
+		"data-cui-min",
+		"data-cui-loadstate",
 	},
 	"transition": {
 		// a view-transition name marker the server
 		// renders on a placed cell; the transition module mirrors it onto the
 		// CSSOM view-transition-name before a navigation's snapshots.
-		// data-fui-vt-when gates the name on a media condition.
-		// data-fui-vt-kinds is the document's declared keyed-transition
+		// data-cui-vt-when gates the name on a media condition.
+		// data-cui-vt-kinds is the document's declared keyed-transition
 		// vocabulary, on <html> at first paint and on the doc shell every
 		// swapped payload's root layer carries; the module copies it onto the
 		// documentElement and gates the X-Gofastr-Transition pick against it.
-		"data-fui-vt",
-		"data-fui-vt-when",
-		"data-fui-vt-kinds",
+		"data-cui-vt",
+		"data-cui-vt-when",
+		"data-cui-vt-kinds",
 	},
 	"popover": {
-		"data-fui-popover-anchor",
-		"data-fui-popover-side",
-		"data-fui-popover-trigger",
+		"data-cui-popover-anchor",
+		"data-cui-popover-side",
+		"data-cui-popover-trigger",
 	},
 	"headless-feedback": {
-		"data-fui-toast-stack",
+		"data-cui-toast-stack",
 	},
 	"rpc": {
-		"data-fui-rpc",
-		"data-fui-rpc-method",
-		"data-fui-rpc-signal",
-		"data-fui-rpc-close",
-		"data-fui-rpc-reset",
-		"data-fui-rpc-body",
-		"data-fui-rpc-open",
-		"data-fui-rpc-navigate",
-		"data-fui-rpc-trigger",
-		"data-fui-rpc-after-text",
-		"data-fui-rpc-after-done",
-		"data-fui-rpc-after-disable",
-		"data-fui-rpc-debounce-ms",
-		"data-fui-rpc-scroll-to",
-		"data-fui-confirm",
-		"data-fui-push-state",
+		"data-cui-rpc",
+		"data-cui-rpc-method",
+		"data-cui-rpc-signal",
+		"data-cui-rpc-close",
+		"data-cui-rpc-reset",
+		"data-cui-rpc-body",
+		"data-cui-rpc-open",
+		"data-cui-rpc-navigate",
+		"data-cui-rpc-trigger",
+		"data-cui-rpc-after-text",
+		"data-cui-rpc-after-done",
+		"data-cui-rpc-after-disable",
+		"data-cui-rpc-debounce-ms",
+		"data-cui-rpc-scroll-to",
+		"data-cui-confirm",
+		"data-cui-push-state",
 	},
 	"reveal": {
-		"data-fui-reveal",
+		"data-cui-reveal",
 	},
 	// scrollspy is retired: the rail is headless.Rail and the observer
 	// that marks the active entry is headless-rail's (data-hui-*,
@@ -372,37 +373,37 @@ var moduleAttrs = map[string][]string{
 	// (bound by the headless-sortablelist registered module through
 	// data-hui-* hooks).
 	"textarea": {
-		"data-fui-autogrow",
+		"data-cui-autogrow",
 	},
 	// toc is retired: the table of contents is headless.TableOfContents
 	// (server-rendered items) and its active state is headless-toc's.
 	// ToggleAction's wiring is the same action primitive
-	// (data-hui-action*): no row here. The data-fui-toggle-* hooks
+	// (data-hui-action*): no row here. The data-cui-toggle-* hooks
 	// and framework/ui/toggleaction.js are retired.
 	// tabs is retired: the tab strip is headless.Tabs's (bound by the
 	// headless-tabs registered module through data-hui-* hooks).
 	// tree is retired: the tree is headless.Tree (bound by the
 	// headless-tree registered module through data-hui-* hooks).
 	"widgethelpers": {
-		"data-fui-persist-storage",
-		"data-fui-charcount-source",
-		"data-fui-clear-on-esc",
-		"data-fui-submit-on-enter",
-		"data-fui-disable-when-invalid",
-		"data-fui-fill-input",
-		"data-fui-fill-text",
-		"data-fui-tick-elapsed",
+		"data-cui-persist-storage",
+		"data-cui-charcount-source",
+		"data-cui-clear-on-esc",
+		"data-cui-submit-on-enter",
+		"data-cui-disable-when-invalid",
+		"data-cui-fill-input",
+		"data-cui-fill-text",
+		"data-cui-tick-elapsed",
 	},
 	"widgets": {
-		"data-fui-widget",
-		"data-fui-action",
-		"data-fui-backdrop",
-		"data-fui-rpc-refresh",
-		// data-fui-ctx (#321): read by openWidget off the trigger the
+		"data-cui-widget",
+		"data-cui-action",
+		"data-cui-backdrop",
+		"data-cui-rpc-refresh",
+		// data-cui-ctx (#321): read by openWidget off the trigger the
 		// eager delegator passed along, and used to key the chrome fetch
 		// + client cache. widgets-boot cross-references it by passing btn;
 		// the behavior lives here, so ownership stays with this module.
-		"data-fui-ctx",
+		"data-cui-ctx",
 	},
 }
 
@@ -414,7 +415,7 @@ const (
 	ownsByModule   ownerKind = "module"
 )
 
-// attrOwner resolves a data-fui-* attribute to its owning fragment or
+// attrOwner resolves a data-cui-* attribute to its owning fragment or
 // module. Returns ("", "") for an unassigned attribute; the gate test
 // asserts that never happens for any attribute in the runtime sources.
 //

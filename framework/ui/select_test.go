@@ -49,14 +49,14 @@ func TestSelectRequiredMarksLabelAndControl(t *testing.T) {
 func TestSelectCarriesItsOwnMarkerBesideTheFields(t *testing.T) {
 	h := requiredSelect()
 	root := h[:strings.Index(h, ">")+1]
-	if !strings.Contains(root, `data-fui-comp="ui-form-field"`) {
+	if !strings.Contains(root, `data-cui-comp="ui-form-field"`) {
 		t.Fatalf("the field marker is missing from the root:\n%s", root)
 	}
 	if !strings.Contains(h, `<select class="fui-select"`) {
 		t.Fatalf("the control does not carry its classes:\n%s", h)
 	}
 	sel := h[strings.Index(h, "<select"):strings.Index(h, "</select>")]
-	if !strings.Contains(sel, `data-fui-comp="ui-select"`) {
+	if !strings.Contains(sel, `data-cui-comp="ui-select"`) {
 		t.Fatalf("the select's own marker is missing — its sheet would never load outside a FormField:\n%s", sel)
 	}
 }
@@ -79,7 +79,7 @@ func TestSelectExtraAttrsCannotOverrideOwned(t *testing.T) {
 		Name: "country", Label: "Country", Class: "mine", Required: true,
 		Options: []SelectOption{{Value: "fr", Text: "France"}},
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "name": "evil", "Class": "evil", "data-fui-comp": "spoof",
+			"data-test": "hook", "name": "evil", "Class": "evil", "data-cui-comp": "spoof",
 		},
 	}))
 	sel := h[strings.Index(h, "<select"):strings.Index(h, "</select>")]

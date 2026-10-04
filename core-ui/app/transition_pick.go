@@ -78,7 +78,7 @@ func chainTransitionPick(ctx context.Context, chain []LayoutLayer) string {
 
 // chainVTKinds lists the document's declared transition vocabulary:
 // every keyed transition name of the chain's tree layers (primaries
-// and outlets), sorted. It rides the doc shell as data-fui-vt-kinds so
+// and outlets), sorted. It rides the doc shell as data-cui-vt-kinds so
 // the runtime can ignore a pick the document never declared.
 func chainVTKinds(chain []LayoutLayer) []string {
 	seen := map[string]bool{}

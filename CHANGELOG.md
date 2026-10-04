@@ -70,7 +70,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   explicit origin), `Config.Widgets` opens floating widget windows at
   launch, `desktop.Widget(path, w, h)` builds the typical spec, and
   `windows.open` accepts a `style` object from the page. A borderless
-  window drags through the page: the `data-fui-window-drag` attribute
+  window drags through the page: the `data-cui-window-drag` attribute
   on any element makes mousedown there start a native window drag.
   Every window now carries its own user script, so a page can learn
   which window it lives in (`window.__gofastr_desktop.window`).
@@ -271,6 +271,68 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
+- **BREAKING: every class and attribute carries the prefix of the
+  tree that defines it** (#467). The kernel's attribute vocabulary is
+  `data-cui-*`: every `data-fui-*` the runtime read is renamed
+  (`data-cui-rpc`, `data-cui-open`, `data-cui-signal`, `data-cui-comp`,
+  `data-cui-toast-stack`, `data-cui-window-drag`, …), and so are the
+  camelCase dataset reads (`dataset.cuiRpc`). The keys that stay
+  `data-fui-*` are the framework's own modules' and hosts':
+  `data-fui-lightbox*`, `data-fui-zoomed`, `data-fui-dropzone-preview*`,
+  `data-fui-pane*`, `data-fui-z-tier`, `data-fui-network-retry-*`,
+  `data-fui-plugin*` and `data-fui-page-loading`. The class families
+  `core-ui` mints are `cui-*`: `cui-widget`, `cui-slot`, `cui-pos-*`,
+  `cui-panel`, `cui-backdrop`, `cui-hidden`, `cui-reveal`,
+  `cui-dropdown`, `cui-section-menu`, `cui-flash`, `cui-loading`,
+  `cui-sse-up`/`cui-sse-down`, `cui-css-*`, `cui-vt-*`,
+  `cui-intercept`, `cui-render-error`, `cui-screen-group`,
+  `cui-route-announce`, `cui-theme-<hash>`, the enter animations
+  (`cui-top-in`, `cui-bottom-in`, `cui-edge-left-in`,
+  `cui-edge-right-in`, `cui-overlay-scale-in`), and the document
+  singletons `#cui-backtotop-sentinel`, `#cui-nav-toast` and
+  `#cui-toast-fallback`; `core-ui/app`'s skip link is
+  `cui-visually-hidden`. `fui-*` is `framework/ui`'s alone. The
+  ownership table is in `core-ui/ARCHITECTURE.md` ("Who owns which
+  prefix"), and `core-ui/check.LintLayerPrefixJS` / `LintLayerPrefixGo`
+  hold the kernel and headless trees to it. `gofastr upgrade` lists
+  every hit in an app's Go, JS, HTML and CSS. Plugins move their
+  attributes to their own prefix (tracked in `gofastr-plugins`).
+- **BREAKING: the kernel and headless modules name no kit class.**
+  The form-errors module places a refused submission's messages by
+  hook: a `ui.FormField` renders `data-hui-field` on the group and a
+  `data-hui-field-error` node for the message (reserved or live, the
+  value `"filled"` or `"live"`); a bare `ui.Choice`/`ui.Switch` label
+  carries `data-hui-choice` and the message follows it. The kit's
+  sheets style the hooks; `fui-field__error` and
+  `fui-choice-field__error` markup placed by the module are gone. The
+  copy control marks a successful copy `data-hui-copy-state="done"`
+  instead of the `fui-copied` class. The search input's clear-button
+  behaviour is `framework/ui`'s own registered module
+  (`framework/ui/searchinput.js`); the kernel's `searchinput` module is
+  deleted.
+- **BREAKING: runtime toasts are cloned from a registered template,
+  and the host guarantees a stack.** `headless-feedback` no longer
+  mounts the `fui-toast-stack-auto` singleton or builds rows out of
+  `fui-notification*` classes. `framework/ui` registers a row template
+  under `preset.ToastTemplate` (`registry.RegisterTemplate`, rendered
+  by the new `headless.ToastTemplate`), `preset.ToastSlotHTML` ships it
+  inside every stack, and the module clones it (`data-hui-toast-item`,
+  `data-hui-toast-tone/-icon/-title/-body`, the glyph and variant
+  class from the template's attributes). With no stack on the page the
+  module returns `null` and the kernel's fallback region shows the
+  toast; `framework/uihost` mounts `uihost.DefaultToastStack`
+  (`gofastr-toasts`) at boot when the app mounted none, so that path
+  is for pages a host did not boot. A dismissed row is marked
+  `data-hui-toast-leaving` (was the `is-leaving` class); the stack
+  container carries no class of its own (`data-cui-comp="ui-toast-stack"`
+  is what the sheet keys on). `ui.ToastSlot` delegates to the preset.
+  New: `registry.Template`, `preset.IsToastStack`,
+  `widget.IsolateForTest`.
+- The pinned v0.85.0 runtime fixture and the test that drove it against
+  today's server are gone: a client that speaks none of the page's
+  attributes intercepts nothing, so the browser's own navigation is the
+  full load the skew contract demands, with no bundle to pin.
+
 - **examples/meridian: `entities/` and `cmd/meridian/` are
   generator-owned again and gated for byte drift** (#416).
   `TestGeneratedTreesMatchGenerator` regenerates both trees from
@@ -311,6 +373,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A sidebar's first-paint mark no longer survives a navigation that
+  lands before the active-link module loads.** `headless.Sidebar` marks
+  every leaf link `data-cui-activelink`, the handover by which the
+  server's `aria-current="page"` becomes the idle-loaded `activelink`
+  module's to clear. Before, the module only cleared links it had
+  stamped itself or that carried `data-cui-match-prefix`, so a click
+  made in the gap before it loaded left two lit entries (the acme-site
+  help nav e2e failed about one run in ten on Linux).
 - **A screen that panics is a logged 500, never a silent 404.** A
   render or `Load` panic on any serving path (full page with or
   without a layout, partial navigation, overlay, and the embed content

@@ -21,8 +21,8 @@ func rawBtn(attrs map[string]string, label string) render.HTML {
 
 func TestWithBodyEmitsAttr(t *testing.T) {
 	attrs := Post("/api/x").WithBody(`{"id":42}`).Attrs()
-	if attrs["data-fui-rpc-body"] != `{"id":42}` {
-		t.Errorf("data-fui-rpc-body = %q, want {\"id\":42}", attrs["data-fui-rpc-body"])
+	if attrs["data-cui-rpc-body"] != `{"id":42}` {
+		t.Errorf("data-cui-rpc-body = %q, want {\"id\":42}", attrs["data-cui-rpc-body"])
 	}
 }
 
@@ -33,7 +33,7 @@ func TestWithBodyRejectsInvalidJSON(t *testing.T) {
 
 func TestWithBodyAcceptsObject(t *testing.T) {
 	// An empty object is valid JSON.
-	if got := Post("/api/x").WithBody(`{}`).Attrs()["data-fui-rpc-body"]; got != `{}` {
+	if got := Post("/api/x").WithBody(`{}`).Attrs()["data-cui-rpc-body"]; got != `{}` {
 		t.Errorf("empty-object body = %q, want {}", got)
 	}
 }
@@ -41,10 +41,10 @@ func TestWithBodyAcceptsObject(t *testing.T) {
 func TestAttrsContainsRPCAndMethod(t *testing.T) {
 	attrs := Delete("/api/d/1").WithConfirm("sure?").OnSuccess(SetSignal("rows")).Attrs()
 	want := map[string]string{
-		"data-fui-rpc":        "/api/d/1",
-		"data-fui-rpc-method": "DELETE",
-		"data-fui-confirm":    "sure?",
-		"data-fui-rpc-signal": "rows",
+		"data-cui-rpc":        "/api/d/1",
+		"data-cui-rpc-method": "DELETE",
+		"data-cui-confirm":    "sure?",
+		"data-cui-rpc-signal": "rows",
 	}
 	for k, v := range want {
 		if attrs[k] != v {
@@ -56,8 +56,8 @@ func TestAttrsContainsRPCAndMethod(t *testing.T) {
 func TestAttrsIsCopy(t *testing.T) {
 	a := Post("/api/x")
 	m := a.Attrs()
-	m["data-fui-rpc"] = "/mutated"
-	if a.Attrs()["data-fui-rpc"] != "/api/x" {
+	m["data-cui-rpc"] = "/mutated"
+	if a.Attrs()["data-cui-rpc"] != "/api/x" {
 		t.Error("Attrs() returned the live map, not a copy")
 	}
 }
@@ -66,16 +66,16 @@ func TestAttrsIsCopy(t *testing.T) {
 
 func TestOpenOnClickEmitsAttr(t *testing.T) {
 	got := string(OpenOnClick(rawBtn(nil, "Open"), "site-modal"))
-	if !strings.Contains(got, `data-fui-open="site-modal"`) {
-		t.Errorf("missing data-fui-open: %s", got)
+	if !strings.Contains(got, `data-cui-open="site-modal"`) {
+		t.Errorf("missing data-cui-open: %s", got)
 	}
 }
 
 func TestOpenOnClickByteIdenticalToMap(t *testing.T) {
-	// The wrapper appends data-fui-open after the tag's existing attrs.
+	// The wrapper appends data-cui-open after the tag's existing attrs.
 	// On a classless button that is also the sorted position.
 	got := string(OpenOnClick(rawBtn(nil, "Open"), "m"))
-	want := string(rawBtn(map[string]string{"data-fui-open": "m"}, "Open"))
+	want := string(rawBtn(map[string]string{"data-cui-open": "m"}, "Open"))
 	if got != want {
 		t.Errorf("OpenOnClick not byte-identical to map:\n got: %s\nwant: %s", got, want)
 	}
@@ -94,7 +94,7 @@ func TestToastOnClickMatchesHandWrittenLiteral(t *testing.T) {
 		Body:    "Triggered from JS, no round-trip.",
 		TTLMs:   5000,
 	}))
-	want := string(rawBtn(map[string]string{"data-fui-toast": json}, "Client: success"))
+	want := string(rawBtn(map[string]string{"data-cui-toast": json}, "Client: success"))
 	if got != want {
 		t.Errorf("toast not byte-identical to hand-written literal:\n got: %s\nwant: %s", got, want)
 	}
@@ -102,7 +102,7 @@ func TestToastOnClickMatchesHandWrittenLiteral(t *testing.T) {
 
 func TestToastOnClickOmitsZeroFields(t *testing.T) {
 	got := string(ToastOnClick(rawBtn(nil, "X"), Toast{Title: "only-title"}))
-	if !strings.Contains(got, `data-fui-toast="{&quot;title&quot;:&quot;only-title&quot;}"`) {
+	if !strings.Contains(got, `data-cui-toast="{&quot;title&quot;:&quot;only-title&quot;}"`) {
 		t.Errorf("zero fields not omitted: %s", got)
 	}
 }
@@ -155,8 +155,8 @@ func TestBindHTMLByteIdenticalToSortedMap(t *testing.T) {
 	inner := render.Tag("div", nil, render.Text("list"))
 	got := string(BindHTML(inner, "opt-create-list"))
 	want := string(render.Tag("div", map[string]string{
-		"data-fui-signal":      "opt-create-list",
-		"data-fui-signal-mode": "html",
+		"data-cui-signal":      "opt-create-list",
+		"data-cui-signal-mode": "html",
 	}, render.Text("list")))
 	if got != want {
 		t.Errorf("BindHTML not byte-identical to sorted map:\n got: %s\nwant: %s", got, want)
@@ -168,8 +168,8 @@ func TestBindTextByteIdenticalToSortedMap(t *testing.T) {
 	got := string(BindText(inner, "demo-counter"))
 	want := string(render.Tag("span", map[string]string{
 		"class":                "demo-signal-out",
-		"data-fui-signal":      "demo-counter",
-		"data-fui-signal-mode": "text",
+		"data-cui-signal":      "demo-counter",
+		"data-cui-signal-mode": "text",
 	}, render.Text("0")))
 	if got != want {
 		t.Errorf("BindText not byte-identical to sorted map:\n got: %s\nwant: %s", got, want)
@@ -180,9 +180,9 @@ func TestBindAttrByteIdenticalToSortedMap(t *testing.T) {
 	inner := render.Tag("span", nil, render.Text(""))
 	got := string(BindAttr(inner, "tab-active", "data-active"))
 	want := string(render.Tag("span", map[string]string{
-		"data-fui-signal":      "tab-active",
-		"data-fui-signal-attr": "data-active",
-		"data-fui-signal-mode": "attr",
+		"data-cui-signal":      "tab-active",
+		"data-cui-signal-attr": "data-active",
+		"data-cui-signal-mode": "attr",
 	}, render.Text("")))
 	if got != want {
 		t.Errorf("BindAttr not byte-identical to sorted map:\n got: %s\nwant: %s", got, want)

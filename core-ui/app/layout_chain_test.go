@@ -22,7 +22,7 @@ func TestDirectScreenLayoutReplacesDefault(t *testing.T) {
 	if strings.Contains(s, "SITE") {
 		t.Errorf("explicit screen layout must replace the default, got: %s", s)
 	}
-	if !strings.Contains(s, "OWN") || !strings.Contains(s, `data-fui-layout-key="l:bare"`) {
+	if !strings.Contains(s, "OWN") || !strings.Contains(s, `data-cui-layout-key="l:bare"`) {
 		t.Errorf("own layout with key missing: %s", s)
 	}
 }
@@ -43,13 +43,13 @@ func TestGroupNestsUnderDefaultWithOneMain(t *testing.T) {
 		t.Fatalf("want exactly 1 <main>, got %d: %s", got, s)
 	}
 	// Default layout is layer 0 (owns <main>); group layer nests inside.
-	if !strings.Contains(s, `data-fui-layout-slot="l:site"`) {
+	if !strings.Contains(s, `data-cui-layout-slot="l:site"`) {
 		t.Errorf("default layer slot missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-layout-key="g:/docs/:docs"`) {
+	if !strings.Contains(s, `data-cui-layout-key="g:/docs/:docs"`) {
 		t.Errorf("group layer key missing: %s", s)
 	}
-	if strings.Index(s, `data-fui-layout-key="l:site"`) >= strings.Index(s, `data-fui-layout-key="g:/docs/:docs"`) {
+	if strings.Index(s, `data-cui-layout-key="l:site"`) >= strings.Index(s, `data-cui-layout-key="g:/docs/:docs"`) {
 		t.Errorf("default layer must wrap group layer: %s", s)
 	}
 }
@@ -73,7 +73,7 @@ func TestStandaloneGroupSkipsDefault(t *testing.T) {
 		t.Fatalf("want exactly 1 <main>, got %d: %s", got, s)
 	}
 	// The group layer is layer 0: it owns <main> and its slot.
-	if !strings.Contains(s, `<main data-fui-layout-slot="g:/admin/:admin"`) {
+	if !strings.Contains(s, `<main data-cui-layout-slot="g:/admin/:admin"`) {
 		t.Errorf("standalone group layer must own the main slot: %s", s)
 	}
 }
@@ -95,11 +95,11 @@ func TestInheritedSubgroupLayerIsMarkerOnly(t *testing.T) {
 		t.Errorf("inherited layout must render once, got %d: %s", got, s)
 	}
 	// The child level still exists as an addressable marker-only layer.
-	if !strings.Contains(s, `data-fui-layout-key="g:/settings/advanced/"`) ||
-		!strings.Contains(s, `data-fui-layout-slot="g:/settings/advanced/"`) {
+	if !strings.Contains(s, `data-cui-layout-key="g:/settings/advanced/"`) ||
+		!strings.Contains(s, `data-cui-layout-slot="g:/settings/advanced/"`) {
 		t.Errorf("marker-only child layer missing: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-layout-key="g:/settings/:settings"`) {
+	if !strings.Contains(s, `data-cui-layout-key="g:/settings/:settings"`) {
 		t.Errorf("parent layer key missing: %s", s)
 	}
 }
@@ -160,7 +160,7 @@ func TestPartialFromSiblingIsBareWithSwapLayer(t *testing.T) {
 		t.Errorf("content missing: %s", s)
 	}
 	// Fully shared chain → bare content, no re-rendered shell.
-	if strings.Contains(s, "NAV") || strings.Contains(s, "data-fui-layout-key") {
+	if strings.Contains(s, "NAV") || strings.Contains(s, "data-cui-layout-key") {
 		t.Errorf("sibling partial must not re-render the shared shell: %s", s)
 	}
 }
@@ -193,7 +193,7 @@ func TestPartialFromRendersOnlyDivergingLayers(t *testing.T) {
 	if strings.Contains(s, "<main") {
 		t.Errorf("partial must not emit <main>: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-layout-slot="g:/docs/:docs"`) {
+	if !strings.Contains(s, `data-cui-layout-slot="g:/docs/:docs"`) {
 		t.Errorf("re-rendered layer must carry its slot marker: %s", s)
 	}
 }
@@ -227,7 +227,7 @@ func TestPartialFromDisjointChainsIsBare(t *testing.T) {
 	if res.SwapLayer != "" {
 		t.Errorf("disjoint chains must yield no SwapLayer, got %q", res.SwapLayer)
 	}
-	if strings.Contains(string(res.HTML), "data-fui-layout-key") {
+	if strings.Contains(string(res.HTML), "data-cui-layout-key") {
 		t.Errorf("bare partial must not carry layer markers: %s", res.HTML)
 	}
 }

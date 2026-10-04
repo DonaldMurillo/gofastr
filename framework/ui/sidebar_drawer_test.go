@@ -48,7 +48,7 @@ func TestSidebarDrawerHeaderRenders(t *testing.T) {
 		`class="fui-sidebar__drawer-head"`,
 		`<span class="fui-sidebar__drawer-brand">Acme Tracker</span>`,
 		`aria-label="Close navigation"`,
-		`data-fui-action="close"`,
+		`data-cui-action="close"`,
 		`class="fui-sidebar__drawer-close"`,
 	} {
 		if !strings.Contains(chrome, want) {
@@ -57,7 +57,7 @@ func TestSidebarDrawerHeaderRenders(t *testing.T) {
 	}
 	// The header must sit ABOVE the body slot (brand read first).
 	if head, body := strings.Index(chrome, "fui-sidebar__drawer-head"),
-		strings.Index(chrome, "fui-slot-body"); head < 0 || body < 0 || head > body {
+		strings.Index(chrome, "cui-slot-body"); head < 0 || body < 0 || head > body {
 	}
 }
 

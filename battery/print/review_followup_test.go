@@ -248,7 +248,7 @@ func TestDocumentPathCollisionPanics(t *testing.T) {
 // ----- component CSS is collected + inlined ---------------------------------
 
 var followupCompStyle = registry.RegisterStyle("print-followup-comp", func(style.Theme) string {
-	return `[data-fui-comp="print-followup-comp"]{color:var(--color-primary)}`
+	return `[data-cui-comp="print-followup-comp"]{color:var(--color-primary)}`
 })
 
 type followupStyledComp struct{}
@@ -263,7 +263,7 @@ func TestComponentCSSInlinedWhenUsed(t *testing.T) {
 		Build: func(*http.Request) (component.Component, error) { return followupStyledComp{}, nil },
 	})
 	body := get(t, mount(t, b), "/print/doc").Body.String()
-	if !strings.Contains(body, `[data-fui-comp="print-followup-comp"]`) {
+	if !strings.Contains(body, `[data-cui-comp="print-followup-comp"]`) {
 		t.Errorf("scoped component CSS not inlined into print shell: %q", body)
 	}
 }

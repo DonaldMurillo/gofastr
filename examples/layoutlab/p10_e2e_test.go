@@ -31,8 +31,8 @@ func mixWatch(t *testing.T, ctx context.Context) {
 			};
 			check();
 		};
-		stamp('[data-fui-outlet="l:shell#toolbar"]', 'fast');
-		stamp('[data-fui-outlet="l:shell#aside"]', 'slow');
+		stamp('[data-cui-outlet="l:shell#toolbar"]', 'fast');
+		stamp('[data-cui-outlet="l:shell#aside"]', 'slow');
 		return true;
 	})()`, nil)); err != nil {
 		t.Fatalf("watch: %v", err)
@@ -99,9 +99,9 @@ func TestP10ANoStreamE2E(t *testing.T) {
 }
 
 const (
-	pAsideSel   = `[data-fui-outlet="l:pshell#aside"]`
-	pRailSel    = `[data-fui-outlet="l:pshell#rail"]`
-	pToolbarSel = `[data-fui-outlet="l:pshell#toolbar"]`
+	pAsideSel   = `[data-cui-outlet="l:pshell#aside"]`
+	pRailSel    = `[data-cui-outlet="l:pshell#rail"]`
+	pToolbarSel = `[data-cui-outlet="l:pshell#toolbar"]`
 )
 
 // partsWatch is mixWatch over the /parts* markers (TOOLBAR-PARTS2 is
@@ -121,8 +121,8 @@ func partsWatch(t *testing.T, ctx context.Context) {
 			};
 			check();
 		};
-		stamp('[data-fui-outlet="l:pshell#toolbar"]', 'fast', 'TOOLBAR-PARTS2');
-		stamp('[data-fui-outlet="l:pshell#aside"]', 'slow', 'ASIDE-PARTS2-SLOW');
+		stamp('[data-cui-outlet="l:pshell#toolbar"]', 'fast', 'TOOLBAR-PARTS2');
+		stamp('[data-cui-outlet="l:pshell#aside"]', 'slow', 'ASIDE-PARTS2-SLOW');
 		return true;
 	})()`, nil)); err != nil {
 		t.Fatalf("arm watchers: %v", err)
@@ -160,7 +160,7 @@ func TestP10PartsE2E(t *testing.T) {
 	}
 	// Mid-flight: the fast regions are in, the deferred aside still
 	// shows the loading content, and the primary has landed.
-	if got := labRead(t, tctx, `main[data-fui-layout-slot="l:pshell"]`); !contains(got, "SCREEN-PARTS2") {
+	if got := labRead(t, tctx, `main[data-cui-layout-slot="l:pshell"]`); !contains(got, "SCREEN-PARTS2") {
 		t.Errorf("primary mid-parts = %q, want SCREEN-PARTS2 applied with the page", got)
 	}
 	if got := labRead(t, tctx, pAsideSel); contains(got, "ASIDE-PARTS2-SLOW") {
@@ -230,7 +230,7 @@ func TestP10PartsFailureContainedE2E(t *testing.T) {
 	}
 	var toastVisible bool
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`!!document.querySelector('.fui-nav-toast.is-visible')`, &toastVisible)); err != nil {
+		`!!document.querySelector('.cui-nav-toast.is-visible')`, &toastVisible)); err != nil {
 		t.Fatal(err)
 	}
 	if toastVisible {
@@ -293,12 +293,12 @@ func TestP10CFirstLoadCarriesDeferredRegions(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	if !strings.Contains(page, `data-fui-outlet="l:pshell#aside"`) {
+	if !strings.Contains(page, `data-cui-outlet="l:pshell#aside"`) {
 		t.Fatal("no aside outlet in the document")
 	}
 	// The outlet cell carries the FILL's own content inline (the
 	// JavaScript-off guarantee), not loading content.
-	i := strings.Index(page, `data-fui-outlet="l:pshell#aside"`)
+	i := strings.Index(page, `data-cui-outlet="l:pshell#aside"`)
 	cell := page[i:]
 	if j := strings.Index(cell, ">"); j >= 0 {
 		cell = cell[j+1:]
@@ -309,7 +309,7 @@ func TestP10CFirstLoadCarriesDeferredRegions(t *testing.T) {
 	if !strings.Contains(cell, "ASIDE-PARTS-SLOW") {
 		t.Errorf("aside outlet cell = %q; a first load must carry the deferred fill's own content inline", cell)
 	}
-	if strings.Contains(page, `<template data-fui-fill=`) {
+	if strings.Contains(page, `<template data-cui-fill=`) {
 		t.Error("a first load must not ship fills as inert templates")
 	}
 }

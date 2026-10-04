@@ -55,7 +55,7 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(res.HTML), `data-fui-layout-key="g:/projects/billing/:project"`) {
+	if !strings.Contains(string(res.HTML), `data-cui-layout-key="g:/projects/billing/:project"`) {
 		t.Errorf("the group layer's key embeds the resolved value:\n%s", res.HTML)
 	}
 
@@ -93,7 +93,7 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 	if cross.SwapLayer != "l:shell" {
 		t.Fatalf("another project re-renders the layer: SwapLayer = %q, want l:shell", cross.SwapLayer)
 	}
-	if !strings.Contains(string(cross.HTML), `data-fui-layout-key="g:/projects/search/:project"`) {
+	if !strings.Contains(string(cross.HTML), `data-cui-layout-key="g:/projects/search/:project"`) {
 		t.Errorf("the re-rendered layer carries the new value's key:\n%s", cross.HTML)
 	}
 }

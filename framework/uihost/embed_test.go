@@ -245,7 +245,7 @@ func TestEmbedShellCarriesRuntimeAndConfig(t *testing.T) {
 }
 
 // The shell must carry the component catalog. Without it the kernel's CSS
-// scanner cannot resolve a data-fui-comp marker to a stylesheet URL, so the
+// scanner cannot resolve a data-cui-comp marker to a stylesheet URL, so the
 // frame renders every component's MARKUP with none of its CSS: cards lose
 // their surface, grids collapse to one column, stat cards become bare
 // paragraphs. Every element is present, so a DOM assertion sees nothing wrong;
@@ -1119,7 +1119,7 @@ func TestEmbedGrantIsRefusedOnSSE(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("grant-bearing SSE request: status = %d, want 401; body = %q", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{"EventSource", "data-fui-poll"} {
+	for _, want := range []string{"EventSource", "data-cui-poll"} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("refusal body missing %q — the developer is left guessing:\n%s", want, rec.Body.String())
 		}

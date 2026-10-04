@@ -579,7 +579,7 @@ the supported `framework/ui/resource` engine through the app's thin
   `filters: [status, assignee_id]`.
 - `entity_detail` reads the route `{id}`, loads the record server-side, and
   renders the fields with the same formatting + relation resolution.
-- `entity_form` renders a `<form data-fui-rpc="<api_prefix>/<entity>">` (enum →
+- `entity_form` renders a `<form data-cui-rpc="<api_prefix>/<entity>">` (enum →
   `<select>` of values; relation → `<select>` populated from the related entity).
 
 The generated `resource.Config` registry (`appResources`) is declared in the
@@ -661,8 +661,8 @@ App-side entity screens are read/write, not read-only:
   a synthesized `<detail-route>/edit` screen with the form **prefilled** from the
   record (enum/relation `<select>`s render their options + selection server-side).
 
-The forms submit as islands: `data-fui-rpc` POSTs/PUTs JSON to the entity's
-`<api_prefix>/<entity>` endpoint, then `data-fui-rpc-navigate` returns to the
+The forms submit as islands: `data-cui-rpc` POSTs/PUTs JSON to the entity's
+`<api_prefix>/<entity>` endpoint, then `data-cui-rpc-navigate` returns to the
 list/detail on success. Delete is a `DELETE` with a native confirm. The synthesized
 screens inherit the source screen's `layout` + `access` and are not added to `nav`.
 

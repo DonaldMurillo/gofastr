@@ -255,7 +255,7 @@ func TestWithDocumentScopeNeedsDocumentRail(t *testing.T) {
 }
 
 // WithDocumentScope on a real uihost: the bridge tag rides the
-// document rail — data-fui-doc, in scope only — and the route manifest
+// document rail — data-cui-doc, in scope only — and the route manifest
 // carries docScripts for the scoped route so the client sees the
 // boundary.
 func TestWithDocumentScopeRidesHostRail(t *testing.T) {
@@ -279,8 +279,8 @@ func TestWithDocumentScopeRidesHostRail(t *testing.T) {
 	rec := httptest.NewRecorder()
 	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/support", nil))
 	page := rec.Body.String()
-	if n := strings.Count(page, `data-fui-doc`); n != 1 {
-		t.Errorf("/support carries %d data-fui-doc tags, want 1:\n%s", n, page)
+	if n := strings.Count(page, `data-cui-doc`); n != 1 {
+		t.Errorf("/support carries %d data-cui-doc tags, want 1:\n%s", n, page)
 	}
 	if !strings.Contains(page, `"docScripts":["/__gofastr/webmcp.js`) {
 		t.Errorf("route manifest does not declare the bridge for /support:\n%s", page)
@@ -289,7 +289,7 @@ func TestWithDocumentScopeRidesHostRail(t *testing.T) {
 	rec = httptest.NewRecorder()
 	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	home := rec.Body.String()
-	if strings.Contains(home, `data-fui-doc`) || strings.Contains(home, `src="/__gofastr/webmcp.js`) {
+	if strings.Contains(home, `data-cui-doc`) || strings.Contains(home, `src="/__gofastr/webmcp.js`) {
 		t.Errorf("out-of-scope / ships the bridge:\n%s", home)
 	}
 }

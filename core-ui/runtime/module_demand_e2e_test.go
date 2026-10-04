@@ -91,35 +91,35 @@ func newDemandSite(t *testing.T, variant string) *demandSite {
 	var outlet, loadingTpl, vtKinds, deferNote string
 	switch variant {
 	case "outlet":
-		outlet = `<div data-fui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
+		outlet = `<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
 	case "loading":
 		// Isolated trigger: the template alone, no outlet marker, so
 		// only the loading module's row fires.
-		loadingTpl = `<template data-fui-loading="l:site#aside" data-fui-after="0" data-fui-min="0"><span id="skeleton">CLIENT-SKELETON</span></template>`
+		loadingTpl = `<template data-cui-loading="l:site#aside" data-cui-after="0" data-cui-min="0"><span id="skeleton">CLIENT-SKELETON</span></template>`
 	case "outlet+defer":
 		// The realistic deferred shape: outlets in the DOM AND the
 		// manifest deferral, so the envelope navigator runs while the
 		// parts module is the one being probed.
-		outlet = `<div data-fui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
+		outlet = `<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
 	case "outlet+loading":
-		outlet = `<div data-fui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
-		loadingTpl = `<template data-fui-loading="l:site#aside" data-fui-after="0" data-fui-min="0"><span id="skeleton">CLIENT-SKELETON</span></template>`
+		outlet = `<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
+		loadingTpl = `<template data-cui-loading="l:site#aside" data-cui-after="0" data-cui-min="0"><span id="skeleton">CLIENT-SKELETON</span></template>`
 	case "parts":
 		// Manifest-only trigger: no outlet marker in the DOM, the
 		// route table alone carries a deferred address.
 		deferNote = `<!-- deferred lives in the manifest only -->`
 	case "vt":
-		vtKinds = ` data-fui-vt-kinds="fade"`
+		vtKinds = ` data-cui-vt-kinds="fade"`
 	}
 	shell := func(mainInner, aside string) string {
 		out := outlet
 		if aside != "" {
-			out = `<div data-fui-outlet="l:site#aside" id="aside">` + aside + `</div>`
+			out = `<div data-cui-outlet="l:site#aside" id="aside">` + aside + `</div>`
 		}
 		return `<!doctype html><html lang="en"` + vtKinds + `><head><title>demand</title>` + routes +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a></nav>` + out +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` + mainInner + `</main>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + mainInner + `</main>` +
 			`</div>` + loadingTpl + deferNote +
 			`<script src="/__gofastr/runtime.js"></script></body></html>`
 	}
@@ -163,8 +163,8 @@ func newDemandSite(t *testing.T, variant string) *demandSite {
 			w.Header().Set("X-Gofastr-Swap", "l:site")
 			if r.Header.Get("X-Gofastr-Fills") == "2" {
 				w.Header().Set("X-Gofastr-Envelope", "2")
-				fmt.Fprint(w, `<template data-fui-fill="l:site">A-CONTENT</template>`+
-					`<template data-fui-fill="l:site#aside">ENVELOPE-ASIDE</template>`)
+				fmt.Fprint(w, `<template data-cui-fill="l:site">A-CONTENT</template>`+
+					`<template data-cui-fill="l:site#aside">ENVELOPE-ASIDE</template>`)
 				return
 			}
 			fmt.Fprint(w, `<p>A-CONTENT</p>`)

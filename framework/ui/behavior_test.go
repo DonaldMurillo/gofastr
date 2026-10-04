@@ -93,3 +93,15 @@ func TestActionAdaptersSetLoadedFlagBeforeInstalling(t *testing.T) {
 		}
 	}
 }
+
+// The modules framework/ui owns are registered behaviours, not kernel
+// modules: each binds the component's own classes, which the kernel
+// never names, and lives beside the component it drives. One going
+// missing is a silent break of that component, not a cleanup.
+func TestOwnModulesAreRegistered(t *testing.T) {
+	for _, name := range []string{"filedropzone", "searchinput", "lightbox"} {
+		if _, ok := registry.LookupBehavior(name); !ok {
+			t.Errorf("%s is not registered: framework/ui owns this behaviour (its .js sits beside the component)", name)
+		}
+	}
+}

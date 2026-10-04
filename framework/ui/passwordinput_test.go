@@ -134,7 +134,7 @@ func TestPasswordInputAttrsCannotOverrideID(t *testing.T) {
 // Extras land on the shell's ROOT — the contract every component's
 // ExtraAttrs carries — never on the inner input that submits, and
 // never override what the component owns (#262); the reveal hooks
-// cannot be forged: a data-hui-* or data-fui-* key is dropped on the
+// cannot be forged: a data-hui-* or data-cui-* key is dropped on the
 // way in.
 func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
@@ -142,7 +142,7 @@ func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 		ExtraAttrs: map[string]string{
 			"data-testid":     "pw-field",
 			"data-hui-reveal": "forged",
-			"data-fui-rpc":    "/evil",
+			"data-cui-rpc":    "/evil",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]
@@ -157,8 +157,8 @@ func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 	if strings.Contains(h, `data-hui-reveal="forged"`) {
 		t.Errorf("a forged data-hui hook must not ship:\n%s", h)
 	}
-	if strings.Contains(h, `data-fui-rpc`) {
-		t.Errorf("a data-fui-* key must not ship:\n%s", h)
+	if strings.Contains(h, `data-cui-rpc`) {
+		t.Errorf("a data-cui-* key must not ship:\n%s", h)
 	}
 }
 

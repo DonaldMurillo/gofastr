@@ -42,7 +42,7 @@ func TestTextAreaEmitsTextareaWithName(t *testing.T) {
 func TestTextAreaControlCarriesItsOwnMarker(t *testing.T) {
 	h := string(TextArea(TextAreaConfig{Name: "bio", Label: "Bio"}))
 	ta := extraAttrsOpeningTag(t, h, "textarea")
-	if !strings.Contains(ta, `data-fui-comp="ui-textarea"`) {
+	if !strings.Contains(ta, `data-cui-comp="ui-textarea"`) {
 		t.Errorf("the textarea should carry the ui-textarea marker:\n%s", ta)
 	}
 	if !strings.Contains(ta, `class="fui-textarea"`) {
@@ -52,11 +52,11 @@ func TestTextAreaControlCarriesItsOwnMarker(t *testing.T) {
 
 func TestTextAreaAutogrowAddsMarker(t *testing.T) {
 	on := string(TextArea(TextAreaConfig{Name: "x", Label: "x", Autogrow: true}))
-	if !strings.Contains(on, "data-fui-autogrow") {
-		t.Errorf("Autogrow=true should emit data-fui-autogrow:\n%s", on)
+	if !strings.Contains(on, "data-cui-autogrow") {
+		t.Errorf("Autogrow=true should emit data-cui-autogrow:\n%s", on)
 	}
 	off := string(TextArea(TextAreaConfig{Name: "x", Label: "x"}))
-	if strings.Contains(off, "data-fui-autogrow") {
+	if strings.Contains(off, "data-cui-autogrow") {
 		t.Errorf("default Autogrow=false should NOT emit marker:\n%s", off)
 	}
 }
@@ -99,12 +99,12 @@ func TestTextAreaLabelForMatchesID(t *testing.T) {
 
 // ExtraAttrs land on the <textarea> but never override what the
 // component owns (#262): rows keeps its framework value; the
-// data-fui-autogrow wiring cannot be spoofed.
+// data-cui-autogrow wiring cannot be spoofed.
 func TestTextAreaExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(TextArea(TextAreaConfig{
 		Name: "bio", Label: "Bio", Class: "mine", Placeholder: "Tell us",
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "rows": "evil", "Class": "evil", "data-fui-autogrow": "spoof",
+			"data-test": "hook", "rows": "evil", "Class": "evil", "data-cui-autogrow": "spoof",
 		},
 	}))
 	ta := extraAttrsOpeningTag(t, h, "textarea")

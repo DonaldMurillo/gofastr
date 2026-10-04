@@ -18,7 +18,7 @@ import (
 // vocabularies are mutually exclusive: zero Wiring renders the hui
 // family, and a set Wiring renders the data-fui-lightbox* family for
 // the framework's own module — framework/ui's registered lightbox
-// behaviour, which binds data-fui-* hooks only — and suppresses the
+// behaviour, which binds data-cui-* hooks only — and suppresses the
 // hui twins, because a host module binding those beside the
 // framework's would double-bind the gallery the shipped module steps
 // and fight its pinch-zoom on the same image.
@@ -40,7 +40,7 @@ const (
 // a host shipping its own viewer module against the hooks leaves
 // Wiring zero and none of the framework's attributes render. A set
 // Wiring renders the data-fui-lightbox* family instead — for
-// framework/ui's lightbox module, which binds data-fui-* hooks only —
+// framework/ui's lightbox module, which binds data-cui-* hooks only —
 // and suppresses the hui twins: the two vocabularies name the same
 // facts, and a viewer that rendered both would invite a host module to
 // double-bind the gallery the framework module steps.
@@ -122,8 +122,10 @@ func LightboxViewer(p LightboxViewerProps, s Classes) render.HTML {
 		"id": p.ID,
 	}))
 	if wired {
+		//gofastr:allow(layerprefix) Wiring renders the framework lightbox module's family on purpose; the hui family is the unwired render
 		own["data-fui-lightbox"] = p.Wiring.Viewer
 		if p.Wiring.Nav {
+			//gofastr:allow(layerprefix) Wiring renders the framework lightbox module's nav key on purpose
 			own["data-fui-lightbox-nav"] = "true"
 		}
 	} else {
@@ -141,6 +143,7 @@ func LightboxViewer(p LightboxViewerProps, s Classes) render.HTML {
 	}
 	zoomAttr := "data-hui-lightbox-image"
 	if wired {
+		//gofastr:allow(layerprefix) Wiring renders the framework lightbox module's zoom target on purpose
 		zoomAttr = "data-fui-lightbox-image"
 	}
 	img := Mark(Attrs(map[string]string{"alt": ""}), zoomAttr)
@@ -156,6 +159,7 @@ func LightboxViewer(p LightboxViewerProps, s Classes) render.HTML {
 		prevAttr, nextAttr := "data-hui-lightbox-prev", "data-hui-lightbox-next"
 		prevName, nextName := p.Name, p.Name
 		if wired {
+			//gofastr:allow(layerprefix) Wiring renders the framework lightbox module's nav buttons on purpose
 			prevAttr, nextAttr = "data-fui-lightbox-prev", "data-fui-lightbox-next"
 			prevName, nextName = p.Wiring.Viewer, p.Wiring.Viewer
 		}
@@ -240,6 +244,7 @@ func init() {
 			}, {
 				Name: "framework wiring",
 				Why: "the binder's spellings instead of the hooks: the same identity, nav opt-in, buttons and " +
+					//gofastr:allow(layerprefix) the panic names the family Wiring renders so the caller knows which spelling they got
 					"zoom target as data-fui-lightbox*, for the framework module a styled lightbox ships — the hui " +
 					"twins are suppressed here; they render exactly when the host's own module is the intended binder",
 				HTML: LightboxViewer(LightboxViewerProps{

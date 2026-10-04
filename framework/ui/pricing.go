@@ -34,7 +34,7 @@ type PricingCardConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the card's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -76,8 +76,8 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 	// the head and price groups hold none of a caller's markup — both
 	// are the topmost of their own internal subtree.
 	out := []render.HTML{
-		html.Div(html.DivConfig{Class: "fui-pricing-card__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, head...),
-		html.Div(html.DivConfig{Class: "fui-pricing-card__price", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, price...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, head...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__price", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, price...),
 	}
 	if len(items) > 0 {
 		out = append(out, html.UnorderedList(html.ListConfig{Class: "fui-pricing-card__features"}, items...))
@@ -107,7 +107,7 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 var pricingCardStyle = registry.RegisterStyle("ui-pricing-card", pricingCardCSS)
 
 func pricingCardCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-pricing-card"] {
+	return `[data-cui-comp="ui-pricing-card"] {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg, 1rem);
@@ -117,13 +117,13 @@ func pricingCardCSS(_ style.Theme) string {
   border-radius: 14px;
   height: 100%;
 }
-[data-fui-comp="ui-pricing-card"].fui-pricing-card--featured {
+[data-cui-comp="ui-pricing-card"].fui-pricing-card--featured {
   border-color: var(--color-primary, #4338CA);
   box-shadow: 0 0 0 1px var(--color-primary, #4338CA);
   background-color: color-mix(in srgb, var(--color-primary, #4338CA) 4%, var(--color-surface, #fff));
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__badge {
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__badge {
   align-self: flex-start;
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
@@ -139,36 +139,36 @@ func pricingCardCSS(_ style.Theme) string {
   padding: 0.15rem var(--spacing-md, 0.5rem);
   border-radius: 999px;
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__name {
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__name {
   font-family: var(--font-heading, inherit);
   font-size: var(--text-xl, 1.25rem);
   margin: 0;
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__amount {
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__feature {
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
   color: var(--color-text, #1B1B2A);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__feature::before {
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature::before {
   content: "✓";
   position: absolute;
   inset-inline-start: 0;
   color: var(--color-success, #15803D);
   font-weight: var(--font-weight-bold);
 }
-[data-fui-comp="ui-pricing-card"] .fui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
 `
 }

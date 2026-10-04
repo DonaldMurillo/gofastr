@@ -11,7 +11,7 @@ func TestResponsiveEmitsBothVariants(t *testing.T) {
 	h := string(Responsive(ResponsiveConfig{},
 		render.Text("DESKTOP"), render.Text("MOBILE")))
 	for _, want := range []string{
-		`data-fui-comp="ui-responsive"`,
+		`data-cui-comp="ui-responsive"`,
 		"DESKTOP",
 		"fui-responsive__mobile",
 		"MOBILE",

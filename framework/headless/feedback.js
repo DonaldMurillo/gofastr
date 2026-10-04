@@ -87,8 +87,10 @@
   };
 
   NS._dismissToast = function (item, id) {
-    if (!item || item.classList.contains('is-leaving')) return;
-    item.classList.add('is-leaving');
+    if (!item || item.hasAttribute('data-hui-toast-leaving')) return;
+    // The leaving mark is the module's own (written here, rendered by
+    // no component): the kit's stack sheet animates the row out on it.
+    item.setAttribute('data-hui-toast-leaving', '');
     const rec = NS._toastTimers.get(id);
     if (rec) { clearTimeout(rec.timer); NS._toastTimers.delete(id); }
     const cs = getComputedStyle(item);
@@ -96,104 +98,128 @@
     setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
   };
 
-  // stackLabelFmt: the dismiss label template the stack carries (from
-  // Strings.DismissTitled), %s where the toast's title goes. The
-  // module never says the sentence itself.
-  function stackLabelFmt(container) {
-    return (container && container.getAttribute('data-hui-toast-dismiss-label')) || '%s';
+  // ─── toast rows ─────────────────────────────────────────────────
+
+  // Every word a built row says arrived on the stack or its template
+  // from Strings, and every class it wears came from the template the
+  // kit registered (registry.RegisterTemplate under preset.ToastTemplate,
+  // rendered by preset's slot inside the stack). The module names hooks
+  // only.
+  const TONES = ['info', 'success', 'warning', 'danger'];
+  const TONE_ATTR = {
+    info: 'data-hui-toast-tone-info', success: 'data-hui-toast-tone-success',
+    warning: 'data-hui-toast-tone-warning', danger: 'data-hui-toast-tone-danger'
+  };
+  const GLYPH_ATTR = {
+    info: 'data-hui-toast-glyph-info', success: 'data-hui-toast-glyph-success',
+    warning: 'data-hui-toast-glyph-warning', danger: 'data-hui-toast-glyph-danger'
+  };
+  const VARIANT_ATTR = {
+    info: 'data-hui-toast-variant-info', success: 'data-hui-toast-variant-success',
+    warning: 'data-hui-toast-variant-warning', danger: 'data-hui-toast-variant-danger'
+  };
+
+  // findStack: the named stack, else the first on the page. None is
+  // null: the module mounts no region of its own — a layout mounts
+  // one, or framework/uihost mounts the default — and the kernel's
+  // fallback region takes the toast on null.
+  function findStack(name) {
+    let c = null;
+    if (name) c = document.querySelector('[data-cui-toast-stack="' + CSS.escape(name) + '"]');
+    return c || document.querySelector('[data-cui-toast-stack], [data-hui-toast-stack]');
+  }
+
+  // rowTemplate: the stack's own template first, then any on the page.
+  function rowTemplate(container) {
+    return container.querySelector(':scope > template[data-hui-toast-template]')
+      || document.querySelector('template[data-hui-toast-template]');
+  }
+
+  // bareRow: the row shape with its hooks and nothing else, for a page
+  // that registered no template. No sheet styles it; it is still a row
+  // a reader hears and a click dismisses.
+  function bareRow() {
+    const item = document.createElement('div');
+    item.setAttribute('data-hui-toast-item', '');
+    const root = document.createElement('div');
+    root.setAttribute('data-hui-toast', '');
+    ['data-hui-toast-tone', 'data-hui-toast-icon', 'data-hui-toast-title', 'data-hui-toast-body'].forEach(function (hook) {
+      const el = document.createElement('span');
+      el.setAttribute(hook, '');
+      root.appendChild(el);
+    });
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.setAttribute('data-hui-toast-dismiss', '');
+    dismiss.textContent = '×';
+    root.appendChild(dismiss);
+    item.appendChild(root);
+    return item;
+  }
+
+  // fill: the part says its text, or goes when there is none to say,
+  // so a cloned row matches what the server renders for the same
+  // content.
+  function fill(root, hook, text) {
+    const el = root.querySelector('[' + CSS.escape(hook) + ']');
+    if (!el) return;
+    if (text) el.textContent = text;
+    else if (el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  // readWord: the stack's Strings first, the template's second.
+  function readWord(container, tpl, attr) {
+    return container.getAttribute(attr) || (tpl && tpl.getAttribute(attr)) || '';
   }
 
   NS.toast = function (cfg) {
     if (cfg == null) return null;
     if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
     if (!cfg.title) return null;
-    let container = null;
-    if (cfg.stack) {
-      container = document.querySelector('[data-fui-toast-stack="' + CSS.escape(cfg.stack) + '"]');
-    }
-    if (!container) container = document.querySelector('[data-fui-toast-stack]');
-    if (!container) {
-      // Body singleton, created at most once and re-attached by the
-      // SPA full-shell swap — distinct from the kernel's unstyled
-      // fallback container for the module-failed-to-load path.
-      container = NS.doc.singleton('fui-toast-stack-auto', function () {
-        const c = document.createElement('div');
-        c.className = 'fui-toast-stack';
-        c.setAttribute('data-fui-comp', 'ui-toast-stack');
-        c.setAttribute('data-fui-toast-stack', '__auto');
-        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;pointer-events:none;max-width:min(360px,calc(100vw - 2rem));';
-        return c;
-      });
-      if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(container);
-    }
+    const container = findStack(cfg.stack);
+    if (!container) return null;
 
     const id = 't' + (++NS._toastSeq);
     const variant = cfg.variant || 'info';
-    const assertive = variant === 'warning' || variant === 'danger';
-    const glyph = ({ success: '✓', warning: '!', danger: '✕', info: '•', neutral: '•' })[variant] || '•';
+    const tone = TONES.indexOf(variant) >= 0 ? variant : 'info';
+    const assertive = tone === 'warning' || tone === 'danger';
 
-    const item = document.createElement('div');
-    item.className = 'fui-toast-stack__item';
+    const tpl = rowTemplate(container);
+    let item = null;
+    if (tpl && tpl.content && tpl.content.firstElementChild) {
+      const frag = tpl.content.cloneNode(true);
+      item = frag.querySelector('[data-hui-toast-item]') || frag.firstElementChild;
+    }
+    if (!item) item = bareRow();
     item.setAttribute('data-hui-toast-id', id);
     const ttl = parseInt(cfg.ttl || 0, 10);
     if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(ttl));
 
-    const wrap = document.createElement('div');
-    wrap.className = 'fui-notification fui-notification--' + variant;
-    wrap.setAttribute('data-fui-comp', 'ui-notification');
-    wrap.setAttribute('data-hui-toast', '');
-    wrap.setAttribute('role', assertive ? 'alert' : 'status');
-    wrap.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
+    const root = item.querySelector('[data-hui-toast]') || item;
+    const variantCls = tpl ? (tpl.getAttribute(VARIANT_ATTR[tone]) || '') : '';
+    variantCls.split(/\s+/).forEach(function (c) { if (c) root.classList.add(c); });
+    root.setAttribute('role', assertive ? 'alert' : 'status');
+    root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
-    // The tone word, read and not shown, from the stack's own Strings:
-    // the module says no word of its own.
-    const toneAttr = {
-      info: 'data-hui-toast-tone-info', success: 'data-hui-toast-tone-success',
-      warning: 'data-hui-toast-tone-warning', danger: 'data-hui-toast-tone-danger'
-    }[variant];
-    const toneWord = toneAttr ? container.getAttribute(toneAttr) : '';
-    let toneEl = null;
-    if (toneWord) {
-      toneEl = document.createElement('span');
-      toneEl.className = 'fui-visually-hidden';
-      toneEl.textContent = toneWord + ': ';
+    const toneWord = readWord(container, tpl, TONE_ATTR[tone]);
+    fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
+    fill(root, 'data-hui-toast-icon', tpl ? (tpl.getAttribute(GLYPH_ATTR[tone]) || '') : '');
+    fill(root, 'data-hui-toast-title', cfg.title);
+    fill(root, 'data-hui-toast-body', cfg.body || '');
+    const dismiss = root.querySelector('[data-hui-toast-dismiss]');
+    if (dismiss) {
+      const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '%s';
+      dismiss.setAttribute('aria-label', fmt.replace('%s', cfg.title));
     }
-    const icon = document.createElement('span');
-    icon.className = 'fui-notification__icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = glyph;
-
-    const titleEl = document.createElement('span');
-    titleEl.className = 'fui-notification__title';
-    titleEl.textContent = cfg.title;
-    let bodyEl = null;
-    if (cfg.body) {
-      bodyEl = document.createElement('span');
-      bodyEl.className = 'fui-notification__body';
-      bodyEl.textContent = cfg.body;
-    }
-
-    const dismiss = document.createElement('button');
-    dismiss.type = 'button';
-    dismiss.className = 'fui-notification__dismiss';
-    dismiss.setAttribute('aria-label', stackLabelFmt(container).replace('%s', cfg.title));
-    dismiss.setAttribute('data-hui-toast-dismiss', '');
-    dismiss.textContent = '×';
-
-    if (toneEl) wrap.appendChild(toneEl);
-    wrap.appendChild(icon);
-    wrap.appendChild(titleEl);
-    if (bodyEl) wrap.appendChild(bodyEl);
-    wrap.appendChild(dismiss);
-    item.appendChild(wrap);
     container.appendChild(item);
 
-    // The stack's capacity: past it the oldest row goes, so a burst
-    // of toasts cannot pile a column over the page.
+    // The stack's capacity: past it the oldest rows go, so a burst of
+    // toasts cannot pile a column over the page. The list is static,
+    // so the surplus is counted once and removed oldest-first.
     const max = parseInt(container.getAttribute('data-hui-toast-max') || '0', 10);
     if (max > 0) {
       const rows = container.querySelectorAll('[data-hui-toast-id]');
-      while (rows.length > max) container.removeChild(rows[0]);
+      for (let i = 0; i < rows.length - max; i++) container.removeChild(rows[i]);
     }
 
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(item);
@@ -220,8 +246,6 @@
       navigator.clipboard.writeText(text).catch(function () {});
     }
     wrap.setAttribute('data-hui-copy-state', 'done');
-    const copyBtn = wrap.querySelector('button');
-    if (copyBtn) copyBtn.classList.add('fui-copied');
     const btn = wrap.querySelector('[data-hui-copy-label]');
     const fmts = wrap.getAttribute('data-hui-copy-copied') || '';
     if (btn && fmts) btn.textContent = fmts;
@@ -235,7 +259,6 @@
     const back = wrap.getAttribute('data-hui-copy-back') || '';
     setTimeout(function () {
       wrap.removeAttribute('data-hui-copy-state');
-      if (copyBtn) copyBtn.classList.remove('fui-copied');
       if (btn && back) btn.textContent = back;
     }, 1200);
     // A toast on copy rides this module's own toast runtime; the
@@ -256,7 +279,7 @@
     const d = e && e.detail;
     if (!d || typeof d.name !== 'string') return;
     for (const bell of document.querySelectorAll('[data-hui-notification-bell]')) {
-      if (bell.getAttribute('data-fui-signal') !== d.name) continue;
+      if (bell.getAttribute('data-cui-signal') !== d.name) continue;
       const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
       const n = parseInt(d.value, 10);
       if (!Number.isFinite(n)) return;
@@ -309,7 +332,7 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    for (const c of within(scope, '[data-hui-toast-stack],[data-fui-toast-stack]')) NS._initToasts(c);
+    for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
   }
 
   scan(document);

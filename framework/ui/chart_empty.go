@@ -30,7 +30,7 @@ func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) rend
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
-	attrs["data-fui-comp"] = "ui-chart-empty"
+	attrs["data-cui-comp"] = "ui-chart-empty"
 	attrs["role"] = "img"
 	if class != "" {
 		attrs["class"] = class
@@ -44,7 +44,7 @@ func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) rend
 }
 
 var chartEmptyStyle = registry.RegisterStyle("ui-chart-empty", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-chart-empty"] {
+	return `[data-cui-comp="ui-chart-empty"] {
 	display: flex;
 	align-items: center;
 	justify-content: center;

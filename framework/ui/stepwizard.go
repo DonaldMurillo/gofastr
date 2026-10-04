@@ -78,7 +78,7 @@ type StepWizardConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the wizard's root
 	// <form> element. Keys the component owns are dropped: class and
-	// id (use Class / ID), data-fui-*, method, and action (both
+	// id (use Class / ID), data-cui-*, method, and action (both
 	// validated by the primitive; the form posts wizard_action
 	// through them).
 	ExtraAttrs html.Attrs
@@ -190,11 +190,11 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 // stepWizardStyle is registered in styles_components.go
 
 func stepWizardCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-step-wizard"] {
+	return `[data-cui-comp="ui-step-wizard"] {
   display: grid;
   gap: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-step-wizard"] .fui-visually-hidden {
+[data-cui-comp="ui-step-wizard"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -204,45 +204,45 @@ func stepWizardCSS(_ style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__indicator {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__indicator {
   list-style: none;
   display: flex;
   gap: var(--spacing-xs, 2px);
   margin: 0;
   padding: 0;
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot {
   flex: 1;
   height: 4px;
   border-radius: 2px;
   background: var(--color-border, #E4E4E7);
   transition: background 150ms ease;
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="done"],
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="current"] {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="done"],
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="current"] {
   background: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__heading {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__heading {
   margin: 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__description {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__fields {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__fields {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__actions {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__actions {
   display: flex;
   gap: var(--spacing-md, 8px);
   justify-content: flex-end;
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back,
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__back,
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__next {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -253,24 +253,24 @@ func stepWizardCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__back {
   border: 1px solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back:hover {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__back:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__next {
   border: 1px solid var(--color-primary, #4F46E5);
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next:hover {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__next:hover {
   filter: brightness(1.05);
 }
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back:focus-visible,
-[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next:focus-visible {
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__back:focus-visible,
+[data-cui-comp="ui-step-wizard"] .fui-step-wizard__next:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }

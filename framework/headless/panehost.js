@@ -154,13 +154,13 @@
     setOpenList(host, openList(host).filter(function (s) { return s !== slot; }));
     // Focus restore: back to the last trigger that opened the pane.
     const reg = host.__huiPaneTrigger;
-    const t = reg && Object.prototype.hasOwnProperty.call(reg, slot) ? reg[slot] : null;
+    const t = reg ? reg.get(slot) || null : null;
     if (t && t.isConnected) { try { t.focus({ preventScroll: true }); } catch (_) {} }
     if (!syncing) stripPane(host, slot);
     host.dispatchEvent(new CustomEvent('pane-host:close', { bubbles: true, detail: { pane: slot } }));
     // A programmatically-opened pane registered no trigger; the
     // registry may not exist at all.
-    if (host.__huiPaneTrigger) delete host.__huiPaneTrigger[slot];
+    if (host.__huiPaneTrigger) host.__huiPaneTrigger.delete(slot);
     syncMode(host);
   }
 
@@ -174,10 +174,12 @@
     openPane(host, slot, key);
   }
 
-  // The trigger remembers itself for the close-time focus restore.
+  // The trigger remembers itself for the close-time focus restore. A
+  // Map, not a plain object: the slot name arrives on an attribute,
+  // and a Map key is only ever a key.
   function rememberTrigger(trigger, host, slot) {
-    host.__huiPaneTrigger = host.__huiPaneTrigger || {};
-    host.__huiPaneTrigger[slot] = trigger;
+    host.__huiPaneTrigger = host.__huiPaneTrigger || new Map();
+    host.__huiPaneTrigger.set(slot, trigger);
   }
 
   // A trigger resolves its host by data-hui-pane-host-target (triggers

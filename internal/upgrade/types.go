@@ -20,7 +20,7 @@ type Registry struct {
 	Through  string
 	Releases []Release
 	// MarkerSinks are the places a kept `ui-*` component name appears
-	// as an identifier rather than a class (a data-fui-comp value, a
+	// as an identifier rather than a class (a data-cui-comp value, a
 	// registered sheet name, a drawer name). A Strings.Classes match
 	// whose value only reaches marker sinks is not a hit.
 	MarkerSinks MarkerSinks

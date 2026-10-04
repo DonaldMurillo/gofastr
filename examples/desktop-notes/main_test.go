@@ -106,7 +106,7 @@ func TestScreensRender(t *testing.T) {
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
 
 	home := ta.Get("/").AssertStatus(t, http.StatusOK)
-	for _, want := range []string{"Notes", "New Note", "search", "data-fui"} {
+	for _, want := range []string{"Notes", "New Note", "search", "data-cui"} {
 		if !strings.Contains(home.Body(), want) {
 			t.Fatalf("/ missing %q", want)
 		}
@@ -213,7 +213,7 @@ func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 	screen := ta.Get("/settings").AssertStatus(t, http.StatusOK)
 	for _, want := range []string{
 		"Settings", `id="f-notify_on_save"`, `id="f-export_folder"`,
-		"Notify on save", "Export folder", `data-fui-rpc="/__gofastr/desktop/preferences"`,
+		"Notify on save", "Export folder", `data-cui-rpc="/__gofastr/desktop/preferences"`,
 	} {
 		if !strings.Contains(screen.Body(), want) {
 			t.Fatalf("/settings missing %q: %.300s", want, screen.Body())

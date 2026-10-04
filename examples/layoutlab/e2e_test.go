@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	toolbarSel = `[data-fui-outlet="l:shell#toolbar"]`
-	asideSel   = `[data-fui-outlet="l:shell#aside"]`
-	crumbsSel  = `[data-fui-area="l:shell~crumbs"]`
+	toolbarSel = `[data-cui-outlet="l:shell#toolbar"]`
+	asideSel   = `[data-cui-outlet="l:shell#aside"]`
+	crumbsSel  = `[data-cui-area="l:shell~crumbs"]`
 )
 
 func labBrowserCtx(t *testing.T) context.Context {
@@ -94,7 +94,7 @@ func labState(t *testing.T, ctx context.Context, primary, toolbar, aside, crumbs
 	if got := labRead(t, ctx, crumbsSel); got != crumbs {
 		t.Errorf("crumbs = %q, want %q", got, crumbs)
 	}
-	if got := labRead(t, ctx, `main[data-fui-layout-slot="l:shell"]`); !strings.Contains(got, primary) {
+	if got := labRead(t, ctx, `main[data-cui-layout-slot="l:shell"]`); !strings.Contains(got, primary) {
 		t.Errorf("primary slot = %q, want it to contain %q", got, primary)
 	}
 }
@@ -365,14 +365,14 @@ func TestNavBusyPageWideE2E(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Poll(`(() => {
 			let marked = 0;
-			for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area],[data-fui-layout-slot]')) {
+			for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area],[data-cui-layout-slot]')) {
 				if (el.getAttribute('aria-busy') === 'true') marked++;
 			}
 			return marked === 5 && document.documentElement.getAttribute('aria-busy') === 'true';
 		})()`, new(bool), chromedp.WithPollingTimeout(500*time.Millisecond)),
 		chromedp.Evaluate(`(() => {
 			let marked = 0;
-			for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area],[data-fui-layout-slot]')) {
+			for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area],[data-cui-layout-slot]')) {
 				if (el.getAttribute('aria-busy') === 'true') marked++;
 			}
 			return {
@@ -463,8 +463,8 @@ func TestLayoutlabWithoutJS(t *testing.T) {
 	// P7: the route bindings' first paint is server-stamped (JS-off
 	// shows the same values the signals would publish).
 	for _, want := range []string{
-		`data-fui-signal="route.title" id="lab-route-title">Message 1<`,
-		`data-fui-signal="route.params.id" id="lab-route-param">1<`,
+		`data-cui-signal="route.title" id="lab-route-title">Message 1<`,
+		`data-cui-signal="route.params.id" id="lab-route-param">1<`,
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("GET /inbox/1 SSR body lacks the stamped route binding %q", want)
@@ -505,7 +505,7 @@ func TestNavBusyPerRegionE2E(t *testing.T) {
 			window[`+name+`] = { dimmed: 0, frames: 0, done: false };
 			const tick = () => {
 				let dim = false;
-				for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area],[data-fui-layout-slot]')) {
+				for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area],[data-cui-layout-slot]')) {
 					if (parseFloat(getComputedStyle(el).opacity) < 0.999) { dim = true; break; }
 				}
 				const s = window[`+name+`];
@@ -536,16 +536,16 @@ func TestNavBusyPerRegionE2E(t *testing.T) {
 	// outlet page no longer boot-loads it), so poll for them inside the
 	// 900ms flight before sampling, as TestNavBusyPageWideE2E does.
 	// A timeout here falls through to the sample, which names the region.
-	_ = chromedp.Run(tctx, chromedp.Poll(`['[data-fui-outlet="l:shell#toolbar"]', '[data-fui-outlet="l:shell#aside"]', '[data-fui-area="l:shell~crumbs"]', 'main[data-fui-layout-slot="l:shell"]']
+	_ = chromedp.Run(tctx, chromedp.Poll(`['[data-cui-outlet="l:shell#toolbar"]', '[data-cui-outlet="l:shell#aside"]', '[data-cui-area="l:shell~crumbs"]', 'main[data-cui-layout-slot="l:shell"]']
 		.every((s) => document.querySelector(s)?.getAttribute('aria-busy') === 'true')`,
 		new(bool), chromedp.WithPollingTimeout(500*time.Millisecond)))
 	if err := chromedp.Run(tctx, chromedp.Evaluate(`(() => {
 		const g = (s) => document.querySelector(s).getAttribute('aria-busy') || '';
 		return {
-			toolbar: g('[data-fui-outlet="l:shell#toolbar"]'),
-			aside:   g('[data-fui-outlet="l:shell#aside"]'),
-			crumbs:  g('[data-fui-area="l:shell~crumbs"]'),
-			slot:    g('main[data-fui-layout-slot="l:shell"]'),
+			toolbar: g('[data-cui-outlet="l:shell#toolbar"]'),
+			aside:   g('[data-cui-outlet="l:shell#aside"]'),
+			crumbs:  g('[data-cui-area="l:shell~crumbs"]'),
+			slot:    g('main[data-cui-layout-slot="l:shell"]'),
 		};
 	})()`, &probe)); err != nil {
 		t.Fatalf("probe during flight: %v", err)

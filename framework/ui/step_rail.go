@@ -55,7 +55,7 @@ type StepRailConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rail's root <aside>
 	// element. Keys the component owns are dropped: class (use
-	// Class), data-fui-*, role and aria-label (derived from Title).
+	// Class), data-cui-*, role and aria-label (derived from Title).
 	ExtraAttrs html.Attrs
 }
 
@@ -109,7 +109,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	// spliced on here.
 	list, err := registry.InjectAttribute(
 		headless.Steps(headless.StepsProps{Steps: steps}, stepRailClasses),
-		"data-fui-internal", "")
+		"data-cui-internal", "")
 	if err != nil {
 		panic(err)
 	}
@@ -123,7 +123,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 		// the landmark name without polluting the heading hierarchy.
 		// Built entirely from cfg.Title, a string: this component's own.
 		body = append(body, html.Div(
-			html.DivConfig{Class: "fui-step-rail__title", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+			html.DivConfig{Class: "fui-step-rail__title", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 			render.Text(cfg.Title)))
 	}
 	body = append(body, list)
@@ -135,7 +135,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 			meta = html.Link(html.LinkConfig{Href: cfg.MetaHref, Text: cfg.Meta})
 		}
 		body = append(body, html.Div(
-			html.DivConfig{Class: "fui-step-rail__meta", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, meta))
+			html.DivConfig{Class: "fui-step-rail__meta", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, meta))
 	}
 
 	attrs := headless.Safe(cfg.ExtraAttrs, "class", "role", "aria-label")
@@ -152,7 +152,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 var stepRailStyle = registry.RegisterStyle("ui-step-rail", stepRailCSS)
 
 func stepRailCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-step-rail"] {
+	return `[data-cui-comp="ui-step-rail"] {
   position: sticky;
   inset-block-start: var(--ui-step-rail-top, var(--spacing-xl, 24px));
   align-self: start;
@@ -164,7 +164,7 @@ func stepRailCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__title {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
@@ -172,14 +172,14 @@ func stepRailCSS(_ style.Theme) string {
   letter-spacing: 0.08em;
   color: var(--color-text-subtle, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__list {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__link {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__link {
   display: grid;
   grid-template-columns: 32px 1fr;
   align-items: center;
@@ -189,27 +189,27 @@ func stepRailCSS(_ style.Theme) string {
   text-decoration: none;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__link:hover,
-[data-fui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__link:hover,
+[data-cui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {
   background: var(--color-surface-soft, rgba(0,0,0,0.04));
   color: var(--color-text, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] {
   color: var(--color-text, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__num {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__num {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   font-variant-numeric: tabular-nums;
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] .fui-step-rail__num {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] .fui-step-rail__num {
   color: var(--ui-step-rail-active-color, var(--color-primary, currentColor));
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__label {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__label {
   font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-step-rail"] .fui-step-rail__meta {
+[data-cui-comp="ui-step-rail"] .fui-step-rail__meta {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   line-height: 1.5;
@@ -226,7 +226,7 @@ func stepRailCSS(_ style.Theme) string {
    disclosure can override .fui-step-rail with display: none in their
    mobile breakpoint. */
 @media (max-width: 720px) {
-  [data-fui-comp="ui-step-rail"] {
+  [data-cui-comp="ui-step-rail"] {
     position: static;
   }
 }`

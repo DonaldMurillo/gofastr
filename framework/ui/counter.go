@@ -12,11 +12,11 @@ import (
 )
 
 // counterStyle registers the scoped CSS for fui-counter. The host emits
-// it for any page whose HTML carries data-fui-comp="fui-counter".
+// it for any page whose HTML carries data-cui-comp="fui-counter".
 var counterStyle = registry.RegisterStyle("fui-counter", counterCSS)
 
 func counterCSS(_ style.Theme) string {
-	return `[data-fui-comp="fui-counter"] .fui-visually-hidden {
+	return `[data-cui-comp="fui-counter"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -26,11 +26,11 @@ func counterCSS(_ style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-fui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
-		`[data-fui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.375rem;background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
-		`[data-fui-comp="fui-counter"] .fui-counter__btn:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9));border-color:var(--fui-primary, var(--color-primary, #3b82f6))}` +
-		`[data-fui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px}` +
-		`[data-fui-comp="fui-counter"] .fui-counter__value{min-width:2ch;text-align:center;font-variant-numeric:tabular-nums;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a))}`
+[data-cui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.375rem;background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__btn:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9));border-color:var(--fui-primary, var(--color-primary, #3b82f6))}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__value{min-width:2ch;text-align:center;font-variant-numeric:tabular-nums;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a))}`
 }
 
 // CounterConfig configures a client-side counter with increment/decrement buttons.
@@ -57,14 +57,14 @@ type CounterConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root element. Keys
 	// the component owns are dropped: class (use Class), id, and
-	// data-fui-*, plus role=group and the aria-label it derives.
+	// data-cui-*, plus role=group and the aria-label it derives.
 	ExtraAttrs html.Attrs
 }
 
 // Counter renders a counter with + and − buttons that mutate a signal
 // locally in the browser. No server round-trip.
 //
-// The counter displays a `<span data-fui-signal="name">0</span>` that
+// The counter displays a `<span data-cui-signal="name">0</span>` that
 // the runtime updates when the signal changes.
 func Counter(cfg CounterConfig) render.HTML {
 	name := cfg.SignalName

@@ -60,7 +60,7 @@ type NotificationConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the notification's root
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, role, and aria-live.
+	// (use Class / ID), data-cui-*, role, and aria-live.
 	ExtraAttrs html.Attrs
 }
 

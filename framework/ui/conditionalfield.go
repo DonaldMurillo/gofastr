@@ -38,7 +38,7 @@ type ConditionalFieldConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the region's root
 	// element. Keys the component owns are dropped: class (use
-	// Class), id, data-fui-*, data-hui-* (the region's hooks are the
+	// Class), id, data-cui-*, data-hui-* (the region's hooks are the
 	// runtime's contract, not a caller's to forge), hidden and
 	// aria-hidden (the module owns the region's visibility).
 	ExtraAttrs html.Attrs

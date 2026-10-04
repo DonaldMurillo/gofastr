@@ -135,8 +135,8 @@ var extraAttrsRawLegacy = map[string]bool{
 }
 
 // safeCarrierAllowed pins the wiring-carrier set: only these files may
-// call html.SafeCarrierAttrs. A carrier keeps data-fui-* pass-through,
-// so a component that emits its own data-fui-* wiring (TextArea
+// call html.SafeCarrierAttrs. A carrier keeps data-cui-* pass-through,
+// so a component that emits its own data-cui-* wiring (TextArea
 // autogrow, NotificationBell's trigger, RangeSlider's mirror, …) must
 // never be one — a caller could spoof its wiring, the exact class the
 // SafeExtraAttrs contract closes. Adding an entry is a design
@@ -152,7 +152,7 @@ var safeCarrierAllowed = map[string]bool{
 // legacy allow-list reads a config's ExtraAttrs without routing it
 // through html.SafeExtraAttrs (or scrubAttrs). Presence of the field
 // (the gate above) is not enough: a raw maps.Copy after the owned keys
-// lets a caller clobber roles, form names, and data-fui-* wiring —
+// lets a caller clobber roles, form names, and data-cui-* wiring —
 // exactly the miss that left 24 legacy sites on the old contract.
 func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 	fset := token.NewFileSet()
@@ -176,7 +176,7 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 				switch fun := d.Fun.(type) {
 				case *ast.SelectorExpr:
 					// SafeCarrierAttrs is the wiring-carrier variant:
-					// owned keys still drop, data-fui-* passes through
+					// owned keys still drop, data-cui-* passes through
 					// by documented contract — allowed only in the
 					// pinned carrier files.
 					// headless.Safe is the render-through components'
@@ -192,7 +192,7 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 						sanitized = append(sanitized, d)
 					}
 					if fun.Sel.Name == "SafeCarrierAttrs" && !safeCarrierAllowed[name] {
-						t.Errorf("%s: SafeCarrierAttrs at %s — the carrier set is pinned to %v; a component with its own data-fui-* wiring must use SafeExtraAttrs (see safeCarrierAllowed)",
+						t.Errorf("%s: SafeCarrierAttrs at %s — the carrier set is pinned to %v; a component with its own data-cui-* wiring must use SafeExtraAttrs (see safeCarrierAllowed)",
 							name, fset.Position(d.Pos()), []string{"components.go", "link.go"})
 					}
 				case *ast.Ident:
@@ -201,14 +201,14 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 						sanitized = append(sanitized, d)
 					}
 					// splitButtonAttrs / splitLinkAttrs are Button's
-					// and LinkButton's own sanitizers: every data-fui-*
+					// and LinkButton's own sanitizers: every data-cui-*
 					// key is routed into headless's typed Action seam,
 					// which admits exactly the wiring vocabulary and
 					// panics on any other key (refusal pinned by
 					// TestButtonPanicsOnAWiringKeyOutsideTheVocabulary
 					// and TestLinkButtonWiringVocabulary), and the rest
 					// lands in headless's Safe — stronger than the
-					// carrier it replaced, which passed data-fui-*
+					// carrier it replaced, which passed data-cui-*
 					// through unchecked.
 					if fun.Name == "splitButtonAttrs" || fun.Name == "splitLinkAttrs" {
 						sanitized = append(sanitized, d)

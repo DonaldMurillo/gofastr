@@ -8,7 +8,7 @@ import (
 
 // The passwordinput module is retired: ui.PasswordInput renders
 // through headless.Password and the headless behaviour module owns the
-// reveal (data-hui-reveal), so the old data-fui-scoped module ran
+// reveal (data-hui-reveal), so the old data-cui-scoped module ran
 // beside its replacement on every page that had both hooks. The
 // tracker's rule is "retire in the PR where the component moves, never
 // run side by side" — this holds the retirement: no src file, no

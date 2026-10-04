@@ -100,7 +100,7 @@ type FormConfig struct {
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes to the <form>
-	// element. Every data-fui-* and data-action-* key is runtime
+	// element. Every data-cui-* and data-action-* key is runtime
 	// wiring and goes through the typed request seam (attach island
 	// wiring with interactive.Post(...).OnSuccess(...).Attrs() —
 	// headless.FormProps.Request admits exactly that vocabulary and
@@ -208,7 +208,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 }
 
 // splitFormAttrs splits a Form's ExtraAttrs at the seam: every
-// data-fui-* and data-action-* key is runtime wiring and travels
+// data-cui-* and data-action-* key is runtime wiring and travels
 // through the typed Request, where headless admits exactly the request
 // vocabulary a form reads and panics on anything else, naming the key;
 // everything else is decoration and travels through headless's
@@ -224,7 +224,7 @@ func splitFormAttrs(extra html.Attrs) (request, plain html.Attrs) {
 			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
 		}
 		switch {
-		case strings.HasPrefix(lk, "data-fui-"), strings.HasPrefix(lk, "data-action-"):
+		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"), strings.HasPrefix(lk, "data-action-"):
 			request[lk] = v
 		default:
 			plain[lk] = v
@@ -305,7 +305,7 @@ type ValidationSummaryConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the summary's root. Keys the component
-	// owns are dropped: class and id (use Class / ID), data-fui-*,
+	// owns are dropped: class and id (use Class / ID), data-cui-*,
 	// role, tabindex and aria-labelledby.
 	ExtraAttrs html.Attrs
 

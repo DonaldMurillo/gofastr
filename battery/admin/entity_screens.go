@@ -3,11 +3,11 @@ package admin
 // Server-rendered screens for the entity CRUD admin. These register on the
 // host's app.App, so they render with the full chrome + runtime.js and hydrate:
 // the list is a DataTable island (paginate via RPC, no reload) and each row's
-// Delete is a `data-fui-confirm` + `data-fui-rpc` button. Forms are plain SSR
+// Delete is a `data-cui-confirm` + `data-cui-rpc` button. Forms are plain SSR
 // forms (browser follows the 303 to the host-rendered list); validation errors
 // round-trip through a one-shot flash so the re-render is a full host page.
 //
-// No bespoke JavaScript: every interaction is a declarative data-fui-* primitive
+// No bespoke JavaScript: every interaction is a declarative data-cui-* primitive
 // the runtime already understands.
 
 import (
@@ -663,7 +663,7 @@ func (b *Battery) relationOptions(ctx context.Context, ent *entity.Entity, selec
 const relationOptionLimit = 100
 
 // rowActions renders the per-row Edit link + Delete confirm button. Delete is a
-// data-fui-confirm + data-fui-rpc DELETE bound to the list's island signal: the
+// data-cui-confirm + data-cui-rpc DELETE bound to the list's island signal: the
 // handler returns the refreshed table fragment, which the runtime swaps in
 // place. (Navigating back to the same list path would hit the SPA cache and
 // show stale rows, the signal swap is the correct island update.) No JS.

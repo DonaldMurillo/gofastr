@@ -79,7 +79,7 @@ func startGadgetServer(t *testing.T, widgets, body string) *gadgetServer {
 	})
 	mux.HandleFunc("/chrome/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div data-fui-widget="dl">chrome</div>`))
+		w.Write([]byte(`<div data-cui-widget="dl">chrome</div>`))
 	})
 	mux.HandleFunc("/steal", func(w http.ResponseWriter, r *http.Request) {
 		g.EvilAny.Add(1)
@@ -187,14 +187,14 @@ func TestFormActionRejectsProtocolRelative(t *testing.T) {
 // RPC URL cannot point the runtime, and the CSRF token it attaches, at
 // another origin.
 //
-// Attack: dispatchRPC takes its URL from data-fui-rpc with no origin
+// Attack: dispatchRPC takes its URL from data-cui-rpc with no origin
 // check and attaches X-CSRF-Token to whatever host the attribute names;
 // the response often lands in innerHTML. The runtime already treats this
 // class as real for data-kiln-tool (gated behind _kilnOK); the same
 // reasoning was never applied to the other fetch sites.
 func TestRuntimeFetchRefusesForeignOrigin(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `
-<button id="rpc" data-fui-rpc="/placeholder" data-fui-rpc-method="POST">go</button>`)
+<button id="rpc" data-cui-rpc="/placeholder" data-cui-rpc-method="POST">go</button>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
@@ -202,14 +202,14 @@ func TestRuntimeFetchRefusesForeignOrigin(t *testing.T) {
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		// localhost and 127.0.0.1 are different origins to the browser
 		// but the same server here, so a hit is unambiguous evidence.
-		chromedp.Evaluate(`document.getElementById('rpc').setAttribute('data-fui-rpc','http://localhost:'+location.port+'/steal'); true`, nil),
+		chromedp.Evaluate(`document.getElementById('rpc').setAttribute('data-cui-rpc','http://localhost:'+location.port+'/steal'); true`, nil),
 		chromedp.Click(`#rpc`, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if g.EvilFetch.Load() > 0 {
-		t.Errorf("SECURITY: [csrf] data-fui-rpc fetched a foreign origin (%d hits) and forwarded the CSRF token with it", g.EvilFetch.Load())
+		t.Errorf("SECURITY: [csrf] data-cui-rpc fetched a foreign origin (%d hits) and forwarded the CSRF token with it", g.EvilFetch.Load())
 	}
 }
 
@@ -218,15 +218,15 @@ func TestRuntimeFetchRefusesForeignOrigin(t *testing.T) {
 //
 // Attack: isReservedSignalKey guarded the three seed-merge loops but not
 // setSignal itself, where attribute-controlled keys enter via
-// data-fui-signal-set / -inc / -toggle and via fetched-JSON keys in
-// poll.js and widgets.js. `data-fui-signal-set="__proto__:POLLUTED"`
+// data-cui-signal-set / -inc / -toggle and via fetched-JSON keys in
+// poll.js and widgets.js. `data-cui-signal-set="__proto__:POLLUTED"`
 // makes ({}).value === "POLLUTED"; because getSignal is `s ? s.value :
 // undefined`, every unset signal then reads back the attacker's string.
 // That is pure data corruption, so it is the one gadget in this family
 // CSP does not stop.
 func TestSetSignalRejectsProtoKey(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `
-<button id="pollute" data-fui-signal-set="__proto__:POLLUTED">pollute</button>`)
+<button id="pollute" data-cui-signal-set="__proto__:POLLUTED">pollute</button>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var polluted, leaked string
@@ -264,7 +264,7 @@ func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 		`"deepLinkKey":"pane","deepLinkValue":"dl","chromePath":"/chrome/dl",` +
 		`"stylePath":"/chrome/dl.css"}}]`
 	g := startGadgetServer(t, catalog, `
-<div id="sink" data-fui-signal="x" data-fui-signal-mode="html">initial</div>`)
+<div id="sink" data-cui-signal="x" data-cui-signal-mode="html">initial</div>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var sink string
@@ -290,7 +290,7 @@ func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 	}
 }
 
-// TestPrefetchAttrRejectsForeignModule pins that `data-fui-prefetch`
+// TestPrefetchAttrRejectsForeignModule pins that `data-cui-prefetch`
 // only ever loads a module name of the shape the framework emits.
 //
 // Attack: _prefetch reads the attribute off any element (including
@@ -331,7 +331,7 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 				// from an island swap, an RPC innerHTML replacement, or an
 				// SPA page merge.
 				chromedp.Evaluate(fmt.Sprintf(
-					`document.getElementById('host').innerHTML = '<div id="pf" data-fui-prefetch="%s" tabindex="0">pf</div>'; true`, tc.attr), nil),
+					`document.getElementById('host').innerHTML = '<div id="pf" data-cui-prefetch="%s" tabindex="0">pf</div>'; true`, tc.attr), nil),
 				chromedp.Sleep(150*time.Millisecond),
 				chromedp.Evaluate(`document.getElementById('pf').dispatchEvent(new Event('pointerover', {bubbles: true})); true`, nil),
 				chromedp.Sleep(500*time.Millisecond),
@@ -344,17 +344,17 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 			switch tc.label {
 			case "traversal":
 				if pwned || g.EvilJS.Load() > 0 {
-					t.Errorf("SECURITY: [module-src] data-fui-prefetch=%q loaded a foreign script (requests=%d, executed=%v). Attack: attribute traversal normalizes the module URL onto an arbitrary same-origin JS route",
+					t.Errorf("SECURITY: [module-src] data-cui-prefetch=%q loaded a foreign script (requests=%d, executed=%v). Attack: attribute traversal normalizes the module URL onto an arbitrary same-origin JS route",
 						tc.attr, g.EvilJS.Load(), pwned)
 				}
 			case "relative-escape":
 				if other || g.OtherJS.Load() > 0 {
-					t.Errorf("SECURITY: [module-src] data-fui-prefetch=%q escaped the runtime-module path (requests=%d, executed=%v)",
+					t.Errorf("SECURITY: [module-src] data-cui-prefetch=%q escaped the runtime-module path (requests=%d, executed=%v)",
 						tc.attr, g.OtherJS.Load(), other)
 				}
 			case "happy-path":
 				if !pollLoaded {
-					t.Errorf("data-fui-prefetch=%q no longer loads the real module 'poll' — a name guard must not reject the emitted shape",
+					t.Errorf("data-cui-prefetch=%q no longer loads the real module 'poll' — a name guard must not reject the emitted shape",
 						tc.attr)
 				}
 			}

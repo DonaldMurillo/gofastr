@@ -16,7 +16,7 @@ func TestComboboxRendersStyledFieldWithHiddenStatus(t *testing.T) {
 	// would match nothing and the field look would silently die (the
 	// review's item 20 shape).
 	root := h[:strings.Index(h, ">")+1]
-	if !strings.Contains(root, `class="fui-combobox"`) || !strings.Contains(root, `data-fui-comp="ui-combobox"`) {
+	if !strings.Contains(root, `class="fui-combobox"`) || !strings.Contains(root, `data-cui-comp="ui-combobox"`) {
 		t.Errorf("the wrapper must carry both the class and the style marker:\n%s", root)
 	}
 	for _, want := range []string{
@@ -32,7 +32,7 @@ func TestComboboxRendersStyledFieldWithHiddenStatus(t *testing.T) {
 	// (role=status, clipped — never display:none) and is not seen.
 	// Attributes render sorted, so the recipe class sits directly
 	// before the status hooks on the span.
-	if !strings.Contains(h, `<span class="fui-visually-hidden" data-fui-internal="" data-hui-combobox-no-results`) {
+	if !strings.Contains(h, `<span class="fui-visually-hidden" data-cui-internal="" data-hui-combobox-no-results`) {
 		t.Errorf("the status region must carry the visually-hidden recipe:\n%s", h)
 	}
 }
@@ -52,11 +52,11 @@ func TestComboboxCSSStylesFieldHidesStatusAndHonoursHidden(t *testing.T) {
 		"border: 1px solid var(--color-border",
 		// The live region is clipped on a page that loads only this
 		// sheet, and stays in the tree.
-		"[data-fui-comp=\"ui-combobox\"] .fui-visually-hidden {",
+		"[data-cui-comp=\"ui-combobox\"] .fui-visually-hidden {",
 		// The module filters static options by setting [hidden]; the
 		// author display rules must not defeat the attribute (#337's
 		// shape, carried from the retired pattern).
-		"[data-fui-comp=\"ui-combobox\"] .fui-combobox__option[hidden]",
+		"[data-cui-comp=\"ui-combobox\"] .fui-combobox__option[hidden]",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("comboboxCSS lost %q:\n%s", want, css)

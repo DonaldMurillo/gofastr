@@ -141,10 +141,10 @@ func renderLeaf(n world.Node, children []render.HTML) render.HTML {
 //
 // The runtime's delegator builds `fetch('/kiln/tool/' + attr)` with no
 // encodeURIComponent (core-ui/runtime frag/rpc.js), and dispatch is gated
-// only on a data-fui-trusted ancestor, which worldScreen.Render puts around
+// only on a data-cui-trusted ancestor, which worldScreen.Render puts around
 // the entire agent-authored tree. core-ui/noderender allows data-kiln-tool
 // through its data-* rule on the stated grounds that "the delegator
-// additionally requires a data-fui-trusted ancestor, which this IR cannot
+// additionally requires a data-cui-trusted ancestor, which this IR cannot
 // produce" (noderender_security_test.go); in kiln's only render path the IR
 // always produces one, so that justification does not hold here and the
 // value has to be checked at ingestion.

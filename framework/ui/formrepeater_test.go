@@ -19,7 +19,7 @@ func TestFormRepeaterRendersEmpty(t *testing.T) {
 		Name: "items",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-form-repeater"`,
+		`data-cui-comp="ui-form-repeater"`,
 		"fui-form-repeater",
 		">Add item<",
 		`name="items_add"`,

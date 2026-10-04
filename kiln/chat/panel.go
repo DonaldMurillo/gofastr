@@ -50,7 +50,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	pe := &panelEnv{live: l, tools: tools, agentState: agentState}
 
 	// Build slot HTML once per Mount call. The /state poll drives signal
-	// updates that re-render the chat log via data-fui-signal="chat_html"
+	// updates that re-render the chat log via data-cui-signal="chat_html"
 	// (HTML mode); page-structure refresh is kiln/live/reload.go's job.
 	def := preset.FloatingPanel("kiln-panel").
 		Slot("header", htmlComp{html: pe.headerHTML()}).
@@ -98,7 +98,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	widget.Mount(r, &def)
 
 	// Hidden Modal: agent-settings, opened by the gear button via
-	// data-fui-open="kiln-agent-settings". Loads the same panel CSS
+	// data-cui-open="kiln-agent-settings". Loads the same panel CSS
 	// (widgetCSS) so .kiln-modal-card, .kiln-modal-title, .kiln-button
 	// and friends are styled. Without this the modal renders as
 	// transparent floating text, looks like the gear "doesn't work".
@@ -107,7 +107,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 		DeepLink("modal", "agent-settings").
 		Slot("body", htmlComp{html: pe.agentSettingsHTML()}).
 		// Server-rendered HTML for the adapter list. The runtime
-		// hydrates [data-fui-signal="agent_list_html"][mode="html"]
+		// hydrates [data-cui-signal="agent_list_html"][mode="html"]
 		// on modal mount, replacing the Loading… placeholder.
 		Signal("agent_list_html", widget.SignalFunc(func() (any, error) {
 			return pe.agentListHTML(), nil
@@ -126,7 +126,7 @@ func MountPanel(r *router.Router, l *live.Live, tools *protocol.Tools, agentStat
 	widget.Mount(r, &help)
 
 	// Hidden Modal: reset confirmation, opened by the ↺ button via
-	// data-fui-open="kiln-reset-confirm". Reset is destructive
+	// data-cui-open="kiln-reset-confirm". Reset is destructive
 	// (truncates journal + drops DB schema) so a single misclick
 	// shouldn't lose work, the modal forces an explicit Confirm.
 	resetConfirm := preset.Modal("kiln-reset-confirm").
@@ -161,7 +161,7 @@ func (pe *panelEnv) helpHTML() string {
 	}
 	b.WriteString(`</dl>`)
 	b.WriteString(`<div class="kiln-modal-actions">`)
-	b.WriteString(`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>`)
+	b.WriteString(`<button type="button" class="kiln-modal-cancel" data-cui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>`)
 	b.WriteString(`</div>`)
 	b.WriteString(`</div>`)
 	return b.String()
@@ -172,11 +172,11 @@ func (pe *panelEnv) resetConfirmHTML() string {
 		`<h2 class="kiln-modal-title">Reset session?</h2>` +
 		// Live count updates via the world_snapshot signal which
 		// refreshes on every world_edit / session_reset.
-		`<p class="kiln-modal-sub">Currently live: <strong data-fui-signal="world_snapshot">` + render.Escape(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
+		`<p class="kiln-modal-sub">Currently live: <strong data-cui-signal="world_snapshot">` + render.Escape(pe.worldSnapshotText()) + `</strong>. Reset wipes the journal, drops the live DB schema, and clears the chat. Anything not frozen is gone.</p>` +
 		`<p class="kiln-modal-tip">Snapshot first with <code>kiln freeze --diff</code> in your terminal: emits a review summary you can paste into a commit message before resetting.</p>` +
 		`<div class="kiln-modal-actions">` +
-		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
-		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-fui-rpc="/kiln/panel/reset" data-fui-rpc-refresh="kiln-panel" data-fui-rpc-close>Reset</button>` +
+		`<button type="button" class="kiln-modal-cancel" data-cui-action="close">Cancel <kbd class="kiln-kbd">Esc</kbd></button>` +
+		`<button type="button" class="kiln-modal-apply kiln-modal-danger" data-cui-rpc="/kiln/panel/reset" data-cui-rpc-refresh="kiln-panel" data-cui-rpc-close>Reset</button>` +
 		`</div>` +
 		`</div>`
 }
@@ -191,9 +191,9 @@ func (pe *panelEnv) agentSettingsHTML() string {
 	return `<div class="kiln-modal">` +
 		`<h2 class="kiln-modal-title">Agent settings</h2>` +
 		`<p class="kiln-modal-sub">Pick which CLI agent kiln spawns when you send a message.</p>` +
-		`<div class="kiln-modal-body" id="kiln-agent-list" data-fui-signal="agent_list_html" data-fui-signal-mode="html">Loading…</div>` +
+		`<div class="kiln-modal-body" id="kiln-agent-list" data-cui-signal="agent_list_html" data-cui-signal-mode="html">Loading…</div>` +
 		`<div class="kiln-modal-actions">` +
-		`<button type="button" class="kiln-modal-cancel" data-fui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>` +
+		`<button type="button" class="kiln-modal-cancel" data-cui-action="close">Close <kbd class="kiln-kbd">Esc</kbd></button>` +
 		`</div>` +
 		`</div>`
 }
@@ -238,11 +238,11 @@ func (pe *panelEnv) agentListHTML() string {
 	}
 
 	// Form posts directly to /kiln/agent (registered by cmd/kiln).
-	// data-fui-rpc-close dismisses the modal on a successful 2xx so
+	// data-cui-rpc-close dismisses the modal on a successful 2xx so
 	// the user gets visible feedback that Apply landed. Re-open to
 	// see the new "current" mark; the panel header chip refreshes on
 	// the next /state poll tick (the RPC also triggers one).
-	b.WriteString(`<form class="kiln-adapter-list" data-fui-rpc="/kiln/agent" data-fui-rpc-close>`)
+	b.WriteString(`<form class="kiln-adapter-list" data-cui-rpc="/kiln/agent" data-cui-rpc-close>`)
 
 	// "none" sentinel, always present, always installed.
 	writeAdapterRow(&b, "none", "(no agent: chat goes to journal but nothing runs)", true, curName == "none" || curName == "")
@@ -296,10 +296,10 @@ func writeAdapterRow(b *strings.Builder, name, display string, installed, isCurr
 // so the framework's positioning + bootstrap behavior also applies.
 func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
-	b.WriteString(`<div class="fui-widget fui-pos-bottom-right kiln-widget kiln-corner-bottom-right" data-fui-widget="kiln-panel">`)
+	b.WriteString(`<div class="cui-widget cui-pos-bottom-right kiln-widget kiln-corner-bottom-right" data-cui-widget="kiln-panel">`)
 	b.WriteString(`<div id="kiln-build-banner" class="kiln-build-banner" role="status" aria-live="polite">`)
 	b.WriteString(`<span class="kiln-build-spinner" aria-hidden="true"></span>`)
-	b.WriteString(`<span id="kiln-build-label" data-fui-signal="build_status" data-fui-signal-mode="html" data-fui-flash-on-update data-fui-flash-duration-ms="1500">`)
+	b.WriteString(`<span id="kiln-build-label" data-cui-signal="build_status" data-cui-signal-mode="html" data-cui-flash-on-update data-cui-flash-duration-ms="1500">`)
 	b.WriteString(pe.buildStatusHTML())
 	b.WriteString(`</span></div>`)
 	b.WriteString(`<section class="kiln-panel kiln-open" role="dialog" aria-label="Kiln agent">`)
@@ -307,11 +307,11 @@ func (pe *panelEnv) skeleton(slots map[string]render.HTML) render.HTML {
 		b.WriteString(string(h))
 	}
 	if l, ok := slots["log"]; ok {
-		// data-fui-scroll-bottom-on-update=".kiln-log" pushes the inner
+		// data-cui-scroll-bottom-on-update=".kiln-log" pushes the inner
 		// scrollable list to bottom after each chat_html refresh; the
 		// wrap itself has overflow:hidden, so the scroll is on .kiln-log.
 		// aria-live="polite" announces new content to screen readers.
-		b.WriteString(`<div class="kiln-log-wrap" role="log" aria-live="polite" aria-relevant="additions text" data-fui-signal="chat_html" data-fui-signal-mode="html" data-fui-scroll-bottom-on-update=".kiln-log">`)
+		b.WriteString(`<div class="kiln-log-wrap" role="log" aria-live="polite" aria-relevant="additions text" data-cui-signal="chat_html" data-cui-signal-mode="html" data-cui-scroll-bottom-on-update=".kiln-log">`)
 		b.WriteString(string(l))
 		b.WriteString(`</div>`)
 	}
@@ -349,17 +349,17 @@ func (pe *panelEnv) headerHTML() string {
 		(func() string {
 			label := pe.agentLabel()
 			if label == "no agent" {
-				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-fui-signal="agent" data-fui-flash-on-update data-fui-open="kiln-agent-settings" title="Pick an agent">` + render.Escape(label) + `</button>`
+				return `<button type="button" class="kiln-panel-agent kiln-panel-agent-none" data-cui-signal="agent" data-cui-flash-on-update data-cui-open="kiln-agent-settings" title="Pick an agent">` + render.Escape(label) + `</button>`
 			}
-			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + render.Escape(label) + `</span>`
+			return `<span class="kiln-panel-agent" data-cui-signal="agent" data-cui-flash-on-update>` + render.Escape(label) + `</span>`
 		})() +
-		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + render.Escape(pe.worldSnapshotTooltip()) + `">` + render.Escape(pe.worldSnapshotText()) + `</a>` +
-		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-hui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
+		`<a class="kiln-panel-snapshot" data-cui-signal="world_snapshot" data-cui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + render.Escape(pe.worldSnapshotTooltip()) + `">` + render.Escape(pe.worldSnapshotText()) + `</a>` +
+		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-cui-open="kiln-help" data-hui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
 		`<span data-hui-copy="" data-hui-copy-target="kiln-log"><button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard">⎘</button></span>` +
-		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
-		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
-		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-open="kiln-reset-confirm">↺</button>` +
-		`<button type="button" class="kiln-panel-close" data-fui-action="close" aria-label="Close">×</button>` +
+		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-cui-rpc="/kiln/agent/cancel" data-cui-rpc-method="POST">■</button>` +
+		`<button type="button" class="kiln-panel-config" title="Agent settings" data-cui-open="kiln-agent-settings">⚙</button>` +
+		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-cui-open="kiln-reset-confirm">↺</button>` +
+		`<button type="button" class="kiln-panel-close" data-cui-action="close" aria-label="Close">×</button>` +
 		`</div>`
 }
 
@@ -582,10 +582,10 @@ func toolCountsLocked(chat []journal.ChatEvent) (calls, pending int) {
 }
 
 func (pe *panelEnv) inputHTML() string {
-	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset data-fui-disable-when-invalid data-fui-submit-on-enter>` +
-		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-hui-shortcut-focus="Mod+k" data-fui-clear-on-esc data-fui-persist-storage="kiln-input-draft"></textarea>` +
+	return `<form class="kiln-form" data-cui-rpc="/kiln/panel/send" data-cui-rpc-reset data-cui-disable-when-invalid data-cui-submit-on-enter>` +
+		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-cui-autogrow data-hui-shortcut-focus="Mod+k" data-cui-clear-on-esc data-cui-persist-storage="kiln-input-draft"></textarea>` +
 		`<button class="kiln-send" type="submit" aria-keyshortcuts="Enter">Send <kbd class="kiln-kbd">⏎</kbd></button>` +
-		`<span class="kiln-input-charcount" data-fui-charcount-source=".kiln-input" aria-hidden="true"></span>` +
+		`<span class="kiln-input-charcount" data-cui-charcount-source=".kiln-input" aria-hidden="true"></span>` +
 		`</form>`
 }
 
@@ -599,7 +599,7 @@ func (pe *panelEnv) inputHTML() string {
 // world + no plans) we render a quick-start tray with example
 // prompts so users have a click-path forward instead of an empty
 // box. The buttons set the textarea value via a tiny on-page hook
-// (data-fui-fill-input) and focus it.
+// (data-cui-fill-input) and focus it.
 func (pe *panelEnv) logHTMLForCurrent() string {
 	var out string
 	pe.live.ReadSession(func(sess *journal.Session) { out = pe.logHTMLForCurrentLocked(sess) })
@@ -625,7 +625,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 			b.WriteString(`<div class="kiln-quickstart">`)
 			b.WriteString(`<div class="kiln-quickstart-label">try one of these:</div>`)
 			for _, ex := range examples {
-				fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-fui-fill-input=".kiln-input">%s</button>`, render.Escape(ex))
+				fmt.Fprintf(&b, `<button type="button" class="kiln-quickstart-btn" data-cui-fill-input=".kiln-input">%s</button>`, render.Escape(ex))
 			}
 			b.WriteString(`</div>`)
 		}
@@ -736,7 +736,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 func thinkingRowHTMLLocked(calls, pending int, startMs int64) string {
 	parts := []string{`agent thinking`}
 	if startMs > 0 {
-		parts = append(parts, fmt.Sprintf(`<span data-fui-tick-elapsed="%d">…</span>`, startMs))
+		parts = append(parts, fmt.Sprintf(`<span data-cui-tick-elapsed="%d">…</span>`, startMs))
 	}
 	if calls > 0 {
 		label := pluralize(calls, "tool", "tools")
@@ -794,7 +794,7 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		} else {
 			// Live ticker, runtime rewrites text every 200ms relative
 			// to the call timestamp so pending tools surface their age.
-			suffix = fmt.Sprintf(` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running… <span data-fui-tick-elapsed="%d">…</span>)</span>`,
+			suffix = fmt.Sprintf(` <span class="kiln-msg-tool-elapsed kiln-msg-tool-pending">(running… <span data-cui-tick-elapsed="%d">…</span>)</span>`,
 				e.Timestamp.UnixMilli())
 		}
 		fmt.Fprintf(b, `<li class="kiln-msg kiln-msg-tool" data-call-id="%s" data-tool="%s" title="%s">%s %s %s%s</li>`,
@@ -842,7 +842,7 @@ func renderChatEvent(b *strings.Builder, e *journal.ChatEvent, resultByCall, cal
 		if !e.Result.OK {
 			if c, ok := callByID[e.Result.CallID]; ok && c.Call != nil {
 				prompt := "retry the failed " + c.Call.Name + " call (" + summarizeArgs(c.Call.Args) + "): "
-				retryBtn = fmt.Sprintf(` <button type="button" class="kiln-msg-retry" data-fui-fill-input=".kiln-input" data-fui-fill-text="%s" title="Retry this tool with edits">↻ retry</button>`,
+				retryBtn = fmt.Sprintf(` <button type="button" class="kiln-msg-retry" data-cui-fill-input=".kiln-input" data-cui-fill-text="%s" title="Retry this tool with edits">↻ retry</button>`,
 					render.Escape(prompt))
 			}
 		}
@@ -995,15 +995,15 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 			`<div class="kiln-plan-actions">`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-approve" `+
 				`data-plan-action="approve" data-plan-id="%s" `+
-				`data-fui-rpc="/kiln/panel/approve_plan"  `+
-				`data-fui-rpc-body='%s'%s>%s</button>`+
+				`data-cui-rpc="/kiln/panel/approve_plan"  `+
+				`data-cui-rpc-body='%s'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-reject" `+
 				`data-plan-action="reject" data-plan-id="%s" `+
-				`data-fui-rpc="/kiln/panel/reject_plan"  `+
-				`data-fui-rpc-body='%s'%s>%s</button>`+
+				`data-cui-rpc="/kiln/panel/reject_plan"  `+
+				`data-cui-rpc-body='%s'%s>%s</button>`+
 				`<button type="button" class="kiln-plan-btn kiln-plan-btn-modify" `+
-				`data-fui-fill-input=".kiln-input" `+
-				`data-fui-fill-text="Refine plan %s: "%s>%s</button>`+
+				`data-cui-fill-input=".kiln-input" `+
+				`data-cui-fill-text="Refine plan %s: "%s>%s</button>`+
 				`</div>`,
 			render.Escape(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), approveExtra, approveLabel,
 			render.Escape(p.PlanID), attrJSON(map[string]string{"plan_id": p.PlanID}), rejectExtra, rejectLabel,

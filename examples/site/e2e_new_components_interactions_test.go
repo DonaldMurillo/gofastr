@@ -178,12 +178,12 @@ func TestE2E_TagInput_EnterCommitsChip(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/taginput"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
 		chromedp.Focus(`[data-hui-tag-input-field]`),
 		chromedp.SendKeys(`[data-hui-tag-input-field]`, "rust"),
 		chromedp.KeyEvent(kb.Enter),
 		chromedp.Sleep(120*1e6),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -229,11 +229,11 @@ func TestE2E_TagInput_BackspaceRemovesLast(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/taginput"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsBefore),
 		chromedp.Focus(`[data-hui-tag-input-field]`),
 		chromedp.KeyEvent(kb.Backspace),
 		chromedp.Sleep(120*1e6),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove]').length`, &chipsAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -271,10 +271,10 @@ func TestE2E_Disclosure_ClickSummaryToggles(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/disclosure"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openA),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="fui-collapsible"]')[0].querySelector('.fui-collapsible__summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openA),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].querySelector('.fui-collapsible__summary').click()`, nil),
 		chromedp.Sleep(100*1e6),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openB),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-comp="fui-collapsible"]')[0].hasAttribute('open')`, &openB),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -358,10 +358,10 @@ func TestE2E_Banner_DismissHidesElement(t *testing.T) {
 		chromedp.Evaluate(`localStorage.removeItem("hui.system.dismissed"); document.cookie = "gofastr.banner-dismiss.feature-filter-chips-2026-05=;path=/;max-age=0"`, nil),
 		chromedp.Reload(),
 		pageReady(),
-		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-fui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenBefore),
+		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-cui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenBefore),
 		chromedp.Evaluate(`document.querySelector("[data-hui-system-dismiss]")?.click()`, nil),
 		chromedp.Sleep(150*1e6),
-		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-fui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenAfter),
+		chromedp.Evaluate(`(document.querySelector("[data-hui-system-id]")?.closest("[data-cui-comp=\"ui-banner\"]")?.hasAttribute("hidden") ?? null) + ""`, &hiddenAfter),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

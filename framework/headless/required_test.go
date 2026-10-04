@@ -143,11 +143,11 @@ func TestHrefsGoThroughTheAnchorPolicy(t *testing.T) {
 	refuse(t, "Path", func() {
 		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "//evil/x", AriaLabel: "Pages"}, nil)
 	})
-	refuse(t, "data-fui-rpc", func() {
-		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-fui-rpc": "//evil/x"}}, nil)
+	refuse(t, "data-cui-rpc", func() {
+		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-cui-rpc": "//evil/x"}}, nil)
 	})
-	refuse(t, "data-fui-rpc", func() {
-		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-fui-rpc": ""}}, nil)
+	refuse(t, "data-cui-rpc", func() {
+		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-cui-rpc": ""}}, nil)
 	})
 }
 

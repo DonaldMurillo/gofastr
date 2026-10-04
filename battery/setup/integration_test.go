@@ -447,7 +447,7 @@ func TestAdminStep_EnvVars(t *testing.T) {
 
 // TestRender_PageContainsComponents verifies the wizard renders
 // framework/ui components (AuthCard, ProgressSteps, Form) with their
-// data-fui-comp markers, no bespoke CSS.
+// data-cui-comp markers, no bespoke CSS.
 func TestRender_PageContainsComponents(t *testing.T) {
 	done := false
 	r := New(Config{
@@ -463,9 +463,9 @@ func TestRender_PageContainsComponents(t *testing.T) {
 	w := doGet(h, "/setup")
 	body := w.Body.String()
 	for _, marker := range []string{
-		`data-fui-comp="ui-auth-card"`,
-		`data-fui-comp="ui-progress-steps"`,
-		`data-fui-comp="ui-form"`,
+		`data-cui-comp="ui-auth-card"`,
+		`data-cui-comp="ui-progress-steps"`,
+		`data-cui-comp="ui-form"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("wizard body must contain %s", marker)

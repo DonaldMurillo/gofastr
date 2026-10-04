@@ -107,12 +107,12 @@ legacy.NoSPA = true
 site.RegisterScreen(legacy, appLayout)
 ```
 
-`data-fui-nav="off"` does the same for one link, when the destination is
+`data-cui-nav="off"` does the same for one link, when the destination is
 otherwise a normal SPA route:
 
 ```go
 ui.Link(ui.LinkConfig{Href: "/reports", Text: "Reports",
-    ExtraAttrs: html.Attrs{"data-fui-nav": "off"}})
+    ExtraAttrs: html.Attrs{"data-cui-nav": "off"}})
 ```
 
 Reach for the screen-level form when the page can never be soft-loaded;

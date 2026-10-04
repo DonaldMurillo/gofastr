@@ -34,7 +34,7 @@ type JSONViewerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the viewer's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -74,16 +74,16 @@ func JSONViewer(cfg JSONViewerConfig) render.HTML {
 var jsonViewerStyle = registry.RegisterStyle("ui-json-viewer", jsonViewerCSS)
 
 func jsonViewerCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-json-viewer"] {
+	return `[data-cui-comp="ui-json-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__node {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__node {
   display: block;
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__summary {
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -91,45 +91,45 @@ func jsonViewerCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary::-webkit-details-marker {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__summary::-webkit-details-marker {
   display: none;
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary::before {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__summary::before {
   content: "▸";
   color: var(--color-text-muted, #52525B);
   transition: transform 100ms ease;
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__node[open] > .fui-json-viewer__summary::before {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__node[open] > .fui-json-viewer__summary::before {
   transform: rotate(90deg);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__type {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__type {
   color: var(--color-text-muted, #52525B);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__count {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__count {
   color: var(--color-text-muted, #52525B);
   font-size: 0.85em;
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__list {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__list {
   margin: 0;
   padding-inline-start: var(--spacing-lg, 16px);
   list-style: none;
   border-inline-start: 1px dashed var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__item {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__item {
   padding-block: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__key {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__key {
   color: var(--color-info, #3B82F6);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__colon {
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__colon {
   color: var(--color-text-muted, #52525B);
   margin-inline-end: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #D97706); }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #4F46E5); font-weight: var(--font-weight-semibold); }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
-[data-fui-comp="ui-json-viewer"] .fui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #16A34A); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #D97706); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #4F46E5); font-weight: var(--font-weight-semibold); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`
 }

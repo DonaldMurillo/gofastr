@@ -11,7 +11,7 @@ import (
 // was a DENY-list of three names (style, srcdoc, on*), so everything the
 // browser runtime treats as privileged sailed through: data-behavior
 // (an unvalidated <script src> sink), data-widget / data-component /
-// data-bind, and any data-fui-* the runtime acts on. URL-valued
+// data-bind, and any data-cui-* the runtime acts on. URL-valued
 // attributes had no scheme guard at all.
 //
 // The property is "an untrusted IR emits only inert presentational
@@ -28,9 +28,9 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		{"data-widget", map[string]any{"data-widget": "admin"}, "data-widget"},
 		{"data-component", map[string]any{"data-component": "admin"}, "data-component"},
 		{"data-bind", map[string]any{"data-bind": "secret"}, "data-bind"},
-		{"data-fui-poll-src", map[string]any{"data-fui-poll-src": "https://evil.example/p"}, "data-fui-poll-src"},
-		{"data-fui-rpc", map[string]any{"data-fui-rpc": "https://evil.example/r"}, "data-fui-rpc"},
-		{"data-fui-signal-set", map[string]any{"data-fui-signal-set": "__proto__:x"}, "data-fui-signal-set"},
+		{"data-cui-poll-src", map[string]any{"data-cui-poll-src": "https://evil.example/p"}, "data-cui-poll-src"},
+		{"data-cui-rpc", map[string]any{"data-cui-rpc": "https://evil.example/r"}, "data-cui-rpc"},
+		{"data-cui-signal-set", map[string]any{"data-cui-signal-set": "__proto__:x"}, "data-cui-signal-set"},
 		{"style", map[string]any{"style": "background:url(x)"}, "style"},
 		{"srcdoc", map[string]any{"srcdoc": "<script>alert(1)</script>"}, "srcdoc"},
 		{"case-folded handler", map[string]any{"OnClick": "alert(1)"}, "alert(1)"},
@@ -77,7 +77,7 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		// data-kiln-tool stays allowed because an agent-authored button
 		// that fires a kiln tool is a deliberate kiln feature
 		// (kiln/integration's TestBrowser_ButtonToolCallFires). This
-		// used to claim the delegator's data-fui-trusted ancestor was
+		// used to claim the delegator's data-cui-trusted ancestor was
 		// something "this IR cannot produce", that was false:
 		// kiln/render/uihost.go wraps the whole agent tree in one. The
 		// value, not the attribute, is what has to be bounded, so kiln

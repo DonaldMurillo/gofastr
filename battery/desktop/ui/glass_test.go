@@ -13,7 +13,7 @@ import (
 // only when asked, and never emits an inline style.
 func TestGlassRendersMarkerAndVariant(t *testing.T) {
 	out := string(desktopui.Glass(desktopui.GlassConfig{}, plain("<p>hi</p>")))
-	if !strings.Contains(out, `data-fui-comp="desktopui-glass"`) {
+	if !strings.Contains(out, `data-cui-comp="desktopui-glass"`) {
 		t.Errorf("missing glass marker:\n%s", out)
 	}
 	if strings.Contains(out, "desktopui-glass--thick") {
@@ -24,7 +24,7 @@ func TestGlassRendersMarkerAndVariant(t *testing.T) {
 	}
 
 	thick := string(desktopui.Glass(desktopui.GlassConfig{Thick: true}, plain("<p>hi</p>")))
-	if !strings.Contains(thick, `data-fui-comp="desktopui-glass"`) || !strings.Contains(thick, "desktopui-glass--thick") {
+	if !strings.Contains(thick, `data-cui-comp="desktopui-glass"`) || !strings.Contains(thick, "desktopui-glass--thick") {
 		t.Errorf("thick glass missing marker or modifier:\n%s", thick)
 	}
 }

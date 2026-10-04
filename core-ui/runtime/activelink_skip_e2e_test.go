@@ -26,8 +26,8 @@ func activelinkSkipPage() string {
   <nav aria-label="Primary">
     <a id="home" href="/">Home</a>
     <a id="other" href="/other">Other</a>
-    <a id="pinned" href="/somewhere" data-fui-activelink-skip aria-current="location" class="active">Pinned</a>
-    <a id="bare" href="/elsewhere" data-fui-activelink-skip>Bare</a>
+    <a id="pinned" href="/somewhere" data-cui-activelink-skip aria-current="location" class="active">Pinned</a>
+    <a id="bare" href="/elsewhere" data-cui-activelink-skip>Bare</a>
   </nav>
   <div data-hui-rail data-hui-rail-observe="main">
     <nav aria-label="On this page">
@@ -96,7 +96,7 @@ func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 	}
 }
 
-// Across a SPA navigation, data-fui-activelink-skip keeps a hand-set
+// Across a SPA navigation, data-cui-activelink-skip keeps a hand-set
 // aria-current untouched, links inside a [data-hui-rail] nav keep the
 // state the rail module owns, and the ordinary exact-match contract
 // still holds (aria-current="page" + .active move to the new path's
@@ -140,19 +140,19 @@ func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 		t.Fatalf("SPA navigation did not reach /other, at %v — test is vacuous", got["path"])
 	}
 	if got["pinned"] != "location" {
-		t.Errorf("data-fui-activelink-skip link lost its author-set aria-current (got %v); activelink must neither set nor clear it", got["pinned"])
+		t.Errorf("data-cui-activelink-skip link lost its author-set aria-current (got %v); activelink must neither set nor clear it", got["pinned"])
 	}
 	// Retention, not just non-addition: activelink clears `.active` in the
 	// same branch it clears aria-current, so a skip link that starts with
 	// the class has to keep it. Asserting only that the class is absent
 	// would pass against a module that had stripped it.
 	if got["pinnedActive"] != true {
-		t.Error("data-fui-activelink-skip link lost its author-set .active class")
+		t.Error("data-cui-activelink-skip link lost its author-set .active class")
 	}
 	// The other direction, on a skip link that starts with neither: the
 	// module must not stamp state onto it either.
 	if got["bare"] != nil || got["bareActive"] != false {
-		t.Errorf("activelink stamped state onto a bare data-fui-activelink-skip link, got %v / active=%v", got["bare"], got["bareActive"])
+		t.Errorf("activelink stamped state onto a bare data-cui-activelink-skip link, got %v / active=%v", got["bare"], got["bareActive"])
 	}
 	if got["rail1"] != "true" || got["rail1Active"] != true {
 		t.Errorf(`rail link lost the state headless-rail owns, got aria-current=%v / is-active=%v`, got["rail1"], got["rail1Active"])

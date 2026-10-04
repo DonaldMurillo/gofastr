@@ -26,7 +26,7 @@ func TestRecordSummaryRendersBoundedCompositionSlots(t *testing.T) {
 	}))
 
 	for _, want := range []string{
-		`data-fui-comp="ui-record-summary"`,
+		`data-cui-comp="ui-record-summary"`,
 		`class="fui-record-summary fui-record-summary--danger extra"`,
 		`id="incident-summary"`,
 		`<h2 class="fui-record-summary__title"`,
@@ -60,7 +60,7 @@ func TestRecordSummaryDefaultsToH1AndNeutralTone(t *testing.T) {
 func TestRecordSummaryCSSControlsMobileScaleAndActionWidth(t *testing.T) {
 	css := recordSummaryCSS(style.Theme{})
 	for _, want := range []string{
-		`[data-fui-comp="ui-record-summary"]`,
+		`[data-cui-comp="ui-record-summary"]`,
 		`border-inline-start: 4px solid`,
 		`inline-size: fit-content`,
 		`grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.55fr)`,
@@ -95,7 +95,7 @@ func TestMetricBandRendersSemanticSignals(t *testing.T) {
 		},
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-metric-band"`,
+		`data-cui-comp="ui-metric-band"`,
 		`class="fui-metric-band fui-metric-band--3"`,
 		`aria-label="Incident signals"`,
 		`<dt class="fui-metric-band__label">Impact</dt>`,

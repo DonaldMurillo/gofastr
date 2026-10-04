@@ -28,7 +28,7 @@
 // # ComponentSheet, auto-scoped per-component CSS
 //
 // NewComponentSheet(name, theme) returns a builder that prefixes every
-// rule with [data-fui-comp="<name>"] at Build() time. The framework
+// rule with [data-cui-comp="<name>"] at Build() time. The framework
 // emits the marker attribute on the component's outermost tag (via
 // the registry package), so the scope is byte-for-byte deterministic
 // and CSP-clean. Selectors that can't be scoped (body, html, :root,
@@ -58,10 +58,10 @@
 // names that are not CSS identifiers (or --custom properties), and
 // most other foot-guns panic with a useful message.
 //
-// # Section-level overrides, fui-theme-<hash>
+// # Section-level overrides, cui-theme-<hash>
 //
 // RegisterThemeOverride(theme, partial) returns a class name like
-// "fui-theme-a1b2c3d4" plus a CSS block that redeclares only the
+// "cui-theme-a1b2c3d4" plus a CSS block that redeclares only the
 // overridden tokens. Wrap a region with that class via ui.Themed
 // and every descendant's var() refs resolve through the override.
 // See core-ui/ARCHITECTURE.md for the cascade rationale.

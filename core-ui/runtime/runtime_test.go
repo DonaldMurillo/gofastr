@@ -72,19 +72,19 @@ func TestRuntimeJS(t *testing.T) {
 		"collectParams",
 		"screenCache",          // screen caching for back-navigation
 		"swapAtSlot",           // layer-cell content swapping
-		"data-fui-layout-key",  // layout-chain identity marker
-		"data-fui-layout-slot", // layer swap-target marker
+		"data-cui-layout-key",  // layout-chain identity marker
+		"data-cui-layout-slot", // layer swap-target marker
 		"X-Gofastr-Navigate",   // client-side navigation header
 		"X-Gofastr-Swap",       // subtree-partial swap boundary
 		"X-Gofastr-Partial",    // server partial response header
 		"loadComponentCSS",     // per-component CSS loader
 		"scanAndLoadCSS",       // marker scan post-swap/post-mount
 		"_pendingLinks",        // sync dedup guard
-		"data-fui-style",       // <link> dedup key
+		"data-cui-style",       // <link> dedup key
 		"scheduleIdleLoads",    // LoadPrewarm idle queue
-		"data-fui-comp",        // marker attr the scanner reads
-		"data-fui-os",          // OS detection on <html> for ShortcutHint
-		"data-fui-spa",         // opt-IN form-intercept for non-JSON forms
+		"data-cui-comp",        // marker attr the scanner reads
+		"data-cui-os",          // OS detection on <html> for ShortcutHint
+		"data-cui-spa",         // opt-IN form-intercept for non-JSON forms
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -119,7 +119,7 @@ func TestRuntimeSize(t *testing.T) {
 	t.Logf("Runtime size: %d bytes", size)
 	// Reasonably small for: router + DOM helpers + SSE + hydration +
 	// widget mounting + per-component CSS loader (catalog + bundle
-	// dedup + idle prefetch) + the data-fui-* primitive set
+	// dedup + idle prefetch) + the data-cui-* primitive set
 	// (rpc-reset, disable-when-invalid, submit-on-enter, autogrow,
 	// clear-on-esc, shortcut-focus, shortcut-click, fill-input,
 	// scroll-bottom-on-update, flash-on-update, tick-elapsed,
@@ -206,9 +206,9 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"NS._syncDeepLinks",
 		"NS._modalStack", // reads state from core
 		"NS._popoverStack",
-		"data-fui-backdrop",
-		"data-fui-widget",
-		"data-fui-rpc",
+		"data-cui-backdrop",
+		"data-cui-widget",
+		"data-cui-rpc",
 		"widgethelpers",
 		"widgetfocus",
 		"widgetlinks",
@@ -218,7 +218,7 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"fui:widget-open",
 		"fui:widget-close",
 		"NS._reattachWidgets",
-		// `data-fui-copy-text-from` was previously checked here but
+		// `data-cui-copy-text-from` was previously checked here but
 		// only lives in a comment now (the delegated handler moved
 		// to core); the minifier correctly strips it.
 	} {
@@ -227,10 +227,10 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		}
 	}
 	moduleMarkers := map[string][]string{
-		"widgethelpers": {"data-fui-persist-storage", "data-fui-charcount-source", "data-fui-clear-on-esc", "data-fui-submit-on-enter", "data-fui-disable-when-invalid", "data-fui-fill-input", "data-fui-tick-elapsed"},
+		"widgethelpers": {"data-cui-persist-storage", "data-cui-charcount-source", "data-cui-clear-on-esc", "data-cui-submit-on-enter", "data-cui-disable-when-invalid", "data-cui-fill-input", "data-cui-tick-elapsed"},
 		"widgetfocus":   {"__fuiModalEsc", "__fuiModalTab"},
 		"widgetlinks":   {"G._deepLinkPushUrl", "G._deepLinkStripUrl"},
-		"textarea":      {"data-fui-autogrow"},
+		"textarea":      {"data-cui-autogrow"},
 	}
 	for module, markers := range moduleMarkers {
 		moduleSrc, ok := Module(module)
@@ -350,7 +350,7 @@ func TestRuntimeModule_Popover(t *testing.T) {
 	}
 	for _, want := range []string{
 		"_anchorPopover",            // exported entry on __gofastr
-		"data-fui-popover-side",     // chosen-side attr the CSS reads
+		"data-cui-popover-side",     // chosen-side attr the CSS reads
 		"is-popover-trigger-active", // trigger highlight class
 		"anchorTrigger",             // per-widget anchor state
 		"--ui-popover-arrow-x",      // arrow CSS variable
@@ -414,7 +414,7 @@ func TestRuntimeModuleRejectsBadName(t *testing.T) {
 
 // TestRuntimeNavigateRejectsUnsafeSchemes: security: when the SPA
 // navigator is handed an attacker-controlled URL (via signal-bound
-// href or a combobox option's data-fui-push-state), it must refuse
+// href or a combobox option's data-cui-push-state), it must refuse
 // javascript:/vbscript:/non-image data: schemes BEFORE calling
 // history.pushState. Otherwise the URL bar lies and a Refresh on
 // some older WebKit forks executes the script.
@@ -448,7 +448,7 @@ func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
 }
 
 // TestRuntimeDocScriptBoundaryShape pins the source-level contract of
-// document-lifetime scripts (data-fui-doc): every soft-nav entry point
+// document-lifetime scripts (data-cui-doc): every soft-nav entry point
 // must consult crossesDocBoundary BEFORE its history write, and the
 // fallback arms must be real document loads (location.assign/replace),
 // never partial swaps. Removing a document script's tag does not
@@ -465,8 +465,8 @@ func TestRuntimeDocScriptBoundaryShape(t *testing.T) {
 	}
 	// The live-document truth is read from the DOM, and the
 	// destination's set comes from the manifest field kernel maps.
-	if !strings.Contains(js, "script[data-fui-doc]") {
-		t.Error("runtime never reads script[data-fui-doc]; the live document's capability set is unknown to nav")
+	if !strings.Contains(js, "script[data-cui-doc]") {
+		t.Error("runtime never reads script[data-cui-doc]; the live document's capability set is unknown to nav")
 	}
 	if !strings.Contains(js, "docScripts:r.docScripts??r.DocScripts??[]") {
 		t.Error("kernel does not map the manifest docScripts field; destinations carry an empty set and every boundary is invisible")
@@ -588,7 +588,7 @@ func contains(s, substr string) bool {
 
 // TestRuntimeSignalAriaLiveContract pins the source-level contract that
 // the runtime injects role="status" aria-live="polite" aria-atomic="true"
-// onto every [data-fui-signal] node. Two integration points must exist:
+// onto every [data-cui-signal] node. Two integration points must exist:
 //  1. _initialPass (boot-time scan)
 //  2. gofastr:navigate handler (post-SPA-nav scan)
 //
@@ -652,15 +652,15 @@ func TestRuntimeErrorObjectFormatting(t *testing.T) {
 	}
 }
 
-// TestRuntimeLoadingCSSClassDuringRPC pins that dispatchRPC adds a fui-loading
+// TestRuntimeLoadingCSSClassDuringRPC pins that dispatchRPC adds a cui-loading
 // class during a request and removes it in finally.
 func TestRuntimeLoadingCSSClassDuringRPC(t *testing.T) {
 	js, ok := Module("rpc")
 	if !ok {
 		t.Fatal("rpc module not embedded")
 	}
-	if !contains(js, "fui-loading") {
-		t.Error("dispatchRPC must add/remove 'fui-loading' CSS class during in-flight requests")
+	if !contains(js, "cui-loading") {
+		t.Error("dispatchRPC must add/remove 'cui-loading' CSS class during in-flight requests")
 	}
 }
 
@@ -673,7 +673,7 @@ func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !contains(js, "prefers-reduced-motion") {
-		t.Error("setSignal flash must check prefers-reduced-motion before applying fui-flash class")
+		t.Error("setSignal flash must check prefers-reduced-motion before applying cui-flash class")
 	}
 	if !contains(js, "matchesMedia") && !contains(js, "matchMedia") {
 		t.Error("setSignal flash must use matchMedia to detect reduced-motion preference")
@@ -683,7 +683,7 @@ func TestRuntimeReducedMotionFlashSkip(t *testing.T) {
 // Hover/focus prefetch delegator and idle-fallback scheduler are
 // verified behaviorally by:
 //   - examples/site/TestE2E_HoverPrefetchLoadsModule: synthesizes
-//     pointerover on a data-fui-prefetch element and asserts the
+//     pointerover on a data-cui-prefetch element and asserts the
 //     monkey-patched loadModule fired exactly once with the right name.
 //   - examples/site/TestE2E_IdleFallbackUsesRIC: stubs
 //     requestIdleCallback=undefined and asserts the setTimeout fallback
@@ -725,15 +725,15 @@ func TestWidget_InjectSignalAria_TextModeOnly(t *testing.T) {
 		t.Fatal("_injectSignalAria definition (with querySelectorAll body) not found in runtime.js")
 	}
 	body := js[defIdx:min(defIdx+600, len(js))]
-	// Must NOT unconditionally apply to all [data-fui-signal] nodes
+	// Must NOT unconditionally apply to all [data-cui-signal] nodes
 	// without a mode check. The mode must be checked or the selector
 	// must exclude attr/html-mode nodes.
-	appliesUnconditionally := strings.Contains(body, `querySelectorAll('[data-fui-signal]')`) &&
+	appliesUnconditionally := strings.Contains(body, `querySelectorAll('[data-cui-signal]')`) &&
 		!strings.Contains(body, `signal-mode`) &&
-		!strings.Contains(body, `getAttribute('data-fui-signal-mode')`) &&
-		!strings.Contains(body, `getAttribute("data-fui-signal-mode")`) &&
-		!strings.Contains(body, `:not([data-fui-signal-mode="attr"])`) &&
-		!strings.Contains(body, `:not([data-fui-signal-mode=`)
+		!strings.Contains(body, `getAttribute('data-cui-signal-mode')`) &&
+		!strings.Contains(body, `getAttribute("data-cui-signal-mode")`) &&
+		!strings.Contains(body, `:not([data-cui-signal-mode="attr"])`) &&
+		!strings.Contains(body, `:not([data-cui-signal-mode=`)
 	if appliesUnconditionally {
 		t.Error("_injectSignalAria applies role=status to ALL signal nodes including attr/html-mode — must restrict to text-mode only")
 	}

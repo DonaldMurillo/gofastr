@@ -25,20 +25,20 @@
     _signals: {},
 
     /** Read the current value of a named signal. Returns undefined for
-        unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
+        unset signals. Used by data-cui-signal-inc and data-cui-signal-toggle
         to read-modify-write without an RPC round-trip. */
     getSignal(name) {
       const s = own(this._signals, name) ? this._signals[name] : undefined;
       return s ? s.value : undefined;
     },
     /** Push a value into a named signal and reflect it into all
-        [data-fui-signal="<name>"] DOM nodes. Mode is read from the
-        node's data-fui-signal-mode attr ("text" default, "html",
-        "attr"+data-fui-signal-attr). */
+        [data-cui-signal="<name>"] DOM nodes. Mode is read from the
+        node's data-cui-signal-mode attr ("text" default, "html",
+        "attr"+data-cui-signal-attr). */
     setSignal(name, value, opts) {
       // Prototype pollution: the reserved-key guard used to live only in
       // the three seed-merge loops, but attribute-controlled keys enter
-      // HERE, data-fui-signal-set/-inc/-toggle, and fetched-JSON keys
+      // HERE, data-cui-signal-set/-inc/-toggle, and fetched-JSON keys
       // from poll.js and widgets.js. `__proto__:POLLUTED` re-parents the
       // store, and because getSignal is `s ? s.value : undefined` EVERY
       // unset signal then reads back the attacker's value. Pure data
@@ -63,8 +63,8 @@
       // produce an invalid selector and querySelectorAll would THROW,
       // taking setSignal (and every listener it drives) down with it.
       // Same shape as sse.js:76.
-      document.querySelectorAll('[data-fui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
-        const mode = node.getAttribute('data-fui-signal-mode') || 'text';
+      document.querySelectorAll('[data-cui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
+        const mode = node.getAttribute('data-cui-signal-mode') || 'text';
         if (mode === 'html') {
           // The html escape hatch is for TRUSTED HTML *strings* only.
           // On a non-2xx response dispatchRPC broadcasts the auto-built
@@ -95,7 +95,7 @@
             }).catch(() => {});
           }
         } else if (mode === 'attr') {
-          const attr = node.getAttribute('data-fui-signal-attr') || 'value';
+          const attr = node.getAttribute('data-cui-signal-attr') || 'value';
           // The attribute NAME is developer-supplied and server-
           // rendered, so the allow-list that keeps a signal out of
           // `srcdoc` / `style` / `on*` lives in Go, at the emitters
@@ -117,8 +117,8 @@
           // role=tab buttons, CSS keys the visual highlight off
           // data-active, but assistive tech reads aria-selected.
           if (attr === 'data-active') {
-            node.querySelectorAll('[role="tab"][data-fui-tab-index]').forEach((b) => {
-              b.setAttribute('aria-selected', String(b.getAttribute('data-fui-tab-index') === v));
+            node.querySelectorAll('[role="tab"][data-cui-tab-index]').forEach((b) => {
+              b.setAttribute('aria-selected', String(b.getAttribute('data-cui-tab-index') === v));
             });
           }
         } else {
@@ -141,26 +141,26 @@
         // After-update hook: brief flash to signal the value changed.
         // Useful for headers/badges where the user might miss an
         // update otherwise. Duration overridable via
-        // data-fui-flash-duration-ms; default 600ms.
+        // data-cui-flash-duration-ms; default 600ms.
         // Task D: skip the flash when the user prefers reduced motion.
-        if (node.hasAttribute('data-fui-flash-on-update')) {
+        if (node.hasAttribute('data-cui-flash-on-update')) {
           const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
           if (!prefersReduced) {
-            const dur = parseInt(node.getAttribute('data-fui-flash-duration-ms') || '600', 10);
-            node.classList.remove('fui-flash');
+            const dur = parseInt(node.getAttribute('data-cui-flash-duration-ms') || '600', 10);
+            node.classList.remove('cui-flash');
             // Force reflow so the next add re-runs the animation.
             // eslint-disable-next-line no-unused-expressions
             node.offsetWidth;
-            node.classList.add('fui-flash');
-            setTimeout(() => node.classList.remove('fui-flash'), dur);
+            node.classList.add('cui-flash');
+            setTimeout(() => node.classList.remove('cui-flash'), dur);
           }
         }
         // After-update hook: scroll a container to bottom so streaming
         // chat logs / live tails surface new content without manual
-        // scrolling. Opt-in via data-fui-scroll-bottom-on-update on
+        // scrolling. Opt-in via data-cui-scroll-bottom-on-update on
         // the signal node itself or the resolved selector target.
-        if (node.hasAttribute('data-fui-scroll-bottom-on-update')) {
-          const sel = node.getAttribute('data-fui-scroll-bottom-on-update');
+        if (node.hasAttribute('data-cui-scroll-bottom-on-update')) {
+          const sel = node.getAttribute('data-cui-scroll-bottom-on-update');
           // The attribute value is a selector by design; a malformed one
           // degrades to the node itself instead of throwing out of the
           // signal fanout pass.
@@ -182,19 +182,19 @@
   // outside RPC so tabs, counters, and toggles work before any network module
   // loads. Widget roots retain their own event ownership.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-fui-widget]')) return;
-    const node = e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]');
+    if (e.target.closest('[data-cui-widget]')) return;
+    const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
     e.preventDefault();
     const G = window.__gofastr;
 
-    const set = node.getAttribute('data-fui-signal-set');
+    const set = node.getAttribute('data-cui-signal-set');
     if (set) {
       const sep = set.indexOf(':');
       if (sep > 0) G.setSignal(set.substring(0, sep), set.substring(sep + 1));
     }
 
-    const inc = node.getAttribute('data-fui-signal-inc');
+    const inc = node.getAttribute('data-cui-signal-inc');
     if (inc) {
       const sep = inc.indexOf(':');
       const name = sep > 0 ? inc.substring(0, sep) : inc;
@@ -202,7 +202,7 @@
       G.setSignal(name, (Number(G.getSignal(name)) || 0) + delta);
     }
 
-    const toggle = node.getAttribute('data-fui-signal-toggle');
+    const toggle = node.getAttribute('data-cui-signal-toggle');
     if (toggle) {
       const current = G.getSignal(toggle);
       G.setSignal(toggle, !current || current === 'false' || current === '0');

@@ -286,7 +286,7 @@ func TestAxeMeridianClean(t *testing.T) {
 			chromedp.Navigate(base+"/app/customers"),
 			axePageSettle(),
 			axetest.Prepare(scheme),
-			chromedp.Click(`button[data-fui-open="customer-quick-add"]`, chromedp.ByQuery),
+			chromedp.Click(`button[data-cui-open="customer-quick-add"]`, chromedp.ByQuery),
 			chromedp.WaitVisible(`#qa-name`, chromedp.ByQuery),
 			chromedp.Sleep(250*time.Millisecond),
 		); err != nil {

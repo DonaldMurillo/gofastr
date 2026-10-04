@@ -68,7 +68,7 @@ type PartAttrs map[Part]html.Attrs
 // attribute whenever the signal changes. It is the third thing a
 // caller may set on a part, beside slots and attrs, because a binding
 // is neither: an attribute may
-// not carry a data-fui-* key, on purpose, so the only way a part can
+// not carry a data-cui-* key, on purpose, so the only way a part can
 // follow a signal is to say so here, where it is typed, reviewable,
 // lands on exactly one element, and cannot reach an attribute the
 // runtime would execute.
@@ -113,7 +113,7 @@ func (b Bind) attrs() html.Attrs {
 	}
 	checkSignalName(b.Signal)
 	mode := orDefault(b.Mode, "text")
-	out := html.Attrs{"data-fui-signal": b.Signal, "data-fui-signal-mode": mode}
+	out := html.Attrs{"data-cui-signal": b.Signal, "data-cui-signal-mode": mode}
 	switch mode {
 	case "text", "html":
 		if b.Attr != "" {
@@ -130,7 +130,7 @@ func (b Bind) attrs() html.Attrs {
 		if !interactive.SignalAttrAllowed(b.Attr) {
 			panic("headless: a signal may not write " + b.Attr + " — an attribute outside the framework's allow-list executes regardless of the value bound to it")
 		}
-		out["data-fui-signal-attr"] = b.Attr
+		out["data-cui-signal-attr"] = b.Attr
 	default:
 		panic("headless: Bind mode must be text, html or attr, not " + mode)
 	}
@@ -331,7 +331,7 @@ func (s Parts) Box(classes Classes, fillable ...Part) Box {
 // region. Two URLs for one click is how the two drift apart and the
 // island starts showing a different page than the address bar says.
 //
-// data-fui-push-state is rendered only for a GET with a href to write:
+// data-cui-push-state is rendered only for a GET with a href to write:
 // a read knows the canonical URL ahead of time, while a mutation's URL
 // is the server's to set — it answers with X-Gofastr-Push-State once
 // it knows whether the change succeeded and where the thing it changed
@@ -343,12 +343,12 @@ func (i Island) attrs(href, method string) html.Attrs {
 		panic("headless: an Island trigger needs a method — GET for a read, the form's method for a mutation")
 	}
 	out := html.Attrs{
-		"data-fui-rpc":        mergeQuery(i.Endpoint, href),
-		"data-fui-rpc-method": m,
-		"data-fui-rpc-signal": i.Signal,
+		"data-cui-rpc":        mergeQuery(i.Endpoint, href),
+		"data-cui-rpc-method": m,
+		"data-cui-rpc-signal": i.Signal,
 	}
 	if href != "" && m == "GET" {
-		out["data-fui-push-state"] = href
+		out["data-cui-push-state"] = href
 	}
 	return out
 }

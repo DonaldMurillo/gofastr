@@ -38,7 +38,7 @@ func TestLayoutStyleStampsLayoutRoot(t *testing.T) {
 	})
 	a.RegisterScreen(app.NewScreen("/r", &stubComp{html: "R"}), l)
 	got := renderPath(t, a, "/r")
-	if !regexp.MustCompile(`<div class="layout-review"[^>]* data-fui-scope="apptest-review"`).MatchString(got) {
+	if !regexp.MustCompile(`<div class="layout-review"[^>]* data-cui-scope="apptest-review"`).MatchString(got) {
 		t.Fatalf("the layout root must carry the layout's scope:\n%s", got)
 	}
 }
@@ -49,13 +49,13 @@ func TestScreenStyleWrapsContentInOneDiv(t *testing.T) {
 	a.SetDefaultLayout(shell)
 	a.RegisterScreen(app.NewScreen("/b", &stubComp{html: "BOARD"}).WithStyle(boardStyle), nil)
 	got := renderPath(t, a, "/b")
-	if !strings.Contains(got, `<div data-fui-scope="apptest-board">BOARD</div>`) {
+	if !strings.Contains(got, `<div data-cui-scope="apptest-board">BOARD</div>`) {
 		t.Fatalf("a non-article screen's content must sit in one div carrying its scope:\n%s", got)
 	}
-	if n := strings.Count(got, "data-fui-scope="); n != 1 {
+	if n := strings.Count(got, "data-cui-scope="); n != 1 {
 		t.Fatalf("want exactly one scope marker (the wrapper, never the primary cell), got %d:\n%s", n, got)
 	}
-	if regexp.MustCompile(`<(main|div class="layout-content")[^>]*data-fui-scope`).MatchString(got) {
+	if regexp.MustCompile(`<(main|div class="layout-content")[^>]*data-cui-scope`).MatchString(got) {
 		t.Fatalf("the primary cell persists across navigations and must never be the screen's scope root:\n%s", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestScreenStyleGoesOnTheArticle(t *testing.T) {
 	app.AsArticle()(story)
 	a.RegisterScreen(story, nil)
 	got := renderPath(t, a, "/a")
-	if !strings.Contains(got, `<article data-fui-scope="apptest-board">STORY</article>`) {
+	if !strings.Contains(got, `<article data-cui-scope="apptest-board">STORY</article>`) {
 		t.Fatalf("an article screen's scope goes on its <article>, with no extra div:\n%s", got)
 	}
 }
@@ -78,7 +78,7 @@ func TestScreenWithoutStyleIsNotWrapped(t *testing.T) {
 	shell, _ := labShell()
 	a.SetDefaultLayout(shell)
 	a.RegisterScreen(app.NewScreen("/p", &stubComp{html: "PLAIN"}), nil)
-	if got := renderPath(t, a, "/p"); strings.Contains(got, "data-fui-scope") || strings.Contains(got, "<div>PLAIN</div>") {
+	if got := renderPath(t, a, "/p"); strings.Contains(got, "data-cui-scope") || strings.Contains(got, "<div>PLAIN</div>") {
 		t.Fatalf("a screen with no style renders exactly as before:\n%s", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestFillsSitOutsideTheScreenWrapper(t *testing.T) {
 		WithStyle(boardStyle).
 		Fill(outlets.Toolbar, &fillComp{label: "TOOLS"}), nil)
 	got := renderPath(t, a, "/f")
-	wrapper := regexp.MustCompile(`<div data-fui-scope="apptest-board">(.*?)</div>`).FindStringSubmatch(got)
+	wrapper := regexp.MustCompile(`<div data-cui-scope="apptest-board">(.*?)</div>`).FindStringSubmatch(got)
 	if wrapper == nil {
 		t.Fatalf("no screen wrapper:\n%s", got)
 	}

@@ -309,7 +309,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	// Widget catalog + chrome + CSS: dumped as query-free files so the
-	// runtime's data-fui-open overlays resolve against the static tree
+	// runtime's data-cui-open overlays resolve against the static tree
 	// instead of 404'ing against the live widget endpoints. Recorded in
 	// res.Assets so the full-site worker precaches them. Overlays must
 	// keep opening offline.
@@ -507,9 +507,9 @@ func validateCatchAllValue(key, v string) error {
 // applyStaticMode post-processes a rendered page for the serverless
 // static export. It does two things:
 //
-//  1. Stamps <html> with data-fui-static: the runtime's static-mode
+//  1. Stamps <html> with data-cui-static: the runtime's static-mode
 //     switch. When present, the runtime skips the widget catalog fetch,
-//     no-ops data-fui-rpc dispatch, and short-circuits data-fui-open,
+//     no-ops data-cui-rpc dispatch, and short-circuits data-cui-open,
 //     so a click on a dead demo does not fire a request that 404s
 //     against the host. Live pages never carry the marker.
 //
@@ -539,20 +539,20 @@ func (b *Builder) applyStaticMode(page string) string {
 	return page
 }
 
-// stampStatic marks <html> with data-fui-static: the runtime's
+// stampStatic marks <html> with data-cui-static: the runtime's
 // static-mode switch. The first "<html" in the document is always the
 // real root element (it precedes any body content); the marker is
 // value-agnostic, so a bare boolean attribute suffices.
 func stampStatic(page string) string {
 	if i := strings.Index(page, "<html"); i >= 0 {
-		return page[:i+len("<html")] + " data-fui-static" + page[i+len("<html"):]
+		return page[:i+len("<html")] + " data-cui-static" + page[i+len("<html"):]
 	}
 	return page
 }
 
 // baseAttrURL matches a whitespace-delimited src="…", href="…", or
-// data-fui-push-state="…" whose value is root-absolute (leading "/") but
-// NOT protocol-relative ("//"). data-fui-push-state is included so combobox/
+// data-cui-push-state="…" whose value is root-absolute (leading "/") but
+// NOT protocol-relative ("//"). data-cui-push-state is included so combobox/
 // palette selection targets get base-prefixed on subpath deploys (otherwise
 // selecting a command navigates to the apex path and 404s). The leading
 // ([\s]) anchor ensures only real attributes match, never "data-src" /
@@ -560,7 +560,7 @@ func stampStatic(page string) string {
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|data-fui-push-state)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`([\s])(src|href|data-cui-push-state)="/([^/])`)
 
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
@@ -604,7 +604,7 @@ var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id
 // (command palette, section-menu drawers, modals) are not SSR-inlined, so
 // the runtime fetches their chrome from cfg.chromePath on open, which 404s
 // on a serverless host. Dumping the same bytes as files lets openWidget
-// resolve against the static tree, so every data-fui-open overlay works.
+// resolve against the static tree, so every data-cui-open overlay works.
 func (b *Builder) dumpWidgetAssets(res *Result) error {
 	defs := widget.AllForSSR()
 	if len(defs) == 0 {
@@ -736,7 +736,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	}
 	// The offline page is rendered basePath-neutral by the host; its
 	// asset links get the same base rewrite as every exported page. It
-	// also gets the data-fui-static stamp so the runtime's static-mode
+	// also gets the data-cui-static stamp so the runtime's static-mode
 	// guards apply, but not the "run locally" banner. An offline
 	// fallback is not a demo page.
 	offline := b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML()))

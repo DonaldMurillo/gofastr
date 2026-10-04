@@ -594,7 +594,7 @@ func setupServer() *framework.App {
 	}))
 
 	// Workspace example (/examples/workspace): GET handlers returning the
-	// detail HTML fragment the pane-host's data-fui-signal (mode=html)
+	// detail HTML fragment the pane-host's data-cui-signal (mode=html)
 	// regions swap in. The runtime uses r.text() for non-JSON responses,
 	// so we return trusted server-rendered HTML with a text/html type.
 	// Read-only demo lookups, no CSRF needed (see the note above).
@@ -622,7 +622,7 @@ func setupServer() *framework.App {
 		fmt.Fprint(w, "something went wrong")
 	}))
 	// Modal for the "RPC → Open Widget" demo.
-	// Hidden by default, only appears when data-fui-rpc-open triggers it.
+	// Hidden by default, only appears when data-cui-rpc-open triggers it.
 	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
 		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
@@ -635,7 +635,7 @@ func setupServer() *framework.App {
 
 	// Overlay widgets backing the /components/{modal,drawer,bottomsheet,toast}
 	// showcase pages. Each is mounted once here; the catalog demos render a
-	// trigger button (data-fui-open / data-fui-toast) that opens them. Modal +
+	// trigger button (data-cui-open / data-cui-toast) that opens them. Modal +
 	// drawer are Hidden (lazy-fetched on open); the toast stack is auto-mount
 	// (always inlined) so a toast has somewhere to land on any page.
 	demoModalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
@@ -679,7 +679,7 @@ func setupServer() *framework.App {
 
 	// Toast stack anchored top-right; auto-mount so every page can fire one.
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
-	// Server-path toast demo: any data-fui-rpc handler can attach the toast
+	// Server-path toast demo: any data-cui-rpc handler can attach the toast
 	// header on a 2xx and the runtime fires it (no SSE, no extra request).
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toast/push", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -732,7 +732,7 @@ func setupServer() *framework.App {
 	}))
 
 	// Rung-3 demo fragment: the polled StatCards on /examples/live-dashboard.
-	// A plain GET returning server-rendered HTML, the data-fui-poll region
+	// A plain GET returning server-rendered HTML, the data-cui-poll region
 	// swaps it in every 5s. Stateless by construction: no stream, no fanout,
 	// any replica serves it.
 	fwApp.Router().Get("/__site/livedash/poll-fragment", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -871,10 +871,10 @@ func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
 		if q != "" && !strings.Contains(strings.ToLower(p.title), q) && !strings.Contains(strings.ToLower(p.path), q) {
 			continue
 		}
-		// data-fui-push-state navigates without a hard refresh on click.
+		// data-cui-push-state navigates without a hard refresh on click.
 		// data-value is what the combobox echoes back to the input.
 		_, _ = fmt.Fprintf(w,
-			`<li role="option" id="site-pal-%d" data-value=%q data-fui-push-state=%q><span>%s</span><span class="pal-meta">%s</span></li>`,
+			`<li role="option" id="site-pal-%d" data-value=%q data-cui-push-state=%q><span>%s</span><span class="pal-meta">%s</span></li>`,
 			i, p.title, p.path, htmlEscape(p.title), htmlEscape(p.path))
 		matched++
 	}
@@ -956,7 +956,7 @@ func registerScreens(site *app.App) {
 	// Components, registered through a ScreenGroup so every /components/*
 	// page shares an inner layout. The inner layout puts the multi-level
 	// ComponentsSidebar in the sidebar slot; the framework's runtime
-	// detects sibling-nav inside the group (via data-fui-screen-group on
+	// detects sibling-nav inside the group (via data-cui-screen-group on
 	// the layout wrapper) and swaps ONLY the inner content cell, the
 	// sidebar stays in place across navigations, no full reload.
 	componentsLayout := app.NewLayout("components", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {

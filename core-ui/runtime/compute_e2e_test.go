@@ -53,7 +53,7 @@ var sumWASM = []byte{
 }
 
 func TestComputeMarkerPreloads(t *testing.T) {
-	got := gofastrruntime.NeededModules(`<div data-fui-compute></div>`)
+	got := gofastrruntime.NeededModules(`<div data-cui-compute></div>`)
 	if want := []string{"compute"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("NeededModules=%v want %v", got, want)
 	}
@@ -65,8 +65,8 @@ func TestComputeMarkerMatchesRuntimeJS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(src), `{ name: 'compute',`) ||
-		!strings.Contains(string(src), `selector: '[data-fui-compute]'`) {
-		t.Fatal("runtime scanner missing data-fui-compute marker")
+		!strings.Contains(string(src), `selector: '[data-cui-compute]'`) {
+		t.Fatal("runtime scanner missing data-cui-compute marker")
 	}
 }
 
@@ -204,7 +204,7 @@ func startComputeServer(t *testing.T) string {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html><head>%s</head><body>
-<div id="compute-trigger" data-fui-compute></div>
+<div id="compute-trigger" data-cui-compute></div>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`, widget.RuntimeModuleManifestScript())
 	})

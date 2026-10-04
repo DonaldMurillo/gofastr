@@ -13,7 +13,7 @@ import (
 // Labelled native <select>, rendered through headless.Field +
 // headless.Select: the field owns the label, the hint, the error and
 // the wiring that ties them to the control; the select is the control,
-// marked with this component's own data-fui-comp so its sheet loads
+// marked with this component's own data-cui-comp so its sheet loads
 // wherever a Select renders, inside a Form or alone.
 
 // SelectOption describes a single <option>.
@@ -48,7 +48,7 @@ type SelectConfig struct {
 	// ExtraAttrs forwards additional attributes to the <select>
 	// element (a relation's data-rel-entity among them). Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, name, disabled, required, aria-invalid, and
+	// data-cui-*, name, disabled, required, aria-invalid, and
 	// aria-describedby.
 	ExtraAttrs html.Attrs
 }

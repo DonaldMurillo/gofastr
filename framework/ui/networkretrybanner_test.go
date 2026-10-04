@@ -27,7 +27,7 @@ func TestRetryBannerAttrs(t *testing.T) {
 		Title:          "Offline",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-network-retry-banner"`,
+		`data-cui-comp="ui-network-retry-banner"`,
 		`role="alert"`,
 		`aria-live="assertive"`,
 		`href="/health"`,

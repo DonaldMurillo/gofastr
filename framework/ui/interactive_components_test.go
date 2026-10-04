@@ -22,7 +22,7 @@ func TestTabsRendersSignalSetOnButtons(t *testing.T) {
 	html := Tabs(cfg)
 
 	for i, tab := range cfg.Tabs {
-		want := `data-fui-signal-set="activeTab:` + strconv.Itoa(i) + `"`
+		want := `data-cui-signal-set="activeTab:` + strconv.Itoa(i) + `"`
 		if !strings.Contains(string(html), want) {
 			t.Errorf("button %d (%q): expected %q in HTML\n%s", i, tab.Label, want, html)
 		}
@@ -39,14 +39,14 @@ func TestTabsWrapperHasSignalAttr(t *testing.T) {
 	// The signal binding must live on the OUTER wrapper (the common
 	// ancestor of nav + panels) so a single data-active attribute drives
 	// BOTH the active button highlight and the visible panel.
-	mustContain(t, html, `data-fui-signal="tab"`)
-	mustContain(t, html, `data-fui-signal-mode="attr"`)
-	mustContain(t, html, `data-fui-signal-attr="data-active"`)
+	mustContain(t, html, `data-cui-signal="tab"`)
+	mustContain(t, html, `data-cui-signal-mode="attr"`)
+	mustContain(t, html, `data-cui-signal-attr="data-active"`)
 	mustContain(t, html, `data-active="0"`)
 
 	// The content wrapper must NOT carry the signal binding. If it did,
 	// the binding couldn't reach the sibling nav buttons.
-	if !strings.Contains(string(html), `<div class="fui-tabs-content" data-fui-internal="">`) {
+	if !strings.Contains(string(html), `<div class="fui-tabs-content" data-cui-internal="">`) {
 		t.Errorf("content wrapper should be bare (no signal binding), got:\n%s", html)
 	}
 }
@@ -63,8 +63,8 @@ func TestTabsRendersAllPanels(t *testing.T) {
 
 	mustContain(t, html, "Content A")
 	mustContain(t, html, "Content B")
-	mustContain(t, html, `data-fui-tab-index="0"`)
-	mustContain(t, html, `data-fui-tab-index="1"`)
+	mustContain(t, html, `data-cui-tab-index="0"`)
+	mustContain(t, html, `data-cui-tab-index="1"`)
 }
 
 func TestTabsFirstButtonActive(t *testing.T) {
@@ -101,11 +101,11 @@ func TestTabsFirstButtonActive(t *testing.T) {
 func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
 	for i := range 3 {
-		btnRule := fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-fui-tab-index="%d"]`, i, i)
+		btnRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-cui-tab-index="%d"]`, i, i)
 		if !strings.Contains(css, btnRule) {
 			t.Errorf("missing active-button rule for tab %d (highlight won't move):\n%s", i, btnRule)
 		}
-		panelRule := fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-fui-tab-index="%d"]`, i, i)
+		panelRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]`, i, i)
 		if !strings.Contains(css, panelRule) {
 			t.Errorf("missing visible-panel rule for tab %d:\n%s", i, panelRule)
 		}
@@ -117,7 +117,7 @@ func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 func TestTabsPanelRuleCoversManyTabs(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
 	last := tabsMaxPanels - 1
-	rule := fmt.Sprintf(`[data-fui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-fui-tab-index="%d"]`, last, last)
+	rule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]`, last, last)
 	if !strings.Contains(css, rule) {
 		t.Errorf("CSS does not cover tab index %d (panels beyond the cap silently stay hidden):\n%s", last, css)
 	}
@@ -202,7 +202,7 @@ func TestTabsHasCompMarker(t *testing.T) {
 	}
 	html := Tabs(cfg)
 
-	mustContain(t, html, `data-fui-comp="fui-tabs"`)
+	mustContain(t, html, `data-cui-comp="fui-tabs"`)
 }
 
 func TestTabsRoleSemantics(t *testing.T) {
@@ -231,7 +231,7 @@ func TestTabsSingleTab(t *testing.T) {
 	}
 	html := Tabs(cfg)
 
-	mustContain(t, html, `data-fui-signal-set="t:0"`)
+	mustContain(t, html, `data-cui-signal-set="t:0"`)
 	mustContain(t, html, "Only")
 	// The single tab is active via data-active="0" on the wrapper, not a
 	// static class.

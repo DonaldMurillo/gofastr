@@ -1,9 +1,9 @@
 // Computed runtime module, client-side derived signals (core-ui/store).
 //
 // An element carries:
-//   data-fui-computed="<reducerName>"   : host-registered reducer fn
-//   data-fui-computed-deps="a,b"        : dependency signal names
-//   data-fui-signal="<name>"            : this computed's own signal name
+//   data-cui-computed="<reducerName>"   : host-registered reducer fn
+//   data-cui-computed-deps="a,b"        : dependency signal names
+//   data-cui-signal="<name>"            : this computed's own signal name
 //
 // On wire, the module subscribes to each dependency signal. When any
 // dependency changes, it runs the reducer over the current dep values
@@ -12,11 +12,11 @@
 // real JS function the host registers on window.__gofastr._reducers by
 // name (CSP-safe).
 //
-// Loaded on-demand when a [data-fui-computed] element appears.
+// Loaded on-demand when a [data-cui-computed] element appears.
 (() => {
   'use strict';
 
-  const SEL = '[data-fui-computed]';
+  const SEL = '[data-cui-computed]';
 
   // Track wired elements + their dependency subscriptions so we can splice the
   // recompute closures back out of each G._signals[dep].listeners once the
@@ -29,11 +29,11 @@
     const G = window.__gofastr;
     if (!G) return;
 
-    const reducerName = el.getAttribute('data-fui-computed');
-    const ownName = el.getAttribute('data-fui-signal');
+    const reducerName = el.getAttribute('data-cui-computed');
+    const ownName = el.getAttribute('data-cui-signal');
     if (!reducerName || !ownName) return;
 
-    const deps = (el.getAttribute('data-fui-computed-deps') || '')
+    const deps = (el.getAttribute('data-cui-computed-deps') || '')
       .split(',').map((s) => s.trim()).filter(Boolean);
 
     el.__fuiComputedWired = true;

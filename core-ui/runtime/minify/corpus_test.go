@@ -35,7 +35,7 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 			path: filepath.Join(root, "core-ui/runtime/runtime.js"),
 			anchors: []string{
 				// Identifiers and string literals, comments are stripped.
-				"data-fui-os",
+				"data-cui-os",
 				"__gofastr",
 			},
 		},

@@ -585,7 +585,7 @@ analyzer reports a diagnostic and `gofastr build` exits non-zero; no stack
 trace. The boot walk panics at `Mount`. Both name the surface, the component
 and the action, and point at island RPC, a form POST, or polling.
 
-Everything else works in a frame: island RPC, form posts, and `data-fui-poll`.
+Everything else works in a frame: island RPC, form posts, and `data-cui-poll`.
 Only the `serverAction` escape hatch is closed.
 
 **SSE does not work inside a frame**, and it is the one exception to that list.
@@ -594,7 +594,7 @@ only credential, a header precisely so nothing about it is ambient, can never
 travel on the connection; putting the grant in the query string instead would
 write a bearer token into access logs, `Referer` and history. `/__gofastr/sse`
 therefore refuses any request carrying a grant, with a message that says so.
-Use `data-fui-poll` (or `widget Builder.Poll`) for live updates in a frame: it
+Use `data-cui-poll` (or `widget Builder.Poll`) for live updates in a frame: it
 is an ordinary `fetch`, which the frame's wrapper does put the grant on.
 
 ## Multi-tenant surfaces

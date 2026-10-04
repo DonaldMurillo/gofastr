@@ -261,6 +261,8 @@ func (ds *UIHost) enforceStrict() {
 // nothing owns the "route table is complete" moment for such a host.
 // Panic contract matches every other strict check.
 func (ds *UIHost) ValidateBoot() {
+	// Strict or not: the toast region is a boot guarantee, not a check.
+	ds.ensureToastStack()
 	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
 		return
 	}
@@ -354,7 +356,7 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 // Scope, deliberately narrow on the input side so the output side can
 // be strict:
 //
-//   - <a href> only. Form actions and data-fui-rpc attributes target
+//   - <a href> only. Form actions and data-cui-rpc attributes target
 //     handlers, not pages; flagging them would misfire on every CRUD
 //     form and API post in the chrome.
 //   - A chrome component whose render fails is skipped with a warning,

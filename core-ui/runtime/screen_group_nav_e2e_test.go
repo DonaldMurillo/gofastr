@@ -28,14 +28,14 @@ func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 			`[{"path":"/studio","layouts":["l:main","g:/studio/:studio"]},` +
 			`{"path":"/studio/read","layouts":["l:main","g:/studio/:studio"]}]` +
 			`</script></head><body>` +
-			`<div data-fui-layout="main" data-fui-layout-key="l:main">` +
+			`<div data-cui-layout="main" data-cui-layout-key="l:main">` +
 			`<header id="siteheader">site</header>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:main">` +
-			`<div class="fui-screen-group" data-fui-screen-group="/studio/">` +
-			`<div data-fui-layout="studio" data-fui-layout-key="g:/studio/:studio">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:main">` +
+			`<div class="cui-screen-group" data-cui-screen-group="/studio/">` +
+			`<div data-cui-layout="studio" data-cui-layout-key="g:/studio/:studio">` +
 			`<nav id="grouptabs"><a id="tab-create" href="/studio">Create</a>` +
 			`<a id="tab-read" href="/studio/read">Read</a></nav>` +
-			`<div class="layout-content" tabindex="-1" data-fui-layout-slot="g:/studio/:studio">` + content + `</div>` +
+			`<div class="layout-content" tabindex="-1" data-cui-layout-slot="g:/studio/:studio">` + content + `</div>` +
 			`</div></div></main></div>` +
 			`<span id="ready">ready</span>` +
 			`<script src="/__gofastr/runtime.js"></script></body></html>`
@@ -111,8 +111,8 @@ func TestCrossLayoutNavCopiesSSEMeta(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head>`+routes+
 			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-OLD">`+
-			`</head><body><div data-fui-layout="marketing" data-fui-layout-key="l:marketing">`+
-			`<main role="main" data-fui-layout-slot="l:marketing"><h1 id="home">Home</h1><a id="to-app" href="/app">App</a></main>`+
+			`</head><body><div data-cui-layout="marketing" data-cui-layout-key="l:marketing">`+
+			`<main role="main" data-cui-layout-slot="l:marketing"><h1 id="home">Home</h1><a id="to-app" href="/app">App</a></main>`+
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 	mux.HandleFunc("/app", func(w http.ResponseWriter, _ *http.Request) {
@@ -120,8 +120,8 @@ func TestCrossLayoutNavCopiesSSEMeta(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head>`+routes+
 			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-NEW">`+
-			`</head><body><div data-fui-layout="app" data-fui-layout-key="l:app">`+
-			`<main role="main" data-fui-layout-slot="l:app"><h1 id="app-screen">App</h1></main>`+
+			`</head><body><div data-cui-layout="app" data-cui-layout-key="l:app">`+
+			`<main role="main" data-cui-layout-slot="l:app"><h1 id="app-screen">App</h1></main>`+
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 

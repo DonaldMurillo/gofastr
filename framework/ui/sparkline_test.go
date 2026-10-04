@@ -12,7 +12,7 @@ func TestSparklineTooFewPointsRendersDash(t *testing.T) {
 	if strings.Contains(h, "<svg ") {
 		t.Errorf("sparse Sparkline should not emit an svg:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-comp="ui-sparkline"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-sparkline"`) {
 		t.Errorf("sparse Sparkline should still carry its comp marker:\n%s", h)
 	}
 }
@@ -27,8 +27,8 @@ func TestSparklineEmitsSVGPath(t *testing.T) {
 	if !strings.Contains(h, "<path ") {
 		t.Errorf("expected at least one <path>:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-comp="ui-sparkline"`) {
-		t.Errorf("svg should carry data-fui-comp marker:\n%s", h)
+	if !strings.Contains(h, `data-cui-comp="ui-sparkline"`) {
+		t.Errorf("svg should carry data-cui-comp marker:\n%s", h)
 	}
 }
 

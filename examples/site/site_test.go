@@ -172,7 +172,7 @@ func TestDocPageRendersEmbeddedMarkdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/docs/entity-declarations: got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `data-fui-comp="ui-markdown"`) {
+	if !strings.Contains(rec.Body.String(), `data-cui-comp="ui-markdown"`) {
 		t.Fatal("doc page should render markdown via ui.Markdown")
 	}
 }
@@ -286,7 +286,7 @@ func TestDocShellCollapsesOnMobile(t *testing.T) {
 	// sheet owns the nav-rail + content grid AND its mobile collapse in
 	// lockstep with SectionMenu's 900px swap. Here we just confirm the
 	// doc page actually mounts that owner.
-	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-scope="docsite-docpage"`) {
+	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-cui-scope="docsite-docpage"`) {
 		t.Fatal("a /docs/<slug> page should render the docpage owned style")
 	}
 }

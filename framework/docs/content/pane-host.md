@@ -29,7 +29,7 @@ body := ui.PaneHost(ui.PaneHostConfig{
 
 ## What it renders
 
-A root `<div data-fui-comp="ui-pane-host" data-hui-panehost>` with
+A root `<div data-cui-comp="ui-pane-host" data-hui-panehost>` with
 three slot children, each carrying `data-hui-pane="primary|secondary|
 tertiary"`. The grid is `display:grid`; the column count derives from
 the open-state hook the runtime module maintains —
@@ -81,12 +81,12 @@ The host dispatches `pane-host:open` and `pane-host:close` events
 
 `PaneHost` does NOT fetch pane content. To load a link's response into a
 pane, use the existing RPC + signal rail: the trigger carries
-`data-fui-rpc` + `data-fui-rpc-signal`, and the pane contains a region
+`data-cui-rpc` + `data-cui-rpc-signal`, and the pane contains a region
 bound to that signal in HTML mode:
 
 ```html
 <div data-hui-pane="secondary" role="region" aria-label="Details">
-  <div data-fui-signal="customer-detail" data-fui-signal-mode="html">
+  <div data-cui-signal="customer-detail" data-cui-signal-mode="html">
     <!-- RPC response HTML lands here -->
   </div>
 </div>
@@ -96,8 +96,8 @@ A row trigger then both opens the pane and fires the fetch:
 
 ```html
 <a href="/api/customers/42/detail"
-   data-fui-rpc data-fui-rpc-method="GET"
-   data-fui-rpc-signal="customer-detail"
+   data-cui-rpc data-cui-rpc-method="GET"
+   data-cui-rpc-signal="customer-detail"
    data-hui-pane-open-control="secondary">View</a>
 ```
 
@@ -204,8 +204,8 @@ the `--fui-pane-host-secondary-w` / `--fui-pane-host-tertiary-w` /
   every shared link painting a closed pane that jumps open a moment
   later. The parameter is only half the feature.
 - **Fetching pane content with a bespoke mechanism.** `PaneHost` is a
-  layout shell, not a content loader. Use `data-fui-rpc` +
-  `data-fui-rpc-signal` into a `data-fui-signal-mode="html"` region
+  layout shell, not a content loader. Use `data-cui-rpc` +
+  `data-cui-rpc-signal` into a `data-cui-signal-mode="html"` region
   inside the pane; don't build a new fetch path.
 - **Forgetting the `hidden` first-paint contract.** A closed side pane
   must ship `hidden` from SSR so first paint matches state (Hard Rule 6)

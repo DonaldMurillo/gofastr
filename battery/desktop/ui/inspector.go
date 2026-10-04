@@ -80,19 +80,19 @@ func InspectorSplit(content, inspector render.HTML) render.HTML {
 var inspectorSplitStyle = registry.RegisterStyle("desktopui-inspector-split", inspectorSplitCSS)
 
 func inspectorSplitCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-inspector-split"] {
+	return `[data-cui-comp="desktopui-inspector-split"] {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--spacing-lg, 16px);
 }
-[data-fui-comp="desktopui-inspector-split"] > .desktopui-inspector-split__content {
+[data-cui-comp="desktopui-inspector-split"] > .desktopui-inspector-split__content {
   flex: 1 1 20rem;
   min-inline-size: 0;
   display: grid;
   gap: var(--spacing-lg, 16px);
 }
-[data-fui-comp="desktopui-inspector-split"] > .desktopui-inspector-split__inspector {
+[data-cui-comp="desktopui-inspector-split"] > .desktopui-inspector-split__inspector {
   flex: 0 0 var(--desktop-inspector-width, 260px);
 }
 `
@@ -101,7 +101,7 @@ func inspectorSplitCSS(_ style.Theme) string {
 var inspectorStyle = registry.RegisterStyle("desktopui-inspector", inspectorCSS)
 
 func inspectorCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-inspector"] {
+	return `[data-cui-comp="desktopui-inspector"] {
   display: block;
   inline-size: 100%;
   /* A 260px panel cannot give the label column the page default
@@ -110,7 +110,7 @@ func inspectorCSS(_ style.Theme) string {
 }
 /* The marker lands on the <aside> itself (WrapHTML stamps the
    outermost tag), so the panel rule is compound, not a descendant. */
-[data-fui-comp="desktopui-inspector"].desktopui-inspector {
+[data-cui-comp="desktopui-inspector"].desktopui-inspector {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 8px);
@@ -120,13 +120,13 @@ func inspectorCSS(_ style.Theme) string {
   min-inline-size: var(--desktop-inspector-width, 260px);
   box-sizing: border-box;
 }
-[data-fui-comp="desktopui-inspector"] .desktopui-inspector__title {
+[data-cui-comp="desktopui-inspector"] .desktopui-inspector__title {
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   margin: 0;
 }
-[data-fui-comp="desktopui-inspector"] .desktopui-inspector__footer {
+[data-cui-comp="desktopui-inspector"] .desktopui-inspector__footer {
   margin-block-start: auto;
   padding-top: var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #E4E4E7);

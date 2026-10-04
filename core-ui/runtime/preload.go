@@ -21,26 +21,25 @@ type demandLoadMarker struct {
 // the bottom of core-ui/runtime/runtime.js (search for "DEMAND-LOAD
 // SCANNERS"). The drift test enforces both sides stay aligned.
 var demandLoadMarkers = []demandLoadMarker{
-	{"data-fui-rpc", "rpc"},
+	{"data-cui-rpc", "rpc"},
 	{"data-kiln-tool", "rpc"},
-	{"data-fui-computed", "computed"},
-	{"data-fui-compute", "compute"},
-	{"data-fui-popover-anchor", "popover"},
+	{"data-cui-computed", "computed"},
+	{"data-cui-compute", "compute"},
+	{"data-cui-popover-anchor", "popover"},
 	// SSE opens on demand: the module loads for a page that takes
 	// pushes (any island region or the offline banner that reads the
 	// stream's mirrored state), not for the availability meta, which
 	// every session-bearing page carries.
 	{"data-island", "sse"},
 	{"data-hui-system-offline", "sse"},
-	{"data-fui-widget", "widgets"},
-	{"data-fui-open", "widgets"},
-	{"data-fui-autogrow", "textarea"},
-	{`data-fui-comp="ui-search-input"`, "searchinput"},
-	{"data-fui-dropdown-wrap", "dropdown"},
-	{"data-fui-reveal", "reveal"},
-	{"data-fui-animate-signal", "animate"},
-	{"data-fui-drag-dismiss", "dragdismiss"},
-	{"data-fui-poll", "poll"},
+	{"data-cui-widget", "widgets"},
+	{"data-cui-open", "widgets"},
+	{"data-cui-autogrow", "textarea"},
+	{"data-cui-dropdown-wrap", "dropdown"},
+	{"data-cui-reveal", "reveal"},
+	{"data-cui-animate-signal", "animate"},
+	{"data-cui-drag-dismiss", "dragdismiss"},
+	{"data-cui-poll", "poll"},
 	// The layout demand modules (docs/DESIGN-layout-outlets.md
 	// "### Opt-in"): transition loads on a declared cell or
 	// vocabulary. (parts has no DOM marker — it loads off the route
@@ -50,8 +49,8 @@ var demandLoadMarkers = []demandLoadMarker{
 	// envelope navigator's, so the template marker means nothing
 	// without it and the envelope module loads it at evaluation — no
 	// row here or in the scanner table the drift test aligns with.)
-	{"data-fui-vt", "transition"},
-	{"data-fui-vt-kinds", "transition"},
+	{"data-cui-vt", "transition"},
+	{"data-cui-vt-kinds", "transition"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load
@@ -63,8 +62,8 @@ var demandLoadMarkers = []demandLoadMarker{
 //
 // Matches are substring containment with an attribute-name boundary
 // check, not a real HTML parse. The boundary check keeps one marker
-// from matching inside a longer attribute name (data-fui-compute must
-// not fire on data-fui-computed). The cost of a residual false positive
+// from matching inside a longer attribute name (data-cui-compute must
+// not fire on data-cui-computed). The cost of a residual false positive
 // is one wasted module fetch (no correctness impact). The list is
 // sorted, not dependency-ordered: a preload link only warms a cache,
 // and loadModule in the kernel is what orders the loads, requirements
@@ -105,7 +104,7 @@ func NeededModules(pageHTML string) []string {
 // markerPresent reports whether marker occurs in pageHTML as a complete
 // attribute name: the byte after the match must end an attribute name
 // ('=', '>', '/', a quote, or whitespace) or be the end of input, so a
-// marker never fires as a prefix of a longer data-fui-* attribute.
+// marker never fires as a prefix of a longer data-cui-* attribute.
 func markerPresent(pageHTML, marker string) bool {
 	for start := 0; ; {
 		i := strings.Index(pageHTML[start:], marker)

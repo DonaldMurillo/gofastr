@@ -21,7 +21,7 @@ marker_sinks:
       arg: 1
   fields:
     - gofastr/framework/ui.SidebarConfig.DrawerName
-  attr_keys: [data-fui-comp]
+  attr_keys: [data-cui-comp]
 releases:
   - version: v0.86.0
     title: Headless design system
@@ -48,7 +48,7 @@ releases:
               value: '^(javascript:|//)'
           strings:
             classes: [ui-button]
-            attrs: [data-fui-signal, data-fui-toggle-]
+            attrs: [data-cui-signal, data-cui-toggle-]
             properties: [--color-muted]
             match: 'X-Gofastr-Infinite-Cursor'
           css:
@@ -62,7 +62,7 @@ releases:
             go_below: "1.27"
           text:
             - glob: "**/*.js"
-              match: 'data-fui-signal'
+              match: 'data-cui-signal'
       - change: 'silent change'
         breaking: true
         guidance: do the thing
@@ -97,8 +97,8 @@ func TestParseFullDocument(t *testing.T) {
 	if len(reg.MarkerSinks.Fields) != 1 || reg.MarkerSinks.Fields[0] != wantField {
 		t.Errorf("MarkerSinks.Fields = %+v, want [%+v]", reg.MarkerSinks.Fields, wantField)
 	}
-	if len(reg.MarkerSinks.AttrKeys) != 1 || reg.MarkerSinks.AttrKeys[0] != "data-fui-comp" {
-		t.Errorf("AttrKeys = %v, want [data-fui-comp]", reg.MarkerSinks.AttrKeys)
+	if len(reg.MarkerSinks.AttrKeys) != 1 || reg.MarkerSinks.AttrKeys[0] != "data-cui-comp" {
+		t.Errorf("AttrKeys = %v, want [data-cui-comp]", reg.MarkerSinks.AttrKeys)
 	}
 
 	rel := reg.Releases[0]
@@ -158,7 +158,7 @@ func TestParseFullDocument(t *testing.T) {
 	}
 	s := find.Strings
 	if strings.Join(s.Classes, ",") != "ui-button" ||
-		strings.Join(s.Attrs, ",") != "data-fui-signal,data-fui-toggle-" ||
+		strings.Join(s.Attrs, ",") != "data-cui-signal,data-cui-toggle-" ||
 		strings.Join(s.Properties, ",") != "--color-muted" ||
 		s.Match == nil || s.Match.String() != "X-Gofastr-Infinite-Cursor" {
 		t.Errorf("Strings = %+v", s)
@@ -179,7 +179,7 @@ func TestParseFullDocument(t *testing.T) {
 	if find.GoMod == nil || find.GoMod.GoBelow != "1.27" {
 		t.Errorf("GoMod = %+v, want go_below 1.27", find.GoMod)
 	}
-	if len(find.Text) != 1 || find.Text[0].Glob != "**/*.js" || find.Text[0].Match == nil || find.Text[0].Match.String() != "data-fui-signal" {
+	if len(find.Text) != 1 || find.Text[0].Glob != "**/*.js" || find.Text[0].Match == nil || find.Text[0].Match.String() != "data-cui-signal" {
 		t.Errorf("Text = %+v", find.Text)
 	}
 

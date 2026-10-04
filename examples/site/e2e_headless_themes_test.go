@@ -33,7 +33,7 @@ const hlThemeProbe = `(() => {
   document.body.appendChild(probe);
   const primaryBG = getComputedStyle(probe).backgroundColor;
   probe.remove();
-  const h1 = document.querySelector('div[class^="fui-theme-"] h1');
+  const h1 = document.querySelector('div[class^="cui-theme-"] h1');
   return {
     radius: cs.borderRadius,
     height: el.getBoundingClientRect().height,

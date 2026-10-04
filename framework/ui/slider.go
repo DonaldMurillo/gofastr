@@ -42,7 +42,7 @@ type SliderConfig struct {
 	Class    string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* hook.
+	// ID), data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 }
 
@@ -89,19 +89,19 @@ func Slider(cfg SliderConfig) render.HTML {
 var sliderStyle = registry.RegisterStyle("ui-slider", sliderCSS)
 
 func sliderCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-slider"] {
+	return `[data-cui-comp="ui-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-slider"] .fui-slider__label {
+[data-cui-comp="ui-slider"] .fui-slider__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-slider"] .fui-slider__label + .fui-slider__value {
+[data-cui-comp="ui-slider"] .fui-slider__label + .fui-slider__value {
   justify-self: end;
 }
-[data-fui-comp="ui-slider"] .fui-slider__value {
+[data-cui-comp="ui-slider"] .fui-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
@@ -109,14 +109,14 @@ func sliderCSS(_ style.Theme) string {
   min-inline-size: 3ch;
   text-align: end;
 }
-[data-fui-comp="ui-slider"] .fui-slider__edges {
+[data-cui-comp="ui-slider"] .fui-slider__edges {
   display: flex;
   justify-content: space-between;
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   margin-top: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-slider"] .fui-slider__input {
+[data-cui-comp="ui-slider"] .fui-slider__input {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -124,14 +124,14 @@ func sliderCSS(_ style.Theme) string {
   background: transparent;
   cursor: pointer;
 }
-[data-fui-comp="ui-slider"] .fui-slider__input:focus { outline: none; }
+[data-cui-comp="ui-slider"] .fui-slider__input:focus { outline: none; }
 /* WebKit + Blink */
-[data-fui-comp="ui-slider"] .fui-slider__input::-webkit-slider-runnable-track {
+[data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-runnable-track {
   height: 6px;
   background: var(--color-border, #E4E4E7);
   border-radius: 999px;
 }
-[data-fui-comp="ui-slider"] .fui-slider__input::-webkit-slider-thumb {
+[data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 20px;
@@ -143,19 +143,19 @@ func sliderCSS(_ style.Theme) string {
   cursor: pointer;
   transition: transform 100ms ease;
 }
-[data-fui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
+[data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
 }
-[data-fui-comp="ui-slider"] .fui-slider__input:active::-webkit-slider-thumb {
+[data-cui-comp="ui-slider"] .fui-slider__input:active::-webkit-slider-thumb {
   transform: scale(1.15);
 }
 /* Firefox */
-[data-fui-comp="ui-slider"] .fui-slider__input::-moz-range-track {
+[data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-track {
   height: 6px;
   background: var(--color-border, #E4E4E7);
   border-radius: 999px;
 }
-[data-fui-comp="ui-slider"] .fui-slider__input::-moz-range-thumb {
+[data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 999px;
@@ -163,11 +163,11 @@ func sliderCSS(_ style.Theme) string {
   border: 2px solid var(--color-surface, #FFFFFF);
   cursor: pointer;
 }
-[data-fui-comp="ui-slider"] .fui-slider__input:focus-visible::-moz-range-thumb {
+[data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
 }
 
-[data-fui-comp="ui-slider"].is-disabled .fui-slider__input {
+[data-cui-comp="ui-slider"].is-disabled .fui-slider__input {
   opacity: 0.6;
   cursor: not-allowed;
 }`

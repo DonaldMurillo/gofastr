@@ -17,7 +17,7 @@ var treeJS string
 const TreeBehaviorName = "headless-tree"
 
 // The marker: the tree root. A lazy branch's toggle carries the
-// kernel's data-fui-rpc wiring, so the rpc primitive is a requirement
+// kernel's data-cui-rpc wiring, so the rpc primitive is a requirement
 // — the loader has it registered before this module evaluates, and
 // the keyboard path's toggle.click() fires it exactly as a pointer
 // click would.

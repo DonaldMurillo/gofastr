@@ -82,7 +82,7 @@ func kitClass(name string) bool {
 
 func kitAttr(name string) bool {
 	lower := strings.ToLower(name)
-	return strings.HasPrefix(lower, "data-fui-") || strings.HasPrefix(lower, "data-hui-")
+	return strings.HasPrefix(lower, "data-cui-") || strings.HasPrefix(lower, "data-fui-") || strings.HasPrefix(lower, "data-hui-")
 }
 
 func (s *Set) addClass(name string, note *upgrade.Note) {
@@ -103,8 +103,8 @@ func (s *Set) addAttr(name string, note *upgrade.Note) {
 		return
 	}
 	if strings.HasSuffix(name, "-") && len(name) > 1 {
-		// The trailing dash is part of the prefix: data-fui-toggle-
-		// retires data-fui-toggle-open, not data-fui-togglex.
+		// The trailing dash is part of the prefix: data-cui-toggle-
+		// retires data-cui-toggle-open, not data-cui-togglex.
 		s.addAttrPrefixLocked(name, note)
 		return
 	}
@@ -170,7 +170,7 @@ func (s *Set) matchAttr(name []byte) *upgrade.Note {
 
 // Check scans rendered HTML and returns every distinct retired name it
 // carries, in document order, deduped per response. Attribute VALUES
-// never match: a kept marker like data-fui-comp="ui-sidebar" is a name
+// never match: a kept marker like data-cui-comp="ui-sidebar" is a name
 // in a value slot, not a class or an attribute name.
 func (s *Set) Check(html []byte) []Finding {
 	if !s.nonEmpty {

@@ -207,7 +207,7 @@ func normalizeSelector(sel string) string {
 
 // cssSelectors matches a selector entry (".a > .b") inside a rule
 // prelude: the normalized compound appears in order, and does not run
-// on into a longer name (.fui-slot-bare is not .fui-slot). Preludes
+// on into a longer name (.cui-slot-bare is not .cui-slot). Preludes
 // are closed by "{"; a ";" or "}" first means the run was a
 // declaration, which is dropped.
 func (e *engine) cssSelectors(rel string, toks []ownstyle.Token) {

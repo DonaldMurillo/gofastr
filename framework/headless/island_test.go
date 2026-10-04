@@ -19,10 +19,10 @@ func TestIslandAttrsShape(t *testing.T) {
 	isle := Island{Endpoint: "/island/apps", Signal: "apps"}
 	read := isle.attrs("/apps?page=3&sort=name", "GET")
 	want := map[string]string{
-		"data-fui-rpc":        "/island/apps?page=3&sort=name",
-		"data-fui-rpc-method": "GET",
-		"data-fui-rpc-signal": "apps",
-		"data-fui-push-state": "/apps?page=3&sort=name",
+		"data-cui-rpc":        "/island/apps?page=3&sort=name",
+		"data-cui-rpc-method": "GET",
+		"data-cui-rpc-signal": "apps",
+		"data-cui-push-state": "/apps?page=3&sort=name",
 	}
 	for k, v := range want {
 		if read[k] != v {
@@ -36,19 +36,19 @@ func TestIslandAttrsShape(t *testing.T) {
 	// An endpoint with its own query joins rather than stacks one.
 	joined := Island{Endpoint: "/island/apps?keep=1", Signal: "apps"}.
 		attrs("/apps?page=2", "GET")
-	if joined["data-fui-rpc"] != "/island/apps?keep=1&page=2" {
-		t.Errorf("query join = %q", joined["data-fui-rpc"])
+	if joined["data-cui-rpc"] != "/island/apps?keep=1&page=2" {
+		t.Errorf("query join = %q", joined["data-cui-rpc"])
 	}
 
 	// A fragment never reaches the endpoint: it names a place inside
 	// the document the href renders, not a place inside the region
 	// the island fetches.
 	frag := isle.attrs("/apps?page=3#results", "GET")
-	if frag["data-fui-rpc"] != "/island/apps?page=3" {
-		t.Errorf("a fragment reached the endpoint: %q", frag["data-fui-rpc"])
+	if frag["data-cui-rpc"] != "/island/apps?page=3" {
+		t.Errorf("a fragment reached the endpoint: %q", frag["data-cui-rpc"])
 	}
-	if frag["data-fui-push-state"] != "/apps?page=3#results" {
-		t.Errorf("push-state must keep the href as written, fragment and all: %q", frag["data-fui-push-state"])
+	if frag["data-cui-push-state"] != "/apps?page=3#results" {
+		t.Errorf("push-state must keep the href as written, fragment and all: %q", frag["data-cui-push-state"])
 	}
 
 	// A key present in both keeps both values in order, the
@@ -57,32 +57,32 @@ func TestIslandAttrsShape(t *testing.T) {
 	// lost the race.
 	both := Island{Endpoint: "/island/apps?sort=name", Signal: "apps"}.
 		attrs("/apps?sort=age&page=2", "GET")
-	if both["data-fui-rpc"] != "/island/apps?page=2&sort=name&sort=age" {
-		t.Errorf("a shared key merged to %q, want both values with the endpoint's first", both["data-fui-rpc"])
+	if both["data-cui-rpc"] != "/island/apps?page=2&sort=name&sort=age" {
+		t.Errorf("a shared key merged to %q, want both values with the endpoint's first", both["data-cui-rpc"])
 	}
 
 	// A mutation writes no URL: where the change lands is the server's
 	// to say through X-Gofastr-Push-State.
 	post := isle.attrs("/apps/blog", "POST")
-	if _, ok := post["data-fui-push-state"]; ok {
+	if _, ok := post["data-cui-push-state"]; ok {
 		t.Error("a POST carried push-state")
 	}
-	if post["data-fui-rpc"] != "/island/apps" {
-		t.Errorf("a mutation with no verb to carry kept the href's query: %q", post["data-fui-rpc"])
+	if post["data-cui-rpc"] != "/island/apps" {
+		t.Errorf("a mutation with no verb to carry kept the href's query: %q", post["data-cui-rpc"])
 	}
 
 	// A form's trigger has no href of its own: no query, no push-state.
 	form := isle.attrs("", "GET")
-	if _, ok := form["data-fui-push-state"]; ok {
+	if _, ok := form["data-cui-push-state"]; ok {
 		t.Error("a form trigger without an href carried push-state")
 	}
-	if form["data-fui-rpc"] != "/island/apps" {
-		t.Errorf("form rpc = %q", form["data-fui-rpc"])
+	if form["data-cui-rpc"] != "/island/apps" {
+		t.Errorf("form rpc = %q", form["data-cui-rpc"])
 	}
 
 	// A lower-case method is canonicalised, not copied: the runtime
 	// upper-cases what it reads and the markup should say it once.
-	if m := isle.attrs("", "post")["data-fui-rpc-method"]; m != "POST" {
+	if m := isle.attrs("", "post")["data-cui-rpc-method"]; m != "POST" {
 		t.Errorf("method = %q, want POST", m)
 	}
 }
@@ -114,10 +114,10 @@ func TestPaginationCarriesTheContractOnItsAnchors(t *testing.T) {
 		AriaLabel: "Pages", Island: fixtureIsland}, nil)
 	for _, want := range []string{
 		`href="/apps?page=4"`,
-		`data-fui-rpc="/island/apps?page=4"`,
-		`data-fui-rpc-method="GET"`,
-		`data-fui-rpc-signal="apps"`,
-		`data-fui-push-state="/apps?page=4"`,
+		`data-cui-rpc="/island/apps?page=4"`,
+		`data-cui-rpc-method="GET"`,
+		`data-cui-rpc-signal="apps"`,
+		`data-cui-push-state="/apps?page=4"`,
 		`data-hui-page="4"`,
 	} {
 		has(t, island, want, "the page anchor did not carry both destinations")
@@ -125,25 +125,25 @@ func TestPaginationCarriesTheContractOnItsAnchors(t *testing.T) {
 	// The disabled end carries no contract: it goes nowhere. Attributes
 	// render sorted, so a disabled anchor would show the pair.
 	has(t, island, `aria-disabled="true"`, "the last page's Next is not disabled")
-	hasNot(t, island, `aria-disabled="true" data-fui-`, "the disabled Next carried a contract or a page hook")
+	hasNot(t, island, `aria-disabled="true" data-cui-`, "the disabled Next carried a contract or a page hook")
 }
 
 func TestToolbarSearchIsTheFormThatCarriesTheContract(t *testing.T) {
 	got := ToolbarSearch(ToolbarSearchProps{Island: fixtureIsland}, nil,
 		Input(InputProps{Type: "search", Name: "q", AriaLabel: "Search apps"}, nil))
-	has(t, got, `<form data-fui-rpc="/island/apps" data-fui-rpc-method="GET" data-fui-rpc-signal="apps" method="get">`,
+	has(t, got, `<form data-cui-rpc="/island/apps" data-cui-rpc-method="GET" data-cui-rpc-signal="apps" method="get">`,
 		"the search wrapper is not the GET form carrying the contract")
-	hasNot(t, got, "data-fui-push-state", "the search form wrote a URL only the server can name")
+	hasNot(t, got, "data-cui-push-state", "the search form wrote a URL only the server can name")
 }
 
 // A caller cannot forge or override the contract through ExtraAttrs:
-// Safe drops every data-fui-* key, so the only way in is the Island.
+// Safe drops every data-cui-* key, so the only way in is the Island.
 func TestTheContractCannotBeSmuggled(t *testing.T) {
 	smuggled := Pagination(PaginationProps{Page: 2, Pages: 5, Path: "/x", PageParam: "p",
 		AriaLabel: "Pages", Island: fixtureIsland,
-		ExtraAttrs: map[string]string{"data-fui-rpc": "/evil"}}, nil)
+		ExtraAttrs: map[string]string{"data-cui-rpc": "/evil"}}, nil)
 	hasNot(t, smuggled, "/evil", "a request arrived through ExtraAttrs, which is for decoration")
-	has(t, smuggled, `data-fui-rpc="/island/apps?p=3"`, "the island's own contract was not rendered")
+	has(t, smuggled, `data-cui-rpc="/island/apps?p=3"`, "the island's own contract was not rendered")
 }
 
 // A component whose whole purpose is an in-page state change refuses
@@ -173,7 +173,7 @@ func TestOptionalIslandsAreOptional(t *testing.T) {
 	hasNoContract(t, plain, "a form with no Island carries framework attributes")
 	isled := Form(FormProps{Action: "/apps", Island: fixtureIsland}, nil)
 	has(t, isled, `action="/apps"`, "the form lost its action")
-	has(t, isled, `data-fui-rpc="/island/apps" data-fui-rpc-method="POST" data-fui-rpc-signal="apps"`,
+	has(t, isled, `data-cui-rpc="/island/apps" data-cui-rpc-method="POST" data-cui-rpc-signal="apps"`,
 		"the form did not carry the POST contract")
 }
 
@@ -184,9 +184,9 @@ func TestOptionalIslandsAreOptional(t *testing.T) {
 func TestTagCarriesTheContractOnItsDismiss(t *testing.T) {
 	got := Tag(TagProps{Label: "env=prod", DismissHref: "/apps?env=", Island: fixtureIsland}, nil)
 	has(t, got, `href="/apps?env="`, "the dismiss lost its href")
-	has(t, got, `data-fui-rpc="/island/apps?env=" data-fui-rpc-method="GET" data-fui-rpc-signal="apps"`,
+	has(t, got, `data-cui-rpc="/island/apps?env=" data-cui-rpc-method="GET" data-cui-rpc-signal="apps"`,
 		"the dismiss did not carry the GET contract with the href's query")
-	has(t, got, `data-fui-push-state="/apps?env="`, "the dismiss did not write the URL")
+	has(t, got, `data-cui-push-state="/apps?env="`, "the dismiss did not write the URL")
 	fixed := Tag(TagProps{Label: "env=prod", Island: fixtureIsland}, nil)
 	hasNoContract(t, fixed, "a tag with nothing to dismiss carries the contract anyway")
 }
@@ -204,11 +204,11 @@ func TestIslandRefusesAReservedSignal(t *testing.T) {
 		})
 		refuse(t, "reserved", func() {
 			Button(ButtonProps{Label: "Go", Type: "button",
-				Action: html.Attrs{"data-fui-rpc": "/x", "data-fui-rpc-signal": name}}, nil)
+				Action: html.Attrs{"data-cui-rpc": "/x", "data-cui-rpc-signal": name}}, nil)
 		})
 		refuse(t, "reserved", func() {
 			Button(ButtonProps{Label: "Go", Type: "button",
-				Action: html.Attrs{"data-fui-signal-set": name + ":1"}}, nil)
+				Action: html.Attrs{"data-cui-signal-set": name + ":1"}}, nil)
 		})
 	}
 }
@@ -220,7 +220,7 @@ func TestIslandRefusesAReservedSignal(t *testing.T) {
 func TestFormRequestRefusesAnEmptySignal(t *testing.T) {
 	refuse(t, "empty", func() {
 		Form(FormProps{Action: "/x",
-			Request: html.Attrs{"data-fui-rpc": "/x", "data-fui-rpc-signal": ""}}, nil)
+			Request: html.Attrs{"data-cui-rpc": "/x", "data-cui-rpc-signal": ""}}, nil)
 	})
 }
 
@@ -240,16 +240,16 @@ func TestEndpointsRefuseTheBackslashSpelling(t *testing.T) {
 }
 
 // ExtraAttrs is sanitised the way the browser reads it. Attribute
-// names are case-insensitive, so a request spelled DATA-FUI-RPC is
-// data-fui-rpc in the DOM; the runtime's privileged unprefixed keys —
-// data-behavior, data-island and their family — carry no data-fui- to
+// names are case-insensitive, so a request spelled DATA-CUI-RPC is
+// data-cui-rpc in the DOM; the runtime's privileged unprefixed keys —
+// data-behavior, data-island and their family — carry no data-cui- to
 // match; and this package's own data-hui-* hooks are the contract
 // between a component and the module that binds it, so a forged one
 // binds behaviour to an element never built for it. All three were
 // let through by a check on the spelling as written.
 func TestSafeRefusesFoldedAndPrivilegedKeys(t *testing.T) {
 	got := Badge(BadgeProps{Label: "x", ExtraAttrs: html.Attrs{
-		"DATA-FUI-RPC":    "/evil",
+		"DATA-CUI-RPC":    "/evil",
 		"Data-Island":     "smuggled",
 		"data-behavior":   "/evil.js",
 		"data-action":     "delete",
@@ -272,7 +272,7 @@ func TestSafeRefusesFoldedAndPrivilegedKeys(t *testing.T) {
 func TestAlertDismissIsAnIsland(t *testing.T) {
 	got := Alert(AlertProps{Title: "Deploy failed", DismissHref: "/apps?dismiss=1", Island: fixtureIsland}, nil)
 	has(t, got, `href="/apps?dismiss=1"`, "the dismiss lost its href")
-	has(t, got, `data-fui-rpc="/island/apps?dismiss=1" data-fui-rpc-method="GET" data-fui-rpc-signal="apps"`,
+	has(t, got, `data-cui-rpc="/island/apps?dismiss=1" data-cui-rpc-method="GET" data-cui-rpc-signal="apps"`,
 		"the dismiss did not carry the GET contract with the href's query")
 	refuse(t, "Island", func() {
 		Alert(AlertProps{Title: "Deploy failed", DismissHref: "/apps?dismiss=1"}, nil)
@@ -300,7 +300,7 @@ func TestFormRefusesIslandAndRequestTogether(t *testing.T) {
 	Form(FormProps{
 		Action:  "/apps",
 		Island:  Island{Endpoint: "/island/apps", Signal: "apps"},
-		Request: Action{"data-fui-rpc": "/apps"},
+		Request: Action{"data-cui-rpc": "/apps"},
 	}, nil)
 }
 
@@ -308,11 +308,11 @@ func TestFormRefusesIslandAndRequestTogether(t *testing.T) {
 // the fields.
 func TestFormAcceptsIslandOrRequestAlone(t *testing.T) {
 	isle := string(Form(FormProps{Action: "/apps", Island: Island{Endpoint: "/island/apps", Signal: "apps"}}, nil))
-	if !strings.Contains(isle, "data-fui-rpc") {
+	if !strings.Contains(isle, "data-cui-rpc") {
 		t.Errorf("an Island form carries no rpc wiring:\n%s", isle)
 	}
-	req := string(Form(FormProps{Action: "/apps", Request: Action{"data-fui-rpc": "/apps"}}, nil))
-	if !strings.Contains(req, `data-fui-rpc="/apps"`) {
+	req := string(Form(FormProps{Action: "/apps", Request: Action{"data-cui-rpc": "/apps"}}, nil))
+	if !strings.Contains(req, `data-cui-rpc="/apps"`) {
 		t.Errorf("a Request form carries no rpc wiring:\n%s", req)
 	}
 }

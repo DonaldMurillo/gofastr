@@ -52,8 +52,8 @@ type TagConfig struct {
 	// Defaults to "Remove <Label>".
 	DismissLabel string
 
-	// DismissAttrs lets callers attach extra data-fui-* attributes to
-	// the × button (e.g. data-fui-rpc-signal).
+	// DismissAttrs lets callers attach extra data-cui-* attributes to
+	// the × button (e.g. data-cui-rpc-signal).
 	DismissAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve the
@@ -66,14 +66,14 @@ type TagConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the tag's root element,
 	// whichever shape it takes (<a> or <span>). Keys the component
-	// owns are dropped: class and id (use Class / ID), data-fui-*,
+	// owns are dropped: class and id (use Class / ID), data-cui-*,
 	// and href (use Href; it goes through the URL sanitizer).
 	ExtraAttrs html.Attrs
 }
 
 // Tag renders a small pill: optionally linked (filter chip), optionally
 // removable (dismiss button). Pure server-rendered; dismiss is wired
-// through standard `data-fui-rpc` semantics so the application picks
+// through standard `data-cui-rpc` semantics so the application picks
 // the response side-effect.
 func Tag(cfg TagConfig) render.HTML {
 	if cfg.Label == "" {

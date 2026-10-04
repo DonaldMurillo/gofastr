@@ -48,7 +48,7 @@ type RangeSliderConfig struct {
 	Class    string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, role, and aria-label (use Label).
+	// ID), data-cui-*, role, and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -101,19 +101,19 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 var rangeSliderStyle = registry.RegisterStyle("ui-range-slider", rangeSliderCSS)
 
 func rangeSliderCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-range-slider"] {
+	return `[data-cui-comp="ui-range-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__label {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__label + .fui-range-slider__value {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__label + .fui-range-slider__value {
   justify-self: end;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__value {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
@@ -121,12 +121,12 @@ func rangeSliderCSS(_ style.Theme) string {
 }
 /* The track is the positioning context the two thumbs overlay; its
    own bar is drawn behind them. */
-[data-fui-comp="ui-range-slider"] .fui-range-slider__track {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__track {
   position: relative;
   block-size: var(--spacing-touch-target, 44px);
   padding-block: calc((var(--spacing-touch-target, 44px) - 6px) / 2);
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__track::before {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__track::before {
   content: "";
   position: absolute;
   inset-inline: 0;
@@ -135,7 +135,7 @@ func rangeSliderCSS(_ style.Theme) string {
   background: var(--color-border, #E4E4E7);
   border-radius: 999px;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input {
   position: absolute;
   inset-inline: 0;
   inset-block: 0;
@@ -147,7 +147,7 @@ func rangeSliderCSS(_ style.Theme) string {
   pointer-events: none;
 }
 /* The thumbs ARE clickable (pointer-events:auto on the thumb only). */
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-thumb {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 20px; height: 20px;
@@ -157,7 +157,7 @@ func rangeSliderCSS(_ style.Theme) string {
   cursor: pointer;
   pointer-events: auto;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-thumb {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-thumb {
   width: 18px; height: 18px;
   border-radius: 999px;
   background: var(--color-primary, #4F46E5);
@@ -165,18 +165,18 @@ func rangeSliderCSS(_ style.Theme) string {
   cursor: pointer;
   pointer-events: auto;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-runnable-track {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-runnable-track {
   background: transparent;
   height: 6px;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-track {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-track {
   background: transparent;
   height: 6px;
 }
-[data-fui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-webkit-slider-thumb {
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
 }
-[data-fui-comp="ui-range-slider"].is-disabled .fui-range-slider__input {
+[data-cui-comp="ui-range-slider"].is-disabled .fui-range-slider__input {
   opacity: 0.6;
   cursor: not-allowed;
 }`

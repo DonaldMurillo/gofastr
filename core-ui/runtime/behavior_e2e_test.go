@@ -271,7 +271,7 @@ func TestBehaviorLoadIdleAttaches(t *testing.T) {
 	}
 }
 
-// data-fui-prefetch="<name>" on hover fetches the registered module
+// data-cui-prefetch="<name>" on hover fetches the registered module
 // before any click, the warm-the-cache path.
 func TestBehaviorHoverPrefetch(t *testing.T) {
 	registerProbe(t)
@@ -283,7 +283,7 @@ func TestBehaviorHoverPrefetch(t *testing.T) {
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Evaluate(`(() => {
             const btn = document.createElement('button');
-            btn.setAttribute('data-fui-prefetch', 'probe-beh');
+            btn.setAttribute('data-cui-prefetch', 'probe-beh');
             btn.textContent = 'prefetch probe';
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
@@ -292,7 +292,7 @@ func TestBehaviorHoverPrefetch(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if !pollTrue(ctx, `!!window.__gofastr.loadedModules['probe-beh']`) {
-		t.Fatal("hover on data-fui-prefetch never loaded the registered module")
+		t.Fatal("hover on data-cui-prefetch never loaded the registered module")
 	}
 	if n := p.hits.Load(); n != 1 {
 		t.Fatalf("module fetched %d times on hover prefetch, want 1", n)
@@ -562,7 +562,7 @@ func TestBehaviorThatNeverRegistersRejectsAndRetries(t *testing.T) {
 	}
 }
 
-// data-fui-prefetch on the dependent warms the requirement too,
+// data-cui-prefetch on the dependent warms the requirement too,
 // because prefetch goes through loadModule and loadModule is where
 // dependencies live.
 func TestBehaviorPrefetchWarmsRequirements(t *testing.T) {
@@ -578,7 +578,7 @@ func TestBehaviorPrefetchWarmsRequirements(t *testing.T) {
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Evaluate(`(() => {
             const btn = document.createElement('button');
-            btn.setAttribute('data-fui-prefetch', 'probe-beh');
+            btn.setAttribute('data-cui-prefetch', 'probe-beh');
             btn.textContent = 'prefetch';
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
@@ -623,7 +623,7 @@ func TestBehaviorMalformedManifestsLeaveTheKernelStanding(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			registerProbe(t)
-			p := startProbeServer(t, tc.head, `<p data-probe>probe marker</p><p data-fui-reveal="fade-up" id="rev">reveal marker</p>`, false)
+			p := startProbeServer(t, tc.head, `<p data-probe>probe marker</p><p data-cui-reveal="fade-up" id="rev">reveal marker</p>`, false)
 			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(p.srv.URL+"/"),

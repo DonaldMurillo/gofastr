@@ -116,14 +116,14 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 var sortablelistStyle = registry.RegisterStyle("ui-sortablelist", sortablelistCSS)
 
 func sortablelistCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-sortablelist"] {
+	return `[data-cui-comp="ui-sortablelist"] {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-:where([data-fui-comp="ui-sortablelist"]) .fui-sortablelist__item {
+:where([data-cui-comp="ui-sortablelist"]) .fui-sortablelist__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -135,22 +135,22 @@ func sortablelistCSS(_ style.Theme) string {
   user-select: none;
   min-block-size: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
   background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
   border-color: var(--color-primary, #4F46E5);
   cursor: grabbing;
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
   opacity: 0.5;
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
   border-top: 2px solid var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__grip {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -162,10 +162,10 @@ func sortablelistCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   cursor: grab;
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item:active .fui-sortablelist__grip {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:active .fui-sortablelist__grip {
   cursor: grabbing;
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__label {
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__label {
   font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
 }

@@ -189,7 +189,7 @@ func TestRenderNodeUsesDesignSystemCard(t *testing.T) {
 		Children: []world.Node{{Kind: "paragraph", Props: map[string]any{"text": "Built from framework/ui"}}},
 	})
 	s := string(got)
-	if !strings.Contains(s, `data-fui-comp="ui-card"`) || !strings.Contains(s, "Built from framework/ui") {
+	if !strings.Contains(s, `data-cui-comp="ui-card"`) || !strings.Contains(s, "Built from framework/ui") {
 		t.Fatalf("card did not use current design-system component: %q", s)
 	}
 }
@@ -235,7 +235,7 @@ func TestRenderNodeCardInsideDiv(t *testing.T) {
 		},
 	})
 	s := string(got)
-	if !strings.Contains(s, `data-fui-comp="ui-card"`) || !strings.Contains(s, "Revenue") {
+	if !strings.Contains(s, `data-cui-comp="ui-card"`) || !strings.Contains(s, "Revenue") {
 		t.Fatalf("card inside div vanished: %q", s)
 	}
 	if strings.Contains(s, "unknown kind") {

@@ -37,7 +37,7 @@ type AnimatedCounterConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the counter's root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* hook.
+	// ID), data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 }
 
@@ -69,7 +69,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	kids := []render.HTML{}
 	if cfg.Prefix != "" {
 		kids = append(kids, render.Tag("span",
-			map[string]string{"class": "fui-animated-counter__prefix", "data-fui-internal": ""},
+			map[string]string{"class": "fui-animated-counter__prefix", "data-cui-internal": ""},
 			render.Text(cfg.Prefix)))
 	}
 	inner := headless.Counter(headless.CounterProps{
@@ -88,7 +88,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	kids = append(kids, headless.Own(inner))
 	if cfg.Suffix != "" {
 		kids = append(kids, render.Tag("span",
-			map[string]string{"class": "fui-animated-counter__suffix", "data-fui-internal": ""},
+			map[string]string{"class": "fui-animated-counter__suffix", "data-cui-internal": ""},
 			render.Text(cfg.Suffix)))
 	}
 	return animatedCounterStyle.WrapHTML(render.Tag("span",
@@ -98,18 +98,18 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 var animatedCounterStyle = registry.RegisterStyle("ui-animated-counter", animatedCounterCSS)
 
 func animatedCounterCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-animated-counter"] {
+	return `[data-cui-comp="ui-animated-counter"] {
   display: inline-flex;
   align-items: baseline;
   gap: var(--spacing-xs, 2px);
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-bold);
 }
-[data-fui-comp="ui-animated-counter"] .fui-animated-counter__value {
+[data-cui-comp="ui-animated-counter"] .fui-animated-counter__value {
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-animated-counter"] .fui-animated-counter__prefix,
-[data-fui-comp="ui-animated-counter"] .fui-animated-counter__suffix {
+[data-cui-comp="ui-animated-counter"] .fui-animated-counter__prefix,
+[data-cui-comp="ui-animated-counter"] .fui-animated-counter__suffix {
   color: var(--color-text-muted, #52525B);
   font-weight: var(--font-weight-semibold);
 }`

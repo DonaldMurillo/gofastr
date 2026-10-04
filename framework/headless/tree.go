@@ -66,7 +66,7 @@ type TreeProps struct {
 	Nodes []TreeNode
 	// LazySignalPrefix names the signal namespace the lazy branches
 	// bind their child groups to (each lazy branch's group carries
-	// data-fui-signal="<prefix>-<node-id>"). Required when any node
+	// data-cui-signal="<prefix>-<node-id>"). Required when any node
 	// uses LazyPath, ignored otherwise.
 	LazySignalPrefix string
 
@@ -177,10 +177,10 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 			// Lazy: clicking the toggle fires the kernel's rpc
 			// primitive; the response populates the child group
 			// through the signal swap.
-			Mark(toggleAttrs, "data-fui-rpc")
-			toggleAttrs["data-fui-rpc-method"] = "POST"
-			toggleAttrs["data-fui-rpc-signal"] = signalPrefix + "-" + n.ID
-			toggleAttrs["data-fui-rpc"] = n.LazyPath
+			Mark(toggleAttrs, "data-cui-rpc")
+			toggleAttrs["data-cui-rpc-method"] = "POST"
+			toggleAttrs["data-cui-rpc-signal"] = signalPrefix + "-" + n.ID
+			toggleAttrs["data-cui-rpc"] = n.LazyPath
 		}
 		row = append(row, b.El("button", PartTreeToggle, toggleAttrs, render.Text("▶")))
 	}
@@ -200,8 +200,8 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 			Mark(groupAttrs, "hidden")
 		}
 		if n.LazyPath != "" && len(n.Children) == 0 {
-			groupAttrs["data-fui-signal"] = signalPrefix + "-" + n.ID
-			groupAttrs["data-fui-signal-mode"] = "html"
+			groupAttrs["data-cui-signal"] = signalPrefix + "-" + n.ID
+			groupAttrs["data-cui-signal-mode"] = "html"
 		}
 		childRendered := make([]render.HTML, len(n.Children))
 		for i, c := range n.Children {

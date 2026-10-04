@@ -237,7 +237,7 @@ scriptURL, err := tools.Mount(app.Router(), uiHost,
 ```
 
 The bridge tag then ships only on pages the scope accepts (marked
-`data-fui-doc`), the route manifest declares the set for those routes,
+`data-cui-doc`), the route manifest declares the set for those routes,
 and the host's client runtime turns the scope's edge into a document
 boundary: entering or leaving it performs a real navigation instead of
 a partial swap, and Back/Forward across the edge loads the destination
@@ -256,7 +256,7 @@ document-script rail, because a self-rendered tag cannot declare the
 boundary in the route manifest.
 
 For hosts that are not a `uihost`, the same contract holds by hand:
-render the tag only on in-scope pages, give it `data-fui-doc`, and add
+render the tag only on in-scope pages, give it `data-cui-doc`, and add
 the script URL to the route manifest's `docScripts` for those routes —
 or mark the routes `NoSPA`, which makes every link to them a full load.
 

@@ -7,7 +7,7 @@ import (
 
 // TestValidateRejectsForgedDataFuiProps proves the core repair for
 // design §9: a third party cannot forge trusted-runtime attributes by
-// smuggling data-fui-* keys into any component's props. DisallowUnknown-
+// smuggling data-cui-* keys into any component's props. DisallowUnknown-
 // Fields rejects every unknown key whole-tree. Subtests cover a sample
 // of components; the property holds for every closed-enum component
 // because none of their prop structs has a data-* field.
@@ -16,12 +16,12 @@ func TestValidateRejectsForgedDataFuiProps(t *testing.T) {
 		name string
 		json string
 	}{
-		{"heading data-fui-rpc", `{"component":"heading","props":{"level":1,"text":"x","data-fui-rpc":"/auth/logout"}}`},
-		{"heading data-fui-island", `{"component":"heading","props":{"level":1,"text":"x","data-fui-island":"42"}}`},
-		{"button data-fui-rpc", `{"component":"button","props":{"label":"x","data-fui-rpc":"/evil"},"action_ref":"a"}`},
-		{"link data-fui-args", `{"component":"link","props":{"text":"x","to":"/a","data-fui-args":"evil"}}`},
-		{"card data-fui-confirm", `{"component":"card","props":{"title":"x","data-fui-confirm":"evil"}}`},
-		{"divider data-fui-anything", `{"component":"divider","data-fui-anything":"evil"}`},
+		{"heading data-cui-rpc", `{"component":"heading","props":{"level":1,"text":"x","data-cui-rpc":"/auth/logout"}}`},
+		{"heading data-cui-island", `{"component":"heading","props":{"level":1,"text":"x","data-cui-island":"42"}}`},
+		{"button data-cui-rpc", `{"component":"button","props":{"label":"x","data-cui-rpc":"/evil"},"action_ref":"a"}`},
+		{"link data-cui-args", `{"component":"link","props":{"text":"x","to":"/a","data-cui-args":"evil"}}`},
+		{"card data-cui-confirm", `{"component":"card","props":{"title":"x","data-cui-confirm":"evil"}}`},
+		{"divider data-cui-anything", `{"component":"divider","data-cui-anything":"evil"}`},
 		{"data-foo arbitrary", `{"component":"heading","props":{"level":1,"text":"x","data-foo":"evil"}}`},
 		{"id attempt", `{"component":"divider","id":"evil"}`},
 		{"class attempt", `{"component":"divider","class":"evil"}`},
@@ -353,7 +353,7 @@ func TestValidateRejectsDuplicateKeys(t *testing.T) {
 	cases := []string{
 		// Smuggle script by repeating component key.
 		`{"component":"heading","component":"script","props":{"level":1,"text":"x"}}`,
-		// Smuggle data-fui-rpc by repeating a prop key.
+		// Smuggle data-cui-rpc by repeating a prop key.
 		`{"component":"heading","props":{"level":1,"level":2,"text":"x"}}`,
 		// Dup at nested level.
 		`{"component":"stack","props":{},"children":[{"component":"divider"},{"component":"divider"}],"children":[]}`,

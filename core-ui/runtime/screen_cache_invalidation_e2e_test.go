@@ -108,7 +108,7 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 </body></html>`, routesJSON, n)
 	})
 	// Mutation endpoints, one per header shape under test. Each returns
-	// a distinct body; the buttons carry data-fui-rpc-signal="mut", so
+	// a distinct body; the buttons carry data-cui-rpc-signal="mut", so
 	// the body lands in the #mutsig span AFTER the runtime processed
 	// the response headers, waiting for that text is a deterministic
 	// "eviction already happened" barrier (no sleeps).
@@ -150,15 +150,15 @@ func invalidationSrv(t *testing.T) *httptest.Server {
     <a id="detail" href="/items/42">detail</a>
     <a id="toentry" href="/entry?x=1">entry</a>
     <a id="redir" href="/redir">redir</a>
-    <button id="mut-items" data-fui-rpc="/mut-items" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">a</button>
-    <button id="mut-fail" data-fui-rpc="/mut-fail" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">e</button>
+    <button id="mut-items" data-cui-rpc="/mut-items" data-cui-rpc-method="POST" data-cui-rpc-signal="mut">a</button>
+    <button id="mut-fail" data-cui-rpc="/mut-fail" data-cui-rpc-method="POST" data-cui-rpc-signal="mut">e</button>
     <button id="tog" data-hui-action="" data-hui-action-endpoint="/mut-items" data-state="idle">
       <span data-hui-action-idle>t</span><span data-hui-action-done hidden>c</span>
     </button>
-    <button id="mut-exact" data-fui-rpc="/mut-exact" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">b</button>
-    <button id="mut-all" data-fui-rpc="/mut-all" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">c</button>
-    <button id="mut-bad" data-fui-rpc="/mut-bad" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">d</button>
-    <span id="mutsig" data-fui-signal="mut"></span>
+    <button id="mut-exact" data-cui-rpc="/mut-exact" data-cui-rpc-method="POST" data-cui-rpc-signal="mut">b</button>
+    <button id="mut-all" data-cui-rpc="/mut-all" data-cui-rpc-method="POST" data-cui-rpc-signal="mut">c</button>
+    <button id="mut-bad" data-cui-rpc="/mut-bad" data-cui-rpc-method="POST" data-cui-rpc-signal="mut">d</button>
+    <span id="mutsig" data-cui-signal="mut"></span>
   </main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>

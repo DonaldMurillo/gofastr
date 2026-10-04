@@ -3,6 +3,7 @@ package headless
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,11 @@ import (
 // Toast parts.
 const (
 	PartToastToneWord Part = "toast-tone-word"
+	// PartToastItem is the stack row that wraps one runtime-built
+	// toast: the element the stack lays out and animates, distinct
+	// from the toast root the tone colours. Only ToastTemplate draws
+	// it; a server-rendered Toast sits in the stack bare.
+	PartToastItem Part = "toast-item"
 )
 
 // ToastProps configures one toast.
@@ -167,6 +173,88 @@ func Toast(p ToastProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, kids...)
 }
 
+// ToastTemplateProps configures the inert <template> a stack carries
+// for the rows the headless-feedback module builds at runtime (the
+// kernel's X-Gofastr-Toast path, window.__gofastr.toast). The module
+// clones the row, fills its hooks and adds the tone's variant class
+// from the template's attributes; it names no class and says no word
+// of its own. A kit registers the rendered template under
+// preset.ToastTemplate (registry.RegisterTemplate) and preset's slot
+// renders it inside the stack.
+type ToastTemplateProps struct {
+	// Glyphs are the decorative icons per tone (info, success,
+	// warning, danger). A tone with no glyph renders no icon on its
+	// rows.
+	Glyphs map[string]string
+	// StyleName, when set, is the registered style (the name given to
+	// registry.RegisterStyle) the cloned row loads: rendered as the
+	// kernel's data-cui-comp marker on the row's root, the way the
+	// kit marks its own server-rendered Toast, so the row's sheet
+	// loads on insertion. A name outside the marker's charset is
+	// refused: it is a sheet name, not free text.
+	StyleName string
+
+	Parts Parts
+	// Strings carry the dismiss label template and the tone words the
+	// module reads when the stack carries none of its own.
+	Strings *Strings
+}
+
+// styleNameRe is the charset of a registered style's name, the one
+// core-ui/registry's marker scan accepts.
+var styleNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
+
+// ToastTemplate renders the row template. Every part the module may
+// fill is present and empty: the tone word, the icon, the title, the
+// body, the dismiss. A part with nothing to say is removed at clone
+// time, so the rendered row matches what Toast renders for the same
+// content.
+func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
+	w := p.Strings.Resolve()
+	b := p.Parts.Box(s)
+	rootOwn := Mark(html.Attrs{}, "data-hui-toast")
+	if p.StyleName != "" {
+		if !styleNameRe.MatchString(p.StyleName) {
+			panic("headless: ToastTemplate StyleName " + strconv.Quote(p.StyleName) + " is not a sheet name")
+		}
+		rootOwn["data-cui-comp"] = p.StyleName
+	}
+	row := b.El("div", PartRoot, rootOwn,
+		b.El("span", PartToastToneWord, Mark(Internal(nil), "data-hui-toast-tone")),
+		b.El("span", PartIcon, Mark(Internal(Attrs(map[string]string{"aria-hidden": "true"})), "data-hui-toast-icon")),
+		b.El("span", PartTitle, Mark(Internal(nil), "data-hui-toast-title")),
+		b.El("span", PartBody, Mark(Internal(nil), "data-hui-toast-body")),
+		b.El("button", PartDismiss, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-dismiss"),
+			render.Text("×")),
+	)
+	// The item is the template's one subtree and holds no caller
+	// content, so it carries the internal mark; the marks on the row's
+	// parts below it are what the cloned row carries once it stands
+	// in the stack on its own.
+	item := b.El("div", PartToastItem, Mark(Internal(nil), "data-hui-toast-item"), row)
+	// The template's own attributes are what the module reads besides
+	// the row: the glyph and variant class per tone, and the words a
+	// stack without Strings of its own falls back to. Each spelled in
+	// full so the hook gates see the names the module binds.
+	attrs := html.Attrs{
+		"data-hui-toast-template":        "",
+		"data-hui-toast-glyph-info":      p.Glyphs["info"],
+		"data-hui-toast-glyph-success":   p.Glyphs["success"],
+		"data-hui-toast-glyph-warning":   p.Glyphs["warning"],
+		"data-hui-toast-glyph-danger":    p.Glyphs["danger"],
+		"data-hui-toast-variant-info":    s.Variant(PartRoot, "info"),
+		"data-hui-toast-variant-success": s.Variant(PartRoot, "success"),
+		"data-hui-toast-variant-warning": s.Variant(PartRoot, "warning"),
+		"data-hui-toast-variant-danger":  s.Variant(PartRoot, "danger"),
+		"data-hui-toast-dismiss-label":   w.DismissTitled,
+		"data-hui-toast-tone-info":       w.ToneInfo,
+		"data-hui-toast-tone-success":    w.ToneSuccess,
+		"data-hui-toast-tone-warning":    w.ToneWarning,
+		"data-hui-toast-tone-danger":     w.ToneDanger,
+	}
+	return render.Tag("template", attrs, item)
+}
+
 // ToastStackProps configures the one stack a layout mounts.
 type ToastStackProps struct {
 	// Label names the stack for assistive technology. Required: the
@@ -190,7 +278,7 @@ type ToastStackProps struct {
 
 // ToastStack renders the region the toasts live in.
 //
-// The stack carries the framework's data-fui-toast-stack name beside
+// The stack carries the framework's data-cui-toast-stack name beside
 // its own: the kernel's response-header toast path and the runtime's
 // auto-mount look for the framework's name, and the module that owns
 // the component lifecycle looks for this package's. One region, two
@@ -208,7 +296,7 @@ func ToastStack(p ToastStackProps, s Classes) render.HTML {
 		"role":                 "region",
 		"aria-label":           p.Label,
 		"id":                   p.ID,
-		"data-fui-toast-stack": p.Label,
+		"data-cui-toast-stack": p.Label,
 	}))
 	Mark(own, "data-hui-toast-stack")
 	if p.Max > 0 {
@@ -249,7 +337,7 @@ type NotificationBellProps struct {
 	UnreadBind *Bind
 	// Opens, when set, is the widget name the anchor opens with
 	// script: the same element is the no-script link (Href) and the
-	// widget's trigger, rendered as the kernel's data-fui-open and a
+	// widget's trigger, rendered as the kernel's data-cui-open and a
 	// bottom-anchored popover. A name carrying control bytes or
 	// whitespace is refused — it is a widget key, not free text.
 	Opens string
@@ -312,8 +400,8 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 		if strings.ContainsAny(p.Opens, " \t\n\r\x00") {
 			panic("headless: NotificationBell Opens " + strconv.Quote(p.Opens) + " is not a widget name — whitespace and control bytes are not keys")
 		}
-		own["data-fui-open"] = p.Opens
-		own["data-fui-popover-anchor"] = "bottom"
+		own["data-cui-open"] = p.Opens
+		own["data-cui-popover-anchor"] = "bottom"
 	}
 
 	// The glyph span carries the badge INSIDE it: the marker is laid
@@ -377,6 +465,33 @@ func init() {
 	})
 
 	Register(Spec{
+		Name:    "ToastTemplate",
+		Anatomy: []Part{PartToastItem, PartRoot, PartToastToneWord, PartIcon, PartTitle, PartBody, PartDismiss},
+		Hooks: []string{"data-hui-toast-template", "data-hui-toast-item", "data-hui-toast",
+			"data-hui-toast-tone", "data-hui-toast-icon", "data-hui-toast-title", "data-hui-toast-body", "data-hui-toast-dismiss",
+			"data-hui-toast-glyph-info", "data-hui-toast-glyph-success", "data-hui-toast-glyph-warning", "data-hui-toast-glyph-danger",
+			"data-hui-toast-variant-info", "data-hui-toast-variant-success", "data-hui-toast-variant-warning", "data-hui-toast-variant-danger",
+			"data-hui-toast-dismiss-label",
+			"data-hui-toast-tone-info", "data-hui-toast-tone-success", "data-hui-toast-tone-warning", "data-hui-toast-tone-danger"},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return ToastTemplate(ToastTemplateProps{Parts: parts}, s)
+		},
+		Cases: func(k Kit) []Case {
+			s := k.Classes
+			return []Case{{
+				Name: "the row the module clones",
+				Why:  "an inert template inside the stack carries every class, glyph and word a runtime toast wears, so the module that builds a row from a response header names hooks only and the kit keeps its skin to itself",
+				HTML: ToastTemplate(ToastTemplateProps{
+					Glyphs: map[string]string{"info": "i", "success": "✓", "warning": "!", "danger": "✕"}}, s),
+			}, {
+				Name: "no glyphs",
+				Why:  "a kit without icons leaves the glyph attributes empty and the module drops the icon part at clone time; the tone word still tells a reader the kind of news",
+				HTML: ToastTemplate(ToastTemplateProps{}, s),
+			}}
+		},
+	})
+
+	Register(Spec{
 		Name:    "ToastStack",
 		Anatomy: []Part{PartRoot},
 		Hooks: []string{"data-hui-toast-stack", "data-hui-toast-max", "data-hui-toast-dismiss-label",
@@ -417,7 +532,7 @@ func init() {
 					Label: "Notifications", UnreadCount: 3}, s),
 			}, {
 				Name: "a widget trigger",
-				Why:  "Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-fui-open spelling typed from a prop",
+				Why:  "Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-cui-open spelling typed from a prop",
 				HTML: NotificationBell(NotificationBellProps{Href: "/notifications",
 					Label: "Notifications", UnreadCount: 1, Opens: "bell-panel"}, s),
 			}, {

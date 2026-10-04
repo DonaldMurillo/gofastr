@@ -290,7 +290,9 @@ func sortableConflictPage() string {
 		RPCPath: "/rpc", Version: "v1", ConflictRPC: "/conflict",
 		Items: []SortableItem{{Key: "k2", Label: "B1"}},
 	}, nil))
-	return a + b
+	// The stack the conflict toast lands in, with a probe-classed row
+	// template: the module mounts no region and names no class.
+	return a + b + toastStackWithTemplate()
 }
 
 // conflict409Server serves the two versioned columns plus a /rpc
@@ -818,7 +820,7 @@ func TestE2E_SortableConflictToastShowsTheMessage(t *testing.T) {
 		t.Fatalf("the toast row lost its props: %q", props)
 	}
 	cls, role, ttl := parts[0], parts[1], parts[2]
-	if !strings.Contains(cls, "fui-notification--danger") {
+	if !strings.Contains(cls, "row--danger") {
 		t.Errorf("the conflict toast should carry the danger tone, got class %q", cls)
 	}
 	if role != "alert" {

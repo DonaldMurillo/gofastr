@@ -1,8 +1,8 @@
 // GoFastr runtime module, Dropdown click-toggle + outside-dismiss
 //
 // Composes with the existing disclosure infrastructure. Each dropdown
-// trigger has data-fui-dropdown; its panel sibling has
-// data-fui-dropdown-panel. The module handles:
+// trigger has data-cui-dropdown; its panel sibling has
+// data-cui-dropdown-panel. The module handles:
 //
 //   - Click on trigger → toggle aria-expanded + show/hide panel
 //   - Click outside open panel → close
@@ -10,34 +10,34 @@
 //   - SPA navigation → close all open dropdowns
 //
 // Loads on demand:
-//   - core.js's marker scanner picks up [data-fui-dropdown] on a page
+//   - core.js's marker scanner picks up [data-cui-dropdown] on a page
 //     and idle-loads this module.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
-  const IS_OPEN = 'data-fui-dropdown-open';
+  const IS_OPEN = 'data-cui-dropdown-open';
 
   const open = (trigger, panel) => {
     trigger.setAttribute('aria-expanded', 'true');
     panel.removeAttribute('hidden');
-    trigger.closest('[data-fui-dropdown-wrap]')?.setAttribute(IS_OPEN, '');
+    trigger.closest('[data-cui-dropdown-wrap]')?.setAttribute(IS_OPEN, '');
   };
 
   const close = (trigger, panel) => {
     trigger.setAttribute('aria-expanded', 'false');
     panel.setAttribute('hidden', '');
-    trigger.closest('[data-fui-dropdown-wrap]')?.removeAttribute(IS_OPEN);
+    trigger.closest('[data-cui-dropdown-wrap]')?.removeAttribute(IS_OPEN);
   };
 
   const isOpen = (trigger) =>
     trigger.getAttribute('aria-expanded') === 'true';
 
   const toggle = (trigger) => {
-    const wrap = trigger.closest('[data-fui-dropdown-wrap]');
+    const wrap = trigger.closest('[data-cui-dropdown-wrap]');
     if (!wrap) return;
-    const panel = wrap.querySelector('[data-fui-dropdown-panel]');
+    const panel = wrap.querySelector('[data-cui-dropdown-panel]');
     if (!panel) return;
     if (isOpen(trigger)) {
       close(trigger, panel);
@@ -49,28 +49,28 @@
   };
 
   const closeAll = (except) => {
-    const sel = '[data-fui-dropdown-wrap][' + IS_OPEN + ']';
+    const sel = '[data-cui-dropdown-wrap][' + IS_OPEN + ']';
     for (const w of document.querySelectorAll(sel)) {
       if (w === except) continue;
-      const trig = w.querySelector('[data-fui-dropdown]');
-      const panel = w.querySelector('[data-fui-dropdown-panel]');
+      const trig = w.querySelector('[data-cui-dropdown]');
+      const panel = w.querySelector('[data-cui-dropdown-panel]');
       if (trig && panel) close(trig, panel);
     }
   };
 
   const closeTopmost = () => {
-    const sel = '[data-fui-dropdown-wrap][' + IS_OPEN + ']';
+    const sel = '[data-cui-dropdown-wrap][' + IS_OPEN + ']';
     const openWraps = Array.from(document.querySelectorAll(sel));
     if (openWraps.length === 0) return;
 
     const active = document.activeElement;
     const focusedWrap = openWraps.find((w) => {
-      const panel = w.querySelector('[data-fui-dropdown-panel]');
+      const panel = w.querySelector('[data-cui-dropdown-panel]');
       return panel && panel.contains(active);
     });
     const wrap = focusedWrap || openWraps[openWraps.length - 1];
-    const trigger = wrap.querySelector('[data-fui-dropdown]');
-    const panel = wrap.querySelector('[data-fui-dropdown-panel]');
+    const trigger = wrap.querySelector('[data-cui-dropdown]');
+    const panel = wrap.querySelector('[data-cui-dropdown-panel]');
     if (!trigger || !panel) return;
 
     const restoreFocus = panel.contains(active);
@@ -80,14 +80,14 @@
 
   // Click on trigger → toggle.
   document.addEventListener('click', (e) => {
-    const trigger = e.target.closest('[data-fui-dropdown]');
+    const trigger = e.target.closest('[data-cui-dropdown]');
     if (trigger) {
       e.preventDefault();
       toggle(trigger);
       return;
     }
     // Click outside any open dropdown → close.
-    const openWrap = e.target.closest('[data-fui-dropdown-wrap][' + IS_OPEN + ']');
+    const openWrap = e.target.closest('[data-cui-dropdown-wrap][' + IS_OPEN + ']');
     if (!openWrap) {
       closeAll(null);
     }
@@ -109,9 +109,9 @@
 
   // Scan: wire up initial state for SSR'd dropdowns.
   const scan = (root) => {
-    for (const w of root.querySelectorAll('[data-fui-dropdown-wrap]')) {
-      const trigger = w.querySelector('[data-fui-dropdown]');
-      const panel = w.querySelector('[data-fui-dropdown-panel]');
+    for (const w of root.querySelectorAll('[data-cui-dropdown-wrap]')) {
+      const trigger = w.querySelector('[data-cui-dropdown]');
+      const panel = w.querySelector('[data-cui-dropdown-panel]');
       if (!trigger || !panel) continue;
       // Ensure panel starts hidden unless the wrapper says open.
       if (w.hasAttribute(IS_OPEN)) {

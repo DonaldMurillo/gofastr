@@ -113,14 +113,14 @@ func TestTimelineBodyRidesInTheBodyWrapper(t *testing.T) {
 }
 
 // ExtraAttrs land on the <ol> root but never override what the
-// component owns (#262): class and data-fui-* variants are dropped
+// component owns (#262): class and data-cui-* variants are dropped
 // (there are no other owned attributes on the root).
 func TestTimelineExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(Timeline(TimelineConfig{
 		Class:  "mine",
 		Events: []TimelineEvent{{Title: "First"}},
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "Class": "evil", "data-fui-comp": "spoof",
+			"data-test": "hook", "Class": "evil", "data-cui-comp": "spoof",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]
@@ -144,7 +144,7 @@ func TestTimelineExtraAttrsCannotOverrideOwned(t *testing.T) {
 func TestTimelineVariantDotRulesAreScoped(t *testing.T) {
 	css := timelineCSS(style.Theme{})
 	for _, v := range []string{"success", "warn", "danger", "info"} {
-		if !strings.Contains(css, `[data-fui-comp="ui-timeline"] .fui-timeline__dot--`+v) {
+		if !strings.Contains(css, `[data-cui-comp="ui-timeline"] .fui-timeline__dot--`+v) {
 			t.Errorf("the %s dot rule is not scoped under the marker:\n%s", v, css)
 		}
 	}

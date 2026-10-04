@@ -138,8 +138,8 @@ func TestRoundTripValuesEscapeAttrPayload(t *testing.T) {
 }
 
 // TestCounterSignalAttrsEscapePayload pins the signal-wiring surfaces of
-// Counter: the SignalName is interpolated into data-fui-signal and
-// data-fui-signal-inc attribute values (name and name:delta), which the
+// Counter: the SignalName is interpolated into data-cui-signal and
+// data-cui-signal-inc attribute values (name and name:delta), which the
 // runtime later parses; the payload must stay attribute-escaped so it
 // cannot inject a second attribute onto the +/- buttons.
 func TestCounterSignalAttrsEscapePayload(t *testing.T) {

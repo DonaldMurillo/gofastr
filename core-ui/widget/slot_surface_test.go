@@ -41,7 +41,7 @@ func ruleBlock(css, sel string) string {
 }
 
 // A centered widget using header/body/footer slots must read as ONE
-// dialog: defaultSkeleton wraps all slots in a single .fui-panel and
+// dialog: defaultSkeleton wraps all slots in a single .cui-panel and
 // the CSS paints that panel, three separately-painted sibling cards
 // is the defect this guards against.
 func TestCenterMultiSlotOnePanel(t *testing.T) {
@@ -52,21 +52,21 @@ func TestCenterMultiSlotOnePanel(t *testing.T) {
 		Build()
 
 	chrome := widget.RenderChrome(&def)
-	if got := strings.Count(chrome, `class="fui-panel"`); got != 1 {
-		t.Fatalf("want exactly 1 .fui-panel wrapper, got %d:\n%s", got, chrome)
+	if got := strings.Count(chrome, `class="cui-panel"`); got != 1 {
+		t.Fatalf("want exactly 1 .cui-panel wrapper, got %d:\n%s", got, chrome)
 	}
 	// All three slots live inside the panel (the panel div closes just
 	// before the widget root's closing tag).
-	panel := chrome[strings.Index(chrome, `class="fui-panel"`):]
-	for _, slot := range []string{"fui-slot-header", "fui-slot-body", "fui-slot-footer"} {
+	panel := chrome[strings.Index(chrome, `class="cui-panel"`):]
+	for _, slot := range []string{"cui-slot-header", "cui-slot-body", "cui-slot-footer"} {
 		if !strings.Contains(panel, slot) {
 			t.Errorf("slot %s not inside the panel:\n%s", slot, chrome)
 		}
 	}
 
 	css := fetchWidgetCSS(t, &def)
-	if ruleBlock(css, ".fui-pos-center > .fui-panel") == "" {
-		t.Fatalf("no `.fui-pos-center > .fui-panel` paint rule:\n%s", css)
+	if ruleBlock(css, ".cui-pos-center > .cui-panel") == "" {
+		t.Fatalf("no `.cui-pos-center > .cui-panel` paint rule:\n%s", css)
 	}
 }
 
@@ -79,9 +79,9 @@ func TestCenterPanelPaintsSurface(t *testing.T) {
 		Build()
 	css := fetchWidgetCSS(t, &def)
 
-	block := ruleBlock(css, ".fui-pos-center > .fui-panel")
+	block := ruleBlock(css, ".cui-pos-center > .cui-panel")
 	if block == "" {
-		t.Fatalf("no `.fui-pos-center > .fui-panel` rule in widget CSS:\n%s", css)
+		t.Fatalf("no `.cui-pos-center > .cui-panel` rule in widget CSS:\n%s", css)
 	}
 	for _, want := range []string{
 		"background: var(--color-surface)",
@@ -108,27 +108,27 @@ func TestBottomSheetPaintsPanel(t *testing.T) {
 		Build()
 	css := fetchWidgetCSS(t, &def)
 
-	block := ruleBlock(css, ".fui-pos-bottom {")
+	block := ruleBlock(css, ".cui-pos-bottom {")
 	if !strings.Contains(block, "background: var(--color-surface)") {
 		// The position loop emits a bare placement rule first; find
-		// the surface rule among all .fui-pos-bottom blocks.
+		// the surface rule among all .cui-pos-bottom blocks.
 		rest := css
 		found := false
 		for {
-			i := strings.Index(rest, ".fui-pos-bottom {")
+			i := strings.Index(rest, ".cui-pos-bottom {")
 			if i < 0 {
 				break
 			}
-			b := ruleBlock(rest[i:], ".fui-pos-bottom {")
+			b := ruleBlock(rest[i:], ".cui-pos-bottom {")
 			if strings.Contains(b, "background: var(--color-surface)") {
 				block = b
 				found = true
 				break
 			}
-			rest = rest[i+len(".fui-pos-bottom {"):]
+			rest = rest[i+len(".cui-pos-bottom {"):]
 		}
 		if !found {
-			t.Fatalf("no .fui-pos-bottom rule paints a surface:\n%s", css)
+			t.Fatalf("no .cui-pos-bottom rule paints a surface:\n%s", css)
 		}
 	}
 	for _, want := range []string{
@@ -145,7 +145,7 @@ func TestBottomSheetPaintsPanel(t *testing.T) {
 }
 
 // Full-bleed bodies opt out of the default panel through the one
-// generic escape hatch: a slot root element carrying .fui-slot-bare
+// generic escape hatch: a slot root element carrying .cui-slot-bare
 // (Lightbox viewers and the command palette put it on their roots).
 // The opt-out marker sits on the slot's root child, one level under
 // the painted panel, and the always-shipped selector names no
@@ -156,12 +156,12 @@ func TestCenterPanelBareOptOut(t *testing.T) {
 		Build()
 	css := fetchWidgetCSS(t, &def)
 
-	i := strings.Index(css, ".fui-pos-center > .fui-panel:not(:has(")
+	i := strings.Index(css, ".cui-pos-center > .cui-panel:not(:has(")
 	if i < 0 {
 		t.Fatalf("center panel rule has no :not(:has(…)) opt-out:\n%s", css)
 	}
 	sel := css[i : strings.Index(css[i:], "{")+i]
-	for _, want := range []string{"> .fui-slot > .fui-slot-bare"} {
+	for _, want := range []string{"> .cui-slot > .cui-slot-bare"} {
 		if !strings.Contains(sel, want) {
 			t.Errorf("panel opt-out selector missing %q: %s", want, sel)
 		}

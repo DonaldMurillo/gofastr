@@ -952,11 +952,11 @@ func renderingRules() []Rule {
 		Why: "Browsers cap concurrent connections per origin, so every bespoke stream is one fewer " +
 			"connection for everything else on the page, and the cap is low enough to hit. " +
 			"GoFastr multiplexes every server push over one bus at `/__gofastr/sse`.",
-		Fix: "Subscribe through the runtime's bus. For passive freshness (dashboards, counters, statuses) use `data-fui-poll` instead: no held connection at all.",
+		Fix: "Subscribe through the runtime's bus. For passive freshness (dashboards, counters, statuses) use `data-cui-poll` instead: no held connection at all.",
 		Doc: "reactivity",
 		Examples: []Example{{
 			Bad:  `new EventSource('/my-feed')`,
-			Good: `<div data-fui-poll="5s" data-fui-island="orders-count">`,
+			Good: `<div data-cui-poll="5s" data-cui-island="orders-count">`,
 		}},
 	}, {
 		ID: RuleInlineStyle, Slug: "rendering/inline-style",
@@ -1041,10 +1041,10 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleKitClassSelector, Slug: "rendering/kit-class-selector",
 		Title: "Owned style selects a kit class or runtime attribute", Capability: CapRendering, Severity: SeverityError,
-		Summary: "A selector in a *.style.css names a kit class (.fui-*) or a [data-fui-*] attribute.",
-		Why: "Kit classes and data-fui-* attributes belong to the kit and the runtime. They change without notice, and an owner " +
+		Summary: "A selector in a *.style.css names a kit class (.fui-*) or a framework attribute ([data-cui-*], [data-fui-*], [data-hui-*]).",
+		Why: "Kit classes belong to the kit; data-cui-*, data-fui-* and data-hui-* attributes belong to the runtime, the framework modules and the headless layer. They change without notice, and an owner " +
 			"that selects them restyles the inside of a component it does not maintain. The compiled @scope already stops at kit " +
-			"internals ([data-fui-internal]), so such a selector either matches nothing or reaches past the boundary on the kit " +
+			"internals ([data-cui-internal]), so such a selector either matches nothing or reaches past the boundary on the kit " +
 			"root, and either way the next kit release breaks it silently.",
 		Fix: "Style the content you pass into the component's slots, use the component's config, or add the option upstream in framework/ui.",
 		Doc: "contracts",
@@ -1131,7 +1131,7 @@ func renderingRules() []Rule {
 			"amd64/arm64), packages under a nested go.mod importing under the nested module's path. Style files " +
 			"no program reaches (library packages meant to be composed into one app) form one program together.",
 		Why: "The owner name is the file stem, and it is the registry key, the /__gofastr/comp/<name>.css URL and the " +
-			"data-fui-scope value. Two sheets with one name cannot both register: the second ownstyle.Must panics at init, " +
+			"data-cui-scope value. Two sheets with one name cannot both register: the second ownstyle.Must panics at init, " +
 			"so the program does not start. `gofastr gen styles` refuses both files for the same reason — it judges the " +
 			"same programs `gofastr verify` does. Sheets are checked per program, so two binaries that each carry their " +
 			"own copy of a siteheader package do not collide, and a main whose platform-specific files each import their " +
@@ -1262,7 +1262,7 @@ func permissionRules() []Rule {
 			"or render time: the page ships, the script silently never runs, and whatever it wired " +
 			"up is simply missing in production while working in any environment with a laxer policy.",
 		Fix: "Move the body to a file and reference it: `<script src=\"/static/x.js\">`. For behaviour " +
-			"attached to server-rendered markup, prefer the runtime's `data-fui-*` hydration over a " +
+			"attached to server-rendered markup, prefer the runtime's `data-cui-*` hydration over a " +
 			"script tag at all: see `gofastr docs runtime-contract`.",
 		Doc: "security", Autofix: false,
 		Examples: []Example{{

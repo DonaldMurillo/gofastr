@@ -30,15 +30,15 @@ import (
 //
 // Scope: the cache is in-memory per tab, so the header only reaches the
 // tab whose request carried it. Surfaces that must stay fresh across
-// tabs belong on the polling rung (data-fui-poll), not the screen cache.
+// tabs belong on the polling rung (data-cui-poll), not the screen cache.
 //
 // Invalidation never re-renders the visible page. It only affects
-// future navigations. Pair with data-fui-rpc-navigate (or
+// future navigations. Pair with data-cui-rpc-navigate (or
 // __gofastr.refresh() client-side) when the mutation should also land
 // the user on a freshly rendered screen.
 
 // InvalidateScreens appends paths to the X-Gofastr-Invalidate response
-// header. Call it from any handler reached via data-fui-rpc, a widget
+// header. Call it from any handler reached via data-cui-rpc, a widget
 // RPC, or SPA navigation; multiple calls accumulate into one JSON
 // array, mirroring AddToast.
 //
@@ -53,7 +53,7 @@ import (
 // real cache key is not worth a malformed header.)
 //
 // The header is consumed on every 2xx mutation or navigation response
-// the runtime dispatches: data-fui-rpc, widget RPC, SPA navigation,
+// the runtime dispatches: data-cui-rpc, widget RPC, SPA navigation,
 // intercepted navigation, toggle/optimistic actions, and sortable-list
 // reorders. Poll replies never consume it.
 func InvalidateScreens(w http.ResponseWriter, paths ...string) {

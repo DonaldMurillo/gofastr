@@ -14,20 +14,20 @@ import (
 func TestCounterSliceOverload(t *testing.T) {
 	s := store.New("retro").Int("count", 5)
 	html := string(Counter(CounterConfig{Slice: s}))
-	if !strings.Contains(html, `data-fui-signal="retro.count"`) {
+	if !strings.Contains(html, `data-cui-signal="retro.count"`) {
 		t.Errorf("counter slice name not used: %s", html)
 	}
 	if !strings.Contains(html, `>5<`) {
 		t.Errorf("counter did not stamp the slice default (5): %s", html)
 	}
-	if !strings.Contains(html, `data-fui-signal-inc="retro.count"`) {
+	if !strings.Contains(html, `data-cui-signal-inc="retro.count"`) {
 		t.Errorf("increment not wired to slice name: %s", html)
 	}
 }
 
 func TestCounterStringOverloadUnchanged(t *testing.T) {
 	html := string(Counter(CounterConfig{SignalName: "qty"}))
-	if !strings.Contains(html, `data-fui-signal="qty"`) || !strings.Contains(html, `>0<`) {
+	if !strings.Contains(html, `data-cui-signal="qty"`) || !strings.Contains(html, `>0<`) {
 		t.Errorf("string overload regressed: %s", html)
 	}
 }
@@ -44,7 +44,7 @@ func TestCounterRequiresNameOrSlice(t *testing.T) {
 func TestTabsSliceOverloadActiveIndex(t *testing.T) {
 	s := store.New("retro").Int("activeTab", 1)
 	html := string(Tabs(TabsConfig{Slice: s, Tabs: []TabItem{{Label: "A"}, {Label: "B"}}}))
-	if !strings.Contains(html, `data-fui-signal="retro.activeTab"`) {
+	if !strings.Contains(html, `data-cui-signal="retro.activeTab"`) {
 		t.Errorf("tabs slice name not used: %s", html)
 	}
 	if !strings.Contains(html, `data-active="1"`) {
@@ -59,7 +59,7 @@ func TestTabsSliceOverloadActiveIndex(t *testing.T) {
 func TestSignalToggleSliceOverloadDefaultTrue(t *testing.T) {
 	s := store.New("retro").Bool("dark", true)
 	html := string(SignalToggle(SignalToggleConfig{Slice: s}))
-	if !strings.Contains(html, `data-fui-signal-toggle="retro.dark"`) {
+	if !strings.Contains(html, `data-cui-signal-toggle="retro.dark"`) {
 		t.Errorf("toggle slice name not used: %s", html)
 	}
 	if !strings.Contains(html, `aria-checked="true"`) {

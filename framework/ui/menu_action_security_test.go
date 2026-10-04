@@ -9,7 +9,7 @@ import (
 
 // Pins: the Menu form-action row allow-lists URL schemes
 // (urlsafe.CleanAnchor, like every form-action sink) and honours
-// MenuItem.Confirm as data-fui-confirm on the submit button.
+// MenuItem.Confirm as data-cui-confirm on the submit button.
 //
 // [menu-action-scheme]
 // Property: every <form action> sink allow-lists URL schemes.
@@ -24,13 +24,13 @@ import (
 // (menu.go:450) and every other form-action sink, degrading rejects.
 //
 // [menu-confirm-dropped]
-// Property: MenuItem.Confirm maps to data-fui-confirm, which the runtime honors on
+// Property: MenuItem.Confirm maps to data-cui-confirm, which the runtime honors on
 // RPC dispatch AND on any form submit (field doc comment, menu.go:44-48; runtime.js
 // submit handler; pinned e2e TestConfirmNativeFormCancelBlocks).
 // Surfaces: framework/ui/menu.go::writeMenuItem (Action branch).
 // Finding: the Action branch never reads it.Confirm, so a destructive form row
 // submits with no confirmation despite the caller asking for one.
-// Fix direction: emit data-fui-confirm on the submit button (or refuse the combo
+// Fix direction: emit data-cui-confirm on the submit button (or refuse the combo
 // like Radio+Children); the assert below accepts either, demanding presence.
 
 func TestMenuFormActionScheme(t *testing.T) {
@@ -70,7 +70,7 @@ func TestMenuConfirmOnActionRow(t *testing.T) {
 		Label: "m",
 		Items: []ui.MenuItem{{Label: "del", Confirm: "Really delete?", Action: &ui.MenuAction{Path: "/go", Unsafe: true}}},
 	})
-	if !strings.Contains(string(h), `data-fui-confirm="Really delete?"`) {
-		t.Errorf("SECURITY: [menu-confirm-dropped] MenuItem.Confirm is silently dropped on an Action row: the destructive form submits unconfirmed, though the field doc promises data-fui-confirm is honored on any form submit:\n%s", h)
+	if !strings.Contains(string(h), `data-cui-confirm="Really delete?"`) {
+		t.Errorf("SECURITY: [menu-confirm-dropped] MenuItem.Confirm is silently dropped on an Action row: the destructive form submits unconfirmed, though the field doc promises data-cui-confirm is honored on any form submit:\n%s", h)
 	}
 }

@@ -29,7 +29,7 @@ func TestSheetsSelectTheClassesTheirMarkupEmits(t *testing.T) {
 		oldSel := regexp.MustCompile(`\.ui-` + regexp.QuoteMeta(name) + `(__|--|[^A-Za-z0-9_-])`)
 		newSel := regexp.MustCompile(`\.fui-` + regexp.QuoteMeta(name) + `(__|--|[^A-Za-z0-9_-])`)
 		// A class string in markup: quoted or space-joined, never the
-		// selector's leading dot and never the data-fui-comp marker.
+		// selector's leading dot and never the data-cui-comp marker.
 		oldCls := regexp.MustCompile(`["' ]ui-` + regexp.QuoteMeta(name) + `(__|--)`)
 		newCls := regexp.MustCompile(`["' ]fui-` + regexp.QuoteMeta(name) + `(__|--|["' ])`)
 		markupNew := newCls.MatchString(src)
@@ -43,7 +43,7 @@ func TestSheetsSelectTheClassesTheirMarkupEmits(t *testing.T) {
 	}
 }
 
-// The registered sheet names and their data-fui-comp markers stay
+// The registered sheet names and their data-cui-comp markers stay
 // ui-*: hosts select on them, and the prefix rule gives fui- to the
 // classes alone. A sheet registered as fui-* would also have escaped
 // the walk above while it filtered on the ui- prefix.
@@ -52,8 +52,8 @@ func TestRegisteredSheetNamesKeepTheirPrefix(t *testing.T) {
 	// framework/ui rewrite this migration stack builds on (the seven
 	// at 149bd1f1). They stay until a change of their own renames
 	// them; nothing joins the list.
-	before := map[string]bool{"fui-collapsible": true, "fui-counter": true, "fui-dropdown": true,
-		"fui-reveal": true, "fui-section-menu": true, "fui-tabs": true, "fui-toggle": true}
+	before := map[string]bool{"fui-collapsible": true, "fui-counter": true, "cui-dropdown": true,
+		"cui-reveal": true, "cui-section-menu": true, "fui-tabs": true, "fui-toggle": true}
 	for _, e := range registry.All() {
 		if e.StyleFn != nil && strings.HasPrefix(e.Name, "fui-") && !before[e.Name] {
 			t.Errorf("sheet %q is registered under the class prefix; registered names and markers stay ui-*", e.Name)

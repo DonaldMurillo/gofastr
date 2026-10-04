@@ -46,7 +46,7 @@ type ButtonProps struct {
 	HasPopup string
 
 	// Action is what the button DOES when the host framework's runtime
-	// is on the page: the data-fui-rpc attributes of one of its
+	// is on the page: the data-cui-rpc attributes of one of its
 	// actions, as its Attrs() returns them, one of its local signal
 	// mutations (set, increment, toggle), or one of the wiring keys a
 	// page can put on any clickable — opening a widget or pane, firing
@@ -54,13 +54,13 @@ type ButtonProps struct {
 	// runtime module. It is a seam of its own rather than a use of
 	// ExtraAttrs, because ExtraAttrs is for what a page knows and a
 	// component cannot — a test id, a title — and Safe drops every
-	// data-fui-* key from it so a decoration can never become a
+	// data-cui-* key from it so a decoration can never become a
 	// request. An action is not decoration. Naming it makes it
 	// reviewable: a button that fires a request says so in its props,
 	// in one place, and the type refuses anything that is not a
 	// request or a wiring key.
 	//
-	// The request family (data-fui-rpc*, data-fui-confirm, the signal
+	// The request family (data-cui-rpc*, data-cui-confirm, the signal
 	// mutations) needs a button: an anchor carrying one is refused at
 	// render, because a link navigates and a button acts. The wiring
 	// keys may ride either tag.
@@ -83,14 +83,14 @@ type ButtonProps struct {
 // anchor is a click the href and the runtime would both answer.
 func linkLegal(key string) bool {
 	switch key {
-	case "data-fui-open", "data-fui-push-state", "data-fui-deeplink", "data-fui-prefetch":
+	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch":
 		return true
 	}
 	return false
 }
 
 // actionAttrs returns the action's attributes, refusing any that are
-// not an action's. The framework's runtime reads many data-fui-*
+// not an action's. The framework's runtime reads many data-cui-*
 // families; what belongs here is what a click DOES — a request, a
 // local signal mutation, or one of the wiring keys core-ui/interactive
 // can splice onto a clickable (open, pane open/close, pane key, toast,
@@ -114,35 +114,35 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Action repeats " + k + " under two spellings")
 		}
 		switch k {
-		case "data-fui-rpc":
+		case "data-cui-rpc":
 			if v == "" {
-				panic("headless: Action carries an empty data-fui-rpc — a request with no endpoint")
+				panic("headless: Action carries an empty data-cui-rpc — a request with no endpoint")
 			}
-			checkSameOrigin("a Button Action", "data-fui-rpc", v)
+			checkSameOrigin("a Button Action", "data-cui-rpc", v)
 			out[k] = v
-		case "data-fui-rpc-method":
+		case "data-cui-rpc-method":
 			switch v {
 			case "GET", "POST", "PUT", "PATCH", "DELETE":
 			default:
-				panic("headless: Action carries data-fui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
+				panic("headless: Action carries data-cui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
 			}
 			out[k] = v
-		case "data-fui-rpc-body":
+		case "data-cui-rpc-body":
 			if !json.Valid([]byte(v)) {
-				panic("headless: Action carries a data-fui-rpc-body that is not JSON — the runtime sends it verbatim and the server refuses it")
+				panic("headless: Action carries a data-cui-rpc-body that is not JSON — the runtime sends it verbatim and the server refuses it")
 			}
 			out[k] = v
-		case "data-fui-rpc-signal":
+		case "data-cui-rpc-signal":
 			checkSignalName(v)
 			out[k] = v
-		case "data-fui-rpc-navigate":
+		case "data-cui-rpc-navigate":
 			if v == "" {
-				panic("headless: Action carries an empty data-fui-rpc-navigate — a success with nowhere to go")
+				panic("headless: Action carries an empty data-cui-rpc-navigate — a success with nowhere to go")
 			}
-			checkSameOrigin("a Button Action", "data-fui-rpc-navigate", v)
+			checkSameOrigin("a Button Action", "data-cui-rpc-navigate", v)
 			out[k] = v
-		case "data-fui-rpc-open", "data-fui-rpc-after-text", "data-fui-rpc-scroll-to",
-			"data-fui-rpc-refresh", "data-fui-confirm":
+		case "data-cui-rpc-open", "data-cui-rpc-after-text", "data-cui-rpc-scroll-to",
+			"data-cui-rpc-refresh", "data-cui-confirm":
 			// refresh names the widget the runtime re-polls once the
 			// request succeeds (rpc.js); the rest of the family names
 			// or says something, and empty names nothing.
@@ -150,14 +150,14 @@ func actionAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Action carries an empty " + k + " — it names or says something, and empty names nothing")
 			}
 			out[k] = v
-		case "data-fui-rpc-close", "data-fui-rpc-reset", "data-fui-rpc-after-disable",
-			"data-fui-intercept-close":
+		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
+			"data-cui-intercept-close":
 			// Presence is the value. intercept-close closes the
 			// enclosing intercept overlay — the runtime's own family
 			// (fragments.go owns it), carried the same way a page
 			// carries pane-close.
 			out[k] = v
-		case "data-fui-action":
+		case "data-cui-action":
 			// The enclosing widget's own close, read by its scoped
 			// click handler (widgets.js): the one wiring key that
 			// fires no request and opens nothing, which is why a
@@ -165,25 +165,25 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// runtime reads; anything else is a button that does
 			// nothing, so it is refused here instead.
 			if v != "close" {
-				panic("headless: Action carries data-fui-action " + strconv.Quote(v) + ", and close is the only action the widget runtime reads")
+				panic("headless: Action carries data-cui-action " + strconv.Quote(v) + ", and close is the only action the widget runtime reads")
 			}
 			out[k] = v
-		case "data-fui-signal-set", "data-fui-signal-inc", "data-fui-signal-toggle":
+		case "data-cui-signal-set", "data-cui-signal-inc", "data-cui-signal-toggle":
 			// The value is "signal" or "signal:argument".
 			checkSignalName(strings.SplitN(v, ":", 2)[0])
 			out[k] = v
-		case "data-fui-push-state":
+		case "data-cui-push-state":
 			if v == "" {
-				panic("headless: Action carries an empty data-fui-push-state — a URL write with no URL")
+				panic("headless: Action carries an empty data-cui-push-state — a URL write with no URL")
 			}
-			checkSameOrigin("a Button Action", "data-fui-push-state", v)
+			checkSameOrigin("a Button Action", "data-cui-push-state", v)
 			out[k] = v
-		case "data-fui-open", "data-fui-deeplink", "data-fui-toast":
+		case "data-cui-open", "data-cui-deeplink", "data-cui-toast":
 			if v == "" {
 				panic("headless: Action carries an empty " + k + " — it names what opens or fires, and empty names nothing")
 			}
-			if k == "data-fui-toast" && !json.Valid([]byte(v)) {
-				panic("headless: Action carries a data-fui-toast that is not JSON — the runtime parses it at click time and would fail there instead")
+			if k == "data-cui-toast" && !json.Valid([]byte(v)) {
+				panic("headless: Action carries a data-cui-toast that is not JSON — the runtime parses it at click time and would fail there instead")
 			}
 			out[k] = v
 		case "data-hui-pane-open-control":
@@ -213,14 +213,14 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			checkNoControlBytes("a Button Action", k, v)
 			out[k] = v
-		case "data-fui-prefetch":
+		case "data-cui-prefetch":
 			for _, name := range strings.Fields(v) {
 				for i := range len(name) {
 					c := name[i]
 					if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
 						continue
 					}
-					panic("headless: Action carries data-fui-prefetch " + strconv.Quote(name) + ", which is not a module name shape — the runtime's loader refuses it at click time")
+					panic("headless: Action carries data-cui-prefetch " + strconv.Quote(name) + ", which is not a module name shape — the runtime's loader refuses it at click time")
 				}
 			}
 			out[k] = v
@@ -229,12 +229,12 @@ func actionAttrs(a html.Attrs) html.Attrs {
 		}
 	}
 	// The widget close is request-free by definition: the runtime's
-	// click handler dispatches a data-fui-rpc first and returns, so a
+	// click handler dispatches a data-cui-rpc first and returns, so a
 	// button carrying both would fire the request and never close. A
-	// close that follows a request is data-fui-rpc-close.
-	if _, close := out["data-fui-action"]; close {
-		if _, rpc := out["data-fui-rpc"]; rpc {
-			panic("headless: Action carries data-fui-action=\"close\" beside data-fui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-fui-rpc-close")
+	// close that follows a request is data-cui-rpc-close.
+	if _, close := out["data-cui-action"]; close {
+		if _, rpc := out["data-cui-rpc"]; rpc {
+			panic("headless: Action carries data-cui-action=\"close\" beside data-cui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-cui-rpc-close")
 		}
 	}
 	return out

@@ -32,7 +32,7 @@ import (
 //	site.Register("/settings", desktop.PreferencesScreen(d,
 //	    desktop.PreferencesScreenPath("/settings")), layout)
 //
-// The form submits through the runtime's data-fui-rpc intercept to
+// The form submits through the runtime's data-cui-rpc intercept to
 // POST /__gofastr/desktop/preferences, a refused submission renders
 // the validation envelope into the fields (the formerrors module),
 // and a successful one navigates back to the mount path the same way
@@ -228,7 +228,7 @@ func choiceLabel(c string) string {
 // the capability uses, and answers the shapes the runtime understands:
 // a validation envelope ({"error", "fields"}) on 400 so the formerrors
 // module renders the per-field messages, and a plain 2xx on success so
-// the form's data-fui-rpc-navigate re-renders the page with the saved
+// the form's data-cui-rpc-navigate re-renders the page with the saved
 // values. The session gate this route sits behind is the whole
 // authorization: the page is the app.
 func (b *Battery) handlePreferencesForm() http.HandlerFunc {

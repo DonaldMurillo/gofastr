@@ -136,7 +136,7 @@ func TestE2E_TabsInsertedStripArmedOnceSingleListener(t *testing.T) {
 			return true; })()`, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, `!!document.querySelector('[data-hui-tabs] [aria-selected="true"][data-fui-signal-set^="second"]') ||
+	if !pollTrue(ctx, `!!document.querySelector('[data-hui-tabs] [aria-selected="true"][data-cui-signal-set^="second"]') ||
 		document.querySelectorAll('[data-hui-tabs]').length === 2`) {
 		t.Fatal("the inserted strip never arrived")
 	}

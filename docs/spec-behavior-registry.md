@@ -19,8 +19,9 @@ cutover: `headless` (the original), `headless-controls`,
 `headless-combobox`, `headless-tabs`, `headless-carousel`,
 `headless-panehost`, `headless-sidebar`. Retired with them, their
 `core-ui/runtime/src` fragments deleted: scrollspy, toc, disclosure,
-menu, combobox, tabs, carousel, panehost, sidebar (searchinput and
-multiselect stay, widgets-owned). Implements the direction
+menu, combobox, tabs, carousel, panehost, sidebar (multiselect stays,
+widgets-owned; searchinput moved to framework/ui as a registered
+behaviour with the cui/hui/fui prefix split). Implements the direction
 from the runtime exploration: the browser runtime is composed on the fly
 per page and loads its features lazily, and a component's behaviour is
 registered by the package that renders its markup, the way its
@@ -124,7 +125,7 @@ startup failure and not a dead marker:
   is refused at registration, because one throw in the kernel's scan
   would abort the boot pass for every module. Nothing else scans (no
   `role=` selectors for registered behaviours; the two kernel modules
-  that use them predate this seam). A `data-fui-*` marker is permitted
+  that use them predate this seam). A `data-cui-*` marker is permitted
   only when the attribute is already in `core-ui/ARCHITECTURE.md`'s
   table, checked by a gate that reads every `registry.Markers(...)`
   call site in the tree rather than the registry of one test binary,
@@ -154,7 +155,7 @@ already keeps, now written down:
 3. It registers `window.__gofastr._moduleScanners[<name>] = fn(root)`,
    idempotent against already-wired elements, so the kernel can hand it
    newly inserted DOM and the document after a client navigation.
-4. It reads no `data-fui-*` attribute it does not own, and writes none.
+4. It reads no `data-cui-*` attribute it does not own, and writes none.
 5. It fetches only same-origin, and forwards the CSRF token on unsafe
    methods the way `src/rpc.js` does.
 
@@ -218,7 +219,7 @@ boot pass and reads this list there; below it, the `const` is a
 temporal dead zone and the page dies.
 `loadModule` needs no change: the name resolves through the manifest to
 the same URL shape, and the identifier guard already rejects anything
-that is not `[\w-]+`. `data-fui-prefetch="<name>"` works for a registered
+that is not `[\w-]+`. `data-cui-prefetch="<name>"` works for a registered
 name for the same reason.
 
 A malformed block (a `window.__gofastr_behaviors` that is not a
@@ -233,9 +234,9 @@ finds bytes to spend.
 
 ### Ownership gate (`fragments.go`, `attrdoc_test.go`)
 
-Every `data-fui-*` attribute in the runtime sources has one owner today.
+Every `data-cui-*` attribute in the runtime sources has one owner today.
 The gate gains one clause: a registered behaviour's markers must be
-`data-` attributes, and any `data-fui-*` among them must be in the
+`data-` attributes, and any `data-cui-*` among them must be in the
 documented table. A registered behaviour is not an owner in
 `fragments.go`; it owns its own prefix.
 
@@ -290,7 +291,7 @@ fails on one appearing again.
   behaviour's requirements with it (the list is sorted, not ordered;
   `loadModule` orders the loads), so the primitive arrives with its
   dependents. The static exporter includes them for the same
-  reason. Hover prefetch (`data-fui-prefetch`) prefetches them too,
+  reason. Hover prefetch (`data-cui-prefetch`) prefetches them too,
   because it goes through `loadModule`.
 - A module with no marker of its own (a primitive) is reachable only
   through `Requires` or an explicit `loadModule`. It is still a module:
@@ -335,8 +336,8 @@ Owners bind their own markup to it:
 
 - `framework/ui`'s `optimisticaction` and `toggleaction` become
   registered behaviours in the Go files that render their markup,
-  `Requires("action")`, read their `data-fui-optimistic-*` and
-  `data-fui-toggle-*` attributes, and call `bind`. They dispatch the
+  `Requires("action")`, read their `data-cui-optimistic-*` and
+  `data-cui-toggle-*` attributes, and call `bind`. They dispatch the
   documented `optimistic-action:*` and `toggle-action:*` events
   alongside the primitive's, because those names are public. The shake
   is a class the optimistic adapter adds on `action:rolled-back`. They
@@ -344,7 +345,7 @@ Owners bind their own markup to it:
   did not.
 - `framework/headless` binds `[data-hui-action]` with its own hooks
   (`data-hui-action-endpoint`, `-method`, `-group`, `-untoggle`) and
-  drops the borrowed `data-fui-comp` markers, which were also the
+  drops the borrowed `data-cui-comp` markers, which were also the
   stylesheet's identity. Its failure announcement listens to
   `action:rolled-back`, so a failed toggle speaks.
 
@@ -352,7 +353,7 @@ Owners bind their own markup to it:
 
 Unit, in `core-ui/registry`:
 
-- name rules, marker rules, the `data-fui-*` clause, duplicate
+- name rules, marker rules, the `data-cui-*` clause, duplicate
   identical no-op, duplicate different panic, `Behaviors()` order,
   reset for tests as `IsolateForTest` does for styles.
 
@@ -379,7 +380,7 @@ Browser, in `core-ui/runtime` (chromedp against `httptest`):
 - after a client navigation the module's scanner runs over the new
   document;
 - `LoadIdle` defers to idle and still attaches;
-- `data-fui-prefetch="<name>"` on hover fetches before any click;
+- `data-cui-prefetch="<name>"` on hover fetches before any click;
 - a failing fetch does not strand the page: the marker element stays,
   `loadedModules[<name>]` stays unset, nothing is thrown; the browser's
   own network error is the signal, as it is for a table module, because
@@ -397,7 +398,7 @@ Browser, in `examples/site`:
   cover, so the scan itself is not re-proven from an exported page.
 
 Documentation, in the same change: `core-ui/ARCHITECTURE.md` ("Component
-CSS" gains "Component behaviour"), the `data-fui-*` table if any marker
+CSS" gains "Component behaviour"), the `data-cui-*` table if any marker
 touches it, `framework/docs/content/ui-new-components.md` and
 `runtime-minification.md`, and `runtime-contract.md`.
 
@@ -430,7 +431,7 @@ Dependencies and the primitive add:
    the two action adapters through the seam as the first modules moved:
    the hardest clients first, with their existing tests intact. Then
    `framework/headless` binds its own action hooks and drops the
-   borrowed `data-fui-comp` markers. (Order set on 2026-09-16 after an
+   borrowed `data-cui-comp` markers. (Order set on 2026-09-16 after an
    outside evaluation found the action modules never re-armed after an
    island swap and the borrowed markers collided with the stylesheet
    identity.)

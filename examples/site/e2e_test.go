@@ -201,7 +201,7 @@ func TestE2ECommandPaletteOpensAndHydrates(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Click(`[data-fui-scope="docsite-header"] button.cmd`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-scope="docsite-header"] button.cmd`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByQuery),
 		chromedp.Evaluate(`!!document.querySelector('[role="dialog"]')`, &dialogVisible),
 	); err != nil {
@@ -228,14 +228,14 @@ func TestE2EDocCardNavigates(t *testing.T) {
 		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.fui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
-		chromedp.OuterHTML(`[data-fui-scope="docsite-docpage"] article.content`, &html, chromedp.ByQuery),
+		chromedp.OuterHTML(`[data-cui-scope="docsite-docpage"] article.content`, &html, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("doc nav: %v", err)
 	}
 	if pathname != "/docs/query-dsl" {
 		t.Fatalf("expected to land on /docs/query-dsl, got %q", pathname)
 	}
-	if !strings.Contains(html, `data-fui-comp="ui-markdown"`) {
+	if !strings.Contains(html, `data-cui-comp="ui-markdown"`) {
 		t.Fatal("doc page should render embedded markdown")
 	}
 }
@@ -252,13 +252,13 @@ func TestE2EInteractive_RPCSignal(t *testing.T) {
 	var signalText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`button[data-fui-rpc="/__site/interactive/counter"]`),
+		chromedp.WaitVisible(`button[data-cui-rpc="/__site/interactive/counter"]`),
 		// Use JS click instead of chromedp.Click, chromedp's mouse
 		// event dispatch doesn't reliably trigger the runtime's
 		// delegated click handler in headless Chrome.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').textContent`, &signalText),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -279,16 +279,16 @@ func TestE2EInteractive_FormSubmitWithSignal(t *testing.T) {
 	var signalHTML string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-form-signal"),
-		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
+		chromedp.WaitVisible(`form[data-cui-rpc="/__site/interactive/submit"]`),
 		// Use JS to fill + submit, same reason as RPCSignal test.
 		chromedp.Evaluate(`{
-            const form = document.querySelector('form[data-fui-rpc="/__site/interactive/submit"]');
+            const form = document.querySelector('form[data-cui-rpc="/__site/interactive/submit"]');
             const input = form.querySelector('input[name="message"]');
             input.value = 'hello e2e';
             form.requestSubmit();
         }`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-form-result"]').innerHTML`, &signalHTML),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-form-result"]').innerHTML`, &signalHTML),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -311,8 +311,8 @@ func TestE2EInteractive_FormInputHasLabel(t *testing.T) {
 	var ariaLabel string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-form-signal"),
-		chromedp.WaitVisible(`form[data-fui-rpc="/__site/interactive/submit"]`),
-		chromedp.Evaluate(`document.querySelector('form[data-fui-rpc="/__site/interactive/submit"] input[name="message"]').getAttribute('aria-label') || ''`, &ariaLabel),
+		chromedp.WaitVisible(`form[data-cui-rpc="/__site/interactive/submit"]`),
+		chromedp.Evaluate(`document.querySelector('form[data-cui-rpc="/__site/interactive/submit"] input[name="message"]').getAttribute('aria-label') || ''`, &ariaLabel),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -334,10 +334,10 @@ func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
 	var exists bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
-		chromedp.WaitVisible(`button[data-fui-rpc-open="demo-result-modal"]`),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="demo-result-modal"]').click()`, nil),
+		chromedp.WaitVisible(`button[data-cui-rpc-open="demo-result-modal"]`),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc-open="demo-result-modal"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="demo-result-modal"]') !== null`, &exists),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="demo-result-modal"]') !== null`, &exists),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -359,13 +359,13 @@ func TestE2EInteractive_ModalAriaLabelledBy(t *testing.T) {
 	var headingExists bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
-		chromedp.WaitVisible(`button[data-fui-rpc-open="demo-result-modal"]`),
+		chromedp.WaitVisible(`button[data-cui-rpc-open="demo-result-modal"]`),
 		// Open the modal
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-open="demo-result-modal"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc-open="demo-result-modal"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
 		// Read aria-labelledby from the widget root
-		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-fui-widget="demo-result-modal"]');return w?(w.getAttribute('aria-labelledby')||''):''})()`, &labelledBy),
-		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-fui-widget="demo-result-modal"]');var lb=w?w.getAttribute('aria-labelledby'):'';return lb&&document.getElementById(lb)!==null})()`, &headingExists),
+		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-cui-widget="demo-result-modal"]');return w?(w.getAttribute('aria-labelledby')||''):''})()`, &labelledBy),
+		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-cui-widget="demo-result-modal"]');var lb=w?w.getAttribute('aria-labelledby'):'';return lb&&document.getElementById(lb)!==null})()`, &headingExists),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -390,8 +390,8 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 	var pathname string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-navigate"),
-		chromedp.WaitVisible(`button[data-fui-rpc-navigate="/components/button"]`),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc-navigate="/components/button"]').click()`, nil),
+		chromedp.WaitVisible(`button[data-cui-rpc-navigate="/components/button"]`),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc-navigate="/components/button"]').click()`, nil),
 		chromedp.Sleep(2*time.Second),
 		chromedp.Evaluate(`location.pathname`, &pathname),
 	); err != nil {
@@ -404,7 +404,7 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 
 // TestE2EInteractive_SignalHasAriaLive verifies the runtime auto-injects
 // role="status" aria-live="polite" aria-atomic="true" onto every
-// [data-fui-signal] node. This is a P0 a11y requirement: without it,
+// [data-cui-signal] node. This is a P0 a11y requirement: without it,
 // screen readers do not announce signal-region updates (counter clicks,
 // form results, error feedback) because the DOM mutations are silent.
 func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
@@ -417,11 +417,11 @@ func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
 	var role, ariaLive, ariaAtomic string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('role')||''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('aria-live')||''`, &ariaLive),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').getAttribute('aria-atomic')||''`, &ariaAtomic),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('role')||''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('aria-live')||''`, &ariaLive),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('aria-atomic')||''`, &ariaAtomic),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -449,12 +449,12 @@ func TestE2EInteractive_RPCErrorFeedback(t *testing.T) {
 	var signalText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
 		// Inject a button that hits the error endpoint.
-		chromedp.Evaluate(`(function(){var b=document.createElement('button');b.setAttribute('data-fui-rpc','/__site/interactive/error');b.setAttribute('data-fui-rpc-signal','demo-counter');b.id='__test-err-btn';document.body.appendChild(b);return true})()`, nil),
+		chromedp.Evaluate(`(function(){var b=document.createElement('button');b.setAttribute('data-cui-rpc','/__site/interactive/error');b.setAttribute('data-cui-rpc-signal','demo-counter');b.id='__test-err-btn';document.body.appendChild(b);return true})()`, nil),
 		chromedp.Evaluate(`document.getElementById('__test-err-btn').click()`, nil),
 		chromedp.Sleep(1*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').textContent`, &signalText),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestE2EInteractive_NetworkErrorFeedback(t *testing.T) {
 	var signalText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
 		// Override fetch to throw a network error for the counter endpoint.
 		chromedp.Evaluate(`(function(){
 			var origFetch = window.fetch;
@@ -497,9 +497,9 @@ func TestE2EInteractive_NetworkErrorFeedback(t *testing.T) {
 			return true;
 		})()`, nil),
 		// Click the counter button.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').click()`, nil),
 		chromedp.Sleep(2*time.Second),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').textContent`, &signalText),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestE2EInteractive_NetworkErrorFeedback(t *testing.T) {
 }
 
 // TestE2EInteractive_LoadingState verifies that the runtime adds the
-// fui-loading CSS class and aria-busy="true" attribute to the trigger
+// cui-loading CSS class and aria-busy="true" attribute to the trigger
 // node during an in-flight RPC, and removes them after completion.
 func TestE2EInteractive_LoadingState(t *testing.T) {
 	if testing.Short() {
@@ -529,7 +529,7 @@ func TestE2EInteractive_LoadingState(t *testing.T) {
 	var ariaBusyAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
 		// Override fetch to add a 2-second delay so we can observe the loading state.
 		chromedp.Evaluate(`(function(){
 			var origFetch = window.fetch;
@@ -547,24 +547,24 @@ func TestE2EInteractive_LoadingState(t *testing.T) {
 		})()`, nil),
 		// Click the counter button (returns a promise, but loading state
 		// should be set synchronously before the await).
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').click()`, nil),
 		// Immediately check for loading indicators.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').classList.contains('fui-loading')`, &hasLoadingClass),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &hasAriaBusy),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').classList.contains('cui-loading')`, &hasLoadingClass),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &hasAriaBusy),
 		// Wait for the RPC to complete.
 		chromedp.Sleep(3*time.Second),
 		// Verify the signal updated.
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').textContent`, &signalText),
 		// Verify loading state was cleaned up.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').classList.contains('fui-loading')`, &loadingClassAfter),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &ariaBusyAfter),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').classList.contains('cui-loading')`, &loadingClassAfter),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').getAttribute('aria-busy')`, &ariaBusyAfter),
 	); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("signal after load: %q", signalText)
 
 	if !hasLoadingClass {
-		t.Error("button did not have fui-loading CSS class during in-flight RPC")
+		t.Error("button did not have cui-loading CSS class during in-flight RPC")
 	}
 	if hasAriaBusy != "true" {
 		t.Error("button did not have aria-busy='true' during in-flight RPC")
@@ -574,7 +574,7 @@ func TestE2EInteractive_LoadingState(t *testing.T) {
 		t.Errorf("counter still %q after delayed RPC — signal didn't update", signalText)
 	}
 	if loadingClassAfter {
-		t.Error("button still has fui-loading CSS class after RPC completed")
+		t.Error("button still has cui-loading CSS class after RPC completed")
 	}
 	if ariaBusyAfter == "true" {
 		t.Error("button still has aria-busy='true' after RPC completed")
@@ -582,7 +582,7 @@ func TestE2EInteractive_LoadingState(t *testing.T) {
 }
 
 // TestE2EInteractive_ReducedMotionFlashSkip verifies that when
-// prefers-reduced-motion is enabled, the fui-flash class is NOT added
+// prefers-reduced-motion is enabled, the cui-flash class is NOT added
 // to signal nodes on update. Users who prefer reduced motion should
 // not see the flash animation.
 func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
@@ -596,7 +596,7 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 	var signalText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
-		chromedp.WaitVisible(`[data-fui-signal="demo-counter"]`),
+		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
 		// Mock matchMedia to report prefers-reduced-motion: reduce.
 		chromedp.Evaluate(`(function(){
 			var origMatchMedia = window.matchMedia;
@@ -609,12 +609,12 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 			return true;
 		})()`, nil),
 		// Click the counter button.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/interactive/counter"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/interactive/counter"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
 		// Check the signal updated.
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').textContent`, &signalText),
-		// Check that the fui-flash class was NOT added.
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-counter"]').classList.contains('fui-flash')`, &hadFlashClass),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').textContent`, &signalText),
+		// Check that the cui-flash class was NOT added.
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').classList.contains('cui-flash')`, &hadFlashClass),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +625,7 @@ func TestE2EInteractive_ReducedMotionFlashSkip(t *testing.T) {
 		t.Errorf("counter still %q after click — signal didn't update", signalText)
 	}
 	if hadFlashClass {
-		t.Error("signal node has fui-flash class despite prefers-reduced-motion — flash should be skipped")
+		t.Error("signal node has cui-flash class despite prefers-reduced-motion — flash should be skipped")
 	}
 }
 
@@ -656,7 +656,7 @@ func TestE2E_CounterIncrementsLocally(t *testing.T) {
 	// Initial value should be 0.
 	var initial string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &initial),
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-cui-signal]').textContent`, &initial),
 	); err != nil {
 		t.Fatalf("read initial: %v", err)
 	}
@@ -674,7 +674,7 @@ func TestE2E_CounterIncrementsLocally(t *testing.T) {
 
 	var afterInc string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &afterInc),
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-cui-signal]').textContent`, &afterInc),
 	); err != nil {
 		t.Fatalf("read after inc: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestE2E_CounterIncrementsLocally(t *testing.T) {
 
 	var afterDec string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-counter [data-fui-signal]').textContent`, &afterDec),
+		chromedp.Evaluate(`document.querySelector('.fui-counter [data-cui-signal]').textContent`, &afterDec),
 	); err != nil {
 		t.Fatalf("read after dec: %v", err)
 	}
@@ -751,7 +751,7 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	// Second panel should now be visible.
 	var panel2Display string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-tab-panel[data-fui-tab-index="1"]')).display`, &panel2Display),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]')).display`, &panel2Display),
 	); err != nil {
 		t.Fatalf("read panel2 display: %v", err)
 	}
@@ -794,7 +794,7 @@ func TestE2E_ToggleFlipsValue(t *testing.T) {
 	// Initial value should be "false".
 	var initial string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &initial),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-toggle"]').textContent`, &initial),
 	); err != nil {
 		t.Fatalf("read initial: %v", err)
 	}
@@ -812,7 +812,7 @@ func TestE2E_ToggleFlipsValue(t *testing.T) {
 
 	var afterToggle string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &afterToggle),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-toggle"]').textContent`, &afterToggle),
 	); err != nil {
 		t.Fatalf("read after toggle: %v", err)
 	}
@@ -830,7 +830,7 @@ func TestE2E_ToggleFlipsValue(t *testing.T) {
 
 	var afterBack string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="demo-toggle"]').textContent`, &afterBack),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-toggle"]').textContent`, &afterBack),
 	); err != nil {
 		t.Fatalf("read after back: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestE2E_DropdownOpensAndCloses(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady("[data-fui-dropdown-wrap]", chromedp.ByQuery),
+		chromedp.WaitReady("[data-cui-dropdown-wrap]", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -920,7 +920,7 @@ func TestE2E_DropdownOpensAndCloses(t *testing.T) {
 	// Panel should be hidden initially.
 	var panelHidden bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-dropdown-panel]').hasAttribute('hidden')`, &panelHidden),
+		chromedp.Evaluate(`document.querySelector('[data-cui-dropdown-panel]').hasAttribute('hidden')`, &panelHidden),
 	); err != nil {
 		t.Fatalf("check initial hidden: %v", err)
 	}
@@ -930,7 +930,7 @@ func TestE2E_DropdownOpensAndCloses(t *testing.T) {
 
 	// Click the trigger to open.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-dropdown]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-dropdown]').click()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("click trigger: %v", err)
@@ -939,7 +939,7 @@ func TestE2E_DropdownOpensAndCloses(t *testing.T) {
 	// Panel should now be visible.
 	var expanded string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-dropdown]').getAttribute('aria-expanded')`, &expanded),
+		chromedp.Evaluate(`document.querySelector('[data-cui-dropdown]').getAttribute('aria-expanded')`, &expanded),
 	); err != nil {
 		t.Fatalf("check expanded: %v", err)
 	}
@@ -957,7 +957,7 @@ func TestE2E_DropdownOpensAndCloses(t *testing.T) {
 
 	var afterClose string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-dropdown]').getAttribute('aria-expanded')`, &afterClose),
+		chromedp.Evaluate(`document.querySelector('[data-cui-dropdown]').getAttribute('aria-expanded')`, &afterClose),
 	); err != nil {
 		t.Fatalf("check after close: %v", err)
 	}
@@ -975,7 +975,7 @@ func TestE2E_ScrollRevealShowsOnViewport(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/scroll-reveal"),
-		chromedp.WaitReady("[data-fui-reveal]", chromedp.ByQuery),
+		chromedp.WaitReady("[data-cui-reveal]", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -983,33 +983,33 @@ func TestE2E_ScrollRevealShowsOnViewport(t *testing.T) {
 	// The reveal element should have the attribute.
 	var revealAttr string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-reveal]').getAttribute('data-fui-reveal')`, &revealAttr),
+		chromedp.Evaluate(`document.querySelector('[data-cui-reveal]').getAttribute('data-cui-reveal')`, &revealAttr),
 	); err != nil {
 		t.Fatalf("check attr: %v", err)
 	}
 	if revealAttr != "fade-up" {
-		t.Fatalf("data-fui-reveal = %q, want fade-up", revealAttr)
+		t.Fatalf("data-cui-reveal = %q, want fade-up", revealAttr)
 	}
 
 	// Scroll the element into view.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-reveal]').scrollIntoView()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-reveal]').scrollIntoView()`, nil),
 		chromedp.Sleep(300*time.Millisecond),
 	); err != nil {
 		t.Fatalf("scroll into view: %v", err)
 	}
 
-	// After scrolling into view, the fui-revealed class should be present
+	// After scrolling into view, the cui-revealed class should be present
 	// (if the runtime module loaded). If the module hasn't loaded yet,
 	// the element still exists and is visible, just without the animation.
 	var hasClass bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-reveal]').classList.contains('fui-revealed')`, &hasClass),
+		chromedp.Evaluate(`document.querySelector('[data-cui-reveal]').classList.contains('cui-revealed')`, &hasClass),
 	); err != nil {
 		t.Fatalf("check revealed: %v", err)
 	}
 	if !hasClass {
-		t.Log("NOTE: fui-revealed class not present — reveal module may not have loaded in test env")
+		t.Log("NOTE: cui-revealed class not present — reveal module may not have loaded in test env")
 	}
 }
 
@@ -1022,7 +1022,7 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-animate"),
-		chromedp.WaitReady("[data-fui-animate-signal]", chromedp.ByQuery),
+		chromedp.WaitReady("[data-cui-animate-signal]", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Initially the animated class should NOT be present.
 	var hasClass bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-animate-signal]').classList.contains('fui-expanded')`, &hasClass),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &hasClass),
 	); err != nil {
 		t.Fatalf("check initial class: %v", err)
 	}
@@ -1047,7 +1047,7 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 
 	// Click the toggle button to set the signal to "true".
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal-toggle]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal-toggle]').click()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("click toggle: %v", err)
@@ -1056,7 +1056,7 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Now the class should be present.
 	var afterToggle bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-animate-signal]').classList.contains('fui-expanded')`, &afterToggle),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &afterToggle),
 	); err != nil {
 		t.Fatalf("check after toggle: %v", err)
 	}
@@ -1076,7 +1076,7 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/copybutton"),
-		chromedp.WaitReady("[data-fui-comp='ui-copy-btn']", chromedp.ByQuery),
+		chromedp.WaitReady("[data-cui-comp='ui-copy-btn']", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -1089,15 +1089,16 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 		t.Fatalf("click copy: %v", err)
 	}
 
-	// The button should show a copied state (fui-copied class).
+	// The wrapper should carry the copied state the module writes and
+	// the kit's sheet styles (data-hui-copy-state="done").
 	var hasCopied bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').classList.contains('fui-copied')`, &hasCopied),
+		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').closest('[data-hui-copy]').getAttribute('data-hui-copy-state') === 'done'`, &hasCopied),
 	); err != nil {
 		t.Fatalf("read copied state: %v", err)
 	}
 	if !hasCopied {
-		t.Error("copy button should have fui-copied class after click")
+		t.Error("copy wrapper should carry data-hui-copy-state=\"done\" after click")
 	}
 }
 
@@ -1110,7 +1111,7 @@ func TestE2E_PasswordToggleWorks(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/passwordinput"),
-		chromedp.WaitReady("[data-fui-comp='ui-password-input']", chromedp.ByQuery),
+		chromedp.WaitReady("[data-cui-comp='ui-password-input']", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -1118,7 +1119,7 @@ func TestE2E_PasswordToggleWorks(t *testing.T) {
 	// Initially the input should be type=password.
 	var inputType string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-password-input"] input').type`, &inputType),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-password-input"] input').type`, &inputType),
 	); err != nil {
 		t.Fatalf("check initial type: %v", err)
 	}
@@ -1128,7 +1129,7 @@ func TestE2E_PasswordToggleWorks(t *testing.T) {
 
 	// Click the toggle button.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-password-input"] button').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-password-input"] button').click()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("click toggle: %v", err)
@@ -1136,7 +1137,7 @@ func TestE2E_PasswordToggleWorks(t *testing.T) {
 
 	var afterToggle string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-password-input"] input').type`, &afterToggle),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-password-input"] input').type`, &afterToggle),
 	); err != nil {
 		t.Fatalf("check after toggle: %v", err)
 	}
@@ -1154,7 +1155,7 @@ func TestE2E_TextareaAutogrow(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/textarea"),
-		chromedp.WaitReady("textarea[data-fui-autogrow]", chromedp.ByQuery),
+		chromedp.WaitReady("textarea[data-cui-autogrow]", chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -1162,12 +1163,12 @@ func TestE2E_TextareaAutogrow(t *testing.T) {
 	// Verify the autogrow attribute is present.
 	var hasAttr bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('textarea[data-fui-autogrow]') !== null`, &hasAttr),
+		chromedp.Evaluate(`document.querySelector('textarea[data-cui-autogrow]') !== null`, &hasAttr),
 	); err != nil {
 		t.Fatalf("check attr: %v", err)
 	}
 	if !hasAttr {
-		t.Fatal("textarea should have data-fui-autogrow attribute")
+		t.Fatal("textarea should have data-cui-autogrow attribute")
 	}
 
 	// Verify the textarea module loaded.
@@ -1196,17 +1197,17 @@ func TestE2EInteractive_WorkspacePanes(t *testing.T) {
 	var url1, detail, url2, customer string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/workspace"),
-		chromedp.WaitVisible(`button[data-fui-rpc="/__site/workspace/ticket?id=4021"]`),
+		chromedp.WaitVisible(`button[data-cui-rpc="/__site/workspace/ticket?id=4021"]`),
 		// Row click: opens the secondary pane + fetches the detail.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-rpc="/__site/workspace/ticket?id=4021"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc="/__site/workspace/ticket?id=4021"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
 		chromedp.Location(&url1),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-ticket"]').textContent`, &detail),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="ws-ticket"]').textContent`, &detail),
 		// "View customer" inside the detail fills the tertiary pane.
 		chromedp.Evaluate(`document.querySelector('[data-hui-pane-open-control="tertiary"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
 		chromedp.Location(&url2),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-customer"]').textContent`, &customer),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="ws-customer"]').textContent`, &customer),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -1240,9 +1241,9 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
-			const nav = document.querySelector('[data-fui-scope="docsite-header"] .links');
-			const drawer = document.querySelector('[data-fui-scope="docsite-header"] .menu');
-			const search = document.querySelector('[data-fui-scope="docsite-header"] .cmd');
+			const nav = document.querySelector('[data-cui-scope="docsite-header"] .links');
+			const drawer = document.querySelector('[data-cui-scope="docsite-header"] .menu');
+			const search = document.querySelector('[data-cui-scope="docsite-header"] .cmd');
 			return {
 				inlineNav: getComputedStyle(nav).display,
 				drawer: getComputedStyle(drawer).display,
@@ -1271,7 +1272,7 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
 			const cta = document.querySelector('.hero__ctas');
-			const headerTargets = [...document.querySelectorAll('[data-fui-scope="docsite-header"] .cmd, [data-fui-scope="docsite-header"] .icon, [data-fui-scope="docsite-header"] .toggle')]
+			const headerTargets = [...document.querySelectorAll('[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle')]
 				.map(el => el.getBoundingClientRect())
 				.filter(rect => rect.width > 0 && rect.height > 0)
 				.map(rect => Math.min(rect.width, rect.height));

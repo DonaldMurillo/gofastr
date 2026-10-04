@@ -10,7 +10,7 @@ import (
 )
 
 // ThemeRef is a handle to a registered theme override. The framework
-// emits a `.fui-theme-<hash>` CSS block in app.css that re-declares
+// emits a `.cui-theme-<hash>` CSS block in app.css that re-declares
 // every changed token; wrapping a subtree with this class scopes the
 // override to that part of the DOM via the CSS variable cascade.
 //
@@ -70,8 +70,8 @@ func (r ThemeRef) record() *themeOverrideRecord {
 }
 
 // Class returns the CSS class name applied to wrapped subtrees:
-// `fui-theme-<hash>`.
-func (r ThemeRef) Class() string { return "fui-theme-" + r.record().contentHash() }
+// `cui-theme-<hash>`.
+func (r ThemeRef) Class() string { return "cui-theme-" + r.record().contentHash() }
 
 var (
 	themeOverrideMu sync.Mutex
@@ -112,7 +112,7 @@ func RegisterThemeOverride(t Theme) ThemeRef {
 // AllThemeOverrides returns a snapshot of every registered theme,
 // keyed by hash, with the nested maps deep-copied: a caller mutating a
 // returned theme changes nothing the process serves. Used by the
-// uihost to emit `.fui-theme-<hash>` blocks in app.css.
+// uihost to emit `.cui-theme-<hash>` blocks in app.css.
 //
 // Each record is hashed HERE, at call time: registration order cannot
 // influence the hash (there is none yet), and the same content
@@ -139,7 +139,7 @@ func AllThemeOverrides() map[string]Theme {
 
 // ThemeOverrideCSS emits the class-scoped blocks for one override:
 //
-//	.fui-theme-<hash> {
+//	.cui-theme-<hash> {
 //	  --color-primary: …;
 //	  …every typed token…
 //	  …the compiled component options, re-emitted…
@@ -150,9 +150,9 @@ func AllThemeOverrides() map[string]Theme {
 // and, when the theme carries a dark palette (DarkColors or DarkCode),
 // the same declarations under the document's dark scheme:
 //
-//	[data-color-scheme="dark"] .fui-theme-<hash> { …dark tokens… }
+//	[data-color-scheme="dark"] .cui-theme-<hash> { …dark tokens… }
 //	@media (prefers-color-scheme: dark) {
-//	  :root:not([data-color-scheme="light"]) .fui-theme-<hash> { …dark tokens… }
+//	  :root:not([data-color-scheme="light"]) .cui-theme-<hash> { …dark tokens… }
 //	}
 //
 // The light block re-declares every typed token, AND sets `color` +
@@ -192,7 +192,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	sort.Strings(lines)
 	lines = append(lines, componentOptionDecls(t.Components)...)
 	var b strings.Builder
-	fmt.Fprintf(&b, ".fui-theme-%s {\n", hash)
+	fmt.Fprintf(&b, ".cui-theme-%s {\n", hash)
 	writeScopeLines(&b, "  ", lines)
 	// The wrapper itself adopts the overridden palette so inherited
 	// `color` flows down. Without this, descendants that don't
@@ -205,11 +205,11 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 		return b.String()
 	}
 	darkLines := darkScopeLines(t)
-	b.WriteString("\n[data-color-scheme=\"dark\"] .fui-theme-" + hash + " {\n")
+	b.WriteString("\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "  ", darkLines)
 	b.WriteString("}\n")
 	b.WriteString("@media (prefers-color-scheme: dark) {\n")
-	b.WriteString("  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + hash + " {\n")
+	b.WriteString("  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "    ", darkLines)
 	b.WriteString("  }\n")
 	b.WriteString("}")

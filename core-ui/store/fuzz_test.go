@@ -8,10 +8,10 @@ import (
 // FuzzScanReferenced asserts the scanner never panics and never invents
 // a name absent from the input.
 func FuzzScanReferenced(f *testing.F) {
-	f.Add(`<span data-fui-signal="a">x</span>`)
-	f.Add(`<button data-fui-signal-set="b:1">s</button>`)
-	f.Add(`<pre>data-fui-signal="ghost"</pre>`)
-	f.Add(`data-fui-signal="`)
+	f.Add(`<span data-cui-signal="a">x</span>`)
+	f.Add(`<button data-cui-signal-set="b:1">s</button>`)
+	f.Add(`<pre>data-cui-signal="ghost"</pre>`)
+	f.Add(`data-cui-signal="`)
 	f.Add(``)
 	f.Fuzz(func(t *testing.T, html string) {
 		got := ScanReferenced(html)
@@ -25,7 +25,7 @@ func FuzzScanReferenced(f *testing.F) {
 
 // FuzzValidateName asserts that any name validateName accepts contains
 // only attribute-safe characters, it can never break out of a
-// data-fui-* attribute value.
+// data-cui-* attribute value.
 func FuzzValidateName(f *testing.F) {
 	f.Add("org.companyName")
 	f.Add(`a"b`)

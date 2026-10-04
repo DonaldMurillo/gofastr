@@ -17,7 +17,7 @@ import (
 // kit against the live registry and refuse any finding: every catalog
 // demo, a widget's chrome at every position (the panel, backdrop and
 // position classes), and every registered stylesheet's class
-// selectors. v0.13.0's note once retired fui-pos-center, which every
+// selectors. v0.13.0's note once retired cui-pos-center, which every
 // centered widget still carries; this is the gate that would have
 // refused it.
 

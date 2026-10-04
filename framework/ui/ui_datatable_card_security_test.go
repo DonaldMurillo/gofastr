@@ -324,7 +324,7 @@ func TestCard_NilBodyHandled(t *testing.T) {
 	// Card with no body variadic args, should render without panic.
 	h := ui.Card(ui.CardConfig{Heading: "No body"})
 	s := string(h)
-	if !strings.Contains(s, `data-fui-comp="ui-card"`) {
+	if !strings.Contains(s, `data-cui-comp="ui-card"`) {
 		t.Errorf("SECURITY: [card-nil-body] expected ui-card marker in output:\n  %s", s)
 	}
 	// The primitive keeps the body element in the tree (its contract:
@@ -377,7 +377,7 @@ func TestContainer_NilChildrenHandled(t *testing.T) {
 	// Container with no children, should render without panic.
 	h := ui.Container(ui.ContainerConfig{})
 	s := string(h)
-	if !strings.Contains(s, `data-fui-comp="ui-container"`) {
+	if !strings.Contains(s, `data-cui-comp="ui-container"`) {
 		t.Errorf("SECURITY: [container-nil-children] expected ui-container marker:\n  %s", s)
 	}
 }

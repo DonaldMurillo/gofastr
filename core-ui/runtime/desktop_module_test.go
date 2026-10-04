@@ -25,7 +25,7 @@ func TestRuntimeModule_Desktop(t *testing.T) {
 		"NS.desktop",               // namespace the generated bridge.js extends
 		"manifest",                 // null until the generated bridge sets it
 		"startDrag",                // window-drag entry point (window namespace)
-		"data-fui-window-drag",     // the drag-handle attribute the module wires
+		"data-cui-window-drag",     // the drag-handle attribute the module wires
 		"messageHandlers",          // the drag rides the WebView message channel
 	} {
 		if !strings.Contains(src, want) {

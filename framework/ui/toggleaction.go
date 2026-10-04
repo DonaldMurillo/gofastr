@@ -40,7 +40,7 @@ import (
 //
 // SSR shape (state ships server-rendered; the runtime only flips it):
 //
-//	<button data-fui-comp="ui-toggle-action"
+//	<button data-cui-comp="ui-toggle-action"
 //	        data-hui-action="" data-hui-action-endpoint="/follow"
 //	        data-hui-action-untoggle="/unfollow"
 //	        data-hui-action-group="follows"
@@ -111,7 +111,7 @@ type ToggleActionConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the button's root <button> element. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// data-fui-* (the toggle runtime wiring), type, data-state, and
+	// data-cui-* (the toggle runtime wiring), type, data-state, and
 	// aria-pressed (mirrored from Committed by the runtime).
 	ExtraAttrs html.Attrs
 
@@ -182,13 +182,13 @@ var toggleActionClasses = headless.Classes{
 }
 
 var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-toggle-action"] {
+	return `[data-cui-comp="ui-toggle-action"] {
   /* Inherits .fui-button base; override only what the toggle flip needs. */
   position: relative;
   transition: background-color 120ms ease, color 120ms ease;
 }
 /* Committed state — success tone signals "active". */
-[data-fui-comp="ui-toggle-action"][data-state="committed"] {
+[data-cui-comp="ui-toggle-action"][data-state="committed"] {
   background: var(--color-success, #16A34A);
   color: var(--color-primary-fg, #FFFFFF);
   border-color: var(--color-success, #16A34A);
@@ -196,7 +196,7 @@ var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.
 /* Pending — same look as committed (optimistic) plus a busy cursor
    while the RPC is in flight. The runtime also sets aria-busy +
    disabled during this window. */
-[data-fui-comp="ui-toggle-action"][data-state="pending"] {
+[data-cui-comp="ui-toggle-action"][data-state="pending"] {
   cursor: progress;
   background: var(--color-success, #16A34A);
   color: var(--color-primary-fg, #FFFFFF);

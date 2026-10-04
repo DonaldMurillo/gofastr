@@ -77,7 +77,7 @@ func TestHeaderLayoutPromises(t *testing.T) {
 	browser := axetest.NewBrowser(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const h='[data-fui-scope="siteheader"]';
+const h='[data-cui-scope="siteheader"]';
 return JSON.stringify({ViewW:innerWidth,ViewH:innerHeight,ScrollW:document.documentElement.scrollWidth,
 Header:r(h),Nav:r(h+' nav[aria-label="Primary"]'),Toggle:r(h+' summary'),
 Panel:r(h+' details[open] > summary + *'),PanelCTA:r(h+' details[open] nav + div a'),
@@ -148,8 +148,8 @@ BarCTA:r(h+' .bar-cta a'),Brand:r(h+' .brand'),Column:r('main p')})})()`
 	})
 
 	t.Run("phone-menu-open", func(t *testing.T) {
-		g := at(390, chromedp.Click(`[data-fui-scope="siteheader"] summary`, chromedp.NodeVisible),
-			chromedp.Poll(`!!document.querySelector('[data-fui-scope="siteheader"] details[open]')`, nil),
+		g := at(390, chromedp.Click(`[data-cui-scope="siteheader"] summary`, chromedp.NodeVisible),
+			chromedp.Poll(`!!document.querySelector('[data-cui-scope="siteheader"] details[open]')`, nil),
 			// The panel slides in; measure where it settles.
 			chromedp.Poll(`document.getAnimations().every(a => a.playState === 'finished')`, nil))
 		if !shown(g.Panel) {
@@ -173,11 +173,11 @@ BarCTA:r(h+' .bar-cta a'),Brand:r(h+' .brand'),Column:r('main p')})})()`
 		Props   []string
 		Drawn   bool
 	}
-	const probe = `(()=>{const p=document.querySelector('[data-fui-scope="siteheader"] details > summary + *');
+	const probe = `(()=>{const p=document.querySelector('[data-cui-scope="siteheader"] details > summary + *');
 const as=p.getAnimations({subtree:true});
 return JSON.stringify({Longest:Math.max(0,...as.map(a=>{const t=a.effect.getComputedTiming();return t.delay+t.duration})),
 Props:as.filter(a=>a.effect.target===p).map(a=>a.transitionProperty),Drawn:p.getBoundingClientRect().height>0})})()`
-	toggle := chromedp.Click(`[data-fui-scope="siteheader"] summary`, chromedp.NodeVisible)
+	toggle := chromedp.Click(`[data-cui-scope="siteheader"] summary`, chromedp.NodeVisible)
 	settled := chromedp.Poll(`document.getAnimations().every(a => a.playState === 'finished')`, nil)
 	run := func(reduce, closing bool) motion {
 		t.Helper()

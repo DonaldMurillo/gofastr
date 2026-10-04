@@ -81,7 +81,7 @@ func TestFooterLayoutPromises(t *testing.T) {
 	browser := axetest.NewBrowser(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const f='[data-fui-scope="sitefooter"]';
+const f='[data-cui-scope="sitefooter"]';
 return JSON.stringify({ViewW:innerWidth,ScrollW:document.documentElement.scrollWidth,
 Inner:r(f+' .inner'),Brand:r(f+' .brand'),Note:r(f+' .note'),
 Lead:r(f+' .top > div:first-child'),Columns:r(f+' .columns'),

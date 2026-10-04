@@ -54,7 +54,7 @@ func TestStalledComponentCSSDoesNotBlockHashScroll(t *testing.T) {
 				w.Header().Set("X-Gofastr-Swap", "l:site")
 				body := `<h1 id="` + id + `">` + id + `</h1><a id="to-other" style="position:fixed;top:4px;right:4px" href="/tall-a">other</a><div style="height:4000px"></div>`
 				if comp {
-					body = `<span data-fui-comp="stalled">styled</span>` + body
+					body = `<span data-cui-comp="stalled">styled</span>` + body
 				}
 				fmt.Fprint(w, body)
 				return
@@ -64,8 +64,8 @@ func TestStalledComponentCSSDoesNotBlockHashScroll(t *testing.T) {
 				`<script type="application/json" id="gofastr-routes">` +
 				`[{"path":"/tall-a","layouts":["l:site"]},{"path":"/tall-b","layouts":["l:site"]}]</script>` +
 				`<script>window.__gofastr_catalog={"stalled":{stylePath:"/css/stalled.css"}};</script>` +
-				`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-				`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
+				`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+				`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
 				`<h1 id="` + id + `">` + id + `</h1>` +
 				`<a id="to-other" style="position:fixed;top:4px;right:4px" href="/tall-b#deep">other</a>` +
 				`<div style="height:4000px"></div>` +
@@ -80,9 +80,9 @@ func TestStalledComponentCSSDoesNotBlockHashScroll(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
 			`<script>window.__gofastr_catalog={"stalled":{stylePath:"/css/stalled.css"}};</script>`+
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">`+
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">`+
-			`<span data-fui-comp="stalled">styled</span>`+
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">`+
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">`+
+			`<span data-cui-comp="stalled">styled</span>`+
 			`<h1 id="screen-b">screen-b</h1>`+
 			`<div style="height:600px"></div><h2 id="deep">deep target</h2><div style="height:4000px"></div>`+
 			`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`)

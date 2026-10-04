@@ -19,7 +19,7 @@ import (
 // preset.Modal("user-edit").Hidden().DeepLink("modal","user-edit").
 // DeepLinkParam("user_id")), and that inlined chrome is rendered with
 // NO trigger ctx — arrival by URL has no trigger. The runtime must not
-// let a later data-fui-ctx trigger hydrate that ctx-less node: it has
+// let a later data-cui-ctx trigger hydrate that ctx-less node: it has
 // to drop it and take the (name, ctx)-keyed chrome fetch instead, or a
 // per-entity dialog shows chrome for the wrong entity (or a form
 // posting to a placeholder action).
@@ -52,9 +52,9 @@ func (s *ssrCtxServer) snapshot() (perCtx map[string]int, total int) {
 // opens. mark carries the ctx the render saw ("ctx=|user=alice" for the
 // SSR inline, which renders with no ctx).
 func ssrChromeBody(mark string) string {
-	return `<div class="fui-widget fui-pos-center" data-fui-widget="user-edit" role="dialog">` +
+	return `<div class="cui-widget cui-pos-center" data-cui-widget="user-edit" role="dialog">` +
 		`<span id="ctxmark">` + mark + `</span>` +
-		`<button type="button" id="closer" data-fui-action="close">Close</button>` +
+		`<button type="button" id="closer" data-cui-action="close">Close</button>` +
 		`</div>`
 }
 
@@ -112,8 +112,8 @@ func startSSRChromeCtxServer(t *testing.T) *ssrCtxServer {
 <script type="application/json" id="gofastr-routes">[{"path":"/"}]</script>
 </head><body>
 <main id="main-content">
-<button id="open-a" data-fui-open="user-edit" data-fui-deeplink="user_id=42" data-fui-ctx="inv-42">Edit 42</button>
-<button id="open-b" data-fui-open="user-edit" data-fui-ctx="inv-99">Edit 99</button>
+<button id="open-a" data-cui-open="user-edit" data-cui-deeplink="user_id=42" data-cui-ctx="inv-42">Edit 42</button>
+<button id="open-b" data-cui-open="user-edit" data-cui-ctx="inv-99">Edit 99</button>
 <span id="ready">ready</span>
 </main>
 %s
@@ -127,7 +127,7 @@ func startSSRChromeCtxServer(t *testing.T) *ssrCtxServer {
 
 // TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx is the release
 // blocker: a Hidden().DeepLink() widget SSR-inlined on a deep-link URL
-// match must still serve per-ctx chrome when a data-fui-ctx trigger
+// match must still serve per-ctx chrome when a data-cui-ctx trigger
 // opens it later. The inlined node is ctx-less by construction (no
 // trigger exists at page load); hydrating it for a ctx-carrying
 // trigger shows the wrong entity. Two triggers with different ctx must
@@ -162,7 +162,7 @@ func TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx(t *testing.T) {
 	// short-circuited on below.
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#closer`, chromedp.ByID),
-		chromedp.Poll(unmounted+` && document.querySelector('[data-fui-widget="user-edit"]')`, nil, chromedp.WithPollingTimeout(10_000)),
+		chromedp.Poll(unmounted+` && document.querySelector('[data-cui-widget="user-edit"]')`, nil, chromedp.WithPollingTimeout(10_000)),
 	); err != nil {
 		t.Fatalf("close hydrated dialog: %v", err)
 	}

@@ -357,7 +357,7 @@ type routeInfoJSON struct {
 	Preload string `json:"preload,omitempty"`
 	// Layouts is the route's layout chain as layer keys, outermost →
 	// innermost (app.LayoutLayer.Key). The runtime compares it against the
-	// DOM's data-fui-layout-key spine to swap at the deepest shared layer.
+	// DOM's data-cui-layout-key spine to swap at the deepest shared layer.
 	Layouts []string `json:"layouts,omitempty"`
 	// Deferred the route's deferred outlet
 	// addresses — every fill the client must fetch as its own part
@@ -367,7 +367,7 @@ type routeInfoJSON struct {
 	// DocScripts lists the document-lifetime external scripts (src
 	// values, RegisterDocumentScript) in scope for this route. The
 	// client runtime compares the destination's set against the live
-	// document's data-fui-doc scripts and performs a real document load
+	// document's data-cui-doc scripts and performs a real document load
 	// when they differ: removing a script tag does not revoke
 	// document-installed capabilities (WebMCP's navigator.modelContext
 	// tools), and a partial swap never runs a body script.
@@ -709,7 +709,7 @@ func (ds *UIHost) CustomCSS() string {
 
 // AppCSS returns the merged app-level stylesheet body: theme :root
 // custom properties + every registered theme override
-// (.fui-theme-<hash> blocks for ui.Themed wrappers) + customCSS +
+// (.cui-theme-<hash> blocks for ui.Themed wrappers) + customCSS +
 // every style.Contribute'd fragment, in that order. Used by the SSG
 // so static export ships the same single asset the live server
 // serves.
@@ -810,10 +810,10 @@ body {
 }
 h1, h2, h3, h4 { font-family: var(--font-heading, var(--font-body, inherit)); }
 /* Columns of numbers (money, counts) align when figures are tabular. */
-[data-fui-comp="ui-data-table"] td,
-[data-fui-comp="ui-stat-card"],
-[data-fui-comp="ui-bar-chart"],
-[data-fui-comp="ui-detail-list"] .fui-detail-list__value,
+[data-cui-comp="ui-data-table"] td,
+[data-cui-comp="ui-stat-card"],
+[data-cui-comp="ui-bar-chart"],
+[data-cui-comp="ui-detail-list"] .fui-detail-list__value,
 .ui-money,
 td[data-align="end"] {
   font-variant-numeric: tabular-nums;
@@ -831,14 +831,14 @@ td[data-align="end"] {
 #main-content:focus:not(:focus-visible),
 main[tabindex="-1"]:focus:not(:focus-visible),
 .layout-content[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
-/* Visually-hidden helper — exposed under BOTH .fui-* (framework runtime
-   uses this for the SPA route-announce region) and .ui-* (framework/ui
-   components — CommandPalette's SR-only trigger, CopyButton's status
-   region, etc.). Apps no longer have to call ui.BaseCSS() to opt in;
-   the helper is part of the built-in auto-emitted app.css floor. Apps
-   that want a custom visually-hidden recipe can override either class
-   via their own WithCustomCSS — last rule wins. */
-.fui-visually-hidden, .fui-visually-hidden {
+/* Visually-hidden helper, one recipe under two names: .cui-visually-hidden
+   is the kernel's (the SPA route-announce region core-ui/app renders),
+   .fui-visually-hidden is framework/ui's (CommandPalette's SR-only
+   trigger, CopyButton's status region, the toast tone word). Apps never
+   call ui.BaseCSS() to opt in; the helper is part of the built-in
+   auto-emitted app.css floor. An app that wants its own recipe
+   overrides either class from its own sheet — last rule wins. */
+.cui-visually-hidden, .fui-visually-hidden {
   position: absolute !important;
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
@@ -879,7 +879,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 /* SPA-nav failure toast — shown when loadPage can't fetch the new
    page (offline, server error). Positioned bottom-right; auto-hides
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
-.fui-nav-toast {
+.cui-nav-toast {
   position: fixed;
   right: 16px; bottom: 16px;
   z-index: 9999;
@@ -900,7 +900,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   transition: opacity 0.18s, transform 0.18s;
   pointer-events: none;
 }
-.fui-nav-toast.is-visible {
+.cui-nav-toast.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -963,21 +963,21 @@ const frameworkDimCSS = `
    transition before a single dimmed frame paints, so fast (<100ms)
    navigations never flicker, while the clear restores opacity with no
    delay (the busy rule stops matching). 
-   a region holding cloned loading content (data-fui-loadstate) is
+   a region holding cloned loading content (data-cui-loadstate) is
    NOT dimmed — the loading content replaces the old content, dimming
    it would double the signal. */
-[data-fui-outlet], [data-fui-area], [data-fui-layout-slot] {
+[data-cui-outlet], [data-cui-area], [data-cui-layout-slot] {
   transition: opacity .12s ease;
 }
-[data-fui-outlet][aria-busy="true"],
-[data-fui-area][aria-busy="true"],
-[data-fui-layout-slot][aria-busy="true"] {
+[data-cui-outlet][aria-busy="true"],
+[data-cui-area][aria-busy="true"],
+[data-cui-layout-slot][aria-busy="true"] {
   opacity: .55;
   transition-delay: .12s;
 }
-[data-fui-outlet][data-fui-loadstate],
-[data-fui-area][data-fui-loadstate],
-[data-fui-layout-slot][data-fui-loadstate] {
+[data-cui-outlet][data-cui-loadstate],
+[data-cui-area][data-cui-loadstate],
+[data-cui-layout-slot][data-cui-loadstate] {
   opacity: 1;
   transition-delay: 0s;
 }
@@ -987,14 +987,14 @@ const frameworkDimCSS = `
    runtime waits for the region's own animationend (capped at 400ms)
    before replacing exit content, so a longer exit delays the swap and
    an absent one costs nothing. */
-[data-fui-outlet][data-fui-loadstate="shown"],
-[data-fui-area][data-fui-loadstate="shown"],
-[data-fui-layout-slot][data-fui-loadstate="shown"] {
+[data-cui-outlet][data-cui-loadstate="shown"],
+[data-cui-area][data-cui-loadstate="shown"],
+[data-cui-layout-slot][data-cui-loadstate="shown"] {
   animation: fui-load-in .18s ease both;
 }
-[data-fui-outlet][data-fui-loadstate="exit"],
-[data-fui-area][data-fui-loadstate="exit"],
-[data-fui-layout-slot][data-fui-loadstate="exit"] {
+[data-cui-outlet][data-cui-loadstate="exit"],
+[data-cui-area][data-cui-loadstate="exit"],
+[data-cui-layout-slot][data-cui-loadstate="exit"] {
   animation: fui-load-out .18s ease both;
 }
 @keyframes fui-load-in { from { opacity: 0; } }
@@ -1666,10 +1666,10 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 // dialog without a chrome round-trip. A Hidden widget with NO deep
 // link, or one whose deep link does not match, is NOT inlined: the
 // runtime lazy-fetches its chrome from cfg.chromePath on the first
-// data-fui-open, keeping page responses minimal.
+// data-cui-open, keeping page responses minimal.
 //
 // Inlined chrome is rendered with NO trigger ctx (arrival by URL has
-// no trigger to carry data-fui-ctx, #321). That is safe only because
+// no trigger to carry data-cui-ctx, #321). That is safe only because
 // the runtime's _mountByName drops the inlined node when a
 // ctx-carrying trigger opens the widget and takes the (name, ctx)
 // keyed chrome fetch instead — per-entity dialogs (Hidden + DeepLink,
@@ -2095,7 +2095,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteByte('\n')
 	}
 
-	// Component CSS: scan the rendered page for data-fui-comp markers
+	// Component CSS: scan the rendered page for data-cui-comp markers
 	// and emit a single bundled <link> (or one direct <link> for a
 	// single component) so first paint has every needed sheet in
 	// <head>. LoadAlways entries are included whether the page used
@@ -2201,7 +2201,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		}
 		docAttr := ""
 		if s.scope != nil {
-			docAttr = " data-fui-doc"
+			docAttr = " data-cui-doc"
 		}
 		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
 	}
@@ -2228,7 +2228,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 }
 
 // handleAppCSS serves the app-level CSS asset: theme :root custom
-// properties + registered .fui-theme-<hash> override blocks +
+// properties + registered .cui-theme-<hash> override blocks +
 // WithCustomCSS payload + style.Contribute'd fragments concatenated.
 // One request per page replaces the legacy theme.css + styles.css
 // split.
@@ -2744,7 +2744,7 @@ func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path
 	if seed := partialSeedIslandDelta(ctx, string(fill.HTML), sent); seed != "" {
 		b.WriteString(seed)
 	}
-	fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, addr, fill.HTML)
+	fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, addr, fill.HTML)
 	fmt.Fprint(w, b.String())
 }
 
@@ -2964,7 +2964,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	w.Header().Set("X-Gofastr-Partial", "true")
 	if res.SwapLayer != "" {
 		// Names the layout layer the body renders BELOW; the client swaps
-		// the matching data-fui-layout-slot cell. Absent when the body is
+		// the matching data-cui-layout-slot cell. Absent when the body is
 		// bare screen content (whole-main swap / full-fetch fallback).
 		//
 		// Version skew (DESIGN "Mixed versions"): a fills-less client
@@ -2984,7 +2984,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	}
 	// The page answer's keyed-transition pick
 	// the runtime adds it to the view-transition types beside the
-	// direction, ignoring names the document's data-fui-vt-kinds does
+	// direction, ignoring names the document's data-cui-vt-kinds does
 	// not declare. Absent when nothing was picked.
 	if res.Transition != "" {
 		w.Header().Set("X-Gofastr-Transition", res.Transition)
@@ -3000,7 +3000,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
-	// every fill), then one <template data-fui-fill> per fill, the
+	// every fill), then one <template data-cui-fill> per fill, the
 	// primary first (addressed by the bare swap key) and the kept
 	// layers' non-primary fills after. Anything else keeps today's body
 	// shape. Under X-Gofastr-Defer a deferred
@@ -3016,9 +3016,9 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if seed := partialSeedIsland(ctx, scanned); seed != "" {
 			b.WriteString(seed)
 		}
-		fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
+		fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
 		for _, f := range res.Fills {
-			fmt.Fprintf(&b, `<template data-fui-fill=%q>%s</template>`, f.Addr, f.HTML)
+			fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, f.Addr, f.HTML)
 		}
 		if status != 0 {
 			w.WriteHeader(status)
@@ -3052,13 +3052,13 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// does send the viewer's Strict cookie, and answering on it would stream
 	// one identity's island updates into a frame authenticated as another.
 	//
-	// Passive freshness inside a frame is data-fui-poll / widget Builder.Poll:
+	// Passive freshness inside a frame is data-cui-poll / widget Builder.Poll:
 	// an ordinary fetch, which the frame's fetch wrapper does put the grant on.
 	// See framework/docs/content/embed.md.
 	if r.Header.Get(embedGrantHeader) != "" {
 		http.Error(w, "embed: SSE cannot be authenticated by a grant: EventSource "+
 			"sends no request headers, so the frame's grant never reaches this "+
-			"endpoint. Use data-fui-poll (or widget Builder.Poll) for live updates "+
+			"endpoint. Use data-cui-poll (or widget Builder.Poll) for live updates "+
 			"inside a frame.", http.StatusUnauthorized)
 		return
 	}
@@ -4294,7 +4294,7 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 
 // componentCSSTags returns the <link> tags to inject into <head> for
 // the components rendered on this page. It scans page for
-// data-fui-comp and data-fui-scope markers (kit component roots and
+// data-cui-comp and data-cui-scope markers (kit component roots and
 // owned-style roots), adds every LoadAlways entry, and emits one
 // bundled link when ≥2 names are involved (single direct link
 // otherwise). Inline emission is forbidden: the bundle endpoint is
@@ -4339,11 +4339,11 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 				b.WriteByte('\n')
 			}
 			// The marker the runtime dedupes on (loadComponentCSS checks
-			// link[data-fui-style=name]). Without it, a static page got a
+			// link[data-cui-style=name]). Without it, a static page got a
 			// second copy of every component stylesheet appended after
 			// app.css on load, which reversed the cascade against the
 			// host's own overrides.
-			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-fui-style="%s" id="fui-css-%s">`,
+			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-cui-style="%s" id="cui-css-%s">`,
 				n, e.VersionFor(theme), n, n)
 		}
 		return b.String()
@@ -4362,13 +4362,13 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	bundleV := hashStrings(versions...)
 	joined := strings.Join(names, ",")
 	return fmt.Sprintf(
-		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-fui-bundle="%s">`,
+		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-cui-bundle="%s">`,
 		joined, bundleV, joined)
 }
 
 // safeComponentName reports whether n is safe to interpolate as the
 // /__gofastr/comp/<name>.css path segment: exactly the charset the
-// data-fui-comp marker regex captures (registry/render.go), so any
+// data-cui-comp marker regex captures (registry/render.go), so any
 // name Scan can produce — and anything a registered component may
 // carry that would rewrite the path ('/', '?', '#', ".." tricks need
 // chars outside it) — is refused before it reaches the URL.

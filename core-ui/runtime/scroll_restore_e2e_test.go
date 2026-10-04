@@ -29,8 +29,8 @@ func scrollSite(t *testing.T) *httptest.Server {
 		return `<!doctype html><html><head><title>t</title>` +
 			`<script type="application/json" id="gofastr-routes">` +
 			`[{"path":"/tall-a","layouts":["l:site"]},{"path":"/tall-b","layouts":["l:site"]}]</script>` +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
 			`<h1 id="` + id + `">` + id + `</h1>` +
 			link(other) +
 			`<div style="height:4000px"></div>` +

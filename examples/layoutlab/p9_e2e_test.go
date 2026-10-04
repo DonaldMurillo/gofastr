@@ -26,8 +26,8 @@ func p9ToolbarProbe(t *testing.T, ctx context.Context) (text, state string, park
 	t.Helper()
 	var out string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
-		t: document.querySelector('[data-fui-outlet="l:shell#toolbar"]').textContent.trim(),
-		s: document.querySelector('[data-fui-outlet="l:shell#toolbar"]').getAttribute('data-fui-loadstate') || '',
+		t: document.querySelector('[data-cui-outlet="l:shell#toolbar"]').textContent.trim(),
+		s: document.querySelector('[data-cui-outlet="l:shell#toolbar"]').getAttribute('data-cui-loadstate') || '',
 		p: document.querySelectorAll('body > div[hidden]').length,
 	})`, &out)); err != nil {
 		t.Fatalf("probe: %v", err)
@@ -50,8 +50,8 @@ func p9CrumbsProbe(t *testing.T, ctx context.Context) (text, state string, parke
 	t.Helper()
 	var out string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
-		t: document.querySelector('[data-fui-area="l:shell~crumbs"]').textContent.trim(),
-		s: document.querySelector('[data-fui-area="l:shell~crumbs"]').getAttribute('data-fui-loadstate') || '',
+		t: document.querySelector('[data-cui-area="l:shell~crumbs"]').textContent.trim(),
+		s: document.querySelector('[data-cui-area="l:shell~crumbs"]').getAttribute('data-cui-loadstate') || '',
 		p: document.querySelectorAll('body > div[hidden]').length,
 	})`, &out)); err != nil {
 		t.Fatalf("probe: %v", err)
@@ -71,7 +71,7 @@ func p9CrumbsProbe(t *testing.T, ctx context.Context) (text, state string, parke
 // way an outlet does (2026-09-26, "Areas take loading content"): a
 // slow navigation that will re-render the crumbs area shows the
 // area's configured loading content past After, the old trail is
-// parked (not destroyed), the region carries data-fui-loadstate=
+// parked (not destroyed), the region carries data-cui-loadstate=
 // "shown", and the apply replaces it with the destination's fresh
 // area fill. A fast navigation that beats After paints nothing.
 func TestP9AreaLoadingShowAndParkE2E(t *testing.T) {
@@ -107,7 +107,7 @@ func TestP9AreaLoadingShowAndParkE2E(t *testing.T) {
 		t.Logf("crumbs during flight = %q (old trail parked)", text)
 	}
 	if state != "shown" {
-		t.Errorf("crumbs data-fui-loadstate during flight = %q, want \"shown\"", state)
+		t.Errorf("crumbs data-cui-loadstate during flight = %q, want \"shown\"", state)
 	}
 	if parked == 0 {
 		t.Error("no hidden park div on body during flight; the old trail must be parked in-document")
@@ -126,7 +126,7 @@ func TestP9AreaLoadingShowAndParkE2E(t *testing.T) {
 		t.Errorf("crumbs after settle = %q, want the destination's fresh trail", text)
 	}
 	if state != "" {
-		t.Errorf("crumbs data-fui-loadstate after settle = %q, want cleared", state)
+		t.Errorf("crumbs data-cui-loadstate after settle = %q, want cleared", state)
 	}
 	if parked != 0 {
 		t.Errorf("%d park divs left after settle", parked)
@@ -136,7 +136,7 @@ func TestP9AreaLoadingShowAndParkE2E(t *testing.T) {
 // TestP9LoadingShowAndParkE2E: a slow navigation shows the toolbar's
 // configured loading content (the Spinner) after After (150ms), the
 // old content is parked (not destroyed), the region carries
-// data-fui-loadstate="shown" and is NOT dimmed, and the apply replaces
+// data-cui-loadstate="shown" and is NOT dimmed, and the apply replaces
 // it with the target fill.
 func TestP9LoadingShowAndParkE2E(t *testing.T) {
 	srv := labServe(t)
@@ -172,7 +172,7 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 		t.Logf("toolbar during flight = %q (old fill parked)", text)
 	}
 	if state != "shown" {
-		t.Errorf("toolbar data-fui-loadstate during flight = %q, want \"shown\"", state)
+		t.Errorf("toolbar data-cui-loadstate during flight = %q, want \"shown\"", state)
 	}
 	if parked == 0 {
 		t.Error("no hidden park div on body during flight; old nodes must be parked in-document")
@@ -184,7 +184,7 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 	var op string
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
 		`(async () => {
-			const el = document.querySelector('[data-fui-outlet="l:shell#toolbar"]');
+			const el = document.querySelector('[data-cui-outlet="l:shell#toolbar"]');
 			await Promise.all(el.getAnimations().map(a => a.finished.catch(() => {})));
 			return getComputedStyle(el).opacity;
 		})()`, &op, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
@@ -208,7 +208,7 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 		t.Errorf("toolbar after settle = %q, want empty (slow fills no toolbar)", text)
 	}
 	if state != "" {
-		t.Errorf("toolbar data-fui-loadstate after settle = %q, want cleared", state)
+		t.Errorf("toolbar data-cui-loadstate after settle = %q, want cleared", state)
 	}
 	if parked != 0 {
 		t.Errorf("%d park divs left after settle", parked)
@@ -218,7 +218,7 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 
 // TestP9LoadingFastPaintsNothingE2E: a response faster than After
 // (150ms) must paint ZERO loading frames — the sampler counts frames
-// in which any [data-fui-loadstate] region exists.
+// in which any [data-cui-loadstate] region exists.
 func TestP9LoadingFastPaintsNothingE2E(t *testing.T) {
 	srv := labServe(t)
 	browser := labBrowserCtx(t)
@@ -233,7 +233,7 @@ func TestP9LoadingFastPaintsNothingE2E(t *testing.T) {
 		chromedp.Evaluate(`(() => {
 			window.__s = { shown: 0, frames: 0, done: false };
 			const tick = () => {
-				if (document.querySelector('[data-fui-loadstate]')) window.__s.shown++;
+				if (document.querySelector('[data-cui-loadstate]')) window.__s.shown++;
 				window.__s.frames++;
 				if (!window.__s.done) requestAnimationFrame(tick);
 			};
@@ -390,7 +390,7 @@ func TestP9LoadingRestoreOnFailureE2E(t *testing.T) {
 		t.Errorf("toolbar after failed nav = %q, want TOOLBAR-ITEMS restored", got)
 	}
 	if err := chromedp.Run(tctx,
-		chromedp.WaitVisible(`.fui-nav-toast.is-visible`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.cui-nav-toast.is-visible`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("failure toast must appear: %v", err)
 	}
@@ -429,11 +429,11 @@ func TestP9LoadingSupersededSettlesE2E(t *testing.T) {
 	}
 	var stale int
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`document.querySelectorAll('[data-fui-loadstate]').length`, &stale)); err != nil {
+		`document.querySelectorAll('[data-cui-loadstate]').length`, &stale)); err != nil {
 		t.Fatal(err)
 	}
 	if stale != 0 {
-		t.Errorf("%d regions still carry data-fui-loadstate after the superseded navigation settled", stale)
+		t.Errorf("%d regions still carry data-cui-loadstate after the superseded navigation settled", stale)
 	}
 	labState(t, tctx, "SCREEN-SETTINGS", "", "ASIDE-HELP", "crumbs:/settings")
 }
@@ -470,11 +470,11 @@ func TestP9ItemsSkeletonE2E(t *testing.T) {
 	}
 	var stale int
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`document.querySelectorAll('[data-fui-loadstate]').length`, &stale)); err != nil {
+		`document.querySelectorAll('[data-cui-loadstate]').length`, &stale)); err != nil {
 		t.Fatal(err)
 	}
 	if stale != 0 {
-		t.Errorf("%d regions still carry data-fui-loadstate after an instant detail swap", stale)
+		t.Errorf("%d regions still carry data-cui-loadstate after an instant detail swap", stale)
 	}
 	// The filter input survived the navigation and still takes input
 	// (P8's layer contract still holds with loading templates beside
@@ -578,10 +578,10 @@ func TestP9LoadingAnimStatesE2E(t *testing.T) {
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
 		chromedp.Evaluate(`(() => {
 			window.__states = [];
-			const el = document.querySelector('[data-fui-outlet="l:shell#toolbar"]');
+			const el = document.querySelector('[data-cui-outlet="l:shell#toolbar"]');
 			new MutationObserver((muts) => {
-				for (const m of muts) window.__states.push(m.target.getAttribute('data-fui-loadstate') || 'gone');
-			}).observe(el, { attributes: true, attributeFilter: ['data-fui-loadstate'] });
+				for (const m of muts) window.__states.push(m.target.getAttribute('data-cui-loadstate') || 'gone');
+			}).observe(el, { attributes: true, attributeFilter: ['data-cui-loadstate'] });
 			return true;
 		})()`, nil),
 	); err != nil {
@@ -639,9 +639,9 @@ func TestP9BManifestLoadingE2E(t *testing.T) {
 		SlotOld   bool   `json:"slotOld"`
 	}
 	if err := chromedp.Run(tctx, chromedp.Evaluate(`(() => {
-		const s = document.querySelector('main[data-fui-layout-slot="l:shell"]');
+		const s = document.querySelector('main[data-cui-layout-slot="l:shell"]');
 		return {
-			slotState: s.getAttribute('data-fui-loadstate') || '',
+			slotState: s.getAttribute('data-cui-loadstate') || '',
 			slotHas: !!s.querySelector('.fui-skeleton-card'),
 			slotOld: !!s.querySelector('#lab-SCREEN-INBOX'),
 		};
@@ -663,10 +663,10 @@ func TestP9BManifestLoadingE2E(t *testing.T) {
 	labState(t, tctx, "SCREEN-SLOW-700", "", "ASIDE-SLOW-700", "crumbs:/slow/700")
 	var stale int
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`document.querySelectorAll('[data-fui-loadstate]').length`, &stale)); err != nil {
+		`document.querySelectorAll('[data-cui-loadstate]').length`, &stale)); err != nil {
 		t.Fatal(err)
 	}
 	if stale != 0 {
-		t.Errorf("%d regions still carry data-fui-loadstate after settle", stale)
+		t.Errorf("%d regions still carry data-cui-loadstate after settle", stale)
 	}
 }

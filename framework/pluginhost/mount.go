@@ -22,7 +22,7 @@ type Attribute struct {
 
 // Field is a hidden input emitted after the mount marker. The generic broker
 // creates the iframe inside the marker; plugins use the hidden inputs so a
-// normal form POST / data-fui-rpc submit round-trips the canonical doc and its
+// normal form POST / data-cui-rpc submit round-trips the canonical doc and its
 // markdown sibling (protocol-v1.md §9).
 type Field struct {
 	Name  string

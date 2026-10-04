@@ -29,14 +29,14 @@ func TestListDetailAccessibleScrollRegion(t *testing.T) {
 
 func TestListDetailOnlyCarriesLayoutTransitionWiring(t *testing.T) {
 	h := string(ListDetail(ListDetailConfig{ListLabel: "Issues", ExtraAttrs: map[string]string{
-		"data-fui-vt": "detail-region", "data-fui-vt-when": "(max-width: 767px)",
-		"data-fui-comp": "spoof", "data-fui-open": "spoof", "DATA-FUI-RUN": "spoof",
+		"data-cui-vt": "detail-region", "data-cui-vt-when": "(max-width: 767px)",
+		"data-cui-comp": "spoof", "data-cui-open": "spoof", "DATA-CUI-RUN": "spoof",
 		"class": "spoof",
 	}}))
 	if strings.Contains(h, "spoof") {
 		t.Fatalf("unrelated wiring or owned attributes survived: %s", h)
 	}
-	if !strings.Contains(h, `data-fui-vt="detail-region"`) || !strings.Contains(h, `data-fui-vt-when="(max-width: 767px)"`) {
+	if !strings.Contains(h, `data-cui-vt="detail-region"`) || !strings.Contains(h, `data-cui-vt-when="(max-width: 767px)"`) {
 		t.Fatalf("layout transition wiring was lost: %s", h)
 	}
 }

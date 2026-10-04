@@ -69,13 +69,13 @@ func isArticle(screen *Screen, comp component.Component) bool {
 // wrapArticle wraps content in an <article> element when the screen is an
 // article, the semantic tag Safari Reader and Firefox Reader View key on to
 // detect article content. A screen with an owned style (Screen.WithStyle)
-// is its scope root: the article carries data-fui-scope, or, for a
+// is its scope root: the article carries data-cui-scope, or, for a
 // non-article screen, one plain <div> wraps the content to carry it.
 // Other screens pass through unchanged.
 func wrapArticle(screen *Screen, comp component.Component, content render.HTML) render.HTML {
 	var attrs html.Attrs
 	if screen != nil && screen.ownStyle != nil {
-		attrs = html.Attrs{"data-fui-scope": screen.ownStyle.Name()}
+		attrs = html.Attrs{"data-cui-scope": screen.ownStyle.Name()}
 	}
 	if isArticle(screen, comp) {
 		return html.Article(html.ArticleConfig{ExtraAttrs: attrs}, content)

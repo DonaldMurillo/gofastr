@@ -39,7 +39,7 @@ type StatusPillConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the pill's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -76,7 +76,7 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)
 
 func statusPillCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-status-pill"] {
+	return `[data-cui-comp="ui-status-pill"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -93,21 +93,21 @@ func statusPillCSS(_ style.Theme) string {
    pill a script hides with el.hidden = true would stay visible.
    hidden="until-found" is excluded: the UA keeps that state
    revealable (content-visibility), and display: none would break it. */
-[data-fui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
+[data-cui-comp="ui-status-pill"][hidden]:not([hidden="until-found"]) {
   display: none;
 }
-[data-fui-comp="ui-status-pill"] .fui-status-pill__dot {
+[data-cui-comp="ui-status-pill"] .fui-status-pill__dot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
   background: var(--color-text-subtle, currentColor);
 }
-[data-fui-comp="ui-status-pill"].fui-status-pill--accent {
+[data-cui-comp="ui-status-pill"].fui-status-pill--accent {
   color: var(--color-primary, currentColor);
   border-color: var(--ui-status-pill-accent-border, var(--color-primary, currentColor));
   background: var(--ui-status-pill-accent-bg, color-mix(in oklch, var(--color-primary, currentColor) 8%, var(--color-surface, transparent)));
 }
-[data-fui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {
+[data-cui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {
   background: var(--color-primary, currentColor);
 }`
 }

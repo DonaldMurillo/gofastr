@@ -20,14 +20,14 @@ func TestFilterToolbarBasic(t *testing.T) {
 		}},
 	}))
 	wants := []string{
-		`data-fui-comp="ui-filter-toolbar"`,
+		`data-cui-comp="ui-filter-toolbar"`,
 		`<form`,
 		`method="GET"`,
 		`action="/customers"`,
 		`role="search"`,
 		`aria-label="Filters"`,
 		// select facet composes ui.Select
-		`data-fui-comp="ui-select"`,
+		`data-cui-comp="ui-select"`,
 		`name="status"`,
 		`>Status<`,     // label text
 		`>Open<`,       // option

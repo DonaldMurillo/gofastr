@@ -13,7 +13,7 @@ import (
 // (HTML attribute names fold case-insensitively, and a folded duplicate
 // would silently become the live attribute), and no on* handler can
 // ride along. html.SafeExtraAttrs enforces this (EqualFold drops +
-// data-fui-*/class/id prefixes + render.Attr's on* key rejection); this
+// data-cui-*/class/id prefixes + render.Attr's on* key rejection); this
 // test pins that every widget in the family actually routes its extras
 // through it and re-asserts its owned keys.
 //
