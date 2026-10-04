@@ -172,6 +172,23 @@
     return container.getAttribute(attr) || (tpl && tpl.getAttribute(attr)) || '';
   }
 
+  // templateVariant: the class and glyph the template lists for a
+  // variant beyond the four tones (data-hui-toast-variants, a JSON map
+  // the kit renders). A name the template does not list, or a map that
+  // does not parse, is a row with no variant class and no glyph.
+  function templateVariant(tpl, variant) {
+    const none = { cls: '', glyph: '' };
+    let map = null;
+    try { map = JSON.parse(tpl.getAttribute('data-hui-toast-variants') || 'null'); } catch (_) { return none; }
+    if (!map || typeof map !== 'object' || !Object.prototype.hasOwnProperty.call(map, variant)) return none;
+    const v = map[variant];
+    if (!v || typeof v !== 'object') return none;
+    return {
+      cls: typeof v.class === 'string' ? v.class : '',
+      glyph: typeof v.glyph === 'string' ? v.glyph : ''
+    };
+  }
+
   NS.toast = function (cfg) {
     if (cfg == null) return null;
     if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
@@ -180,8 +197,15 @@
     if (!container) return null;
 
     const id = 't' + (++NS._toastSeq);
-    const variant = cfg.variant || 'info';
-    const tone = TONES.indexOf(variant) >= 0 ? variant : 'info';
+    // The kernel's own failures say 'error' (formerrors.js, rpc.js):
+    // that is the danger tone by another name.
+    let variant = String(cfg.variant || 'info');
+    if (variant === 'error') variant = 'danger';
+    // A tone gets its word, its glyph and its class from the per-tone
+    // attributes. Any other variant (neutral, a registered status
+    // variant) is not a tone: it wears what the template lists for it
+    // and says no tone word, so it never passes for info.
+    const tone = TONES.indexOf(variant) >= 0 ? variant : '';
     const assertive = tone === 'warning' || tone === 'danger';
 
     const tpl = rowTemplate(container);
@@ -196,14 +220,23 @@
     if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(ttl));
 
     const root = item.querySelector('[data-hui-toast]') || item;
-    const variantCls = tpl ? (tpl.getAttribute(VARIANT_ATTR[tone]) || '') : '';
+    let variantCls = '';
+    let glyph = '';
+    if (tpl && tone) {
+      variantCls = tpl.getAttribute(VARIANT_ATTR[tone]) || '';
+      glyph = tpl.getAttribute(GLYPH_ATTR[tone]) || '';
+    } else if (tpl) {
+      const extra = templateVariant(tpl, variant);
+      variantCls = extra.cls;
+      glyph = extra.glyph;
+    }
     variantCls.split(/\s+/).forEach(function (c) { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
     root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
-    const toneWord = readWord(container, tpl, TONE_ATTR[tone]);
+    const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
-    fill(root, 'data-hui-toast-icon', tpl ? (tpl.getAttribute(GLYPH_ATTR[tone]) || '') : '');
+    fill(root, 'data-hui-toast-icon', glyph);
     fill(root, 'data-hui-toast-title', cfg.title);
     fill(root, 'data-hui-toast-body', cfg.body || '');
     const dismiss = root.querySelector('[data-hui-toast-dismiss]');

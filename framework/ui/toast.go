@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -142,17 +143,38 @@ var toastTemplateClasses = func() headless.Classes {
 
 // toastTemplate renders the row template preset's toast slot ships
 // inside every stack, in the request's language.
+//
+// Every status variant beyond the four tones rides the template too:
+// neutral and each registered status variant, with the class and glyph
+// a server Notification of that variant wears, so a runtime toast
+// carrying one is drawn as itself and not as info.
 func toastTemplate(ctx context.Context) render.HTML {
+	glyphs := map[string]string{
+		"info":    notificationGlyph(StatusInfo),
+		"success": notificationGlyph(StatusSuccess),
+		"warning": notificationGlyph(StatusWarning),
+		"danger":  notificationGlyph(StatusDanger),
+	}
+	variants := append([]string{string(StatusNeutral)}, registeredStatusNames()...)
+	classes := maps.Clone(toastTemplateClasses)
+	for _, v := range variants {
+		glyphs[v] = notificationGlyph(StatusVariant(v))
+		classes[headless.Part("root--"+v)] = "fui-notification--" + v
+	}
 	return headless.ToastTemplate(headless.ToastTemplateProps{
-		Glyphs: map[string]string{
-			"info":    notificationGlyph(StatusInfo),
-			"success": notificationGlyph(StatusSuccess),
-			"warning": notificationGlyph(StatusWarning),
-			"danger":  notificationGlyph(StatusDanger),
-		},
+		Glyphs:    glyphs,
+		Variants:  variants,
 		StyleName: notificationStyle.Name(),
 		Strings:   StringsFor(ctx),
-	}, toastTemplateClasses)
+	}, classes)
+}
+
+// registeredStatusNames lists the registered status variants in
+// stable order, without sealing the set.
+func registeredStatusNames() []string {
+	statusMods.mu.RLock()
+	defer statusMods.mu.RUnlock()
+	return slices.Sorted(maps.Keys(statusMods.status))
 }
 
 var _ = registry.RegisterTemplate(preset.ToastTemplate, toastTemplate)

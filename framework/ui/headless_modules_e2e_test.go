@@ -76,3 +76,40 @@ func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 			evalString(ctx, `(document.querySelector('[data-cui-toast-stack]')||{}).innerHTML||''`))
 	}
 }
+
+// toastProbeStatus is a status variant an app registers: a runtime
+// toast carrying it wears its class and glyph, the way a server
+// Notification does.
+var toastProbeStatus = ui.RegisterStatusVariant("toastprobe", ui.StatusVariantCSS{Color: "{colors.primary}", Icon: "γ"})
+
+// A runtime toast keeps its own variant: neutral and a registered
+// variant wear their class and glyph and say no tone word, and the
+// kernel's 'error' is drawn and announced as danger.
+func TestRuntimeToastKeepsItsVariant(t *testing.T) {
+	ctx := moduleTestCtx(t, string(preset.ToastSlotHTML(context.Background(), "toasts")))
+	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
+		t.Fatal("the stack marker never loaded headless-feedback")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){var T=window.__gofastr.toast;`+
+		`T({variant:'neutral', title:'N'}); T({variant:'error', title:'E'}); T({variant:'`+string(toastProbeStatus)+`', title:'G'});})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.querySelectorAll('[data-cui-toast-stack] [data-hui-toast-id]').length === 3`) {
+		t.Fatal("three runtime toasts did not render")
+	}
+	row := func(title string) string {
+		return `(function(){var r=[].slice.call(document.querySelectorAll('[data-cui-toast-stack] [data-hui-toast]'))` +
+			`.filter(function(x){return x.querySelector('[data-hui-toast-title]').textContent==='` + title + `'})[0];` +
+			`var tw=r.querySelector('[data-hui-toast-tone]'), ic=r.querySelector('[data-hui-toast-icon]');` +
+			`return r.className+'|'+(tw?tw.textContent:'<none>')+'|'+(ic?ic.textContent:'<none>')+'|'+r.getAttribute('role');})()`
+	}
+	for _, c := range []struct{ title, want string }{
+		{"N", "fui-notification fui-notification--neutral|<none>|•|status"},
+		{"E", "fui-notification fui-notification--danger|Error: |✕|alert"},
+		{"G", "fui-notification fui-notification--toastprobe|<none>|γ|status"},
+	} {
+		if got := evalString(ctx, row(c.title)); got != c.want {
+			t.Errorf("toast %s: class|tone word|glyph|role = %q, want %q", c.title, got, c.want)
+		}
+	}
+}
