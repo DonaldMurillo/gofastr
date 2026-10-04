@@ -26,3 +26,17 @@ func TestExportDir_TrailingFlagWithoutValue(t *testing.T) {
 		t.Errorf("got %q, want empty", got)
 	}
 }
+
+func TestSiteURLForListenAddr(t *testing.T) {
+	for addr, want := range map[string]string{
+		":8083":           "http://localhost:8083",
+		"127.0.0.1:10083": "http://127.0.0.1:10083",
+		"0.0.0.0:8083":    "http://localhost:8083",
+		"[::]:8083":       "http://localhost:8083",
+		"[::1]:8083":      "http://[::1]:8083",
+	} {
+		if got := siteURL(addr); got != want {
+			t.Errorf("siteURL(%q) = %q, want %q", addr, got, want)
+		}
+	}
+}

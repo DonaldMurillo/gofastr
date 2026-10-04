@@ -635,7 +635,13 @@ func TestPartResetReloadsOnce(t *testing.T) {
 	}
 	jsClick(t, ctx, `#goA`)
 	// The reload lands the /a DOCUMENT; the reset stops there: no loop.
-	waitContains(t, ctx, `#doc-a`, "DOC")
+	// WaitVisible, not an Evaluate poll: #doc-a exists only in a document
+	// load, and a poll that lands mid-reload fails with "Inspected target
+	// navigated or closed" where the query action retries onto the new
+	// document.
+	if err := chromedp.Run(ctx, chromedp.WaitVisible(`#doc-a`, chromedp.ByID)); err != nil {
+		t.Fatalf("wait for the /a document: %v", err)
+	}
 	time.Sleep(700 * time.Millisecond) // wait out any would-be second reload
 	if n := s.count("doc", "/a"); n != 1 {
 		t.Errorf("document loads of /a after reset = %d, want exactly 1 (reload once per navigation)", n)

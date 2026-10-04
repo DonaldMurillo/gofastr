@@ -8,6 +8,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`gofastr docs serve`**: browse the docs website offline. The first
+  run downloads the static export of the docs site for the binary's
+  release, verifies its SHA-256, and caches it in the user cache
+  directory; the CLI serves it from a GoFastr app on `127.0.0.1:8083`.
+  `--full` builds and runs the live site with `go install` so the
+  server-backed demos work too; `--dir` serves a local export;
+  `--release`, `--refresh`, `--port` and `--open` do what they say.
+  Releases now attach `gofastr-site-<tag>.tar.gz` and its `.sha256`;
+  releases before this one carry no archive, so use `--full` with them
+  (v0.82.0 and later).
+- **`core/static.Config.NotFoundFile`**: answer a miss with a file from
+  the served `FS` (a static export's `404.html`) under status 404. A
+  conditional request cannot turn it into a 304, and SPA mode ignores it.
+- **`static.Builder.Handler` and `UIHost.ExtraScriptSrcs(routes)`**: the
+  export fetches each extra-script rail entry the exported pages load and
+  the build has not already written (a script the app serves from its
+  own router, the plugin broker, a document-scoped script whose scope
+  accepts a rendered route) through `Handler`, query included, and writes
+  it into the tree, replacing a stale copy in a reused output directory;
+  `App.ExportStatic` passes the app's router. A same-origin rail script
+  that does not answer 200, or whose path is an exported page, fails the
+  build; a CDN or relative src is left to the browser.
 - **`gofastr generate screen <name> --from-a11y=<file>`** builds an
   owned screen from a Playwright aria snapshot (#434). The YAML that
   `locator.ariaSnapshot()` returns (a file, or `-` for stdin) is
@@ -452,8 +474,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `handshake:` as an integrity fault, so a child that crashed while the
   host was still writing the handshake (broken pipe, EOF, peer closed)
   went to terminal `Failed` with no restart and no circuit-breaker
-  charge. Transport errors are crashes now; a handshake mismatch, a
-  failed negotiation or an executable SHA mismatch is still terminal.
+  charge. Transport errors are crashes now, as is a handshake call the
+  child never answered, which carries the new
+  `moduleproto.ErrHandshakeUnanswered`; a handshake mismatch, a failed
+  negotiation, an RPC error reply or an executable SHA mismatch is
+  still terminal.
+- **Static export shipped pages that load a missing script.** The docs
+  site loads `/__site/livedash-reducers.js` on every page from an app
+  route; the export skipped it, so every exported page (GitHub Pages
+  included) logged a 404 and a refused script. It is now exported.
+- **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
+  when `PORT` held a host:port. A wildcard bind (`0.0.0.0`, `[::]`) now
+  prints localhost.
 - **`battery/rtc`: a late join mirror no longer kicks a peer that already
   moved** (#474). With two replicas, a peer that joined R1 and
   reconnected to R2 before R1's join mirror reached R2 had its live R2

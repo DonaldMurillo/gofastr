@@ -1597,10 +1597,13 @@ func isIntegrityFault(err error) bool {
 	return false
 }
 
-// isTransportFailure reports whether err is the peer going away or the
-// spawn budget running out, as opposed to a verdict the child answered.
+// isTransportFailure reports whether err is the peer going away, the
+// spawn budget running out, or a handshake call the child never answered
+// (moduleproto marks those, deadline included), as opposed to a verdict
+// the child answered.
 func isTransportFailure(err error) bool {
-	return errors.Is(err, moduleproto.ErrClosed) ||
+	return errors.Is(err, moduleproto.ErrHandshakeUnanswered) ||
+		errors.Is(err, moduleproto.ErrClosed) ||
 		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, os.ErrClosed) ||

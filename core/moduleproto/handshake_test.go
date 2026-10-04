@@ -301,3 +301,39 @@ func TestWaitForReadyDeadline(t *testing.T) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
+
+// A child that is gone before it answers leaves the handshake unanswered,
+// which the supervisor counts as a crash rather than an integrity fault.
+func TestHandshakeUnansweredWhenChildGone(t *testing.T) {
+	host, _, _, connB, cleanup := newPeerPair(t, 0)
+	defer cleanup()
+	_ = connB.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := Handshake(ctx, host, HandshakeConfig{HostProto: ProtoRange{Min: 1, Max: 1}})
+	if !errors.Is(err, ErrHandshakeUnanswered) {
+		t.Fatalf("err = %v, want ErrHandshakeUnanswered", err)
+	}
+}
+
+// An RPC error reply is an answer: it must not read as unanswered.
+func TestHandshakeErrorReplyIsAnswered(t *testing.T) {
+	host, child, _, _, cleanup := newPeerPair(t, 0)
+	defer cleanup()
+	if err := child.Handle(MethodHandshake, func(context.Context, json.RawMessage) (any, error) {
+		return nil, &Error{Code: -32600, Message: "refused"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := Handshake(ctx, host, HandshakeConfig{HostProto: ProtoRange{Min: 1, Max: 1}})
+	if err == nil || errors.Is(err, ErrHandshakeUnanswered) {
+		t.Fatalf("err = %v, want an answered handshake error", err)
+	}
+	if _, ok := errors.AsType[*Error](err); !ok {
+		t.Fatalf("err = %v (%T), want the child's *Error", err, err)
+	}
+}
