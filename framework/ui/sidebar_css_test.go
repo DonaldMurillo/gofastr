@@ -91,9 +91,9 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 // page load.
 func TestCalloutHiddenAttributeWins(t *testing.T) {
 	css := calloutCSS(style.Theme{})
-	start := strings.Index(css, `[data-fui-comp="ui-callout"][hidden]`)
+	start := strings.Index(css, `[data-cui-comp="ui-callout"][hidden]`)
 	if start == -1 {
-		t.Fatal(`no [data-fui-comp="ui-callout"][hidden] rule found: a hidden callout renders`)
+		t.Fatal(`no [data-cui-comp="ui-callout"][hidden] rule found: a hidden callout renders`)
 	}
 	block := css[start:]
 	if end := strings.Index(block, "}"); end != -1 {

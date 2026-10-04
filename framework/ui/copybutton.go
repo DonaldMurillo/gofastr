@@ -20,8 +20,8 @@ import (
 // The headless-feedback module's [data-hui-copy] reader performs the
 // clipboard write; this component adds:
 //
-//   - Visible label/copied-label swap driven by the `.fui-copied`
-//     class the module toggles for 1.2s.
+//   - Visible label/copied-label swap keyed on the wrapper's
+//     data-hui-copy-state="done", which the module holds for 1.2s.
 //   - A visually-hidden role="status" sibling the module populates
 //     through data-hui-copy-status on success so screen-reader users
 //     hear "Copied" without focus-loss.
@@ -85,9 +85,9 @@ type CopyButtonConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root wrapper (the
-	// span carrying data-fui-comp). Keys the component owns are
+	// span carrying data-cui-comp). Keys the component owns are
 	// dropped: class, id (ID lands on the button, not the wrapper),
-	// and data-fui-*.
+	// and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -126,7 +126,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	// markup — both are the topmost of their own internal subtree.
 	btnAttrs := html.Attrs{
 		"type":              "button",
-		"data-fui-internal": "",
+		"data-cui-internal": "",
 	}
 	if cfg.ToastOnCopy {
 		variant := cfg.ToastVariant
@@ -165,7 +165,8 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		btnAttrs["aria-label"] = cfg.AriaLabel
 	}
 
-	// Visible labels (one shown via CSS at a time based on .fui-copied).
+	// Visible labels (CSS shows one at a time from the wrapper's
+	// data-hui-copy-state).
 	var inner []render.HTML
 	if !cfg.IconOnly {
 		inner = []render.HTML{
@@ -194,7 +195,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 			"role":                 "status",
 			"aria-live":            "polite",
 			"data-hui-copy-status": "",
-			"data-fui-internal":    "",
+			"data-cui-internal":    "",
 		},
 	})
 
@@ -225,10 +226,10 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 var copyButtonStyle = registry.RegisterStyle("ui-copy-btn", copyButtonCSS)
 
 func copyButtonCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-copy-btn"] {
+	return `[data-cui-comp="ui-copy-btn"] {
   display: inline-block;
 }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn {
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -249,25 +250,25 @@ func copyButtonCSS(_ style.Theme) string {
    theme in both schemes, so text set to --color-text stays readable (a rule
    that names an undefined token silently renders its fallback constant
    instead, which is how dark themes once got near-white on white here). */
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn:hover {
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn:hover {
   background: var(--color-surface-soft, #f3f3f5);
   border-color: var(--color-border-strong, var(--color-border, #d0d0d8));
 }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn:focus-visible {
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__copied { display: none; }
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__copied { display: none; }
 /* Success tint mixes the theme's own success color over the surface, so it
    adapts to light and dark schemes alike (--color-success-bg was never a real
    token; its light fallback always applied). */
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied .fui-copy-btn__label { display: none; }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn.fui-copied .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: 6px 10px; }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: 6px 10px; }
 /* The icon glyph: one line-box tall so the aria-hidden ⧉ never stretches
    the icon-only button past the touch target the base rule sets. */
-[data-fui-comp="ui-copy-btn"] .fui-copy-btn__icon {
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn__icon {
   line-height: 1;
 }
 `

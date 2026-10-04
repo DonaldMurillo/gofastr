@@ -500,7 +500,7 @@ var allowedAttrs = map[string]bool{
 //     data-island is what core-ui/runtime/src/sse.js targets when it
 //     swaps server-pushed content into a region
 //   - data-bind writes into the client state store
-//   - the whole data-fui-* family drives signals, RPC, polling and
+//   - the whole data-cui-* family drives signals, RPC, polling and
 //     navigation
 //
 // Everything else in the data- namespace is an inert marker read only by
@@ -536,6 +536,8 @@ var privilegedDataAttrs = map[string]bool{
 // (RenderNode vs RenderTrustedNode) is what tells the two apart. See
 // actionAttrs for why they matter and TestIRCannotFireActions for the pin.
 var privilegedDataPrefixes = []string{
+	"data-cui-",
+	//gofastr:allow(layerprefix) the privileged-prefix refusal names the framework prefix to bar it from node attrs
 	"data-fui-",
 }
 

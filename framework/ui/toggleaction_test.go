@@ -12,7 +12,7 @@ func TestToggleActionIdleMarkup(t *testing.T) {
 		CommittedLabel: "Following ✓",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-toggle-action"`,
+		`data-cui-comp="ui-toggle-action"`,
 		`data-hui-action-endpoint="/api/follow"`,
 		`data-hui-action=""`,
 		`data-state="idle"`,

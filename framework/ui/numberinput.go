@@ -51,7 +51,7 @@ type NumberInputConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and every data-hui-* hook.
+	// ID), data-cui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the Decrement
 	// and Increment aria labels. When nil, English fallbacks apply.
@@ -130,16 +130,16 @@ func modifierClass(name string, on bool) string {
 var numberInputStyle = registry.RegisterStyle("ui-number-input", numberInputCSS)
 
 func numberInputCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-number-input"] {
+	return `[data-cui-comp="ui-number-input"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__label {
+[data-cui-comp="ui-number-input"] .fui-number-input__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__row {
+[data-cui-comp="ui-number-input"] .fui-number-input__row {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--color-border, #E4E4E7);
@@ -148,7 +148,7 @@ func numberInputCSS(_ style.Theme) string {
   overflow: hidden;
   width: fit-content;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__input {
+[data-cui-comp="ui-number-input"] .fui-number-input__input {
   appearance: textfield;
   -moz-appearance: textfield;
   border: 0;
@@ -161,17 +161,17 @@ func numberInputCSS(_ style.Theme) string {
   width: 5ch;
   padding: 0;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__input::-webkit-outer-spin-button,
-[data-fui-comp="ui-number-input"] .fui-number-input__input::-webkit-inner-spin-button {
+[data-cui-comp="ui-number-input"] .fui-number-input__input::-webkit-outer-spin-button,
+[data-cui-comp="ui-number-input"] .fui-number-input__input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__input:focus {
+[data-cui-comp="ui-number-input"] .fui-number-input__input:focus {
   outline: none;
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__decrement,
-[data-fui-comp="ui-number-input"] .fui-number-input__increment {
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement,
+[data-cui-comp="ui-number-input"] .fui-number-input__increment {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -186,31 +186,31 @@ func numberInputCSS(_ style.Theme) string {
   cursor: pointer;
   user-select: none;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__decrement:hover,
-[data-fui-comp="ui-number-input"] .fui-number-input__increment:hover {
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement:hover,
+[data-cui-comp="ui-number-input"] .fui-number-input__increment:hover {
   background: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
-[data-fui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
+[data-cui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__decrement:disabled,
-[data-fui-comp="ui-number-input"] .fui-number-input__increment:disabled {
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement:disabled,
+[data-cui-comp="ui-number-input"] .fui-number-input__increment:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__help {
+[data-cui-comp="ui-number-input"] .fui-number-input__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-number-input"] .fui-number-input__error {
+[data-cui-comp="ui-number-input"] .fui-number-input__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-number-input"].is-error .fui-number-input__row {
+[data-cui-comp="ui-number-input"].is-error .fui-number-input__row {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }`

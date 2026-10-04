@@ -12,7 +12,7 @@ var comboboxJS string
 // ComboboxBehaviorName is the runtime module that binds the combobox's
 // data-hui-* hooks and owns its keyboard contract. It replaces the
 // retired core-ui/runtime combobox module; the RPC debouncing and the
-// signal swap stay the kernel's data-fui-rpc contract.
+// signal swap stay the kernel's data-cui-rpc contract.
 const ComboboxBehaviorName = "headless-combobox"
 
 // The marker: the input. A combobox without script is a labelled

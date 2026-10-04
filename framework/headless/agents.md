@@ -9,7 +9,7 @@ The action buttons carry their own hooks — `data-hui-action-endpoint`,
 `-method`, `-group`, `-untoggle`, and the `data-hui-action-idle` /
 `-done` label parts — and bind through the kernel's `action` primitive,
 which the module's registration `Requires`; nothing here borrows a
-`data-fui-comp` marker, so a headless button can never pull
+`data-cui-comp` marker, so a headless button can never pull
 `framework/ui`'s stylesheet. The harness
 proves every registered component against the same contract, so a class
 map can be replaced without a single accessibility guarantee moving.
@@ -92,7 +92,7 @@ the fixtures are handed is harness infrastructure, not caller surface.
   announces the swap through the `data-hui-table*` and `data-hui-page`
   hooks the components render. Every href goes through the
   framework's anchor policy (`urlsafe.CleanAnchor`).
-- **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
+- **A request through `ExtraAttrs`.** `Safe` drops every `data-cui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
   region's refresh is an `Island`. Action also admits the wiring
   keys a page can put on any clickable — widget and pane open/close,

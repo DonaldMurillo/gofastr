@@ -62,8 +62,8 @@ func TestRepeaterRPCAttrs(t *testing.T) {
 		RPCPath: "/api/items/repeater",
 		Items:   []render.HTML{render.Text("x")},
 	})
-	mustContain(t, h, `data-fui-rpc="/api/items/repeater?op=add"`)
-	mustContain(t, h, `data-fui-rpc="/api/items/repeater?index=0&amp;op=remove`)
+	mustContain(t, h, `data-cui-rpc="/api/items/repeater?op=add"`)
+	mustContain(t, h, `data-cui-rpc="/api/items/repeater?index=0&amp;op=remove`)
 }
 
 func TestRepeaterHidesRemoveOnMinItems(t *testing.T) {
@@ -92,8 +92,8 @@ func TestRepeaterRPCPathWithExistingQuery(t *testing.T) {
 		t.Fatalf("double-? in RPC URL:\n%s", s)
 	}
 	// Strings are HTML-escaped so & becomes &amp;
-	mustContain(t, h, `data-fui-rpc="/api/items?op=add&amp;tenant=42"`)
-	mustContain(t, h, `data-fui-rpc="/api/items?index=0&amp;op=remove&amp;tenant=42`)
+	mustContain(t, h, `data-cui-rpc="/api/items?op=add&amp;tenant=42"`)
+	mustContain(t, h, `data-cui-rpc="/api/items?index=0&amp;op=remove&amp;tenant=42`)
 }
 
 func TestRepeaterItemsAriaLive(t *testing.T) {

@@ -34,7 +34,7 @@ type DetailListConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <dl>. Keys the
 	// component owns are dropped: class (use Class), id, style and
-	// data-fui-*.
+	// data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -88,14 +88,14 @@ func DetailList(cfg DetailListConfig) render.HTML {
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)
 
 func detailListCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-detail-list"] {
+	return `[data-cui-comp="ui-detail-list"] {
   display: flex;
   flex-direction: column;
   container-type: inline-size;
   max-width: 44rem;
   margin: 0;
 }
-[data-fui-comp="ui-detail-list"] .fui-detail-list__row {
+[data-cui-comp="ui-detail-list"] .fui-detail-list__row {
   display: grid;
   /* --ui-detail-list-label-track lets a narrow container (a side
      panel) cap the label column: the default track grows to 13rem
@@ -106,23 +106,23 @@ func detailListCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) 0;
   border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
-[data-fui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
-[data-fui-comp="ui-detail-list"] .fui-detail-list__label {
+[data-cui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
+[data-cui-comp="ui-detail-list"] .fui-detail-list__label {
   margin: 0;
   color: var(--color-text-muted, inherit);
   font-weight: var(--font-weight-medium);
 }
-[data-fui-comp="ui-detail-list"] .fui-detail-list__value {
+[data-cui-comp="ui-detail-list"] .fui-detail-list__value {
   margin: 0;
   color: var(--color-text, inherit);
 }
 @container (max-width: 30rem) {
-  [data-fui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
+  [data-cui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
 }
 @media (max-width: 30rem) {
-  [data-fui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
+  [data-cui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
 }
-[data-fui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--spacing-sm); }
-[data-fui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__value { min-inline-size: 0; overflow-wrap: anywhere; }
+[data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--spacing-sm); }
+[data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__value { min-inline-size: 0; overflow-wrap: anywhere; }
 `
 }

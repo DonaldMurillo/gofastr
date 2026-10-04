@@ -14,7 +14,7 @@ import (
 )
 
 // docShellSite exercises the document-shell contract (#408 + #411): the
-// outermost layout layer carries data-fui-lang and data-fui-skip-label,
+// outermost layout layer carries data-cui-lang and data-cui-skip-label,
 // and after a client-side swap the runtime copies them onto
 // documentElement.lang and the skip link. Two shapes:
 //
@@ -59,8 +59,8 @@ func docShellBody(lang, label string) string {
 func keyedPage(lang, key, label, id, linkID, linkHref, linkText string) string {
 	return `<!doctype html><html lang="` + lang + `"><head><title>` + id + `</title>` + docShellRoutes + `</head><body>` +
 		docShellBody(lang, label) +
-		`<div data-fui-layout="docs" data-fui-layout-key="` + key + `" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-docs">` +
-		`<main role="main" tabindex="-1" data-fui-layout-slot="` + key + `">` +
+		`<div data-cui-layout="docs" data-cui-layout-key="` + key + `" data-cui-lang="` + lang + `" data-cui-skip-label="` + label + `" class="layout-docs">` +
+		`<main role="main" tabindex="-1" data-cui-layout-slot="` + key + `">` +
 		`<h1 id="` + id + `">` + id + `</h1><a id="` + linkID + `" href="` + linkHref + `">` + linkText + `</a>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
 }
@@ -71,12 +71,12 @@ func keyedPage(lang, key, label, id, linkID, linkHref, linkText string) string {
 func sharedRootPage(lang, groupPrefix, groupKey, label, id, linkID, linkText string) string {
 	return `<!doctype html><html lang="` + lang + `"><head><title>` + id + `</title>` + docShellRoutes + `</head><body>` +
 		docShellBody(lang, label) +
-		`<div data-fui-layout="site" data-fui-layout-key="l:site" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-site">` +
+		`<div data-cui-layout="site" data-cui-layout-key="l:site" data-cui-lang="` + lang + `" data-cui-skip-label="` + label + `" class="layout-site">` +
 		`<header id="site-header">` + lang + `</header>` +
-		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
-		`<div class="fui-screen-group" data-fui-screen-group="` + groupPrefix + `">` +
-		`<div data-fui-layout="docs" data-fui-layout-key="` + groupKey + `" class="layout-docs">` +
-		`<div class="layout-content" tabindex="-1" data-fui-layout-slot="` + groupKey + `">` +
+		`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
+		`<div class="cui-screen-group" data-cui-screen-group="` + groupPrefix + `">` +
+		`<div data-cui-layout="docs" data-cui-layout-key="` + groupKey + `" class="layout-docs">` +
+		`<div class="layout-content" tabindex="-1" data-cui-layout-slot="` + groupKey + `">` +
 		`<h1 id="` + id + `">` + id + `</h1><a id="` + linkID + `" href="/g/es/x">` + linkText + `</a>` +
 		`</div></div></div>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
@@ -85,9 +85,9 @@ func sharedRootPage(lang, groupPrefix, groupKey, label, id, linkID, linkText str
 // sharedRootPartial: the fragment the server sends for /g/en/x → /g/es/x:
 // only the group layer re-renders, and it carries the fresh markers.
 func sharedRootPartial(lang, label, groupPrefix, groupKey, id string) string {
-	return `<div class="fui-screen-group" data-fui-screen-group="` + groupPrefix + `">` +
-		`<div data-fui-layout="docs" data-fui-layout-key="` + groupKey + `" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-docs">` +
-		`<div class="layout-content" tabindex="-1" data-fui-layout-slot="` + groupKey + `">` +
+	return `<div class="cui-screen-group" data-cui-screen-group="` + groupPrefix + `">` +
+		`<div data-cui-layout="docs" data-cui-layout-key="` + groupKey + `" data-cui-lang="` + lang + `" data-cui-skip-label="` + label + `" class="layout-docs">` +
+		`<div class="layout-content" tabindex="-1" data-cui-layout-slot="` + groupKey + `">` +
 		`<h1 id="` + id + `">` + id + `</h1>` +
 		`</div></div></div>`
 }
@@ -99,7 +99,7 @@ func sharedRootPartial(lang, label, groupPrefix, groupKey, id string) string {
 func plainPage(lang, label, id, linkID, linkHref, linkText string) string {
 	return `<!doctype html><html lang="` + lang + `"><head><title>` + id + `</title>` + docShellRoutes + `</head><body>` +
 		docShellBody(lang, label) +
-		`<main id="main-content" role="main" tabindex="-1" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `">` +
+		`<main id="main-content" role="main" tabindex="-1" data-cui-lang="` + lang + `" data-cui-skip-label="` + label + `">` +
 		`<h1 id="` + id + `">` + id + `</h1><a id="` + linkID + `" href="` + linkHref + `">` + linkText + `</a>` +
 		`</main><script src="/__gofastr/runtime.js"></script></body></html>`
 }
@@ -198,7 +198,7 @@ func TestKeyedShellSwapSyncsDocLangAndSkip(t *testing.T) {
 		chromedp.Navigate(site.srv.URL+"/en/x"),
 		chromedp.WaitVisible(`#en-screen`, chromedp.ByID),
 		chromedp.Evaluate(`window.__survived = true;
-			document.querySelector('[data-fui-layout-key]').dataset.stamp = 'old';
+			document.querySelector('[data-cui-layout-key]').dataset.stamp = 'old';
 			document.documentElement.lang`, &lang),
 		chromedp.Evaluate(`document.querySelector('[data-skip-link]').textContent`, &skip),
 		chromedp.Click(`#to-es`, chromedp.ByID),
@@ -207,8 +207,8 @@ func TestKeyedShellSwapSyncsDocLangAndSkip(t *testing.T) {
 			document.documentElement.lang,
 			document.querySelector('[data-skip-link]').textContent,
 			window.__survived === true,
-			document.querySelector('[data-fui-layout-key="l:docs-en"]') === null,
-			!!document.querySelector('[data-fui-layout-key="l:docs-es"][data-fui-lang="es"]'),
+			document.querySelector('[data-cui-layout-key="l:docs-en"]') === null,
+			!!document.querySelector('[data-cui-layout-key="l:docs-es"][data-cui-lang="es"]'),
 		].join('|')`, &result),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -256,8 +256,8 @@ func TestSharedShellKeepsNodeSyncsDocLang(t *testing.T) {
 			document.documentElement.lang,
 			document.querySelector('[data-skip-link]').textContent,
 			document.getElementById('site-header').dataset.stamp === 'kept',
-			document.querySelector('[data-fui-screen-group]').getAttribute('data-fui-screen-group'),
-			document.querySelector('[data-fui-layout="docs"]').getAttribute('data-fui-layout-key'),
+			document.querySelector('[data-cui-screen-group]').getAttribute('data-cui-screen-group'),
+			document.querySelector('[data-cui-layout="docs"]').getAttribute('data-cui-layout-key'),
 		].join('|')`, &result),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)

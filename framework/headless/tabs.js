@@ -1,5 +1,5 @@
 // headless-tabs: the behaviour module for this package's tab strips.
-// Selection stays the kernel's signal contract (data-fui-signal-set on
+// Selection stays the kernel's signal contract (data-cui-signal-set on
 // the tab, data-active mirrored on the wrapper, CSS lights the panel);
 // the module owns the keyboard contract (one tab is roving-tabindex 0;
 // ArrowLeft/ArrowRight are RTL-aware and select on focus; Home/End
@@ -41,7 +41,7 @@
     const idx = parseInt(wrapper.getAttribute('data-active') || '0', 10);
     if (wrapper.hasAttribute('data-hui-tabs-state')) {
       for (const t of wrapper.querySelectorAll('[role="tab"]')) {
-        const on = t.getAttribute('data-fui-signal-set') === wrapper.getAttribute('data-fui-signal') + ':' + idx ||
+        const on = t.getAttribute('data-cui-signal-set') === wrapper.getAttribute('data-cui-signal') + ':' + idx ||
           t.closest('[data-hui-tabs]') === wrapper && t.getAttribute('aria-selected') === 'true';
         t.setAttribute('data-state', on ? 'active' : 'inactive');
         t.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -125,7 +125,7 @@
   });
 
   // A click selects: the signal write is the kernel's (the anchor's
-  // data-fui-signal-set); the module updates the roving tabindex and
+  // data-cui-signal-set); the module updates the roving tabindex and
   // the aria mirror so the strip stays coherent even before the signal
   // fanout lands.
   document.addEventListener('click', function (e) {

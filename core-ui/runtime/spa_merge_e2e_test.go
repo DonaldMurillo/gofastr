@@ -33,7 +33,7 @@ func TestSPAMerge_GlobalSurvivesNavPageScopedReseeds(t *testing.T) {
 		w.Header().Set("X-Gofastr-Partial", "true")
 		fmt.Fprint(w, `<script type="application/json" id="gofastr-signals-partial">{"p":{"b.local":"B"},"g":{"g.count":0}}</script>`+
 			`<h1 id="pageB">Page B</h1>`+
-			`<span id="bcount" data-fui-signal="g.count">0</span>`)
+			`<span id="bcount" data-cui-signal="g.count">0</span>`)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -42,8 +42,8 @@ func TestSPAMerge_GlobalSurvivesNavPageScopedReseeds(t *testing.T) {
   <script type="application/json" id="gofastr-signals">{"g.count":0,"a.local":"A"}</script>
 </head><body>
   <main role="main" tabindex="-1">
-    <span id="count" data-fui-signal="g.count">0</span>
-    <button id="inc" data-fui-signal-inc="g.count">+</button>
+    <span id="count" data-cui-signal="g.count">0</span>
+    <button id="inc" data-cui-signal-inc="g.count">+</button>
     <a id="tob" href="/b">to B</a>
   </main>
   <span id="ready">ready</span>

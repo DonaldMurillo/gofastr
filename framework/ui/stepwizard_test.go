@@ -39,7 +39,7 @@ func TestStepWizardRendersSingleStep(t *testing.T) {
 		Action: "/wiz",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-step-wizard"`,
+		`data-cui-comp="ui-step-wizard"`,
 		`action="/wiz"`,
 		`method="POST"`,
 		"fui-step-wizard__indicator",
@@ -204,7 +204,7 @@ func TestStepWizardExtraAttrsOnRoot(t *testing.T) {
 	if !strings.Contains(root, `action="/wizard"`) {
 		t.Errorf("owned action must win over ExtraAttrs:\n%s", root)
 	}
-	if !strings.Contains(root, `data-fui-comp="ui-step-wizard"`) {
+	if !strings.Contains(root, `data-cui-comp="ui-step-wizard"`) {
 		t.Errorf("comp marker lost:\n%s", root)
 	}
 }

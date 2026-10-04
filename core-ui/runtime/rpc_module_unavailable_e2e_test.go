@@ -45,7 +45,7 @@ func TestFormSubmitSurvivesMissingRPCModule(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><body>
-<form id="f" action="/save" method="POST" data-fui-spa
+<form id="f" action="/save" method="POST" data-cui-spa
       enctype="application/x-www-form-urlencoded">
   <input name="note" value="kept">
   <!-- name="submit" shadows form.submit via HTML named-property lookup -->
@@ -72,7 +72,7 @@ func TestFormSubmitSurvivesMissingRPCModule(t *testing.T) {
 	}
 }
 
-// The counterpart: a data-fui-rpc form must NOT be submitted natively when
+// The counterpart: a data-cui-rpc form must NOT be submitted natively when
 // the module is missing. It targets a JSON API, the resource engine emits
 // these with no enctype at all and rpc.js builds the body, so a native
 // submit posts urlencoded (415) or cannot issue its declared PUT (405).
@@ -104,7 +104,7 @@ func TestRPCFormIsNotNativelySubmittedWhenModuleMissing(t *testing.T) {
 		// action, and the RPC attributes.
 		fmt.Fprint(w, `<!doctype html><html><body>
 <form id="f" action="/api/things" method="POST"
-      data-fui-rpc="/api/things" data-fui-rpc-method="POST">
+      data-cui-rpc="/api/things" data-cui-rpc-method="POST">
   <input id="note" name="note" value="typed by the user">
   <button id="go" type="submit">Save</button>
 </form>

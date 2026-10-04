@@ -31,17 +31,17 @@ func TestE2E_Modal_DeepLinkPopstateCloses(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	const modal = `!!document.querySelector('[data-fui-widget="site-demo-modal"]')`
+	const modal = `!!document.querySelector('[data-cui-widget="site-demo-modal"]')`
 
 	var urlAfterOpen, urlAfterBack string
 	var openAfterOpen, openAfterBack bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
-		chromedp.WaitVisible(`button[data-fui-open="site-demo-modal"][data-fui-deeplink]`),
+		chromedp.WaitVisible(`button[data-cui-open="site-demo-modal"][data-cui-deeplink]`),
 
 		// The deep-linked trigger opens the modal AND records it.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-modal"][data-fui-deeplink]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"][data-cui-deeplink]').click()`, nil),
 		chromedp.Sleep(time.Second),
 		chromedp.Evaluate(`location.search`, &urlAfterOpen),
 		chromedp.Evaluate(modal, &openAfterOpen),

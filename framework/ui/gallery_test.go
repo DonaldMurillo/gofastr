@@ -61,11 +61,11 @@ func TestGalleryLightboxModeEmitsTriggerAttrs(t *testing.T) {
 		Lightbox: "photo-viewer",
 		Items:    []GalleryItem{{Src: "/a.jpg", Alt: "A", Caption: "First"}},
 	}))
-	if !strings.Contains(h, `data-fui-open="photo-viewer"`) {
-		t.Errorf("Lightbox mode should add data-fui-open=<name>:\n%s", h)
+	if !strings.Contains(h, `data-cui-open="photo-viewer"`) {
+		t.Errorf("Lightbox mode should add data-cui-open=<name>:\n%s", h)
 	}
-	if !strings.Contains(h, "data-fui-deeplink=") {
-		t.Errorf("Lightbox mode should add data-fui-deeplink:\n%s", h)
+	if !strings.Contains(h, "data-cui-deeplink=") {
+		t.Errorf("Lightbox mode should add data-cui-deeplink:\n%s", h)
 	}
 	// %20-encoding (NOT '+'): runtime decoder is decodeURIComponent.
 	if !strings.Contains(h, "caption=First") {

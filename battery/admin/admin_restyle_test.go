@@ -87,21 +87,21 @@ func TestAdmin_OpsPagesRenderViaUIComponents(t *testing.T) {
 	h := mountAdmin(t, Config{DB: db, Queue: q})
 
 	// Overview → StatCards.
-	if body := adminGet(t, h, "/admin"); !strings.Contains(body, `data-fui-comp="ui-stat-card"`) {
+	if body := adminGet(t, h, "/admin"); !strings.Contains(body, `data-cui-comp="ui-stat-card"`) {
 		t.Errorf("overview must render ui.StatCard; got %s", trunc(body, 300))
 	}
 
 	// Queue → FilterToolbar + DataTable.
 	qbody := adminGet(t, h, "/admin/queue")
-	if !strings.Contains(qbody, `data-fui-comp="ui-filter-toolbar"`) {
+	if !strings.Contains(qbody, `data-cui-comp="ui-filter-toolbar"`) {
 		t.Errorf("queue must render ui.FilterToolbar; got %s", trunc(qbody, 300))
 	}
-	if !strings.Contains(qbody, `data-fui-comp="ui-data-table"`) {
+	if !strings.Contains(qbody, `data-cui-comp="ui-data-table"`) {
 		t.Errorf("queue must render ui.DataTable; got %s", trunc(qbody, 300))
 	}
 
 	// Audit → DataTable.
-	if body := adminGet(t, h, "/admin/audit"); !strings.Contains(body, `data-fui-comp="ui-data-table"`) {
+	if body := adminGet(t, h, "/admin/audit"); !strings.Contains(body, `data-cui-comp="ui-data-table"`) {
 		t.Errorf("audit must render ui.DataTable; got %s", trunc(body, 300))
 	}
 }
@@ -113,7 +113,7 @@ func TestAdmin_RolesRenderViaUIComponentsAndDropOrphanBadges(t *testing.T) {
 	_, h, _, _, _, _ := rbacTestEnv(t)
 	body := adminGet(t, h, "/admin/rbac/roles")
 
-	if !strings.Contains(body, `data-fui-comp="ui-data-table"`) {
+	if !strings.Contains(body, `data-cui-comp="ui-data-table"`) {
 		t.Errorf("roles must render ui.DataTable; got %s", trunc(body, 300))
 	}
 	// Orphan badge classes (never had CSS) must be gone, replaced by ui.Tag.
@@ -133,7 +133,7 @@ func TestAdmin_ModulesRenderViaUIComponents(t *testing.T) {
 	}}
 	_, r, _ := moduleTestEnv(t, fake)
 	body := adminGet(t, r, "/admin/modules")
-	if !strings.Contains(body, `data-fui-comp="ui-data-table"`) {
+	if !strings.Contains(body, `data-cui-comp="ui-data-table"`) {
 		t.Errorf("modules must render ui.DataTable; got %s", trunc(body, 300))
 	}
 }

@@ -13,7 +13,7 @@ import (
 // ─── PollingIndicator ───────────────────────────────────────────────
 //
 // Tiny pulsing dot + label that confirms a polling RPC or live-update
-// pipeline is firing. Pairs with `data-fui-rpc-trigger="input"` to give
+// pipeline is firing. Pairs with `data-cui-rpc-trigger="input"` to give
 // users feedback that the live-search / live-validate is actually
 // searching. Pure CSS, no runtime module needed.
 
@@ -30,7 +30,7 @@ type PollingIndicatorConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the indicator's root
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, role, and aria-live — the
+	// (use Class / ID), data-cui-*, role, and aria-live — the
 	// live-region contract.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the live label.
@@ -74,9 +74,9 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 		render.Tag("span", map[string]string{
 			"class":             "fui-polling-indicator__dot",
 			"aria-hidden":       "true",
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		}),
-		html.Span(html.TextConfig{Class: "fui-polling-indicator__label", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, render.Text(label)),
+		html.Span(html.TextConfig{Class: "fui-polling-indicator__label", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(label)),
 	))
 }
 

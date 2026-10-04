@@ -23,10 +23,10 @@ swaps just that island's content.
 Liveness escalates through four rungs; each is opt-in and pull beats push
 (canonical doc: `framework/docs/content/reactivity.md`):
 
-1. **Client signals** (`data-fui-signal-*`): UI-only state, zero server.
+1. **Client signals** (`data-cui-signal-*`): UI-only state, zero server.
 2. **RPC**: user acts, server renders from the DB, runtime swaps. The
    default for anything touching data. Stateless; any replica answers.
-3. **Polling** (`data-fui-poll`, `widget Builder.Poll`): passive freshness
+3. **Polling** (`data-cui-poll`, `widget Builder.Poll`): passive freshness
    (dashboards, counters, statuses). No held connection, no fanout needed.
 4. **SSE push** (the single `/__gofastr/sse` bus): ONLY for semantics
    that need a connection: presence, collaborative editing, sub-second
@@ -44,7 +44,7 @@ build-mode reload ships its own; that's the whole exception class.)
 **Symptom**: pagination/sort renders as `<a href="?p=2">` and triggers
 either a full reload or an SPA route change to "the same page with
 different query params".
-**Correct**: pagination is an island. The buttons are `data-fui-rpc=...`
+**Correct**: pagination is an island. The buttons are `data-cui-rpc=...`
 NOT `<a href>`. The server has an RPC handler that returns the new
 rendered rows.
 
@@ -63,7 +63,7 @@ code.
 ### ❌ Reaching for SSE when a cheaper rung works
 **Symptom**: a metrics card / status badge / count subscribes to the SSE
 bus (or worse, opens its own `EventSource`) just to stay fresh.
-**Correct**: rung 3, `data-fui-poll` (page region) or `Builder.Poll`
+**Correct**: rung 3, `data-cui-poll` (page region) or `Builder.Poll`
 (widget). SSE is earned by presence/collab/sub-second semantics only,
 and always via the shared bus.
 
@@ -109,13 +109,13 @@ ui.Themed(Dark,
 ) // wrapped subtree's var(--color-*) reads from Dark via CSS cascade
 ```
 
-Framework emits a `.fui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed: registering the same theme twice ships CSS once.
+Framework emits a `.cui-theme-<hash>` block in `app.css`; the CSS cascade does the rest. Content-addressed: registering the same theme twice ships CSS once.
 
 ## Per-component CSS: the registry pattern
 
 Component-owned CSS ships as a real `<link>` (never inline), loaded
 lazily on first appearance, dedup'd globally, and always scoped to
-`[data-fui-comp="<name>"]`. Global resets / typography / theme tokens
+`[data-cui-comp="<name>"]`. Global resets / typography / theme tokens
 stay in `theme.css` or `WithCustomCSS`.
 
 ```go
@@ -161,12 +161,12 @@ theme.go was never updated to concatenate it.
 
 | Attribute | Effect |
 |---|---|
-| `data-fui-rpc="<path>"` | Click/submit fires HTTP request |
-| `data-fui-rpc-signal="<name>"` | Response body becomes the value of signal `<name>` |
-| `data-fui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
-| `data-fui-poll="<interval>"` + `data-fui-poll-src="<path>"` | Region re-fetches + swaps on the interval (≥5s, jittered, pauses hidden) |
-| `data-fui-open="<widget>"` | Opens a mounted widget |
-| `data-fui-comp="<name>"` | Marker for a registered styled component: runtime loads `/__gofastr/comp/<name>.css` once |
+| `data-cui-rpc="<path>"` | Click/submit fires HTTP request |
+| `data-cui-rpc-signal="<name>"` | Response body becomes the value of signal `<name>` |
+| `data-cui-signal="<name>"` mode=`text\|html\|attr` | Element auto-updates when the signal changes |
+| `data-cui-poll="<interval>"` + `data-cui-poll-src="<path>"` | Region re-fetches + swaps on the interval (≥5s, jittered, pauses hidden) |
+| `data-cui-open="<widget>"` | Opens a mounted widget |
+| `data-cui-comp="<name>"` | Marker for a registered styled component: runtime loads `/__gofastr/comp/<name>.css` once |
 
 The runtime + the data-attributes ARE the API surface for hydration.
 Adding new attributes requires updating `core-ui/ARCHITECTURE.md` and
@@ -199,7 +199,7 @@ The flow:
 
 ## Stop and re-read `core-ui/ARCHITECTURE.md` if
 
-- You're about to write `data-fui-spa` or any "opt into SPA mode" attribute.
+- You're about to write `data-cui-spa` or any "opt into SPA mode" attribute.
 - You're about to make pagination an `<a href>`.
 - You're about to add a runtime endpoint that's not part of the
   SSR / page-nav / island-RPC / poll / SSE-push grid.

@@ -12,8 +12,8 @@ import (
 // This file pins fix #5: computed + animate tear down their signal
 // listeners when their node is detached by a NON-navigate swap
 // (island/poll/signal innerHTML). Both modules used to tear down only on
-// gofastr:navigate, so a swap that removed a [data-fui-computed] /
-// [data-fui-animate-signal] node leaked its recompute/apply closure into
+// gofastr:navigate, so a swap that removed a [data-cui-computed] /
+// [data-cui-animate-signal] node leaked its recompute/apply closure into
 // G._signals[dep].listeners forever (along with the detached DOM node
 // it closed over).
 
@@ -28,7 +28,7 @@ func detachPage(body string) string {
 // TestAnimate_TearsDownOnNonNavigateDetach: removing an animate node
 // without navigating MUST splice its listener out of the signal slot.
 func TestAnimate_TearsDownOnNonNavigateDetach(t *testing.T) {
-	body := `<div id="host"><div id="t" data-fui-animate-signal="a" data-fui-animate-class="on">x</div></div>`
+	body := `<div id="host"><div id="t" data-cui-animate-signal="a" data-cui-animate-class="on">x</div></div>`
 	base := startPollServer(t, detachPage(body), nil)
 
 	ctx := chromedptest.Context(t)
@@ -59,7 +59,7 @@ func TestAnimate_TearsDownOnNonNavigateDetach(t *testing.T) {
 // node, its recompute closure must leave the dependency signal's
 // listeners when the node is swapped away without a navigate.
 func TestComputed_TearsDownOnNonNavigateDetach(t *testing.T) {
-	body := `<div id="host"><div id="c" data-fui-computed="echo" data-fui-computed-deps="a" data-fui-signal="total">0</div></div>`
+	body := `<div id="host"><div id="c" data-cui-computed="echo" data-cui-computed-deps="a" data-cui-signal="total">0</div></div>`
 	base := startPollServer(t, detachPage(body), nil)
 
 	ctx := chromedptest.Context(t)

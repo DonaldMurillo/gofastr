@@ -108,9 +108,9 @@ func TestSegmentedControlRPC(t *testing.T) {
 		},
 	}))
 	for _, w := range []string{
-		`data-fui-rpc="/views/set"`,
-		`data-fui-rpc-method="POST"`,
-		`data-fui-rpc-signal="current-view"`,
+		`data-cui-rpc="/views/set"`,
+		`data-cui-rpc-method="POST"`,
+		`data-cui-rpc-signal="current-view"`,
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("missing %q in: %s", w, out)
@@ -120,7 +120,7 @@ func TestSegmentedControlRPC(t *testing.T) {
 
 // TestSegmentedControlRPCCarriesSelectionContract is the Go half of #194:
 // when RPCPath is set, EVERY option's <input> must carry name + value +
-// data-fui-rpc together. The runtime serializes new FormData(radio.form) for a
+// data-cui-rpc together. The runtime serializes new FormData(radio.form) for a
 // form control (core-ui/runtime/segmented_rpc_e2e_test.go proves that path),
 // which only carries the chosen segment if the radio has a name and value to
 // submit. A radio missing name/value would post an empty selection even after
@@ -146,9 +146,9 @@ func TestSegmentedControlRPCCarriesSelectionContract(t *testing.T) {
 		for _, want := range []string{
 			`name="view"`,               // the form-submit name the handler reads
 			`value="` + val + `"`,       // the segment's submit value
-			`data-fui-rpc="/views/set"`, // the dispatch trigger
-			`data-fui-rpc-signal="current-view"`,
-			`data-fui-rpc-method="POST"`,
+			`data-cui-rpc="/views/set"`, // the dispatch trigger
+			`data-cui-rpc-signal="current-view"`,
+			`data-cui-rpc-method="POST"`,
 		} {
 			if !strings.Contains(tag, want) {
 				t.Errorf("radio value=%q missing %q in tag: %s", val, want, tag)

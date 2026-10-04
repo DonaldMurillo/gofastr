@@ -82,7 +82,7 @@ func TestModal_BodyXSS(t *testing.T) {
 }
 
 // TestModal_ActionURLXSS verifies that an RPC path containing javascript:
-// is rendered safely: it goes into data-fui-rpc (not href), so it can't
+// is rendered safely: it goes into data-cui-rpc (not href), so it can't
 // navigate. The value is attr-escaped by render.Attr().
 func TestModal_ActionURLXSS(t *testing.T) {
 	t.Parallel()
@@ -99,7 +99,7 @@ func TestModal_ActionURLXSS(t *testing.T) {
 	// The RPC path is an endpoint, and an endpoint is refused at
 	// render unless it is same-origin and starts with / — the same
 	// rule headless's Action seam enforces. A javascript: URI never
-	// reaches data-fui-rpc (or href) at all; escaping it would still
+	// reaches data-cui-rpc (or href) at all; escaping it would still
 	// ship a control whose click posts to a scheme the runtime would
 	// never answer.
 	defer func() {
@@ -200,7 +200,7 @@ func TestDrawer_PositionInjection(t *testing.T) {
 	comp := Sidebar(cfg)
 	h := string(comp.Render())
 	mustNotContainRaw(t, h, "<script>", "drawer-position-injection")
-	if strings.Contains(h, `data-fui-open="drawer"&gt;`) {
+	if strings.Contains(h, `data-cui-open="drawer"&gt;`) {
 		t.Logf("NOTE: [drawer-position-injection] drawer name attr-escaped")
 	}
 }
@@ -393,7 +393,7 @@ func TestCommandPalette_PlaceholderXSS(t *testing.T) {
 func TestCommandPalette_ClassInjection(t *testing.T) {
 	t.Parallel()
 	trigger := render.Tag("button", map[string]string{
-		"data-fui-open": `cmd"><script>alert(1)</script>`,
+		"data-cui-open": `cmd"><script>alert(1)</script>`,
 		"aria-label":    "Open",
 	}, render.Text("Open"))
 	h := string(trigger)

@@ -12,7 +12,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// A post-mutation navigation (data-fui-rpc-navigate) calls
+// A post-mutation navigation (data-cui-rpc-navigate) calls
 // loadPage(path, {bypassCache:true}). When the server answers that
 // fetch with X-Gofastr-Location, the recursive loadPage for the
 // redirect target must KEEP bypassing the screen cache, otherwise the
@@ -56,8 +56,8 @@ func TestRedirectNavBypassesStaleCache(t *testing.T) {
 </head><body>
   <main role="main" tabindex="-1">
     <a id="tostale" href="/stale">stale</a>
-    <button id="mut" data-fui-rpc="/mutate" data-fui-rpc-method="POST"
-            data-fui-rpc-navigate="/redir">mutate</button>
+    <button id="mut" data-cui-rpc="/mutate" data-cui-rpc-method="POST"
+            data-cui-rpc-navigate="/redir">mutate</button>
   </main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>

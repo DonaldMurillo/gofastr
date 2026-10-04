@@ -49,7 +49,7 @@ type TimelineConfig struct {
 	Class  string
 	// ExtraAttrs forwards additional attributes to the <ol> root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-fui-*.
+	// ID), style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -126,26 +126,26 @@ func Timeline(cfg TimelineConfig) render.HTML {
 var timelineStyle = registry.RegisterStyle("ui-timeline", timelineCSS)
 
 func timelineCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-timeline"] {
+	return `[data-cui-comp="ui-timeline"] {
   display: block;
   margin: 0;
   padding: 0;
   list-style: none;
   position: relative;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__item {
+[data-cui-comp="ui-timeline"] .fui-timeline__item {
   position: relative;
   display: grid;
   grid-template-columns: var(--spacing-lg, 16px) 1fr;
   gap: var(--spacing-md, 8px);
   padding-block-end: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__item:last-child {
+[data-cui-comp="ui-timeline"] .fui-timeline__item:last-child {
   padding-block-end: 0;
 }
 /* Vertical rail — drawn under the dot column. Stops at the last item
    so the rail doesn't run past the final dot. */
-[data-fui-comp="ui-timeline"] .fui-timeline__item::before {
+[data-cui-comp="ui-timeline"] .fui-timeline__item::before {
   content: "";
   position: absolute;
   left: calc(var(--spacing-lg, 16px) / 2 - 1px);
@@ -154,10 +154,10 @@ func timelineCSS(_ style.Theme) string {
   width: 2px;
   background: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__item:last-child::before {
+[data-cui-comp="ui-timeline"] .fui-timeline__item:last-child::before {
   display: none;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__dot {
+[data-cui-comp="ui-timeline"] .fui-timeline__dot {
   display: inline-block;
   width: 12px;
   height: 12px;
@@ -170,19 +170,19 @@ func timelineCSS(_ style.Theme) string {
   position: relative;
   z-index: 1;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__content {
+[data-cui-comp="ui-timeline"] .fui-timeline__content {
   display: grid;
   gap: var(--spacing-xs, 2px);
   min-width: 0;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__header {
+[data-cui-comp="ui-timeline"] .fui-timeline__header {
   display: flex;
   gap: var(--spacing-md, 8px);
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__title {
+[data-cui-comp="ui-timeline"] .fui-timeline__title {
   margin: 0;
   /* The title is a p; a host's global p rule must not retune its
      metrics — the rhythm is the family's, inherited. */
@@ -190,17 +190,17 @@ func timelineCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__meta {
+[data-cui-comp="ui-timeline"] .fui-timeline__meta {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__detail {
+[data-cui-comp="ui-timeline"] .fui-timeline__detail {
   margin: 0;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
 }
-[data-fui-comp="ui-timeline"] .fui-timeline__body {
+[data-cui-comp="ui-timeline"] .fui-timeline__body {
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
@@ -209,8 +209,8 @@ func timelineCSS(_ style.Theme) string {
 /* Variant dots — colored highlights for state changes. Scoped under
    the marker so they outrank the base dot rule at equal class
    count. */
-[data-fui-comp="ui-timeline"] .fui-timeline__dot--success { background: var(--color-success, #16A34A); }
-[data-fui-comp="ui-timeline"] .fui-timeline__dot--warn    { background: var(--color-warning, #D97706); }
-[data-fui-comp="ui-timeline"] .fui-timeline__dot--danger  { background: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #3B82F6); }`
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--success { background: var(--color-success, #16A34A); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn    { background: var(--color-warning, #D97706); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger  { background: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #3B82F6); }`
 }

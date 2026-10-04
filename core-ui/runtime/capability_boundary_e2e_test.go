@@ -124,7 +124,7 @@ func (s *boundarySite) record(r *http.Request) {
 func (s *boundarySite) page(docScript bool, inner string) string {
 	cap := ""
 	if docScript {
-		cap = `<script src="/cap.js" data-fui-doc></script>`
+		cap = `<script src="/cap.js" data-cui-doc></script>`
 	}
 	return `<!doctype html><html><head><title>t</title>` + boundaryRoutes + `</head><body>` +
 		`<main role="main" tabindex="-1">` + inner + `</main>` + cap +
@@ -266,7 +266,7 @@ func TestSameScopeNavigationStaysPartial(t *testing.T) {
 	if n := site.partialCount("/b"); n != 1 {
 		t.Errorf("/b served %d partial requests, want 1", n)
 	}
-	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-fui-doc]')`); !ok {
+	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-cui-doc]')`); !ok {
 		t.Error("document script vanished across a same-scope navigation")
 	}
 }
@@ -297,7 +297,7 @@ func TestScopeEdgeLoadsNewDocument(t *testing.T) {
 	if sameDoc, _ := evalBool(ctx, `window.__sameDoc === true`); sameDoc {
 		t.Error("scope edge reused the document; leaving a docScripts scope must be a real navigation")
 	}
-	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-fui-doc]')`); ok {
+	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-cui-doc]')`); ok {
 		t.Error("new document still carries the origin's document script")
 	}
 	if typeof, _ := evalBool(ctx, `typeof window.__fuiCap !== 'undefined'`); typeof {
@@ -334,7 +334,7 @@ func TestBackForwardRestoresDocCapabilities(t *testing.T) {
 	}
 	waitForURL(t, ctx, "/a")
 	waitFor(t, ctx, `typeof window.__fuiCap === 'number'`, 10*time.Second)
-	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-fui-doc]')`); !ok {
+	if ok, _ := evalBool(ctx, `!!document.querySelector('script[data-cui-doc]')`); !ok {
 		t.Error("back to the scoped page lost its document script")
 	}
 

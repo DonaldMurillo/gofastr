@@ -120,23 +120,23 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 var comboboxStyle = registry.RegisterStyle("ui-combobox", comboboxCSS)
 
 func comboboxCSS(_ style.Theme) string {
-	return `:where([data-fui-comp="ui-combobox"]).fui-combobox {
+	return `:where([data-cui-comp="ui-combobox"]).fui-combobox {
   position: relative;
   display: block;
   inline-size: 100%;
   max-inline-size: 24rem;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__label {
+[data-cui-comp="ui-combobox"] .fui-combobox__label {
   display: block;
   margin-block-end: var(--spacing-xs, 2px);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #4b5563);
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__form {
+[data-cui-comp="ui-combobox"] .fui-combobox__form {
   display: block;
   margin: 0;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__input {
+[data-cui-comp="ui-combobox"] .fui-combobox__input {
   inline-size: 100%;
   min-block-size: var(--spacing-touch-target, 44px);
   padding: 0 var(--spacing-md, 8px);
@@ -148,12 +148,12 @@ func comboboxCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   box-sizing: border-box;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__input:focus-visible {
+[data-cui-comp="ui-combobox"] .fui-combobox__input:focus-visible {
   outline: none;
   border-color: var(--color-primary, #4F46E5);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__listbox {
+[data-cui-comp="ui-combobox"] .fui-combobox__listbox {
   position: absolute;
   inset-inline-start: 0;
   inset-inline-end: 0;
@@ -168,8 +168,8 @@ func comboboxCSS(_ style.Theme) string {
   overflow-y: auto;
   z-index: 50;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__listbox[hidden] { display: none; }
-[data-fui-comp="ui-combobox"] .fui-combobox__option[hidden] {
+[data-cui-comp="ui-combobox"] .fui-combobox__listbox[hidden] { display: none; }
+[data-cui-comp="ui-combobox"] .fui-combobox__option[hidden] {
   /* Author origin beats the UA's [hidden]{display:none} regardless of
      specificity, so the option rules below (display:block, and
      display:flex under pointer:coarse) would override the attribute and
@@ -178,22 +178,22 @@ func comboboxCSS(_ style.Theme) string {
      attribute over theirs. */
   display: none;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__option {
+[data-cui-comp="ui-combobox"] .fui-combobox__option {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #111);
   cursor: pointer;
   user-select: none;
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__option.is-active {
+[data-cui-comp="ui-combobox"] .fui-combobox__option.is-active {
   background: var(--color-surface-soft, #f1f1f3);
 }
-[data-fui-comp="ui-combobox"] .fui-combobox__option[aria-disabled="true"] {
+[data-cui-comp="ui-combobox"] .fui-combobox__option[aria-disabled="true"] {
   color: var(--color-text-muted, #6b7280);
   cursor: default;
 }
 @media (pointer: coarse) {
-  [data-fui-comp="ui-combobox"] .fui-combobox__option {
+  [data-cui-comp="ui-combobox"] .fui-combobox__option {
     min-block-size: var(--spacing-touch-target, 44px);
     display: flex;
     align-items: center;
@@ -203,7 +203,7 @@ func comboboxCSS(_ style.Theme) string {
    (and a hidden label) must not be seen on a page that loads only this
    sheet, and must stay in the accessibility tree (clipped, never
    display: none). */
-[data-fui-comp="ui-combobox"] .fui-visually-hidden {
+[data-cui-comp="ui-combobox"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

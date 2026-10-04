@@ -17,7 +17,7 @@ import (
 
 func wizardIslandPage(t *testing.T, current int, errors string) string {
 	t.Helper()
-	return `<div data-fui-signal="setup" data-fui-signal-mode="html">` +
+	return `<div data-cui-signal="setup" data-cui-signal-mode="html">` +
 		string(StepWizard(StepWizardProps{
 			Action:  "/__hui/setup",
 			Current: current,

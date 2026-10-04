@@ -16,7 +16,7 @@ func TestConfirmActionTrigger(t *testing.T) {
 	out := string(trigger)
 	wants := []string{
 		`<button`,
-		`data-fui-open="delete-user-1"`,
+		`data-cui-open="delete-user-1"`,
 		`fui-button fui-button--danger`,
 		`>Delete</button>`,
 	}
@@ -102,9 +102,9 @@ func TestConfirmActionSlotRendersAlertdialog(t *testing.T) {
 		`id="delete-row-9-body"`,
 		`Delete row?`,
 		`This cannot be undone.`,
-		`data-fui-rpc-close="`,
-		`data-fui-rpc="/row/9"`,
-		`data-fui-rpc-method="POST"`,
+		`data-cui-rpc-close="`,
+		`data-cui-rpc="/row/9"`,
+		`data-cui-rpc-method="POST"`,
 		`fui-button--danger`,
 		`fui-button--ghost`,
 	}
@@ -160,7 +160,7 @@ func TestConfirmActionAutofocusConfirm(t *testing.T) {
 }
 
 // TestConfirmActionSuccessSignal wires the response-signal attribute on
-// the Confirm button. The runtime reads data-fui-rpc-signal to decide
+// the Confirm button. The runtime reads data-cui-rpc-signal to decide
 // where the 2xx body goes. Without it, a ConfirmAction that mutates
 // server state (e.g. delete) can never reconcile a list region.
 func TestConfirmActionSuccessSignal(t *testing.T) {
@@ -174,14 +174,14 @@ func TestConfirmActionSuccessSignal(t *testing.T) {
 	})
 	body := string(b.Definition().Slots[0].Component.Render())
 	dangerTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--danger"))
-	if !strings.Contains(dangerTag, `data-fui-rpc-signal="row-list"`) {
-		t.Errorf("expected data-fui-rpc-signal=\"row-list\" on the Confirm button, got tag: %s", dangerTag)
+	if !strings.Contains(dangerTag, `data-cui-rpc-signal="row-list"`) {
+		t.Errorf("expected data-cui-rpc-signal=\"row-list\" on the Confirm button, got tag: %s", dangerTag)
 	}
 	// Sanity: the Cancel button must NOT carry the signal. Only the
 	// confirm action reconciles state.
 	ghostTag := substringFromTag(body, "<button", strings.Index(body, "fui-button--ghost"))
-	if strings.Contains(ghostTag, "data-fui-rpc-signal") {
-		t.Errorf("did NOT expect data-fui-rpc-signal on Cancel, got tag: %s", ghostTag)
+	if strings.Contains(ghostTag, "data-cui-rpc-signal") {
+		t.Errorf("did NOT expect data-cui-rpc-signal on Cancel, got tag: %s", ghostTag)
 	}
 }
 
@@ -196,20 +196,20 @@ func TestConfirmActionNoSignalByDefault(t *testing.T) {
 		RPCPath:      "/go",
 	})
 	body := string(b.Definition().Slots[0].Component.Render())
-	if strings.Contains(body, "data-fui-rpc-signal") {
-		t.Errorf("expected NO data-fui-rpc-signal in body by default, got: %s", body)
+	if strings.Contains(body, "data-cui-rpc-signal") {
+		t.Errorf("expected NO data-cui-rpc-signal in body by default, got: %s", body)
 	}
 }
 
 // TestConfirmActionSuccessSignalRejectedNames pins the
 // selector-injection guard: the runtime interpolates the signal name
 // verbatim into the CSS attribute selector
-// `[data-fui-signal="<name>"]`, so any character outside [A-Za-z0-9_-]
+// `[data-cui-signal="<name>"]`, so any character outside [A-Za-z0-9_-]
 // is either an invalid selector (silently no-ops) or a breakout
-// (`x"],[data-fui-signal="secret`). Names that are safe MUST still pass.
+// (`x"],[data-cui-signal="secret`). Names that are safe MUST still pass.
 func TestConfirmActionSuccessSignalRejectedNames(t *testing.T) {
 	bad := []string{
-		`x"],[data-fui-signal="secret`,
+		`x"],[data-cui-signal="secret`,
 		`na"me`,
 		`with space`,
 		`hash#`,

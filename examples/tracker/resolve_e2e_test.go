@@ -98,8 +98,8 @@ func TestTrackerProjectLayerKeyedByProject(t *testing.T) {
 	}
 	var key string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const el = document.querySelector('[data-fui-layout-key^="g:/projects/"]');
-		return el ? el.getAttribute('data-fui-layout-key') : '!missing';
+		const el = document.querySelector('[data-cui-layout-key^="g:/projects/"]');
+		return el ? el.getAttribute('data-cui-layout-key') : '!missing';
 	})()`, &key)); err != nil {
 		t.Fatal(err)
 	}
@@ -328,15 +328,15 @@ func TestTrackerExportDownToasts(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var toast string
 		if err := chromedp.Run(ctx, chromedp.Evaluate(
-			`(() => { const t = document.getElementById('fui-nav-toast'); return t ? t.textContent : ''; })()`, &toast)); err == nil && strings.Contains(toast, "503") {
+			`(() => { const t = document.getElementById('cui-nav-toast'); return t ? t.textContent : ''; })()`, &toast)); err == nil && strings.Contains(toast, "503") {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if got := readText(t, ctx, `#fui-nav-toast`); !strings.Contains(got, "503") {
+	if got := readText(t, ctx, `#cui-nav-toast`); !strings.Contains(got, "503") {
 		t.Fatalf("the toast never named the 503 (last read %q)", got)
 	}
-	if got := readText(t, ctx, `#fui-nav-toast`); !strings.Contains(got, "/reports/export") {
+	if got := readText(t, ctx, `#cui-nav-toast`); !strings.Contains(got, "/reports/export") {
 		t.Fatalf("the toast names the target: %q", got)
 	}
 	var path string

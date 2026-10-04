@@ -130,7 +130,7 @@ type TextareaProps struct {
 	// Autogrow opts the control into the core runtime's auto-resize
 	// (textarea.js: every input event resets the height to the
 	// scrollHeight, so the field always shows all its content). It is
-	// the one data-fui-* attribute a component here renders, and it
+	// the one data-cui-* attribute a component here renders, and it
 	// is a prop rather than an extra because every seam a caller can
 	// reach — Safe, the part-attrs sanitiser — refuses the prefix
 	// precisely so decoration cannot become a request; autogrow is a
@@ -157,7 +157,7 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	attrsSet(attrs, "placeholder", p.Placeholder)
 	attrsSet(attrs, "id", p.ID)
 	attrsSet(attrs, "aria-describedby", p.DescribedBy)
-	Flag(attrs, "data-fui-autogrow", p.Autogrow)
+	Flag(attrs, "data-cui-autogrow", p.Autogrow)
 	Flag(attrs, "required", p.Required)
 	Flag(attrs, "disabled", p.Disabled)
 	if p.Invalid {

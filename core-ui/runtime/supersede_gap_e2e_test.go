@@ -91,9 +91,9 @@ func newGapRig(t *testing.T, loadingTpl, deferredRoute string, failPath string) 
 	// loads and whole-document fallbacks): the shell, the aside outlet
 	// and the primary all marked like the navigate answers.
 	chainedFull := func(main string) string {
-		return `<div data-fui-layout="x" data-fui-layout-key="l:x">` + navLinks +
-			`<div data-fui-outlet="l:x#aside" id="aside">BOOT-ASIDE</div>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:x" id="main">` + main + `</main>` +
+		return `<div data-cui-layout="x" data-cui-layout-key="l:x">` + navLinks +
+			`<div data-cui-outlet="l:x#aside" id="aside">BOOT-ASIDE</div>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:x" id="main">` + main + `</main>` +
 			`</div>` + loadingTpl
 	}
 	plainFull := func(main string) string {
@@ -138,7 +138,7 @@ func newGapRig(t *testing.T, loadingTpl, deferredRoute string, failPath string) 
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", strings.ToUpper(strings.TrimPrefix(req.URL.Path, "/")))
 			fill := func(addr, html string) string {
-				return fmt.Sprintf(`<template data-fui-fill=%q>%s</template>`, addr, html)
+				return fmt.Sprintf(`<template data-cui-fill=%q>%s</template>`, addr, html)
 			}
 			name := strings.ToUpper(strings.TrimPrefix(req.URL.Path, "/"))
 			if isChained(req.URL.Path) {
@@ -340,7 +340,7 @@ func TestSupersededNavKeepsBusy(t *testing.T) {
 // post-loading-wait resume: a navigation superseded while its Min hold
 // or exit animation runs must not apply after the wait.
 func TestDoubleClickDuringLoadingHold(t *testing.T) {
-	tpl := `<template data-fui-loading="l:x" data-fui-after="0" data-fui-min="600"><span id="skeleton">SKELETON</span></template>`
+	tpl := `<template data-cui-loading="l:x" data-cui-after="0" data-cui-min="600"><span id="skeleton">SKELETON</span></template>`
 	r := newGapRig(t, tpl, "", "")
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 	warmModule(t, ctx, r)
@@ -379,7 +379,7 @@ func TestDoubleClickDuringLoadingHold(t *testing.T) {
 // after-timer guard: a superseded navigation's pending timer must not
 // park its skeleton over the newer navigation's content.
 func TestSupersededLoadingTimerSleeps(t *testing.T) {
-	tpl := `<template data-fui-loading="l:x" data-fui-after="500" data-fui-min="0"><span id="skeleton">SKELETON</span></template>`
+	tpl := `<template data-cui-loading="l:x" data-cui-after="500" data-cui-min="0"><span id="skeleton">SKELETON</span></template>`
 	r := newGapRig(t, tpl, "", "")
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 	warmModule(t, ctx, r)
@@ -411,7 +411,7 @@ func TestSupersededLoadingTimerSleeps(t *testing.T) {
 // between its claim and its landing must not show the claimed
 // region's loading content over the winner.
 func TestSupersededPartDoesNotShowLoading(t *testing.T) {
-	r := newGapRig(t, `<template data-fui-loading="l:x#aside" data-fui-after="0" data-fui-min="0"><span id="sk-part">PART-SKELETON</span></template>`, "/d", "")
+	r := newGapRig(t, `<template data-cui-loading="l:x#aside" data-cui-after="0" data-cui-min="0"><span id="sk-part">PART-SKELETON</span></template>`, "/d", "")
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 	// Boot on the deferred page: its address is live in the document,
 	// so parts AND envelope boot-load and every navigation launches

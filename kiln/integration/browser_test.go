@@ -103,7 +103,7 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 
 	// Stub /kiln/agent so the modal Apply form has somewhere to POST.
 	// Real wiring lives in cmd/kiln/agent_http.go; tests only need a
-	// 200 ack so the runtime's data-fui-rpc-close path triggers.
+	// 200 ack so the runtime's data-cui-rpc-close path triggers.
 	l.Aux().Post("/kiln/agent", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"current":{"name":"claude-code"}}`))
@@ -561,7 +561,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	var hasBanner, bannerOn bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`!!document.getElementById("kiln-build-banner")`, &hasBanner),
-		chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &bannerOn),
+		chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.cui-flash")`, &bannerOn),
 	); err != nil {
 		t.Fatalf("read initial banner state: %v", err)
 	}
@@ -591,7 +591,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	for {
 		var on bool
 		_ = chromedp.Run(flashCtx,
-			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &on),
+			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.cui-flash")`, &on),
 			chromedp.Evaluate(`document.getElementById("kiln-build-label").textContent || ""`, &label),
 		)
 		if on {
@@ -641,7 +641,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	for {
 		var on bool
 		_ = chromedp.Run(clearCtx,
-			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.fui-flash")`, &on),
+			chromedp.Evaluate(`!!document.querySelector("#kiln-build-label.cui-flash")`, &on),
 		)
 		if !on {
 			break
@@ -990,7 +990,7 @@ func TestBrowser_NewPanelMountsViaWidget(t *testing.T) {
 	}
 	cssBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	for _, want := range []string{":root", ".fui-widget", ".fui-pos-bottom-right"} {
+	for _, want := range []string{":root", ".cui-widget", ".cui-pos-bottom-right"} {
 		if !strings.Contains(string(cssBody), want) {
 			t.Errorf("new panel style missing %q", want)
 		}
@@ -1097,7 +1097,7 @@ func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
-		chromedp.WaitVisible(`[data-fui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-cui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
 		chromedp.Sleep(300*time.Millisecond),
 	); err != nil {
 		t.Fatalf("open modal: %v", err)
@@ -1106,7 +1106,7 @@ func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
 	var diag string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`(()=>{
-			const card = document.querySelector('[data-fui-widget="kiln-agent-settings"] .kiln-modal');
+			const card = document.querySelector('[data-cui-widget="kiln-agent-settings"] .kiln-modal');
 			if (!card) return JSON.stringify({error: "modal card not in DOM"});
 			const cs = getComputedStyle(card);
 			const r = card.getBoundingClientRect();
@@ -1134,7 +1134,7 @@ func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
 }
 
 // TestBrowser_GearOpensAgentSettingsModal: clicking the gear button
-// (data-fui-open="kiln-agent-settings") mounts the previously-hidden
+// (data-cui-open="kiln-agent-settings") mounts the previously-hidden
 // Modal widget. Catches the "I can't even open the gear" regression.
 func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 	urlBase, _ := startKiln(t)
@@ -1147,7 +1147,7 @@ func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(
-			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			`!!document.querySelector('[data-cui-widget="kiln-agent-settings"]')`,
 			&presentBefore,
 		),
 	); err != nil {
@@ -1167,7 +1167,7 @@ func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			`!!document.querySelector('[data-cui-widget="kiln-agent-settings"]')`,
 			&present))
 		if present {
 			return
@@ -1189,7 +1189,7 @@ func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
-		chromedp.WaitVisible(`[data-fui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-cui-widget="kiln-agent-settings"]`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 	); err != nil {
 		t.Fatalf("open modal: %v", err)
@@ -1224,7 +1224,7 @@ func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
 // fire a POST /kiln/agent with {name: "<selected>"}. Catches the case
 // where the form submit handler is overshadowed by the click handler
 // (or vice versa), the FormData serialization drops the radio, or the
-// runtime treats the form's data-fui-rpc as a click target only.
+// runtime treats the form's data-cui-rpc as a click target only.
 func TestBrowser_ApplyAgentActuallyPosts(t *testing.T) {
 	urlBase, _ := startKiln(t)
 	ctx := chromedptest.Context(t)
@@ -1296,7 +1296,7 @@ func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`,
+			`!!document.querySelector('[data-cui-widget="kiln-agent-settings"]')`,
 			&present))
 		if !present {
 			return
@@ -1310,7 +1310,7 @@ func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 // keystroke starts a fresh prompt. Otherwise pressing Send again
 // resubmits the same text, surprising and dangerous (re-fires the
 // agent on the same prompt). The fix is framework-level: the
-// data-fui-rpc-reset opt-in on the form tells the runtime to call
+// data-cui-rpc-reset opt-in on the form tells the runtime to call
 // form.reset() after a 2xx ack.
 func TestBrowser_SendClearsInput(t *testing.T) {
 	urlBase, _ := startKiln(t)
@@ -1446,7 +1446,7 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 		}
 		time.Sleep(80 * time.Millisecond)
 	}
-	t.Errorf("panel chat list still showed seeded message 2s after Reset — the Reset button's data-fui-rpc-refresh=\"kiln-panel\" cross-widget pollNow did not fire (only the 2s cadence would clear it)")
+	t.Errorf("panel chat list still showed seeded message 2s after Reset — the Reset button's data-cui-rpc-refresh=\"kiln-panel\" cross-widget pollNow did not fire (only the 2s cadence would clear it)")
 }
 
 // The empty-state landing page shows a curl example. Previously the
@@ -1472,7 +1472,7 @@ func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
 	}
 }
 
-// Verifies the runtime's data-fui-scroll-bottom-on-update opt-in:
+// Verifies the runtime's data-cui-scroll-bottom-on-update opt-in:
 // after setSignal updates an html-mode signal node that has the
 // attribute, the resolved target's scrollTop should be at the bottom.
 // Builds a controlled overflow container in JS so the test isn't at
@@ -1505,9 +1505,9 @@ func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 		(function(){
 			const c = document.createElement('div');
 			c.id = 'scroll-test-container';
-			c.setAttribute('data-fui-signal', 'scroll_test');
-			c.setAttribute('data-fui-signal-mode', 'html');
-			c.setAttribute('data-fui-scroll-bottom-on-update', '');
+			c.setAttribute('data-cui-signal', 'scroll_test');
+			c.setAttribute('data-cui-signal-mode', 'html');
+			c.setAttribute('data-cui-scroll-bottom-on-update', '');
 			c.style.cssText = 'position:fixed;top:0;left:0;width:200px;height:60px;overflow:auto;border:1px solid red;background:white;z-index:99999;';
 			c.innerHTML = '<div style="height:200px">initial</div>';
 			document.body.appendChild(c);
@@ -1567,8 +1567,8 @@ func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), `data-fui-scroll-bottom-on-update`) {
-		t.Errorf("kiln chat panel does not declare data-fui-scroll-bottom-on-update on its log container")
+	if !strings.Contains(string(body), `data-cui-scroll-bottom-on-update`) {
+		t.Errorf("kiln chat panel does not declare data-cui-scroll-bottom-on-update on its log container")
 	}
 }
 
@@ -1699,7 +1699,7 @@ func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 // Send button stays disabled while the textarea is empty so the user
 // can't accidentally fire a no-op POST. Becomes enabled the moment
 // any non-whitespace text is typed; goes back to disabled after the
-// 2xx ack clears the textarea (existing data-fui-rpc-reset).
+// 2xx ack clears the textarea (existing data-cui-rpc-reset).
 func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 	ctx := chromedptest.Context(t)
@@ -1739,7 +1739,7 @@ func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 		t.Errorf("Send button still disabled after typing — should be enabled")
 	}
 
-	// Send → input clears via data-fui-rpc-reset → button disables again.
+	// Send → input clears via data-cui-rpc-reset → button disables again.
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`.kiln-send`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
@@ -1787,7 +1787,7 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`, &present))
+			`!!document.querySelector('[data-cui-widget="kiln-agent-settings"]')`, &present))
 		if !present {
 			break
 		}
@@ -1795,7 +1795,7 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 	}
 	var stillGear bool
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`!!document.querySelector('[data-fui-widget="kiln-agent-settings"]')`, &stillGear))
+		`!!document.querySelector('[data-cui-widget="kiln-agent-settings"]')`, &stillGear))
 	if stillGear {
 		t.Errorf("gear modal still present after Esc")
 	}
@@ -1812,7 +1812,7 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var present bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`!!document.querySelector('[data-fui-widget="kiln-reset-confirm"]')`, &present))
+			`!!document.querySelector('[data-cui-widget="kiln-reset-confirm"]')`, &present))
 		if !present {
 			return
 		}
@@ -1888,7 +1888,7 @@ func TestBrowser_EnterSubmitsChat(t *testing.T) {
 	); err != nil {
 		t.Fatalf("enter-submit flow: %v", err)
 	}
-	// Input should have cleared (data-fui-rpc-reset).
+	// Input should have cleared (data-cui-rpc-reset).
 	var val string
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -2202,7 +2202,7 @@ func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 
 // Pending tool rows get a live elapsed-time counter so a stuck tool
 // is visible to the user without waiting for the result. Uses the
-// runtime's data-fui-tick-elapsed primitive.
+// runtime's data-cui-tick-elapsed primitive.
 func TestBrowser_PendingToolRowTicksElapsedTime(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
 	ctx := chromedptest.Context(t)
@@ -2233,7 +2233,7 @@ func TestBrowser_PendingToolRowTicksElapsedTime(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var t1 string
 	for time.Now().Before(deadline) {
-		_ = chromedp.Run(ctx, chromedp.Text(`[data-fui-tick-elapsed]`, &t1, chromedp.ByQuery))
+		_ = chromedp.Run(ctx, chromedp.Text(`[data-cui-tick-elapsed]`, &t1, chromedp.ByQuery))
 		if t1 != "…" && t1 != "" {
 			break
 		}
@@ -2245,7 +2245,7 @@ func TestBrowser_PendingToolRowTicksElapsedTime(t *testing.T) {
 
 	time.Sleep(700 * time.Millisecond)
 	var t2 string
-	_ = chromedp.Run(ctx, chromedp.Text(`[data-fui-tick-elapsed]`, &t2, chromedp.ByQuery))
+	_ = chromedp.Run(ctx, chromedp.Text(`[data-cui-tick-elapsed]`, &t2, chromedp.ByQuery))
 	if t1 == t2 {
 		t.Errorf("ticker did not advance over 700ms; t1=%q t2=%q", t1, t2)
 	}
@@ -2261,7 +2261,7 @@ func mustJSON(v any) []byte {
 
 // In-flight header indicator includes a live-ticking elapsed time
 // since the last user message: 'agent thinking · 1.2s · 0 tools'.
-// Verifies the data-fui-tick-elapsed plumbing reaches this surface.
+// Verifies the data-cui-tick-elapsed plumbing reaches this surface.
 func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	urlBase, l, tools := startKilnExt(t)
 	ctx := chromedptest.Context(t)
@@ -2295,7 +2295,7 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	var t1 string
 	for time.Now().Before(deadline) {
-		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-fui-tick-elapsed]'); return e?e.textContent:'';})()`, &t1))
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-cui-tick-elapsed]'); return e?e.textContent:'';})()`, &t1))
 		if t1 != "" && t1 != "…" {
 			break
 		}
@@ -2307,14 +2307,14 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 
 	time.Sleep(700 * time.Millisecond)
 	var t2 string
-	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-fui-tick-elapsed]'); return e?e.textContent:'';})()`, &t2))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{const e=document.querySelector('.kiln-msg-thinking [data-cui-tick-elapsed]'); return e?e.textContent:'';})()`, &t2))
 	if t1 == t2 {
 		t.Errorf("header elapsed ticker did not advance; t1=%q t2=%q", t1, t2)
 	}
 }
 
-// SSE connection-status dot: body.fui-sse-up after the first SSE
-// open, .fui-sse-down after a forced error. The panel header shows
+// SSE connection-status dot: body.cui-sse-up after the first SSE
+// open, .cui-sse-down after a forced error. The panel header shows
 // the dot styled accordingly so the user knows when the live link
 // is alive vs. silently stale.
 func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
@@ -2332,7 +2332,7 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 	for time.Now().Before(deadline) {
 		var up bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`document.body.classList.contains('fui-sse-up')`, &up))
+			`document.body.classList.contains('cui-sse-up')`, &up))
 		if up {
 			break
 		}
@@ -2340,26 +2340,26 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 	}
 	var sseUp bool
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.body.classList.contains('fui-sse-up')`, &sseUp))
+		`document.body.classList.contains('cui-sse-up')`, &sseUp))
 	if !sseUp {
-		t.Fatalf("body.fui-sse-up never set within 4s")
+		t.Fatalf("body.cui-sse-up never set within 4s")
 	}
 
 	// Force the EventSources to error by killing the page's connections
 	// via JS, call .close() and dispatch a synthetic 'error'.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`
 		(function(){
-			document.body.classList.remove('fui-sse-up');
-			document.body.classList.add('fui-sse-down');
+			document.body.classList.remove('cui-sse-up');
+			document.body.classList.add('cui-sse-down');
 		})()
 	`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	var sseDown bool
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.body.classList.contains('fui-sse-down')`, &sseDown))
+		`document.body.classList.contains('cui-sse-down')`, &sseDown))
 	if !sseDown {
-		t.Errorf("body.fui-sse-down not set after manual flip")
+		t.Errorf("body.cui-sse-down not set after manual flip")
 	}
 }
 
@@ -2672,7 +2672,7 @@ func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
 	}
 }
 
-// data-fui-flash-on-update adds .fui-flash for ~600ms after a
+// data-cui-flash-on-update adds .cui-flash for ~600ms after a
 // signal update so the user can spot which header pill changed.
 // Verifies the kiln world snapshot opt-in: add an entity, see the
 // flash class land on .kiln-panel-snapshot.
@@ -2702,19 +2702,19 @@ func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "flashy", Fields: []world.Field{{Name: "x", Type: "string"}}}})
 
-	// Look for .fui-flash within the brief window before the
+	// Look for .cui-flash within the brief window before the
 	// 600ms timeout removes it.
 	deadline := time.Now().Add(5 * time.Second) // 2s±10% poll cadence needs headroom
 	for time.Now().Before(deadline) {
 		var hasClass bool
 		_ = chromedp.Run(ctx, chromedp.Evaluate(
-			`document.querySelector('.kiln-panel-snapshot').classList.contains('fui-flash')`, &hasClass))
+			`document.querySelector('.kiln-panel-snapshot').classList.contains('cui-flash')`, &hasClass))
 		if hasClass {
 			return
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
-	t.Errorf(".fui-flash class never landed on snapshot pill after entity addition")
+	t.Errorf(".cui-flash class never landed on snapshot pill after entity addition")
 }
 
 // Cancel-turn button is only visible while in-flight, and clicking
@@ -3172,7 +3172,7 @@ func TestBrowser_ApprovedPlansCollapse(t *testing.T) {
 
 // Char counter span shows '<n> chars' alongside the input,
 // updating live as the user types. Verifies the framework
-// data-fui-charcount-source primitive on the kiln textarea.
+// data-cui-charcount-source primitive on the kiln textarea.
 func TestBrowser_InputCharCounterUpdatesLive(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
 	ctx := chromedptest.Context(t)
@@ -3285,9 +3285,9 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	}
 	var hasFlash bool
 	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.querySelector('.kiln-panel-copy').classList.contains('fui-copied')`, &hasFlash))
+		`document.querySelector('.kiln-panel-copy').closest('[data-hui-copy]').getAttribute('data-hui-copy-state') === 'done'`, &hasFlash))
 	if !hasFlash {
-		t.Errorf("expected .fui-copied flash class on copy button after click")
+		t.Errorf("expected data-hui-copy-state=\"done\" on the copy wrapper after click")
 	}
 }
 

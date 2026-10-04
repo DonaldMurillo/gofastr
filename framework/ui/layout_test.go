@@ -9,7 +9,7 @@ import (
 
 func TestStackRendersDataFuiComp(t *testing.T) {
 	h := Stack(StackConfig{}, render.Text("A"), render.Text("B"))
-	for _, want := range []string{`data-fui-comp="ui-layout"`, "fui-stack", "A", "B"} {
+	for _, want := range []string{`data-cui-comp="ui-layout"`, "fui-stack", "A", "B"} {
 		mustContain(t, h, want)
 	}
 }
@@ -143,7 +143,7 @@ func TestAspectRatioExtraAttrsOnRoot(t *testing.T) {
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("AspectRatio root missing data-test:\n%s", root)
 	}
-	mustContain(t, h, `data-fui-comp="ui-aspect-ratio"`)
+	mustContain(t, h, `data-cui-comp="ui-aspect-ratio"`)
 }
 
 // The styled layout adapters own their roots the way the headless
@@ -154,7 +154,7 @@ func TestStyledLayoutAdaptersRefuseHostileExtraAttrs(t *testing.T) {
 	hostile := map[string]string{
 		"style":         "color:red",
 		"STYLE":         "color:red",
-		"data-fui-comp": "spoof",
+		"data-cui-comp": "spoof",
 		"data-hui-x":    "1",
 	}
 	kids := []render.HTML{render.Text("x")}

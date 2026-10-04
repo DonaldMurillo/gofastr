@@ -17,12 +17,12 @@ import (
 var signalToggleStyle = registry.RegisterStyle("fui-toggle", signalToggleCSS)
 
 func signalToggleCSS(_ style.Theme) string {
-	return `[data-fui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:var(--spacing-md, .5rem);background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground, var(--color-text, #0f172a));font:inherit}` +
-		`[data-fui-comp="fui-toggle"] .fui-toggle__track{position:relative;display:inline-block;width:2.5rem;height:1.375rem;border-radius:999px;background:var(--fui-border, var(--color-border, #cbd5e1));transition:background .15s}` +
-		`[data-fui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:2px;left:2px;width:1.125rem;height:1.125rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}` +
-		`[data-fui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__track{background:var(--fui-primary, var(--color-primary, #3b82f6))}` +
-		`[data-fui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__thumb{transform:translateX(1.125rem)}` +
-		`[data-fui-comp="fui-toggle"]:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px;border-radius:var(--radii-sm, 4px)}`
+	return `[data-cui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:var(--spacing-md, .5rem);background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground, var(--color-text, #0f172a));font:inherit}` +
+		`[data-cui-comp="fui-toggle"] .fui-toggle__track{position:relative;display:inline-block;width:2.5rem;height:1.375rem;border-radius:999px;background:var(--fui-border, var(--color-border, #cbd5e1));transition:background .15s}` +
+		`[data-cui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:2px;left:2px;width:1.125rem;height:1.125rem;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}` +
+		`[data-cui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__track{background:var(--fui-primary, var(--color-primary, #3b82f6))}` +
+		`[data-cui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__thumb{transform:translateX(1.125rem)}` +
+		`[data-cui-comp="fui-toggle"]:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px;border-radius:var(--radii-sm, 4px)}`
 }
 
 // ─── SignalToggle ────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ type SignalToggleConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the toggle's root
 	// <button>. Keys the component owns are dropped: class (use
-	// Class), data-fui-*, role, aria-checked, and aria-label — the
+	// Class), data-cui-*, role, aria-checked, and aria-label — the
 	// switch contract and signal wiring the runtime drives.
 	ExtraAttrs html.Attrs
 }
@@ -50,11 +50,11 @@ type SignalToggleConfig struct {
 // SignalToggle renders a <button role="switch"> that toggles a boolean
 // signal on click. The signal binding is fully client-side:
 //
-//   - data-fui-signal-toggle flips the signal on click
-//   - data-fui-signal + attr mode keeps aria-checked in sync
-//   - a nested label span shows the signal value via data-fui-signal
+//   - data-cui-signal-toggle flips the signal on click
+//   - data-cui-signal + attr mode keeps aria-checked in sync
+//   - a nested label span shows the signal value via data-cui-signal
 //
-// The button carries data-fui-comp="fui-toggle" for scoped CSS auto-loading.
+// The button carries data-cui-comp="fui-toggle" for scoped CSS auto-loading.
 func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	name := cfg.SignalName
 	initial := false
@@ -91,18 +91,18 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	// SignalToggleConfig carries no render.HTML field, so the track
 	// and the label both hold none of a caller's markup.
 	inner := fmt.Sprintf(
-		`<span class="fui-toggle__track" data-fui-internal=""><span class="fui-toggle__thumb"></span></span>`+
-			`<span class="fui-toggle__label" data-fui-internal="" data-fui-signal="%s">%s</span>`,
+		`<span class="fui-toggle__track" data-cui-internal=""><span class="fui-toggle__thumb"></span></span>`+
+			`<span class="fui-toggle__label" data-cui-internal="" data-cui-signal="%s">%s</span>`,
 		escName, initStr,
 	)
 
 	// Construct the full button element.
-	// data-fui-signal-toggle: click handler flips the signal
-	// data-fui-signal + data-fui-signal-mode="attr": binds signal value to aria-checked
+	// data-cui-signal-toggle: click handler flips the signal
+	// data-cui-signal + data-cui-signal-mode="attr": binds signal value to aria-checked
 	return render.HTML(fmt.Sprintf(
-		`<button class="%s" data-fui-comp="fui-toggle"`+
-			` data-fui-signal-toggle="%s"`+
-			` data-fui-signal="%s" data-fui-signal-mode="attr" data-fui-signal-attr="aria-checked"`+
+		`<button class="%s" data-cui-comp="fui-toggle"`+
+			` data-cui-signal-toggle="%s"`+
+			` data-cui-signal="%s" data-cui-signal-mode="attr" data-cui-signal-attr="aria-checked"`+
 			` role="switch" aria-checked="%s" aria-label="%s"%s>%s</button>`,
 		escCls, escName, escName, initStr, escLabel, extraAttrs, inner,
 	))

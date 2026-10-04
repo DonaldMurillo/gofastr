@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	_ "embed"
 	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -16,8 +17,19 @@ import (
 //
 // Search input with a search icon prefix and a clear button suffix.
 // Optionally wraps in a <form role="search"> when Action is set.
-// Runtime JS (core-ui/runtime/src/searchinput.js) handles show/hide
-// of the clear button and clearing the input on click.
+// searchinput.js, registered below as this package's own behaviour,
+// shows and hides the clear button and clears the input on click or
+// Escape. It binds the component's classes, which is why it lives
+// here and not in the kernel: core-ui/runtime names no kit class.
+
+//go:embed searchinput.js
+var searchInputJS string
+
+// SearchInput has no headless counterpart by binding decision, so the
+// module that drives it is framework/ui's, the filedropzone shape: the
+// kernel demand-loads it when the marker is on the page, and the
+// component's classes stay the component's to rename.
+var _ = registry.RegisterBehavior("searchinput", searchInputJS, registry.Markers(`[data-cui-comp="ui-search-input"]`))
 
 // SearchInputConfig configures a SearchInput.
 type SearchInputConfig struct {
@@ -34,7 +46,7 @@ type SearchInputConfig struct {
 	// Class adds extra CSS classes to the wrapper.
 	Class string
 	// ExtraAttrs forwards additional attributes to the <input> element.
-	// Keys the component owns are dropped: class and id, data-fui-*,
+	// Keys the component owns are dropped: class and id, data-cui-*,
 	// type, and name. "value" is deliberately NOT owned: the resource
 	// UI prefills the current search term through it.
 	ExtraAttrs map[string]string
@@ -83,7 +95,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
 	// Extras land on the <input>: SafeExtraAttrs drops every
-	// case-variant of type/name (and id/class/data-fui-*), so a caller
+	// case-variant of type/name (and id/class/data-cui-*), so a caller
 	// cannot flip the box to a hidden input or clobber the submitted
 	// field name. value survives — see the config comment.
 	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "name"))
@@ -111,7 +123,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	// root, and holds nothing but this component's own icon/input/clear
 	// trio, so it becomes the topmost internal subtree instead.
 	if cfg.Action != "" {
-		labelAttrs["data-fui-internal"] = ""
+		labelAttrs["data-cui-internal"] = ""
 	}
 	innerWrapper := render.Tag("label", labelAttrs, inner...)
 	// Wrap in <form role="search"> when Action is provided. The action
@@ -137,7 +149,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 var searchInputStyle = registry.RegisterStyle("ui-search-input", searchInputCSS)
 
 // searchInputCSS keys every rule on the .fui-search class, NOT the
-// data-fui-comp marker: WrapHTML injects the marker into the OUTERMOST
+// data-cui-comp marker: WrapHTML injects the marker into the OUTERMOST
 // tag, which is the <label> in the bare variant but the <form> in the
 // Action variant. Attribute-ancestor selectors therefore stop matching
 // the label the moment Action is set (#239) — the class is the one

@@ -18,10 +18,10 @@ var feedbackJS string
 const FeedbackBehaviorName = "headless-feedback"
 
 // The markers: the copy wrapper, the stack (both names — the kernel's
-// data-fui-toast-stack is what a runtime-only stack or a ToastSlot
+// data-cui-toast-stack is what a runtime-only stack or a ToastSlot
 // carries, data-hui-toast-stack what the component renders), the bell
 // and the retry link.
 var _ = uiregistry.RegisterBehavior(FeedbackBehaviorName, feedbackJS,
 	uiregistry.Markers("[data-hui-copy]", "[data-hui-toast-stack]",
-		"[data-fui-toast-stack]", "[data-hui-notification-bell]",
+		"[data-cui-toast-stack]", "[data-hui-notification-bell]",
 		"[data-hui-network-retry]"))

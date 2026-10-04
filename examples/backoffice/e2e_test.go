@@ -2,7 +2,7 @@ package main
 
 // Browser-level (chromedp) e2e for the entity admin. Drives the real user
 // path through a headless Chrome so the runtime-dependent behaviour is
-// exercised end to end: SSR list hydration, the data-fui-confirm delete
+// exercised end to end: SSR list hydration, the data-cui-confirm delete
 // (native confirm → DELETE RPC → SPA refresh), and a form create round-trip.
 //
 // Gated by -short (slow; needs a headless Chrome), matching the repo's e2e
@@ -33,7 +33,7 @@ func backofficeServer(t *testing.T) string {
 func backofficeBrowser(t *testing.T) context.Context {
 	t.Helper()
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
-	// Auto-accept any window.confirm (the data-fui-confirm delete dialog).
+	// Auto-accept any window.confirm (the data-cui-confirm delete dialog).
 	chromedp.ListenTarget(ctx, func(ev any) {
 		if _, ok := ev.(*page.EventJavascriptDialogOpening); ok {
 			go func() { _ = chromedp.Run(ctx, page.HandleJavaScriptDialog(true)) }()
@@ -62,7 +62,7 @@ func rowCount(ctx context.Context) (int, error) {
 }
 
 // waitHydrated blocks until runtime.js has installed its global click/submit
-// dispatcher, clicking a data-fui-rpc button before that is a no-op.
+// dispatcher, clicking a data-cui-rpc button before that is a no-op.
 func waitHydrated(t *testing.T, ctx context.Context) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -98,11 +98,11 @@ func TestBackofficeE2E_DeleteFlow(t *testing.T) {
 		t.Fatalf("no first row id to delete (id=%q err=%v)", rowID, err)
 	}
 
-	// Click that row's Delete. data-fui-confirm calls window.confirm, stub it to
+	// Click that row's Delete. data-cui-confirm calls window.confirm, stub it to
 	// accept, then the runtime DELETEs and the island swaps in the fresh table.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.confirm = () => true; true`, nil),
-		chromedp.Click(`tbody tr:first-child button[data-fui-rpc^="/admin/e/products/_delete/"]`, chromedp.ByQuery),
+		chromedp.Click(`tbody tr:first-child button[data-cui-rpc^="/admin/e/products/_delete/"]`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("click delete: %v", err)
 	}

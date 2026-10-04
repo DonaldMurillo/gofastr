@@ -156,7 +156,7 @@ func Mark(a html.Attrs, names ...string) html.Attrs {
 	return a
 }
 
-// Internal returns own with data-fui-internal set: the attribute an
+// Internal returns own with data-cui-internal set: the attribute an
 // owned style's @scope stops at. A component puts it on each subtree
 // that holds none of the caller's content (a header built from a Title
 // string, a control's input, a dismiss button), and never on an
@@ -169,7 +169,7 @@ func Internal(own html.Attrs) html.Attrs {
 	for k, v := range own {
 		out[k] = v
 	}
-	out["data-fui-internal"] = ""
+	out["data-cui-internal"] = ""
 	return out
 }
 
@@ -184,13 +184,13 @@ func Flag(a html.Attrs, name string, on bool) html.Attrs {
 // refused reports whether a caller-supplied attribute may never reach
 // the markup, whichever way it came in. Attribute names are
 // case-insensitive in HTML — the parser lowercases them, so
-// DATA-FUI-RPC is data-fui-rpc by the time the runtime looks — which
+// DATA-CUI-RPC is data-cui-rpc by the time the runtime looks — which
 // is why the key is folded before every check, and why a sanitiser
 // that compared the spelling as written let the request through.
 //
 // Refused, in three families: style, which a host serving no
 // unsafe-inline drops (the framework's default posture), so it is a
-// rule that vanishes in production; every data-fui-* key, the
+// rule that vanishes in production; every data-cui-* key, the
 // framework runtime's own contract, so decoration can never become a
 // request; and the runtime's privileged unprefixed keys — data-behavior
 // (a script-loading sink), data-island (the SSE swap target),
@@ -216,7 +216,8 @@ func refused(key string) bool {
 	if strings.HasPrefix(k, "on") {
 		return true
 	}
-	for _, prefix := range []string{"data-hui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
+	//gofastr:allow(layerprefix) Safe names every reserved prefix to refuse it from ExtraAttrs
+	for _, prefix := range []string{"data-hui-", "data-cui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
 		if strings.HasPrefix(k, prefix) {
 			return true
 		}

@@ -399,7 +399,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"role":          "status",
 		"aria-live":     "polite",
 		"class":         "fui-callout fui-callout--neutral",
-		"data-fui-comp": "ui-callout",
+		"data-cui-comp": "ui-callout",
 	}, render.Tag("div", map[string]string{"class": "fui-callout__body"}, render.Text("")))
 
 	// Contrast panel: JS fills this. Same Callout shape; the JS swaps to
@@ -409,7 +409,7 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		"role":          "alert",
 		"hidden":        "",
 		"class":         "fui-callout fui-callout--warning",
-		"data-fui-comp": "ui-callout",
+		"data-cui-comp": "ui-callout",
 	})
 
 	// The controls themselves are renderTokenControls output (ui.Collapsible

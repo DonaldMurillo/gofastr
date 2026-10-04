@@ -14,9 +14,9 @@ func TestCodeTabsRendersTabPerSample(t *testing.T) {
 		CodeSample{Label: "curl", Language: "shell", Code: "curl -s https://x"},
 	))
 	for _, want := range []string{
-		`data-fui-comp="ui-code-tabs"`,
+		`data-cui-comp="ui-code-tabs"`,
 		`data-hui-tabs=""`,
-		`data-fui-signal-set="install:0"`,
+		`data-cui-signal-set="install:0"`,
 		">Go</", ">TypeScript</", ">curl</",
 		`href="#install-panel-0"`,
 		"ui-code-block", // each panel is a real CodeBlock
@@ -73,11 +73,11 @@ func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
 	// index, the strip bordered, the active tab underlined. Without
 	// the per-index pair all panels stack (review item 19).
 	for _, want := range []string{
-		`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__nav {`,
+		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {`,
 		`border-bottom: 1px solid var(--color-border`,
-		`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none;`,
-		`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="0"] .fui-code-tabs__panel[data-fui-tab-index="0"]{display:block}`,
-		`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="1"] .fui-code-tabs__tab[data-fui-tab-index="1"]{color:var(--color-primary`,
+		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none;`,
+		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="0"] .fui-code-tabs__panel[data-cui-tab-index="0"]{display:block}`,
+		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="1"] .fui-code-tabs__tab[data-cui-tab-index="1"]{color:var(--color-primary`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("codeTabsCSS lost the rule %q — the strip or the panel visibility regressed:\n%s", want, css)

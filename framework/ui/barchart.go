@@ -82,7 +82,7 @@ type BarChartConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <svg>. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, width, height, viewBox, xmlns, role,
+	// data-cui-*, width, height, viewBox, xmlns, role,
 	// aria-labelledby (use LabelledBy), and aria-hidden. With no Bars
 	// the extras land on the shared zero-data placeholder instead.
 	ExtraAttrs html.Attrs
@@ -223,7 +223,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	} else {
 		sb.WriteString(` aria-hidden="true"`)
 	}
-	sb.WriteString(` data-fui-comp="ui-bar-chart"`)
+	sb.WriteString(` data-cui-comp="ui-bar-chart"`)
 	sb.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
 	sb.WriteString(`>`)
@@ -241,12 +241,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(float64(w)))
 			sb.WriteString(`" y2="`)
 			sb.WriteString(ftoa(ty))
-			sb.WriteString(`" class="fui-bar-chart__grid" data-fui-internal=""/>`)
+			sb.WriteString(`" class="fui-bar-chart__grid" data-cui-internal=""/>`)
 			sb.WriteString(`<text x="`)
 			sb.WriteString(ftoa(axisGutter - 5))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ty + 3))
-			sb.WriteString(`" class="fui-bar-chart__axis-label" data-fui-internal="" text-anchor="end">`)
+			sb.WriteString(`" class="fui-bar-chart__axis-label" data-cui-internal="" text-anchor="end">`)
 			sb.WriteString(ftoa(tv))
 			sb.WriteString(`</text>`)
 		}
@@ -261,7 +261,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	sb.WriteString(ftoa(float64(w)))
 	sb.WriteString(`" y2="`)
 	sb.WriteString(ftoa(baseY))
-	sb.WriteString(`" class="fui-bar-chart__baseline" data-fui-internal=""/>`)
+	sb.WriteString(`" class="fui-bar-chart__baseline" data-cui-internal=""/>`)
 
 	for i, b := range cfg.Bars {
 		slotX := axisGutter + float64(i)*slotW
@@ -308,7 +308,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		sb.WriteString(ftoa(barH))
 		sb.WriteString(`" rx="3" class="`)
 		sb.WriteString(barCls)
-		sb.WriteString(`" data-fui-internal=""`)
+		sb.WriteString(`" data-cui-internal=""`)
 		if fill != "" {
 			sb.WriteString(` fill="`)
 			sb.WriteString(escapeXML(fill))
@@ -328,7 +328,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(y - 4))
-			sb.WriteString(`" class="fui-bar-chart__value" data-fui-internal="" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__value" data-cui-internal="" text-anchor="middle">`)
 			sb.WriteString(escapeXML(ftoa(b.Value)))
 			sb.WriteString(`</text>`)
 		}
@@ -341,7 +341,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ly))
-			sb.WriteString(`" class="fui-bar-chart__label" data-fui-internal="" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__label" data-cui-internal="" text-anchor="middle">`)
 			for li, ln := range lines {
 				sb.WriteString(`<tspan x="`)
 				sb.WriteString(ftoa(cx))
@@ -501,14 +501,14 @@ func wrapChartLabel(label string, maxChars int) []string {
 var barChartStyle = registry.RegisterStyle("ui-bar-chart", barChartCSS)
 
 func barChartCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-bar-chart"] {
+	return `[data-cui-comp="ui-bar-chart"] {
   display: block;
   max-inline-size: 100%;
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__bar {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar {
   transition: opacity 120ms ease;
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
   opacity: 0.85;
 }
 .fui-bar-chart__bar--primary { fill: var(--color-primary, #4F46E5); }
@@ -517,26 +517,26 @@ func barChartCSS(_ style.Theme) string {
 .fui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
 .fui-bar-chart__bar--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__baseline {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__baseline {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__grid {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__grid {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
   opacity: 0.55;
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__value {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__value {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
   fill: var(--color-text, #18181B);
   font-variant-numeric: tabular-nums;
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__label {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__label {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-bar-chart"] .fui-bar-chart__axis-label {
+[data-cui-comp="ui-bar-chart"] .fui-bar-chart__axis-label {
   font-size: 0.68rem;
   fill: var(--color-text-muted, #52525B);
   font-variant-numeric: tabular-nums;

@@ -34,15 +34,15 @@ func TestDropdownEscapeRestoresPanelFocusWithoutStealingOtherDismissals(t *testi
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html><head><title>dropdown-focus</title></head><body>
-  <div id="one" data-fui-dropdown-wrap data-fui-dropdown-open>
-    <button id="trigger-one" data-fui-dropdown aria-expanded="true">One</button>
-    <div id="panel-one" data-fui-dropdown-panel>
+  <div id="one" data-cui-dropdown-wrap data-cui-dropdown-open>
+    <button id="trigger-one" data-cui-dropdown aria-expanded="true">One</button>
+    <div id="panel-one" data-cui-dropdown-panel>
       <div><a id="nested-one" href="#one-action">Nested one</a></div>
     </div>
   </div>
-  <div id="two" data-fui-dropdown-wrap data-fui-dropdown-open>
-    <button id="trigger-two" data-fui-dropdown aria-expanded="true">Two</button>
-    <div id="panel-two" data-fui-dropdown-panel>
+  <div id="two" data-cui-dropdown-wrap data-cui-dropdown-open>
+    <button id="trigger-two" data-cui-dropdown aria-expanded="true">Two</button>
+    <div id="panel-two" data-cui-dropdown-panel>
       <div><button id="nested-two">Nested two</button></div>
     </div>
   </div>

@@ -89,17 +89,17 @@
       st.entries.set(addr, {
         el, tpl,
         after: 0,
-        min: tpl ? (+tpl.getAttribute('data-fui-min') || 0) : 0,
+        min: tpl ? (+tpl.getAttribute('data-cui-min') || 0) : 0,
         epoch: st.epoch, timer: 0, shown: true, park: null,
         shownAt: performance.now(),
       });
-      el.setAttribute('data-fui-loadstate', 'shown');
+      el.setAttribute('data-cui-loadstate', 'shown');
     }
   };
   const findLoadingTpl = (addr) => {
     if (!addr) return null;
-    for (const el of document.querySelectorAll('template[data-fui-loading]')) {
-      if (el.getAttribute('data-fui-loading') === addr) return el;
+    for (const el of document.querySelectorAll('template[data-cui-loading]')) {
+      if (el.getAttribute('data-cui-loading') === addr) return el;
     }
     return null;
   };
@@ -169,7 +169,7 @@
 
   // applyPart writes a part landing AFTER the commit: its region's
   // Min hold and exit animation run first (the loading content leaves
-  // through data-fui-loadstate, per region), then the content, the
+  // through data-cui-loadstate, per region), then the content, the
   // seed delta, and the gofastr:fill event. Never a view transition:
   // a second startViewTransition would skip the page's.
   const applyPart = async (st, addr, p) => {
@@ -251,7 +251,7 @@
       let text = '';
       try { text = await resp.text(); } catch (_) { restore(addr); return; }
       if (st.dead || !NS._navLive(st.epoch)) { restore(addr); return; }
-      if (text.indexOf('data-fui-fill') < 0 && text.indexOf('gofastr-signals-partial') < 0) { restore(addr); return; }
+      if (text.indexOf('data-cui-fill') < 0 && text.indexOf('gofastr-signals-partial') < 0) { restore(addr); return; }
       const snap = NS._navHooks.envelope.parse(text, addr);
       const p = { html: snap.primary.html, seed: null };
       if (snap.seed) {
@@ -356,8 +356,8 @@
   // shape this runtime does not ship).
   if (Array.isArray(window.__gofastr_routes) &&
       window.__gofastr_routes.some((r) => (r.deferred || []).some((a) => {
-        for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area]')) {
-          if ((el.getAttribute('data-fui-outlet') || el.getAttribute('data-fui-area')) === a) return true;
+        for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
+          if ((el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area')) === a) return true;
         }
         return false;
       }))) {

@@ -129,7 +129,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	// way: fallback, no escape.
 	ssrNoPanic(t, "ssr-containment", "Screen.Render on a panicking component", func() {
 		s := NewScreen("/x", ssrBoomScreen{})
-		if out := string(s.Render()); !strings.Contains(out, "fui-render-error") {
+		if out := string(s.Render()); !strings.Contains(out, "cui-render-error") {
 			t.Errorf("Screen.Render must render the fallback box, got:\n%s", out)
 		}
 	})

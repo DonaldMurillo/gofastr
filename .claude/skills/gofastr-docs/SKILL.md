@@ -14,7 +14,7 @@ skill applies. Docs are part of the change, not a follow-up.
 | File | Role | Update when |
 |------|------|-------------|
 | `README.md` | Canonical entry point. The "Surfaces" table & quickstart are the source of truth for what the framework advertises. | A new surface is added/renamed/removed. A new auto-generated entity behaviour is added. CLI changes. |
-| `core-ui/ARCHITECTURE.md` | UI/runtime contract. Authoritative for SSR/hydration/island/SSE model. | Any change to `core-ui/`, `framework/ui/`, `framework/uihost/`, `runtime.js`, or the `data-fui-*` attribute set. |
+| `core-ui/ARCHITECTURE.md` | UI/runtime contract. Authoritative for SSR/hydration/island/SSE model. | Any change to `core-ui/`, `framework/ui/`, `framework/uihost/`, `runtime.js`, or the `data-cui-*` attribute set. |
 | `framework/docs/content/entity-declarations.md` | JSON + Go entity declaration reference. | New field type, new option in `EntityConfig`, new declaration loader, new validator. |
 | `framework/docs/content/query-dsl.md` | Query DSL parser surface. | New operator, new clause, new column type, change to DSL grammar. |
 | `framework/docs/content/migrations.md` | SQL-file migrate directives + CLI subcommands. | New directive, new CLI subcommand, dialect change. |
@@ -97,7 +97,7 @@ was needed.
 
 **You changed `core-ui/` or `framework/uihost/`:**
 - `core-ui/ARCHITECTURE.md`: this is mandatory; the doc is the contract
-- If you added a new `data-fui-*` attribute: update the runtime test
+- If you added a new `data-cui-*` attribute: update the runtime test
   suite as well (rule from `CLAUDE.md`)
 
 **You added/changed a battery package (`auth`, `cache`, `email`,
@@ -158,7 +158,7 @@ was needed.
 3. **Don't document private implementation details.** The reference
    pages describe the public surface a user touches: exported types,
    exported funcs, HTTP routes, CLI flags, JSON declaration fields,
-   `data-fui-*` attributes. Skip internal helpers.
+   `data-cui-*` attributes. Skip internal helpers.
 
 4. **No time estimates, no roadmaps in reference docs.** Status
    ("pre-alpha") goes in the README only, once. Reference pages

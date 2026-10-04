@@ -63,7 +63,7 @@ type BannerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the banner's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and the severity contract (role, aria-live,
+	// ID), data-cui-*, and the severity contract (role, aria-live,
 	// derived from Variant).
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the dismiss label.
@@ -178,7 +178,7 @@ func bannerIcon(v BannerVariant) string {
 }
 
 func bannerCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-banner"] {
+	return `[data-cui-comp="ui-banner"] {
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   column-gap: var(--spacing-md, 8px);
@@ -190,7 +190,7 @@ func bannerCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-banner"] .fui-visually-hidden {
+[data-cui-comp="ui-banner"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -202,14 +202,14 @@ func bannerCSS(_ style.Theme) string {
 }
 /* SystemBanner's parts are the banner's own children: the icon and
    the controls span both rows, the title sits over the body. */
-[data-fui-comp="ui-banner"] .fui-banner__icon {
+[data-cui-comp="ui-banner"] .fui-banner__icon {
   grid-column: 1;
   grid-row: 1 / span 2;
   display: inline-flex;
   color: var(--color-info, #3B82F6);
   margin-top: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-banner"] .fui-banner__title {
+[data-cui-comp="ui-banner"] .fui-banner__title {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
@@ -217,7 +217,7 @@ func bannerCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-base, 1rem);
 }
-[data-fui-comp="ui-banner"] .fui-banner__body {
+[data-cui-comp="ui-banner"] .fui-banner__body {
   grid-column: 2;
   grid-row: 2;
   min-width: 0;
@@ -226,13 +226,13 @@ func bannerCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
-[data-fui-comp="ui-banner"] .fui-banner__action {
+[data-cui-comp="ui-banner"] .fui-banner__action {
   grid-column: 3;
   grid-row: 1 / span 2;
   display: inline-flex;
   align-items: center;
 }
-[data-fui-comp="ui-banner"] .fui-banner__dismiss {
+[data-cui-comp="ui-banner"] .fui-banner__dismiss {
   grid-column: 4;
   grid-row: 1 / span 2;
   display: inline-flex;
@@ -250,11 +250,11 @@ func bannerCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 4px);
   margin: -8px -8px -8px 0;
 }
-[data-fui-comp="ui-banner"] .fui-banner__dismiss:hover {
+[data-cui-comp="ui-banner"] .fui-banner__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
+[data-cui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
@@ -262,14 +262,14 @@ func bannerCSS(_ style.Theme) string {
    narrowest of them. Below 30rem the action drops under the body and
    the dismiss spans the whole stack. */
 @media (max-width: 30rem) {
-  [data-fui-comp="ui-banner"] {
+  [data-cui-comp="ui-banner"] {
     grid-template-columns: auto 1fr auto;
   }
-  [data-fui-comp="ui-banner"] .fui-banner__action {
+  [data-cui-comp="ui-banner"] .fui-banner__action {
     grid-column: 2;
     grid-row: 3;
   }
-  [data-fui-comp="ui-banner"] .fui-banner__dismiss {
+  [data-cui-comp="ui-banner"] .fui-banner__dismiss {
     grid-column: 3;
     grid-row: 1 / span 3;
   }
@@ -282,10 +282,10 @@ func bannerCSS(_ style.Theme) string {
 .fui-banner--warn .fui-banner__icon { color: var(--color-warning, #D97706); }
 .fui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
 .fui-banner--danger .fui-banner__icon { color: var(--color-danger, #DC2626); }
-:where([data-fui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: 1.5; border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
-[data-fui-comp="ui-banner"].fui-banner--strip .fui-banner__icon { display: none; }
-[data-fui-comp="ui-banner"].fui-banner--strip :is(.fui-banner__title, .fui-banner__body, .fui-banner__action) { display: inline; font-size: inherit; margin-inline-end: var(--spacing-sm); }
+:where([data-cui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: 1.5; border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
+[data-cui-comp="ui-banner"].fui-banner--strip .fui-banner__icon { display: none; }
+[data-cui-comp="ui-banner"].fui-banner--strip :is(.fui-banner__title, .fui-banner__body, .fui-banner__action) { display: inline; font-size: inherit; margin-inline-end: var(--spacing-sm); }
 
 /* Hidden state for runtime dismiss. */
-[data-fui-comp="ui-banner"][hidden] { display: none; }`
+[data-cui-comp="ui-banner"][hidden] { display: none; }`
 }

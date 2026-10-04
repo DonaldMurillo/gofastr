@@ -95,7 +95,7 @@ func TestToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
 		Groups: []ToolbarGroup{{Children: []render.HTML{Button(ButtonConfig{Label: "B"})}}},
 		ExtraAttrs: map[string]string{
 			"data-test": "hook", "role": "evil", "aria-label": "evil", "Class": "evil",
-			"data-fui-comp": "spoof",
+			"data-cui-comp": "spoof",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]

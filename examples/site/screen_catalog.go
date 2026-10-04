@@ -130,13 +130,13 @@ func (s *CatalogItemScreen) RenderCtx(_ context.Context) render.HTML {
 			{Label: "Price", Value: render.Text(it.Price)},
 		}}),
 		html.Paragraph(html.TextConfig{Class: "cat-detail__blurb"}, render.Text(it.Blurb)),
-		// data-fui-intercept-close is inert on the standalone page and
+		// data-cui-intercept-close is inert on the standalone page and
 		// closes the drawer when this render is the overlay, so one
 		// markup tree serves both presentations.
 		ui.Button(ui.ButtonConfig{
 			Label:      "Close",
 			Variant:    ui.ButtonGhost,
-			ExtraAttrs: html.Attrs{"data-fui-intercept-close": ""},
+			ExtraAttrs: html.Attrs{"data-cui-intercept-close": ""},
 		}),
 	)
 }

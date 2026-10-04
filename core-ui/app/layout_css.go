@@ -12,12 +12,12 @@ package app
 //
 // Every value is a theme token, so the overlay inherits an app's palette,
 // spacing, and radii without an override. Presentation keys off
-// data-fui-intercept-as, which the SERVER sets from the registered
+// data-cui-intercept-as, which the SERVER sets from the registered
 // ScreenType, the client cannot pick its own chrome.
 func InterceptOverlayCSS() string {
 	return `/* Intercepted-route overlay: a scrim over the page that stays
    mounted underneath, with the screen render docked to an edge. */
-[data-fui-intercept-overlay] {
+[data-cui-intercept-overlay] {
   position: fixed;
   inset: 0;
   /* --z-modal is the framework's overlay tier (300), the same one
@@ -28,7 +28,7 @@ func InterceptOverlayCSS() string {
   display: flex;
   background: var(--color-overlay, rgba(0, 0, 0, 0.45));
 }
-[data-fui-intercept-overlay] > * {
+[data-cui-intercept-overlay] > * {
   background-color: var(--color-surface, #fff);
   color: var(--color-text, #18181b);
   overflow-y: auto;
@@ -37,15 +37,15 @@ func InterceptOverlayCSS() string {
   box-shadow: var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
 }
 /* Drawer: docked to the inline end, full height. */
-[data-fui-intercept-as="drawer"] { justify-content: flex-end; }
-[data-fui-intercept-as="drawer"] > * {
+[data-cui-intercept-as="drawer"] { justify-content: flex-end; }
+[data-cui-intercept-as="drawer"] > * {
   width: min(var(--ui-intercept-drawer-w, 480px), 100%);
   height: 100%;
   border-inline-start: 1px solid var(--color-border, #e4e4e7);
 }
 /* Sheet: docked to the bottom, capped so the page stays visible above. */
-[data-fui-intercept-as="sheet"] { align-items: flex-end; }
-[data-fui-intercept-as="sheet"] > * {
+[data-cui-intercept-as="sheet"] { align-items: flex-end; }
+[data-cui-intercept-as="sheet"] > * {
   width: 100%;
   max-height: var(--ui-intercept-sheet-h, 85vh);
   border-top: 1px solid var(--color-border, #e4e4e7);
@@ -55,8 +55,8 @@ func InterceptOverlayCSS() string {
 /* Below the drawer breakpoint a side drawer is a poor fit; present it
    as a sheet instead. Matches the pane-host collapse at the same width. */
 @media (max-width: 768px) {
-  [data-fui-intercept-as="drawer"] { align-items: flex-end; justify-content: stretch; }
-  [data-fui-intercept-as="drawer"] > * {
+  [data-cui-intercept-as="drawer"] { align-items: flex-end; justify-content: stretch; }
+  [data-cui-intercept-as="drawer"] > * {
     width: 100%;
     height: auto;
     max-height: var(--ui-intercept-sheet-h, 85vh);
@@ -67,8 +67,8 @@ func InterceptOverlayCSS() string {
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  [data-fui-intercept-overlay] > * { animation: fui-intercept-in 160ms ease-out; }
-  @keyframes fui-intercept-in {
+  [data-cui-intercept-overlay] > * { animation: cui-intercept-in 160ms ease-out; }
+  @keyframes cui-intercept-in {
     from { transform: translateY(8px); opacity: 0.6; }
     to   { transform: none; opacity: 1; }
   }

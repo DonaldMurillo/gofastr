@@ -324,7 +324,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 		t.Fatalf("%s: GET /%s = %d — unexpected status, decide deliberately whether it is a refusal", name, table, resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), `data-fui-comp="ui-data-table"`) {
+	if strings.Contains(string(body), `data-cui-comp="ui-data-table"`) {
 		t.Fatalf("%s: GET /%s renders a data table while GET /api/%s refuses the same anonymous caller — "+
 			"a server-rendered screen is a second door to rows the API declines to serve", name, table, table)
 	}

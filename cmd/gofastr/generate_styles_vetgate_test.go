@@ -121,7 +121,7 @@ func TestGeneratedStyleBehavior(t *testing.T) {
 		t.Errorf("Tokens.Sizes.HeroGap.CSS() = %q", got)
 	}
 	scoped := Style.Scope(render.HTML("<div class=\"wrap\">"))
-	if !strings.Contains(string(scoped), "data-fui-scope=") || !strings.Contains(string(scoped), "issuecard") {
+	if !strings.Contains(string(scoped), "data-cui-scope=") || !strings.Contains(string(scoped), "issuecard") {
 		t.Errorf("Scope did not stamp the marker: %s", scoped)
 	}
 }

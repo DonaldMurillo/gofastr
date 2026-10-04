@@ -21,7 +21,7 @@ func TestNeededModules_EmptyPage(t *testing.T) {
 }
 
 func TestNeededModules_SingleMarker(t *testing.T) {
-	html := `<button data-fui-popover-anchor="bottom">Help</button>`
+	html := `<button data-cui-popover-anchor="bottom">Help</button>`
 	got := NeededModules(html)
 	want := []string{"popover"}
 	if !reflect.DeepEqual(got, want) {
@@ -31,7 +31,7 @@ func TestNeededModules_SingleMarker(t *testing.T) {
 
 func TestNeededModules_RPCMarkers(t *testing.T) {
 	for _, html := range []string{
-		`<button data-fui-rpc="/save">Save</button>`,
+		`<button data-cui-rpc="/save">Save</button>`,
 		`<form data-kiln-tool="build"></form>`,
 	} {
 		if got, want := NeededModules(html), []string{"rpc"}; !reflect.DeepEqual(got, want) {
@@ -44,10 +44,10 @@ func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
 	// popover, widgets (twice), rpc (the retired toasts marker no
 	// longer exists; rpc carries the toast-button dialect instead)
 	html := `
-		<button data-fui-open="m1">open</button>
-		<div data-fui-widget="m1"></div>
-		<button data-fui-rpc="/x" data-fui-rpc-signal="t">toast</button>
-		<button data-fui-popover-anchor="auto">pop</button>
+		<button data-cui-open="m1">open</button>
+		<div data-cui-widget="m1"></div>
+		<button data-cui-rpc="/x" data-cui-rpc-signal="t">toast</button>
+		<button data-cui-popover-anchor="auto">pop</button>
 	`
 	got := NeededModules(html)
 	want := []string{"popover", "rpc", "widgets"}
@@ -138,9 +138,9 @@ func TestDemandLoadMarkersMatchRuntimeJS(t *testing.T) {
 
 func TestNeededModules_StableSort(t *testing.T) {
 	// Same input → same output ordering, regardless of map iteration.
-	// (The retired data-fui-carousel marker loaded nothing; live
+	// (The retired data-cui-carousel marker loaded nothing; live
 	// markers from three different modules keep the sort observable.)
-	html := `<div data-fui-widget="x"></div><button data-fui-popover-anchor="auto">p</button><button data-fui-rpc="/x">r</button>`
+	html := `<div data-cui-widget="x"></div><button data-cui-popover-anchor="auto">p</button><button data-cui-rpc="/x">r</button>`
 	for range 50 {
 		got := NeededModules(html)
 		if !sort.StringsAreSorted(got) {
@@ -150,7 +150,7 @@ func TestNeededModules_StableSort(t *testing.T) {
 }
 
 func TestComputedDoesNotPreloadCompute(t *testing.T) {
-	got := NeededModules(`<div data-fui-computed="a+b"></div>`)
+	got := NeededModules(`<div data-cui-computed="a+b"></div>`)
 	for _, m := range got {
 		if m == "compute" {
 			t.Fatalf("computed-only page preloaded compute: %v", got)

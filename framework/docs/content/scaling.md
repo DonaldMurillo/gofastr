@@ -143,7 +143,7 @@ the connection. Two answers, in order of preference:
    work must move to outbox consumers and derived emits must gate on
    `event.IsRemote(ctx)`.
 2. **Poll instead.** For passive freshness such as a dashboard, a
-   counter, or a status pill, `data-fui-poll` re-fetches on an interval from any
+   counter, or a status pill, `data-cui-poll` re-fetches on an interval from any
    replica and needs no fanout at all. Reserve SSE push for semantics
    that need the connection: presence, collaborative editing,
    sub-second updates. See [Reactivity model](reactivity.md) for the
@@ -181,7 +181,7 @@ route the request to whichever replica the load balancer picks.
       auth.NewSQLRateLimitStore(db, "auth_rate_limits")`), or enforced at
       the ingress.
 - [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
-      handlers moved to outbox consumers), or use `data-fui-poll` for
+      handlers moved to outbox consumers), or use `data-cui-poll` for
       passive freshness that needs no fanout.
 - [ ] `GOFASTR_SECRET` set (or `framework.WithSecret` in code) so the
       HMAC-signed uihost session token verifies on every replica.

@@ -13,7 +13,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Pages for the data-fui-open anchor contract (R7, tracker round 2):
+// Pages for the data-cui-open anchor contract (R7, tracker round 2):
 // #bell is an ANCHOR widget trigger — a real link for the no-script
 // page whose scripted click must open the widget and NOT navigate.
 // One click used to do both: the widgets delegator opened the popover
@@ -25,7 +25,7 @@ func openAnchorPage() string {
   <script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/inbox"}]</script>
 </head><body>
   <div style="display:flex"><span style="flex:1"></span>
-    <a id="bell" href="/inbox" data-fui-open="notes" data-fui-popover-anchor="bottom">Notifications</a>
+    <a id="bell" href="/inbox" data-cui-open="notes" data-cui-popover-anchor="bottom">Notifications</a>
   </div>
   <main>home screen</main>
   <span id="ready">ready</span>
@@ -55,12 +55,12 @@ func openAnchorServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Server {
 	})
 	mux.HandleFunc("/chrome/notes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<div class="fui-widget fui-pos-top-right" data-fui-widget="notes" role="dialog" aria-label="Notifications"><p id="note-body">a note</p></div>`)
+		fmt.Fprint(w, `<div class="cui-widget cui-pos-top-right" data-cui-widget="notes" role="dialog" aria-label="Notifications"><p id="note-body">a note</p></div>`)
 	})
 	mux.HandleFunc("/style/notes.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
-		fmt.Fprint(w, `.fui-widget { position: fixed; }
-.fui-widget[data-fui-popover-side] { max-inline-size: 360px; background: #fff; }`)
+		fmt.Fprint(w, `.cui-widget { position: fixed; }
+.cui-widget[data-cui-popover-side] { max-inline-size: 360px; background: #fff; }`)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -79,7 +79,7 @@ func openAnchorServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Server {
 }
 
 // TestOpenAnchorClickOpensWidgetWithoutNavigating: an anchor carrying
-// data-fui-open is a widget trigger, not a navigation. The router must
+// data-cui-open is a widget trigger, not a navigation. The router must
 // stand down (URL unchanged, no partial fetch, no gofastr:navigate)
 // while the widgets delegator opens the widget — and the anchored
 // popover must be measured against its APPLIED stylesheet (the style
@@ -99,7 +99,7 @@ func TestOpenAnchorClickOpensWidgetWithoutNavigating(t *testing.T) {
 		chromedp.Click(`#bell`, chromedp.ByID),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const w = document.querySelector('[data-fui-widget="notes"]');
+			const w = document.querySelector('[data-cui-widget="notes"]');
 			const r = w.getBoundingClientRect();
 			return JSON.stringify({
 				url: location.pathname,
@@ -126,7 +126,7 @@ func TestOpenAnchorClickOpensWidgetWithoutNavigating(t *testing.T) {
 		t.Fatalf("state parse: %v (%s)", err, state)
 	}
 	if got.URL != "/" {
-		t.Errorf("a data-fui-open click navigated to %q — the URL must not change", got.URL)
+		t.Errorf("a data-cui-open click navigated to %q — the URL must not change", got.URL)
 	}
 	if got.Stamp != "live" {
 		t.Errorf("the document reloaded (stamp wiped) — the click became a hard navigation")

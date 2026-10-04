@@ -258,4 +258,4 @@ at `core/fuzzy/fuzzy.go`: `Levenshtein`.
 - **Conflating the two `HTML` symbols.** `render.HTML` is the safe, auto-escaped HTML fragment value type; `handler.HTML` is a `ResponseType` that writes `text/html` through `Respond`. They share a name and little else. Check which one a function returns before passing it on.
 - **Treating `fanout` as durable.** It is lossy and best-effort: a subscriber that is not connected when a message is published misses it. Use it for real-time fan-out, not for work that must be delivered.
 - **Expecting `markdown` to pass through raw HTML.** It escapes all source HTML by design. If you need embedded HTML, build it with `render` directly rather than smuggling it through markdown.
-- **Adding `on*` handlers via `render.Attr`.** The attribute allow-list drops them; use a real event binding (`data-fui-*` via `core-ui/interactive`) instead.
+- **Adding `on*` handlers via `render.Attr`.** The attribute allow-list drops them; use a real event binding (`data-cui-*` via `core-ui/interactive`) instead.

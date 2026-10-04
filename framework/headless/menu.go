@@ -46,7 +46,7 @@ type MenuItem struct {
 	Href string
 
 	// RPC and RPCMethod wire the row to a server-side handler via the
-	// kernel's data-fui-rpc contract. Use for "Delete this row" items.
+	// kernel's data-cui-rpc contract. Use for "Delete this row" items.
 	RPC, RPCMethod string
 
 	// Confirm asks the reader to confirm before the RPC fires; the
@@ -372,10 +372,10 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		}
 		rowOwn := own
 		if it.Confirm != "" {
-			// data-fui-confirm rides the submit control: the runtime
+			// data-cui-confirm rides the submit control: the runtime
 			// honours it on any form submit, so a destructive form row
 			// asks before it POSTs.
-			rowOwn = Merge(own, Attrs(map[string]string{"data-fui-confirm": it.Confirm}))
+			rowOwn = Merge(own, Attrs(map[string]string{"data-cui-confirm": it.Confirm}))
 		}
 		// role="none": a form is not one of a menu's required owned
 		// elements (menuitem, menuitemcheckbox, menuitemradio, group,
@@ -408,10 +408,10 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		if method == "" {
 			method = "POST"
 		}
-		own["data-fui-rpc"] = it.RPC
-		own["data-fui-rpc-method"] = method
+		own["data-cui-rpc"] = it.RPC
+		own["data-cui-rpc-method"] = method
 		if it.Confirm != "" {
-			own["data-fui-confirm"] = it.Confirm
+			own["data-cui-confirm"] = it.Confirm
 		}
 	}
 	if it.Disabled {

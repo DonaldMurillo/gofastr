@@ -13,7 +13,7 @@ func TestAuthCardRendersTitleAndFooter(t *testing.T) {
 		Footer: render.Text("No account?"),
 	})
 	for _, want := range []string{
-		`data-fui-comp="ui-auth-card"`,
+		`data-cui-comp="ui-auth-card"`,
 		"fui-auth-card__title",
 		"Sign in",
 		"No account?",

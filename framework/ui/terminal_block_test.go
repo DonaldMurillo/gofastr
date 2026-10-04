@@ -13,7 +13,7 @@ func TestTerminalBlockRendersHeadDotBodyAndLines(t *testing.T) {
 		TerminalOK("→ done\n"),
 	))
 	for _, want := range []string{
-		`data-fui-comp="ui-terminal-block"`,
+		`data-cui-comp="ui-terminal-block"`,
 		"fui-terminal-block__head",
 		"fui-terminal-block__dot",
 		"$ install",

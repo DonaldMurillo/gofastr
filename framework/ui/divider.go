@@ -39,7 +39,7 @@ type DividerConfig struct {
 	// analytics markers, ARIA overrides) to the root element (<hr>,
 	// or the role=separator div for vertical / labelled shapes).
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-fui-*, role and aria-orientation (use
+	// ID), style, data-cui-*, role and aria-orientation (use
 	// Orientation).
 	ExtraAttrs html.Attrs
 }

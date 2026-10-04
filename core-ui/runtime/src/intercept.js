@@ -26,7 +26,7 @@
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
-  const OVERLAY_ID = 'fui-intercept';
+  const OVERLAY_ID = 'cui-intercept';
   let open = null; // { underPath, restoreFocus }
 
   const routes = () => (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []);
@@ -54,7 +54,7 @@
     if (el) return el;
     el = document.createElement('div');
     el.id = OVERLAY_ID;
-    el.setAttribute('data-fui-intercept-overlay', '');
+    el.setAttribute('data-cui-intercept-overlay', '');
     document.body.appendChild(el);
     return el;
   }
@@ -76,7 +76,7 @@
 
   function mount(html, as, path, hash) {
     const el = overlayHost();
-    el.setAttribute('data-fui-intercept-as', as);
+    el.setAttribute('data-cui-intercept-as', as);
     el.innerHTML = html;
     if (NS.doc) NS.doc.lockScroll('intercept');
     // Deliberately NOT NS._pushURL: currentPath must stay on the page
@@ -167,7 +167,7 @@
     if (!open) return;
     const el = document.getElementById(OVERLAY_ID);
     if (el && e.target === el) close(false);            // backdrop
-    if (e.target.closest && e.target.closest('[data-fui-intercept-close]')) {
+    if (e.target.closest && e.target.closest('[data-cui-intercept-close]')) {
       e.preventDefault();
       close(false);
     }

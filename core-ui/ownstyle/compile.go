@@ -14,7 +14,7 @@ type Kind int
 
 const (
 	// KindScoped is a layout, screen or component style. It compiles to
-	// @scope ([data-fui-scope="<name>"]) to (…) and loads by marker.
+	// @scope ([data-cui-scope="<name>"]) to (…) and loads by marker.
 	KindScoped Kind = iota
 	// KindApp is the program's one app style ("app.style.css"). It
 	// compiles to @scope (:root) to (…) and loads on every page.
@@ -52,9 +52,9 @@ var styleNameOK = func(name string) bool {
 // Compile wraps, expands and minifies a parsed sheet into the CSS the
 // host serves for it:
 //
-//  1. the scope wrap — scoped: @scope ([data-fui-scope="<name>"]) to
-//     (:scope [data-fui-scope] > *, [data-fui-internal]); app:
-//     @scope (:root) to ([data-fui-internal]);
+//  1. the scope wrap — scoped: @scope ([data-cui-scope="<name>"]) to
+//     (:scope [data-cui-scope] > *, [data-cui-internal]); app:
+//     @scope (:root) to ([data-cui-internal]);
 //  2. custom media expanded against the theme's breakpoints:
 //     (--above-X) → (min-width: X), (--below-X) → (max-width: X−0.02px),
 //     (--reduced-motion) → (prefers-reduced-motion: reduce);
@@ -531,26 +531,26 @@ func (c *compiler) unknownBreakpoint(name string) error {
 // wrapHeader is the main scope block's opening.
 func (c *compiler) wrapHeader() string {
 	if c.kind == KindApp {
-		return `@scope (:root) to ([data-fui-internal]){`
+		return `@scope (:root) to ([data-cui-internal]){`
 	}
-	return `@scope ([data-fui-scope="` + c.name + `"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){`
+	return `@scope ([data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
 // darkAttrHeader opens the attribute-variant dark scope.
 func (c *compiler) darkAttrHeader() string {
 	if c.kind == KindApp {
-		return `@scope (:root[data-color-scheme="dark"]) to ([data-fui-internal]){`
+		return `@scope (:root[data-color-scheme="dark"]) to ([data-cui-internal]){`
 	}
-	return `@scope ([data-color-scheme="dark"] [data-fui-scope="` + c.name + `"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){`
+	return `@scope ([data-color-scheme="dark"] [data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
 // darkMediaHeader opens the prefers-color-scheme-variant dark scope
 // (it lives inside `@media (prefers-color-scheme: dark)`).
 func (c *compiler) darkMediaHeader() string {
 	if c.kind == KindApp {
-		return `@scope (:root:not([data-color-scheme="light"])) to ([data-fui-internal]){`
+		return `@scope (:root:not([data-color-scheme="light"])) to ([data-cui-internal]){`
 	}
-	return `@scope (:root:not([data-color-scheme="light"]) [data-fui-scope="` + c.name + `"]) to (:scope [data-fui-scope]>*,[data-fui-internal]){`
+	return `@scope (:root:not([data-color-scheme="light"]) [data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
 // emitNodes renders node bodies (no outer braces). Returns "" when

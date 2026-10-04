@@ -34,11 +34,11 @@ func TestLightboxViewerLabelOverrideWins(t *testing.T) {
 // these values is URL-borne.
 func TestLightboxViewerBindsTheWidgetContractSignals(t *testing.T) {
 	got := LightboxViewer(LightboxViewerProps{Name: "x", Caption: true, Download: true}, nil)
-	has(t, got, `data-fui-signal="alt"`, "the title span carries the alt signal")
-	has(t, got, `data-fui-signal-attr="src"`, "the image's src is signal-written")
-	has(t, got, `data-fui-signal="caption"`, "the caption carries the caption signal")
-	has(t, got, `data-fui-signal-attr="href"`, "the download's href is signal-written")
-	hasNot(t, got, `data-fui-signal-mode="html"`, "a URL-seeded value would render as markup in html mode")
+	has(t, got, `data-cui-signal="alt"`, "the title span carries the alt signal")
+	has(t, got, `data-cui-signal-attr="src"`, "the image's src is signal-written")
+	has(t, got, `data-cui-signal="caption"`, "the caption carries the caption signal")
+	has(t, got, `data-cui-signal-attr="href"`, "the download's href is signal-written")
+	hasNot(t, got, `data-cui-signal-mode="html"`, "a URL-seeded value would render as markup in html mode")
 }
 
 // The zoom target is named by attribute, never by a class: a class map

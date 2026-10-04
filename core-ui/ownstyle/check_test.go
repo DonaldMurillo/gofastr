@@ -212,7 +212,7 @@ func TestCheckKitClassAndAttributeSelectors(t *testing.T) {
 		{".card .fui-card__body { gap: 0; }", "1:7 error GOFASTR1810"},
 		{".a .fui-sidebar__item { color: red; }", "1:4 error GOFASTR1810"},
 		// The attribute form, positioned at the bracket.
-		{".a [data-fui-scope=\"x\"] { color: red; }", "1:4 error GOFASTR1810"},
+		{".a [data-cui-scope=\"x\"] { color: red; }", "1:4 error GOFASTR1810"},
 		// App-owned data attributes are fine.
 		{".column[data-drop-over] { outline: red; }", ""},
 		// Kit class mentioned in a string never matches.

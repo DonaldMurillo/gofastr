@@ -5,9 +5,9 @@
 - **Entity CRUD**: generated list / create / edit / delete screens for
   your entities, rendered **through your app's UI host** so they hydrate
   with `runtime.js`: the list is a server-driven `DataTable` island
-  (paginate without a reload), delete is a `data-fui-confirm` button, and
+  (paginate without a reload), delete is a `data-cui-confirm` button, and
   forms are server-rendered. **No bespoke JavaScript.** The island
-  mechanics behind these (`data-fui-rpc`, signals, fragment swaps) are
+  mechanics behind these (`data-cui-rpc`, signals, fragment swaps) are
   catalogued in [interactive-patterns](interactive-patterns.md).
 - **Ops dashboards**: read-only **Queue** and **Audit log** pages on top
   of data the framework already collects (`battery/queue`,
@@ -75,7 +75,7 @@ The entity screens mount at `<PathPrefix>/e/<table>`:
 
 ### How the interactions work (no JavaScript)
 
-Everything is a declarative `data-fui-*` primitive the runtime already
+Everything is a declarative `data-cui-*` primitive the runtime already
 understands. The battery ships zero JS:
 
 - **List** uses `ui.DataTable` with the typed `ui.Pagination` footer.
@@ -85,8 +85,8 @@ understands. The battery ships zero JS:
   typed pager backs an island table (the resource engine's screens),
   where the anchors carry the RPC contract beside their hrefs and the
   swap keeps focus on the page the reader chose.
-- **Delete** is a `<button data-fui-confirm="…" data-fui-rpc="…/_delete/{id}"
-  data-fui-rpc-method="DELETE" data-fui-rpc-signal="…">`. The runtime runs
+- **Delete** is a `<button data-cui-confirm="…" data-cui-rpc="…/_delete/{id}"
+  data-cui-rpc-method="DELETE" data-cui-rpc-signal="…">`. The runtime runs
   the native confirm, fires the DELETE, and swaps the returned (refreshed)
   table into the list signal. (It does **not** navigate to the list path,
   because that would hit the SPA cache and show a stale row.)

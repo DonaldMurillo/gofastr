@@ -136,7 +136,7 @@ func setScope(name string, scope Scope) {
 	}
 }
 
-// validateName rejects names that could break out of a data-fui-* HTML
+// validateName rejects names that could break out of a data-cui-* HTML
 // attribute or the signal key. Allowed: letters, digits, '.', '_', '-'.
 //
 // The route.* prefix is RESERVED for the router's snapshot (DESIGN

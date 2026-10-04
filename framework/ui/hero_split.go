@@ -49,7 +49,7 @@ type HeroSplitConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the hero's root <section>.
 	// Keys the component owns are dropped: class and id (use Class),
-	// data-fui-*, and aria-label (use AriaLabel).
+	// data-cui-*, and aria-label (use AriaLabel).
 	ExtraAttrs html.Attrs
 }
 
@@ -82,10 +82,10 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 	// caller's markup in it, so that div is this component's own.
 	var copyOwn, mediaOwn html.Attrs
 	if cfg.Copy == "" {
-		copyOwn = html.Attrs{"data-fui-internal": ""}
+		copyOwn = html.Attrs{"data-cui-internal": ""}
 	}
 	if cfg.Media == "" {
-		mediaOwn = html.Attrs{"data-fui-internal": ""}
+		mediaOwn = html.Attrs{"data-cui-internal": ""}
 	}
 	return heroSplitStyle.WrapHTML(render.Tag("section", attrs,
 		html.Div(html.DivConfig{Class: "fui-hero-split__copy", ExtraAttrs: copyOwn}, cfg.Copy),
@@ -96,26 +96,26 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 var heroSplitStyle = registry.RegisterStyle("ui-hero-split", heroSplitCSS)
 
 func heroSplitCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-hero-split"] {
+	return `[data-cui-comp="ui-hero-split"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--spacing-2xl, 32px);
   align-items: start;
 }
-[data-fui-comp="ui-hero-split"].fui-hero-split--copy {
+[data-cui-comp="ui-hero-split"].fui-hero-split--copy {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
-[data-fui-comp="ui-hero-split"].fui-hero-split--media {
+[data-cui-comp="ui-hero-split"].fui-hero-split--media {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
 }
-[data-fui-comp="ui-hero-split"] .fui-hero-split__copy,
-[data-fui-comp="ui-hero-split"] .fui-hero-split__media {
+[data-cui-comp="ui-hero-split"] .fui-hero-split__copy,
+[data-cui-comp="ui-hero-split"] .fui-hero-split__media {
   min-inline-size: 0;
 }
 @media (max-width: 980px) {
-  [data-fui-comp="ui-hero-split"],
-  [data-fui-comp="ui-hero-split"].fui-hero-split--copy,
-  [data-fui-comp="ui-hero-split"].fui-hero-split--media {
+  [data-cui-comp="ui-hero-split"],
+  [data-cui-comp="ui-hero-split"].fui-hero-split--copy,
+  [data-cui-comp="ui-hero-split"].fui-hero-split--media {
     grid-template-columns: 1fr;
     gap: var(--spacing-lg, 16px);
   }

@@ -34,7 +34,7 @@ func TestSectionMenuGroupLabelAlignsWithLead(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
 		chromedp.Evaluate(`(() => {
-			const rail = document.querySelector('.fui-section-menu__rail') || document;
+			const rail = document.querySelector('.cui-section-menu__rail') || document;
 			// Where an element's first painted text starts: padding,
 			// borders and an eyebrow ahead of the label all count.
 			const left = sel => {
@@ -49,9 +49,9 @@ func TestSectionMenuGroupLabelAlignsWithLead(t *testing.T) {
 				return r.getBoundingClientRect().left;
 			};
 			return {
-				lead: left('.fui-section-menu__lead'),
-				group: left('.fui-section-menu__group-summary'),
-				link: left('.fui-section-menu__link'),
+				lead: left('.cui-section-menu__lead'),
+				group: left('.cui-section-menu__group-summary'),
+				link: left('.cui-section-menu__link'),
 			};
 		})()`, &m),
 	); err != nil {
@@ -90,7 +90,7 @@ func TestSectionMenuRailShowsCollapsedGroups(t *testing.T) {
 
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	const painted = `(() => {
-		const a = document.querySelector('.fui-section-menu__rail a[href="/docs/hidden"]');
+		const a = document.querySelector('.cui-section-menu__rail a[href="/docs/hidden"]');
 		const r = a.getBoundingClientRect();
 		if (r.height === 0) return false;
 		return document.elementFromPoint(r.left + 30, r.top + r.height / 2) === a;
@@ -101,8 +101,8 @@ func TestSectionMenuRailShowsCollapsedGroups(t *testing.T) {
 		chromedp.Evaluate(painted, &shown),
 		// A reader clicking the rail group's label shuts the <details>;
 		// the rail still shows its links.
-		chromedp.Click(`.fui-section-menu__rail .fui-section-menu__group:last-child > summary`, chromedp.ByQuery),
-		chromedp.Evaluate(`!document.querySelector('.fui-section-menu__rail .fui-section-menu__group:last-child').open`, &closed),
+		chromedp.Click(`.cui-section-menu__rail .cui-section-menu__group:last-child > summary`, chromedp.ByQuery),
+		chromedp.Evaluate(`!document.querySelector('.cui-section-menu__rail .cui-section-menu__group:last-child').open`, &closed),
 		chromedp.Evaluate(painted, &shownAfterClick),
 	); err != nil {
 		t.Fatal(err)

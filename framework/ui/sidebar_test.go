@@ -23,9 +23,9 @@ func TestSidebarRendersInlineAndHamburger(t *testing.T) {
 	})
 	out := string(c.Render())
 	for _, want := range []string{
-		`data-fui-comp="ui-sidebar"`,
+		`data-cui-comp="ui-sidebar"`,
 		`fui-sidebar--persistent`,
-		`data-fui-open="ui-sidebar-drawer"`,
+		`data-cui-open="ui-sidebar-drawer"`,
 		`aria-label="Open navigation"`,
 		`<h2 class="fui-sidebar__title">App</h2>`,
 		`href="/customers"`,
@@ -72,7 +72,7 @@ func TestSidebarBodyExposesSharedContent(t *testing.T) {
 	if !strings.Contains(body, `class="fui-sidebar__nav"`) {
 		t.Errorf("SidebarBody should render the nav: %s", body)
 	}
-	if strings.Contains(body, "data-fui-open") {
+	if strings.Contains(body, "data-cui-open") {
 		t.Errorf("SidebarBody should NOT render the hamburger: %s", body)
 	}
 }
@@ -83,7 +83,7 @@ func TestSidebarSuppressDrawerTrigger(t *testing.T) {
 		SuppressDrawerTrigger: true,
 	})
 	out := string(c.Render())
-	if strings.Contains(out, `data-fui-open=`) {
+	if strings.Contains(out, `data-cui-open=`) {
 		t.Errorf("SuppressDrawerTrigger should hide hamburger: %s", out)
 	}
 }
@@ -367,7 +367,7 @@ func TestSidebarOffCanvasEmitsDrawerOnlyVariant(t *testing.T) {
 	out := string(c.Render())
 	for _, want := range []string{
 		`fui-sidebar--off-canvas`,
-		`data-fui-open="workspace-nav"`,
+		`data-cui-open="workspace-nav"`,
 		`id="workspace-nav-inline"`,
 	} {
 		if !strings.Contains(out, want) {
@@ -424,7 +424,7 @@ func TestSidebarBodySingleScopedRoot(t *testing.T) {
 		Footer:   render.HTML(`<a href="/x">x</a>`),
 		Items:    []ui.SidebarItem{{Label: "Home", Href: "/"}},
 	}))
-	if !strings.HasPrefix(out, `<div class="fui-sidebar fui-sidebar__body" data-fui-comp="ui-sidebar">`) {
+	if !strings.HasPrefix(out, `<div class="fui-sidebar fui-sidebar__body" data-cui-comp="ui-sidebar">`) {
 		t.Fatalf("SidebarBody root missing scope: %.120s", out)
 	}
 	if strings.Count(out, "data-hui-sidebar\"") != 0 || strings.Count(out, "data-hui-sidebar ") != 0 {
@@ -498,7 +498,7 @@ func TestSidebarPrependSitsBetweenTitleAndNav(t *testing.T) {
 // An item with MatchPath must hand the runtime's active-link module
 // its section prefix: the server marks the item current on first
 // paint, and after a client navigation inside a kept shell it is
-// data-fui-match-prefix (carrying the MatchPath value) that lets
+// data-cui-match-prefix (carrying the MatchPath value) that lets
 // src/activelink.js re-derive the highlight. Without it the exact-href
 // sweep clears the item the moment the URL grows a deeper segment.
 func TestSidebarEmitsMatchPrefixForActiveLink(t *testing.T) {
@@ -509,24 +509,27 @@ func TestSidebarEmitsMatchPrefixForActiveLink(t *testing.T) {
 			{Label: "Plain", Href: "/plain"},
 		},
 	}).Render())
-	if !strings.Contains(out, `data-fui-match-prefix="/projects/billing"`) {
-		t.Errorf("MatchPath item did not emit data-fui-match-prefix for the runtime:\n%s", out)
+	if !strings.Contains(out, `data-cui-match-prefix="/projects/billing"`) {
+		t.Errorf("MatchPath item did not emit data-cui-match-prefix for the runtime:\n%s", out)
 	}
-	if strings.Contains(out, `data-fui-match-prefix="/plain"`) {
-		t.Error("an item with no MatchPath must not carry data-fui-match-prefix (exact-href matching is its contract)")
+	if strings.Contains(out, `data-cui-match-prefix="/plain"`) {
+		t.Error("an item with no MatchPath must not carry data-cui-match-prefix (exact-href matching is its contract)")
+	}
+	if strings.Count(out, `data-cui-activelink`) != 2 {
+		t.Errorf("every leaf hands its first-paint mark to activelink with data-cui-activelink, want 2 markers:\n%s", out)
 	}
 }
 
 // The standalone trigger is the SAME button the shell renders (the
 // relocated-header spelling of SidebarConfig.SuppressDrawerTrigger):
 // same part class plus the variant class the >= md hiding keys on,
-// same data-fui-open widget contract, same accessible name.
+// same data-cui-open widget contract, same accessible name.
 func TestSidebarDrawerTriggerMatchesShellTrigger(t *testing.T) {
 	cfg := ui.SidebarConfig{Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}}
 	trigger := string(ui.SidebarDrawerTrigger(cfg))
 	for _, want := range []string{
 		`class="fui-sidebar__hamburger fui-sidebar__hamburger--persistent"`,
-		`data-fui-open="ui-sidebar-drawer"`,
+		`data-cui-open="ui-sidebar-drawer"`,
 		`aria-label="Open navigation"`,
 		`type="button"`,
 	} {

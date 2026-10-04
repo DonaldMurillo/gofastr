@@ -13,7 +13,7 @@ import (
 )
 
 // TestRpcNavigateRefusesJavascriptScheme: security: a successful
-// RPC whose data-fui-rpc-navigate carries an attacker-controlled
+// RPC whose data-cui-rpc-navigate carries an attacker-controlled
 // javascript: URL must NOT reach history.pushState / replaceState.
 // The widget path routes through NS.navigate (which applies the
 // _isUnsafeSignalUrl guard); the CORE dispatchRPC path must do the
@@ -45,8 +45,8 @@ func TestRpcNavigateRefusesJavascriptScheme(t *testing.T) {
   <script type="application/json" id="gofastr-routes">[{"path":"/"}]</script>
 </head><body>
   <main role="main" tabindex="-1">
-    <button id="mut" data-fui-rpc="/mutate" data-fui-rpc-method="POST"
-            data-fui-rpc-navigate="javascript:alert(1)">mutate</button>
+    <button id="mut" data-cui-rpc="/mutate" data-cui-rpc-method="POST"
+            data-cui-rpc-navigate="javascript:alert(1)">mutate</button>
   </main>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
@@ -81,6 +81,6 @@ func TestRpcNavigateRefusesJavascriptScheme(t *testing.T) {
 		t.Fatal("RPC /mutate was never called — click did not exercise the navigate path; test is vacuous")
 	}
 	if joined != "" && contains(joined, "javascript:") {
-		t.Errorf("SECURITY: data-fui-rpc-navigate=javascript: reached history API — guard bypassed:\n%s", joined)
+		t.Errorf("SECURITY: data-cui-rpc-navigate=javascript: reached history API — guard bypassed:\n%s", joined)
 	}
 }

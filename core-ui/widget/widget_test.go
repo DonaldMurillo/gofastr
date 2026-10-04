@@ -175,7 +175,7 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 		t.Fatalf("chrome status: %v code=%d", err, resp.StatusCode)
 	}
 	chrome := readAll(t, resp)
-	for _, want := range []string{`fui-slot-header`, `<span class="hi">hi</span>`} {
+	for _, want := range []string{`cui-slot-header`, `<span class="hi">hi</span>`} {
 		if !strings.Contains(chrome, want) {
 			t.Errorf("chrome missing %q", want)
 		}
@@ -190,7 +190,7 @@ func TestMountServesRuntimeStyleStateAndDiscovery(t *testing.T) {
 	// Widget CSS no longer prepends its own :root block, that was
 	// clobbering host-set theme variables (see server.go comment).
 	// app.css owns the :root floor now.
-	for _, want := range []string{".fui-widget", ".fui-pos-bottom-right"} {
+	for _, want := range []string{".cui-widget", ".cui-pos-bottom-right"} {
 		if !strings.Contains(style, want) {
 			t.Errorf("style missing %q", want)
 		}

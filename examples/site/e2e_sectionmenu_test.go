@@ -26,10 +26,10 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 	var triggerDisplay, railDisplay, activeBorder string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/entity-declarations"),
-		chromedp.WaitReady(`[data-fui-comp="fui-section-menu"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__trigger')).display`, &triggerDisplay),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__rail')).display`, &railDisplay),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__link.is-active')).borderLeftColor`, &activeBorder),
+		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__trigger')).display`, &triggerDisplay),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail')).display`, &railDisplay),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__link.is-active')).borderLeftColor`, &activeBorder),
 	); err != nil {
 		t.Fatalf("desktop rail: %v", err)
 	}
@@ -61,16 +61,16 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.fui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.innerWidth`, &viewportW),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowClosed),
-		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopBefore),
+		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopBefore),
 		// Open the drawer.
-		chromedp.Click(`.fui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.Click(`.cui-section-menu__trigger`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond), // lazy widget chrome + open
-		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
+		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="`+drawer+`"]')`, &backdropPresent),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="`+drawer+`"]')`, &backdropPresent),
 		// Close on OUTSIDE click, tap the exposed backdrop strip to the right
 		// of the ~337px (90vw) drawer panel. Clicking the panel-covered centre
 		// would (correctly) NOT dismiss, so target the dim area at x≈365.
@@ -121,18 +121,18 @@ func TestE2E_SectionMenu_CloseButtonAndScrollPreserved(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.fui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
 		// Scroll the page down so an open/close scroll jump would be visible.
 		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
 		chromedp.Sleep(100*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollBefore),
-		chromedp.Evaluate(`document.querySelector('.fui-section-menu__trigger').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterOpen),
 		// The × close button must be visible inside the drawer.
-		chromedp.Evaluate(`(()=>{const b=document.querySelector('[data-fui-widget="`+drawer+`"] .fui-section-menu__close');return !!b && b.getBoundingClientRect().width>0})()`, &closeVisible),
-		// Close via the × button (data-fui-action="close").
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="`+drawer+`"] .fui-section-menu__close').click()`, nil),
+		chromedp.Evaluate(`(()=>{const b=document.querySelector('[data-cui-widget="`+drawer+`"] .cui-section-menu__close');return !!b && b.getBoundingClientRect().width>0})()`, &closeVisible),
+		// Close via the × button (data-cui-action="close").
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="`+drawer+`"] .cui-section-menu__close').click()`, nil),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterClose),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterClose),
@@ -167,12 +167,12 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.fui-section-menu__trigger`, chromedp.ByQuery),
-		chromedp.Click(`.fui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.Click(`.cui-section-menu__trigger`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &pathBefore),
 		// Tap the "Overview" lead link inside the open drawer.
-		chromedp.Click(`[data-fui-widget="`+drawer+`"] .fui-section-menu__lead`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-widget="`+drawer+`"] .cui-section-menu__lead`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &pathAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfter),
@@ -203,17 +203,17 @@ func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 	var railDisplay string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/auth"),
-		chromedp.WaitReady(`[data-fui-comp="fui-section-menu"] .fui-section-menu__rail`, chromedp.ByQuery),
+		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"] .cui-section-menu__rail`, chromedp.ByQuery),
 		// Scroll well past the fold so the rail is sticky-pinned.
 		chromedp.Evaluate(`window.scrollTo(0, 1500)`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		// Open the palette (⌘K trigger in the header).
-		chromedp.Click(`[data-fui-scope="docsite-header"] .cmd`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-scope="docsite-header"] .cmd`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`window.innerHeight`, &innerH),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__rail')).display`, &railDisplay),
-		chromedp.Evaluate(`document.querySelector('.fui-section-menu__rail').getBoundingClientRect().top`, &railTop),
-		chromedp.Evaluate(`document.querySelector('.fui-section-menu__rail').getBoundingClientRect().bottom`, &railBottom),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail')).display`, &railDisplay),
+		chromedp.Evaluate(`document.querySelector('.cui-section-menu__rail').getBoundingClientRect().top`, &railTop),
+		chromedp.Evaluate(`document.querySelector('.cui-section-menu__rail').getBoundingClientRect().bottom`, &railBottom),
 	); err != nil {
 		t.Fatalf("palette + rail: %v", err)
 	}

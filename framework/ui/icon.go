@@ -40,7 +40,7 @@ type IconConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the icon's root <svg>
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, and the drawing / accessibility
+	// (use Class / ID), data-cui-*, and the drawing / accessibility
 	// keys the component derives (xmlns, width, height, viewBox,
 	// fill, stroke*, role, aria-label, aria-hidden).
 	ExtraAttrs html.Attrs

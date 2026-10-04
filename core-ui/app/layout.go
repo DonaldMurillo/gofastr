@@ -14,12 +14,12 @@ import (
 // the primary slot, the spec's outlets, and its route areas through the
 // *LayoutTree it receives (see layout_tree.go). The layout keeps the
 // name, layer-key, and wrapper-marker duty: every layer renders a
-// wrapper carrying data-fui-layout (the name, the CSS/debug contract)
-// and data-fui-layout-key (the identity the runtime compares to decide
+// wrapper carrying data-cui-layout (the name, the CSS/debug contract)
+// and data-cui-layout-key (the identity the runtime compares to decide
 // what a navigation swaps).
 type Layout struct {
 	// Name identifies the layout (used in the wrapper's class and
-	// data-fui-layout attribute).
+	// data-cui-layout attribute).
 	Name string
 	// Key, when set, overrides the layout's layer identity: the runtime
 	// compares "l:<Key>" (or "g:<prefix>:<Key>" inside a group) to decide
@@ -27,7 +27,7 @@ type Layout struct {
 	// layout shape must re-render per context, the #408 case being a
 	// shell that varies by language: key layer 0 per language and the
 	// runtime swaps it like any other layer. Name keeps driving
-	// data-fui-layout and the wrapper class, so the CSS contract stays
+	// data-cui-layout and the wrapper class, so the CSS contract stays
 	// stable while the identity varies. Empty derives from Name.
 	Key string
 

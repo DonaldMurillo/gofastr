@@ -82,7 +82,7 @@ func TestE2E_RepeaterIslandSwapRestoresFocus(t *testing.T) {
 	// The signal region is the caller's, exactly as the DataTable
 	// documents it: wrap the island's markup in the signal the
 	// response replaces.
-	body := render.HTML(`<div data-fui-signal="guests" data-fui-signal-mode="html">` +
+	body := render.HTML(`<div data-cui-signal="guests" data-cui-signal-mode="html">` +
 		string(Repeater(RepeaterProps{
 			Name:   "guests",
 			Label:  "Guests",
@@ -95,7 +95,7 @@ func TestE2E_RepeaterIslandSwapRestoresFocus(t *testing.T) {
 	extra := func(mux *http.ServeMux) {
 		mux.HandleFunc("/__hui/guests", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<div data-fui-signal="guests" data-fui-signal-mode="html">` +
+			w.Write([]byte(`<div data-cui-signal="guests" data-cui-signal-mode="html">` +
 				string(Repeater(RepeaterProps{
 					Name:   "guests",
 					Label:  "Guests",

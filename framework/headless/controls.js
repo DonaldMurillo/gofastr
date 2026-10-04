@@ -36,7 +36,7 @@
   // non-numeric either end, leaves the SSR text untouched.
   function animateCounter(root) {
     const from = parseFloat(root.getAttribute('data-hui-counter-from'));
-    const value = root.querySelector('[data-fui-signal]');
+    const value = root.querySelector('[data-cui-signal]');
     if (!value || !Number.isFinite(from)) return;
     const to = parseFloat(value.textContent);
     if (!Number.isFinite(to) || to === from) return;

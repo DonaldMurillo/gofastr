@@ -2,7 +2,7 @@
 //
 // Loading content (spike/layout-loading, P9-A/P9-ANIM/P9-B). The
 // server renders each configured Loading once, as an inert
-// <template data-fui-loading="<addr>" data-fui-after data-fui-min>
+// <template data-cui-loading="<addr>" data-cui-after data-cui-min>
 // BESIDE its outlet, area, or slot cell, so the browser holds the
 // bytes before any fetch starts. Loaded when the document carries
 // such a template (marker scan, at boot and after any apply).
@@ -14,7 +14,7 @@
 // marks), so after `after` ms of in-flight wait the region's old nodes
 // move into an in-document hidden park (they stay connected:
 // listeners, input values and poll timers all survive) and the
-// template clones in, marked data-fui-loadstate="shown". On apply the
+// template clones in, marked data-cui-loadstate="shown". On apply the
 // response replaces the clone (a Min hold keeps it from flashing); on
 // failure or a superseded navigation the old nodes come back exactly.
 //
@@ -31,8 +31,8 @@
   const _liveLoading = [];
   const findLoadingTpl = (addr) => {
     if (!addr) return null;
-    for (const el of document.querySelectorAll('template[data-fui-loading]')) {
-      if (el.getAttribute('data-fui-loading') === addr) return el;
+    for (const el of document.querySelectorAll('template[data-cui-loading]')) {
+      if (el.getAttribute('data-cui-loading') === addr) return el;
     }
     return null;
   };
@@ -44,7 +44,7 @@
     while (e.el.firstChild) e.park.appendChild(e.el.firstChild);
     e.el.appendChild(e.tpl.content.cloneNode(true));
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(e.el);
-    e.el.setAttribute('data-fui-loadstate', 'shown');
+    e.el.setAttribute('data-cui-loadstate', 'shown');
     e.shownAt = performance.now();
     e.shown = true;
     _liveLoading.push(e);
@@ -58,7 +58,7 @@
     if (!e.shown) return;
     if (e.park) { e.park.remove(); e.park = null; }
 
-    if (e.el.isConnected) e.el.removeAttribute('data-fui-loadstate');
+    if (e.el.isConnected) e.el.removeAttribute('data-cui-loadstate');
     e.shown = false;
   };
   // Failure/supersede restore: the parked nodes come back EXACTLY —
@@ -73,7 +73,7 @@
       e.park.remove();
       e.park = null;
     }
-    if (e.el.isConnected) e.el.removeAttribute('data-fui-loadstate');
+    if (e.el.isConnected) e.el.removeAttribute('data-cui-loadstate');
     e.shown = false;
   };
   // The apply sweep: every live loading entry's region is one this
@@ -107,7 +107,7 @@
     };
     e.el.addEventListener('animationend', fin);
     e.timer = setTimeout(fin, 400);
-    e.el.setAttribute('data-fui-loadstate', 'exit');
+    e.el.setAttribute('data-cui-loadstate', 'exit');
   });
   const holdExit = async (e) => {
     if (!e || !e.shown) return;
@@ -149,14 +149,14 @@
       const rl = en.loading ? { html: en.loading, after: en.loadingAfter || 0, min: en.loadingMin || 0 } : null;
       const shows = [];
       for (const el of marks) {
-        const isSlot = !!el.getAttribute('data-fui-layout-slot');
-        let tpl = findLoadingTpl(el.getAttribute('data-fui-outlet')
-          || el.getAttribute('data-fui-area')
-          || el.getAttribute('data-fui-layout-slot'));
-        let after = tpl ? (+tpl.getAttribute('data-fui-after') || 0) : 0;
-        let min = tpl ? (+tpl.getAttribute('data-fui-min') || 0) : 0;
+        const isSlot = !!el.getAttribute('data-cui-layout-slot');
+        let tpl = findLoadingTpl(el.getAttribute('data-cui-outlet')
+          || el.getAttribute('data-cui-area')
+          || el.getAttribute('data-cui-layout-slot'));
+        let after = tpl ? (+tpl.getAttribute('data-cui-after') || 0) : 0;
+        let min = tpl ? (+tpl.getAttribute('data-cui-min') || 0) : 0;
         if (parts && tpl && P) {
-          const a = el.getAttribute('data-fui-outlet');
+          const a = el.getAttribute('data-cui-outlet');
           if (a && parts.addrs.includes(a)) {
             P.claimEntry(parts, a, { el, tpl, after: Math.max(0, after), min: Math.max(0, min), epoch });
             continue;

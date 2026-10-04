@@ -32,12 +32,12 @@ func TestE2E_Modal_OpensWithCorrectARIA(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-modal"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-modal"]')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-modal"]')?.getAttribute('aria-modal')`, &ariaModal),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-modal"]')?.getAttribute('aria-labelledby')`, &labelledBy),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="site-demo-modal"]')`, &backdrop),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('role')`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-modal')`, &ariaModal),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-labelledby')`, &labelledBy),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="site-demo-modal"]')`, &backdrop),
 	); err != nil {
 		t.Fatalf("modal: %v", err)
 	}
@@ -68,8 +68,8 @@ func TestE2E_Modal_EscClosesAndReturnsFocus(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-modal"]').focus()`, nil),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-modal"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').focus()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
 		// Lazy-fetched widget needs time for the chrome request + mount.
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))`, nil),
@@ -78,11 +78,11 @@ func TestE2E_Modal_EscClosesAndReturnsFocus(t *testing.T) {
 		// SSR-inlined (hydrated) widgets are hidden in place. Either
 		// way the widget should NOT be visible after Esc.
 		chromedp.Evaluate(`(() => {
-            const el = document.querySelector('[data-fui-widget="site-demo-modal"]');
+            const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
             return !el || el.hasAttribute('hidden') || getComputedStyle(el).display === 'none';
         })()`, &dismissed),
 		chromedp.Evaluate(`document.documentElement.style.overflow`, &bodyOverflow),
-		chromedp.Evaluate(`document.activeElement === document.querySelector('button[data-fui-open="site-demo-modal"]')`, &focusReturned),
+		chromedp.Evaluate(`document.activeElement === document.querySelector('button[data-cui-open="site-demo-modal"]')`, &focusReturned),
 	); err != nil {
 		t.Fatalf("modal Esc: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestE2E_Modal_DeepLinkOpensFromURL(t *testing.T) {
 		chromedp.Navigate(base+"/components/modal?modal=user-edit&user_id=42"),
 		pageReady(),
 		chromedp.Sleep(500*time.Millisecond), // boot-time deep-link sync
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-modal"] h3')?.textContent`, &heading),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"] h3')?.textContent`, &heading),
 	); err != nil {
 		t.Fatalf("modal deeplink: %v", err)
 	}
@@ -136,11 +136,11 @@ func TestE2E_Drawer_OpensWithBackdropAndScrollLock(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/drawer"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-drawer"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-drawer"]').click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-drawer"]')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="site-demo-drawer"]')?.getAttribute('aria-modal')`, &ariaModal),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-backdrop="site-demo-drawer"]')`, &backdrop),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('role')`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('aria-modal')`, &ariaModal),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="site-demo-drawer"]')`, &backdrop),
 		chromedp.Evaluate(`document.documentElement.style.overflow`, &overflow),
 	); err != nil {
 		t.Fatalf("drawer: %v", err)
@@ -293,21 +293,21 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sidebar"),
 		pageReady(),
-		chromedp.Evaluate(`!!document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
+		chromedp.Evaluate(`!!document.querySelector('button.fui-sidebar__hamburger[data-cui-open="ui-sidebar-drawer"]')`, &triggerExists),
 		// Click via JS so the test is viewport-independent, the open is gated
 		// on the runtime handler, not CSS visibility.
-		chromedp.Evaluate(`document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button.fui-sidebar__hamburger[data-cui-open="ui-sidebar-drawer"]')?.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
 		// Coalesce undefined→'' so an absent drawer fails on the assertion below
 		// rather than a chromedp "undefined value" error.
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')?.getAttribute('role') ?? ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')?.getAttribute('aria-modal') ?? ''`, &ariaModal),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.getAttribute('role') ?? ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.getAttribute('aria-modal') ?? ''`, &ariaModal),
 	); err != nil {
 		t.Fatalf("sidebar hamburger: %v", err)
 	}
 	if !triggerExists {
-		t.Fatal("hamburger trigger button[data-fui-open=ui-sidebar-drawer] missing from the showcase")
+		t.Fatal("hamburger trigger button[data-cui-open=ui-sidebar-drawer] missing from the showcase")
 	}
 	if !drawerPresent {
 		t.Fatal("hamburger click did not open the sidebar drawer — ui-sidebar-drawer is not mounted")

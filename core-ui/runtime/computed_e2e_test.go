@@ -51,7 +51,7 @@ func TestComputed_RecomputesOnDepChange(t *testing.T) {
 		w.Write([]byte(js))
 	})
 	// Serve the computed module at the canonical demand-load URL so the
-	// runtime's loader fetches it when it sees [data-fui-computed].
+	// runtime's loader fetches it when it sees [data-cui-computed].
 	mux.HandleFunc("/__gofastr/runtime/computed.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(mod))
@@ -61,9 +61,9 @@ func TestComputed_RecomputesOnDepChange(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><html><head>
   <script type="application/json" id="gofastr-signals">{"org.company":"Acme"}</script>
 </head><body>
-  <span id="company" data-fui-signal="org.company">Acme</span>
-  <h1 id="greeting" data-fui-signal="org.greeting" data-fui-computed="greet" data-fui-computed-deps="org.company"></h1>
-  <button id="rename" data-fui-signal-set="org.company:Globex">rename</button>
+  <span id="company" data-cui-signal="org.company">Acme</span>
+  <h1 id="greeting" data-cui-signal="org.greeting" data-cui-computed="greet" data-cui-computed-deps="org.company"></h1>
+  <button id="rename" data-cui-signal-set="org.company:Globex">rename</button>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
   <!-- host registers reducers AFTER runtime.js (the WithExtraScripts

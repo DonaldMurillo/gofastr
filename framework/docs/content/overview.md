@@ -117,7 +117,7 @@ re-render.
   a plain `framework.App` by hand.
 - **[Theming](/docs/theming)**: token catalog, dark mode, section overrides,
   `--ui-*` vars. **[Runtime contract](/docs/runtime-contract)**: the
-  SSR/hydration/island/SSE model and the full `data-fui-*` reference.
+  SSR/hydration/island/SSE model and the full `data-cui-*` reference.
 - **[New components](/docs/ui-new-components)**: the minimal-register,
   SSR-inline, hydrate contract. **[Widget builder](/docs/widgets)**: islands
   that hydrate against a registered handler.

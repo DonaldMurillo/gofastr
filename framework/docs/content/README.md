@@ -29,7 +29,7 @@ results, the harness contract) are exempt. The exemption list lives in
 ## Architecture & conventions
 
 - [Runtime contract](runtime-contract.md): the UI/runtime contract:
-  SSR/hydration/island/SSE model + `data-fui-*` attribute reference.
+  SSR/hydration/island/SSE model + `data-cui-*` attribute reference.
   **Mandatory reading** before any UI or runtime change. (Embedded
   extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
 - [`ROADMAP.md`](../../../ROADMAP.md): forward-looking work (proposals,
@@ -133,12 +133,12 @@ results, the harness contract) are exempt. The exemption list lives in
   `--ui-*` component knobs, and why component internals are never
   overridden from site CSS.
 - [Runtime contract](runtime-contract.md): the SSR / hydration /
-  island / SSE model and the `data-fui-*` attribute reference
+  island / SSE model and the `data-cui-*` attribute reference
   (embedded extract of `core-ui/ARCHITECTURE.md`).
 - [UI components index](ui-new-components.md): one-page catalog of
   every component the framework ships, each with its package, `go doc`
   path, and live demo at `/components/<slug>` on the docs site.
-- [Interactive patterns](interactive-patterns.md): every `data-fui-*`
+- [Interactive patterns](interactive-patterns.md): every `data-cui-*`
   behavior, client-only vs RPC-backed, plus writing a hand-written
   island end to end.
 - [Form module](form-module.md): HTML form primitives, `framework/ui`
@@ -225,7 +225,7 @@ results, the harness contract) are exempt. The exemption list lives in
 - [Static-site export](static-export.md): `app.ExportStatic`: render
   every route in-process to a directory of query-free HTML + assets for
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
-  stamps pages with `data-fui-static` so server-backed islands no-op
+  stamps pages with `data-cui-static` so server-backed islands no-op
   instead of 404'ing.
 
 - [Codegen](codegen.md): YAML-configured generators, external extension

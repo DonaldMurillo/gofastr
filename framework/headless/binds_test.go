@@ -8,7 +8,7 @@ import (
 )
 
 // A binding is a seam of its own because an override may not carry a
-// data-fui-* key. The binding lands on the named part, on that part
+// data-cui-* key. The binding lands on the named part, on that part
 // only, and renders exactly the triple the framework's runtime reads.
 func TestBindLandsOnTheNamedPartOnly(t *testing.T) {
 	// The header is the card's one fillable part, so it is the one
@@ -16,12 +16,12 @@ func TestBindLandsOnTheNamedPartOnly(t *testing.T) {
 	got := Card(CardProps{Title: "CPU", Parts: Parts{Binds: Binds{
 		PartCardHeader: {Signal: "cpu"},
 	}}}, nil, render.HTML("<p>41%</p>"))
-	has(t, got, `data-fui-signal="cpu"`, "the binding never arrived")
-	has(t, got, `data-fui-signal-mode="text"`, "text is the default mode and must be stated for the runtime")
-	if n := count(got, "data-fui-signal="); n != 1 {
+	has(t, got, `data-cui-signal="cpu"`, "the binding never arrived")
+	has(t, got, `data-cui-signal-mode="text"`, "text is the default mode and must be stated for the runtime")
+	if n := count(got, "data-cui-signal="); n != 1 {
 		t.Errorf("the binding landed %d times; it must land on the one part that asked", n)
 	}
-	hasNot(t, got, "data-fui-signal-attr", "a text binding carries an attribute name")
+	hasNot(t, got, "data-cui-signal-attr", "a text binding carries an attribute name")
 }
 
 func TestBindAttrModeNamesItsAttribute(t *testing.T) {
@@ -31,8 +31,8 @@ func TestBindAttrModeNamesItsAttribute(t *testing.T) {
 	got := Card(CardProps{Title: "CPU", Parts: Parts{Binds: Binds{
 		PartCardBody: {Signal: "busy", Mode: "attr", Attr: "title"},
 	}}}, nil, render.HTML("<p>x</p>"))
-	has(t, got, `data-fui-signal-mode="attr"`, "attr mode is not stated")
-	has(t, got, `data-fui-signal-attr="title"`, "the attribute to write is missing")
+	has(t, got, `data-cui-signal-mode="attr"`, "attr mode is not stated")
+	has(t, got, `data-cui-signal-attr="title"`, "the attribute to write is missing")
 }
 
 // A text Bind on a part that is not fillable would gut the part's
@@ -53,7 +53,7 @@ func TestBindRefusesWhatTheRuntimeWouldRefuse(t *testing.T) {
 		{"text with attr", Bind{Signal: "s", Attr: "title"}, "takes no Attr"},
 		{"executable attr", Bind{Signal: "s", Mode: "attr", Attr: "onclick"}, "may not write onclick"},
 		{"style attr", Bind{Signal: "s", Mode: "attr", Attr: "style"}, "may not write style"},
-		{"privileged attr", Bind{Signal: "s", Mode: "attr", Attr: "data-fui-rpc"}, "may not write data-fui-rpc"},
+		{"privileged attr", Bind{Signal: "s", Mode: "attr", Attr: "data-cui-rpc"}, "may not write data-cui-rpc"},
 		{"text on an unfillable part", Bind{Signal: "s"}, "not a fillable part"},
 		{"html on an unfillable part", Bind{Signal: "s", Mode: "html"}, "not a fillable part"},
 		{"the lifecycle's pressed", Bind{Signal: "s", Mode: "attr", Attr: "aria-pressed"}, "the runtime owns it"},
@@ -88,14 +88,14 @@ func TestBindRefusesWhatTheRuntimeWouldRefuse(t *testing.T) {
 // Local mutations are what a click does, so they travel through the
 // Action seam like a request does, and nowhere else.
 func TestButtonActionAdmitsLocalSignalMutations(t *testing.T) {
-	got := Button(ButtonProps{Label: "+", Action: map[string]string{"data-fui-signal-inc": "count:5"}}, nil)
-	has(t, got, `data-fui-signal-inc="count:5"`, "the local mutation never arrived")
-	smuggled := Button(ButtonProps{Label: "+", ExtraAttrs: map[string]string{"data-fui-signal-inc": "count"}}, nil)
-	hasNot(t, smuggled, "data-fui-signal-inc", "a local mutation arrived through ExtraAttrs")
+	got := Button(ButtonProps{Label: "+", Action: map[string]string{"data-cui-signal-inc": "count:5"}}, nil)
+	has(t, got, `data-cui-signal-inc="count:5"`, "the local mutation never arrived")
+	smuggled := Button(ButtonProps{Label: "+", ExtraAttrs: map[string]string{"data-cui-signal-inc": "count"}}, nil)
+	hasNot(t, smuggled, "data-cui-signal-inc", "a local mutation arrived through ExtraAttrs")
 	defer func() {
 		if recover() == nil {
 			t.Error("a signal BINDING was accepted as an action; a binding is a seam of its own")
 		}
 	}()
-	Button(ButtonProps{Label: "x", Action: map[string]string{"data-fui-signal": "count"}}, nil)
+	Button(ButtonProps{Label: "x", Action: map[string]string{"data-cui-signal": "count"}}, nil)
 }

@@ -48,7 +48,7 @@ type FactBoxConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the fact's root div.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -82,12 +82,12 @@ func FactBox(cfg FactBoxConfig) render.HTML {
 	if value == "" {
 		value = render.Text(cfg.Value)
 	}
-	label := html.Span(html.TextConfig{Class: "fui-fact-box__label", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, render.Text(cfg.Label))
+	label := html.Span(html.TextConfig{Class: "fui-fact-box__label", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Label))
 	// The value span holds a caller's markup only when ValueHTML is
 	// set; otherwise it is Value, a plain string, rendered as text.
 	var valAttrs html.Attrs
 	if cfg.ValueHTML == "" {
-		valAttrs = html.Attrs{"data-fui-internal": ""}
+		valAttrs = html.Attrs{"data-cui-internal": ""}
 	}
 	val := html.Span(html.TextConfig{Class: "fui-fact-box__value", ExtraAttrs: valAttrs}, value)
 	children := []render.HTML{label, val}
@@ -103,7 +103,7 @@ func FactBox(cfg FactBoxConfig) render.HTML {
 var factBoxStyle = registry.RegisterStyle("ui-fact-box", factBoxCSS)
 
 func factBoxCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-fact-box"] {
+	return `[data-cui-comp="ui-fact-box"] {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs, 2px);
@@ -112,17 +112,17 @@ func factBoxCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
-:where([data-fui-comp="ui-fact-box"]).fui-fact-box--full {
+:where([data-cui-comp="ui-fact-box"]).fui-fact-box--full {
   grid-column: 1 / -1;
 }
-[data-fui-comp="ui-fact-box"] .fui-fact-box__label {
+[data-cui-comp="ui-fact-box"] .fui-fact-box__label {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-muted, currentColor);
 }
-[data-fui-comp="ui-fact-box"] .fui-fact-box__value {
+[data-cui-comp="ui-fact-box"] .fui-fact-box__value {
   font-size: var(--font-size-md, 14px);
   color: var(--color-text, currentColor);
   line-height: 1.5;
@@ -130,19 +130,19 @@ func factBoxCSS(_ style.Theme) string {
 
 /* Value-first variant: big display value on top, label as caption
    underneath. Stat-band/KPI use cases. */
-[data-fui-comp="ui-fact-box"].fui-fact-box--value-first {
+[data-cui-comp="ui-fact-box"].fui-fact-box--value-first {
   border: 0;
   background: transparent;
   padding: 0;
 }
-[data-fui-comp="ui-fact-box"].fui-fact-box--value-first .fui-fact-box__value {
+[data-cui-comp="ui-fact-box"].fui-fact-box--value-first .fui-fact-box__value {
   font-size: var(--ui-fact-box-value-size, 32px);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
   color: var(--ui-fact-box-value-color, var(--color-primary, currentColor));
   font-variant-numeric: tabular-nums;
 }
-[data-fui-comp="ui-fact-box"].fui-fact-box--value-first .fui-fact-box__label {
+[data-cui-comp="ui-fact-box"].fui-fact-box--value-first .fui-fact-box__label {
   font-size: var(--text-xs, 12px);
 }`
 }

@@ -8,7 +8,7 @@ import (
 )
 
 // TestSearchInputActionVariantKeepsBoxStyle pins #239: with Action set,
-// WrapHTML injects data-fui-comp into the <form> (the outermost tag),
+// WrapHTML injects data-cui-comp into the <form> (the outermost tag),
 // so every rule keyed on the marker attribute as an ANCESTOR stops
 // matching the label — the box shell landed on the form and the label
 // lost all styling. The shell must key on the .fui-search class,
@@ -16,14 +16,14 @@ import (
 func TestSearchInputActionVariantKeepsBoxStyle(t *testing.T) {
 	h := SearchInput(SearchInputConfig{Name: "q", ID: "q", Action: "/search"})
 	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, "<form") || !strings.Contains(root, `data-fui-comp="ui-search-input"`) {
+	if !strings.Contains(root, "<form") || !strings.Contains(root, `data-cui-comp="ui-search-input"`) {
 		t.Fatalf("action variant root should be the marked form:\n%s", root)
 	}
 	css := searchInputCSS(style.Theme{})
 	if !strings.Contains(css, ".fui-search {") {
 		t.Errorf("shell rule must key on the .fui-search class (the label), which exists in both variants:\n%s", css)
 	}
-	if strings.Contains(css, `[data-fui-comp="ui-search-input"] `) {
+	if strings.Contains(css, `[data-cui-comp="ui-search-input"] `) {
 		t.Errorf("marker-attribute descendant selectors cannot match in the Action variant (the form carries the marker):\n%s", css)
 	}
 	if !strings.Contains(css, ".fui-search__form {") {

@@ -24,7 +24,7 @@ type TerminalBlockConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the block's root
 	// wrapper <div>. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-fui-*.
+	// and id (use Class / ID), data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -39,7 +39,7 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 		cls += " " + cfg.Class
 	}
 	// Label is a string, so the head is always this component's own.
-	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
+	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		html.Span(html.TextConfig{
 			Class:      "fui-terminal-block__dot",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
@@ -51,7 +51,7 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	// component's own.
 	var bodyOwn html.Attrs
 	if len(lines) == 0 {
-		bodyOwn = html.Attrs{"data-fui-internal": ""}
+		bodyOwn = html.Attrs{"data-cui-internal": ""}
 	}
 	body := html.Div(html.DivConfig{Class: "fui-terminal-block__body", ExtraAttrs: bodyOwn}, lines...)
 	return terminalBlockStyle.WrapHTML(
@@ -72,7 +72,7 @@ func TerminalOK(s string) render.HTML {
 var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlockCSS)
 
 func terminalBlockCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-terminal-block"] {
+	return `[data-cui-comp="ui-terminal-block"] {
   border: 1px solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-background, #fff);
@@ -81,7 +81,7 @@ func terminalBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 12px);
   margin-top: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-terminal-block"] .fui-terminal-block__head {
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__head {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
@@ -90,22 +90,22 @@ func terminalBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-terminal-block"] .fui-terminal-block__dot {
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__dot {
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: var(--color-primary, currentColor);
 }
-[data-fui-comp="ui-terminal-block"] .fui-terminal-block__body {
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__body {
   padding: 10px 12px;
   line-height: 1.7;
   color: var(--color-text, #18181B);
   white-space: pre-wrap;
 }
-[data-fui-comp="ui-terminal-block"] .fui-terminal-block__out {
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__out {
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-terminal-block"] .fui-terminal-block__ok {
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__ok {
   color: var(--ui-terminal-block-ok-color, var(--color-success, #16A34A));
 }`
 }

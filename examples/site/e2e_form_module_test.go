@@ -140,7 +140,7 @@ func TestE2E_SearchInput_ClearButton(t *testing.T) {
 		pageReady(),
 		// Type into the search input.
 		chromedp.Evaluate(`(() => {
-			var input = document.querySelector('[data-fui-comp="ui-search-input"] input');
+			var input = document.querySelector('[data-cui-comp="ui-search-input"] input');
 			if (!input) return '';
 			input.value = 'hello';
 			input.dispatchEvent(new Event('input', {bubbles: true}));
@@ -148,7 +148,7 @@ func TestE2E_SearchInput_ClearButton(t *testing.T) {
 		})()`, &value),
 		// Check clear button is visible.
 		chromedp.Evaluate(`(() => {
-			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .fui-search__clear');
+			var btn = document.querySelector('[data-cui-comp="ui-search-input"] .fui-search__clear');
 			return btn ? btn.hasAttribute('hidden') : true;
 		})()`, &clearHidden),
 	)
@@ -165,9 +165,9 @@ func TestE2E_SearchInput_ClearButton(t *testing.T) {
 	// Click clear.
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`(() => {
-			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .fui-search__clear');
+			var btn = document.querySelector('[data-cui-comp="ui-search-input"] .fui-search__clear');
 			if (btn) btn.click();
-			var input = document.querySelector('[data-fui-comp="ui-search-input"] input');
+			var input = document.querySelector('[data-cui-comp="ui-search-input"] input');
 			return input ? input.value : '';
 		})()`, &value),
 	)
@@ -194,8 +194,8 @@ func TestE2E_InputGroup_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/inputgroup"),
 		pageReady(),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .fui-input-group__prepend')`, &hasPrepend),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .fui-input-group__append')`, &hasAppend),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-comp="ui-input-group"] .fui-input-group__prepend')`, &hasPrepend),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-comp="ui-input-group"] .fui-input-group__append')`, &hasAppend),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -224,7 +224,7 @@ func TestE2E_ValidationSummary_RendersLinks(t *testing.T) {
 		chromedp.Navigate(base+"/components/validationsummary"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var summaries = document.querySelectorAll('[data-fui-comp="ui-validation-summary"]');
+			var summaries = document.querySelectorAll('[data-cui-comp="ui-validation-summary"]');
 			if (summaries.length === 0) return {links:0, anchor:false, minHeight:0};
 			var last = summaries[summaries.length - 1];
 			var links = last.querySelectorAll('a[href^="#"]');
@@ -277,7 +277,7 @@ func TestE2EFieldOrderAndTitle(t *testing.T) {
 		chromedp.Navigate(base+"/components/validationsummary"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var sums = document.querySelectorAll('[data-fui-comp="ui-validation-summary"]');
+			var sums = document.querySelectorAll('[data-cui-comp="ui-validation-summary"]');
 			if (sums.length === 0) return {found: false};
 			var last = sums[sums.length - 1];
 			var links = Array.from(last.querySelectorAll('a[href^="#"]'));

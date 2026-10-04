@@ -9,12 +9,12 @@ import (
 )
 
 // TestCollapsibleRegistersCSS guards that Collapsible ships its own
-// scoped CSS. It stamps data-fui-comp="fui-collapsible" but had no
+// scoped CSS. It stamps data-cui-comp="fui-collapsible" but had no
 // registered style, so the summary/content rendered unstyled.
 func TestCollapsibleRegistersCSS(t *testing.T) {
 	css := collapsibleStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-fui-comp="fui-collapsible"]`,
+		`[data-cui-comp="fui-collapsible"]`,
 		".fui-collapsible__summary",
 		".fui-collapsible__content",
 	} {
@@ -62,7 +62,7 @@ func TestCollapsibleBasic(t *testing.T) {
 	mustContain(t, h, "Details")
 	mustContain(t, h, "body content")
 	mustContain(t, h, `class="fui-collapsible"`)
-	mustContain(t, h, `data-fui-comp="fui-collapsible"`)
+	mustContain(t, h, `data-cui-comp="fui-collapsible"`)
 	mustContain(t, h, `fui-collapsible__summary`)
 	mustContain(t, h, `fui-collapsible__content`)
 	mustContain(t, h, "</details>")

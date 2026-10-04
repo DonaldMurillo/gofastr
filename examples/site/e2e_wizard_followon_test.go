@@ -462,7 +462,7 @@ func TestE2E_SearchInputClearOnEsc(t *testing.T) {
 		pageReady(),
 		// Type a value into the SearchInput.
 		chromedp.Evaluate(`(() => {
-			var input = document.querySelector('[data-fui-comp="ui-search-input"] input');
+			var input = document.querySelector('[data-cui-comp="ui-search-input"] input');
 			if (!input) return false;
 			input.focus();
 			input.value = 'pizza';
@@ -471,7 +471,7 @@ func TestE2E_SearchInputClearOnEsc(t *testing.T) {
 		})()`, new(bool)),
 		// Now press Escape on the input via keyboard event.
 		chromedp.Evaluate(`(() => {
-			var input = document.querySelector('[data-fui-comp="ui-search-input"] input');
+			var input = document.querySelector('[data-cui-comp="ui-search-input"] input');
 			if (!input) return '';
 			input.focus();
 			var ev = new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true});

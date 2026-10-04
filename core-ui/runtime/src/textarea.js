@@ -1,9 +1,9 @@
-// TextArea runtime module, applies the data-fui-autogrow handler to
+// TextArea runtime module, applies the data-cui-autogrow handler to
 // any textarea on the page, inside widgets and out. This module is the
 // sole owner of autogrow wiring (widgets.js demand-loads it and relies
 // on the rescan loops for widget-mounted textareas).
 //
-// Loaded on-demand when a [data-fui-autogrow] textarea is on the page.
+// Loaded on-demand when a [data-cui-autogrow] textarea is on the page.
 (function () {
   'use strict';
 
@@ -29,7 +29,7 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('textarea[data-fui-autogrow]').forEach(wire);
+    scope.querySelectorAll('textarea[data-cui-autogrow]').forEach(wire);
   }
   scan(document);
 

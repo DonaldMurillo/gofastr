@@ -20,7 +20,7 @@ package main
 //
 // MODAL gate (TestModalFocusTrap): Enter opens the quick-add modal from its
 // trigger; Tab CYCLES WITHIN the modal only (focus never leaves
-// [data-fui-widget="customer-quick-add"]); Escape closes it; focus RETURNS to
+// [data-cui-widget="customer-quick-add"]); Escape closes it; focus RETURNS to
 // the trigger. The modal's own focusables also pass the indicator gate.
 //
 // Real defects are fixed upstream in framework/ui via the token/variant
@@ -161,8 +161,8 @@ const kbgateSetupJS = `(() => {
       if (cur.id) part += '#' + cur.id;
       const cls = (cur.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
       if (cls) part += '.' + cls;
-      if (cur.dataset && cur.dataset.fuiComp) part += '[fui=' + cur.dataset.fuiComp + ']';
-      if (cur.dataset && cur.dataset.fuiOpen) part += '[open=' + cur.dataset.fuiOpen + ']';
+      if (cur.dataset && cur.dataset.cuiComp) part += '[fui=' + cur.dataset.cuiComp + ']';
+      if (cur.dataset && cur.dataset.cuiOpen) part += '[open=' + cur.dataset.cuiOpen + ']';
       parts.unshift(part); cur = cur.parentElement; depth++;
     }
     return parts.join('>') || el.tagName.toLowerCase();
@@ -544,8 +544,8 @@ func TestModalFocusTrap(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
-	const triggerSel = `button[data-fui-open="customer-quick-add"]`
-	const widgetSel = `[data-fui-widget="customer-quick-add"]`
+	const triggerSel = `button[data-cui-open="customer-quick-add"]`
+	const widgetSel = `[data-cui-widget="customer-quick-add"]`
 
 	// 1. Open the modal with Enter on the trigger (focus positioned, then a
 	//    real Enter keypress. Enter on a focused <button> fires click).

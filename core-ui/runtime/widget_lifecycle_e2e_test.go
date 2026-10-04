@@ -33,7 +33,7 @@ type widgetLifecycleSite struct {
 // widgets with no page scoping:
 //
 //	appwide-panel  non-hidden, SSR-inlined inside the shell on /one pages
-//	appwide-drawer hidden + backdrop, opened via data-fui-open, chrome
+//	appwide-drawer hidden + backdrop, opened via data-cui-open, chrome
 //	               fetched lazily (root lands on <body>)
 //
 // An inline script installed before runtime.js records every
@@ -60,12 +60,12 @@ func startWidgetLifecycleServer(t *testing.T) *widgetLifecycleSite {
 	})
 	mux.HandleFunc("/chrome/panel", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<div data-fui-widget="appwide-panel" id="panel-fetched">Fetched panel</div>`)
+		fmt.Fprint(w, `<div data-cui-widget="appwide-panel" id="panel-fetched">Fetched panel</div>`)
 	})
 	mux.HandleFunc("/chrome/drawer", func(w http.ResponseWriter, _ *http.Request) {
 		chromeHits.Add(1)
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<div data-fui-widget="appwide-drawer" id="drawer-root"><button data-fui-action="close">×</button>Drawer</div>`)
+		fmt.Fprint(w, `<div data-cui-widget="appwide-drawer" id="drawer-root"><button data-cui-action="close">×</button>Drawer</div>`)
 	})
 	mux.HandleFunc("/style.css", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
@@ -78,7 +78,7 @@ func startWidgetLifecycleServer(t *testing.T) *widgetLifecycleSite {
 		`</script>`
 	header := `<header><a id="to-b" href="/one/b">B</a><a id="to-one-a" href="/one/a">OneA</a>` +
 		`<a id="to-two" href="/two">Two</a><a id="to-two-b" href="/two/b">TwoB</a>` +
-		`<button id="open-drawer" data-fui-open="appwide-drawer">Drawer</button></header>`
+		`<button id="open-drawer" data-cui-open="appwide-drawer">Drawer</button></header>`
 	events := `<script>
 window.__wopens=[];window.__wcloses=[];
 document.addEventListener('fui:widget-open',function(e){window.__wopens.push(e.detail);});
@@ -86,15 +86,15 @@ document.addEventListener('fui:widget-close',function(e){window.__wcloses.push(e
 </script>`
 	onePage := func(screen string) string {
 		return `<!doctype html><html><head><title>t</title>` + routes + `</head><body>` + events +
-			`<div data-fui-layout="one" data-fui-layout-key="l:one">` + header +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:one"><h1 id="` + screen + `">` + screen + `</h1></main>` +
-			`<div data-fui-widget="appwide-panel" id="panel-root">Panel SSR chrome</div>` +
+			`<div data-cui-layout="one" data-cui-layout-key="l:one">` + header +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:one"><h1 id="` + screen + `">` + screen + `</h1></main>` +
+			`<div data-cui-widget="appwide-panel" id="panel-root">Panel SSR chrome</div>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	twoPage := func(screen string) string {
 		return `<!doctype html><html><head><title>t</title>` + routes + `</head><body>` + events +
-			`<div data-fui-layout="two" data-fui-layout-key="l:two">` + header +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:two"><h1 id="` + screen + `">` + screen + `</h1></main>` +
+			`<div data-cui-layout="two" data-cui-layout-key="l:two">` + header +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:two"><h1 id="` + screen + `">` + screen + `</h1></main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	partial := func(w http.ResponseWriter, swap, screen string) {
@@ -141,7 +141,7 @@ var widgetPollOpts = chromedp.WithPollingTimeout(10 * time.Second)
 //   - an open modal drawer is closed by the navigate listener (root
 //     dropped, fui:widget-close fired), and reopening re-fetches its
 //     chrome and announces fui:widget-open again;
-//   - fui:widget-open detail.root is the mounted [data-fui-widget]
+//   - fui:widget-open detail.root is the mounted [data-cui-widget]
 //     element on both the fetched and the SSR-hydrated path.
 func TestAppwideWidgetRootsSurviveShellSwap(t *testing.T) {
 	site := startWidgetLifecycleServer(t)
@@ -158,7 +158,7 @@ func TestAppwideWidgetRootsSurviveShellSwap(t *testing.T) {
 var o=window.__wopens.filter(function(d){return d.name==='appwide-panel';});
 var root=document.getElementById('panel-root');
 return o.length===1&&o[0].root===root&&o[0].hydrated===true&&o[0].reinserted===false&&
-  root.isConnected&&!!root.closest('[data-fui-layout-key]')?
+  root.isConnected&&!!root.closest('[data-cui-layout-key]')?
   {ok:true,rootIsBodyChild:false}:o;})()`, &panelHydrated),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -171,18 +171,18 @@ return o.length===1&&o[0].root===root&&o[0].hydrated===true&&o[0].reinserted===f
 	var drawerOpen bool
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#open-drawer`, chromedp.ByID),
-		chromedp.Poll(`!!document.querySelector('[data-fui-widget="appwide-drawer"]')`, nil, widgetPollOpts),
+		chromedp.Poll(`!!document.querySelector('[data-cui-widget="appwide-drawer"]')`, nil, widgetPollOpts),
 		chromedp.Evaluate(`(function(){
 var o=window.__wopens.filter(function(d){return d.name==='appwide-drawer';});
-var root=document.querySelector('[data-fui-widget="appwide-drawer"]');
+var root=document.querySelector('[data-cui-widget="appwide-drawer"]');
 return o.length===1&&o[0].root===root&&o[0].hydrated===false&&o[0].reinserted===false&&
   root.parentElement===document.body&&
-  !!document.querySelector('[data-fui-backdrop="appwide-drawer"]');})()`, &drawerOpen),
+  !!document.querySelector('[data-cui-backdrop="appwide-drawer"]');})()`, &drawerOpen),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if !drawerOpen {
-		t.Error("drawer open event must carry the fetched [data-fui-widget] root appended to <body>")
+		t.Error("drawer open event must carry the fetched [data-cui-widget] root appended to <body>")
 	}
 	if got := site.chromeHits.Load(); got != 1 {
 		t.Errorf("drawer chrome fetches after first open = %d, want 1", got)
@@ -201,11 +201,11 @@ var panelEvents=window.__wopens.filter(function(d){return d.name==='appwide-pane
 var G=window.__gofastr;
 return {
  drawerClosedEvent:c.length===1&&!!c[0].root,
- drawerGone:!document.querySelector('[data-fui-widget="appwide-drawer"]')&&
+ drawerGone:!document.querySelector('[data-cui-widget="appwide-drawer"]')&&
    !G._widgets['appwide-drawer'],
- backdropGone:!document.querySelector('[data-fui-backdrop="appwide-drawer"]'),
+ backdropGone:!document.querySelector('[data-cui-backdrop="appwide-drawer"]'),
  panelUntouched:panelEvents.length===1&&document.getElementById('panel-root').isConnected&&
-   !!document.getElementById('panel-root').closest('[data-fui-layout-key]'),
+   !!document.getElementById('panel-root').closest('[data-cui-layout-key]'),
 };})()`, &inChain),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -221,7 +221,7 @@ return {
 	var reopened bool
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#open-drawer`, chromedp.ByID),
-		chromedp.Poll(`!!document.querySelector('[data-fui-widget="appwide-drawer"]')`, nil, widgetPollOpts),
+		chromedp.Poll(`!!document.querySelector('[data-cui-widget="appwide-drawer"]')`, nil, widgetPollOpts),
 		chromedp.Evaluate(`window.__wopens.filter(function(d){return d.name==='appwide-drawer';}).length===2`, &reopened),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -248,7 +248,7 @@ return {
  panelAlive:root&&root.isConnected&&root.parentElement===document.body,
  panelReinserted:re.length===1&&re[0].root===root&&re[0].hydrated===true,
  drawerClosed:window.__wcloses.filter(function(d){return d.name==='appwide-drawer';}).length===2,
- drawerGone:!document.querySelector('[data-fui-widget="appwide-drawer"]'),
+ drawerGone:!document.querySelector('[data-cui-widget="appwide-drawer"]'),
 };})()`, &crossChain),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -300,7 +300,7 @@ func TestSwappedSSRPanelMovesToFreshInline(t *testing.T) {
 		chromedp.Click(`#to-two`, chromedp.ByID),
 		chromedp.WaitVisible(`#screen-two`, chromedp.ByID),
 		// /two does not inline the panel: the old root is reattached.
-		chromedp.Poll(`!!document.querySelector('[data-fui-widget="appwide-panel"][data-stamp="old"]')&&document.querySelector('[data-fui-widget="appwide-panel"][data-stamp="old"]').parentElement===document.body`, nil, widgetPollOpts),
+		chromedp.Poll(`!!document.querySelector('[data-cui-widget="appwide-panel"][data-stamp="old"]')&&document.querySelector('[data-cui-widget="appwide-panel"][data-stamp="old"]').parentElement===document.body`, nil, widgetPollOpts),
 		chromedp.Click(`#to-one-a`, chromedp.ByID),
 		chromedp.WaitVisible(`#screen-one-a`, chromedp.ByID),
 		// The fresh /one/a shell inlines a new panel node; the runtime
@@ -309,10 +309,10 @@ func TestSwappedSSRPanelMovesToFreshInline(t *testing.T) {
 var G=window.__gofastr;
 var reg=G._widgets&&G._widgets['appwide-panel'];
 if(!reg||!reg.root||reg.root.dataset.stamp==='old')return false;
-return reg.root.isConnected&&!!reg.root.closest('[data-fui-layout-key]')&&
-  !document.querySelector('[data-fui-widget="appwide-panel"][data-stamp="old"]');})()`, nil, widgetPollOpts),
+return reg.root.isConnected&&!!reg.root.closest('[data-cui-layout-key]')&&
+  !document.querySelector('[data-cui-widget="appwide-panel"][data-stamp="old"]');})()`, nil, widgetPollOpts),
 		chromedp.Evaluate(`(function(){
-var old=document.querySelector('[data-fui-widget="appwide-panel"][data-stamp="old"]');
+var old=document.querySelector('[data-cui-widget="appwide-panel"][data-stamp="old"]');
 var G=window.__gofastr;
 var reg=G._widgets['appwide-panel'];
 var cl=window.__wcloses.filter(function(d){return d.name==='appwide-panel'&&d.root&&d.root.dataset.stamp==='old';});

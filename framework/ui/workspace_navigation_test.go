@@ -62,7 +62,7 @@ func TestWorkspaceKeptListAndEmptyAside(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	var before, after float64
 	var contextFits bool
-	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/items/full"), chromedp.Poll(`!!window.__gofastr`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &before), chromedp.Evaluate(`(()=>{const aside=document.querySelector('.fui-content-row__aside'), group=aside.querySelector('[data-fui-comp="ui-avatar-group"]');return group.getBoundingClientRect().right<=aside.getBoundingClientRect().right})()`, &contextFits), chromedp.Evaluate(`window.keptList=document.querySelector('.fui-list-detail__list');keptList.scrollTop=200`, nil), chromedp.Click(`a[href="/items/empty"]`), chromedp.Poll(`location.pathname === '/items/empty' && document.querySelector('.fui-content-row__aside > [data-fui-outlet]').textContent === ''`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &after)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/items/full"), chromedp.Poll(`!!window.__gofastr`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &before), chromedp.Evaluate(`(()=>{const aside=document.querySelector('.fui-content-row__aside'), group=aside.querySelector('[data-cui-comp="ui-avatar-group"]');return group.getBoundingClientRect().right<=aside.getBoundingClientRect().right})()`, &contextFits), chromedp.Evaluate(`window.keptList=document.querySelector('.fui-list-detail__list');keptList.scrollTop=200`, nil), chromedp.Click(`a[href="/items/empty"]`), chromedp.Poll(`location.pathname === '/items/empty' && document.querySelector('.fui-content-row__aside > [data-cui-outlet]').textContent === ''`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &after)); err != nil {
 		t.Fatal(err)
 	}
 	if !contextFits {
@@ -78,7 +78,7 @@ func TestWorkspaceKeptListAndEmptyAside(t *testing.T) {
 	if !kept {
 		t.Fatal("list node or scroll lost across detail navigation")
 	}
-	if err := chromedp.Run(ctx, chromedp.Click(`a[href="/items/full"]`), chromedp.Poll(`location.pathname === '/items/full' && !!document.querySelector('.fui-content-row__aside [data-fui-comp="ui-avatar-group"]')`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &after)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Click(`a[href="/items/full"]`), chromedp.Poll(`location.pathname === '/items/full' && !!document.querySelector('.fui-content-row__aside [data-cui-comp="ui-avatar-group"]')`, nil), chromedp.Evaluate(`document.querySelector('.fui-content-row__aside').getBoundingClientRect().width`, &after)); err != nil {
 		t.Fatal(err)
 	}
 	if after != before {

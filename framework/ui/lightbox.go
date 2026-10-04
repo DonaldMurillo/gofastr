@@ -19,7 +19,7 @@ import (
 // Standalone zoom overlay. Composes preset.Modal: ESC, click-outside,
 // focus-trap, return-focus all come free. Lightbox does NOT render any
 // trigger surface itself; any element on the page can open it via
-// `data-fui-open="<lightbox-name>" data-fui-deeplink="src=…&alt=…&caption=…&group=<id>"`.
+// `data-cui-open="<lightbox-name>" data-cui-deeplink="src=…&alt=…&caption=…&group=<id>"`.
 //
 // Pairs cleanly with framework/ui.Gallery (set its Lightbox field to
 // this Lightbox's Name and each gallery item becomes a trigger) but
@@ -56,7 +56,7 @@ var _ = registry.RegisterBehavior("lightbox", lightboxJS,
 		},
 		registry.Interaction{
 			Event: "keydown",
-			Scope: "[data-fui-widget]:not([hidden]) [data-fui-lightbox]",
+			Scope: "[data-cui-widget]:not([hidden]) [data-fui-lightbox]",
 			Keys:  []string{"ArrowLeft", "ArrowRight"},
 		},
 	),
@@ -66,7 +66,7 @@ var _ = registry.RegisterBehavior("lightbox", lightboxJS,
 type LightboxConfig struct {
 	// Name is the unique widget name (required) used as the
 	// preset.Modal name. Page-unique. Any element with
-	// data-fui-open="<this Name>" opens the overlay.
+	// data-cui-open="<this Name>" opens the overlay.
 	Name string
 	// Label is the accessible name for the open modal. Defaults to
 	// "Image viewer" (i18nui.KeyLightboxLabel through the strings
@@ -77,7 +77,7 @@ type LightboxConfig struct {
 	// data-fui-lightbox-group attribute.
 	NavArrows bool
 	// ShowCaption adds a <figcaption> bound to the "caption" signal.
-	// Triggers pass caption=<text> in their data-fui-deeplink.
+	// Triggers pass caption=<text> in their data-cui-deeplink.
 	ShowCaption bool
 	// AllowDownload renders a visible "Download" anchor inside the
 	// modal whose href is bound to the current src signal.
@@ -95,13 +95,13 @@ type LightboxConfig struct {
 	// analytics markers, ARIA overrides) onto the lightbox's own root
 	// (the fui-lightbox viewer panel; the modal chrome is widget
 	// machinery, and triggers are caller-owned elements). Keys the
-	// component owns are dropped: class, id, data-fui-* (the viewer and
+	// component owns are dropped: class, id, data-cui-* (the viewer and
 	// nav wiring) and data-hui-* (the headless anatomy's hooks).
 	ExtraAttrs html.Attrs
 }
 
 // Lightbox returns a *widget.Builder for the zoom-overlay modal.
-// Mount once at app startup; trigger from anywhere via data-fui-open.
+// Mount once at app startup; trigger from anywhere via data-cui-open.
 func Lightbox(cfg LightboxConfig) *widget.Builder {
 	if cfg.Name == "" {
 		panic("ui: Lightbox requires Name")
@@ -151,7 +151,7 @@ type lightboxSlot struct {
 // package's own vocabulary. The pinch-zoom module and the stylesheet
 // key off the data-fui-lightbox* attributes, never off these classes.
 var lightboxClasses = headless.Classes{
-	headless.PartRoot:           "fui-lightbox fui-slot-bare",
+	headless.PartRoot:           "fui-lightbox cui-slot-bare",
 	headless.PartVisuallyHidden: "fui-visually-hidden",
 	headless.PartFigure:         "fui-lightbox__figure",
 	headless.PartImage:          "fui-lightbox__full",
@@ -191,19 +191,19 @@ const lightboxDownloadIcon render.HTML = `<svg width="22" height="22" viewBox="0
 var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 
 func lightboxCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-lightbox"] {
+	return `[data-cui-comp="ui-lightbox"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   place-items: center;
   inline-size: min(90vw, 1200px);
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__figure {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__figure {
   margin: 0;
   display: grid;
   gap: var(--spacing-sm, 4px);
   place-items: center;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__full {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__full {
   display: block;
   max-inline-size: 100%;
   max-block-size: min(75vh, 80vh);
@@ -217,29 +217,29 @@ func lightboxCSS(_ style.Theme) string {
   will-change: transform;
   cursor: zoom-in;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__full[data-fui-zoomed] {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__full[data-fui-zoomed] {
   cursor: grab;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__full[data-fui-zoomed]:active {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__full[data-fui-zoomed]:active {
   cursor: grabbing;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__caption {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__caption {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   text-align: center;
   color: var(--color-text-muted, #52525B);
   max-inline-size: 60ch;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__caption:empty { display: none; }
+[data-cui-comp="ui-lightbox"] .fui-lightbox__caption:empty { display: none; }
 
-[data-fui-comp="ui-lightbox"] .fui-lightbox__toolbar {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__toolbar {
   display: flex;
   gap: var(--spacing-sm, 4px);
   align-items: center;
   justify-content: center;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__nav,
-[data-fui-comp="ui-lightbox"] .fui-lightbox__download {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__nav,
+[data-cui-comp="ui-lightbox"] .fui-lightbox__download {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -252,12 +252,12 @@ func lightboxCSS(_ style.Theme) string {
   cursor: pointer;
   text-decoration: none;
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__nav:hover,
-[data-fui-comp="ui-lightbox"] .fui-lightbox__download:hover {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__nav:hover,
+[data-cui-comp="ui-lightbox"] .fui-lightbox__download:hover {
   background: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-lightbox"] .fui-lightbox__nav:focus-visible,
-[data-fui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
+[data-cui-comp="ui-lightbox"] .fui-lightbox__nav:focus-visible,
+[data-cui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }`

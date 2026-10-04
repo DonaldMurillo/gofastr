@@ -32,7 +32,7 @@ type TextFieldConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, pattern and title) onto the field's <input>.
 	// Keys the input owns are dropped: class and id (use ID),
-	// data-fui-*, type, name, value, placeholder, autocomplete,
+	// data-cui-*, type, name, value, placeholder, autocomplete,
 	// minlength, maxlength, required, disabled, aria-invalid, and
 	// aria-describedby.
 	ExtraAttrs html.Attrs
@@ -79,7 +79,7 @@ type NumberFieldConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) onto the field's <input>. Keys the input owns
-	// are dropped: class and id (use ID), data-fui-*, type, name,
+	// are dropped: class and id (use ID), data-cui-*, type, name,
 	// value, placeholder, min, max, step, required, disabled,
 	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
@@ -120,7 +120,7 @@ type DateFieldConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) onto the field's <input>. Keys the input owns
-	// are dropped: class and id (use ID), data-fui-*, type, name,
+	// are dropped: class and id (use ID), data-cui-*, type, name,
 	// value, placeholder, min, max, required, disabled,
 	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs

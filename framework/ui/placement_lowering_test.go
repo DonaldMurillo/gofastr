@@ -19,7 +19,7 @@ import (
 // that would win outright, so every kit rule whose subject is a kit
 // root and that sets a placement property (the GOFASTR1817 list) is
 // lowered with :where() to (0,1,0) or less. A rule that names a class
-// only ever found on or under a data-fui-internal mark styles markup
+// only ever found on or under a data-cui-internal mark styles markup
 // no owned style reaches, and keeps its weight.
 func TestKitRootPlacementRulesAreLowered(t *testing.T) {
 	roots := kitRootClasses(t)
@@ -89,7 +89,7 @@ func kitRootClasses(t *testing.T) map[string]string {
 }
 
 // internalOnlyClasses is every class the marking gate's renders put
-// only on elements at or under a data-fui-internal mark, never on one
+// only on elements at or under a data-cui-internal mark, never on one
 // an owned style's scope reaches.
 func internalOnlyClasses(t *testing.T) map[string]bool {
 	t.Helper()
@@ -97,7 +97,7 @@ func internalOnlyClasses(t *testing.T) map[string]bool {
 	var walk func(ns []*tagNode, marked bool)
 	walk = func(ns []*tagNode, marked bool) {
 		for _, n := range ns {
-			_, own := n.attrs["data-fui-internal"]
+			_, own := n.attrs["data-cui-internal"]
 			in := marked || own
 			for _, cls := range strings.Fields(n.attrs["class"]) {
 				if in {
@@ -259,13 +259,13 @@ func subjectRootClass(sel string, roots map[string]string) (string, bool) {
 	if strings.Contains(subj, "::") || strings.Contains(subj, ":before") || strings.Contains(subj, ":after") {
 		return "", false
 	}
-	// The registry injects data-fui-comp on a component's root and
+	// The registry injects data-cui-comp on a component's root and
 	// nowhere else, so a subject carrying it is a root whatever its
 	// classes (.fui-stack--screen, a modifier no gate render sets) and
-	// whatever element or :where() it sits in (hr[data-fui-comp=…]).
-	if at := strings.Index(subj, `[data-fui-comp=`); at >= 0 && !negated(subj[:at]) {
+	// whatever element or :where() it sits in (hr[data-cui-comp=…]).
+	if at := strings.Index(subj, `[data-cui-comp=`); at >= 0 && !negated(subj[:at]) {
 		end := matchClose(subj, at)
-		return strings.Trim(subj[at+len(`[data-fui-comp=`):end], `"`), true
+		return strings.Trim(subj[at+len(`[data-cui-comp=`):end], `"`), true
 	}
 	depth := 0
 	for i := 0; i < len(subj); i++ {

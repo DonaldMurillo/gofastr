@@ -182,8 +182,8 @@ All components pass **axe-core 4.10** with zero violations:
 
 | Module | File | Purpose |
 |--------|------|---------|
-| searchinput | `core-ui/runtime/src/searchinput.js` | Clear button + auto-show/hide |
-| textarea | `core-ui/runtime/src/textarea.js` | Autogrow (`data-fui-autogrow`) |
+| searchinput | `framework/ui/searchinput.js` | Clear button + auto-show/hide (registered behaviour, loaded on its marker) |
+| textarea | `core-ui/runtime/src/textarea.js` | Autogrow (`data-cui-autogrow`) |
 | filedropzone | `framework/ui/filedropzone.js` | FileDropzone's image thumbnail strip |
 
 Four modules this family used to carry are gone: `passwordinput`,

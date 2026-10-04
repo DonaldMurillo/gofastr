@@ -4,7 +4,7 @@ An admin back-office battery with two halves:
 
 1. **Entity CRUD**: generated list / create / edit / delete screens for your
    entities, rendered through the app's UI host so they hydrate with
-   `runtime.js` (DataTable island, `data-fui-confirm` delete, SSR forms). No
+   `runtime.js` (DataTable island, `data-cui-confirm` delete, SSR forms). No
    bespoke JS. Requires a mounted UI host.
 2. **Ops dashboards**: read-only queue + audit pages on data the framework
    already collects (`battery/queue`, `framework.WithAuditLog`). Self-contained

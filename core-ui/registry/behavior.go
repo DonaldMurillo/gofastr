@@ -183,7 +183,7 @@ var (
 // host-side, so it may use the parts of the selector grammar a
 // browser accepts and a descriptor needs: combinators (descendant,
 // >, +, ~), :not([attr]) — the lightbox's scope is
-// `[data-fui-widget]:not([hidden]) …`, where [hidden] is a plain HTML
+// `[data-cui-widget]:not([hidden]) …`, where [hidden] is a plain HTML
 // attribute, not a data- one — and comma lists. What is still refused
 // is the set querySelector THROWS on, because a throw lives inside
 // the bridge's document-level listener and silently kills retention

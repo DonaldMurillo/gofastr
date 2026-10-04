@@ -33,7 +33,7 @@ func TestDarkChainMatchesInBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `<div data-fui-scope="p">
+	body := `<div data-cui-scope="p">
 <div class="a"><span class="c" id="t1">x</span></div>
 <div class="b"><span class="c" id="t2">x</span></div>
 <div class="a" id="t3">x</div>

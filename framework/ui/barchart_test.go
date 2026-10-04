@@ -10,7 +10,7 @@ func TestBarChartEmptyRendersEmptyState(t *testing.T) {
 	// No bars is a normal data-bound state (a brand-new user has no rows),
 	// not misuse. It must render a calm empty state, never panic.
 	h := string(BarChart(BarChartConfig{}))
-	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-chart-empty"`) {
 		t.Errorf("empty BarChart should render the chart empty state:\n%s", h)
 	}
 	if strings.Contains(h, "<rect ") {

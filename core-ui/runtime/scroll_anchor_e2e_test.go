@@ -31,19 +31,19 @@ func scrollAnchorSite(t *testing.T, delayMs int, padPx int) *httptest.Server {
 	mux.HandleFunc("/css/cold.css", func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
 		w.Header().Set("Content-Type", "text/css")
-		fmt.Fprintf(w, `[data-fui-comp="cold"] { display: block; block-size: %dpx; }`, padPx)
+		fmt.Fprintf(w, `[data-cui-comp="cold"] { display: block; block-size: %dpx; }`, padPx)
 	})
 	page := func(id, href string, comp bool) string {
 		compSpan := ""
 		if comp {
-			compSpan = `<span data-fui-comp="cold">cold</span>`
+			compSpan = `<span data-cui-comp="cold">cold</span>`
 		}
 		return `<!doctype html><html><head><title>t</title>` +
 			`<script type="application/json" id="gofastr-routes">` +
 			`[{"path":"/a","layouts":["l:site"]},{"path":"/b","layouts":["l:site"]}]</script>` +
 			`<script>window.__gofastr_catalog={"cold":{stylePath:"/css/cold.css"}};</script>` +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` +
 			`<h1 id="` + id + `">` + id + `</h1>` +
 			`<a id="to-b" style="position:fixed;top:4px;right:4px" href="` + href + `">to b</a>` +
 			compSpan +
@@ -69,7 +69,7 @@ func scrollAnchorSite(t *testing.T, delayMs int, padPx int) *httptest.Server {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "b")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="screen-b">b</h1><span data-fui-comp="cold">cold</span><div style="height:600px"></div><h2 id="deep">deep target</h2><div style="height:4000px"></div>`)
+			fmt.Fprint(w, `<h1 id="screen-b">b</h1><span data-cui-comp="cold">cold</span><div style="height:600px"></div><h2 id="deep">deep target</h2><div style="height:4000px"></div>`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")

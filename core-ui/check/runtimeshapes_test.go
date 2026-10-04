@@ -35,8 +35,8 @@ const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (rea
 
   function pairFor(id) { // rangeslider.js, pre-fix: 2 lookups, 1 helper
     return {
-      min: document.querySelector('input[data-fui-range-slider="' + id + '"].ui-range-slider__input--min'),
-      out: document.querySelector('output[data-fui-range-slider-value="' + id + '"]'),
+      min: document.querySelector('input[data-cui-range-slider="' + id + '"].ui-range-slider__input--min'),
+      out: document.querySelector('output[data-cui-range-slider-value="' + id + '"]'),
     };
   }
 
@@ -53,12 +53,12 @@ const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (rea
   }
 
   function deferFor(carousel, id, k) { // carousel.js, pre-fix
-    carousel.querySelector('script[type="application/json"][data-fui-carousel-deferred-for="' + id + '"]');
-    return carousel.querySelector('[data-fui-carousel-defer="' + k + '"]');
+    carousel.querySelector('script[type="application/json"][data-cui-carousel-deferred-for="' + id + '"]');
+    return carousel.querySelector('[data-cui-carousel-defer="' + k + '"]');
   }
 
   function styleLoaded(name) { // frag/kernel.js, pre-fix
-    return !!document.querySelector('link[data-fui-style="' + name + '"]');
+    return !!document.querySelector('link[data-cui-style="' + name + '"]');
   }
 
   const hydrate = (componentId) => { // frag/boot.js, pre-fix
@@ -77,7 +77,7 @@ const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (rea
   // Fixed spellings (e936f791): must stay quiet.
   function pairForFixed(id) {
     const sel = CSS.escape(id);
-    return document.querySelector('input[data-fui-range-slider="' + sel + '"].ui-range-slider__input--min');
+    return document.querySelector('input[data-cui-range-slider="' + sel + '"].ui-range-slider__input--min');
   }
   function wireFieldFixed(form, whenName) {
     return form.querySelectorAll('[name="' + CSS.escape(whenName) + '"]');
@@ -92,7 +92,7 @@ const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (rea
   function shimmed(anchorId) {
     return document.querySelector('#' + cssEscape(anchorId));
   }
-  const IS_OPEN = 'data-fui-dropdown-open';
+  const IS_OPEN = 'data-cui-dropdown-open';
   document.querySelectorAll('[' + IS_OPEN + ']');
   for (const ev of ['input', 'change']) {
     document.querySelector(~[data-action-type="${ev}"]~);
@@ -814,7 +814,7 @@ function viaAttr(el) {
 }
 // Silent postures that must survive: literal constant, literal read
 // with no reassignment, for-of over an array of literals.
-const IS_OPEN2 = 'data-fui-open';
+const IS_OPEN2 = 'data-cui-open';
 document.querySelectorAll('[' + IS_OPEN2 + ']');
 function viaLit() {
   const tag = 'section';
@@ -1373,11 +1373,11 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
 (function () {
   'use strict';
 
-  // copy.js, pre-fix: data-fui-copy-text-from is a selector by design.
+  // copy.js, pre-fix: data-cui-copy-text-from is a selector by design.
   document.addEventListener('click', function (e) {
-    const btn = e.target && e.target.closest && e.target.closest('[data-fui-copy-text-from]');
+    const btn = e.target && e.target.closest && e.target.closest('[data-cui-copy-text-from]');
     if (!btn) return;
-    const sel = btn.getAttribute('data-fui-copy-text-from');
+    const sel = btn.getAttribute('data-cui-copy-text-from');
     if (!sel) return;
     const target = document.querySelector(sel); // FIRES: sel
     if (!target) return;
@@ -1386,10 +1386,10 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
 
   // widgethelpers.js fill-input, pre-fix: two lookups on one line.
   document.addEventListener('click', function (e) {
-    const btn = e.target.closest && e.target.closest('[data-fui-fill-input]');
+    const btn = e.target.closest && e.target.closest('[data-cui-fill-input]');
     if (!btn) return;
-    const sel = btn.getAttribute('data-fui-fill-input');
-    const widget = btn.closest('[data-fui-widget]');
+    const sel = btn.getAttribute('data-cui-fill-input');
+    const widget = btn.closest('[data-cui-widget]');
     const target = sel && ((widget && widget.querySelector(sel)) || document.querySelector(sel)); // FIRES x2: sel
     if (!target) return;
     e.preventDefault();
@@ -1397,7 +1397,7 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
 
   // widgethelpers.js wireCount, pre-fix.
   function wireCount(el) {
-    const sel = el.getAttribute('data-fui-charcount-source');
+    const sel = el.getAttribute('data-cui-charcount-source');
     const src = sel && document.querySelector(sel); // FIRES: sel
     if (!src) return;
     src.addEventListener('input', function () { el.textContent = src.value.length; });
@@ -1405,7 +1405,7 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
 
   // shortcut.js resolveTarget, pre-fix: two lookups on one line.
   function resolveTarget(el) {
-    const sel = el.getAttribute('data-fui-shortcut-target');
+    const sel = el.getAttribute('data-cui-shortcut-target');
     if (sel) {
       const t = el.querySelector(sel) || document.querySelector(sel); // FIRES x2: sel
       if (t) return t;
@@ -1417,7 +1417,7 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
   // the lookup, the containment copy.js's own fireToast practices
   // around JSON.parse. Quiet.
   function resolveTargetFixed(el) {
-    const sel = el.getAttribute('data-fui-shortcut-target');
+    const sel = el.getAttribute('data-cui-shortcut-target');
     if (sel) {
       try {
         const t = el.querySelector(sel) || document.querySelector(sel);
@@ -1431,7 +1431,7 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
   // inside the main try, so the throw is contained.
   function scrollAfter(r) {
     try {
-      const scrollSel = r.node.getAttribute('data-fui-rpc-scroll-to');
+      const scrollSel = r.node.getAttribute('data-cui-rpc-scroll-to');
       if (scrollSel) {
         const target = document.querySelector(scrollSel); // quiet: in try
         if (target) target.scrollIntoView();
@@ -1441,7 +1441,7 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
   // menu.js / animate.js style: the deciding assignment is one string
   // literal, not an attribute read.
   const ITEM = '[role="menuitem"]';
-  const TRIGGER_WRAP = '[data-fui-menu-trigger]';
+  const TRIGGER_WRAP = '[data-cui-menu-trigger]';
   function menuRows(panel) {
     return Array.from(panel.querySelectorAll(ITEM)).filter(function (n) {
       return n.closest(TRIGGER_WRAP);
@@ -1454,8 +1454,8 @@ const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red t
     return document.querySelector(sel); // quiet: escape result
   }
   // dropdown.js style: a literal concatenation, no attribute read.
-  const IS_OPEN = 'data-fui-dropdown-open';
-  const openSel = '[data-fui-dropdown-wrap][' + IS_OPEN + ']';
+  const IS_OPEN = 'data-cui-dropdown-open';
+  const openSel = '[data-cui-dropdown-wrap][' + IS_OPEN + ']';
   document.querySelectorAll(openSel); // quiet: literal-built constant
   // kernel.js style: a selector PARAMETER; provenance is invisible.
   function updateText(selector, text) {
@@ -1800,12 +1800,12 @@ const DISMISS_PREFIX = 'gofastr.banner-dismiss.';
 
 const setCollapsed = (root, collapsed, persist) => { // sidebar.js, pre-fix: FIRES on key
   if (!persist) return;
-  const key = root.getAttribute('data-fui-sidebar-storage');
+  const key = root.getAttribute('data-cui-sidebar-storage');
   if (!key) return;
   try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}
 };
 const setup = (root) => { // sidebar.js, pre-fix: FIRES on key
-  const key = root.getAttribute('data-fui-sidebar-storage');
+  const key = root.getAttribute('data-cui-sidebar-storage');
   let collapsed = false;
   if (key) {
     try { collapsed = localStorage.getItem(key) === 'true'; } catch (_) {}
@@ -1816,7 +1816,7 @@ const setup = (root) => { // sidebar.js, pre-fix: FIRES on key
 // Fixed spelling (the red test's fix direction): namespace AND encode,
 // spelled at the sink. Quiet — the read side too.
 const setupFixed = (root) => {
-  const key = root.getAttribute('data-fui-sidebar-storage');
+  const key = root.getAttribute('data-cui-sidebar-storage');
   let collapsed = false;
   if (key) {
     try { collapsed = localStorage.getItem(SIDEBAR_PREFIX + encodeURIComponent(key)) === 'true'; } catch (_) {}
@@ -1828,7 +1828,7 @@ const setupFixed = (root) => {
 // dots and hyphens alone, so the probe's 'gofastr.planted-by-attr'
 // survives encoding verbatim — the prefix is load-bearing.
 function paneState(pane) {
-  const k = pane.dataset.fuiPaneKey;
+  const k = pane.dataset.cuiPaneKey;
   sessionStorage.setItem(encodeURIComponent(k), '1');
 }
 
@@ -1841,7 +1841,7 @@ function saveChord(el) {
   sessionStorage.setItem(~chord:${chordKey}~, 'on');
 }
 function stampCard(card) {
-  const stampId = card.getAttribute('data-fui-stamp-id');
+  const stampId = card.getAttribute('data-cui-stamp-id');
   document.cookie = 'app.stamp.' + stampId + '=1; path=/';
 }
 function quickTag(el) {
@@ -1906,7 +1906,7 @@ func TestStorageKeyRawFiresOnAttrKey(t *testing.T) {
 
 // decodeFixtureRaw uses ~ for JS backticks (untailed below). Reduced
 // from the live pre-fix tree (2026-09-06/07 round-5): the
-// [data-fui-open] eager delegator (frag/widgets-boot.js and its
+// [data-cui-open] eager delegator (frag/widgets-boot.js and its
 // widgets-boot-static twin) and src/lightbox.js srcOf/parseDeeplink,
 // where parseDeeplink's parameter receives the attribute read from
 // step()'s call one call-site away.
@@ -1915,10 +1915,10 @@ const decodeFixtureRaw = `(() => {
 
   function installDelegators() { // frag/widgets-boot.js, pre-fix
     document.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-fui-open]');
+      const btn = e.target.closest('[data-cui-open]');
       if (!btn) return;
       e.preventDefault();
-      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const raw = btn.getAttribute('data-cui-deeplink') || '';
       const overrides = {};
       for (const pair of raw.split('&')) {
         if (!pair) continue;
@@ -1931,7 +1931,7 @@ const decodeFixtureRaw = `(() => {
   }
 
   function srcOf(anchor) { // src/lightbox.js, pre-fix
-    const dl = anchor.getAttribute('data-fui-deeplink') || '';
+    const dl = anchor.getAttribute('data-cui-deeplink') || '';
     for (const pair of dl.split('&')) {
       const eq = pair.indexOf('=');
       if (eq < 0) continue;
@@ -1952,23 +1952,23 @@ const decodeFixtureRaw = `(() => {
     return out;
   }
   function step(anchor) {
-    const dl = anchor.getAttribute('data-fui-deeplink') || '';
+    const dl = anchor.getAttribute('data-cui-deeplink') || '';
     const params = parseDeeplink(dl);
     return params;
   }
 
   // Synthetic positives (never in this repo): different names, same shape.
   function decodeTag(el) {
-    return decodeURI(el.dataset.fuiTag);
+    return decodeURI(el.dataset.cuiTag);
   }
   const viaVar = (node) => {
-    const v = node.getAttribute('data-fui-via');
+    const v = node.getAttribute('data-cui-via');
     return decodeURIComponent(v);
   };
 
   // Fixed spellings (the red tests' fix direction): must stay quiet.
   function parseFixed(btn) {
-    const raw = btn.getAttribute('data-fui-deeplink') || '';
+    const raw = btn.getAttribute('data-cui-deeplink') || '';
     const out = {};
     for (const pair of raw.split('&')) {
       const eq = pair.indexOf('=');
@@ -1980,7 +1980,7 @@ const decodeFixtureRaw = `(() => {
     return out;
   }
   function viaHelper(btn) {
-    return safeDecode(btn.getAttribute('data-fui-deeplink'));
+    return safeDecode(btn.getAttribute('data-cui-deeplink'));
   }
   function safeDecode(v) {
     try { return decodeURIComponent(v); } catch (_) { return ''; }
@@ -2019,7 +2019,7 @@ func TestLintDecodeURIRaw_FiresOnAttrDerived(t *testing.T) {
 			t.Errorf("unexpected message: %s", v.Message)
 		}
 	}
-	for _, w := range []string{`"raw"`, `"dl"`, `"el.dataset.fuiTag"`, `"v"`} {
+	for _, w := range []string{`"raw"`, `"dl"`, `"el.dataset.cuiTag"`, `"v"`} {
 		if !strings.Contains(res.Error(), w) {
 			t.Errorf("expected a finding naming witness %s (full result:\n%s)", w, res.Error())
 		}
@@ -2065,8 +2065,8 @@ const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 ro
     k === '__proto__' || k === 'constructor' || k === 'prototype';
 
   const wire = (el) => { // src/animate.js, pre-fix
-    const name = el.getAttribute('data-fui-animate-signal');
-    const cls = el.getAttribute('data-fui-animate-class');
+    const name = el.getAttribute('data-cui-animate-signal');
+    const cls = el.getAttribute('data-cui-animate-class');
     if (!name || !cls) return;
     let slot = Object.prototype.hasOwnProperty.call(G._signals, name)
       ? G._signals[name]
@@ -2080,12 +2080,12 @@ const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 ro
 
   NS._toastTimers = NS._toastTimers || {};
   NS._initToasts = function (root) { // src/toasts.js, pre-fix
-    const items = root.querySelectorAll('[data-fui-toast-id]');
+    const items = root.querySelectorAll('[data-cui-toast-id]');
     const present = {};
     items.forEach((item) => {
-      const id = item.getAttribute('data-fui-toast-id');
+      const id = item.getAttribute('data-cui-toast-id');
       present[id] = true; // quiet: primitive RHS
-      const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
+      const ttl = parseInt(item.getAttribute('data-cui-toast-ttl-ms') || '0', 10);
       if (ttl > 0) {
         const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
         NS._toastTimers[id] = rec;
@@ -2097,7 +2097,7 @@ const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 ro
   // by a dataset value.
   const glyphSlots = {};
   function cacheGlyph(node) {
-    const g = node.dataset.fuiGlyph;
+    const g = node.dataset.cuiGlyph;
     glyphSlots[g] = { node: node };
   }
 
@@ -2109,38 +2109,38 @@ const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 ro
     if (!G._signals[name]) G._signals[name] = { value: value, listeners: [] };
   }
   function wireSignal(el) { // derived via the parameter, saved by the guard
-    setSignal(el.getAttribute('data-fui-signal'), 1);
+    setSignal(el.getAttribute('data-cui-signal'), 1);
   }
   function mergeAttrSeeds(btn, store) { // the seed-loop guard
-    const seed = JSON.parse(btn.getAttribute('data-fui-seed') || '{}');
+    const seed = JSON.parse(btn.getAttribute('data-cui-seed') || '{}');
     for (const k of Object.keys(seed)) {
       if (isReservedSignalKey(k)) continue;
       if (!store[k]) store[k] = { value: seed[k], listeners: [] };
     }
   }
   function inlineGuard(el, store) {
-    const k = el.dataset.fuiZone;
+    const k = el.dataset.cuiZone;
     if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
     store[k] = { value: 1 };
   }
   function hasOwnGuard(el, store) {
-    const k = el.dataset.fuiZone;
+    const k = el.dataset.cuiZone;
     if (!Object.hasOwn(store, k)) return;
     store[k] = { value: 1 };
   }
   function branchGuard(el, store) {
-    const k = el.getAttribute('data-fui-zone');
+    const k = el.getAttribute('data-cui-zone');
     if (!isReservedSignalKey(k)) {
       store[k] = { value: 1 };
     }
   }
   const slotMap = new Map(); // Map-keyed store: credited
   function mapBracket(el) {
-    const k = el.getAttribute('data-fui-map-key');
+    const k = el.getAttribute('data-cui-map-key');
     slotMap[k] = { v: 1 };
   }
   function mapSet(el) { // the toast red test's fix spelling
-    const t = el.getAttribute('data-fui-timer');
+    const t = el.getAttribute('data-cui-timer');
     NS.timerMap = new Map();
     NS.timerMap.set(t, { at: Date.now() });
   }
@@ -2148,11 +2148,11 @@ const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 ro
   // Quiet postures: composite key, decode-valued RHS, literal keys.
   NS._chromeCache = NS._chromeCache || {};
   function chromeFor(el, ctx) {
-    const name = el.getAttribute('data-fui-chrome');
+    const name = el.getAttribute('data-cui-chrome');
     NS._chromeCache[name + '\0' + (ctx || '')] = { at: 1 };
   }
   function parsePairs(btn) {
-    const raw = btn.getAttribute('data-fui-deeplink') || '';
+    const raw = btn.getAttribute('data-cui-deeplink') || '';
     const out = {};
     for (const pair of raw.split('&')) {
       const eq = pair.indexOf('=');

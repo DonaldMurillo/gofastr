@@ -33,12 +33,12 @@ type MenuItem struct {
 	Href string
 
 	// RPC + RPCMethod wire the item to a server-side handler via
-	// data-fui-rpc / data-fui-rpc-method. Use for "Delete this row"
+	// data-cui-rpc / data-cui-rpc-method. Use for "Delete this row"
 	// menu items.
 	RPC, RPCMethod string
 
 	// Confirm asks the user to confirm before the RPC fires. Maps to
-	// data-fui-confirm, which the runtime honors on RPC dispatch and on
+	// data-cui-confirm, which the runtime honors on RPC dispatch and on
 	// any form submit. A menu item is neither unless it carries RPC, so
 	// on a plain link item the attribute is inert.
 	Confirm string
@@ -123,7 +123,7 @@ type MenuItem struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the rendered item
 	// element. Keys the item owns are dropped: class (use Class),
-	// id (use ID), the runtime wiring (data-fui-*), and the menuitem
+	// id (use ID), the runtime wiring (data-cui-*), and the menuitem
 	// contract (type, href, tabindex, role, aria-disabled, disabled,
 	// aria-checked).
 	ExtraAttrs map[string]string
@@ -332,11 +332,11 @@ func Menu(cfg MenuConfig) render.HTML {
 }
 
 func menuCSS(_ style.Theme) string {
-	return `:where([data-fui-comp="ui-menu"]).fui-menu {
+	return `:where([data-cui-comp="ui-menu"]).fui-menu {
   position: relative;
   display: inline-block;
 }
-[data-fui-comp="ui-menu"] > summary.fui-menu__trigger {
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
@@ -351,14 +351,14 @@ func menuCSS(_ style.Theme) string {
   font: inherit;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
-[data-fui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
-[data-fui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-menu"] .fui-menu__caret { font-size: 0.75em; opacity: 0.7; }
-[data-fui-comp="ui-menu"] .fui-menu__panel {
+[data-cui-comp="ui-menu"] .fui-menu__caret { font-size: 0.75em; opacity: 0.7; }
+[data-cui-comp="ui-menu"] .fui-menu__panel {
   position: absolute;
   z-index: var(--z-dropdown, 100);
   min-width: 12rem;
@@ -379,10 +379,10 @@ func menuCSS(_ style.Theme) string {
    whole menu (the trigger's own activation state lies). Hide explicitly;
    the open state is the UA default. The details type selector is
    load-bearing: on the TriggerElement path the root carrying
-   data-fui-comp is a plain div, which never carries [open] — an
+   data-cui-comp is a plain div, which never carries [open] — an
    untyped rule matches unconditionally and hides the panel even while
    the summary-less details child is open (#386). */
-details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
+details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 /* Trigger-element path (MenuConfig.TriggerElement): the root is a div,
    so the rule above cannot key [open] on it — the closed panel is
    hidden through the summary-less <details data-hui-menu> child for
@@ -391,17 +391,17 @@ details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
    child of the root and host CSS written against the element itself
    (header button.rounded-full) keeps working; role="presentation"
    keeps it out of the accessibility tree. */
-[data-fui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }
-[data-fui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }
-[data-fui-comp="ui-menu"].fui-menu--bottom-start .fui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + 4px); }
+[data-cui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }
+[data-cui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }
+[data-cui-comp="ui-menu"].fui-menu--bottom-start .fui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
+[data-cui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
+[data-cui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
+[data-cui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + 4px); }
 @keyframes fui-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
-[data-fui-comp="ui-menu"] .fui-menu__item {
+[data-cui-comp="ui-menu"] .fui-menu__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -417,41 +417,41 @@ details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   text-decoration: none;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-menu"] .fui-menu__item:hover,
-[data-fui-comp="ui-menu"] .fui-menu__item:focus-visible {
+[data-cui-comp="ui-menu"] .fui-menu__item:hover,
+[data-cui-comp="ui-menu"] .fui-menu__item:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
   outline: none;
 }
-[data-fui-comp="ui-menu"] .fui-menu__item--danger { color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-menu"] .fui-menu__item--danger:hover,
-[data-fui-comp="ui-menu"] .fui-menu__item--danger:focus-visible {
+[data-cui-comp="ui-menu"] .fui-menu__item--danger { color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-menu"] .fui-menu__item--danger:hover,
+[data-cui-comp="ui-menu"] .fui-menu__item--danger:focus-visible {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
-[data-fui-comp="ui-menu"] .fui-menu__item--disabled {
+[data-cui-comp="ui-menu"] .fui-menu__item--disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
 }
-[data-fui-comp="ui-menu"] .fui-menu__icon { display: inline-flex; width: 1em; justify-content: center; }
-[data-fui-comp="ui-menu"] .fui-menu__label { flex: 1; }
-[data-fui-comp="ui-menu"] .fui-menu__sep {
+[data-cui-comp="ui-menu"] .fui-menu__icon { display: inline-flex; width: 1em; justify-content: center; }
+[data-cui-comp="ui-menu"] .fui-menu__label { flex: 1; }
+[data-cui-comp="ui-menu"] .fui-menu__sep {
   border: 0;
   border-top: 1px solid var(--color-border, #E4E4E7);
   margin: var(--spacing-xs, 2px) 0;
 }
-[data-fui-comp="ui-menu"] .fui-menu__form { display: grid; gap: inherit; }
+[data-cui-comp="ui-menu"] .fui-menu__form { display: grid; gap: inherit; }
 /* Submenus: the nested <details> is one grid child of the parent
    panel; it positions the nested panel, which reuses every panel
    chrome rule above. The position-variant inset rules on the outer
    details would also match the nested panel, so this rule carries a
    higher specificity (element + two classes vs attr + class + class)
    and always wins, at any depth. */
-[data-fui-comp="ui-menu"] details.fui-menu__sub { position: relative; display: block; }
-[data-fui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item {
+[data-cui-comp="ui-menu"] details.fui-menu__sub { position: relative; display: block; }
+[data-cui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item {
   list-style: none;
 }
-[data-fui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item::-webkit-details-marker { display: none; }
-[data-fui-comp="ui-menu"] details.fui-menu__sub > .fui-menu__panel {
+[data-cui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item::-webkit-details-marker { display: none; }
+[data-cui-comp="ui-menu"] details.fui-menu__sub > .fui-menu__panel {
   inset-inline-start: 100%;
   top: calc(-1 * var(--spacing-xs, 2px));
 }
@@ -459,16 +459,16 @@ details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
    textContent (type-ahead) and accessible name, unlike the trigger's
    <span> caret. :dir() flips it in RTL; unsupported engines show the
    LTR glyph, a cosmetic-only degradation. */
-[data-fui-comp="ui-menu"] .fui-menu__item--hassub::after {
+[data-cui-comp="ui-menu"] .fui-menu__item--hassub::after {
   content: "▸";
   font-size: 0.75em;
   opacity: 0.7;
 }
-:dir(rtl) [data-fui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
+:dir(rtl) [data-cui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
 /* Radio rows: the check indicator is likewise a pseudo-element —
    space is reserved in both states so labels align whether checked
    or not. */
-[data-fui-comp="ui-menu"] [role="menuitemradio"]::before {
+[data-cui-comp="ui-menu"] [role="menuitemradio"]::before {
   content: "✓";
   display: inline-flex;
   width: 1em;
@@ -476,8 +476,8 @@ details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   justify-content: center;
   visibility: hidden;
 }
-[data-fui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
+[data-cui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-menu"] .fui-menu__panel { animation: none; }
+  [data-cui-comp="ui-menu"] .fui-menu__panel { animation: none; }
 }`
 }

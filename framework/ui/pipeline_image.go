@@ -109,7 +109,7 @@ type PipelineImageConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the image's root element
 	// (the wrapping <span>, not the inner <img>). Keys the component
-	// owns are dropped: class and id (use Class / ID) and data-fui-*.
+	// owns are dropped: class and id (use Class / ID) and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -228,7 +228,7 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	// component's own fields (Sources, a struct slice, carries no
 	// render.HTML), so picture — with no wrapper an owner could reach
 	// around — is the topmost internal element here.
-	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, children...)
+	picture := render.Tag("picture", map[string]string{"data-cui-internal": ""}, children...)
 
 	// The placeholder is emitted before the picture so the real image paints
 	// over it in DOM order. Both are positioned, so tree order decides,

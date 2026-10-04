@@ -602,10 +602,10 @@ func TestThemeEditGalleryPreviewRenders(t *testing.T) {
 	// The preview's own structure is design-system output. A page whose job is
 	// to show what the design system looks like must not lay itself out with
 	// anything else.
-	if !strings.Contains(html, `data-fui-comp="ui-section"`) {
+	if !strings.Contains(html, `data-cui-comp="ui-section"`) {
 		t.Errorf("preview does not use ui.Section for its groups:\n%s", truncate(html, 400))
 	}
-	if !strings.Contains(html, `data-fui-comp="ui-layout"`) {
+	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
 		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", truncate(html, 400))
 	}
 	for _, gone := range []string{"tp-category", "tp-demo", "tp-gallery", "tp-preview"} {
@@ -653,7 +653,7 @@ func TestThemeEditChromeHasNoBespokeClasses(t *testing.T) {
 		t.Errorf("chrome ships an inline <style> block; all styling must come from /__gofastr/app.css")
 	}
 	// No inline style="..." attribute either: the design system's variants
-	// drive every visual state through class/data-fui-comp markers.
+	// drive every visual state through class/data-cui-comp markers.
 	if loc := regexp.MustCompile(`style="[^"]*"`).FindStringIndex(body); loc != nil {
 		t.Errorf("chrome has an inline style=\"…\" attribute at byte %d — bespoke CSS by another name:\n...%s...",
 			loc[0], truncate(body[loc[0]:], 200))
@@ -675,12 +675,12 @@ func TestThemeEditChromeHasNoBespokeClasses(t *testing.T) {
 	// Positive presence checks: the chrome composes these design-system
 	// primitives. Cutover is incomplete without them.
 	mustHave := []string{
-		`data-fui-comp="ui-workbench"`,    // framework/ui two-pane inspector shell
-		`data-fui-comp="ui-form-field"`,   // design-system input rows
-		`data-fui-comp="ui-callout"`,      // status + contrast panels
-		`data-fui-comp="ui-button"`,       // scheme toggle + Write button
-		`data-fui-comp="fui-collapsible"`, // token groups
-		`data-fui-comp="ui-color-field"`,  // swatch + text input row
+		`data-cui-comp="ui-workbench"`,    // framework/ui two-pane inspector shell
+		`data-cui-comp="ui-form-field"`,   // design-system input rows
+		`data-cui-comp="ui-callout"`,      // status + contrast panels
+		`data-cui-comp="ui-button"`,       // scheme toggle + Write button
+		`data-cui-comp="fui-collapsible"`, // token groups
+		`data-cui-comp="ui-color-field"`,  // swatch + text input row
 	}
 	for _, want := range mustHave {
 		if !strings.Contains(body, want) {

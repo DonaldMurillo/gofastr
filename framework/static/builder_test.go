@@ -345,12 +345,12 @@ func TestBuildMarksPagesStaticAndInjectsNotice(t *testing.T) {
 	// 1. <html> stamped with the runtime's static-mode switch so
 	//    server-backed dispatches (RPC, widget catalog, open) no-op
 	//    instead of 404'ing against the serverless host.
-	if !strings.Contains(s, "<html data-fui-static") {
+	if !strings.Contains(s, "<html data-cui-static") {
 		head := s
 		if len(head) > 200 {
 			head = head[:200]
 		}
-		t.Errorf("exported page must stamp <html data-fui-static; got head:\n%s", head)
+		t.Errorf("exported page must stamp <html data-cui-static; got head:\n%s", head)
 	}
 	// 2. The run-locally notice is injected (doctrine: one styling
 	//    surface: framework/ui.Banner).
@@ -361,7 +361,7 @@ func TestBuildMarksPagesStaticAndInjectsNotice(t *testing.T) {
 
 // TestRenderStaticPageHasNoStaticMarker pins that the marker is
 // exporter-only: the host's own SSG-aware render (the input the Builder
-// consumes) must NOT carry data-fui-static, so a live server using the
+// consumes) must NOT carry data-cui-static, so a live server using the
 // same render path stays fully interactive.
 func TestRenderStaticPageHasNoStaticMarker(t *testing.T) {
 	a := coreapp.NewApp("SSGTest")
@@ -372,7 +372,7 @@ func TestRenderStaticPageHasNoStaticMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderStaticPage: %v", err)
 	}
-	if strings.Contains(html, "data-fui-static") {
+	if strings.Contains(html, "data-cui-static") {
 		t.Error("RenderStaticPage must NOT carry the static marker (exporter-only)")
 	}
 }
@@ -490,30 +490,30 @@ func TestRewriteBaseURLs_PrefixesCatalogJSON(t *testing.T) {
 	}
 }
 
-// data-fui-push-state carries the navigation target a combobox/palette option
+// data-cui-push-state carries the navigation target a combobox/palette option
 // routes to on selection. On a subpath deploy these root-absolute paths must
 // be base-prefixed just like href/src. Otherwise selecting a command navigates
 // to the apex path and 404s. External and protocol-relative values are left alone.
 func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
 	b := &Builder{BasePath: "/gofastr"}
-	in := `<li role="option" data-fui-push-state="/docs/">Docs</li>` +
-		`<li role="option" data-fui-push-state="/">Home</li>` +
-		`<li role="option" data-fui-push-state="/components/">Components</li>` +
-		`<li role="option" data-fui-push-state="//cdn.example.com">proto-rel</li>` +
-		`<li role="option" data-fui-push-state="https://example.com">ext</li>`
+	in := `<li role="option" data-cui-push-state="/docs/">Docs</li>` +
+		`<li role="option" data-cui-push-state="/">Home</li>` +
+		`<li role="option" data-cui-push-state="/components/">Components</li>` +
+		`<li role="option" data-cui-push-state="//cdn.example.com">proto-rel</li>` +
+		`<li role="option" data-cui-push-state="https://example.com">ext</li>`
 	out := b.rewriteBaseURLs(in)
 	for _, want := range []string{
-		`data-fui-push-state="/gofastr/docs/"`,
-		`data-fui-push-state="/gofastr/"`,
-		`data-fui-push-state="/gofastr/components/"`,
+		`data-cui-push-state="/gofastr/docs/"`,
+		`data-cui-push-state="/gofastr/"`,
+		`data-cui-push-state="/gofastr/components/"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rewriteBaseURLs: want %q; got:\n%s", want, out)
 		}
 	}
 	for _, want := range []string{
-		`data-fui-push-state="//cdn.example.com"`,
-		`data-fui-push-state="https://example.com"`,
+		`data-cui-push-state="//cdn.example.com"`,
+		`data-cui-push-state="https://example.com"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rewriteBaseURLs must not touch external/proto-rel push-state; want %q unchanged; got:\n%s", want, out)

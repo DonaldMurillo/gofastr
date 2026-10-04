@@ -32,7 +32,7 @@ func TestRenderPageRegions(t *testing.T) {
 	html := string(docpage.Render(full()))
 	for _, want := range []string{
 		// The owned root and its three regions.
-		`data-fui-scope="docpage"`, `class="nav"`, `class="article"`, `class="toc"`,
+		`data-cui-scope="docpage"`, `class="nav"`, `class="article"`, `class="toc"`,
 		// The crumbs sit inside the article, above the body.
 		`class="crumbs"`, "Getting started",
 		// The TOC content lands in its rail.

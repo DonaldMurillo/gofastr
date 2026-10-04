@@ -5,7 +5,7 @@ package app
 // per OUTLET (OutletSpec.Loading), per PRIMARY SLOT (LayoutSpec.
 // Primary), or per ROUTE AREA (AreaSpec.Loading, 2026-09-26): the
 // server renders the component ONCE into an inert
-// <template data-fui-loading="<addr>"> beside the outlet, slot, or
+// <template data-cui-loading="<addr>"> beside the outlet, slot, or
 // area cell, so the browser already holds the bytes BEFORE any
 // navigation fetch starts;
 import (
@@ -77,9 +77,9 @@ func loadingTemplate(ctx context.Context, addr string, ld *Loading) render.HTML 
 		content = ""
 	}
 	return render.Tag("template", map[string]string{
-		"data-fui-loading": addr,
-		"data-fui-after":   strconv.Itoa(ld.loadingAfterMs()),
-		"data-fui-min":     strconv.Itoa(ld.loadingMinMs()),
+		"data-cui-loading": addr,
+		"data-cui-after":   strconv.Itoa(ld.loadingAfterMs()),
+		"data-cui-min":     strconv.Itoa(ld.loadingMinMs()),
 	}, content)
 }
 

@@ -123,7 +123,7 @@ func TestE2E_ControlsCounterAnimatesToTheSSRValue(t *testing.T) {
 	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
 		t.Fatal("the animate marker never loaded headless-controls")
 	}
-	if !pollTrue(ctx, `document.querySelector('[data-hui-counter-animate] [data-fui-signal]').textContent === '4820'`) {
+	if !pollTrue(ctx, `document.querySelector('[data-hui-counter-animate] [data-cui-signal]').textContent === '4820'`) {
 		t.Fatal("the animation did not land on the SSR value")
 	}
 }

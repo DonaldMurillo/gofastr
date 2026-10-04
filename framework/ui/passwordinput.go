@@ -46,7 +46,7 @@ type PasswordInputConfig struct {
 	// component owns are dropped: class (use Class), id, the input's
 	// type, name, placeholder, required, autocomplete, aria-invalid
 	// and aria-describedby (the field's wiring owns them), plus every
-	// data-fui-* and data-hui-* key — the reveal hooks are the
+	// data-cui-* and data-hui-* key — the reveal hooks are the
 	// runtime's contract, not a caller's to forge. Autocomplete has
 	// its own field because it belongs to the input that submits.
 	ExtraAttrs map[string]string

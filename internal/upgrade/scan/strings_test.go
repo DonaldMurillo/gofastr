@@ -121,7 +121,7 @@ func TestClassesAttrKeySinkSilent(t *testing.T) {
 import "example.com/kit/ui"
 
 func main() {
-	_ = ui.Attrs{"data-fui-comp": "ui-button"}
+	_ = ui.Attrs{"data-cui-comp": "ui-button"}
 }
 `
 	n := classesNote("ui-button")
@@ -270,7 +270,7 @@ import "testing"
 
 func TestPage(t *testing.T) {
 	t.Fatal("no ui-button on the page")
-	t.Errorf("want %s", "data-fui-signal" + " set")
+	t.Errorf("want %s", "data-cui-signal" + " set")
 	t.Run("ui-button renders", func(t *testing.T) {})
 	var tb testing.TB = t
 	tb.Log("ui-button")
@@ -279,7 +279,7 @@ func TestPage(t *testing.T) {
 	}
 }
 `
-	n := &upgrade.Note{Find: upgrade.Find{Strings: upgrade.StringMatch{Classes: []string{"ui-button"}, Attrs: []string{"data-fui-signal"}}}}
+	n := &upgrade.Note{Find: upgrade.Find{Strings: upgrade.StringMatch{Classes: []string{"ui-button"}, Attrs: []string{"data-cui-signal"}}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": "package main\n\nfunc main() {}\n", "page_test.go": src}), n)
 	// Only the comparison operand is markup a test asserts on; the
 	// failure messages, the subtest name and the TB log are prose.
@@ -324,12 +324,12 @@ func TestAttrsMapKey(t *testing.T) {
 import "example.com/kit/ui"
 
 func main() {
-	_ = ui.Attrs{"data-fui-signal": ""}
+	_ = ui.Attrs{"data-cui-signal": ""}
 }
 `
-	n := attrsNote("data-fui-signal")
+	n := attrsNote("data-cui-signal")
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
-	wantHits(t, res, n, hitAt(src, `"data-fui-signal"`, "main.go", "attr data-fui-signal"))
+	wantHits(t, res, n, hitAt(src, `"data-cui-signal"`, "main.go", "attr data-cui-signal"))
 }
 
 func TestAttrsPrefixForm(t *testing.T) {
@@ -339,44 +339,44 @@ import "example.com/kit/ui"
 
 func main() {
 	_ = ui.Attrs{
-		"data-fui-toggle-open": "",
-		"data-fui-toggle-close": "",
-		"data-fui-other":       "",
+		"data-cui-toggle-open": "",
+		"data-cui-toggle-close": "",
+		"data-cui-other":       "",
 	}
 }
 `
-	n := attrsNote("data-fui-toggle-")
+	n := attrsNote("data-cui-toggle-")
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n,
-		hitAt(src, `"data-fui-toggle-open"`, "main.go", "attr data-fui-toggle-"),
-		hitAt(src, `"data-fui-toggle-close"`, "main.go", "attr data-fui-toggle-"))
+		hitAt(src, `"data-cui-toggle-open"`, "main.go", "attr data-cui-toggle-"),
+		hitAt(src, `"data-cui-toggle-close"`, "main.go", "attr data-cui-toggle-"))
 }
 
 func TestAttrsInsideMarkup(t *testing.T) {
 	src := "package main\n" +
 		"\n" +
 		"func main() {\n" +
-		"\t_ = `<input data-fui-signal=\"\" data-x-fui-signal=\"\">`\n" +
+		"\t_ = `<input data-cui-signal=\"\" data-x-fui-signal=\"\">`\n" +
 		"}\n"
 	// The attribute inside markup matches; the one whose name merely
 	// contains the string does not (no left boundary).
-	n := attrsNote("data-fui-signal")
+	n := attrsNote("data-cui-signal")
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
-	wantHits(t, res, n, hitAt(src, "`<input", "main.go", "attr data-fui-signal"))
+	wantHits(t, res, n, hitAt(src, "`<input", "main.go", "attr data-cui-signal"))
 }
 
 func TestAttrsProseMentionIsHit(t *testing.T) {
 	src := `package main
 
 func main() {
-	_ = "see data-fui-signal docs"
+	_ = "see data-cui-signal docs"
 }
 `
 	// The boundary rule (whitespace before and after) accepts a prose
 	// mention; that is what the rule gives.
-	n := attrsNote("data-fui-signal")
+	n := attrsNote("data-cui-signal")
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
-	wantHits(t, res, n, hitAt(src, `"see data-fui-signal`, "main.go", "attr data-fui-signal"))
+	wantHits(t, res, n, hitAt(src, `"see data-cui-signal`, "main.go", "attr data-cui-signal"))
 }
 
 func TestPropertiesVarRead(t *testing.T) {

@@ -31,7 +31,7 @@ func FloatingToolbar(cfg ui.ToolbarConfig) render.HTML {
 var floatingToolbarStyle = registry.RegisterStyle("desktopui-floating-toolbar", floatingToolbarCSS)
 
 func floatingToolbarCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-floating-toolbar"] {
+	return `[data-cui-comp="desktopui-floating-toolbar"] {
   /* Floats over the content column: detached from the window edges the
      way a macOS 26 floating toolbar group sits. */
   position: sticky;
@@ -40,11 +40,11 @@ func floatingToolbarCSS(_ style.Theme) string {
   margin-inline: auto;
   inline-size: fit-content;
 }
-[data-fui-comp="desktopui-floating-toolbar"] [data-fui-comp="desktopui-glass"] {
+[data-cui-comp="desktopui-floating-toolbar"] [data-cui-comp="desktopui-glass"] {
   /* Capsule: the concentric rule's capsule case. */
   border-radius: var(--radii-full, 9999px);
 }
-[data-fui-comp="desktopui-floating-toolbar"] [data-fui-comp="ui-toolbar"] {
+[data-cui-comp="desktopui-floating-toolbar"] [data-cui-comp="ui-toolbar"] {
   /* Strip the framework toolbar's own chrome: the glass surface is the
      chrome now. This is the wrapper-variant contract, not an outside
      override: the rule ships in a registered component stylesheet. */

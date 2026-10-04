@@ -131,7 +131,7 @@ if(document.documentElement.scrollWidth>innerWidth)return 'long title overflows'
 		check(t, "/workspace", 1280, `
 const rows=[...document.querySelectorAll('.fui-card--row')];
 if(rows.filter(e=>r(e).bottom<=800).length<7)return 'dense rows exceed viewport';
-const filter=q('[data-fui-comp="ui-filter-toolbar"]');
+const filter=q('[data-cui-comp="ui-filter-toolbar"]');
 if(r(filter).height>48)return 'filter controls stack';
 const term=q('dt'),value=q('dd');
 if(Math.abs(r(term).y-r(value).y)>1)return 'detail fields stack';
@@ -153,7 +153,7 @@ if(!getComputedStyle(trigger,'::after').content.includes(trigger.getAttribute('a
 `)
 	})
 	t.Run("PhoneAnnouncement", func(t *testing.T) {
-		check(t, "/releases", 390, `if(r(q('[data-fui-comp="ui-banner"]')).height>56)return 'announcement adds empty rows'`)
+		check(t, "/releases", 390, `if(r(q('[data-cui-comp="ui-banner"]')).height>56)return 'announcement adds empty rows'`)
 	})
 	t.Run("Document", func(t *testing.T) {
 		check(t, "/docs", 1280, `

@@ -88,7 +88,7 @@ type RatingConfig struct {
 	Class    string
 	// ExtraAttrs forwards additional attributes to the rating's root
 	// <fieldset>. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, role, and aria-label — the
+	// (use Class / ID), data-cui-*, role, and aria-label — the
 	// radiogroup contract.
 	ExtraAttrs html.Attrs
 }
@@ -201,7 +201,7 @@ func ratingIcon(shape RatingShape) string {
 var ratingStyle = registry.RegisterStyle("ui-rating", ratingCSS)
 
 func ratingCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-rating"] {
+	return `[data-cui-comp="ui-rating"] {
   --ui-rating-glyph: 24px;
   --ui-rating-cell: var(--spacing-touch-target, 44px);
   --ui-rating-color: var(--color-warning, #F59E0B);
@@ -215,7 +215,7 @@ func ratingCSS(_ style.Theme) string {
   padding: 0;
   border: 0;
 }
-[data-fui-comp="ui-rating"] .fui-rating__input {
+[data-cui-comp="ui-rating"] .fui-rating__input {
   /* Visually hidden; clicking the label activates the input. */
   position: absolute;
   width: 1px;
@@ -227,7 +227,7 @@ func ratingCSS(_ style.Theme) string {
   overflow: hidden;
   white-space: nowrap;
 }
-[data-fui-comp="ui-rating"] .fui-rating__choice {
+[data-cui-comp="ui-rating"] .fui-rating__choice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -242,12 +242,12 @@ func ratingCSS(_ style.Theme) string {
 }
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */
-[data-fui-comp="ui-rating"] .fui-rating__star svg {
+[data-cui-comp="ui-rating"] .fui-rating__star svg {
   width: var(--ui-rating-glyph, 24px);
   height: var(--ui-rating-glyph, 24px);
 }
-[data-fui-comp="ui-rating"].fui-rating--small { --ui-rating-glyph: 16px; }
-[data-fui-comp="ui-rating"].fui-rating--large { --ui-rating-glyph: 32px; }
+[data-cui-comp="ui-rating"].fui-rating--small { --ui-rating-glyph: 16px; }
+[data-cui-comp="ui-rating"].fui-rating--large { --ui-rating-glyph: 32px; }
 
 /* Gap presets — independent of Size.
    Default keeps the WCAG 2.5.5 AAA tap-target floor (44×44 per star).
@@ -255,16 +255,16 @@ func ratingCSS(_ style.Theme) string {
    actually touch — the block axis stays 44px and the inline zone
    stays ≥24px (WCAG 2.5.8 AA), but AAA is intentionally relaxed for
    dense inline ratings. */
-[data-fui-comp="ui-rating"].fui-rating--gap-tight {
+[data-cui-comp="ui-rating"].fui-rating--gap-tight {
   --ui-rating-cell: max(24px, calc(var(--ui-rating-glyph) + 8px));
   gap: 0;
 }
-[data-fui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
-[data-fui-comp="ui-rating"].fui-rating--gap-wide { gap: 20px; }
-[data-fui-comp="ui-rating"] .fui-rating__choice:hover {
+[data-cui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
+[data-cui-comp="ui-rating"].fui-rating--gap-wide { gap: 20px; }
+[data-cui-comp="ui-rating"] .fui-rating__choice:hover {
   transform: scale(1.08);
 }
-[data-fui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
+[data-cui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
   border-radius: var(--radii-sm, 4px);
@@ -274,9 +274,9 @@ func ratingCSS(_ style.Theme) string {
    reverse-order = smaller-value) sibling label lights up. Color is
    driven by --ui-rating-color so per-shape variants and per-instance
    overrides can recolor without writing new highlight rules. */
-[data-fui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
-[data-fui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
-[data-fui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
+[data-cui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
+[data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
+[data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
   color: var(--ui-rating-color);
 }
 
@@ -288,7 +288,7 @@ func ratingCSS(_ style.Theme) string {
 .fui-rating--thumb   { --ui-rating-color: var(--color-primary, #4F46E5); }
 .fui-rating--diamond { --ui-rating-color: var(--color-info, #3B82F6); }
 
-[data-fui-comp="ui-rating"].is-disabled .fui-rating__choice {
+[data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;
   opacity: 0.6;
 }`

@@ -151,7 +151,7 @@ func TestPaginationPageHookRendersOnlyWithAnIsland(t *testing.T) {
 
 // A request-derived carry can corrupt neither the plain hrefs nor the
 // island sinks. The core pattern's security tests pinned this against
-// a "%d" HrefPattern Sprintf'd into data-fui-push-state and the RPC
+// a "%d" HrefPattern Sprintf'd into data-cui-push-state and the RPC
 // URL; under the typed props every one of those URLs is built through
 // net/url from the scrubbed carry, so the percent signs in a hostile
 // search are bytes of a value, never verbs — but the property is the
@@ -174,8 +174,8 @@ func TestPaginationCarryCannotCorruptTheIslandSinks(t *testing.T) {
 				// The page anchor's three destinations all keep the
 				// page parameter beside the carried search.
 				`href="?p=2&amp;q=`,
-				`data-fui-rpc="/island/apps?p=2&amp;q=`,
-				`data-fui-push-state="?p=2&amp;q=`,
+				`data-cui-rpc="/island/apps?p=2&amp;q=`,
+				`data-cui-push-state="?p=2&amp;q=`,
 			} {
 				has(t, got, want, "an island sink lost its page parameter")
 			}

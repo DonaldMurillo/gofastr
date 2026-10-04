@@ -256,7 +256,7 @@ __gofastr.desktop.available // false in a plain browser
 ```
 
 The generated module is served at `/__gofastr/desktop/bridge.js` and
-put on the script rail; no inline script and no new `data-fui-*`
+put on the script rail; no inline script and no new `data-cui-*`
 attribute. A capability absent from this host simply has no namespace;
 calling it through `call` rejects `not_found`. The module forwards
 `X-CSRF-Token` when the app ships a `csrf-token` meta (for example
@@ -498,11 +498,11 @@ bounded to ±100000.
 
 A borderless window has no title bar to drag, and the web view covers
 the window's background, so the drag starts in the PAGE: put
-`data-fui-window-drag` on the element that is the handle (a header
+`data-cui-window-drag` on the element that is the handle (a header
 strip, the whole card, anything).
 
 ```go
-html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-fui-window-drag": ""}},
+html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
     render.Text("Quick note")),
 ```
 
@@ -1700,7 +1700,7 @@ anywhere else; `PreferencesScreenPath` names the mount path and
 panics on one that is not a same-origin absolute path, the grammar
 `Config.Settings.Path` is held to.
 
-Saving goes through the runtime's form intercept (`data-fui-rpc`, the
+Saving goes through the runtime's form intercept (`data-cui-rpc`, the
 resource engine's shape) to the battery's own route,
 `POST /__gofastr/desktop/preferences`, which sits behind the same
 session gate as every other `/__gofastr/desktop/*` route. The route
@@ -1714,7 +1714,7 @@ understands:
 - a refusal is status 400 with the validation envelope
   `{"error": ..., "fields": {key: [msg]}}`, which the `formerrors`
   module renders into the named fields;
-- a success is a plain 2xx, and the form's `data-fui-rpc-navigate`
+- a success is a plain 2xx, and the form's `data-cui-rpc-navigate`
   back to the mount path re-renders the page with the saved values,
   the same landing a saved resource form gives.
 

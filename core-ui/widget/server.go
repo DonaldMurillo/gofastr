@@ -324,7 +324,7 @@ func chromePathFor(d *Definition) string {
 }
 
 // MaxChromeContext bounds the trigger-carried chrome context (#321): the
-// string a `data-fui-ctx` open trigger forwards to the chrome endpoint as
+// string a `data-cui-ctx` open trigger forwards to the chrome endpoint as
 // ?ctx=…. It is an attacker-chosen value in a URL, so it needs a hard byte
 // cap before it reaches render, logs, or error text. 256 comfortably covers
 // every real entity key (ids, slugs, UUIDs, small compound keys) while
@@ -390,7 +390,7 @@ func validChromeContext(v string) bool {
 // rather than serve stale HTML from a CDN.
 func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 	// #321: the open trigger may carry context (?ctx=…, forwarded from
-	// data-fui-ctx). Validate before it reaches anything: it is a
+	// data-cui-ctx). Validate before it reaches anything: it is a
 	// page-supplied string in a URL. Reject, don't truncate — truncated
 	// context would silently render chrome for the wrong entity.
 	triggerCtx := r.URL.Query().Get("ctx")
@@ -404,7 +404,7 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 	// every open except a deep-link arrival (where the host SSR-inlines
 	// a ctx-less chrome), so this is where it gets personalised; the
 	// runtime replaces the inlined node with this fetch whenever the
-	// trigger carries data-fui-ctx (#321). The trigger context rides
+	// trigger carries data-cui-ctx (#321). The trigger context rides
 	// the same context so a slot can vary per entity.
 	chrome := s.renderSkeletonCtx(WithChromeContext(r.Context(), triggerCtx))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -519,12 +519,12 @@ func (s *server) safeSkeleton(slots map[string]render.HTML) (out render.HTML) {
 }
 
 // defaultSkeleton is the framework-built chrome for each Position.
-// It writes a <div class="fui-widget fui-pos-<pos>"> with the slot
+// It writes a <div class="cui-widget cui-pos-<pos>"> with the slot
 // contents inserted by name. Hosts that want bespoke chrome supply
 // their own Skeleton func.
 func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
-	b.WriteString(`<div class="fui-widget fui-pos-` + render.Escape(string(def.Position)) + `" data-fui-widget="` + render.Escape(def.Name) + `"`)
+	b.WriteString(`<div class="cui-widget cui-pos-` + render.Escape(string(def.Position)) + `" data-cui-widget="` + render.Escape(def.Name) + `"`)
 	if def.Role != "" {
 		b.WriteString(` role="` + render.Escape(def.Role) + `"`)
 	}
@@ -541,9 +541,9 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		b.WriteString(` aria-describedby="` + render.Escape(def.DescribedBy) + `"`)
 	}
 	if def.DragDismiss {
-		// data-fui-drag-dismiss is the runtime delegator hook; the
+		// data-cui-drag-dismiss is the runtime delegator hook; the
 		// runtime listens on the widget root and the handle bar.
-		b.WriteString(` data-fui-drag-dismiss="true"`)
+		b.WriteString(` data-cui-drag-dismiss="true"`)
 	}
 	b.WriteString(`>`)
 
@@ -552,10 +552,10 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		// keyboard activation isn't meaningful (drag is the gesture);
 		// keep it inert for AT and rely on ESC + backdrop click as the
 		// keyboard/pointer dismiss path.
-		b.WriteString(`<div class="fui-widget-drag-handle" aria-hidden="true" data-fui-drag-handle="true"></div>`)
+		b.WriteString(`<div class="cui-widget-drag-handle" aria-hidden="true" data-cui-drag-handle="true"></div>`)
 	}
 
-	// Centered (modal) widgets group every slot inside ONE .fui-panel,
+	// Centered (modal) widgets group every slot inside ONE .cui-panel,
 	// the element the chrome CSS paints as the dialog surface. Slots
 	// as direct flex children of the viewport-filling center wrapper
 	// would each paint their own card (a header/body/footer modal read
@@ -563,12 +563,12 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	// position container / widget root, so their slots stay direct
 	// children.
 	if def.Position == Center {
-		b.WriteString(`<div class="fui-panel">`)
+		b.WriteString(`<div class="cui-panel">`)
 	}
 	// Render header / body / footer slots if present.
 	for _, name := range []string{"header", "body", "footer"} {
 		if html, ok := slots[name]; ok {
-			b.WriteString(`<div class="fui-slot fui-slot-` + name + `">`)
+			b.WriteString(`<div class="cui-slot cui-slot-` + name + `">`)
 			b.WriteString(string(html))
 			b.WriteString(`</div>`)
 		}
@@ -580,7 +580,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		if canonical[name] {
 			continue
 		}
-		b.WriteString(`<div class="fui-slot fui-slot-` + render.Escape(name) + `">`)
+		b.WriteString(`<div class="cui-slot cui-slot-` + render.Escape(name) + `">`)
 		b.WriteString(string(slots[name]))
 		b.WriteString(`</div>`)
 	}
@@ -593,7 +593,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 
 // widgetCSS builds the stylesheet using core-ui/style. Owns:
 //
-//   - Per-position layout (fui-pos-bottom-right, fui-pos-center, …)
+//   - Per-position layout (cui-pos-bottom-right, cui-pos-center, …)
 //   - Backdrop styles for modal-mode widgets
 //   - Slot containers
 //
@@ -605,7 +605,7 @@ func widgetCSS(def Definition) string {
 	ss := style.NewStyleSheet(theme)
 
 	// Common widget base.
-	ss.Rule(".fui-widget").
+	ss.Rule(".cui-widget").
 		Set(
 			"position", "fixed",
 			"z-index", "2147483600",
@@ -614,24 +614,24 @@ func widgetCSS(def Definition) string {
 			"box-sizing", "border-box",
 		).
 		End()
-	// Honour the `hidden` HTML attribute even when a `.fui-pos-*`
+	// Honour the `hidden` HTML attribute even when a `.cui-pos-*`
 	// selector tries to apply display: flex/grid. SSR-inlined widgets
 	// rely on `hidden` to stay invisible until openWidget removes it.
-	ss.Rule(".fui-widget[hidden]").
+	ss.Rule(".cui-widget[hidden]").
 		Set("display", "none").
 		End()
-	ss.Rule(".fui-widget *, .fui-widget *::before, .fui-widget *::after").
+	ss.Rule(".cui-widget *, .cui-widget *::before, .cui-widget *::after").
 		Set("box-sizing", "border-box").
 		End()
 
 	// Position presets: 6 corner/edge points + 2 full-width banners.
 	for _, p := range []struct{ cls, top, right, bottom, left string }{
-		{"fui-pos-bottom-right", "", "20px", "20px", ""},
-		{"fui-pos-bottom-left", "", "", "20px", "20px"},
-		{"fui-pos-top-right", "20px", "20px", "", ""},
-		{"fui-pos-top-left", "20px", "", "", "20px"},
-		{"fui-pos-top", "0", "0", "", "0"},
-		{"fui-pos-bottom", "", "0", "0", "0"},
+		{"cui-pos-bottom-right", "", "20px", "20px", ""},
+		{"cui-pos-bottom-left", "", "", "20px", "20px"},
+		{"cui-pos-top-right", "20px", "20px", "", ""},
+		{"cui-pos-top-left", "20px", "", "", "20px"},
+		{"cui-pos-top", "0", "0", "", "0"},
+		{"cui-pos-bottom", "", "0", "0", "0"},
 	} {
 		props := []string{}
 		if p.top != "" {
@@ -651,17 +651,17 @@ func widgetCSS(def Definition) string {
 	// Horizontally centered top + bottom, toast stacks anchored at
 	// the viewport's top-center or bottom-center. transform centers
 	// the element regardless of its width.
-	ss.Rule(".fui-pos-top-center").
+	ss.Rule(".cui-pos-top-center").
 		Set("top", "20px", "left", "50%", "transform", "translateX(-50%)").
 		End()
-	ss.Rule(".fui-pos-bottom-center").
+	ss.Rule(".cui-pos-bottom-center").
 		Set("bottom", "20px", "left", "50%", "transform", "translateX(-50%)").
 		End()
 
 	// Edge mounts (drawer-style). Background + shadow so the drawer
 	// is visually distinct from the dimmed page below; overflow:auto
 	// lets long content scroll inside the drawer.
-	ss.Rule(".fui-pos-edge-left").
+	ss.Rule(".cui-pos-edge-left").
 		Set("top", "0", "left", "0", "bottom", "0",
 			"width", "min(360px, 90vw)",
 			"background", "{colors.surface}",
@@ -669,7 +669,7 @@ func widgetCSS(def Definition) string {
 			"overflow", "auto",
 		).
 		End()
-	ss.Rule(".fui-pos-edge-right").
+	ss.Rule(".cui-pos-edge-right").
 		Set("top", "0", "right", "0", "bottom", "0",
 			"width", "min(360px, 90vw)",
 			"background", "{colors.surface}",
@@ -685,7 +685,7 @@ func widgetCSS(def Definition) string {
 	// the page. Without this the sheet's slot text floats over the
 	// page content on the dimmed backdrop, same invisible-panel
 	// defect the centered modal had.
-	ss.Rule(".fui-pos-bottom").
+	ss.Rule(".cui-pos-bottom").
 		Set(
 			"background", "{colors.surface}",
 			"box-shadow", "{shadows.xl}",
@@ -697,7 +697,7 @@ func widgetCSS(def Definition) string {
 	// Sheet slot: breathing room inside the panel (the panel is the
 	// root, so padding lives on the slot; the drag handle above it
 	// keeps its own margins).
-	ss.Rule(".fui-pos-bottom > .fui-slot").
+	ss.Rule(".cui-pos-bottom > .cui-slot").
 		Set("padding", "{spacing.md} {spacing.lg} {spacing.lg}").
 		End()
 
@@ -712,7 +712,7 @@ func widgetCSS(def Definition) string {
 	// reach the backdrop's click handler, the "backdrop-click closes"
 	// affordance breaks silently. Direct children are flipped back to
 	// `pointer-events: auto` so the slot content stays interactive.
-	ss.Rule(".fui-pos-center").
+	ss.Rule(".cui-pos-center").
 		Set(
 			"top", "0", "left", "0", "right", "0", "bottom", "0",
 			"display", "flex", "align-items", "center", "justify-content", "center",
@@ -720,19 +720,19 @@ func widgetCSS(def Definition) string {
 			"pointer-events", "none",
 		).
 		End()
-	ss.Rule(".fui-pos-center > *").
+	ss.Rule(".cui-pos-center > *").
 		Set("pointer-events", "auto").
 		End()
 
 	// Backdrop overlay sits behind any widget that requested it. The
-	// bootstrap script appends a <div class="fui-backdrop"> sibling to
+	// bootstrap script appends a <div class="cui-backdrop"> sibling to
 	// the widget root when def.Backdrop is true.
-	ss.Rule(".fui-backdrop").
+	ss.Rule(".cui-backdrop").
 		Set(
 			"position", "fixed", "inset", "0",
 			"background", "rgba(0,0,0,0.45)",
 			"z-index", "2147483599",
-			"animation", "fui-backdrop-in {durations.overlay-enter} {easings.ease-out}",
+			"animation", "cui-backdrop-in {durations.overlay-enter} {easings.ease-out}",
 		).
 		End()
 
@@ -740,31 +740,31 @@ func widgetCSS(def Definition) string {
 	// runtime appends the widget root after mount; the animation
 	// runs once on insertion. Theme-driven duration + easing so a
 	// single theme tweak retunes every surface.
-	ss.Rule(".fui-pos-center").
-		Set("animation", "fui-overlay-scale-in {durations.overlay-enter} {easings.spring}").
+	ss.Rule(".cui-pos-center").
+		Set("animation", "cui-overlay-scale-in {durations.overlay-enter} {easings.spring}").
 		End()
-	ss.Rule(".fui-pos-edge-left").
-		Set("animation", "fui-edge-left-in {durations.overlay-enter} {easings.ease-out}").
+	ss.Rule(".cui-pos-edge-left").
+		Set("animation", "cui-edge-left-in {durations.overlay-enter} {easings.ease-out}").
 		End()
-	ss.Rule(".fui-pos-edge-right").
-		Set("animation", "fui-edge-right-in {durations.overlay-enter} {easings.ease-out}").
+	ss.Rule(".cui-pos-edge-right").
+		Set("animation", "cui-edge-right-in {durations.overlay-enter} {easings.ease-out}").
 		End()
-	ss.Rule(".fui-pos-bottom").
-		Set("animation", "fui-bottom-in {durations.overlay-enter} {easings.ease-out}").
+	ss.Rule(".cui-pos-bottom").
+		Set("animation", "cui-bottom-in {durations.overlay-enter} {easings.ease-out}").
 		End()
-	ss.Rule(".fui-pos-top").
-		Set("animation", "fui-top-in {durations.overlay-enter} {easings.ease-out}").
+	ss.Rule(".cui-pos-top").
+		Set("animation", "cui-top-in {durations.overlay-enter} {easings.ease-out}").
 		End()
 
 	// Slots are plain containers, the visible surface lives on the
 	// position container (drawers, sheets), the widget root (popovers)
-	// or the .fui-panel slot group (centered modals, below).
-	ss.Rule(".fui-slot").Set("display", "block").End()
+	// or the .cui-panel slot group (centered modals, below).
+	ss.Rule(".cui-slot").Set("display", "block").End()
 
 	// Centered (modal) panel: default dialog surface. Drawers paint
 	// their surface on the position container and popovers on the
 	// widget root, but the centered wrapper IS the full viewport, so
-	// defaultSkeleton groups every slot inside one .fui-panel and the
+	// defaultSkeleton groups every slot inside one .cui-panel and the
 	// panel paints the card. Painting each slot instead would render a
 	// header/body/footer modal as three separate cards; painting
 	// nothing leaves slot content floating bare on the dimmed backdrop
@@ -772,10 +772,10 @@ func widgetCSS(def Definition) string {
 	// RPCs while showing no dialog).
 	//
 	// Opt-out: full-bleed bodies that own (or reject) the chrome put
-	// `.fui-slot-bare` on the slot's root element, one level under the
+	// `.cui-slot-bare` on the slot's root element, one level under the
 	// panel — the documented escape hatch for chrome-less content
 	// (Lightbox viewers and the command palette use it).
-	ss.Rule(`.fui-pos-center > .fui-panel:not(:has(> .fui-slot > .fui-slot-bare))`).
+	ss.Rule(`.cui-pos-center > .cui-panel:not(:has(> .cui-slot > .cui-slot-bare))`).
 		Set(
 			"background", "{colors.surface}",
 			"border", "1px solid {colors.border}",
@@ -792,8 +792,8 @@ func widgetCSS(def Definition) string {
 	// ─── Drag-to-dismiss handle (bottom sheets) ───────────────────
 	// Visible 40×4px rounded bar centered at the top of the panel.
 	// The runtime attaches pointer handlers when it sees
-	// data-fui-drag-dismiss on the widget root.
-	ss.Rule(".fui-widget-drag-handle").
+	// data-cui-drag-dismiss on the widget root.
+	ss.Rule(".cui-widget-drag-handle").
 		Set(
 			"display", "block",
 			"width", "40px",
@@ -808,27 +808,27 @@ func widgetCSS(def Definition) string {
 	// Wider drag affordance: the entire widget root accepts the
 	// initial pointerdown when DragDismiss is on. touch-action: none
 	// keeps the browser from claiming vertical pans for scrolling.
-	ss.Rule(`[data-fui-widget][data-fui-drag-dismiss]`).
+	ss.Rule(`[data-cui-widget][data-cui-drag-dismiss]`).
 		Set("touch-action", "none").
 		End()
-	// While dragging the runtime sets data-fui-dragging=true; disable
+	// While dragging the runtime sets data-cui-dragging=true; disable
 	// the entrance animation + transitions so the live transform isn't
 	// fought by competing tweens.
-	ss.Rule(`[data-fui-widget][data-fui-dragging]`).
+	ss.Rule(`[data-cui-widget][data-cui-dragging]`).
 		Set(
 			"animation", "none",
 			"transition", "none",
 			"will-change", "transform",
 		).
 		End()
-	ss.Rule(`[data-fui-widget][data-fui-drag-handle="true"]`).
+	ss.Rule(`[data-cui-widget][data-cui-drag-handle="true"]`).
 		Set("cursor", "grabbing").
 		End()
 
 	// ─── Anchored popover chrome ────────────────────────────────────
 	// When the runtime positions a popover next to its trigger
-	// (data-fui-popover-anchor on the trigger), it sets
-	// data-fui-popover-side="top|bottom|left|right" on the widget
+	// (data-cui-popover-anchor on the trigger), it sets
+	// data-cui-popover-side="top|bottom|left|right" on the widget
 	// root after picking the final placement (post auto-flip). The
 	// rules below paint the surface, constrain its size so it can
 	// actually fit beside small triggers on small viewports, and
@@ -837,9 +837,9 @@ func widgetCSS(def Definition) string {
 	// single token tweak retunes every popover surface.
 	// Popover root keeps overflow visible so the arrow ::before (sitting
 	// outside the root's box at -7px) renders. The scroll cap moves
-	// to the inner .fui-slot below, a tall slot scrolls inside the
+	// to the inner .cui-slot below, a tall slot scrolls inside the
 	// popover, the arrow stays visible.
-	ss.Rule("[data-fui-widget][data-fui-popover-side]").
+	ss.Rule("[data-cui-widget][data-cui-popover-side]").
 		Set("border-radius", "{radii.md}",
 			"box-shadow", "{shadows.lg}",
 			"background", "{colors.surface}",
@@ -853,13 +853,13 @@ func widgetCSS(def Definition) string {
 	// max-block-size. flex: 1 1 auto + min-block-size: 0 lets the
 	// slot consume whatever the parent allows; overflow-y: auto then
 	// engages on tall content. Keeps the arrow on the root visible.
-	ss.Rule(`[data-fui-widget][data-fui-popover-side] > .fui-slot`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side] > .cui-slot`).
 		Set("flex", "1 1 auto",
 			"min-block-size", "0",
 			"max-block-size", "100%",
 			"overflow-y", "auto").
 		End()
-	ss.Rule(`[data-fui-widget][data-fui-popover-side]::before`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side]::before`).
 		Set("content", "''",
 			"position", "absolute",
 			"inline-size", "12px",
@@ -870,28 +870,28 @@ func widgetCSS(def Definition) string {
 		End()
 	// side="top" → popover sits ABOVE trigger → arrow at its
 	// bottom edge, pointing DOWN.
-	ss.Rule(`[data-fui-widget][data-fui-popover-side="top"]::before`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side="top"]::before`).
 		Set("inset-block-end", "-7px",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(225deg)").
 		End()
 	// side="bottom" → popover sits BELOW trigger → arrow at its
 	// top edge, pointing UP.
-	ss.Rule(`[data-fui-widget][data-fui-popover-side="bottom"]::before`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side="bottom"]::before`).
 		Set("inset-block-start", "-7px",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(45deg)").
 		End()
 	// side="left" → popover sits LEFT of trigger → arrow at its
 	// right edge, pointing RIGHT.
-	ss.Rule(`[data-fui-widget][data-fui-popover-side="left"]::before`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side="left"]::before`).
 		Set("inset-inline-end", "-7px",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(135deg)").
 		End()
 	// side="right" → popover sits RIGHT of trigger → arrow at its
 	// left edge, pointing LEFT.
-	ss.Rule(`[data-fui-widget][data-fui-popover-side="right"]::before`).
+	ss.Rule(`[data-cui-widget][data-cui-popover-side="right"]::before`).
 		Set("inset-inline-start", "-7px",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(-45deg)").
@@ -913,14 +913,14 @@ func widgetCSS(def Definition) string {
 	// because the StyleSheet builder doesn't yet model @keyframes /
 	// @media, small targeted escape hatch.
 	const animationCSS = `
-@keyframes fui-backdrop-in    { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fui-overlay-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
-@keyframes fui-edge-left-in     { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-@keyframes fui-edge-right-in    { from { transform: translateX(100%);  } to { transform: translateX(0); } }
-@keyframes fui-bottom-in        { from { transform: translateY(100%);  } to { transform: translateY(0); } }
-@keyframes fui-top-in           { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@keyframes cui-backdrop-in    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cui-overlay-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes cui-edge-left-in     { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes cui-edge-right-in    { from { transform: translateX(100%);  } to { transform: translateX(0); } }
+@keyframes cui-bottom-in        { from { transform: translateY(100%);  } to { transform: translateY(0); } }
+@keyframes cui-top-in           { from { transform: translateY(-100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
-  .fui-backdrop, .fui-pos-center, .fui-pos-edge-left, .fui-pos-edge-right, .fui-pos-bottom, .fui-pos-top {
+  .cui-backdrop, .cui-pos-center, .cui-pos-edge-left, .cui-pos-edge-right, .cui-pos-bottom, .cui-pos-top {
     animation: none !important;
   }
 }

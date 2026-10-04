@@ -116,23 +116,23 @@ var (
 )
 
 func sheetCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-sheet"] {
+	return `[data-cui-comp="desktopui-sheet"] {
   inline-size: 100%;
   max-inline-size: var(--desktop-sheet-width, 420px);
 }
-[data-fui-comp="desktopui-sheet"].desktopui-sheet {
+[data-cui-comp="desktopui-sheet"].desktopui-sheet {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
 }
-[data-fui-comp="desktopui-sheet"] .desktopui-sheet__title {
+[data-cui-comp="desktopui-sheet"] .desktopui-sheet__title {
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   margin: 0;
 }
-[data-fui-comp="desktopui-sheet"] .desktopui-sheet__footer {
+[data-cui-comp="desktopui-sheet"] .desktopui-sheet__footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);
@@ -143,17 +143,17 @@ func sheetCSS(_ style.Theme) string {
 }
 
 func popoverCSS(_ style.Theme) string {
-	return `[data-fui-comp="desktopui-popover"] {
+	return `[data-cui-comp="desktopui-popover"] {
   inline-size: 100%;
   max-inline-size: var(--desktop-popover-width, 320px);
 }
-[data-fui-comp="desktopui-popover"].desktopui-popover {
+[data-cui-comp="desktopui-popover"].desktopui-popover {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
 }
-[data-fui-comp="desktopui-popover"] .desktopui-popover__title {
+[data-cui-comp="desktopui-popover"] .desktopui-popover__title {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);

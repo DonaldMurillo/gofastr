@@ -11,7 +11,7 @@ import (
 )
 
 // The tabs: a tablist of anchors and a stack of panels. Selection is
-// the kernel's signal contract — each tab carries data-fui-signal-set
+// the kernel's signal contract — each tab carries data-cui-signal-set
 // beside its fragment href, the wrapper mirrors the signal into
 // data-active, and CSS lights the panel — so with script the switch is
 // client-side and without script the fragment href lands on the panel
@@ -110,10 +110,10 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"id":                  p.ID + "-tab-" + strconv.Itoa(i),
 			"aria-selected":       strconv.FormatBool(i == p.Active),
 			"tabindex":            tabTabIndex(i == p.Active),
-			"data-fui-signal-set": p.Name + ":" + strconv.Itoa(i),
+			"data-cui-signal-set": p.Name + ":" + strconv.Itoa(i),
 			// The per-index pair the styled layer's generated CSS keys
 			// the active highlight and the visible panel on.
-			"data-fui-tab-index": strconv.Itoa(i),
+			"data-cui-tab-index": strconv.Itoa(i),
 		}
 		own["aria-controls"] = p.ID + "-panel-" + strconv.Itoa(i)
 		if tab.Disabled {
@@ -167,7 +167,7 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"id":                 p.ID + "-panel-" + strconv.Itoa(i),
 			"aria-labelledby":    p.ID + "-tab-" + strconv.Itoa(i),
 			"tabindex":           "0",
-			"data-fui-tab-index": strconv.Itoa(i),
+			"data-cui-tab-index": strconv.Itoa(i),
 		}
 		vacated := p.VacateHidden && i != p.Active
 		rendersContent := tab.Panel != "" && !vacated
@@ -197,7 +197,7 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 				el = render.Tag("script", html.Attrs{
 					"type":                "application/json",
 					"data-hui-tabs-stash": "true",
-					"data-fui-internal":   "",
+					"data-cui-internal":   "",
 				}, render.HTML(enc))
 			}
 			panelChildren = append(panelChildren, el)
@@ -205,9 +205,9 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 	}
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "data-active"), html.Attrs{
-		"data-fui-signal":      p.Name,
-		"data-fui-signal-mode": "attr",
-		"data-fui-signal-attr": "data-active",
+		"data-cui-signal":      p.Name,
+		"data-cui-signal-mode": "attr",
+		"data-cui-signal-attr": "data-active",
 		"data-active":          strconv.Itoa(p.Active),
 	})
 	Mark(rootAttrs, "data-hui-tabs")

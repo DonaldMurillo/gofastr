@@ -7,7 +7,7 @@ import (
 )
 
 // TestGeneratedEntityListIsIsland pins Hard rule 1: a generated entity_list
-// must sort and paginate as an ISLAND (a data-fui-rpc swap of just the table),
+// must sort and paginate as an ISLAND (a data-cui-rpc swap of just the table),
 // never a full document/route navigation. The resource engine's island mode
 // needs the list's Config to carry an island path AND a TableHandler mounted
 // at that path, exactly the wiring examples/meridian/app.go does for its

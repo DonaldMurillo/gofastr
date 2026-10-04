@@ -15,7 +15,7 @@ import (
 // (role engines prune every menuitem while details.open stays false).
 func TestMenuTriggerCSSHidesClosedPanel(t *testing.T) {
 	css := menuCSS(style.Theme{})
-	if !strings.Contains(css, `[data-fui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }`) {
+	if !strings.Contains(css, `[data-cui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }`) {
 		t.Fatal("menuCSS must hide the trigger path's closed panels through the details child: the root div never carries [open], and the author display:grid on .fui-menu__panel would defeat the UA sheet's closed-details hiding")
 	}
 }
@@ -26,7 +26,7 @@ func TestMenuTriggerCSSHidesClosedPanel(t *testing.T) {
 // element itself (header button.rounded-full) keeps working.
 func TestMenuTriggerCSSWrapperIsBoxless(t *testing.T) {
 	css := menuCSS(style.Theme{})
-	if !strings.Contains(css, `[data-fui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }`) {
+	if !strings.Contains(css, `[data-cui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }`) {
 		t.Fatal("menuCSS must keep the trigger wrapper box-less (display: contents): a wrapper box would sit between the host's layout and the caller's element")
 	}
 }

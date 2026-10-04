@@ -53,7 +53,7 @@ type Column struct {
 	Sortable bool
 	// HeaderAttrs and CellAttrs add attributes to this column's <th>
 	// and to every <td> under it, through the same sanitiser as
-	// ExtraAttrs (Safe): data-fui-* keys, style, id and class are
+	// ExtraAttrs (Safe): data-cui-* keys, style, id and class are
 	// dropped, names are stored folded, and one attribute under two
 	// spellings is refused.
 	HeaderAttrs html.Attrs

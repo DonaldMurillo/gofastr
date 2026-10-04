@@ -468,7 +468,7 @@ func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 // widgetScreen is "/widget": the floating timer's page. The window is
 // borderless, transparent, and non-activating (desktop.Widget), so
 // this screen owns the whole surface: a ui.Card is the visual chrome,
-// its header strip is the drag handle (data-fui-window-drag), and
+// its header strip is the drag handle (data-cui-window-drag), and
 // Close/Open task go through the page script because only the page
 // knows its own window id.
 type widgetScreen struct {
@@ -493,9 +493,9 @@ func (s *widgetScreen) RenderCtx(ctx context.Context) render.HTML {
 	header := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		// The drag surface: mousedown here (or on a child) starts a
 		// native window drag. html.Div is the 1:1 tag primitive; the
-		// design-system components strip data-fui-* from ExtraAttrs,
+		// design-system components strip data-cui-* from ExtraAttrs,
 		// and a drag handle is not a button.
-		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-fui-window-drag": ""}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
 			render.Text(title)),
 		ui.Spacer(),
 		ui.Button(ui.ButtonConfig{

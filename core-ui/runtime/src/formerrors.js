@@ -1,30 +1,49 @@
 // GoFastr runtime module, form errors
 //
-// The failure half of a data-fui-rpc form submission, loaded on demand
+// The failure half of a data-cui-rpc form submission, loaded on demand
 // by rpc.js the first time a form's request answers non-2xx. Like ws
 // and desktop it has no DOM marker. The server's validation envelope
 // ({error, fields: {name: [messages]}}) lands beside each named
-// field's control in the exact markup framework/ui renders for a
-// server-side error: aria-invalid and aria-describedby on the control,
-// a role=alert paragraph carrying the field's error class
-// (fui-field__error in a FormField, fui-choice-field__error beside a
-// standalone Checkbox/Switch). When no field matched, the error text
-// is toasted (module or fallback). Before this module a refused Save
-// did nothing the user could see.
+// field's control through the headless layer's hooks, never a kit
+// class: aria-invalid and aria-describedby on the control, the words
+// in the field's error node ([data-hui-field-error], which
+// headless.Field renders filled, reserved and empty, or not at all).
+// A field with no error node gets one: a role=alert paragraph carrying
+// the hook with the value "live", so clear() can tell it from the
+// server's, placed where the rendered one would sit (last in a
+// [data-hui-field], right after a bare [data-hui-choice] label). The
+// kit's sheet styles the hook, so this module names no class and the
+// kit may rename every one of its own. When no field matched, the
+// error text is toasted (module or fallback). Before this module a
+// refused Save did nothing the user could see.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
-  const FIELD = '[data-fui-comp="ui-form-field"]';
-  const CHOICE = '[data-fui-comp="ui-toggle"]';
-  const LIVE = '.fui-field__error.is-live, .fui-choice-field__error.is-live';
+  const FIELD = '[data-hui-field]';
+  const CHOICE = '[data-hui-choice]';
+  const ERR = '[data-hui-field-error]';
 
   // clear removes what a previous failed attempt placed, so a retry
-  // starts clean and a success leaves no stale error behind.
+  // starts clean and a success leaves no stale error behind: live
+  // paragraphs go, filled rendered nodes empty back to reserved.
   function clear(form) {
     if (!form) return;
-    form.querySelectorAll(LIVE).forEach((e) => e.remove());
+    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => e.remove());
+    form.querySelectorAll('[data-hui-field-error="filled"]').forEach((e) => {
+      e.textContent = '';
+      e.setAttribute('data-hui-field-error', '');
+    });
     form.querySelectorAll('[aria-invalid="true"]').forEach((e) => e.removeAttribute('aria-invalid'));
+  }
+
+  // renderedNode finds the error node the server shipped for this
+  // control: a field's is its own child, a bare choice's follows the
+  // label (the errored render's shape).
+  function renderedNode(field, choice) {
+    if (field) return field.querySelector(':scope > ' + ERR);
+    const next = choice.nextElementSibling;
+    return next && next.matches(ERR) ? next : null;
   }
 
   // report renders the envelope into the form. status and txt are the
@@ -45,17 +64,19 @@
       const choice = !field && el && el.closest && el.closest(CHOICE);
       if (!field && !choice) continue;
       el.setAttribute('aria-invalid', 'true');
-      const p = document.createElement('p');
-      p.className = (field ? 'fui-field__error' : 'fui-choice-field__error') + ' is-live';
-      p.setAttribute('role', 'alert');
-      if (el.id) { p.id = el.id + '-error'; el.setAttribute('aria-describedby', p.id); }
+      let p = renderedNode(field, choice);
+      if (p) {
+        p.setAttribute('data-hui-field-error', 'filled');
+      } else {
+        p = document.createElement('p');
+        p.setAttribute('data-hui-field-error', 'live');
+        p.setAttribute('role', 'alert');
+        if (el.id) p.id = el.id + '-error';
+        if (field) field.appendChild(p);
+        else choice.after(p);
+      }
+      if (p.id) el.setAttribute('aria-describedby', p.id);
       p.textContent = [].concat(fields[name]).join(', ');
-      // A FormField takes the message as its last child. A bare
-      // Checkbox's root is its <label>, which may not hold a <p>: the
-      // message follows it, the way the errored choice renders.
-      if (field) field.appendChild(p);
-      else if (choice.tagName === 'LABEL') choice.after(p);
-      else choice.appendChild(p);
       placed++;
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {

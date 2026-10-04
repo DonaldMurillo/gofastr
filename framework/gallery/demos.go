@@ -198,7 +198,7 @@ func OptimisticDeleteModals() []*widget.Builder {
 			// shorter list HTML returned by the delete handler) into
 			// the opt-delete-list signal region. The runtime swaps
 			// the region's innerHTML, the row disappears, and the
-			// modal closes via data-fui-rpc-close. On a non-2xx the
+			// modal closes via data-cui-rpc-close. On a non-2xx the
 			// runtime leaves the region unchanged (html-mode skips
 			// non-string values), which is the "failed delete leaves
 			// the list unchanged" invariant.

@@ -76,22 +76,22 @@ func TestLinkEmitsAnchorAndHref(t *testing.T) {
 }
 
 func TestLinkActionEmitsCompMarker(t *testing.T) {
-	// linkStyle.WrapHTML should attach data-fui-comp so the runtime
+	// linkStyle.WrapHTML should attach data-cui-comp so the runtime
 	// auto-loads the link CSS sheet on first appearance.
 	h := string(Link(LinkConfig{Href: "/x", Text: "y", Variant: LinkAction}))
-	if !strings.Contains(h, `data-fui-comp="ui-link"`) {
-		t.Errorf("Link should emit data-fui-comp=ui-link:\n%s", h)
+	if !strings.Contains(h, `data-cui-comp="ui-link"`) {
+		t.Errorf("Link should emit data-cui-comp=ui-link:\n%s", h)
 	}
 }
 
 func TestLinkExtraAttrsCarriesWiring(t *testing.T) {
 	// Link is a wiring carrier: uinoderender's ActionRef links ship an
-	// href fallback plus a data-fui-rpc upgrade through ExtraAttrs.
+	// href fallback plus a data-cui-rpc upgrade through ExtraAttrs.
 	h := Link(LinkConfig{Href: "/m/mod/act", Text: "Act", ExtraAttrs: map[string]string{
-		"data-fui-rpc": "/m/mod/act",
+		"data-cui-rpc": "/m/mod/act",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-fui-rpc="/m/mod/act"`) {
+	if !strings.Contains(root, `data-cui-rpc="/m/mod/act"`) {
 		t.Errorf("wiring attr dropped from carrier link:\n%s", root)
 	}
 }

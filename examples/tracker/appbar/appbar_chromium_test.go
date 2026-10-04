@@ -67,7 +67,7 @@ func TestAppBarLayoutPromises(t *testing.T) {
 	ctx := chromedptest.Context(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const h='[data-fui-scope="appbar"]';
+const h='[data-cui-scope="appbar"]';
 return JSON.stringify({ViewW:innerWidth,ScrollW:document.documentElement.scrollWidth,
 Token:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-header-height')),
 Header:r(h),Brand:r(h+' a.brand'),Search:r(h+' .search'),

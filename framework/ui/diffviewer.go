@@ -48,7 +48,7 @@ type DiffViewerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root element. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// and data-fui-*.
+	// and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -84,7 +84,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		if right == "" {
 			right = "New"
 		}
-		sb.WriteString(`<div class="fui-diff-viewer__header" data-fui-internal=""><div class="fui-diff-viewer__header-cell">`)
+		sb.WriteString(`<div class="fui-diff-viewer__header" data-cui-internal=""><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(left))
 		sb.WriteString(`</div><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(right))
@@ -96,14 +96,14 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for i < len(lines) {
 			ln := lines[i]
 			if strings.HasPrefix(ln, "@@") {
-				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-fui-internal="">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
 				continue
 			}
 			if strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++") {
-				sb.WriteString(`<div class="fui-diff-viewer__file" data-fui-internal="">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
@@ -133,7 +133,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(cur, " ") {
 					ctx = cur[1:]
 				}
-				sb.WriteString(`<div class="fui-diff-viewer__row fui-diff-viewer__row--context" data-fui-internal="">`)
+				sb.WriteString(`<div class="fui-diff-viewer__row fui-diff-viewer__row--context" data-cui-internal="">`)
 				sb.WriteString(`<div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ctx))
 				sb.WriteString(`</pre></div><div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
@@ -148,19 +148,19 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for _, ln := range lines {
 			switch {
 			case strings.HasPrefix(ln, "@@"):
-				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-fui-internal="">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++"):
-				sb.WriteString(`<div class="fui-diff-viewer__file" data-fui-internal="">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "+"):
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--add" data-fui-internal=""><span class="fui-diff-viewer__gutter">+</span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--add" data-cui-internal=""><span class="fui-diff-viewer__gutter">+</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			case strings.HasPrefix(ln, "-"):
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--remove" data-fui-internal=""><span class="fui-diff-viewer__gutter">−</span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--remove" data-cui-internal=""><span class="fui-diff-viewer__gutter">−</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			default:
@@ -168,7 +168,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(ln, " ") {
 					body = ln[1:]
 				}
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--context" data-fui-internal=""><span class="fui-diff-viewer__gutter"> </span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--context" data-cui-internal=""><span class="fui-diff-viewer__gutter"> </span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(body))
 				sb.WriteString(`</pre></div>`)
 			}
@@ -192,7 +192,7 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 	}
 	n := max(len(added), len(removed))
 	for i := range n {
-		sb.WriteString(`<div class="fui-diff-viewer__row" data-fui-internal="">`)
+		sb.WriteString(`<div class="fui-diff-viewer__row" data-cui-internal="">`)
 		// Left column: removed (or empty).
 		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--remove">`)
 		if i < len(removed) {
@@ -219,7 +219,7 @@ var _ = strconv.Itoa
 var diffViewerStyle = registry.RegisterStyle("ui-diff-viewer", diffViewerCSS)
 
 func diffViewerCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-diff-viewer"] {
+	return `[data-cui-comp="ui-diff-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.5;
@@ -228,42 +228,42 @@ func diffViewerCSS(_ style.Theme) string {
   overflow: hidden;
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__hunk {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__hunk {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);
   border-block: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line {
   display: grid;
   grid-template-columns: 2ch 1fr;
   gap: var(--spacing-sm, 4px);
   padding-inline: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__gutter {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__gutter {
   user-select: none;
   text-align: end;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__code {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__code {
   margin: 0;
   padding: 0;
   font: inherit;
   white-space: pre;
   overflow-x: auto;
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line--add {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--add {
   background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);
 }
-[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line--remove {
+[data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--remove {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent);
 }
 

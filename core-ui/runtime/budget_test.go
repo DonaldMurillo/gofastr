@@ -20,7 +20,7 @@ const (
 	// What bought the bytes, one SOURCE change that cannot be carved
 	// into a demand module:
 	//   - frag/nav.js's applyDocShell (19 lines): after any SPA swap it
-	//     copies data-fui-lang / data-fui-skip-label off the swapped
+	//     copies data-cui-lang / data-cui-skip-label off the swapped
 	//     payload onto documentElement.lang and the skip link. <html
 	//     lang> and the body-level link live OUTSIDE the shell the
 	//     runtime swaps, so no partial payload can fix them; the sync
@@ -175,7 +175,7 @@ const (
 	// cancelable gofastr:transition event, prefers-reduced-motion
 	// gating, skipTransition of a still-running transition, an
 	// epoch guard for the frame-later update callback, and the
-	// _vtNames CSSOM mirror of data-fui-vt cells (a style attribute
+	// _vtNames CSSOM mirror of data-cui-vt cells (a style attribute
 	// is refused by the default CSP; a CSSOM write is not).
 	// Uncarvable: the wrapper IS the swap path, core's click path.
 	// The bundle measures 14258 at level 6; 8 bytes of clearance,
@@ -183,7 +183,7 @@ const (
 	//
 	// 15368, the same spike's conclusion commit (opt-in gate + anchor
 	// hardening): _commitSwap runs a transition only when the document
-	// carries a [data-fui-vt] cell (Chrome delivers no pointer input to
+	// carries a [data-cui-vt] cell (Chrome delivers no pointer input to
 	// the page while a transition animates — measured; an app that
 	// never named a region must not pay that window on every soft
 	// navigation), _winOf became a hoisted function declaration (the
@@ -226,8 +226,8 @@ const (
 	//
 	// 14482, raised 541 more bytes from 13941 on 2026-09-25
 	// (spike/layout-loading, P9-A loading content): the navigator
-	// clones the server-rendered inert <template data-fui-loading>
-	// beside an outlet into the outlet after data-fui-after ms of
+	// clones the server-rendered inert <template data-cui-loading>
+	// beside an outlet into the outlet after data-cui-after ms of
 	// in-flight wait, parks the old nodes in an in-document hidden
 	// div, restores them exactly on failure or a superseded
 	// navigation, and honors the no-flash Min hold across the apply
@@ -240,7 +240,7 @@ const (
 	// TestCoreBudgetRejectsCliffOverflow.
 	// 14614, raised 132 more bytes from 14482 on 2026-09-25
 	// (spike/layout-loading, P9-ANIM exit wait): _exitLoading sets
-	// data-fui-loadstate=exit and waits for the region's own
+	// data-cui-loadstate=exit and waits for the region's own
 	// animationend (capped at 400ms, child animations ignored) before
 	// the apply replaces the loading content; the apply path awaits
 	// every shown region's exit in parallel (frag/nav.js). The default
@@ -323,7 +323,7 @@ const (
 	// TestCoreBudgetRejectsCliffOverflow.
 	// 17635, raised 26 more bytes from 17609 on 2026-09-26 (tracker
 	// polish round 4, U1; the same nav.js change as the level-1 entry
-	// below): _vtNames honours data-fui-vt-when — a media condition
+	// below): _vtNames honours data-cui-vt-when — a media condition
 	// that moves a view-transition name between the placed cell and
 	// the region the build marks (Transition.Narrow, the master-detail
 	// collapse on a phone) and CLEARS a non-matching mirror so a
@@ -348,7 +348,7 @@ const (
 	// 18933, raised 563 more bytes from 18370 on 2026-09-26
 	// (spike/layout-resolve: resolution-driven navigation): the
 	// keyed-transition pick (the X-Gofastr-Transition read, the
-	// data-fui-vt-kinds vocabulary gate, the history.state.vt record,
+	// data-cui-vt-kinds vocabulary gate, the history.state.vt record,
 	// and the Back/Forward edge rule in the popstate) plus the client's
 	// param-substitution of manifest layer keys and deferred addresses
 	// (routeMatch captures what the pattern matched; the server stays
@@ -366,7 +366,7 @@ const (
 	// demand): every piece of the view-transition machinery — the
 	// startViewTransition wrapper, the direction types, the cancelable
 	// gofastr:transition event, the reduced-motion gate, the
-	// click-during-transition re-delivery, the data-fui-vt CSSOM
+	// click-during-transition re-delivery, the data-cui-vt CSSOM
 	// mirror, and the keyed pick — left the core for the transition
 	// demand module (src/transition.js), which loads only when the
 	// document declares a transition. Before it loads the swap applies
@@ -425,7 +425,7 @@ const (
 	//        plain body), boot's two marker rows (loading, transition)
 	//        + the parts manifest trigger + the sse row's push-target
 	//        selector, and the kernel's _navHooks table + the
-	//        data-fui-vt-kinds htmlAttrs word. (level 1: 160)
+	//        data-cui-vt-kinds htmlAttrs word. (level 1: 160)
 	//   +83  error pages: a non-OK HTML answer applies through the
 	//        swap path instead of toasting, and the toast names the
 	//        status. Every site's error UX, not a layout feature.
@@ -433,7 +433,7 @@ const (
 	//   +50  F2 pointer-modality focus: a pointer-initiated swap passes
 	//        focusVisible:false (the ring is keyboard signal). Every
 	//        page's swap. (level 1: 77)
-	//   +5   the data-fui-open anchor guard: a widget trigger's href is
+	//   +5   the data-cui-open anchor guard: a widget trigger's href is
 	//        the no-script fallback, not a destination. (level 1: 8)
 	//
 	// What LEFT the core in the same carve (measured moves, now module
@@ -495,10 +495,10 @@ const (
 	//        click legs). (l1: 110)
 	//   +79  error pages through the swap path. (l1: 113)
 	//   +55  F2 pointer-modality focus. (l1: 83)
-	//   +33  the data-fui-open anchor guard (+chain residue). (l1: 23)
+	//   +33  the data-cui-open anchor guard (+chain residue). (l1: 23)
 	//   +65  the atomic seed merge. (l1: 91)
 	//   +71  the kernel's _navHooks table + epoch slot, boot's
-	//        transition row (a plain page DECLARING data-fui-vt must
+	//        transition row (a plain page DECLARING data-cui-vt must
 	//        load the module at boot; nothing else ever will) and the
 	//        deferred-manifest one-liner (a page whose site defers
 	//        needs parts at boot) + the sse row's push-target
@@ -530,9 +530,9 @@ const (
 	//        listener itself left the module, net -40 module bytes).
 	//        Un-carvable: it is the click path. (l1: 34)
 	//   +26  owned styles load by marker: scanAndLoadCSS reads
-	//        data-fui-scope beside data-fui-comp, and nav.js's
+	//        data-cui-scope beside data-cui-comp, and nav.js's
 	//        swapShell scans the new shell's parent, because the shell
-	//        root itself carries its layout's data-fui-scope and the
+	//        root itself carries its layout's data-cui-scope and the
 	//        scan reads descendants only. Un-carvable: every component
 	//        sheet load goes through the scan, and a styled layout or
 	//        screen reached by client navigation renders unstyled
@@ -583,7 +583,7 @@ const (
 	// The band is tighter than it looks. The bundle measured 14602 when this
 	// line was first re-baselined against a 41812-byte artifact; v0.69.0's
 	// click-path work took it to 41968 raw and 14660 compressed, and the
-	// native-submit confirm gate (#279: data-fui-confirm honored on plain POST
+	// native-submit confirm gate (#279: data-cui-confirm honored on plain POST
 	// forms, which until then submitted unconfirmed) took it to 42215 raw and
 	// 14745 compressed. The gate cannot be carved into a demand module: a
 	// native submit navigates away before a module could load, the same class
@@ -593,7 +593,7 @@ const (
 	// measured this independently: the prefetch-failure retry
 	// (mark-on-success), forwarding the widget trigger's ctx through the
 	// core boot, and loadModule's module-name shape check -- the last of
-	// which stops a "../../../evil" value in data-fui-prefetch from
+	// which stops a "../../../evil" value in data-cui-prefetch from
 	// normalizing out of the runtime serve route onto an arbitrary
 	// same-origin script. None could see the others, so every one of them
 	// reported more headroom than exists. The value below was re-measured
@@ -601,7 +601,7 @@ const (
 	// anything. Re-measure after a merge, not before.
 	// 15071, lowered 5 bytes from 15076 on 2026-09-04, a SOURCE change in
 	// the downward direction: the scroll-bottom selector guard added to
-	// frag/signals.js (the data-fui-scroll-bottom-on-update lookup must
+	// frag/signals.js (the data-cui-scroll-bottom-on-update lookup must
 	// degrade, not throw, out of setSignal's fanout) carries a repeated
 	// attribute literal the level-1 encoder dictionaries better than the
 	// sortablelist filler the cliff fixture pads with, so the real core
@@ -898,14 +898,14 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"opt-in hand-off + delegation split + public push alias":                113, // (l1: 110)
 		"p14 error pages apply through the swap path":                           79,  // (l1: 113)
 		"f2 pointer-modality focus ring":                                        55,  // (l1: 83)
-		"data-fui-open anchor guard (+chain residue)":                           33,  // (l1: 23)
+		"data-cui-open anchor guard (+chain residue)":                           33,  // (l1: 23)
 		"p7-c atomic seed merge":                                                65,  // (l1: 91)
 		"kernel navHooks/epoch + transition row + deferred line + sse selector": 71,  // (l1: 57)
 		"ablation residue (declaration relocations)":                            73,  // (l1: 78)
 		"scroll settle stylesheet wait + its stall bound":                       79,  // (l1: 69)
 		"scroll settle cancels on user intent, not anchoring drift":             67,  // (l1: 49)
 		"first-nav pointer modality rides the delegated opts":                   33,  // (l1: 34)
-		"owned styles load by marker (data-fui-scope scan)":                     26,  // (l1: 15)
+		"owned styles load by marker (data-cui-scope scan)":                     26,  // (l1: 15)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1040,7 +1040,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		"envelope": 7621,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
-		// reads a marked region's data-fui-area beside its outlet and
+		// reads a marked region's data-cui-area beside its outlet and
 		// slot attributes, so an area's loading template is found by
 		// its "~" address like an outlet's "#".
 		"loading": 1368,
@@ -1210,7 +1210,7 @@ func TestTypicalPagePayloadBudget(t *testing.T) {
 	// measured 20645 + 8. The real PR revisits the whole layout cost.
 	// Round 3 of the same spike: the streamed commit calls the
 	// active-link sweep at the swap (S3), measured 20670 + 8.
-	// Round 4 (U1): _vtNames's data-fui-vt-when media gate (the name
+	// Round 4 (U1): _vtNames's data-cui-vt-when media gate (the name
 	// moves between the placed cell and the region the build marks,
 	// across the breakpoint), measured 20696 + 8. Spike
 	// (spike/layout-parts, parallel part requests replacing the stream

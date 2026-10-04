@@ -247,7 +247,7 @@ func TestRecipeShapesKeepTheFrameGuarantees(t *testing.T) {
 // The aside releases its width when it holds only an empty outlet —
 // the behaviour that lets an unfilled context column take no space.
 func TestAsideReleasesEmptyOutlet(t *testing.T) {
-	emptyOutlet := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-fui-outlet": "app#aside"}})
+	emptyOutlet := html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-outlet": "app#aside"}})
 	site := app.NewApp("Aside release")
 	site.RegisterScreen(app.NewScreen("/recipe", app.NewStaticComponent(
 		meridianRecipe(render.Text("h"),

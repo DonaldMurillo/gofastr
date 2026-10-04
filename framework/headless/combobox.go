@@ -15,7 +15,7 @@ import (
 // rendered server-side so a reader with no script gets a labelled
 // search form whose results are real content. The module owns the
 // keyboard contract and the pick; the RPC debouncing and the signal
-// swap are the kernel's data-fui-rpc contract, rendered here beside
+// swap are the kernel's data-cui-rpc contract, rendered here beside
 // the form's no-script destination.
 
 // Combobox parts.
@@ -154,11 +154,11 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	// combobox instead.
 	carrierAttrs := Attrs(map[string]string{})
 	if p.Island != nil && !hasStatic {
-		carrierAttrs["data-fui-rpc"] = p.Island.Endpoint
-		carrierAttrs["data-fui-rpc-method"] = "POST"
-		carrierAttrs["data-fui-rpc-trigger"] = "input"
-		carrierAttrs["data-fui-rpc-debounce-ms"] = strconv.Itoa(debounce)
-		carrierAttrs["data-fui-rpc-signal"] = p.Island.Signal
+		carrierAttrs["data-cui-rpc"] = p.Island.Endpoint
+		carrierAttrs["data-cui-rpc-method"] = "POST"
+		carrierAttrs["data-cui-rpc-trigger"] = "input"
+		carrierAttrs["data-cui-rpc-debounce-ms"] = strconv.Itoa(debounce)
+		carrierAttrs["data-cui-rpc-signal"] = p.Island.Signal
 		carrierAttrs["data-hui-combobox-loading"] = w.ComboboxLoading
 		Mark(carrierAttrs, "data-hui-combobox-loader")
 	}
@@ -174,8 +174,8 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	// on the static listbox after each filter.
 	listboxAttrs["data-hui-combobox-count"] = w.ComboboxResultCount
 	if p.Island != nil && !hasStatic {
-		listboxAttrs["data-fui-signal"] = p.Island.Signal
-		listboxAttrs["data-fui-signal-mode"] = "html"
+		listboxAttrs["data-cui-signal"] = p.Island.Signal
+		listboxAttrs["data-cui-signal-mode"] = "html"
 		Mark(listboxAttrs, "hidden")
 	}
 	var rows []render.HTML
@@ -254,7 +254,7 @@ func comboboxOptionEl(b Box, o ComboboxOption) render.HTML {
 	if href := urlsafe.Clean(o.Href, urlsafe.Anchor); href != "" {
 		// The module hands the pick to the SPA navigator; an unsafe
 		// href drops the navigation affordance entirely.
-		attrs["data-fui-push-state"] = href
+		attrs["data-cui-push-state"] = href
 	}
 	kids := []render.HTML{b.El("span", PartText, nil, render.Text(scrubControlBytes(o.Label)))}
 	if o.Meta != "" {

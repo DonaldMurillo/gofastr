@@ -21,7 +21,7 @@ import (
 //
 // Theme boundaries DECLARE the --fui-* option variables; component
 // rules CONSUME them (border-radius: var(--fui-button-radius)) and
-// never redeclare them. No descendant option rules: .fui-theme-a
+// never redeclare them. No descendant option rules: .cui-theme-a
 // .fui-button would outrank the component's own variant and state
 // selectors, so options travel by inheritance instead. Because every
 // theme built by theme.Default declares the complete set, an inner

@@ -29,7 +29,7 @@ look authored for this product at both mobile and desktop sizes.
   scope: framework components may be nested there, and app CSS is intentionally
   loaded after component CSS. Style a text link through an app-owned class or a
   framework variant, never by restyling every anchor in the composition.
-- Never target a framework `data-fui-comp` marker or framework class from app
+- Never target a framework `data-cui-comp` marker or framework class from app
   CSS, and never override a framework component root indirectly with a broader
   selector. If a framework component needs a new reusable treatment, add a
   registered variant upstream and select it through the component API.

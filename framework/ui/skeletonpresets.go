@@ -60,7 +60,7 @@ type SkeletonCardConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the placeholder's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and aria-hidden (skeletons are always
+	// style, data-cui-* and aria-hidden (skeletons are always
 	// presentational; the one announcement is the primitive's).
 	ExtraAttrs html.Attrs
 }
@@ -114,7 +114,7 @@ type SkeletonRowConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the placeholder's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and aria-hidden.
+	// style, data-cui-* and aria-hidden.
 	ExtraAttrs html.Attrs
 }
 
@@ -154,7 +154,7 @@ type SkeletonTimelineConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the placeholder's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and aria-hidden.
+	// style, data-cui-* and aria-hidden.
 	ExtraAttrs html.Attrs
 }
 
@@ -197,7 +197,7 @@ type SkeletonAvatarConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the placeholder's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and aria-hidden.
+	// style, data-cui-* and aria-hidden.
 	ExtraAttrs html.Attrs
 }
 
@@ -237,7 +237,7 @@ type SkeletonLineConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the placeholder's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and aria-hidden.
+	// style, data-cui-* and aria-hidden.
 	ExtraAttrs html.Attrs
 }
 

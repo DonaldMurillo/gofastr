@@ -20,7 +20,7 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 
 	// The header's owned style: everything below selects inside it.
-	const h = `[data-fui-scope="meridian-siteheader"]`
+	const h = `[data-cui-scope="meridian-siteheader"]`
 
 	type rect struct {
 		Present bool    `json:"present"`
@@ -45,13 +45,13 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Evaluate(measure(h+` .end a[href="/login"]`), &signIn),
-		chromedp.Evaluate(measure(h+` .bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
+		chromedp.Evaluate(measure(h+` .bar-actions [data-cui-comp="ui-theme-toggle"]`), &toggle),
 		// Open the phone menu: "folded into the menu" must mean the
 		// toggle actually lives there, not that it vanished — and the
 		// persistent Sign in must not have a menu duplicate.
 		chromedp.Click(h+` summary`, chromedp.ByQuery),
 		chromedp.WaitVisible(h+` details[open] .panel-links`, chromedp.ByQuery),
-		chromedp.Evaluate(measure(h+` details[open] .panel-actions [data-fui-comp="ui-theme-toggle"]`), &menuToggle),
+		chromedp.Evaluate(measure(h+` details[open] .panel-actions [data-cui-comp="ui-theme-toggle"]`), &menuToggle),
 		chromedp.Evaluate(measure(h+` details[open] a[href="/login"]`), &menuSignIn),
 	); err != nil {
 		t.Fatal(err)

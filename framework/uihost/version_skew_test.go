@@ -89,7 +89,7 @@ func TestOldClientGetsReloadSwapWhenKeptLayerHasOutlets(t *testing.T) {
 	if got := w2.Header().Get("X-Gofastr-Envelope"); got != "2" {
 		t.Fatalf("X-Gofastr-Envelope = %q, want 2", got)
 	}
-	if !strings.Contains(body, `data-fui-fill="l:site#toolbar"`) {
+	if !strings.Contains(body, `data-cui-fill="l:site#toolbar"`) {
 		t.Errorf("envelope must carry the kept toolbar fill: %s", body)
 	}
 	if !strings.Contains(body, "OTHER-TOOLBAR") {

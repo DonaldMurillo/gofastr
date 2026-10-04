@@ -55,7 +55,7 @@ type ColorFieldConfig struct {
 	// inputs, for the data-* attributes a caller's own JS binds to.
 	// Keys the component owns are dropped: the swatch's aria-label,
 	// type, value and tabindex; the text input's name, value and the
-	// field wiring; and every data-fui-* / data-hui-* key.
+	// field wiring; and every data-cui-* / data-hui-* key.
 	SwatchAttrs html.Attrs
 	TextAttrs   html.Attrs
 
@@ -63,7 +63,7 @@ type ColorFieldConfig struct {
 
 	// ExtraAttrs forwards additional attributes to the shell's root
 	// element. Keys the component owns are dropped: class (use
-	// Class), id, and every data-fui-* / data-hui-* key. Per-input
+	// Class), id, and every data-cui-* / data-hui-* key. Per-input
 	// attributes belong in SwatchAttrs / TextAttrs.
 	ExtraAttrs html.Attrs
 

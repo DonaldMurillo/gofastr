@@ -88,7 +88,7 @@ func Breadcrumbs(cfg BreadcrumbsConfig, crumbs ...Crumb) render.HTML {
 var breadcrumbsStyle = registry.RegisterStyle("ui-breadcrumbs", breadcrumbsCSS)
 
 func breadcrumbsCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__list {
+	return `[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__list {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-sm, 4px);
@@ -98,30 +98,30 @@ func breadcrumbsCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #6B7280);
 }
-[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__item {
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
   color: var(--color-text-muted, #6B7280);
   opacity: 0.5;
 }
-[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link {
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link {
   color: var(--color-text-muted, #6B7280);
   text-decoration: none;
 }
-[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link:hover {
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link:hover {
   color: var(--color-primary, #4F46E5);
   text-decoration: underline;
 }
-[data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {
   color: var(--color-text, #1F2937);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
 }
 @media (max-width: 47.99rem) {
-  [data-fui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:not(:nth-last-child(-n+2)) { display: none; }
-  [data-fui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2) .fui-breadcrumbs__sep { display: none; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:not(:nth-last-child(-n+2)) { display: none; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2) .fui-breadcrumbs__sep { display: none; }
 }`
 }

@@ -29,8 +29,8 @@ import (
 //   - preset: a *widget.Builder the host mounts once at startup.
 //
 // Selecting an option does whatever the option's HTML wires it to:
-// typically the server emits `<li role="option" data-fui-rpc="..."
-// data-fui-push-state="...">…</li>` so picking it navigates or fires
+// typically the server emits `<li role="option" data-cui-rpc="..."
+// data-cui-push-state="...">…</li>` so picking it navigates or fires
 // an action. The combobox runtime picks the option's data-value or
 // textContent as the input replacement.
 
@@ -87,14 +87,14 @@ type CommandPaletteConfig struct {
 	// analytics markers, ARIA overrides) onto the palette's own root
 	// (the ui-cmd-palette panel inside the modal; the modal chrome is
 	// widget machinery). Keys the component owns are dropped:
-	// class, id, and data-fui-*.
+	// class, id, and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
 // PaletteCommand is one entry in a static command-palette list.
 type PaletteCommand struct {
 	Label string // visible text
-	Href  string // route to navigate to on pick (data-fui-push-state)
+	Href  string // route to navigate to on pick (data-cui-push-state)
 	Meta  string // optional muted secondary text (e.g. the route path)
 }
 
@@ -151,7 +151,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	trigger := render.Tag("a", map[string]string{
 		"href":                    cfg.FallbackHref,
 		"class":                   "fui-visually-hidden",
-		"data-fui-open":           name,
+		"data-cui-open":           name,
 		"data-hui-shortcut-click": shortcut,
 		"aria-label":              triggerLabel,
 	}, render.Text(triggerLabel))
@@ -256,7 +256,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		headless.PartComboboxStatus:  "fui-visually-hidden",
 	})
 
-	// Visible close control (#325). data-fui-action="close" is the
+	// Visible close control (#325). data-cui-action="close" is the
 	// framework's declarative widget-dismiss hook (same wiring as the
 	// section-menu drawer): the widget runtime's own click handler
 	// dismisses the palette and restores focus to the trigger, so the
@@ -269,7 +269,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	closeBtn := render.Tag("button", map[string]string{
 		"class":           "fui-cmd-palette__close",
 		"type":            "button",
-		"data-fui-action": "close",
+		"data-cui-action": "close",
 		"aria-label":      closeLabel,
 	}, Icon("close", IconConfig{Class: "fui-cmd-palette__close-icon"}))
 
@@ -291,7 +291,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	)
 
 	return commandPaletteStyle.WrapHTML(html.Div(html.DivConfig{
-		Class:      "fui-cmd-palette fui-slot-bare",
+		Class:      "fui-cmd-palette cui-slot-bare",
 		ExtraAttrs: s.extraAttrs,
 	}, srTitle, combo, footer))
 }
@@ -308,7 +308,7 @@ var _ component.Component = (*commandPaletteSlot)(nil)
 var commandPaletteStyle = registry.RegisterStyle("ui-cmd-palette", commandPaletteCSS)
 
 func commandPaletteCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-cmd-palette"] {
+	return `[data-cui-comp="ui-cmd-palette"] {
   display: flex;
   flex-direction: column;
   inline-size: min(36rem, 92vw);
@@ -324,7 +324,7 @@ func commandPaletteCSS(_ style.Theme) string {
   box-shadow: 0 16px 48px rgba(0,0,0,0.18);
   overflow: hidden;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__combobox {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__combobox {
   max-inline-size: none;
   /* Flex child of the palette column AND flex container for the form +
      listbox. min-block-size: 0 lets it shrink below its content so the
@@ -333,7 +333,7 @@ func commandPaletteCSS(_ style.Theme) string {
   flex-direction: column;
   min-block-size: 0;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__field {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__field {
   /* The combobox root between the no-script form and the listbox: a
      flex column that may shrink, or the listbox grows to its content
      and the dialog clips the tail on a phone, where the listbox has no
@@ -343,7 +343,7 @@ func commandPaletteCSS(_ style.Theme) string {
   flex: 1 1 auto;
   min-block-size: 0;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__combobox:has(> .fui-cmd-palette__input) {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__combobox:has(> .fui-cmd-palette__input) {
   /* The carrier row (the div directly wrapping the input — the
      no-script FORM also wears the combobox class, so :has() picks
      the row): the search field's padding and seam. */
@@ -351,7 +351,7 @@ func commandPaletteCSS(_ style.Theme) string {
   border-bottom: 1px solid var(--color-border, #d0d0d8);
   flex: 0 0 auto;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__input {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__input {
   font-size: var(--text-base, 1rem);
   border: none;
   background: transparent;
@@ -360,11 +360,11 @@ func commandPaletteCSS(_ style.Theme) string {
   inline-size: 100%;
   box-sizing: border-box;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__input:focus-visible {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__input:focus-visible {
   box-shadow: none;
   outline: none;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox {
   position: static;
   margin: 0;
   border: none;
@@ -380,7 +380,7 @@ func commandPaletteCSS(_ style.Theme) string {
   flex: 1 1 auto;
   overflow-y: auto;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__footer {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -390,7 +390,7 @@ func commandPaletteCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #f7f7f8);
   flex: 0 0 auto;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__close {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -407,26 +407,26 @@ func commandPaletteCSS(_ style.Theme) string {
   cursor: pointer;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__close:hover {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:hover {
   background: var(--color-surface-soft, #f4f4f5);
   color: var(--color-text, #18181b);
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__close:focus-visible {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__hints {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hints {
   display: inline-flex;
   gap: var(--spacing-md, 8px);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #6b7280);
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__hint {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hint {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
   font-family: var(--fonts-mono, ui-monospace, monospace);
   padding: 1px 6px;
   border: 1px solid var(--color-border, #d0d0d8);
@@ -441,8 +441,8 @@ func commandPaletteCSS(_ style.Theme) string {
      (the 100vw/100dvh panel spans the padding box edge to edge), and
      the listbox cap is dropped because the palette cap now governs —
      the list takes every remaining pixel and scrolls inside. */
-  [data-fui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
-  [data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox { max-block-size: none; }
+  [data-cui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
+  [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox { max-block-size: none; }
 }
 `
 }

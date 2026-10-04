@@ -26,7 +26,7 @@ func toastText(t *testing.T, ctx context.Context) (string, bool) {
 	t.Helper()
 	var out string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const el = document.querySelector('.fui-nav-toast');
+		const el = document.querySelector('.cui-nav-toast');
 		if (!el) return '';
 		return (el.classList.contains('is-visible') ? '1' : '0') + el.textContent;
 	})()`, &out)); err != nil {
@@ -52,7 +52,7 @@ func assertNoToast(t *testing.T, ctx context.Context, where string) {
 func labBadgeAttr(t *testing.T, ctx context.Context) (attr, css string) {
 	t.Helper()
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const el = document.querySelector('[data-fui-outlet="l:shell#aside"] [data-lab-badge]');
+		const el = document.querySelector('[data-cui-outlet="l:shell#aside"] [data-lab-badge]');
 		if (!el) return '|';
 		const cs = getComputedStyle(el, '::before');
 		return el.getAttribute('data-lab-badge') + '|' + (cs ? cs.content : '');
@@ -77,7 +77,7 @@ func assertNotFoundInShell(t *testing.T, ctx context.Context) {
 	if got := labRead(t, ctx, `#shell-header nav`); !strings.Contains(got, "Missing page") {
 		t.Errorf("shell header gone or missing the link; nav reads %q", got)
 	}
-	if got := labRead(t, ctx, `main[data-fui-layout-slot="l:shell"]`); !strings.Contains(got, "404: Page not found") {
+	if got := labRead(t, ctx, `main[data-cui-layout-slot="l:shell"]`); !strings.Contains(got, "404: Page not found") {
 		t.Errorf("main slot = %q, want the not-found body", got)
 	}
 	if got := labRead(t, ctx, asideSel); got != "ASIDE-HELP" {
@@ -133,7 +133,7 @@ func TestP14LiveNotFoundShowsInShell(t *testing.T) {
 	); err != nil {
 		t.Fatalf("back to items/2: %v", err)
 	}
-	if got := labRead(t, tctx, `main[data-fui-layout-slot="l:shell"]`); !strings.Contains(got, "SCREEN-DETAIL-2") {
+	if got := labRead(t, tctx, `main[data-cui-layout-slot="l:shell"]`); !strings.Contains(got, "SCREEN-DETAIL-2") {
 		t.Errorf("main slot after Back = %q, want the item page back", got)
 	}
 
@@ -177,7 +177,7 @@ func TestP14StaticServes404Page(t *testing.T) {
 	if !strings.Contains(string(body), "404: Page not found") {
 		t.Errorf("404.html body lacks the not-found page; got:\n%.400s", body)
 	}
-	if !strings.Contains(string(body), `data-fui-layout="shell"`) {
+	if !strings.Contains(string(body), `data-cui-layout="shell"`) {
 		t.Errorf("404.html lacks the root layout shell (the runtime needs its chain to swap at layer 0)")
 	}
 
@@ -211,7 +211,7 @@ func TestP14StaticServes404Page(t *testing.T) {
 	if got := labRead(t, tctx, `#shell-header nav`); !strings.Contains(got, "Missing page") {
 		t.Errorf("shell header gone; nav reads %q", got)
 	}
-	if got := labRead(t, tctx, `main[data-fui-layout-slot="l:shell"]`); !strings.Contains(got, "404: Page not found") {
+	if got := labRead(t, tctx, `main[data-cui-layout-slot="l:shell"]`); !strings.Contains(got, "404: Page not found") {
 		t.Errorf("main slot = %q, want the not-found body applied from the 404.html document", got)
 	} else if strings.Contains(got, "No route matched") {
 		// 404.html is rendered once at build time; any path it printed

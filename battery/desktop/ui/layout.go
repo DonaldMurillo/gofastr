@@ -13,7 +13,7 @@ import (
 )
 
 // LayoutName is the desktop layout's name. It lands in the wrapper's
-// class (layout-desktop) and its data-fui-layout attribute, so it is
+// class (layout-desktop) and its data-cui-layout attribute, so it is
 // part of the CSS contract, not a private string.
 const LayoutName = "desktop"
 
