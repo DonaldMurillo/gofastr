@@ -18,8 +18,9 @@ import (
 // word) or an imports path lands at the error's position. Whether an
 // unmatched error is unexplained is decided once every matcher has run
 // (see result): a hit on the error's line explains it when the error
-// names what the hit matched. An error with no position (a go.mod the
-// go tool refuses) still counts.
+// names what the hit matched, and so does a shapes symbol on that line
+// whose resolved shape the regex refused (explainedByShapeSite). An
+// error with no position (a go.mod the go tool refuses) still counts.
 func (e *engine) fallbackPackage(p *packages.Package) {
 	aliases := importAliases(p)
 	// go/types writes the erroring package's own names bare, as if its
@@ -77,11 +78,20 @@ func (e *engine) explainedByLine(h Hit) bool {
 }
 
 // hitNamesError reports whether the compile error msg names what hit
-// matched: the imports path of an import hit, or the uses or fields
-// symbol behind hit.Why.
+// matched: the imports path of an import hit, or the uses, shapes or
+// fields symbol behind hit.Why.
 func (e *engine) hitNamesError(n *upgrade.Note, hit Hit, msg string) bool {
 	if path, ok := strings.CutPrefix(hit.Why, "import "); ok {
 		return errNamesImport(msg, path)
+	}
+	for _, sm := range n.Find.Shapes {
+		tag := sm.Symbol.String() + " shape"
+		if hit.Why != tag && !strings.HasPrefix(hit.Why, tag+" ") {
+			continue
+		}
+		if e.errNamesHitSymbol(msg, sm.Symbol) {
+			return true
+		}
 	}
 	if rest, ok := strings.CutPrefix(hit.Why, "field "); ok {
 		for _, fm := range n.Find.Fields {
@@ -100,6 +110,28 @@ func (e *engine) hitNamesError(n *upgrade.Note, hit Hit, msg string) bool {
 		}
 	}
 	return false
+}
+
+// explainedByShapeSite explains a compile error on a line where a shapes
+// symbol resolved to a shape its regex did not match. Against a kit
+// already past the release that is how the migrated spelling looks, so
+// the typed walk withheld the hit; an error there that names the symbol
+// (or the struct literal its field sits in) means the app still spells
+// the old shape. The note gets the hit, carrying the error, the way a
+// uses symbol named by an error does.
+func (e *engine) explainedByShapeSite(h Hit) bool {
+	if h.File == "" {
+		return false
+	}
+	explained := false
+	for _, s := range e.shapeSites[lineKey{h.File, h.Line}] {
+		if !e.errNamesHitSymbol(h.Why, s.sym) {
+			continue
+		}
+		e.addGo(s.n, Hit{File: h.File, Line: h.Line, Col: s.col, Why: s.sym.String() + " shape", Err: h.Why})
+		explained = true
+	}
+	return explained
 }
 
 // errNamesHitSymbol is errNamesSymbol over one already-matched symbol,

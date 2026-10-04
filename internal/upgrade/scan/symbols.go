@@ -131,11 +131,14 @@ func buildDeclIndex(pkg *types.Package) map[types.Object]*types.TypeName {
 
 // usesPackage reports every identifier use whose object is a listed
 // symbol: calls, selectors, method values, composite-literal keys,
-// generic instantiations, test files included. Hits are keyed by position
-// so the final dedupe merges the same file's appearances across package
+// generic instantiations, test files included. A shapes entry runs the
+// same walk and adds the uses whose resolved type string matches, so a
+// symbol that survives a release with a new shape stops matching once
+// the type checker sees the new one. Hits are keyed by position so the
+// final dedupe merges the same file's appearances across package
 // variants.
 func (e *engine) usesPackage(p *packages.Package) {
-	if len(e.symIndex) == 0 {
+	if len(e.symIndex) == 0 && len(e.shapeIndex) == 0 {
 		return
 	}
 	info := p.TypesInfo
@@ -150,17 +153,41 @@ func (e *engine) usesPackage(p *packages.Package) {
 			continue
 		}
 		for _, sym := range e.objectSymbols(obj) {
-			for _, n := range e.symIndex[sym] {
-				pos := p.Fset.Position(id.Pos())
-				rel, ok := e.relToRoot(pos.Filename)
-				if !ok {
+			notes := e.symIndex[sym]
+			shapes := e.shapeIndex[sym]
+			if len(notes) == 0 && len(shapes) == 0 {
+				continue
+			}
+			pos := p.Fset.Position(id.Pos())
+			rel, ok := e.relToRoot(pos.Filename)
+			if !ok {
+				continue
+			}
+			for _, n := range notes {
+				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: sym.String()})
+			}
+			for _, w := range shapes {
+				ts := types.TypeString(obj.Type(), shapeTypeQual)
+				if !w.re.MatchString(ts) {
+					// The symbol resolved to another shape. Against a kit
+					// already past the release that is the migrated
+					// spelling, unless a compile error on this line says
+					// otherwise (explainedByShapeSite).
+					k := lineKey{rel, pos.Line}
+					e.shapeSites[k] = append(e.shapeSites[k], shapeSite{n: w.n, sym: sym, col: pos.Column})
 					continue
 				}
-				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: sym.String()})
+				e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
+					Why: sym.String() + " shape " + ts})
 			}
 		}
 	}
 }
+
+// shapeTypeQual prints a package by its name, the way a declaration
+// spells its own types: "func(name string) *app.Layout", with the
+// package the type came from named app, not its import path.
+func shapeTypeQual(p *types.Package) string { return p.Name() }
 
 // defsPackage reports app-declared methods that implement a listed
 // interface method: a uses symbol naming an interface's method matches
@@ -173,11 +200,22 @@ func (e *engine) defsPackage(p *packages.Package) {
 	}
 	var wants []ifaceWant
 	load := e.loadOf[p]
+	seen := map[upgrade.Symbol]bool{}
+	want := func(sym upgrade.Symbol) {
+		if seen[sym] {
+			return
+		}
+		seen[sym] = true
+		if w := e.interfaceWant(sym, load); w != nil {
+			wants = append(wants, *w)
+		}
+	}
 	for _, n := range e.notes {
 		for _, sym := range n.Find.Uses {
-			if w := e.interfaceWant(sym, load); w != nil {
-				wants = append(wants, *w)
-			}
+			want(sym)
+		}
+		for _, sm := range n.Find.Shapes {
+			want(sm.Symbol)
 		}
 	}
 	if len(wants) == 0 {
@@ -210,12 +248,23 @@ func (e *engine) defsPackage(p *packages.Package) {
 			for _, n := range e.symIndex[w.sym] {
 				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String()})
 			}
+			// A shapes entry reads the implementation's own signature: an
+			// app method still spelling the old shape is the hit, one
+			// already ported is not.
+			if sws := e.shapeIndex[w.sym]; len(sws) > 0 {
+				ts := types.TypeString(sig, shapeTypeQual)
+				for _, sw := range sws {
+					if sw.re.MatchString(ts) {
+						e.addGo(sw.n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String() + " shape " + ts})
+					}
+				}
+			}
 		}
 	}
 }
 
-// ifaceWant is a uses symbol whose declaring type is an interface, with
-// that interface resolved for types.Implements.
+// ifaceWant is a uses or shapes symbol whose declaring type is an
+// interface, with that interface resolved for types.Implements.
 type ifaceWant struct {
 	sym   upgrade.Symbol
 	iface *types.Interface

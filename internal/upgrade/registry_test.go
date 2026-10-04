@@ -35,6 +35,9 @@ releases:
             - gofastr/framework/app.Layout.WithHeader
             - gofastr/framework/ui.SiteHeader
             - database/sql.Open
+          shapes:
+            - symbol: gofastr/core-ui/app.NewLayout
+              type: '^func\(name string\) \*app\.Layout$'
           imports:
             - gofastr/core-ui/patterns/accordion
             - gofastr/core-ui/patterns/...
@@ -129,6 +132,16 @@ func TestParseFullDocument(t *testing.T) {
 		if find.Uses[i] != want {
 			t.Errorf("Uses[%d] = %+v, want %+v", i, find.Uses[i], want)
 		}
+	}
+	wantShape := ShapeMatch{
+		Symbol: Symbol{Pkg: ModulePath + "/core-ui/app", Name: "NewLayout"},
+		Type:   regexp.MustCompile(`^func\(name string\) \*app\.Layout$`),
+	}
+	if len(find.Shapes) != 1 {
+		t.Fatalf("Shapes = %+v, want 1", find.Shapes)
+	}
+	if s := find.Shapes[0]; s.Symbol != wantShape.Symbol || s.Type == nil || s.Type.String() != wantShape.Type.String() {
+		t.Errorf("Shapes[0] = %+v, want %+v", s, wantShape)
 	}
 	wantImports := []string{ModulePath + "/core-ui/patterns/accordion", ModulePath + "/core-ui/patterns/..."}
 	if strings.Join(find.Imports, "|") != strings.Join(wantImports, "|") {
@@ -231,13 +244,15 @@ func TestParseRefuses(t *testing.T) {
 		{"unknown gomod key", note("        find:\n          gomod:\n            bogus: 1\n"), "unknown key"},
 		{"unknown fields item key", note("        find:\n          fields:\n            - field: gofastr/framework/ui.C.F\n              bogus: 1\n"), "unknown key"},
 		{"unknown config item key", note("        find:\n          config:\n            - key: a\n              bogus: 1\n"), "unknown key"},
-		{"unknown text item key", note("        find:\n          text:\n            - glob: '**/*.js'\n              bogus: 1\n"), "unknown key"},
+		{"unknown shapes item key", note("        find:\n          shapes:\n            - symbol: gofastr/core-ui/app.NewLayout\n              type: '^x$'\n              bogus: 1\n"), "unknown key"},
 		{"unknown marker_sinks key", "through: v0.86.0\nmarker_sinks:\n  bogus: []\nreleases: []\n", "unknown key"},
 		{"unknown calls item key", "through: v0.86.0\nmarker_sinks:\n  calls:\n    - func: gofastr/core-ui/registry.RegisterStyle\n      bogus: 1\nreleases: []\n", "unknown key"},
 
 		{"strings match regex", note("        find:\n          strings:\n            match: '[unclosed'\n"), "does not compile"},
 		{"field value regex", note("        find:\n          fields:\n            - field: gofastr/framework/ui.C.F\n              value: '[unclosed'\n"), "does not compile"},
-		{"text match regex", note("        find:\n          text:\n            - glob: '**/*.js'\n              match: '[unclosed'\n"), "does not compile"},
+		{"shapes entry missing type", note("        find:\n          shapes:\n            - symbol: gofastr/core-ui/app.NewLayout\n"), "missing type"},
+		{"shapes entry missing symbol", note("        find:\n          shapes:\n            - type: '^x$'\n"), "missing symbol"},
+		{"shapes type regex", note("        find:\n          shapes:\n            - symbol: gofastr/core-ui/app.NewLayout\n              type: '[unclosed'\n"), "does not compile"},
 		{"config value regex", note("        find:\n          config:\n            - key: a\n              value: '[unclosed'\n"), "does not compile"},
 
 		{"symbol no name", note("        find:\n          uses: [gofastr/framework/ui.]\n"), "malformed symbol"},
