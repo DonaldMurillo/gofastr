@@ -8,6 +8,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`gofastr docs serve`**: browse the docs website offline. The first
+  run downloads the static export of the docs site for the binary's
+  release, verifies its SHA-256, and caches it in the user cache
+  directory; the CLI serves it from a GoFastr app on `127.0.0.1:8083`.
+  `--full` builds and runs the live site with `go install` so the
+  server-backed demos work too; `--dir` serves a local export;
+  `--release`, `--refresh`, `--port` and `--open` do what they say.
+  Releases now attach `gofastr-site-<tag>.tar.gz` and its `.sha256`;
+  releases before this one carry no archive, so use `--full` with them
+  (v0.82.0 and later).
 - **`core/static.Config.NotFoundFile`**: answer a miss with a file from
   the served `FS` (a static export's `404.html`) under status 404. A
   conditional request cannot turn it into a 304, and SPA mode ignores it.
