@@ -22,7 +22,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func themeToggleTestPage(t *testing.T, body string) *httptest.Server {
+func themeToggleTestPage(t *testing.T, body string, extra ...func(mux *http.ServeMux)) *httptest.Server {
 	t.Helper()
 	js, err := runtime.RuntimeJS()
 	if err != nil {
@@ -46,6 +46,10 @@ func themeToggleTestPage(t *testing.T, body string) *httptest.Server {
 		}
 		http.NotFound(w, r)
 	})
+	// An endpoint a test's island posts to.
+	for _, add := range extra {
+		add(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html><head>`+

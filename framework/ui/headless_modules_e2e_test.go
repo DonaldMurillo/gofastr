@@ -7,11 +7,16 @@ package ui_test
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/cdproto/emulation"
@@ -22,10 +27,21 @@ import (
 // pre runs before the navigation (an emulated media feature, say).
 func moduleTestCtx(t *testing.T, body string, pre ...chromedp.Action) context.Context {
 	t.Helper()
+	return moduleTestCtxMux(t, body, nil, pre...)
+}
+
+// moduleTestCtxMux is moduleTestCtx with extra handlers on the
+// server (the endpoint an island posts to).
+func moduleTestCtxMux(t *testing.T, body string, extra func(mux *http.ServeMux), pre ...chromedp.Action) context.Context {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	srv := themeToggleTestPage(t, body)
+	var adds []func(mux *http.ServeMux)
+	if extra != nil {
+		adds = append(adds, extra)
+	}
+	srv := themeToggleTestPage(t, body, adds...)
 	ctx := chromedptest.Context(t)
 	actions := append(append([]chromedp.Action{}, pre...),
 		chromedp.Navigate(srv.URL),
@@ -174,6 +190,45 @@ func TestThemeCycleFirstClickChangesScheme(t *testing.T) {
 			t.Fatalf("click %d left the page at %q (states after each click: %v)", i+1, s, seen)
 		}
 		prev = s
+	}
+}
+
+// An island combobox says how many results arrived once the RPC's
+// rows land, and says there are none when the swap is empty: the
+// "Loading…" the input event wrote does not stay.
+func TestIslandComboboxAnnouncesResults(t *testing.T) {
+	body := string(ui.Combobox(ui.ComboboxConfig{ID: "q", Name: "q", Label: "Search",
+		Island: &headless.Island{Endpoint: "/__test/search", Signal: "search"}, NoScriptAction: "/search", DebounceMs: 50}))
+	ctx := moduleTestCtxMux(t, body, func(mux *http.ServeMux) {
+		mux.HandleFunc("/__test/search", func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if strings.Contains(string(b), "zz") {
+				return
+			}
+			fmt.Fprint(w, `<li role="option" id="q-o1">Alpha</li><li role="option" id="q-o2">Alps</li>`)
+		})
+	})
+	if !pollJS(ctx, moduleLoaded("headless-combobox")) {
+		t.Fatal("the combobox marker never loaded headless-combobox")
+	}
+	const status = `document.querySelector('[data-hui-combobox-status]').textContent`
+	want := evalString(ctx, `document.getElementById('q-listbox').getAttribute('data-hui-combobox-count').replace('{n}','2')`)
+	if err := chromedp.Run(ctx, chromedp.SendKeys(`#q`, "al", chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.querySelectorAll('#q-listbox [role="option"]').length === 2`) {
+		t.Fatal("the RPC rows never landed in the listbox")
+	}
+	if !pollJS(ctx, status+` === '`+want+`'`) {
+		t.Fatalf("after two rows landed the status reads %q, want %q", evalString(ctx, status), want)
+	}
+	none := evalString(ctx, `document.querySelector('[data-hui-combobox-status]').getAttribute('data-hui-combobox-no-results')`)
+	if err := chromedp.Run(ctx, chromedp.SendKeys(`#q`, "zz", chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, status+` === '`+none+`'`) {
+		t.Fatalf("after an empty swap the status reads %q, want %q", evalString(ctx, status), none)
 	}
 }
 
