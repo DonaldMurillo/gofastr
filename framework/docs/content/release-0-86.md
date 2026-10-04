@@ -65,6 +65,11 @@ An order that works for most apps:
 5. Run the tests. A config the kit now refuses panics at render, and in
    a test a render panic fails the request, so the test run lists them.
 
+The docpage copy keeps the old narrow mode: a page that leaves `Nav`
+and `Toc` unset (the `ui.DocLayout(ui.DocLayoutConfig{}, body)` shape)
+renders one centred reading column at the prose measure, with both
+rail columns collapsed.
+
 ## Headless: structure split from styling
 
 `framework/headless` renders tags, ARIA roles, labelling relationships,

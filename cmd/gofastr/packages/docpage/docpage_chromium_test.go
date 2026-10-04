@@ -31,15 +31,20 @@ var front = page.BringToFront()
 // geometry is what the page JS reports, in CSS pixels.
 type geometry struct {
 	ViewW, ScrollW    float64
+	Scope             []float64
+	ScopePadLeft      float64 // the scope's resolved inline padding
 	Nav, Article, Toc []float64
+	NavDisplay        string // the computed display of the nav rail
 	TocDisplay        string // the computed display of the toc rail
 	Pager, PageNext   []float64
+	ProseMeasure      float64 // --size-prose-measure resolved in px
 }
 
 // The docs page's layout promises, drawn in Chrome: three columns at
-// lg and up, the contents rail collapsing when its region renders
-// empty and dropping below lg, one column with no sideways scroll on
-// a phone.
+// lg and up, a rail collapsing when its region renders empty or is
+// left unset (the contents rail dropping below lg too), no rails at
+// all drawing one centred column at the prose measure, and one column
+// with no sideways scroll on a phone.
 func TestDocPageLayoutPromises(t *testing.T) {
 	// article builds a body with sections a TOC can watch.
 	article := func(paras int) []render.HTML {
@@ -87,6 +92,21 @@ func TestDocPageLayoutPromises(t *testing.T) {
 		Body: render.Join(article(0)...),
 		Toc:  html.Div(html.DivConfig{}, render.HTML("")),
 	})
+	// plain: neither rail set, the old DocLayout narrow shape a blog
+	// post or a standalone page uses. An unset region renders the
+	// empty element itself (no child at all).
+	plain := shell(docpage.Config{Body: render.Join(article(2)...)})
+	// noNav: the left rail unset, the contents rail filled.
+	noNav := shell(docpage.Config{
+		Body: render.Join(article(2)...),
+		Toc:  tocRail,
+	})
+	// noToc: the left rail filled, the contents rail unset (the empty
+	// element, not the empty child the /short page uses).
+	noToc := shell(docpage.Config{
+		Nav:  navRail,
+		Body: render.Join(article(2)...),
+	})
 
 	site := app.NewApp("Docs")
 	// A theme set the way an app sets one; docpage's prose-measure
@@ -94,6 +114,9 @@ func TestDocPageLayoutPromises(t *testing.T) {
 	site.WithTheme(theme.Default().Extend(docpage.Tokens))
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(full)), nil)
 	site.RegisterScreen(app.NewScreen("/short", app.NewStaticComponent(short)), nil)
+	site.RegisterScreen(app.NewScreen("/plain", app.NewStaticComponent(plain)), nil)
+	site.RegisterScreen(app.NewScreen("/no-nav", app.NewStaticComponent(noNav)), nil)
+	site.RegisterScreen(app.NewScreen("/no-toc", app.NewStaticComponent(noToc)), nil)
 	host := uihost.New(site)
 	fw := framework.NewApp()
 	fw.Use(host.RouteMatchMiddleware())
@@ -107,10 +130,19 @@ func TestDocPageLayoutPromises(t *testing.T) {
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
 const d='[data-fui-scope="docpage"]';
+const root=document.querySelector(d);
+const nav=document.querySelector(d+' .nav');
 const toc=document.querySelector(d+' .toc');
+const probe=document.createElement('div');
+probe.style.cssText='position:absolute;inline-size:var(--size-prose-measure)';
+document.body.appendChild(probe);
+const prose=probe.getBoundingClientRect().width;
+probe.remove();
 return JSON.stringify({ViewW:innerWidth,ScrollW:document.documentElement.scrollWidth,
-Nav:r(d+' .nav'),Article:r(d+' .article'),Toc:r(d+' .toc'),TocDisplay:toc?getComputedStyle(toc).display:null,
-Pager:r(d+' .pager'),PageNext:r(d+' .page.next')})})()`
+Scope:r(d),ScopePadLeft:root?parseFloat(getComputedStyle(root).paddingLeft):null,
+Nav:r(d+' .nav'),NavDisplay:nav?getComputedStyle(nav).display:null,
+Article:r(d+' .article'),Toc:r(d+' .toc'),TocDisplay:toc?getComputedStyle(toc).display:null,
+Pager:r(d+' .pager'),PageNext:r(d+' .page.next'),ProseMeasure:prose})})()`
 	// at opens a fresh tab and measures the page at the given width.
 	at := func(width int64, path string) geometry {
 		t.Helper()
@@ -167,6 +199,66 @@ Pager:r(d+' .pager'),PageNext:r(d+' .page.next')})})()`
 		// than on the three-column page.
 		if grew := shortPage.Article[2] - fullPage.Article[2]; grew < 150 {
 			t.Errorf("the article should take the collapsed rail's column (grew only %vpx): %v vs %v", grew, shortPage.Article, fullPage.Article)
+		}
+	})
+
+	t.Run("no-rails-centred-column", func(t *testing.T) {
+		g := at(1280, "/plain")
+		if g.NavDisplay != "none" || g.TocDisplay != "none" {
+			t.Fatalf("unset rails should hide (nav display %q, toc display %q)", g.NavDisplay, g.TocDisplay)
+		}
+		if !shown(g.Article) {
+			t.Fatalf("the article should draw with no rails: %v", g.Article)
+		}
+		// The old DocLayout narrow mode: one column at the prose
+		// measure, centred between equal gaps.
+		left, right := g.Article[0], g.ViewW-(g.Article[0]+g.Article[2])
+		if d := math.Abs(left - right); d > 2 {
+			t.Errorf("the article should sit centred between equal gaps (left %v, right %v)", left, right)
+		}
+		if g.Article[2] > g.ProseMeasure+1 {
+			t.Errorf("the article should stop at the prose measure (%vpx), width %v", g.ProseMeasure, g.Article[2])
+		}
+	})
+
+	t.Run("no-rails-one-column-on-phone", func(t *testing.T) {
+		g := at(375, "/plain")
+		if g.ScrollW > g.ViewW+1 {
+			t.Errorf("the page scrolls sideways at 375: scrollWidth %v", g.ScrollW)
+		}
+		if !shown(g.Article) || g.NavDisplay != "none" {
+			t.Errorf("the article alone should draw at 375: article %v, nav display %q", g.Article, g.NavDisplay)
+		}
+	})
+
+	t.Run("unset-nav-drops-left-rail", func(t *testing.T) {
+		g := at(1280, "/no-nav")
+		if g.NavDisplay != "none" {
+			t.Fatalf("an unset nav should hide the rail (display %q)", g.NavDisplay)
+		}
+		if !shown(g.Article) || !shown(g.Toc) || !(g.Article[0] < g.Toc[0]) {
+			t.Fatalf("the article and the filled toc should flank: article %v, toc %v", g.Article, g.Toc)
+		}
+		// The article starts at the page's own left padding, not one
+		// rail in.
+		if !near(g.Article[0], g.Scope[0]+g.ScopePadLeft) {
+			t.Errorf("the article should start at the page padding: article x %v, scope %v + %v", g.Article[0], g.Scope[0], g.ScopePadLeft)
+		}
+	})
+
+	t.Run("unset-toc-collapses-too", func(t *testing.T) {
+		fullPage := at(1280, "/")
+		g := at(1280, "/no-toc")
+		if g.TocDisplay != "none" {
+			t.Fatalf("an unset toc should hide the rail (display %q)", g.TocDisplay)
+		}
+		if !shown(g.Nav) || !shown(g.Article) || !(g.Nav[0] < g.Article[0]) {
+			t.Fatalf("the nav should stay beside the article: nav %v, article %v", g.Nav, g.Article)
+		}
+		// The unset rail frees its column exactly like the empty
+		// child on /short does.
+		if grew := g.Article[2] - fullPage.Article[2]; grew < 150 {
+			t.Errorf("the article should take the collapsed rail's column (grew only %vpx): %v vs %v", grew, g.Article, fullPage.Article)
 		}
 	})
 

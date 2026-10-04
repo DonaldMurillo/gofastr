@@ -7,10 +7,12 @@
 // header and footer use.
 //
 // The regions are whatever the app passes in, so a layout can hand
-// it outlets and a route area: the TOC column collapses when its
-// region renders empty (an article with no headings), and below the
-// lg breakpoint it goes. Below md the page is one column and the nav
-// is the Sidebar's own phone drawer.
+// it outlets and a route area. A rail left unset, or holding an
+// empty element (an outlet with no fill), collapses and its column
+// goes; no rails at all is the narrow reading shape, one centred
+// column at the prose measure. Below lg the contents rail goes.
+// Below md the page is one column and the nav is the Sidebar's own
+// phone drawer.
 //
 // This package is the app's own code: edit it freely.
 package docpage
@@ -22,7 +24,8 @@ import (
 
 // Config holds the page's regions.
 type Config struct {
-	// Nav is the left rail: the article list.
+	// Nav is the left rail: the article list. Left unset, or holding
+	// an empty element, the rail collapses and its column goes.
 	Nav render.HTML
 	// Crumbs sits above the article body.
 	Crumbs render.HTML
@@ -30,8 +33,9 @@ type Config struct {
 	Body render.HTML
 	// Pager sits under the article (see Pager).
 	Pager render.HTML
-	// Toc is the right rail. When it renders an empty element (an
-	// outlet with no fill) the column collapses.
+	// Toc is the right rail: the table of contents. Left unset, or
+	// holding an empty element (an outlet with no fill), the rail
+	// collapses and its column goes.
 	Toc render.HTML
 }
 

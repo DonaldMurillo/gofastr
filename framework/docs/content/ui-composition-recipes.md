@@ -313,7 +313,10 @@ server-side on every navigation). Crumbs, toc and pager are outlets each
 article fills; the crumbs are `ui.Breadcrumbs`. An article without
 headings declines the TOC fill (`ErrNoFill`), and the sheet collapses
 the empty column with `:has(> :empty)`, including after client
-navigation.
+navigation. A rail left unset collapses the same way, because the
+unset region renders an empty element itself; a page with neither
+rail is one centred column at the prose measure, the shape a blog
+post or a standalone page uses.
 
 From `examples/acme-site` (`main.go`, `buildSite` + `buildHelpDocs`):
 

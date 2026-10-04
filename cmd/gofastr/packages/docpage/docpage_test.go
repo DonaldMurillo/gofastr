@@ -64,6 +64,18 @@ func TestRenderTocRegionCollapse(t *testing.T) {
 	}
 }
 
+func TestRenderNavRegionEmpty(t *testing.T) {
+	// An unset Nav renders an empty .nav element, no child at all:
+	// the shape the sheet's .nav:empty collapse keys on.
+	cfg := full()
+	cfg.Nav = render.HTML("")
+	got := string(docpage.Render(cfg))
+	want := `<div class="nav"></div>`
+	if !strings.Contains(got, want) {
+		t.Errorf("an unset nav should render the empty element %q:\n%s", want, got)
+	}
+}
+
 func TestPager(t *testing.T) {
 	both := string(docpage.Pager(docpage.PagerConfig{
 		PrevHref: "/help/a", PrevLabel: "Setup",
