@@ -213,11 +213,10 @@ func (t Theme) tokenCSS() string {
 // all-or-nothing: a partial map such as {"density": "compact"} (what
 // the scaffold's "declare Components only to deviate" invites) once
 // replaced the whole floor and left every button and field variable
-// undeclared. The floor is deliberately ROOT-only:
-// scope blocks (ThemeOverrideCSS) emit a theme's own options or
-// nothing, because a scoped theme with no options inherits its
-// parent's variables — that is the nesting contract. With no compiler
-// registered the block is "" as before.
+// undeclared. Scope blocks (ThemeOverrideCSS) compile the same merge,
+// so every boundary re-declares the palette-referencing variables
+// against its own tokens. With no compiler registered the block is ""
+// as before.
 //
 // The floor does not change a theme's identity: ThemeHash fingerprints
 // the flattened options directly, so an optionless theme still hashes

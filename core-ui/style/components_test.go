@@ -78,11 +78,28 @@ func TestComponentOptionsRootEmission(t *testing.T) {
 	if css := DefaultTheme().CSSCustomProperties(); !strings.Contains(css, "--fui-test-density: compact;") {
 		t.Error("empty Components did not emit the registered default set at :root:\n" + css)
 	}
-	// The floor does not leak into scope blocks: an optionless scoped
-	// theme inherits its parent's variables (the nesting contract).
+	// Scope blocks carry the floor too. Option values reference
+	// palette tokens and a var() resolves where it is declared, so an
+	// optionless scope that emitted nothing would inherit option values
+	// already resolved against the ROOT palette: examples/meridian's
+	// ink band drew an indigo primary button inside its violet scope.
+	// The price is that a scope's unset keys reset to the defaults
+	// rather than inherit an enclosing scope's values; theme.Default
+	// already declares the full set at every boundary it builds.
 	stageTestCompiler(t, echoCompiler)
-	if css := ThemeOverrideCSS("floor", Theme{}); strings.Contains(css, "--fui-test") {
-		t.Error("the default set leaked into a scope block:\n" + css)
+	scoped := ThemeOverrideCSS("floor", Theme{})
+	for _, want := range []string{"--fui-test-density: compact;", "--fui-test-button-treatment: outline;"} {
+		if !strings.Contains(scoped, want) {
+			t.Errorf("optionless scope block lacks the default %s:\n%s", want, scoped)
+		}
+	}
+	stageTestCompiler(t, echoCompiler)
+	scoped = ThemeOverrideCSS("partial", Theme{Components: map[string]string{"density": "comfy"}})
+	if !strings.Contains(scoped, "--fui-test-density: comfy;") || !strings.Contains(scoped, "--fui-test-button-treatment: outline;") {
+		t.Errorf("partial scope block is not own-over-defaults:\n%s", scoped)
+	}
+	if strings.Contains(scoped, "--fui-test-density: compact;") {
+		t.Errorf("the default density overrode the scope's own:\n%s", scoped)
 	}
 	// A theme with options of its own merges them over the defaults
 	// key by key: its own value wins where it sets one, and the floor

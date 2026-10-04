@@ -99,8 +99,9 @@ type Declaration struct {
 // componentCompiler is the process-wide registration state of the
 // component-options compiler. One compiler per process, registered from
 // a package init with its complete default option set, read (and frozen)
-// at the first theme-CSS emission. The defaults are the :root floor a
-// theme's own options merge over (see compiledOptionsCSS).
+// at the first theme-CSS emission. The defaults are the floor a theme's
+// own options merge over, at :root and in every scope block (see
+// compiledOptionsCSS and ThemeOverrideCSS).
 var componentCompiler struct {
 	mu       sync.Mutex
 	fn       func(components map[string]string) []Declaration
@@ -118,14 +119,15 @@ var componentCompiler struct {
 // which puts them in the app.css identity the host's theme variants
 // hash.
 //
-// defaults is the floor: the root emitter compiles it when a theme
-// carries no Components of its own, so a bare style.DefaultTheme, the
-// `gofastr theme init` scaffold and a host with no App.Theme still ship
-// every --fui-* variable the component stylesheets consume — without
-// the floor those rules resolve to nothing and a primary button
-// renders as an unstyled text label. Scope blocks never take the floor:
-// a scoped theme with no options inherits its parent's variables, which
-// is the nesting contract. defaults is validated with the same grammar
+// defaults is the floor: both emitters compile a theme's own Components
+// merged over it, key by key, so a bare style.DefaultTheme, the
+// `gofastr theme init` scaffold, a host with no App.Theme and a theme
+// with a partial map still ship every --fui-* variable the component
+// stylesheets consume — without the floor those rules resolve to
+// nothing and a primary button renders as an unstyled text label.
+// Scope blocks take the floor too: the variables reference palette
+// tokens, and an inherited declaration arrives already resolved
+// against the parent's palette. defaults is validated with the same grammar
 // (and the same compiler-vocabulary run) as a theme's own options, at
 // registration, because it reaches CSS the moment any optionless theme
 // is emitted.

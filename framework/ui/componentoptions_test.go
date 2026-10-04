@@ -224,12 +224,70 @@ func TestPartialRootThemeKeepsDefaultFloor(t *testing.T) {
 	}
 }
 
-// A scoped theme with no options emits no option variables and inherits
-// its parent's — the nesting contract. The floor is a :root-only
-// guarantee; leaking it into scope blocks would block inheritance.
-func TestOptionlessScopeBlockEmitsNoOptions(t *testing.T) {
-	if css := style.ThemeOverrideCSS("probe", style.Theme{}); strings.Contains(css, "--fui-") {
-		t.Errorf("an optionless scope block emitted option variables:\n%s", css)
+// A scoped theme with no options declares the complete default set,
+// the same floor :root gets. This replaced an earlier contract in which
+// an optionless scope emitted nothing and inherited its parent's
+// variables: those variables arrive already resolved against the
+// parent's palette (var() computes where it is declared), so a scope
+// with its own palette drew the parent's colours. Unset keys now reset
+// to the framework defaults at every boundary instead of inheriting an
+// enclosing scope's choice, which is what theme.Default themes already
+// did.
+func TestOptionlessScopeDeclaresDefaults(t *testing.T) {
+	css := style.ThemeOverrideCSS("probe", style.Theme{})
+	for _, want := range []string{
+		"--fui-density-control-h: var(--spacing-touch-target);",
+		"--fui-button-radius: var(--radii-md);",
+		"--fui-button-primary-bg: var(--color-primary);",
+		"--fui-field-radius: var(--radii-md);",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("optionless scope block missing default %s:\n%s", want, css)
+		}
+	}
+}
+
+// paletteOnlyTheme is examples/meridian's ink band in miniature: a
+// scoped override built from style.DefaultTheme with its own primary
+// pair and a dark palette, and no Components of its own.
+func paletteOnlyTheme() style.Theme {
+	th := style.DefaultTheme()
+	th.Colors.Primary.Value = "#8B80F2"
+	th.Colors.PrimaryFg.Value = "#15141B"
+	th.DarkColors = map[string]string{"primary": "#8B80F2", "primary-fg": "#15141B"}
+	return th
+}
+
+// A palette-only scope must still re-declare the palette-referencing
+// option variables. --fui-button-primary-bg: var(--color-primary)
+// resolves where it is declared, so with the declaration only at :root
+// a primary button inside ui.Themed(inkBand, …) drew the ROOT's primary
+// (indigo, white ink) instead of the scope's.
+func TestPaletteOnlyScopeRebindsOptions(t *testing.T) {
+	css := style.ThemeOverrideCSS("h", paletteOnlyTheme())
+	for _, probe := range []struct{ block, opener string }{
+		{"light", ".cui-theme-h {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .cui-theme-h {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .cui-theme-h {\n"},
+	} {
+		i := strings.Index(css, probe.opener)
+		if i < 0 {
+			t.Fatalf("%s scope block missing its opener %q in:\n%s", probe.block, probe.opener, css)
+		}
+		end := strings.Index(css[i:], "\n}")
+		if end < 0 {
+			t.Fatalf("%s scope block missing its closer in:\n%s", probe.block, css)
+		}
+		body := css[i : i+end]
+		for _, want := range []string{
+			"--fui-button-primary-bg: var(--color-primary);",
+			"--fui-button-primary-fg: var(--color-primary-fg);",
+			"--fui-button-danger-bg: var(--color-danger);",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)
+			}
+		}
 	}
 }
 
