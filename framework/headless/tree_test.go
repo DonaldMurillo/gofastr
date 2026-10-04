@@ -72,12 +72,12 @@ func TestTreeLazyBranchKeepsThePatternContract(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`aria-expanded="false"`,
-		`data-fui-rpc="/tree/vendor"`,
-		`data-fui-rpc-method="POST"`,
-		`data-fui-rpc-signal="tree-lz-vendor"`,
+		`data-cui-rpc="/tree/vendor"`,
+		`data-cui-rpc-method="POST"`,
+		`data-cui-rpc-signal="tree-lz-vendor"`,
 		`data-hui-tree-toggle=""`,
-		`data-fui-signal="tree-lz-vendor"`,
-		`data-fui-signal-mode="html"`,
+		`data-cui-signal="tree-lz-vendor"`,
+		`data-cui-signal-mode="html"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("lazy tree missing %q:\n%s", want, h)
@@ -87,7 +87,7 @@ func TestTreeLazyBranchKeepsThePatternContract(t *testing.T) {
 	h = renderTreeView(TreeProps{ID: "lz2", Label: "Lazy", LazySignalPrefix: "x", Nodes: []TreeNode{
 		{ID: "n", Label: "n", LazyPath: "/x", Children: []TreeNode{{ID: "c", Label: "c"}}},
 	}})
-	if strings.Contains(h, "data-fui-rpc") || strings.Contains(h, "data-fui-signal=") {
+	if strings.Contains(h, "data-cui-rpc") || strings.Contains(h, "data-cui-signal=") {
 		t.Errorf("a node with Children should ignore LazyPath:\n%s", h)
 	}
 	// The children are real markup (collapsed by default, like any

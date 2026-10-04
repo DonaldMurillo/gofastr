@@ -9,7 +9,7 @@ import (
 
 // A plain preset.Modal must paint a visible panel behind its slot
 // content: non-transparent surface background, padding, and rounded
-// corners. The chrome groups all slots inside one .fui-panel and
+// corners. The chrome groups all slots inside one .cui-panel and
 // paints that (so multi-slot modals read as ONE dialog). Regression
 // guard for the invisible-modal defect where slot content floated
 // bare on the dimmed backdrop.
@@ -24,19 +24,19 @@ func TestE2E_ModalSlotPaintsSurface(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/modal"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-modal"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
 		// Lazy-fetched widget needs time for the chrome request + mount.
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-            const s = document.querySelector('[data-fui-widget="site-demo-modal"] .fui-panel');
+            const s = document.querySelector('[data-cui-widget="site-demo-modal"] .cui-panel');
             return s ? getComputedStyle(s).backgroundColor : '';
         })()`, &bg),
 		chromedp.Evaluate(`(() => {
-            const s = document.querySelector('[data-fui-widget="site-demo-modal"] .fui-panel');
+            const s = document.querySelector('[data-cui-widget="site-demo-modal"] .cui-panel');
             return s ? getComputedStyle(s).paddingTop : '';
         })()`, &padTop),
 		chromedp.Evaluate(`(() => {
-            const s = document.querySelector('[data-fui-widget="site-demo-modal"] .fui-panel');
+            const s = document.querySelector('[data-cui-widget="site-demo-modal"] .cui-panel');
             return s ? getComputedStyle(s).borderTopLeftRadius : '';
         })()`, &radius),
 	); err != nil {
@@ -71,10 +71,10 @@ func TestE2E_SheetPaintsSurface(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/bottomsheet"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-bottomsheet"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-bottomsheet"]').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-            const w = document.querySelector('[data-fui-widget="site-demo-bottomsheet"]');
+            const w = document.querySelector('[data-cui-widget="site-demo-bottomsheet"]');
             return w ? getComputedStyle(w).backgroundColor : '';
         })()`, &bg),
 	); err != nil {
@@ -89,7 +89,7 @@ func TestE2E_SheetPaintsSurface(t *testing.T) {
 }
 
 // The command palette is excluded from the default panel surface, it
-// paints its own chrome, so the .fui-panel around it must stay
+// paints its own chrome, so the .cui-panel around it must stay
 // transparent (the :has() opt-out branch, exercised in real DOM rather
 // than by string-matching the selector).
 func TestE2E_PaletteSlotUnstyled(t *testing.T) {
@@ -103,14 +103,14 @@ func TestE2E_PaletteSlotUnstyled(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-command-palette"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-command-palette"]').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-            const p = document.querySelector('[data-fui-widget="site-command-palette"] .fui-panel');
+            const p = document.querySelector('[data-cui-widget="site-command-palette"] .cui-panel');
             return p ? getComputedStyle(p).backgroundColor : '';
         })()`, &panelBG),
 		chromedp.Evaluate(`(() => {
-            const c = document.querySelector('[data-fui-widget="site-command-palette"] [data-fui-comp="ui-cmd-palette"]');
+            const c = document.querySelector('[data-cui-widget="site-command-palette"] [data-cui-comp="ui-cmd-palette"]');
             return c ? getComputedStyle(c).backgroundColor : '';
         })()`, &paletteBG),
 	); err != nil {

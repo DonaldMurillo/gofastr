@@ -59,8 +59,8 @@ func TestMarkdownCompactClass(t *testing.T) {
 
 func TestMarkdownDataFuiComp(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{Source: "Hi"}))
-	if !strings.Contains(h, `data-fui-comp="ui-markdown"`) {
-		t.Errorf("Markdown should emit data-fui-comp marker:\n%s", h)
+	if !strings.Contains(h, `data-cui-comp="ui-markdown"`) {
+		t.Errorf("Markdown should emit data-cui-comp marker:\n%s", h)
 	}
 }
 

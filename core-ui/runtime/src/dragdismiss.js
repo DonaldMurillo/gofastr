@@ -1,19 +1,19 @@
 // GoFastr runtime module, DragDismiss
 //
 // Pointer-driven drag-to-close for widgets whose Definition opts in
-// via DragDismiss (data-fui-drag-dismiss="true" on the widget root,
-// data-fui-drag-handle="true" on the visible handle bar, e.g.
+// via DragDismiss (data-cui-drag-dismiss="true" on the widget root,
+// data-cui-drag-handle="true" on the visible handle bar, e.g.
 // preset.BottomSheet). Drag is only initiated from the handle so taps
 // inside the panel content (scrolling, form input) don't accidentally
 // dismiss the sheet.
 //
 // Thresholds: close on >80px downward distance OR >0.5px/ms downward
-// velocity. Snap back otherwise. data-fui-dragging is mirrored onto
+// velocity. Snap back otherwise. data-cui-dragging is mirrored onto
 // the widget root while the gesture is active (CSS suppresses entrance
 // animation and transitions so the live transform isn't fought).
 //
 // Loads on demand: core's module scanner watches
-// [data-fui-drag-dismiss="true"], present at boot for SSR-inlined
+// [data-cui-drag-dismiss="true"], present at boot for SSR-inlined
 // sheets, and caught by the MutationObserver scan when widget chrome
 // is appended to <body> on open. Listeners are document-level and
 // installed once (guarded), so no per-navigation rescan is needed.
@@ -29,11 +29,11 @@
     let active = null;
     document.addEventListener('pointerdown', (e) => {
       if (active) return;
-      const handle = e.target && e.target.closest && e.target.closest('[data-fui-drag-handle="true"]');
+      const handle = e.target && e.target.closest && e.target.closest('[data-cui-drag-handle="true"]');
       if (!handle) return;
-      const widget = handle.closest('[data-fui-drag-dismiss="true"]');
+      const widget = handle.closest('[data-cui-drag-dismiss="true"]');
       if (!widget) return;
-      const name = widget.getAttribute('data-fui-widget') || '';
+      const name = widget.getAttribute('data-cui-widget') || '';
       // Only primary pointer (left mouse / single touch).
       if (e.button !== undefined && e.button > 0) return;
       active = {
@@ -41,7 +41,7 @@
         startY: e.clientY, startTime: Date.now(),
         lastY: e.clientY, lastTime: Date.now(),
       };
-      widget.setAttribute('data-fui-dragging', 'true');
+      widget.setAttribute('data-cui-dragging', 'true');
       try { widget.setPointerCapture(e.pointerId); } catch (_) {}
     }, true);
     document.addEventListener('pointermove', (e) => {
@@ -55,7 +55,7 @@
       const w = active.widget;
       const name = active.name;
       try { w.releasePointerCapture(active.pointerId); } catch (_) {}
-      w.removeAttribute('data-fui-dragging');
+      w.removeAttribute('data-cui-dragging');
       if (close && name) {
         if (typeof NS.closeWidget === 'function') {
           try { NS.closeWidget(name); } catch (_) {}

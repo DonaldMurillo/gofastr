@@ -69,7 +69,7 @@ visible (non-hidden) widget                               →  inline OPEN
 ```
 
 The widget chrome lands just before `</body>`. The runtime's `_mountByName`
-checks for an existing `[data-fui-widget="<name>"]` root before fetching
+checks for an existing `[data-cui-widget="<name>"]` root before fetching
 `chromePath`. If one exists, the runtime hydrates in-place. View-source
 shows the modal. Refreshing a deep-link paints instantly with no flicker.
 
@@ -118,7 +118,7 @@ def := preset.Dropdown("user-menu").
 widget.Mount(r, &def)   // registers metadata + the three /style.css /state /chrome routes
 
 // 3. trigger element in any screen.
-<button data-fui-open="user-menu">Open</button>
+<button data-cui-open="user-menu">Open</button>
 
 // 4. (optional) deep link
 preset.Modal("user-edit").
@@ -192,7 +192,7 @@ the bug you would have shipped without it. Always add both.
 and widget chrome.** (`core-ui/patterns/` is deleted; a composed
 pattern is a `framework/ui` component on its `framework/headless`
 primitive.)
-The runtime emits a `data-fui-comp="<name>"` marker on the wrapper,
+The runtime emits a `data-cui-comp="<name>"` marker on the wrapper,
 the SSR collector scans the rendered HTML, and CSS auto-loads: one
 `<link>` per used component per page, dedup'd globally.
 
@@ -207,7 +207,7 @@ func Foo(cfg FooConfig) render.HTML {
     return fooStyle.WrapHTML(headless.Foo(headless.FooProps{...}, classes))
 }
 
-const fooBaseCSS = `[data-fui-comp="ui-foo"] .fui-foo { ... }`
+const fooBaseCSS = `[data-cui-comp="ui-foo"] .fui-foo { ... }`
 ```
 
 **Do NOT export `func BaseCSS() string`** from a component package.
@@ -303,7 +303,7 @@ new RPC is still in flight.
 - ❌ Hand-rolling `<button class="ui-btn …">` (or `class="fui-button …"`)
   instead of `ui.Button(...)`. The framework class is `fui-button`,
   emitted only by the class map inside `ui.Button` / `ui.LinkButton`
-  (with the `data-fui-comp` marker so the CSS auto-loads; the marker
+  (with the `data-cui-comp` marker so the CSS auto-loads; the marker
   and the sheet registration keep the `ui-button` NAME). `ui-btn` IS
   NOT a thing; it renders unstyled native buttons. **Always compose
   with the typed framework components.**

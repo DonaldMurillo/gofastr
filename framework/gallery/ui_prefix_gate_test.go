@@ -15,7 +15,7 @@ import (
 )
 
 // The ui- prefix belongs to the registered sheet names and their
-// data-fui-comp markers, and to nothing else: every class framework/ui
+// data-cui-comp markers, and to nothing else: every class framework/ui
 // emits is fui-*. These two gates hold that line. The first renders the
 // whole catalog and refuses a ui-* class TOKEN anywhere in the output;
 // the second walks every sheet framework/ui registers and refuses a
@@ -51,7 +51,7 @@ func TestCatalogRendersNoUIClassTokens(t *testing.T) {
 
 // uiSelectorRe matches a .ui-* class selector in CSS. The dot is what
 // separates a selector from every other place the ui- prefix legitimately
-// appears: the [data-fui-comp="ui-…"] markers, the --ui-* custom
+// appears: the [data-cui-comp="ui-…"] markers, the --ui-* custom
 // properties, and @keyframes names.
 var uiSelectorRe = regexp.MustCompile(`\.ui-[A-Za-z0-9_-]+`)
 

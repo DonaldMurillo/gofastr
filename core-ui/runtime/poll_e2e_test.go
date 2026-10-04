@@ -69,7 +69,7 @@ func startPollServer(t *testing.T, pageHTML string, extra map[string]http.Handle
 }
 
 // TestPoll_SwapsRegion proves the load-bearing behavior: a
-// data-fui-poll element fetches data-fui-poll-src on the (clamped)
+// data-cui-poll element fetches data-cui-poll-src on the (clamped)
 // cadence and the response HTML replaces the element's innerHTML.
 // The clamp forces a ~5s minimum wait; the test tolerates that rather
 // than weaken the production rule.
@@ -77,7 +77,7 @@ func TestPoll_SwapsRegion(t *testing.T) {
 	var mu sync.Mutex
 	hits := 0
 	page := `<!doctype html><html><head></head><body>
-<div id="region" data-fui-poll="5s" data-fui-poll-src="/fresh">stale</div>
+<div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div>
 <script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
 		"/fresh": func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +127,7 @@ func TestPoll_ClampsIntervalToFiveSeconds(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.Poll(`window.__gofastr && window.__gofastr.loadModule`, nil,
 			chromedp.WithPollingInterval(100*time.Millisecond)),
-		// Explicitly load the poll module, no [data-fui-poll] marker
+		// Explicitly load the poll module, no [data-cui-poll] marker
 		// on this page means the scanner wouldn't trigger it. Same
 		// loadModule path _scanForModules takes internally.
 		chromedp.Evaluate(`window.__gofastr.loadModule('poll')`, nil),
@@ -167,7 +167,7 @@ func TestPoll_TeardownOnRemoval(t *testing.T) {
 	var mu sync.Mutex
 	hits := 0
 	page := `<!doctype html><html><head></head><body>
-<div id="host"><div id="region" data-fui-poll="5s" data-fui-poll-src="/fresh">stale</div></div>
+<div id="host"><div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div></div>
 <script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
 		"/fresh": func(w http.ResponseWriter, r *http.Request) {
@@ -215,12 +215,12 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 	var mu sync.Mutex
 	stateHits := 0
 	// 1s pollMs, the widget poll path doesn't apply the 5s clamp
-	// (only data-fui-poll does), so the test observes multiple ticks
+	// (only data-cui-poll does), so the test observes multiple ticks
 	// well within the chromedp timeout.
 	const pollMs = 1000
 
 	page := `<!doctype html><html><head></head><body>
-<div class="fui-widget fui-pos-bottom-right" data-fui-widget="poller" role="status"><span data-fui-signal="count">0</span></div>
+<div class="cui-widget cui-pos-bottom-right" data-cui-widget="poller" role="status"><span data-cui-signal="count">0</span></div>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`
 	widgetsJS, _ := Module("widgets")
@@ -256,7 +256,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 		},
 		"/core-ui/widget/poller/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="poller" role="status"><span data-fui-signal="count">0</span></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="poller" role="status"><span data-cui-signal="count">0</span></div>`)
 		},
 		"/core-ui/widget/poller/style.css": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
@@ -286,7 +286,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 			chromedp.WithPollingInterval(100*time.Millisecond)),
 		chromedp.Sleep(3*time.Second),
 		chromedp.Evaluate(`JSON.stringify({
-			val: document.querySelector('[data-fui-signal="count"]')?.textContent,
+			val: document.querySelector('[data-cui-signal="count"]')?.textContent,
 			sig: window.__gofastr?._signals?.["count"]?.value,
 			hasPollStop: typeof window.__gofastr?._widgets?.["poller"]?.pollStop === 'function',
 		})`, &snapshot),
@@ -341,7 +341,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 }
 
 // TestWidgetPollNow_RefreshesAfterRPC pins the mutation→authoritative-
-// refresh contract added in #112: after a successful data-fui-rpc, the
+// refresh contract added in #112: after a successful data-cui-rpc, the
 // widget re-fetches /state immediately (dispatchRPC → entry.pollNow)
 // instead of waiting out the cadence. The 60s pollMs makes the test
 // deterministic, no scheduled tick can fire within the test window, so
@@ -388,7 +388,7 @@ func TestWidgetPollNow_RefreshesAfterRPC(t *testing.T) {
 		},
 		"/core-ui/widget/bumper/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="bumper" role="status"><span data-fui-signal="count">0</span><button data-fui-rpc="/rpc/bump">Bump</button></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="bumper" role="status"><span data-cui-signal="count">0</span><button data-cui-rpc="/rpc/bump">Bump</button></div>`)
 		},
 		"/core-ui/widget/bumper/style.css": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
@@ -415,7 +415,7 @@ func TestWidgetPollNow_RefreshesAfterRPC(t *testing.T) {
 
 	var sig int
 	if err := chromedp.Run(ctx,
-		chromedp.Click(`[data-fui-rpc="/rpc/bump"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-rpc="/rpc/bump"]`, chromedp.ByQuery),
 		chromedp.Sleep(1200*time.Millisecond),
 		chromedp.Evaluate(`Number(window.__gofastr?._signals?.["count"]?.value ?? 0)`, &sig),
 	); err != nil {
@@ -470,7 +470,7 @@ func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
 		},
 		"/core-ui/widget/slow/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="slow" role="status"><span data-fui-signal="count">0</span></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="slow" role="status"><span data-cui-signal="count">0</span></div>`)
 		},
 		"/core-ui/widget/slow/style.css": func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type", "text/css") },
 	})
@@ -503,7 +503,7 @@ func TestPoll_StopsOnTerminalHeader(t *testing.T) {
 	var mu sync.Mutex
 	hits := 0
 	page := `<!doctype html><html><head></head><body>
-<div id="region" data-fui-poll="5s" data-fui-poll-src="/fresh">stale</div>
+<div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div>
 <script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
 		"/fresh": func(w http.ResponseWriter, r *http.Request) {
@@ -568,7 +568,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 	const terminalAt = 3
 
 	page := `<!doctype html><html><head></head><body>
-<div class="fui-widget fui-pos-bottom-right" data-fui-widget="jobpoll" role="status"><span data-fui-signal="status">0</span></div>
+<div class="cui-widget cui-pos-bottom-right" data-cui-widget="jobpoll" role="status"><span data-cui-signal="status">0</span></div>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`
 	widgetsJS, _ := Module("widgets")
@@ -610,7 +610,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 		},
 		"/core-ui/widget/jobpoll/chrome": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<div class="fui-widget fui-pos-bottom-right" data-fui-widget="jobpoll" role="status"><span data-fui-signal="status">0</span></div>`)
+			fmt.Fprint(w, `<div class="cui-widget cui-pos-bottom-right" data-cui-widget="jobpoll" role="status"><span data-cui-signal="status">0</span></div>`)
 		},
 		"/core-ui/widget/jobpoll/style.css": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
@@ -630,10 +630,10 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.Poll(`window.__gofastr?._widgets?.["jobpoll"]`, nil,
 			chromedp.WithPollingInterval(100*time.Millisecond)),
-		chromedp.Poll(`document.querySelector('[data-fui-signal="status"]')?.textContent === 'completed'`, nil,
+		chromedp.Poll(`document.querySelector('[data-cui-signal="status"]')?.textContent === 'completed'`, nil,
 			chromedp.WithPollingInterval(100*time.Millisecond)),
 		chromedp.Evaluate(`JSON.stringify({
-			val: document.querySelector('[data-fui-signal="status"]')?.textContent,
+			val: document.querySelector('[data-cui-signal="status"]')?.textContent,
 			hasPollStop: typeof window.__gofastr?._widgets?.["jobpoll"]?.pollStop === 'function',
 		})`, &snapshot),
 	); err != nil {

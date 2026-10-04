@@ -47,7 +47,7 @@ type SidebarItem struct {
 	// Open opens a group at SSR. Inert on leaves.
 	Open bool
 	// MatchPrefix, when non-empty, is emitted as the leaf link's
-	// data-fui-match-prefix value: the runtime's active-link module
+	// data-cui-match-prefix value: the runtime's active-link module
 	// re-derives the item's current-state on sub-paths after a client
 	// navigation, using this value (not the href) as the section
 	// prefix. The caller resolves the active state for first paint;
@@ -246,7 +246,7 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 // header) instead of above the sidebar's inline column — pair it with
 // SidebarProps.HideDrawerTrigger so the shell does not draw a second
 // one. Same button and widget contract as the shell's own trigger
-// (data-fui-open names the drawer widget); the styled component's
+// (data-cui-open names the drawer widget); the styled component's
 // class map carries the variant class the sheet's >= md hiding keys
 // on — the button IS the component's root, so root overrides and
 // binds land on it. Empty DrawerName renders nothing.
@@ -265,7 +265,7 @@ func SidebarDrawerTrigger(p SidebarProps, s Classes) render.HTML {
 func sidebarDrawerTrigger(b Box, p SidebarProps, part Part) render.HTML {
 	drawerAttrs := Attrs(map[string]string{
 		"type":          "button",
-		"data-fui-open": p.DrawerName,
+		"data-cui-open": p.DrawerName,
 	})
 	if p.DrawerLabel != "" {
 		drawerAttrs["aria-label"] = scrubControlBytes(p.DrawerLabel)
@@ -498,7 +498,7 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 		// this value as the link's section prefix, so the highlight
 		// the server settled for first paint survives client
 		// navigations into sub-paths.
-		own["data-fui-match-prefix"] = scrubControlBytes(it.MatchPrefix)
+		own["data-cui-match-prefix"] = scrubControlBytes(it.MatchPrefix)
 	}
 	return b.El("li", PartSidebarItem, itemAttrs,
 		b.El("a", PartControl, Merge(own, controlMark),

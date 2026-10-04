@@ -143,7 +143,7 @@ type DataTableConfig struct {
 	//
 	// The signal-bound wrapper is the caller's responsibility: wrap
 	// the DataTable's rendered HTML in:
-	//   <div data-fui-signal="<Signal>" data-fui-signal-mode="html">
+	//   <div data-cui-signal="<Signal>" data-cui-signal-mode="html">
 	//     {DataTable(...)}
 	//   </div>
 	Island headless.Island
@@ -174,7 +174,7 @@ type DataTableConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the list's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-fui-* and the data-hui-* hooks.
+	// ID), style, data-cui-* and the data-hui-* hooks.
 	ExtraAttrs html.Attrs
 }
 
@@ -272,7 +272,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		// inside an already-marked wrapper is fine).
 		footer = html.Div(html.DivConfig{
 			Class:      "fui-data-table__footer",
-			ExtraAttrs: html.Attrs{"data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
 		}, Pagination(pag))
 	}
 

@@ -90,7 +90,7 @@ func TestSeed_ResolvedValueInBlockAndConsumer(t *testing.T) {
 		t.Errorf("seed block should carry request value, not default: %s", block)
 	}
 	// The consumer DOM stamps the SAME value (no SSR/seed drift).
-	if !strings.Contains(page, `data-fui-signal="uihosttest.company"`) || !strings.Contains(page, `>TenantCo</span>`) {
+	if !strings.Contains(page, `data-cui-signal="uihosttest.company"`) || !strings.Contains(page, `>TenantCo</span>`) {
 		t.Errorf("consumer did not stamp resolved value:\n%s", truncate(page, 800))
 	}
 }

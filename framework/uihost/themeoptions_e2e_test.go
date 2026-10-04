@@ -28,7 +28,7 @@ import (
 //
 //  1. A scoped theme's dark palette follows the DOCUMENT's scheme
 //     (data-color-scheme on <html>): the scope re-declares its own dark
-//     tokens under [data-color-scheme="dark"] .fui-theme-<hash>, and
+//     tokens under [data-color-scheme="dark"] .cui-theme-<hash>, and
 //     the element inside the wrapper resolves --color-background to
 //     the SCOPE's dark value, not the root theme's.
 //  2. Option variables nest: two complete scoped themes A → B → A, the

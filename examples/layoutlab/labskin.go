@@ -47,12 +47,12 @@ const labDemoCSS = `
 
 
 /* ---- labelled regions ------------------------------------------------ */
-.shell [data-fui-outlet],
-.shell [data-fui-area],
-.shell main[data-fui-layout-slot],
-.shell .layout-content[data-fui-layout-slot],
-.shell [data-fui-layout-key]:not([data-fui-lang]),
-.layout-bare main[data-fui-layout-slot] {
+.shell [data-cui-outlet],
+.shell [data-cui-area],
+.shell main[data-cui-layout-slot],
+.shell .layout-content[data-cui-layout-slot],
+.shell [data-cui-layout-key]:not([data-cui-lang]),
+.layout-bare main[data-cui-layout-slot] {
   position: relative;
   border: 1px solid var(--lab-line);
   border-radius: 8px;
@@ -60,12 +60,12 @@ const labDemoCSS = `
   padding: 20px 12px 28px;
   min-height: 22px;
 }
-.shell [data-fui-outlet]::before,
-.shell [data-fui-area]::before,
-.shell main[data-fui-layout-slot]::before,
-.shell .layout-content[data-fui-layout-slot]::before,
-.shell [data-fui-layout-key]:not([data-fui-lang])::before,
-.layout-bare main[data-fui-layout-slot]::before {
+.shell [data-cui-outlet]::before,
+.shell [data-cui-area]::before,
+.shell main[data-cui-layout-slot]::before,
+.shell .layout-content[data-cui-layout-slot]::before,
+.shell [data-cui-layout-key]:not([data-cui-lang])::before,
+.layout-bare main[data-cui-layout-slot]::before {
   position: absolute; top: -9px; left: 10px;
   font: 600 10.5px/1.6 var(--lab-mono);
   letter-spacing: 0.02em; white-space: nowrap;
@@ -74,37 +74,37 @@ const labDemoCSS = `
 }
 /* Generic names first (attr() carries the raw address), then the
    readable per-region names override them. */
-.shell [data-fui-outlet] { --lab-c: var(--lab-c-outlet); }
-.shell [data-fui-outlet]::before { content: "outlet · " attr(data-fui-outlet) var(--lab-wait, ""); }
-.shell [data-fui-area] { --lab-c: var(--lab-c-area); }
-.shell [data-fui-area]::before { content: "area · " attr(data-fui-area) var(--lab-wait, ""); }
-.shell main[data-fui-layout-slot] { --lab-c: var(--lab-c-slot); }
-.shell main[data-fui-layout-slot]::before { content: "main slot" var(--lab-wait, ""); }
-.shell .layout-content[data-fui-layout-slot] { --lab-c: var(--lab-c-slot); }
-.shell .layout-content[data-fui-layout-slot]::before { content: "slot" var(--lab-wait, ""); }
-.shell [data-fui-layout-key]:not([data-fui-lang]) { --lab-c: var(--lab-c-layer); }
-.shell [data-fui-layout-key]:not([data-fui-lang])::before { content: "kept layer" var(--lab-wait, ""); }
-.layout-bare main[data-fui-layout-slot] { --lab-c: var(--lab-c-slot); }
-.layout-bare main[data-fui-layout-slot]::before { content: "main slot" var(--lab-wait, ""); }
+.shell [data-cui-outlet] { --lab-c: var(--lab-c-outlet); }
+.shell [data-cui-outlet]::before { content: "outlet · " attr(data-cui-outlet) var(--lab-wait, ""); }
+.shell [data-cui-area] { --lab-c: var(--lab-c-area); }
+.shell [data-cui-area]::before { content: "area · " attr(data-cui-area) var(--lab-wait, ""); }
+.shell main[data-cui-layout-slot] { --lab-c: var(--lab-c-slot); }
+.shell main[data-cui-layout-slot]::before { content: "main slot" var(--lab-wait, ""); }
+.shell .layout-content[data-cui-layout-slot] { --lab-c: var(--lab-c-slot); }
+.shell .layout-content[data-cui-layout-slot]::before { content: "slot" var(--lab-wait, ""); }
+.shell [data-cui-layout-key]:not([data-cui-lang]) { --lab-c: var(--lab-c-layer); }
+.shell [data-cui-layout-key]:not([data-cui-lang])::before { content: "kept layer" var(--lab-wait, ""); }
+.layout-bare main[data-cui-layout-slot] { --lab-c: var(--lab-c-slot); }
+.layout-bare main[data-cui-layout-slot]::before { content: "main slot" var(--lab-wait, ""); }
 
-.shell [data-fui-outlet="l:shell#toolbar"]::before { content: "outlet · toolbar" var(--lab-wait, ""); }
-.shell [data-fui-outlet="l:shell#aside"]::before { content: "outlet · aside" var(--lab-wait, ""); }
-.shell [data-fui-outlet="l:shell#rail"]::before { content: "outlet · rail" var(--lab-wait, ""); }
-.shell [data-fui-area="l:shell~crumbs"]::before { content: "route area · crumbs" var(--lab-wait, ""); }
-.shell main[data-fui-layout-slot="l:shell"]::before { content: "main slot · shell" var(--lab-wait, ""); }
-.layout-bare main[data-fui-layout-slot="l:bare"]::before { content: "main slot · bare" var(--lab-wait, ""); }
-.shell [data-fui-layout-key="g:/items/:items"]:not([data-fui-lang])::before { content: "kept layer · items list" var(--lab-wait, ""); }
-.shell .layout-content[data-fui-layout-slot="g:/items/:items"]::before { content: "slot · item detail" var(--lab-wait, ""); }
+.shell [data-cui-outlet="l:shell#toolbar"]::before { content: "outlet · toolbar" var(--lab-wait, ""); }
+.shell [data-cui-outlet="l:shell#aside"]::before { content: "outlet · aside" var(--lab-wait, ""); }
+.shell [data-cui-outlet="l:shell#rail"]::before { content: "outlet · rail" var(--lab-wait, ""); }
+.shell [data-cui-area="l:shell~crumbs"]::before { content: "route area · crumbs" var(--lab-wait, ""); }
+.shell main[data-cui-layout-slot="l:shell"]::before { content: "main slot · shell" var(--lab-wait, ""); }
+.layout-bare main[data-cui-layout-slot="l:bare"]::before { content: "main slot · bare" var(--lab-wait, ""); }
+.shell [data-cui-layout-key="g:/items/:items"]:not([data-cui-lang])::before { content: "kept layer · items list" var(--lab-wait, ""); }
+.shell .layout-content[data-cui-layout-slot="g:/items/:items"]::before { content: "slot · item detail" var(--lab-wait, ""); }
 
-/* Region state: the runtime's marks become tag suffixes. data-fui-loadstate
+/* Region state: the runtime's marks become tag suffixes. data-cui-loadstate
    wins over aria-busy when a region shows loading content (it is the
    sharper fact). */
 [aria-busy="true"] { --lab-wait: " · waiting"; }
-[data-fui-loadstate] { --lab-wait: " · loading content"; }
+[data-cui-loadstate] { --lab-wait: " · loading content"; }
 
 /* Transition and change tags sit below content, not across the region
    name: both labels remain readable in a narrow nested detail pane. */
-[data-fui-vt]::after,
+[data-cui-vt]::after,
 [data-lab-flash]::after {
   position: absolute; bottom: 4px; right: 10px;
   font: 500 10.5px/1.6 var(--lab-mono);
@@ -112,7 +112,7 @@ const labDemoCSS = `
   border: 1px solid var(--lab-line); color: var(--lab-fg-dim);
   background: var(--lab-panel-bg);
 }
-[data-fui-vt]::after { content: "transition: " attr(data-fui-vt); }
+[data-cui-vt]::after { content: "transition: " attr(data-cui-vt); }
 [data-lab-flash] { animation: lab-flash 600ms ease-out; }
 [data-lab-flash]::after {
   content: attr(data-lab-flash);

@@ -70,7 +70,7 @@ type FileUploadConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the component's root
 	// element. Keys the component owns are dropped: class (use
-	// Class), id, and data-fui-*.
+	// Class), id, and data-cui-*.
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve the zone's
@@ -83,7 +83,7 @@ type FileUploadConfig struct {
 //
 // Markup shape:
 //
-//	<div class="fui-upload-field" data-fui-comp="ui-fileupload">
+//	<div class="fui-upload-field" data-cui-comp="ui-fileupload">
 //	  <div class="fui-upload" data-hui-drop …>
 //	    <label class="fui-upload__zone" for="…">
 //	      <span class="fui-upload__label">…</span>
@@ -147,7 +147,7 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 			"id":                id + "-error",
 			"class":             "fui-upload__error",
 			"role":              "alert",
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
 

@@ -180,7 +180,7 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 				// the client.
 				html = render.Tag(
 					"div",
-					map[string]string{"class": "fui-render-error", "role": "alert"},
+					map[string]string{"class": "cui-render-error", "role": "alert"},
 					render.Tag("strong", nil, render.Text("Error:")),
 					render.Text(" "+textsafe.Recovered(r)),
 				)

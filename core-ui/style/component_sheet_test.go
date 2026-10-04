@@ -14,10 +14,10 @@ func TestComponentSheetScopesSimpleSelectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if !strings.Contains(got, `[data-fui-comp="modal"] .header`) {
+	if !strings.Contains(got, `[data-cui-comp="modal"] .header`) {
 		t.Errorf("missing scoped .header: %s", got)
 	}
-	if !strings.Contains(got, `[data-fui-comp="modal"] .body`) {
+	if !strings.Contains(got, `[data-cui-comp="modal"] .body`) {
 		t.Errorf("missing scoped .body: %s", got)
 	}
 	if !strings.Contains(got, "padding: var(--spacing-lg)") {
@@ -33,9 +33,9 @@ func TestComponentSheetCompoundSelector(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	for _, want := range []string{
-		`[data-fui-comp="modal"] .a`,
-		`[data-fui-comp="modal"] .b`,
-		`[data-fui-comp="modal"] .c`,
+		`[data-cui-comp="modal"] .a`,
+		`[data-cui-comp="modal"] .b`,
+		`[data-cui-comp="modal"] .c`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %s", want, got)
@@ -55,9 +55,9 @@ func TestComponentSheetPseudoAndChild(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	want := []string{
-		`[data-fui-comp="modal"] .btn`,
-		`[data-fui-comp="modal"] .btn:hover`,
-		`[data-fui-comp="modal"] .btn .icon`,
+		`[data-cui-comp="modal"] .btn`,
+		`[data-cui-comp="modal"] .btn:hover`,
+		`[data-cui-comp="modal"] .btn .icon`,
 	}
 	for _, w := range want {
 		if !strings.Contains(got, w) {
@@ -81,7 +81,7 @@ func TestComponentSheetMediaScopesInner(t *testing.T) {
 		t.Errorf("@media missing: %s", got)
 	}
 	// Inner rule should be scoped too.
-	if !strings.Contains(got, `[data-fui-comp="modal"] .body`) {
+	if !strings.Contains(got, `[data-cui-comp="modal"] .body`) {
 		t.Errorf("inner .body not scoped: %s", got)
 	}
 }
@@ -100,7 +100,7 @@ func TestComponentSheetKeyframesUnprefixed(t *testing.T) {
 		t.Errorf("@keyframes missing: %s", got)
 	}
 	// Step selectors must not be prefixed.
-	if strings.Contains(got, `[data-fui-comp="toast"] 0%`) {
+	if strings.Contains(got, `[data-cui-comp="toast"] 0%`) {
 		t.Errorf("keyframe step accidentally scoped: %s", got)
 	}
 }
@@ -128,9 +128,9 @@ func TestComponentSheetAmpersandRefersToMarkerElement(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	wants := []string{
-		`[data-fui-comp="modal"] {`,       // & alone
-		`[data-fui-comp="modal"].open`,    // & combined
-		`[data-fui-comp="modal"] .header`, // & descendant
+		`[data-cui-comp="modal"] {`,       // & alone
+		`[data-cui-comp="modal"].open`,    // & combined
+		`[data-cui-comp="modal"] .header`, // & descendant
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
@@ -146,7 +146,7 @@ func TestWhereAmpersandScopesWithoutWeight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	want := `:where([data-fui-comp="card"] .actions) > .item, :where([data-fui-comp="card"]).wide`
+	want := `:where([data-cui-comp="card"] .actions) > .item, :where([data-cui-comp="card"]).wide`
 	if !strings.Contains(got, want) {
 		t.Errorf("missing %q:\n%s", want, got)
 	}

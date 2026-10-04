@@ -28,7 +28,7 @@ func TestLightboxReturnsHiddenModalByName(t *testing.T) {
 		t.Errorf("widget Name should match Lightbox Name; got %q", d.Name)
 	}
 	if !d.Hidden {
-		t.Errorf("Lightbox modal should be Hidden by default (data-fui-open opens it)")
+		t.Errorf("Lightbox modal should be Hidden by default (data-cui-open opens it)")
 	}
 }
 
@@ -49,13 +49,13 @@ func TestLightboxDeepLinkParams(t *testing.T) {
 func TestLightboxSlotRendersSignalBoundImg(t *testing.T) {
 	slot := &lightboxSlot{name: "x", label: "Viewer"}
 	h := string(slot.Render())
-	if !strings.Contains(h, `data-fui-signal="src"`) {
+	if !strings.Contains(h, `data-cui-signal="src"`) {
 		t.Errorf("slot should bind src signal:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-signal-mode="attr"`) {
+	if !strings.Contains(h, `data-cui-signal-mode="attr"`) {
 		t.Errorf("slot src binding should be attr-mode:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-signal-attr="src"`) {
+	if !strings.Contains(h, `data-cui-signal-attr="src"`) {
 		t.Errorf("slot should mirror into the src attribute:\n%s", h)
 	}
 }
@@ -89,7 +89,7 @@ func TestLightboxShowCaptionAddsFigcaption(t *testing.T) {
 	if !strings.Contains(on, "<figcaption") {
 		t.Errorf("ShowCaption=true should emit <figcaption>:\n%s", on)
 	}
-	if !strings.Contains(on, `data-fui-signal="caption"`) {
+	if !strings.Contains(on, `data-cui-signal="caption"`) {
 		t.Errorf("figcaption should bind to caption signal:\n%s", on)
 	}
 }
@@ -103,7 +103,7 @@ func TestLightboxAllowDownloadAddsAnchor(t *testing.T) {
 	if !strings.Contains(on, `class="fui-lightbox__download"`) {
 		t.Errorf("AllowDownload=true should emit download anchor:\n%s", on)
 	}
-	if !strings.Contains(on, `data-fui-signal-attr="href"`) {
+	if !strings.Contains(on, `data-cui-signal-attr="href"`) {
 		t.Errorf("download anchor should mirror src signal into href:\n%s", on)
 	}
 }
@@ -137,19 +137,19 @@ func TestLightboxExtraAttrsOnViewerRoot(t *testing.T) {
 		t.Errorf("the styled viewer carries a data-hui-lightbox* attribute — the hui family renders exactly when Wiring is zero, and a host module binding it here would double-bind the gallery the shipped module steps:\n%s", root)
 	}
 	if strings.Contains(root, "spoof") {
-		t.Errorf("a forged data-fui-*/data-hui-* key reached the viewer root:\n%s", root)
+		t.Errorf("a forged data-cui-*/data-hui-* key reached the viewer root:\n%s", root)
 	}
 }
 
 // TestLightboxSlotRootIsBare: the centered-panel chrome opts out
-// through .fui-slot-bare as a whole class token on the slot's root
+// through .cui-slot-bare as a whole class token on the slot's root
 // element — the generic escape hatch, so the always-shipped panel CSS
 // names no framework/ui component.
 func TestLightboxSlotRootIsBare(t *testing.T) {
 	body := string((&lightboxSlot{name: "x", label: "x"}).Render())
 	root := body[:strings.Index(body, ">")+1]
-	if !classTokenPresent(root, "fui-slot-bare") {
-		t.Errorf("lightbox slot root missing fui-slot-bare token:\n%s", root)
+	if !classTokenPresent(root, "cui-slot-bare") {
+		t.Errorf("lightbox slot root missing cui-slot-bare token:\n%s", root)
 	}
 	if !classTokenPresent(root, "fui-lightbox") {
 		t.Errorf("lightbox slot root missing fui-lightbox token:\n%s", root)
@@ -240,19 +240,19 @@ func TestLightboxBehaviorRegistration(t *testing.T) {
 		t.Fatal("lightbox behaviour not registered — the module this package embeds is unreachable")
 	}
 	if want := []string{"[data-fui-lightbox]"}; !reflect.DeepEqual(e.Markers, want) {
-		t.Errorf("markers = %v, want %v (the viewer's own attribute; data-fui-comp keeps its one job, fetching the sheet)", e.Markers, want)
+		t.Errorf("markers = %v, want %v (the viewer's own attribute; data-cui-comp keeps its one job, fetching the sheet)", e.Markers, want)
 	}
 	if want := []string{"widgets"}; !reflect.DeepEqual(e.Requires, want) {
 		t.Errorf("requires = %v, want %v (navigation re-opens the widget through openWidget)", e.Requires, want)
 	}
 	want := []registry.Interaction{
 		{Event: "click", Selector: "[data-fui-lightbox-prev],[data-fui-lightbox-next]"},
-		{Event: "keydown", Scope: "[data-fui-widget]:not([hidden]) [data-fui-lightbox]", Keys: []string{"ArrowLeft", "ArrowRight"}},
+		{Event: "keydown", Scope: "[data-cui-widget]:not([hidden]) [data-fui-lightbox]", Keys: []string{"ArrowLeft", "ArrowRight"}},
 	}
 	if !reflect.DeepEqual(e.Interactions, want) {
 		t.Errorf("interactions = %#v, want %#v", e.Interactions, want)
 	}
-	if strings.Contains(e.Source, "data-fui-comp") || strings.Contains(e.Source, "ui-lightbox__full") {
+	if strings.Contains(e.Source, "data-cui-comp") || strings.Contains(e.Source, "ui-lightbox__full") {
 		t.Errorf("the module still binds by the kernel's comp marker or by a class — the registered-module contract forbids both")
 	}
 }

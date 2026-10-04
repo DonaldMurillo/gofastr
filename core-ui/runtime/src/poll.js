@@ -1,10 +1,10 @@
 // GoFastr runtime module, Poll
 //
 // Page-level region polling. An element carrying
-//   data-fui-poll="<duration>" data-fui-poll-src="<url>"
+//   data-cui-poll="<duration>" data-cui-poll-src="<url>"
 // gets GET-fetched on the interval; the response HTML replaces the
 // element's innerHTML, then __gofastr.scanAndLoadCSS wires any
-// freshly-arrived [data-fui-comp] component styles. Used for passive
+// freshly-arrived [data-cui-comp] component styles. Used for passive
 // freshness of server-rendered regions that don't warrant an SSE
 // channel, the pull-first half of the reactivity model.
 //
@@ -21,7 +21,7 @@
 //     SPA navigation (the _moduleScanners hook reclaims detached
 //     elements and wires freshly-swapped-in ones)
 //
-// Loads on demand: core's marker scanner picks up [data-fui-poll]
+// Loads on demand: core's marker scanner picks up [data-cui-poll]
 // and idle-loads this module. The scanner is also invoked after SPA
 // navigation and on MutationObserver-added nodes, so swapped-in
 // regions get wired without a full page reload.
@@ -61,7 +61,7 @@
   }
 
   // _clampedMs is the test surface for the clamp rule: parse a
-  // data-fui-poll attribute value and return the effective interval
+  // data-cui-poll attribute value and return the effective interval
   // in milliseconds (>= MIN_MS), or NaN when the input is unusable.
   // chromedp exercises this directly so the clamp + parser don't
   // need a 5-second browser wait to verify.
@@ -105,8 +105,8 @@
 
   function wireOne(el) {
     if (!el || !el.getAttribute || el.__fuiPollWired) return;
-    const raw = el.getAttribute('data-fui-poll') || '';
-    const src = el.getAttribute('data-fui-poll-src') || '';
+    const raw = el.getAttribute('data-cui-poll') || '';
+    const src = el.getAttribute('data-cui-poll-src') || '';
     if (!src) return;
     const parsed = parseGoDuration(raw);
     if (!isFinite(parsed) || parsed <= 0) return;
@@ -155,7 +155,7 @@
           // for html-mode (innerHTML + scanAndLoadCSS): one innerHTML
           // path, not a hand-rolled second one. scanAndLoadCSS is
           // already exposed on __gofastr and handles component-CSS
-          // dedup for any freshly-arrived [data-fui-comp] markers.
+          // dedup for any freshly-arrived [data-cui-comp] markers.
           el.innerHTML = html;
           if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el);
           pollTicked();
@@ -193,9 +193,9 @@
 
   function wireAll(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    if (scope.matches && scope.matches('[data-fui-poll]')) wireOne(scope);
+    if (scope.matches && scope.matches('[data-cui-poll]')) wireOne(scope);
     if (scope.querySelectorAll) {
-      scope.querySelectorAll('[data-fui-poll]').forEach(wireOne);
+      scope.querySelectorAll('[data-cui-poll]').forEach(wireOne);
     }
   }
 

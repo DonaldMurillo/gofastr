@@ -96,14 +96,14 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 	id, _ := row["id"].(string)
 
 	screens := []struct{ path, want string }{
-		{"/", "data-fui-comp"},
+		{"/", "data-cui-comp"},
 		{"/tasks", "Markup probe"},
 		{"/tasks/new", "New Task"},
 		{"/tasks/" + id, "Markup probe"},
 		{"/tasks/" + id + "/edit", "Markup probe"},
 		{"/history", "No sessions yet"},
 		{"/settings", "Work minutes"},
-		{"/widget", "data-fui-window-drag"},
+		{"/widget", "data-cui-window-drag"},
 	}
 	for _, s := range screens {
 		body := ta.Get(s.path).AssertStatus(t, http.StatusOK).Body()
@@ -162,7 +162,7 @@ func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 		`id="f-break_minutes"`, `value="5"`,
 		`id="f-notify_on_done"`, `id="f-tray_countdown"`,
 		`id="f-sound"`, `selected="" value="chime"`,
-		`data-fui-rpc="/__gofastr/desktop/preferences"`,
+		`data-cui-rpc="/__gofastr/desktop/preferences"`,
 		"Work minutes", "Notify when a session ends", "Session sound",
 	} {
 		if !strings.Contains(body, want) {

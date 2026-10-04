@@ -32,7 +32,7 @@ func Modal(name string) *widget.Builder {
 // pushed entirely on the client, either via the JS API
 // `window.__gofastr.toast({...})`, or by setting an
 // `X-Gofastr-Toast: <json>` header on the response of any
-// `data-fui-rpc` handler. The runtime appends the rendered item into
+// `data-cui-rpc` handler. The runtime appends the rendered item into
 // this widget's stack container and handles the TTL / dismiss
 // lifecycle.
 //
@@ -57,7 +57,7 @@ func Modal(name string) *widget.Builder {
 func ToastStack(name string) *widget.Builder {
 	// No custom Skeleton, the framework's defaultSkeleton picks up
 	// whatever Position the caller chose via .Mount(). The slot
-	// renders the empty `data-fui-toast-stack="<name>"` container
+	// renders the empty `data-cui-toast-stack="<name>"` container
 	// the runtime appends items into.
 	return widget.New(name).
 		Mount(widget.TopRight).
@@ -137,7 +137,7 @@ func BottomSheet(name string) *widget.Builder {
 }
 
 // Popover is a click-triggered floating surface with no backdrop dim.
-// Hidden by default, opened with data-fui-open="<name>", and
+// Hidden by default, opened with data-cui-open="<name>", and
 // dismisses on Escape or click-outside.
 //
 // Two placement modes share the same widget definition; the choice
@@ -148,7 +148,7 @@ func BottomSheet(name string) *widget.Builder {
 //     override via .Mount(widget.BottomLeft) etc). Predictable global
 //     placement, good for a toolbar "Share" / "Help" surface.
 //
-//  2. Trigger-anchored. Add data-fui-popover-anchor to the trigger
+//  2. Trigger-anchored. Add data-cui-popover-anchor to the trigger
 //     button (with an optional preferred side, "top", "bottom",
 //     "left", "right", or "auto"). The runtime measures both rects
 //     after open and positions the popover next to the trigger; when

@@ -71,7 +71,7 @@ func TestComponentStatusBeatsDefault200(t *testing.T) {
 	if pw.Header().Get("X-Gofastr-Envelope") != "2" {
 		t.Errorf("partial GET must ship the fills envelope even at 410")
 	}
-	if body := pw.Body.String(); !strings.Contains(body, `data-fui-fill="l:shell#toolbar"`) || !strings.Contains(body, "GONE-TOOLBAR") {
+	if body := pw.Body.String(); !strings.Contains(body, `data-cui-fill="l:shell#toolbar"`) || !strings.Contains(body, "GONE-TOOLBAR") {
 		t.Errorf("the fills must still ship at 410: %s", body)
 	}
 }

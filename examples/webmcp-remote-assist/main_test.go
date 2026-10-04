@@ -361,7 +361,7 @@ func TestBridgeShipsOnlyOnSupportPages(t *testing.T) {
 	// join page is checked before its POST spends the token.
 	for _, path := range []string{"/", "/support/login", join} {
 		page := getPage(t, srv, path)
-		if strings.Contains(page, `src="/__gofastr/webmcp.js`) || strings.Contains(page, "data-fui-doc") {
+		if strings.Contains(page, `src="/__gofastr/webmcp.js`) || strings.Contains(page, "data-cui-doc") {
 			t.Fatalf("%s carries a document-scoped script", path)
 		}
 	}
@@ -382,7 +382,7 @@ func TestBridgeShipsOnlyOnSupportPages(t *testing.T) {
 	}
 
 	console := getPage(t, srv, "/support/session/"+id, cookie)
-	if !strings.Contains(console, "data-fui-doc") {
+	if !strings.Contains(console, "data-cui-doc") {
 		t.Fatal("support console lacks the document-scoped bridge tag")
 	}
 	if !strings.Contains(console, "/__assist/app.js") {

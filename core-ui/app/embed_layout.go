@@ -7,7 +7,7 @@ import (
 )
 
 // EmbedLayoutName is the layout name embedded surfaces render under. It lands
-// in the wrapper's class and in data-fui-layout, so it is part of the CSS
+// in the wrapper's class and in data-cui-layout, so it is part of the CSS
 // contract rather than a private string.
 const EmbedLayoutName = "embed"
 

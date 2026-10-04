@@ -24,9 +24,9 @@ func TestRetiredReportWithoutReporterLogs(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	defer slog.SetDefault(old)
 
-	ReportRetired(context.Background(), "retired markup: attr \"data-fui-signal\"")
+	ReportRetired(context.Background(), "retired markup: attr \"data-cui-signal\"")
 
-	if text := logs.String(); !bytes.Contains([]byte(text), []byte("data-fui-signal")) ||
+	if text := logs.String(); !bytes.Contains([]byte(text), []byte("data-cui-signal")) ||
 		!bytes.Contains([]byte(text), []byte("level=WARN")) {
 		t.Fatalf("missing warn log: %s", text)
 	}

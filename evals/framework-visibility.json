@@ -141,11 +141,11 @@
       "id": 11,
       "name": "ui-islands-streams-no-js-frameworks",
       "prompt": "You are in a freshly scaffolded GoFastr project at {PROJECT_DIR}. The user needs: (1) live-updating notification bell via server-push, (2) search-as-you-type without page reload, (3) a like button that increments without page reload. Find GoFastr's island/stream/hydration system. Do NOT suggest HTMX, Alpine.js, React, or manual fetch() calls.",
-      "expected_output": "Agent discovers core-ui/island + core/stream SSE + data-fui-* hydration attributes. No external JS frameworks suggested.",
+      "expected_output": "Agent discovers core-ui/island + core/stream SSE + data-cui-* hydration attributes. No external JS frameworks suggested.",
       "assertions": [
         {"field": "island_found", "check": "response mentions island system or core-ui/island"},
         {"field": "stream_found", "check": "response mentions SSE or core/stream"},
-        {"field": "hydration_found", "check": "response mentions data-fui-* attributes or runtime.js"},
+        {"field": "hydration_found", "check": "response mentions data-cui-* attributes or runtime.js"},
         {"field": "no_htmx", "check": "response does NOT suggest HTMX or htmx"},
         {"field": "no_alpine", "check": "response does NOT suggest Alpine.js"},
         {"field": "no_react", "check": "response does NOT suggest React, Vue, Svelte, or any JS framework"}

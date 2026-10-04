@@ -84,13 +84,13 @@
     if (h) try { h.postMessage(DRAG_MSG); } catch (_) { /* handler gone */ }
   }
 
-  // Mousedown on an element carrying data-fui-window-drag, or inside
+  // Mousedown on an element carrying data-cui-window-drag, or inside
   // one, starts a window drag: the drag-handle pattern for borderless
   // windows. Delegated, so runtime-swapped islands keep working.
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('mousedown', (e) => {
       const t = e.target;
-      if (t && t.closest && t.closest('[data-fui-window-drag]')) startDrag();
+      if (t && t.closest && t.closest('[data-cui-window-drag]')) startDrag();
     });
   }
 

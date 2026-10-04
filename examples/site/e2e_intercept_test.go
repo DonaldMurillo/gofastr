@@ -118,7 +118,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 	base := siteE2EServer(t)
 	ctx := siteBrowserCtx(t)
 
-	const overlay = `!!document.querySelector('[data-fui-intercept-overlay]')`
+	const overlay = `!!document.querySelector('[data-cui-intercept-overlay]')`
 	const listAlive = `!!document.querySelector('.cat-list')`
 
 	var urlOpen, urlClosed, overlayAs, overlayText string
@@ -132,8 +132,8 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 		chromedp.Sleep(2*time.Second),
 		chromedp.Location(&urlOpen),
 		chromedp.Evaluate(overlay, &overlayOpen),
-		chromedp.Evaluate(`document.querySelector('[data-fui-intercept-overlay]')?.getAttribute('data-fui-intercept-as') || ""`, &overlayAs),
-		chromedp.Evaluate(`document.querySelector('[data-fui-intercept-overlay]')?.textContent || ""`, &overlayText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay]')?.getAttribute('data-cui-intercept-as') || ""`, &overlayAs),
+		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay]')?.textContent || ""`, &overlayText),
 		// The list is still mounted underneath, that is what makes the
 		// close cheap and the scroll position survive.
 		chromedp.Evaluate(listAlive, &listStillThere),

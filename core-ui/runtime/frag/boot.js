@@ -175,7 +175,7 @@
     } catch (_) { return {}; }
   })();
   // Map-keyed, not {}: module names arrive through DOM attributes
-  // (data-fui-prefetch, data-behavior) and a plain-object cache keyed by
+  // (data-cui-prefetch, data-behavior) and a plain-object cache keyed by
   // "__proto__" re-parents through the setter while "constructor" reads
   // as a truthy inherited entry. Map keys are plain strings.
   const _modulePromises = new Map();
@@ -187,7 +187,7 @@
     const cached = _modulePromises.get(name);
     if (cached) return cached;
     const modPromise = new Promise((resolve, reject) => {
-      // Module names come from DOM attributes (data-fui-prefetch,
+      // Module names come from DOM attributes (data-cui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
       // a "../../../evil" token normalizes out of the runtime serve
       // route and onto an arbitrary same-origin script, which then runs
@@ -252,16 +252,16 @@
   const _rpcFormFallback = (form) => {
     _rpcUnavailable();
     // Native submit is correct ONLY for a form the browser could have
-    // submitted itself, a data-fui-spa form with an ordinary enctype.
+    // submitted itself, a data-cui-spa form with an ordinary enctype.
     //
-    // A data-fui-rpc form targets a JSON API: the resource engine emits it
+    // A data-cui-rpc form targets a JSON API: the resource engine emits it
     // with no enctype at all and rpc.js builds the JSON body, so submitting
     // it natively posts urlencoded (415) or cannot issue its declared
     // PUT/PATCH at all (405). Either way the user is navigated off the page
     // to a raw error and everything they typed is gone, strictly worse
     // than staying put. An application/json enctype is unsendable natively
     // for the same reason. In those cases the warning is the whole remedy.
-    if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) return;
+    if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
     if ((form.getAttribute('enctype') || '').toLowerCase() === 'application/json') return;
     // Call the prototype method, not form.submit: HTML named-property
     // lookup shadows it with any control named "submit", so a form
@@ -271,7 +271,7 @@
   };
   // Widget-scoped listeners live in the widgets MODULE and prevent the
   // default before awaiting rpc too, so they need the same recovery, the
-  // document bridge deliberately skips anything inside [data-fui-widget]
+  // document bridge deliberately skips anything inside [data-cui-widget]
   // and cannot cover for them.
   window.__gofastr._rpcUnavailable = _rpcUnavailable;
   window.__gofastr._rpcFormFallback = _rpcFormFallback;
@@ -279,13 +279,13 @@
   if (!document.__fuiStaticDispatch && !document.__fuiGlobalDispatch) {
     document.__fuiGlobalDispatch = true;
     document.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-fui-widget]')) return;
+      if (e.target.closest('[data-cui-widget]')) return;
       // Signal mutations win, as they did when one delegator owned both:
       // the old handler set the signal and RETURNED without consulting
-      // data-fui-rpc. Two listeners would otherwise both fire on an
+      // data-cui-rpc. Two listeners would otherwise both fire on an
       // element carrying each attribute.
-      if (e.target.closest('[data-fui-signal-set],[data-fui-signal-inc],[data-fui-signal-toggle]')) return;
-      const node = e.target.closest('[data-fui-rpc],[data-kiln-tool]');
+      if (e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]')) return;
+      const node = e.target.closest('[data-cui-rpc],[data-kiln-tool]');
       if (!node || node.tagName === 'FORM') return;
       e.preventDefault();
       try {
@@ -296,19 +296,19 @@
 
     document.addEventListener('submit', async (e) => {
       const form = e.target.closest('form');
-      if (!form || form.closest('[data-fui-widget]')) return;
+      if (!form || form.closest('[data-cui-widget]')) return;
       // Confirm gate runs BEFORE every branch below, so a plain native
       // POST form (which leaves at the enctype check) is gated too. The
       // submitter wins over the form: one form can carry several submit
       // buttons of different destructive weight. Callers that already
       // gated pass {confirmed:true} so rpc.js does not prompt twice.
       const sub = e.submitter;
-      const msg = (sub && sub.getAttribute('data-fui-confirm')) || form.getAttribute('data-fui-confirm');
+      const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
       if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
         e.preventDefault();
         return;
       }
-      if (form.hasAttribute('data-fui-rpc') || form.hasAttribute('data-kiln-tool')) {
+      if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) {
         e.preventDefault();
         try {
           await loadModule('rpc');
@@ -320,7 +320,7 @@
       const action = form.getAttribute('action');
       if (!action || !window.__gofastr._sameOrigin(action)) return;
       const enctype = (form.getAttribute('enctype') || '').toLowerCase();
-      if (enctype !== 'application/json' && !form.hasAttribute('data-fui-spa')) return;
+      if (enctype !== 'application/json' && !form.hasAttribute('data-cui-spa')) return;
       e.preventDefault();
       try {
         await loadModule('rpc');
@@ -341,7 +341,7 @@
           lb.removeAttribute('hidden');
         }
       }
-      const form = e.target.closest('[data-fui-rpc][data-fui-rpc-trigger="input"]');
+      const form = e.target.closest('[data-cui-rpc][data-cui-rpc-trigger="input"]');
       if (!form) return;
       loadModule('rpc')
         .then(() => window.__gofastr.dispatchRPC(form, 'input'))
@@ -349,7 +349,7 @@
     });
   }
 
-  // Hover/focus prefetch: any element with data-fui-prefetch="<name>"
+  // Hover/focus prefetch: any element with data-cui-prefetch="<name>"
   // kicks off the module fetch as soon as the user hovers or
   // keyboard-focuses it. By the time they click, the module is
   // resolved. Capture phase; an element is marked attempted only once
@@ -357,7 +357,7 @@
   // failed fetch is retried on the next hover/focus.
   const _prefetchAttempted = new WeakSet();
   function _prefetch(e) {
-    const node = e.target && e.target.closest && e.target.closest('[data-fui-prefetch]');
+    const node = e.target && e.target.closest && e.target.closest('[data-cui-prefetch]');
     if (!node || _prefetchAttempted.has(node)) return;
     // Mark attempted only on success: a failed fetch (network blip,
     // a host not serving the module) must not pin the element, or the
@@ -365,7 +365,7 @@
     // _moduleMarkers entry, so no scanner picks it up either; vacate
     // panels would then stay empty for the page lifetime. Re-hovers
     // while a fetch is in flight cost nothing: loadModule dedups.
-    const names = node.getAttribute('data-fui-prefetch').split(/\s+/).filter(Boolean);
+    const names = node.getAttribute('data-cui-prefetch').split(/\s+/).filter(Boolean);
     for (const n of names) {
       loadModule(n).then(() => { _prefetchAttempted.add(node); }, () => {});
     }
@@ -377,7 +377,7 @@
   // Pointer-driven drag-to-close for widgets (DragDismiss /
   // preset.BottomSheet) lives in the split-runtime module at
   // core-ui/runtime/src/dragdismiss.js, demand-loaded via the
-  // [data-fui-drag-dismiss="true"] scanner below (SSR-inlined sheets
+  // [data-cui-drag-dismiss="true"] scanner below (SSR-inlined sheets
   // load at boot; dynamically-opened chrome is caught by the
   // MutationObserver scan when it's appended to <body>).
 
@@ -385,15 +385,15 @@
   // Marker-driven modules are rescanned after boot, SPA navigation,
   // and DOM insertion.
   const _moduleMarkers = [
-    { name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' },
+    { name: 'rpc', selector: '[data-cui-rpc],[data-kiln-tool]' },
     // Computed: client-side derived signals (core-ui/store). The module
-    // subscribes each [data-fui-computed] node to its dependency signals
+    // subscribes each [data-cui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.
-    { name: 'computed',   selector: '[data-fui-computed]' },
+    { name: 'computed',   selector: '[data-cui-computed]' },
     // Compute: registered same-origin Web Worker and WebAssembly assets.
     // The marker only loads the imperative __gofastr.compute API.
-    { name: 'compute',    selector: '[data-fui-compute]' },
-    { name: 'popover',    selector: '[data-fui-popover-anchor]' },
+    { name: 'compute',    selector: '[data-cui-compute]' },
+    { name: 'popover',    selector: '[data-cui-popover-anchor]' },
     // SSE: background event stream, opened only for a page that takes
     // pushes. The markers are the PUSH TARGETS (any island — the
     // server can PushUpdate any island id — plus the offline banner
@@ -405,31 +405,31 @@
     // first interaction; the channel only carries push updates, not
     // user actions. See ROADMAP §8 Phase 5.
     { name: 'sse',        selector: '[data-island],[data-hui-system-offline]', idle: true },
-    // Widgets: any SSR-inlined widget element or any data-fui-open
+    // Widgets: any SSR-inlined widget element or any data-cui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
     // scanner just covers the marker-on-page path. Idle-loaded,
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
-    { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
+    { name: 'widgets',    selector: '[data-cui-widget],[data-cui-open]', idle: true },
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
-    { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
+    { name: 'textarea',       selector: 'textarea[data-cui-autogrow]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // Dropdown: click-toggle + click-outside dismiss + Esc close.
-    { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
+    { name: 'dropdown',         selector: '[data-cui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.
-    { name: 'reveal',           selector: '[data-fui-reveal]' },
+    { name: 'reveal',           selector: '[data-cui-reveal]' },
     // Animate: signal-driven CSS class toggling.
-    { name: 'animate',          selector: '[data-fui-animate-signal]' },
-    // Poll: page-level region polling. data-fui-poll="<duration>" +
-    // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
+    { name: 'animate',          selector: '[data-cui-animate-signal]' },
+    // Poll: page-level region polling. data-cui-poll="<duration>" +
+    // data-cui-poll-src="<url>" re-fetches the URL on the cadence and
     // swaps the response HTML into the element. The module owns
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
-    { name: 'poll',         selector: '[data-fui-poll]' },
+    { name: 'poll',         selector: '[data-cui-poll]' },
     // Envelope (fills, snapshots, scroll anchors): NOT a boot trigger.
     // The outlet/area marker alone costs nothing until the first
     // navigation that needs the module: frag/nav.js starts its load
@@ -439,10 +439,10 @@
     // boot exception is the deferred trigger below.
     // Loading content: the inert server-rendered template beside an
     // outlet. Before it loads the busy dim alone shows.
-    // View transitions: the document declares a [data-fui-vt] cell or
-    // a data-fui-vt-kinds vocabulary. Before it loads swaps run bare
+    // View transitions: the document declares a [data-cui-vt] cell or
+    // a data-cui-vt-kinds vocabulary. Before it loads swaps run bare
     // and the X-Gofastr-Transition pick is not read.
-    { name: 'transition', selector: '[data-fui-vt-kinds],[data-fui-vt]' },
+    { name: 'transition', selector: '[data-cui-vt-kinds],[data-cui-vt]' },
 ];
 
   // Registered behaviours (registry.RegisterBehavior): a component's own
@@ -580,7 +580,7 @@
       if (lm && own(lm, name) && lm[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
-      // markers (data-fui-drag-dismiss) on the node handed to us.
+      // markers (data-cui-drag-dismiss) on the node handed to us.
       if (!(scope.matches?.(selector) || scope.querySelector(selector))) continue;
       if (idle) {
         idleQueue.push(name);
@@ -643,7 +643,7 @@
   // arrives via partial-fetch (instead of a full page load).
   //
   // Without this, the boot-time catalog only contains widgets visible
-  // on the initial path; clicking a data-fui-open trigger for a
+  // on the initial path; clicking a data-cui-open trigger for a
   // page-scoped widget elsewhere silently bails because the entry is
   // missing from _widgetCatalog.
   //
@@ -686,10 +686,10 @@
     // Seed _pendingLinks with names already covered by the SSR
     // bundle link, so the on-demand scanner doesn't redundantly load
     // per-component sheets. The names live on the bundle <link>'s
-    // data-fui-bundle attribute (a stable contract), not parsed
+    // data-cui-bundle attribute (a stable contract), not parsed
     // from the URL.
-    document.head.querySelectorAll('link[data-fui-bundle]').forEach((l) => {
-      const names = (l.getAttribute('data-fui-bundle') || '').split(',');
+    document.head.querySelectorAll('link[data-cui-bundle]').forEach((l) => {
+      const names = (l.getAttribute('data-cui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
     G.scanAndLoadCSS(docEl);
@@ -711,7 +711,7 @@
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
-  // when data-fui-signal-mode is absent or "text"): attr-mode and
+  // when data-cui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
   //  - attr-mode: injects into element attributes (e.g. <a href=…>),
   //    not text, role=status on an <a> is invalid ARIA.
@@ -720,8 +720,8 @@
   //    on every island update. Those regions use their own role/aria.
   // Runs at boot and after SPA navigation.
   const _injectSignalAria = () => {
-    document.querySelectorAll('[data-fui-signal]').forEach((node) => {
-      const mode = node.getAttribute('data-fui-signal-mode') || 'text';
+    document.querySelectorAll('[data-cui-signal]').forEach((node) => {
+      const mode = node.getAttribute('data-cui-signal-mode') || 'text';
       if (mode !== 'text') return;
       if (!node.getAttribute('role')) node.setAttribute('role', 'status');
       if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');

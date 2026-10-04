@@ -59,7 +59,7 @@ func TestFillErrorContainedToOutlet(t *testing.T) {
 			}
 			var toastVisible bool
 			if err := chromedp.Run(ctx, chromedp.Evaluate(
-				`!!document.querySelector('.fui-nav-toast.is-visible')`, &toastVisible)); err != nil {
+				`!!document.querySelector('.cui-nav-toast.is-visible')`, &toastVisible)); err != nil {
 				t.Fatal(err)
 			}
 			if toastVisible {

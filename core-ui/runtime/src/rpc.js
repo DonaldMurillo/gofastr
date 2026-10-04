@@ -25,7 +25,7 @@
   }
 
   const _kilnOK = (el) =>
-    document.body.classList.contains('kiln-app') || el.closest('[data-fui-trusted]');
+    document.body.classList.contains('kiln-app') || el.closest('[data-cui-trusted]');
 
   const _kilnPost = (el, body) => {
     // The tool name is DOM-borne (data-kiln-tool) and lands in a URL
@@ -53,7 +53,7 @@
     } else if (!body && node.form) {
       // A form control that belongs to a form (radio/select/input/textarea
       // with node.form set) carries its value by serializing the enclosing
-      // form, the same class as the data-fui-rpc fix below. Explicit
+      // form, the same class as the data-cui-rpc fix below. Explicit
       // data-kiln-args wins (read above); a control with no form keeps the
       // legacy '' body rather than erroring.
       const obj = {};
@@ -70,7 +70,7 @@
     if (!action || !NS._sameOrigin(action)) return;
     const enctype = (form.getAttribute('enctype') || '').toLowerCase();
     const wantsJSON = enctype === 'application/json';
-    const explicitSPA = form.hasAttribute('data-fui-spa');
+    const explicitSPA = form.hasAttribute('data-cui-spa');
     if (!wantsJSON && !explicitSPA) return;
 
     const wantsForm = enctype === 'application/x-www-form-urlencoded' ||
@@ -93,7 +93,7 @@
         headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
       }
     } else {
-      // data-fui-spa with no enctype defaults to urlencoded so r.ParseForm()
+      // data-cui-spa with no enctype defaults to urlencoded so r.ParseForm()
       // sees the same shape as a native form submit.
       const params = new URLSearchParams();
       fd.forEach((v, k) => params.append(k, v));
@@ -125,17 +125,17 @@
   }
 
   async function _dispatchRPC(node, opts) {
-    const path = node.getAttribute('data-fui-rpc');
-    const method = (node.getAttribute('data-fui-rpc-method') || 'POST').toUpperCase();
-    const responseSignal = node.getAttribute('data-fui-rpc-signal');
-    const closeOnSuccess = node.hasAttribute('data-fui-rpc-close');
-    const resetOnSuccess = node.hasAttribute('data-fui-rpc-reset') && node.tagName === 'FORM';
+    const path = node.getAttribute('data-cui-rpc');
+    const method = (node.getAttribute('data-cui-rpc-method') || 'POST').toUpperCase();
+    const responseSignal = node.getAttribute('data-cui-rpc-signal');
+    const closeOnSuccess = node.hasAttribute('data-cui-rpc-close');
+    const resetOnSuccess = node.hasAttribute('data-cui-rpc-reset') && node.tagName === 'FORM';
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
-    const confirmMsg = node.getAttribute('data-fui-confirm');
+    const confirmMsg = node.getAttribute('data-cui-confirm');
     if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
       if (!window.confirm(confirmMsg)) return;
     }
@@ -147,13 +147,13 @@
     const ctl = new AbortController();
     if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
 
-    let body = node.getAttribute('data-fui-rpc-body');
+    let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
     let bodyIsFormData = false;
     // A form control that belongs to a form (every radio/input/select/
     // textarea with node.form set) carries its value exactly like a FORM
     // node: serialize the enclosing form so the handler sees name=value.
-    // An explicit data-fui-rpc-body (read above) still wins; a control with
+    // An explicit data-cui-rpc-body (read above) still wins; a control with
     // no enclosing form and no explicit body keeps the legacy empty body.
     const formSource = node.tagName === 'FORM' ? node : (node.form || null);
     // A retry starts clean (the formerrors module placed the previous
@@ -207,8 +207,8 @@
       }
     }
 
-    const widgetEl = node.closest('[data-fui-widget]');
-    const widgetName = (widgetEl && widgetEl.getAttribute('data-fui-widget')) || '';
+    const widgetEl = node.closest('[data-cui-widget]');
+    const widgetName = (widgetEl && widgetEl.getAttribute('data-cui-widget')) || '';
     const wentry = widgetName && NS._widgets
       && Object.prototype.hasOwnProperty.call(NS._widgets, widgetName)
       && NS._widgets[widgetName];
@@ -220,7 +220,7 @@
     // makes rapid replacement safe. Other button/input triggers are disabled.
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
     if (wantDisable) node.disabled = true;
-    node.classList.add('fui-loading');
+    node.classList.add('cui-loading');
     node.setAttribute('aria-busy', 'true');
     try {
       if (!NS._originOK(resolvedPath)) return;
@@ -248,7 +248,7 @@
       // nav is absent from the embed composition, so invalidation is optional.
       NS._inval?.(r);
       const pushState = r.headers.get('X-Gofastr-Push-State') ||
-        node.getAttribute('data-fui-push-state');
+        node.getAttribute('data-cui-push-state');
       if (pushState) {
         try {
           // Through the router's choke point (entry id + currentPath).
@@ -270,18 +270,18 @@
       if (closeOnSuccess && wentry && wentry.dismiss) wentry.dismiss();
       if (resetOnSuccess) node.reset();
 
-      // data-fui-rpc-after-done is written through dataset so repeated clicks
+      // data-cui-rpc-after-done is written through dataset so repeated clicks
       // cannot reapply one-shot text or disabled state.
-      if (!node.dataset.fuiRpcAfterDone) {
-        const afterText = node.getAttribute('data-fui-rpc-after-text');
+      if (!node.dataset.cuiRpcAfterDone) {
+        const afterText = node.getAttribute('data-cui-rpc-after-text');
         if (afterText !== null) node.textContent = afterText;
-        if (node.hasAttribute('data-fui-rpc-after-disable')) {
+        if (node.hasAttribute('data-cui-rpc-after-disable')) {
           node.setAttribute('aria-disabled', 'true');
           if ('disabled' in node) node.disabled = true;
         }
-        node.dataset.fuiRpcAfterDone = '1';
+        node.dataset.cuiRpcAfterDone = '1';
       }
-      const scrollSel = node.getAttribute('data-fui-rpc-scroll-to');
+      const scrollSel = node.getAttribute('data-cui-rpc-scroll-to');
       if (scrollSel) {
         // The hint must never corrupt the result: this lookup runs after
         // the response signal is set, in its own try, so a malformed
@@ -297,20 +297,20 @@
         } catch (_) {}
       }
 
-      const refreshName = node.getAttribute('data-fui-rpc-refresh') || widgetName;
+      const refreshName = node.getAttribute('data-cui-rpc-refresh') || widgetName;
       const rentry = NS._widgets
         && Object.prototype.hasOwnProperty.call(NS._widgets, refreshName)
         && NS._widgets[refreshName];
       if (rentry && rentry.pollNow) rentry.pollNow();
 
-      const openWidgetName = node.getAttribute('data-fui-rpc-open');
+      const openWidgetName = node.getAttribute('data-cui-rpc-open');
       if (openWidgetName) {
         NS.loadModule('widgets').then(() => {
           NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
 
-      const navigatePath = node.getAttribute('data-fui-rpc-navigate');
+      const navigatePath = node.getAttribute('data-cui-rpc-navigate');
       if (navigatePath) {
         try { NS.navigate(navigatePath, { force: true }); }
         catch (_) {}
@@ -328,10 +328,10 @@
       if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
         _rpcInFlight.delete(responseSignal);
       }
-      const sticky = node.hasAttribute('data-fui-rpc-after-disable') &&
-        node.dataset.fuiRpcAfterDone === '1';
+      const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
+        node.dataset.cuiRpcAfterDone === '1';
       if (!sticky && wantDisable) node.disabled = false;
-      node.classList.remove('fui-loading');
+      node.classList.remove('cui-loading');
       node.removeAttribute('aria-busy');
     }
   }
@@ -348,7 +348,7 @@
   async function dispatchRPC(node, source, opts) {
     if (!node) return;
     if (source === 'input') {
-      const ms = parseInt(node.getAttribute('data-fui-rpc-debounce-ms') || '250', 10) || 250;
+      const ms = parseInt(node.getAttribute('data-cui-rpc-debounce-ms') || '250', 10) || 250;
       const prev = _idt.get(node);
       clearTimeout(prev);
       _idt.set(node, setTimeout(() => {
@@ -358,7 +358,7 @@
       return;
     }
     if (node.hasAttribute('data-kiln-tool')) return _dispatchKiln(node);
-    if (!node.hasAttribute('data-fui-rpc')) return _dispatchPlainForm(node);
+    if (!node.hasAttribute('data-cui-rpc')) return _dispatchPlainForm(node);
     return _dispatchRPC(node, opts);
   }
 

@@ -9,8 +9,8 @@ package widget
 // text. (2026-09-06 adversarial pass, round 5.)
 // Property: every value the widget chrome interpolates into an attribute is escaped;
 // Definition.Position is the one field that reaches defaultSkeleton's HTML unescaped.
-// Surfaces: core-ui/widget/server.go::defaultSkeleton — `<div class="fui-widget
-// fui-pos-` + string(def.Position) + `"` — while Name, Role, LabelledBy,
+// Surfaces: core-ui/widget/server.go::defaultSkeleton — `<div class="cui-widget
+// cui-pos-` + string(def.Position) + `"` — while Name, Role, LabelledBy,
 // DescribedBy, and slot names all go through render.Escape.
 
 import (
@@ -21,10 +21,10 @@ import (
 )
 
 func TestChromeRedPositionEscaped(t *testing.T) {
-	// Control: a real Position round-trips as the fui-pos-<pos> class.
+	// Control: a real Position round-trips as the cui-pos-<pos> class.
 	ctl := string(defaultSkeleton(Definition{Name: "w", Position: BottomRight}, map[string]render.HTML{"body": render.Text("x")}))
-	if !strings.Contains(ctl, `fui-pos-bottom-right"`) {
-		t.Errorf("control broken: BottomRight no longer renders as fui-pos-bottom-right:\n%s", ctl)
+	if !strings.Contains(ctl, `cui-pos-bottom-right"`) {
+		t.Errorf("control broken: BottomRight no longer renders as cui-pos-bottom-right:\n%s", ctl)
 	}
 
 	// Hostile Position: must not break out of the class attribute. Under the

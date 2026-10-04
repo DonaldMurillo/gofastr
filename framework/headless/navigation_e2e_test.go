@@ -31,8 +31,8 @@ func TestE2E_ThemeToggleArrivingAsASwapRootIsInitialised(t *testing.T) {
 	// the marker the swap brought.
 	b := startBehaviorServer(t,
 		`<a id="top" href="#main" data-hui-back-to-top="">Top</a>`+
-			`<div id="isle" data-fui-signal="theme" data-fui-signal-mode="html"><p id="before">before</p></div>`+
-			`<a id="swap" href="?theme=1" data-fui-rpc="/__hui/theme" data-fui-rpc-method="GET" data-fui-rpc-signal="theme">Swap</a>`,
+			`<div id="isle" data-cui-signal="theme" data-cui-signal-mode="html"><p id="before">before</p></div>`+
+			`<a id="swap" href="?theme=1" data-cui-rpc="/__hui/theme" data-cui-rpc-method="GET" data-cui-rpc-signal="theme">Swap</a>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/theme", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/html")

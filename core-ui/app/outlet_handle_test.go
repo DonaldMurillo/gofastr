@@ -79,7 +79,7 @@ func TestNewLayoutRefusesSharedHandle(t *testing.T) {
 }
 
 // TestValidateRefusesBadName: an outlet name is a wire address
-// (data-fui-outlet="<key>#<name>"); anything but letters, digits, '-'
+// (data-cui-outlet="<key>#<name>"); anything but letters, digits, '-'
 // and '_' panics at NewOutlet, a duplicate name in one layout panics
 // at NewLayout, and a valid name passes.
 func TestValidateRefusesBadName(t *testing.T) {

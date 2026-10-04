@@ -86,7 +86,7 @@ type ContentRowConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the row root. Keys the
-	// component owns are dropped: class (use Class), and data-fui-*.
+	// component owns are dropped: class (use Class), and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -174,7 +174,7 @@ func contentRowCSS(_ style.Theme) string {
 .fui-content-row__workspace > main, .fui-content-row__workspace > .layout-content { flex: 1 1 auto; min-inline-size: 0; }
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: 1px solid var(--color-border); }
 .fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: 1px solid var(--color-border); }
-.fui-content-row__aside:has(> [data-fui-outlet]:empty) { display: none; }
+.fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }

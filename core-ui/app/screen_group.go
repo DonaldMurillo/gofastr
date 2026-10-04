@@ -169,7 +169,7 @@ func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
 
 	// Remember the innermost group so the renderer can compose all
 	// parent group layouts at render time (with proper
-	// data-fui-screen-group markers per level).
+	// data-cui-screen-group markers per level).
 	screen.group = g
 
 	g.screens = append(g.screens, screen)
@@ -232,7 +232,7 @@ func (g *ScreenGroup) AllScreens() []*Screen {
 // RenderLayout wraps content in the group's layout. If the group has
 // no layout, returns content unchanged.
 //
-// The rendered wrapper carries a data-fui-screen-group attribute so
+// The rendered wrapper carries a data-cui-screen-group attribute so
 // the runtime knows this is a layout boundary that should be preserved
 // during sibling-screen navigation.
 func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
@@ -247,10 +247,10 @@ func (g *ScreenGroup) RenderLayoutCtx(ctx context.Context, content render.HTML) 
 	}
 	wrapped := g.layout.WrapCtx(ctx, content)
 	// Wrap in a group marker div so the runtime can identify the boundary.
-	// The data-fui-screen-group attribute enables DOM-stable sibling nav.
+	// The data-cui-screen-group attribute enables DOM-stable sibling nav.
 	return html.Div(html.DivConfig{
-		Class:      "fui-screen-group",
-		ExtraAttrs: map[string]string{"data-fui-screen-group": g.prefix},
+		Class:      "cui-screen-group",
+		ExtraAttrs: map[string]string{"data-cui-screen-group": g.prefix},
 	}, wrapped)
 }
 

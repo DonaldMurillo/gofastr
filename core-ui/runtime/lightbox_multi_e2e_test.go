@@ -31,18 +31,18 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 	// where the old first-match findViewer() picked the wrong viewer.
 	// B is OPEN and carries the Prev/Next buttons.
 	page := fmt.Sprintf(`<!doctype html><html><head>%s</head><body>
-<div id="lbA" data-fui-widget="lbA" hidden>
-  <div data-fui-comp="ui-lightbox" data-fui-lightbox="lbA" data-fui-lightbox-nav="true">
+<div id="lbA" data-cui-widget="lbA" hidden>
+  <div data-cui-comp="ui-lightbox" data-fui-lightbox="lbA" data-fui-lightbox-nav="true">
     <button data-fui-lightbox-prev>A-prev</button><button data-fui-lightbox-next>A-next</button>
   </div>
 </div>
-<div id="lbB" data-fui-widget="lbB">
-  <div data-fui-comp="ui-lightbox" data-fui-lightbox="lbB" data-fui-lightbox-nav="true">
+<div id="lbB" data-cui-widget="lbB">
+  <div data-cui-comp="ui-lightbox" data-fui-lightbox="lbB" data-fui-lightbox-nav="true">
     <button data-fui-lightbox-prev>B-prev</button><button id="bNext" data-fui-lightbox-next>B-next</button>
   </div>
 </div>
-<a data-fui-lightbox-group="grpB" data-fui-deeplink="src=img1.jpg&group=grpB">1</a>
-<a data-fui-lightbox-group="grpB" data-fui-deeplink="src=img2.jpg&group=grpB">2</a>
+<a data-fui-lightbox-group="grpB" data-cui-deeplink="src=img1.jpg&group=grpB">1</a>
+<a data-fui-lightbox-group="grpB" data-cui-deeplink="src=img2.jpg&group=grpB">2</a>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`, block)
@@ -59,7 +59,7 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.lightbox&&window.__gofastr.lightbox.rescan)`,
 			nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
 		// The widgets module self-registers openWidget when it loads, and it
-		// is idle-scheduled off the [data-fui-widget] marker this fixture
+		// is idle-scheduled off the [data-cui-widget] marker this fixture
 		// carries. Installing the spy first is a race: if widgets lands
 		// afterwards it overwrites the spy, step() calls the real
 		// openWidget, and __lbCall stays "", which is exactly the ~8%
@@ -80,8 +80,8 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 
 	var insertedWatched bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.body.insertAdjacentHTML('beforeend', '<div id="lbC" data-fui-widget="lbC" hidden><div data-fui-comp="ui-lightbox" data-fui-lightbox="lbC"></div></div>')`, nil),
-		chromedp.Poll(`document.getElementById('lbC').dataset.fuiLightboxWatched === '1'`, &insertedWatched,
+		chromedp.Evaluate(`document.body.insertAdjacentHTML('beforeend', '<div id="lbC" data-cui-widget="lbC" hidden><div data-cui-comp="ui-lightbox" data-fui-lightbox="lbC"></div></div>')`, nil),
+		chromedp.Poll(`document.getElementById('lbC').dataset.cuiLightboxWatched === '1'`, &insertedWatched,
 			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 	); err != nil {
 		t.Fatalf("chromedp dynamic lightbox scan: %v", err)

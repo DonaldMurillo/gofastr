@@ -23,7 +23,7 @@ func TestRenderFooterLandmarks(t *testing.T) {
 	html := string(sitefooter.Render(full()))
 	for _, want := range []string{
 		// The contentinfo landmark, owned by this package's style.
-		"<footer", `role="contentinfo"`, `data-fui-scope="sitefooter"`,
+		"<footer", `role="contentinfo"`, `data-cui-scope="sitefooter"`,
 		// The measure-taking inner, the lead-over-columns top, the note.
 		`class="inner"`, `class="top"`, `class="columns"`, `class="note"`,
 		// The brand links home; the columns are titled lists.

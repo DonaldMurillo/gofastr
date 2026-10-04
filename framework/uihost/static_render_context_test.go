@@ -116,7 +116,7 @@ func TestRenderStaticPageMarksComponentStylesheets(t *testing.T) {
 	if !strings.Contains(page, want) {
 		t.Fatalf("no component stylesheet link in the static page: %s", excerpt(page, "<link"))
 	}
-	if !strings.Contains(page, `data-fui-style="`+st.Name()+`" id="fui-css-`+st.Name()+`"`) {
+	if !strings.Contains(page, `data-cui-style="`+st.Name()+`" id="cui-css-`+st.Name()+`"`) {
 		t.Fatalf("the component stylesheet link lacks the runtime's marker: %s", excerpt(page, "/__gofastr/comp/"))
 	}
 }

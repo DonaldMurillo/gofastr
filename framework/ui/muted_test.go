@@ -10,7 +10,7 @@ import (
 
 func TestMutedMarksAndWraps(t *testing.T) {
 	out := string(Muted(render.Text("3 drafts")))
-	if !strings.Contains(out, `data-fui-comp="ui-muted"`) {
+	if !strings.Contains(out, `data-cui-comp="ui-muted"`) {
 		t.Fatalf("Muted must carry the style marker: %s", out)
 	}
 	if !strings.Contains(out, `class="fui-muted"`) || !strings.Contains(out, "3 drafts") {

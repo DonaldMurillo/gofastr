@@ -11,8 +11,8 @@ func TestSafeExtraAttrsDropsProtectedKeys(t *testing.T) {
 		"Type":        "hidden",
 		"data-test":   "hook",
 		"aria-label":  "override",
-		"data-fui-on": "spoof",
-		"DATA-FUI-X":  "spoof-case-variant",
+		"data-cui-on": "spoof",
+		"DATA-CUI-X":  "spoof-case-variant",
 	}, "type")
 
 	want := Attrs{"data-test": "hook", "aria-label": "override"}
@@ -31,16 +31,16 @@ func TestSafeCarrierAttrsKeepsWiring(t *testing.T) {
 		"class":            "evil",
 		"ID":               "evil-case-variant",
 		"Type":             "hidden",
-		"data-fui-comp":    "spoofed-style-scope",
+		"data-cui-comp":    "spoofed-style-scope",
 		"data-test":        "hook",
-		"data-fui-rpc":     "/api/items/42",
-		"data-fui-confirm": "Delete?",
+		"data-cui-rpc":     "/api/items/42",
+		"data-cui-confirm": "Delete?",
 	}, "type")
 
 	want := Attrs{
 		"data-test":        "hook",
-		"data-fui-rpc":     "/api/items/42",
-		"data-fui-confirm": "Delete?",
+		"data-cui-rpc":     "/api/items/42",
+		"data-cui-confirm": "Delete?",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)

@@ -12,7 +12,7 @@ import (
 // FileUpload and FileDropzone render their behaviour through the
 // headless module's data-hui-when / data-hui-drop hooks (the drop
 // forwarding, the chosen-files list and the pick announcement), so
-// the old data-fui-scoped modules ran beside their replacement on
+// the old data-cui-scoped modules ran beside their replacement on
 // every page that had both hooks. The tracker's rule is "retire in
 // the PR where the component moves, never run side by side" — this
 // holds the retirement: no src file, no module-table entry, no
@@ -23,7 +23,7 @@ import (
 // NumberInput, Slider, RangeSlider, TagInput, Repeater and
 // FormRepeater render through headless primitives whose data-hui-*
 // hooks the registered headless-controls / headless-collections
-// modules bind, so the old data-fui-scoped steppers, mirrors, pairs,
+// modules bind, so the old data-cui-scoped steppers, mirrors, pairs,
 // chip strips and form-repeat interceptors ran beside their
 // replacements on every page that had both. searchinput and shortcut
 // are the deliberate retention: SearchInput stays a styled wrapper

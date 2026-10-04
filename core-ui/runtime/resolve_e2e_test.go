@@ -40,11 +40,11 @@ func newResolveSite(t *testing.T) *resolveSite {
 		`{"path":"/"},{"path":"/a","layouts":["l:site"]},{"path":"/b","layouts":["l:site"]}` +
 		`]</script>`
 	doc := func(inner, entry string) string {
-		return `<!doctype html><html lang="en" data-fui-vt-kinds="fade slide">` +
+		return `<!doctype html><html lang="en" data-cui-vt-kinds="fade slide">` +
 			`<head><title>resolve</title>` + routes + `</head><body>` +
-			`<div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a> <a id="goB" href="/b">B</a></nav>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` + inner + `</main>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux := http.NewServeMux()
@@ -223,7 +223,7 @@ func TestTransitionPickedByDestination(t *testing.T) {
 	waitTextContent(t, ctx, `#main`, "A")
 	got := read2()
 	if len(got) == 0 || strings.Join(got[len(got)-1], ",") != "forward" {
-		t.Fatalf("a pick outside data-fui-vt-kinds must be ignored, got %v", got)
+		t.Fatalf("a pick outside data-cui-vt-kinds must be ignored, got %v", got)
 	}
 }
 
@@ -251,13 +251,13 @@ func newParamSite(t *testing.T) *paramSite {
 	page := func(svc, inner string) string {
 		key := "g:/projects/" + svc + "/:site"
 		return `<!doctype html><html lang="en"><head><title>param</title>` + routes + `</head><body>` +
-			`<div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="toBilling" href="/projects/billing">Billing</a> <a id="toSearch" href="/projects/search">Search</a></nav>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` +
-			`<div data-fui-screen-group="/projects/` + svc + `/">` +
-			`<div data-fui-layout="site" data-fui-layout-key="` + key + `">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` +
+			`<div data-cui-screen-group="/projects/` + svc + `/">` +
+			`<div data-cui-layout="site" data-cui-layout-key="` + key + `">` +
 			`<input id="proj-filter" value="` + svc + `-typed">` +
-			`<div data-fui-layout-slot="` + key + `" id="slot">` + inner + `</div>` +
+			`<div data-cui-layout-slot="` + key + `" id="slot">` + inner + `</div>` +
 			`</div></div></main></div>` +
 			`<script src="/__gofastr/runtime.js"></script></body></html>`
 	}
@@ -279,13 +279,13 @@ func newParamSite(t *testing.T) *paramSite {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", svc)
 			w.Header().Set("X-Gofastr-Swap", key)
-			fmt.Fprintf(w, `<div data-fui-screen-group="/projects/%s/"><div data-fui-layout="site" data-fui-layout-key="%s"><div data-fui-layout-slot="%s" id="slot"><span id="page">%s</span></div></div></div>`, svc, key, key, path)
+			fmt.Fprintf(w, `<div data-cui-screen-group="/projects/%s/"><div data-cui-layout="site" data-cui-layout-key="%s"><div data-cui-layout-slot="%s" id="slot"><span id="page">%s</span></div></div></div>`, svc, key, key, path)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
 		switch path {
 		case "/":
-			fmt.Fprint(w, `<<!DOCTYPE html><html lang="en"><head><title>param</title>`+routes+`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site"><nav><a id="toBilling" href="/projects/billing">Billing</a> <a id="toSearch" href="/projects/search">Search</a></nav><main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">HOME</main></div><script src="/__gofastr/runtime.js"></script></body></html>`)
+			fmt.Fprint(w, `<<!DOCTYPE html><html lang="en"><head><title>param</title>`+routes+`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site"><nav><a id="toBilling" href="/projects/billing">Billing</a> <a id="toSearch" href="/projects/search">Search</a></nav><main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">HOME</main></div><script src="/__gofastr/runtime.js"></script></body></html>`)
 		default:
 			fmt.Fprint(w, page(svc, `<span id="page">`+path+`</span>`))
 		}
@@ -370,8 +370,8 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 	}
 	waitTextContent(t, ctx, `#page`, "/projects/search")
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-      const el = document.querySelector('[data-fui-layout-key^="g:/projects/"]');
-      return el ? el.getAttribute('data-fui-layout-key') : '!missing';
+      const el = document.querySelector('[data-cui-layout-key^="g:/projects/"]');
+      return el ? el.getAttribute('data-cui-layout-key') : '!missing';
     })()`, &filterVal)); err != nil {
 		t.Fatal(err)
 	}
@@ -388,8 +388,8 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 	waitTextContent(t, ctx, `#page`, "/projects/billing/issues/42")
 	var reKey string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-      const el = document.querySelector('[data-fui-layout-key^="g:/projects/"]');
-      return el ? el.getAttribute('data-fui-layout-key') : '!missing';
+      const el = document.querySelector('[data-cui-layout-key^="g:/projects/"]');
+      return el ? el.getAttribute('data-cui-layout-key') : '!missing';
     })()`, &reKey)); err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 // TestTransitionVocabularyCopyIsModuleOwned pins the vocabulary copy's
 // home (the transition module's gofastr:navigate listener + direct
 // setAttribute, not core's applyDocShell seam): a swapped payload
-// whose root carries data-fui-vt-kinds updates the live
+// whose root carries data-cui-vt-kinds updates the live
 // documentElement, and no kernel allowlist word is involved (the
 // write is a plain attribute set).
 // Mutation it catches: removing the listener's setAttribute leaves the
@@ -413,18 +413,18 @@ func TestTransitionVocabularyCopyIsModuleOwned(t *testing.T) {
 		chromedp.Navigate(s.srv.URL+"/"),
 		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && !!window.__gofastr.loadedModules["transition"]`, new(bool), chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`(() => {
-			document.documentElement.setAttribute('data-fui-vt-kinds', 'fade');
+			document.documentElement.setAttribute('data-cui-vt-kinds', 'fade');
 			const root = document.createElement('div');
-			root.setAttribute('data-fui-vt-kinds', 'fade slide');
+			root.setAttribute('data-cui-vt-kinds', 'fade slide');
 			window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x', prevPath: '/', cached: false, root } }));
 			return true;
 		})()`, nil),
-		chromedp.Evaluate(`document.documentElement.getAttribute('data-fui-vt-kinds')`, new(string)),
+		chromedp.Evaluate(`document.documentElement.getAttribute('data-cui-vt-kinds')`, new(string)),
 	); err != nil {
 		t.Fatal(err)
 	}
 	var kinds string
-	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.documentElement.getAttribute('data-fui-vt-kinds')`, &kinds))
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.documentElement.getAttribute('data-cui-vt-kinds')`, &kinds))
 	if !strings.Contains(kinds, "slide") {
 		t.Errorf("documentElement vocabulary = %q after a swap whose payload declared the full set; the module-side copy (gofastr:navigate listener, direct setAttribute) did not run", kinds)
 	}

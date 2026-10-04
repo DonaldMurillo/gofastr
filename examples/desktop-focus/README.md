@@ -33,7 +33,7 @@ or over plain HTTP.
   `desktop.Widget("/widget", 320, 300)` with `AllSpaces` (borderless,
   non-activating, transparent, visible on every Space), opened
   automatically when a session starts. The widget's card header is the
-  drag handle (`data-fui-window-drag`).
+  drag handle (`data-cui-window-drag`).
 - Cross-window messages: the widget's "Open task" button posts
   `show_task` to the main window through `windows.post`; the main
   page's listener navigates to the task with `__gofastr.navigate`.

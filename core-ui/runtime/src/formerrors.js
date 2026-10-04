@@ -1,6 +1,6 @@
 // GoFastr runtime module, form errors
 //
-// The failure half of a data-fui-rpc form submission, loaded on demand
+// The failure half of a data-cui-rpc form submission, loaded on demand
 // by rpc.js the first time a form's request answers non-2xx. Like ws
 // and desktop it has no DOM marker. The server's validation envelope
 // ({error, fields: {name: [messages]}}) lands beside each named

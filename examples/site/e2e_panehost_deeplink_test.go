@@ -157,7 +157,7 @@ func TestWorkspaceDeepLinkRoundTrip(t *testing.T) {
 		chromedp.Sleep(2*time.Second),
 		chromedp.Evaluate(paneParam, &afterFwd),
 		chromedp.Evaluate(secOpen, &fwdState),
-		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-ticket"]').textContent`, &detailAfterFwd),
+		chromedp.Evaluate(`document.querySelector('[data-cui-signal="ws-ticket"]').textContent`, &detailAfterFwd),
 	); err != nil {
 		t.Fatal(err)
 	}

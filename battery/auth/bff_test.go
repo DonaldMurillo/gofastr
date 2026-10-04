@@ -192,7 +192,7 @@ func TestBFFPostureSignOutFormPassesLogoutOriginGuard(t *testing.T) {
 		t.Fatal("account page did not mint the secure CSRF cookie")
 	}
 	body := pageRec.Body.String()
-	if !strings.Contains(body, `data-fui-comp="ui-sign-out"`) {
+	if !strings.Contains(body, `data-cui-comp="ui-sign-out"`) {
 		t.Fatalf("account page omitted SignOut: %s", body)
 	}
 	form := url.Values{"next": {"/"}}

@@ -1,4 +1,4 @@
-// Package retired reports retired class names and data-fui-* attributes
+// Package retired reports retired class names and kit data-* attributes
 // in rendered HTML. `gofastr upgrade` finds these names in an app's
 // source: constant strings and CSS. A name built at run time —
 // fmt.Sprintf("ui-%s", kind), a class read from the database, a template

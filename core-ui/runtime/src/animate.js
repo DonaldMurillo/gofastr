@@ -1,13 +1,13 @@
 // Animate runtime module, signal-driven CSS transitions.
 //
-// Loaded on-demand when any [data-fui-animate-signal] marker is on the
+// Loaded on-demand when any [data-cui-animate-signal] marker is on the
 // page (or arrives via SPA-nav). Subscribes to signal changes via
 // __gofastr._signals[name].listeners and toggles a CSS class on the
 // element when the signal value changes.
 //
 // Attributes:
-//   data-fui-animate-signal="<name>"  : signal to watch
-//   data-fui-animate-class="<class>"  : CSS class to toggle
+//   data-cui-animate-signal="<name>"  : signal to watch
+//   data-cui-animate-class="<class>"  : CSS class to toggle
 //
 // Truthy signals ("true", non-empty, non-"0", non-"false") add the
 // class; falsy signals remove it. Initial state is applied on setup.
@@ -15,7 +15,7 @@
 (() => {
   'use strict';
 
-  const ANIMATE_SEL = '[data-fui-animate-signal]';
+  const ANIMATE_SEL = '[data-cui-animate-signal]';
 
   // Track wired elements + their signal subscriptions so we can splice the
   // listener closures back out of G._signals[name].listeners once the element
@@ -37,8 +37,8 @@
 
   // Wire a single animate element to its signal.
   const wire = (el) => {
-    const name = el.getAttribute('data-fui-animate-signal');
-    const cls = el.getAttribute('data-fui-animate-class');
+    const name = el.getAttribute('data-cui-animate-signal');
+    const cls = el.getAttribute('data-cui-animate-class');
     if (!name || !cls) return;
 
     const G = window.__gofastr;

@@ -5,7 +5,7 @@
 // eager open/toast delegators) against the DUMPED catalog the static
 // exporter writes.
 //
-// Why a separate fragment instead of a runtime branch on data-fui-static:
+// Why a separate fragment instead of a runtime branch on data-cui-static:
 // the composition IS the switch (kernel+rpc-stub+signals+nav+widgets-boot-
 // static+boot vs. kernel+rpc+signals+nav+widgets-boot+boot). The static
 // exporter (framework/static.Builder.dumpWidgetAssets) writes
@@ -25,13 +25,13 @@
 // for the same reason: mutually-exclusive fragments are not a shared
 // code surface. Pulling the eager delegators into a third shared
 // fragment would (a) change the `full` composition and risk drift in
-// data-fui-open behaviour there, and (b) require either a runtime
-// branch on data-fui-static (the exact silent _staticMode trap the
+// data-cui-open behaviour there, and (b) require either a runtime
+// branch on data-cui-static (the exact silent _staticMode trap the
 // composition switch was introduced to avoid) or a third composition
 // entry in fragments.go for zero functional gain. Duplicating keeps
 // `full` byte-identical and keeps the static composition honest.
 //
-// data-fui-open / data-fui-toast / data-fui-deeplink are still OWNED by
+// data-cui-open / data-cui-toast / data-cui-deeplink are still OWNED by
 // widgets-boot (see fragments.go), this fragment cross-references them
 // the way rpc-stub cross-references the rpc family. The attrdoc gate
 // treats cross-references as non-transferable; that holds here.
@@ -65,7 +65,7 @@
       if (!Array.isArray(list)) { _wcr(); return; }
       // The widget runtime ships as a split module. Make sure it's
       // loaded before iterating mounts, covers the case where no
-      // [data-fui-widget] marker is present in initial HTML (the
+      // [data-cui-widget] marker is present in initial HTML (the
       // marker scanner wouldn't have fired) but the catalog says there
       // are widgets to mount.
       if (list.length > 0) {
@@ -114,26 +114,26 @@
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
     document.addEventListener('click', (e) => {
-      // Toast trigger: data-fui-toast='<json>' fires a client toast.
-      const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
+      // Toast trigger: data-cui-toast='<json>' fires a client toast.
+      const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
       if (toastBtn) {
         e.preventDefault();
         window.__gofastr.loadModule('headless-feedback').then(() => {
           try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
+            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
             window.__gofastr.toast(cfg);
           } catch (_) {}
         }).catch(() => {});
         return;
       }
-      const btn = e.target.closest && e.target.closest('[data-fui-open]');
+      const btn = e.target.closest && e.target.closest('[data-cui-open]');
       if (!btn) return;
       // openWidget resolves against the dumped catalog; chrome HTML
       // comes from the per-widget static file the exporter dumps.
-      const name = btn.getAttribute('data-fui-open');
+      const name = btn.getAttribute('data-cui-open');
       if (!name) return;
       e.preventDefault();
-      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const raw = btn.getAttribute('data-cui-deeplink') || '';
       const overrides = {};
       if (raw) {
         // Degrade-don't-throw, same as widgets-boot: a malformed escape
@@ -148,7 +148,7 @@
           } catch (_) {}
         }
       }
-      const anchorPref = btn.getAttribute('data-fui-popover-anchor');
+      const anchorPref = btn.getAttribute('data-cui-popover-anchor');
       (async () => {
         // The widgets module + catalog must both be ready before
         // openWidget can find the entry. Awaiting both here keeps the

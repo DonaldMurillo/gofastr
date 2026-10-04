@@ -1269,7 +1269,7 @@ func TestE2E_IslandFormFailureFocusesTheSummary(t *testing.T) {
 	}, nil, Input(InputProps{Name: "name", ID: "acct-name"}, nil),
 		Button(ButtonProps{Label: "Save", Type: "submit", Variant: "primary"}, nil))
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="acct" data-fui-signal-mode="html">`+string(failed)+`</div>`,
+		`<div id="isle" data-cui-signal="acct" data-cui-signal-mode="html">`+string(failed)+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/form", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/html")
@@ -1424,7 +1424,7 @@ func TestE2E_WhenFollowsAFormAssociatedControlOutsideTheFormElement(t *testing.T
 
 // The route every swap-driven behaviour is built on, proved on its own
 // before the table behaviour is built on it: an island update is an
-// innerHTML write into a data-fui-signal region, which the kernel's
+// innerHTML write into a data-cui-signal region, which the kernel's
 // MutationObserver sees as an insertion and hands to every loaded
 // module's scanner. A module that could not rely on this would need an
 // observer of its own, which arms everything a second time on top of
@@ -1445,8 +1445,8 @@ func TestE2E_TheKernelArmsTheModuleOnASwappedSignalRegion(t *testing.T) {
 	// subtree, not the module loading on the marker the swap brought.
 	b := startBehaviorServer(t,
 		string(Password(PasswordProps{Name: "token", ID: "token"}, nil))+
-			`<div id="isle" data-fui-signal="probe" data-fui-signal-mode="html"><p id="before">before</p></div>`+
-			`<a id="sorter" href="?sort=name" data-fui-rpc="/__hui/swap?sort=name" data-fui-rpc-method="GET" data-fui-rpc-signal="probe" data-fui-push-state="?sort=name">Sort</a>`,
+			`<div id="isle" data-cui-signal="probe" data-cui-signal-mode="html"><p id="before">before</p></div>`+
+			`<a id="sorter" href="?sort=name" data-cui-rpc="/__hui/swap?sort=name" data-cui-rpc-method="GET" data-cui-rpc-signal="probe" data-cui-push-state="?sort=name">Sort</a>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/swap", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/html")
@@ -1516,7 +1516,7 @@ var tableCols = []Column{
 // the island pushed.
 func TestE2E_IslandSortRestoresFocusAndAnnounces(t *testing.T) {
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1576,7 +1576,7 @@ func TestE2E_IslandSortRestoresFocusAndAnnounces(t *testing.T) {
 func TestE2E_IslandSortFallsBackToTheScrollRegion(t *testing.T) {
 	narrow := []Column{{Key: "env", Header: "Environment", Sortable: true}}
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1635,7 +1635,7 @@ func pagerFixture(t *testing.T, page, pages int, summary string) render.HTML {
 // the island pushed.
 func TestE2E_IslandPageTurnRestoresFocusOnThePageAnchor(t *testing.T) {
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(pagerFixture(t, 1, 3, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1688,7 +1688,7 @@ func TestE2E_IslandPageTurnRestoresFocusOnThePageAnchor(t *testing.T) {
 // own marked position — rather than falling to <body>.
 func TestE2E_IslandPageTurnFallsBackToTheCurrentPage(t *testing.T) {
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(pagerFixture(t, 1, 3, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1771,9 +1771,9 @@ func TestE2E_PlainTableSortIsTheRouters(t *testing.T) {
 // table when both wrappers receive the same response.
 func TestE2E_IslandSortSameSignalRestoresClickedRegion(t *testing.T) {
 	b := startBehaviorServer(t,
-		`<div id="first" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="first" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`+
-			`<div id="second" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			`<div id="second" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1802,9 +1802,9 @@ func TestE2E_IslandSortSameSignalRestoresClickedRegion(t *testing.T) {
 // non-sort RPC in the same replacement region is that next act, so its
 // answer must not restore the old sort's focus or announcement.
 func TestE2E_FailedSortThenRefreshDoesNotRestoreFocus(t *testing.T) {
-	initial := `<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">` +
+	initial := `<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">` +
 		string(tableFixture(t, "name", SortAsc, tableCols, "")) +
-		`<button id="refresh" type="button" data-fui-rpc="/__hui/refresh" data-fui-rpc-method="GET" data-fui-rpc-signal="apps">Refresh</button></div>`
+		`<button id="refresh" type="button" data-cui-rpc="/__hui/refresh" data-cui-rpc-method="GET" data-cui-rpc-signal="apps">Refresh</button></div>`
 	b := startBehaviorServer(t, initial,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
@@ -1861,7 +1861,7 @@ func TestE2E_FailedSortThenRefreshDoesNotRestoreFocus(t *testing.T) {
 // cannot claim a later passive signal swap.
 func TestE2E_ExpiredTableSortDoesNotRestoreFocus(t *testing.T) {
 	b := startBehaviorServer(t,
-		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+		`<div id="isle" data-cui-signal="apps" data-cui-signal-mode="html">`+
 			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
 		func(mux *http.ServeMux) {
 			mux.HandleFunc("/__hui/age", func(w http.ResponseWriter, r *http.Request) {

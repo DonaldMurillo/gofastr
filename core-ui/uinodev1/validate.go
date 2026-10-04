@@ -90,7 +90,7 @@ type walker struct {
 //     capturing props as a json.RawMessage so we don't materialize
 //     attacker-shaped prop structures before we know the component.
 //  2. Look up the component's typed prop decoder, then decode props into
-//     the right struct with DisallowUnknownFields (rejects data-fui-* and
+//     the right struct with DisallowUnknownFields (rejects data-cui-* and
 //     every other unknown prop key).
 //
 // Children are decoded as []json.RawMessage, then recursed on, so the
@@ -144,7 +144,7 @@ func (w *walker) decodeNode(data []byte, depth int) (decodedNode, error) {
 
 	// Decode props into the typed struct, or use a zero-value if absent.
 	// DisallowUnknownFields here is the load-bearing control: a key like
-	// "data-fui-rpc" or "onclick" is not a field of any prop struct, so
+	// "data-cui-rpc" or "onclick" is not a field of any prop struct, so
 	// the decoder rejects it. This is the core repair for the noderender
 	// extraAttrs denylist breach (design §9).
 	props, err := decodeProps(propDecoder, shadow.Props)

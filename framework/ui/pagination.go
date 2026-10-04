@@ -79,7 +79,7 @@ type PaginationConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the nav landmark. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// style, data-fui-* and the data-hui-* hooks.
+	// style, data-cui-* and the data-hui-* hooks.
 	ExtraAttrs html.Attrs
 }
 

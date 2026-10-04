@@ -381,12 +381,12 @@ func tocState(t *testing.T, ctx context.Context) (cellDisplay string, columns in
 	t.Helper()
 	// The cell is the helpdocs column holding the toc outlet.
 	cellDisplay = evalString(t, ctx, `(() => {
-		const el = document.querySelector('[data-fui-outlet$="#toc"]');
+		const el = document.querySelector('[data-cui-outlet$="#toc"]');
 		return el ? getComputedStyle(el.parentElement).display : 'missing';
 	})()`)
 	var cols int
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const el = document.querySelector('[data-fui-scope="helpdocs"]');
+		const el = document.querySelector('[data-cui-scope="helpdocs"]');
 		return el ? getComputedStyle(el).gridTemplateColumns.split(' ').length : 0;
 	})()`, &cols)); err != nil {
 		t.Fatalf("read help page columns: %v", err)
@@ -411,7 +411,7 @@ func TestHelpTocRailCollapsesWhenEmpty(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Navigate(base+"/help/projects")); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, ctx, `!!document.querySelector('[data-fui-outlet$="#toc"] .fui-toc')`)
+	waitUntil(t, ctx, `!!document.querySelector('[data-cui-outlet$="#toc"] .fui-toc')`)
 	if disp, cols := tocState(t, ctx); disp == "none" || cols != 3 {
 		t.Errorf("projects: toc cell %q, %d columns; want a shown rail and 3 columns", disp, cols)
 	}
@@ -433,7 +433,7 @@ func TestHelpTocRailCollapsesWhenEmpty(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, ctx, `!!document.querySelector('[data-fui-outlet$="#toc"] .fui-toc')`)
+	waitUntil(t, ctx, `!!document.querySelector('[data-cui-outlet$="#toc"] .fui-toc')`)
 	if disp, cols := tocState(t, ctx); disp == "none" || cols != 3 {
 		t.Errorf("keyboard after client nav: toc cell %q, %d columns; want the rail back", disp, cols)
 	}
@@ -480,7 +480,7 @@ func TestHelpDirectArticleWithoutJS(t *testing.T) {
 	)
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('article p')).display`, &paraShown),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-fui-outlet$="#toc"]').parentElement).display`, &tocShown),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-outlet$="#toc"]').parentElement).display`, &tocShown),
 	); err != nil {
 		t.Fatalf("probe the article: %v", err)
 	}
@@ -533,8 +533,8 @@ func TestHelpDirectArticleWithoutJS(t *testing.T) {
 	// The site header's own mobile menu is native too: it leaves the
 	// help center for the marketing site, still without script.
 	if err := chromedp.Run(ctx,
-		chromedp.Click(`[data-fui-scope="siteheader"] summary`, chromedp.NodeVisible),
-		chromedp.Evaluate(`document.querySelector('[data-fui-scope="siteheader"] details').open`, &opened),
+		chromedp.Click(`[data-cui-scope="siteheader"] summary`, chromedp.NodeVisible),
+		chromedp.Evaluate(`document.querySelector('[data-cui-scope="siteheader"] details').open`, &opened),
 	); err != nil {
 		t.Fatalf("open the site menu: %v", err)
 	}

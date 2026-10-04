@@ -309,11 +309,11 @@ func (s *ComponentShowcaseScreen) registeredBehaviorSection() render.HTML {
 		ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{
 			Label: "Ping",
 			ID:    "site-ping-btn",
-			// data-fui-prefetch warms the module on hover; aria-pressed
+			// data-cui-prefetch warms the module on hover; aria-pressed
 			// is the attribute the behaviour toggles on click.
 			ExtraAttrs: html.Attrs{
 				"data-site-ping":    "1",
-				"data-fui-prefetch": "site-ping",
+				"data-cui-prefetch": "site-ping",
 				"aria-pressed":      "false",
 			},
 		})),

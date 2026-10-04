@@ -15,7 +15,7 @@ func TestHeroSplitRendersBothColumns(t *testing.T) {
 		AriaLabel: "Hero",
 	}))
 	for _, want := range []string{
-		`data-fui-comp="ui-hero-split"`,
+		`data-cui-comp="ui-hero-split"`,
 		`aria-label="Hero"`,
 		`class="fui-hero-split__copy"`,
 		`<h1>Hello</h1>`,

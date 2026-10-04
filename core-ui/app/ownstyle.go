@@ -11,7 +11,7 @@ import (
 // *ownstyle.Sheet, which supplies OwnedSheet.
 //
 // Three owners take one here. LayoutSpec.Style and Screen.WithStyle
-// take a scoped sheet; the framework stamps data-fui-scope="<name>" on
+// take a scoped sheet; the framework stamps data-cui-scope="<name>" on
 // the owner's root, which bounds the compiled @scope and tells the
 // SSR head and the runtime to load /__gofastr/comp/<name>.css.
 // App.WithStyle takes the app sheet, which covers every page and
@@ -44,7 +44,7 @@ func ownedSheet(owner string, st OwnedStyle) *ownstyle.Sheet {
 // WithStyle gives the screen an owned style. The screen's content is
 // wrapped once — in its <article> when the screen is an article,
 // otherwise in a plain <div> — and the wrapper carries
-// data-fui-scope="<name>". The primary cell is never the scope root:
+// data-cui-scope="<name>". The primary cell is never the scope root:
 // it persists across navigations while screens swap inside it. Fills
 // render in the layout's outlets, outside the wrapper, so the screen's
 // style never reaches them.

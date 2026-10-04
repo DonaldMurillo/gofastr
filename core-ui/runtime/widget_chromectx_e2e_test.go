@@ -37,9 +37,9 @@ type chromeCtxServer struct {
 // chromeBody is the widget chrome: a mark span showing what the server
 // rendered, and a close button so tests can dismiss between opens.
 func chromeBody(mark string) string {
-	return `<div class="fui-widget fui-pos-center" data-fui-widget="dlg" role="dialog">` +
+	return `<div class="cui-widget cui-pos-center" data-cui-widget="dlg" role="dialog">` +
 		`<span id="ctxmark">` + mark + `</span>` +
-		`<button type="button" id="closer" data-fui-action="close">Close</button>` +
+		`<button type="button" id="closer" data-cui-action="close">Close</button>` +
 		`</div>`
 }
 
@@ -151,7 +151,7 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 			c.setPrincipal("anon")
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "After")
-			fmt.Fprint(w, `<h2 id="after-mark">after</h2><button id="open2" data-fui-open="dlg">Open</button><button id="open-ctx" data-fui-open="dlg" data-fui-ctx="slowfail">Open ctx</button>`)
+			fmt.Fprint(w, `<h2 id="after-mark">after</h2><button id="open2" data-cui-open="dlg">Open</button><button id="open-ctx" data-cui-open="dlg" data-cui-ctx="slowfail">Open ctx</button>`)
 			return
 		}
 		fmt.Fprintf(w, `<!doctype html><html><head><title>chromectx</title>
@@ -173,19 +173,19 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 func closeWidget() chromedp.Action {
 	return chromedp.Tasks{
 		chromedp.Click(`#closer`, chromedp.ByID),
-		chromedp.WaitNotPresent(`[data-fui-widget="dlg"]`),
+		chromedp.WaitNotPresent(`[data-cui-widget="dlg"]`),
 	}
 }
 
 // TestWidgetChromeCtx_DistinctPerCtxAndCachedPerCtx pins #321: two open
-// triggers with different data-fui-ctx must produce two distinct chromes,
+// triggers with different data-cui-ctx must produce two distinct chromes,
 // and re-opening the SAME ctx must be served from the (name, ctx) client
 // cache — the server sees exactly one fetch per ctx. A test where both
 // triggers share a ctx proves nothing; this one varies it.
 func TestWidgetChromeCtx_DistinctPerCtxAndCachedPerCtx(t *testing.T) {
 	body := `
-<button id="open-a" data-fui-open="dlg" data-fui-ctx="inv-42">A</button>
-<button id="open-b" data-fui-open="dlg" data-fui-ctx="inv-99">B</button>`
+<button id="open-a" data-cui-open="dlg" data-cui-ctx="inv-42">A</button>
+<button id="open-b" data-cui-open="dlg" data-cui-ctx="inv-99">B</button>`
 	c := startChromeCtxServer(t, body)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
@@ -241,7 +241,7 @@ func TestWidgetChromeCtx_DistinctPerCtxAndCachedPerCtx(t *testing.T) {
 // middleware produces on the first request after the session dies.
 func TestWidgetChromeCacheClearedOnPrincipalChange(t *testing.T) {
 	body := `
-<button id="open1" data-fui-open="dlg">Open</button>
+<button id="open1" data-cui-open="dlg">Open</button>
 <a id="nav-out" href="/after">Sign out</a>`
 	c := startChromeCtxServer(t, body)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
@@ -285,7 +285,7 @@ func TestWidgetChromeCacheClearedOnPrincipalChange(t *testing.T) {
 func TestWidgetChromeCtx_CacheCapped(t *testing.T) {
 	var body strings.Builder
 	for i := range 34 {
-		fmt.Fprintf(&body, `<button id="open-%d" data-fui-open="dlg" data-fui-ctx="c%d">%d</button>`+"\n", i, i, i)
+		fmt.Fprintf(&body, `<button id="open-%d" data-cui-open="dlg" data-cui-ctx="c%d">%d</button>`+"\n", i, i, i)
 	}
 	c := startChromeCtxServer(t, body.String())
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
@@ -333,7 +333,7 @@ func TestWidgetChromeCtx_CacheCapped(t *testing.T) {
 // extra request per failure (measured as 3 fetches where 2 suffice).
 func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 	body := `
-<button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>
+<button id="open-slow" data-cui-open="dlg" data-cui-ctx="slowfail">Slow</button>
 <a id="nav-out" href="/after">Go</a>`
 	c := startChromeCtxServer(t, body)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
@@ -370,7 +370,7 @@ func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 	// them "Could not open that panel." about a panel that is open.
 	var staleToasts int
 	step("no-stale-toast",
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-toast-id]').length`, &staleToasts))
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-toast-id]').length`, &staleToasts))
 	step("close-after", closeWidget())
 	if staleToasts != 0 {
 		t.Errorf("a pre-navigation fetch failure raised %d toast(s) on the page the user moved to; the panel it names is open", staleToasts)
@@ -404,7 +404,7 @@ func TestWidgetChromeCtx_LRURecency(t *testing.T) {
 	// then inserts c32 (33 > 32 → evicts the least-recently-used key).
 	// With the refresh, the LRU is c1; without it, c0.
 	for i := range 33 {
-		fmt.Fprintf(&body, `<button id="open-%d" data-fui-open="dlg" data-fui-ctx="c%d">%d</button>`+"\n", i, i, i)
+		fmt.Fprintf(&body, `<button id="open-%d" data-cui-open="dlg" data-cui-ctx="c%d">%d</button>`+"\n", i, i, i)
 	}
 	c := startChromeCtxServer(t, body.String())
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
@@ -461,9 +461,9 @@ func TestWidgetChromeCtx_LRURecency(t *testing.T) {
 // SUCCESSFUL ctx open must not toast.
 func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 	body := `
-<div data-fui-widget="dlg" hidden><span>ssr chrome</span></div>
-<button id="open-ok" data-fui-open="dlg" data-fui-ctx="okctx">OK</button>
-<button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>`
+<div data-cui-widget="dlg" hidden><span>ssr chrome</span></div>
+<button id="open-ok" data-cui-open="dlg" data-cui-ctx="okctx">OK</button>
+<button id="open-slow" data-cui-open="dlg" data-cui-ctx="slowfail">Slow</button>`
 	c := startChromeCtxServer(t, body)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
@@ -503,7 +503,7 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Text(`.fui-notification__title`, &toastTitle, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelectorAll('[data-hui-toast-id]').length`, &failToasts),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-widget="dlg"]').length`, &dlgNodes))
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-widget="dlg"]').length`, &dlgNodes))
 
 	if okMark != "ctx=okctx|user=alice" {
 		t.Errorf("healthy open mark = %q, want ctx=okctx|user=alice", okMark)
@@ -515,7 +515,7 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 		t.Errorf("successful ctx open produced %d toast(s) — the happy path must stay quiet", happyToasts)
 	}
 	if dlgNodes != 0 {
-		t.Errorf("%d [data-fui-widget] node(s) after the failed open — the dropped SSR chrome must not be re-inserted (#321)", dlgNodes)
+		t.Errorf("%d [data-cui-widget] node(s) after the failed open — the dropped SSR chrome must not be re-inserted (#321)", dlgNodes)
 	}
 	if toastTitle != "Could not open that panel." {
 		t.Errorf("toast title = %q, want the failed-open message", toastTitle)

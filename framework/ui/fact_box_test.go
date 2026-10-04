@@ -10,7 +10,7 @@ import (
 func TestFactBoxLabelFirstDefaultsToLabelThenValueInSource(t *testing.T) {
 	h := string(FactBox(FactBoxConfig{Label: "Prereqs", Value: "Go 1.26+, git"}))
 	for _, want := range []string{
-		`data-fui-comp="ui-fact-box"`,
+		`data-cui-comp="ui-fact-box"`,
 		`class="fui-fact-box__label"`,
 		`>Prereqs<`,
 		`class="fui-fact-box__value"`,

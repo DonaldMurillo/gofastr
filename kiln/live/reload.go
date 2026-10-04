@@ -32,11 +32,11 @@ const reloadJS = `// kiln build-mode reload (dev only)
     }
   }, 200);
   // Body classes mirror the link state for the panel's connection dot
-  // (.kiln-panel-conn styles off body.fui-sse-up / body.fui-sse-down:
+  // (.kiln-panel-conn styles off body.cui-sse-up / body.cui-sse-down:
   // the same contract the old per-widget SSE block maintained).
   const mark = (up) => {
-    document.body.classList.toggle('fui-sse-up', up);
-    document.body.classList.toggle('fui-sse-down', !up);
+    document.body.classList.toggle('cui-sse-up', up);
+    document.body.classList.toggle('cui-sse-down', !up);
   };
   // dirty: a prior connection dropped, so a page-structure edit may have
   // been broadcast while we were gone (the broadcaster has no replay).

@@ -382,7 +382,7 @@ func renderDashStats(s liveDashData) render.HTML {
 
 // renderDashPollCards renders the rung-3 contrast block: the same queue
 // metrics served as a plain HTML fragment the page re-fetches on an
-// interval (data-fui-poll), no SSE, no island push, no fanout. The
+// interval (data-cui-poll), no SSE, no island push, no fanout. The
 // render timestamp makes each refresh visible.
 func renderDashPollCards(s liveDashData) render.HTML {
 	return ui.Grid(ui.GridConfig{Min: "12rem"},
@@ -461,7 +461,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 	// string for the same inputs (see dashStatusLabel above).
 	dashStatus.Seed(ctx, dashStatusLabel(open, ackd))
 
-	// +/- buttons. data-fui-signal-inc mutates the signal client-side
+	// +/- buttons. data-cui-signal-inc mutates the signal client-side
 	// only, no RPC, no round-trip. The computed slice picks up the
 	// change and re-derives the label. Negative deltas decrement.
 	controls := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
@@ -469,7 +469,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 			Label:     "Open incident",
 			AriaLabel: "Open a new incident",
 			ExtraAttrs: html.Attrs{
-				"data-fui-signal-inc": dashIncidentsOpen.Name() + ":1",
+				"data-cui-signal-inc": dashIncidentsOpen.Name() + ":1",
 			},
 		}),
 		ui.Button(ui.ButtonConfig{
@@ -477,7 +477,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 			AriaLabel: "Resolve one open incident",
 			Variant:   ui.ButtonSecondary,
 			ExtraAttrs: html.Attrs{
-				"data-fui-signal-inc": dashIncidentsOpen.Name() + ":-1",
+				"data-cui-signal-inc": dashIncidentsOpen.Name() + ":-1",
 			},
 		}),
 		ui.Button(ui.ButtonConfig{
@@ -485,22 +485,22 @@ func renderDashConsole(ctx context.Context) render.HTML {
 			AriaLabel: "Acknowledge one incident",
 			Variant:   ui.ButtonSecondary,
 			ExtraAttrs: html.Attrs{
-				"data-fui-signal-inc": dashIncidentsAckd.Name() + ":1",
+				"data-cui-signal-inc": dashIncidentsAckd.Name() + ":1",
 			},
 		}),
 	)
 
 	// Bound StatusPill. dashStatus.Bind emits:
-	//   <span data-fui-signal="dash.status"
-	//         data-fui-computed="dash.status"
-	//         data-fui-computed-deps="dash.incidentsOpen,dash.incidentsAckd">
+	//   <span data-cui-signal="dash.status"
+	//         data-cui-computed="dash.status"
+	//         data-cui-computed-deps="dash.incidentsOpen,dash.incidentsAckd">
 	//     {seeded initial label}
 	//   </span>
 	// The computed module subscribes to the deps, runs the reducer on
 	// change, and fans the result through the signal to this same span.
 	statusPill := dashStatus.Bind(ctx, "span", map[string]string{
 		"class":         "fui-status-pill fui-status-pill--accent",
-		"data-fui-comp": "ui-status-pill",
+		"data-cui-comp": "ui-status-pill",
 		"aria-live":     "polite",
 		"aria-atomic":   "true",
 	})
@@ -516,9 +516,9 @@ func renderDashConsole(ctx context.Context) render.HTML {
 			html.Paragraph(html.TextConfig{Class: "fui-muted"},
 				render.Text("Open "+strconv.Itoa(open)+" · Acknowledged "),
 				// Live-bound count: dashIncidentsAckd.Bind emits a
-				// <span data-fui-signal="dash.incidentsAckd"> that the
+				// <span data-cui-signal="dash.incidentsAckd"> that the
 				// runtime updates in place whenever the Acknowledge
-				// button's data-fui-signal-inc fires. Without this
+				// button's data-cui-signal-inc fires. Without this
 				// bind the click increments the signal but the visible
 				// count stays at the SSR-painted 0 forever.
 				dashIncidentsAckd.Bind(ctx, "span", map[string]string{
@@ -576,20 +576,20 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 
 			// The poll-rung contrast. The stats above are rung 4 of the
 			// reactivity ladder (SSE push: the ticker pushes HTML the
-			// moment it changes); this card is rung 3 (data-fui-poll:
+			// moment it changes); this card is rung 3 (data-cui-poll:
 			// the browser re-fetches a server-rendered fragment on an
 			// interval). Same markup pipeline, no connection, no
 			// fanout, any replica answers the GET.
 			ui.Card(ui.CardConfig{
 				Heading:      "The same metrics, polled",
 				HeadingLevel: 2,
-				Description:  "This block is rung 3 of the reactivity ladder: data-fui-poll re-fetches a server-rendered fragment every 5 seconds. No SSE, no held connection, no fanout: any replica answers the GET. The stat cards above are rung 4: the server pushes the moment a tick lands. See /docs/reactivity for when each rung fits.",
+				Description:  "This block is rung 3 of the reactivity ladder: data-cui-poll re-fetches a server-rendered fragment every 5 seconds. No SSE, no held connection, no fanout: any replica answers the GET. The stat cards above are rung 4: the server pushes the moment a tick lands. See /docs/reactivity for when each rung fits.",
 			},
 				html.Div(html.DivConfig{
 					AriaLabel: "Polled metrics",
 					ExtraAttrs: html.Attrs{
-						"data-fui-poll":     "5s",
-						"data-fui-poll-src": "/__site/livedash/poll-fragment",
+						"data-cui-poll":     "5s",
+						"data-cui-poll-src": "/__site/livedash/poll-fragment",
 					},
 				}, renderDashPollCards(snap)),
 			),

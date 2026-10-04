@@ -195,7 +195,7 @@ func (a *App) docLangFor(path string, comp any) string {
 // SkipLabelForPath returns the skip-link text for a route: SkipLabelFunc's
 // answer when it gives one, else SkipLabel, else the English default. It
 // mirrors LangForPath, and the value rides the outermost layout layer as
-// data-fui-skip-label so the runtime can re-localize the link after a
+// data-cui-skip-label so the runtime can re-localize the link after a
 // client-side navigation.
 func (a *App) SkipLabelForPath(path string) string {
 	if a.SkipLabelFunc != nil {
@@ -294,7 +294,7 @@ type RouteEntry struct {
 	// Layouts is the route's resolved layout chain as layer keys, outermost
 	// → innermost ("l:<name>" for plain layers, "g:<prefix>" for screen-group
 	// layers. See LayoutLayer.Key). The runtime compares it positionally
-	// against the DOM's data-fui-layout-key spine to find the deepest layer
+	// against the DOM's data-cui-layout-key spine to find the deepest layer
 	// shared with a navigation target, swapping only below it. Empty when
 	// the route has no layout. An unnamed layer contributes "" to keep depth
 	// indexes aligned; the runtime treats "" as never-matching.
@@ -769,7 +769,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	}
 	skip := a.SkipLabelForPath(path)
 	// The keyed-transition vocabulary of THIS document's chain rides
-	// the doc shell (data-fui-vt-kinds, copied onto <html> by the
+	// the doc shell (data-cui-vt-kinds, copied onto <html> by the
 	// runtime after a swap) beside the pick the answer carries.
 	vtKinds := chainVTKinds(chain)
 	ctx = withDocShell(ctx, lang, skip, strings.Join(vtKinds, " "))
@@ -921,11 +921,11 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	// aren't announced by screen readers; the runtime writes the new
 	// page title into here after each partial-nav so AT users hear it.
 	routeAnnounce := render.Tag("div", map[string]string{
-		"id":          "fui-route-announce",
+		"id":          "cui-route-announce",
 		"role":        "status",
 		"aria-live":   "polite",
 		"aria-atomic": "true",
-		"class":       "fui-visually-hidden",
+		"class":       "cui-visually-hidden",
 	}, render.Text(""))
 
 	body := render.Tag("body", nil, skipLink, routeAnnounce, wrapped)
@@ -934,7 +934,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	doctype := render.Raw("<!DOCTYPE html>")
 	htmlAttrs := map[string]string{"lang": lang}
 	if len(vtKinds) > 0 {
-		htmlAttrs["data-fui-vt-kinds"] = strings.Join(vtKinds, " ")
+		htmlAttrs["data-cui-vt-kinds"] = strings.Join(vtKinds, " ")
 	}
 	htmlDoc := render.Tag("html", htmlAttrs, head, body)
 
@@ -983,7 +983,7 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 // client's DOM, so the response contains the target's content wrapped
 // only in the layers BELOW the deepest shared one. SwapLayer names that
 // shared layer; the client swaps the content cell marked
-// data-fui-layout-slot=SwapLayer.
+// data-cui-layout-slot=SwapLayer.
 //
 // Layers are compared by *Layout pointer identity plus group prefix, the
 // same identities that produced the layer keys in the route manifest, so

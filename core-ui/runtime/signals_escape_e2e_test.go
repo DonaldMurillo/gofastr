@@ -12,7 +12,7 @@ import (
 )
 
 // TestSetSignal_EscapesSpecialCharName pins fix #8: setSignal builds the
-// `[data-fui-signal="<name>"]` selector by concatenation, so a signal name
+// `[data-cui-signal="<name>"]` selector by concatenation, so a signal name
 // containing `"]` (or other selector metacharacters) produced a malformed
 // selector and querySelectorAll THREW, taking setSignal down with it.
 // sse.js already escapes its island name; signals.js was the holdout.
@@ -32,7 +32,7 @@ func TestSetSignal_EscapesSpecialCharName(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		// The attribute value is a"]b, single-quoted so the " is literal.
 		fmt.Fprint(w, `<!doctype html><html><head><title>esc</title></head><body>
-<span id="t" data-fui-signal='a"]b'>old</span>
+<span id="t" data-cui-signal='a"]b'>old</span>
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`)

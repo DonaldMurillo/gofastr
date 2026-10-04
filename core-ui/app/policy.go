@@ -33,7 +33,7 @@ type RenderResult struct {
 	// render was a subtree partial (RenderPartialFromResult with a known
 	// origin whose layout chain shares an addressable prefix with the
 	// target's). The client swaps the content cell marked
-	// data-fui-layout-slot=SwapLayer. Empty for full pages and bare
+	// data-cui-layout-slot=SwapLayer. Empty for full pages and bare
 	// partials.
 	SwapLayer string
 	// Fills are the resolved non-primary fills of the KEPT layout layers
@@ -54,7 +54,7 @@ type RenderResult struct {
 	// declares a TransitionFor decides it. The partial answer carries
 	// it as X-Gofastr-Transition; the runtime adds it to the
 	// view-transition types beside the direction, ignoring names the
-	// document's vocabulary (data-fui-vt-kinds) does not declare.
+	// document's vocabulary (data-cui-vt-kinds) does not declare.
 	// Empty when nothing was picked or a full page is the answer (a
 	// whole-document load gets the default).
 	Transition string

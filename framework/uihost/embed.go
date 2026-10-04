@@ -744,7 +744,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	// The component catalog and the runtime module manifest, as inert
 	// <script type="application/json"> blocks, the same shape a normal page
 	// ships, and the same reason: the kernel's CSS scanner resolves a
-	// data-fui-comp marker to a stylesheet URL through the catalog, and
+	// data-cui-comp marker to a stylesheet URL through the catalog, and
 	// loadModule cache-busts through the manifest.
 	//
 	// Without the catalog the frame renders every component's MARKUP with none
@@ -760,7 +760,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		b.WriteByte('\n')
 	}
 	b.WriteString("</head>\n<body>\n")
-	b.WriteString(`<div id="gofastr-embed-root" data-fui-embed-state="loading"></div>` + "\n")
+	b.WriteString(`<div id="gofastr-embed-root" data-cui-embed-state="loading"></div>` + "\n")
 	// The embed runtime carries the app's compiled component actions with it.
 	// See handleEmbedRuntimeJS. A separate <script src="/__gofastr/actions.js">
 	// cannot work here: a script tag is not a fetch, so the runtime's wrapper

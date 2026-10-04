@@ -49,7 +49,7 @@ type RecordSummaryConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the summary's root
 	// <article> element. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-fui-*.
+	// and id (use Class / ID), data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -95,9 +95,9 @@ func RecordSummary(cfg RecordSummaryConfig) render.HTML {
 	hasSupport := cfg.Aside != "" || cfg.Actions != ""
 	var leadOwn, copyOwn html.Attrs
 	if hasSupport {
-		copyOwn = html.Attrs{"data-fui-internal": ""}
+		copyOwn = html.Attrs{"data-cui-internal": ""}
 	} else {
-		leadOwn = html.Attrs{"data-fui-internal": ""}
+		leadOwn = html.Attrs{"data-cui-internal": ""}
 	}
 	lead := []render.HTML{html.Div(html.DivConfig{Class: "fui-record-summary__copy", ExtraAttrs: copyOwn}, copy...)}
 	leadClass := "fui-record-summary__lead"
@@ -159,7 +159,7 @@ type MetricBandConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the band's root <dl> element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, and aria-label (derived from Label).
+	// data-cui-*, and aria-label (derived from Label).
 	ExtraAttrs html.Attrs
 }
 
@@ -185,7 +185,7 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 		}
 		// MetricBandItem draws from strings alone, so each item is
 		// always this component's own.
-		items = append(items, html.Div(html.DivConfig{Class: "fui-metric-band__item", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, parts...))
+		items = append(items, html.Div(html.DivConfig{Class: "fui-metric-band__item", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, parts...))
 	}
 	cls := "fui-metric-band fui-metric-band--" + strconv.Itoa(len(cfg.Items))
 	if cfg.Class != "" {
@@ -237,7 +237,7 @@ func recordSummaryCSS(t style.Theme) string {
 		Rule(".fui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
 		Rule(".fui-record-summary__footer-copy").Set("min-inline-size", "0", "color", "var(--color-text-muted, currentColor)").End().
 		Rule(".fui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 4px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
-		Rule(":where(& .fui-record-summary__actions) > [data-fui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
+		Rule(":where(& .fui-record-summary__actions) > [data-cui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&").Set("gap", "var(--spacing-md, 8px)", "padding", "var(--spacing-lg, 16px)").End()
 			s.Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 8px)").End()

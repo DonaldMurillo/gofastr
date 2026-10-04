@@ -88,7 +88,7 @@ brings its own renderer and a *statically compiled* component registry,
 the model composes registry entries (ids, props, layout) as a
 schema-validated tree, generated views may wire only actions the host
 app explicitly exposed, and generations persist as data with a
-placeholder-then-poll UX (`data-fui-poll`, per the
+placeholder-then-poll UX (`data-cui-poll`, per the
 [reactivity ladder](reactivity.md)). The composition rule holds even
 in exile: a bounded registry the model arranges, never markup it
 invents.

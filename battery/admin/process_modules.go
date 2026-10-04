@@ -200,7 +200,7 @@ func moduleLastExitCell(last string) render.HTML {
 
 // moduleActionsCell renders the per-row lifecycle levers as CSRF'd inline
 // POST forms (same shape as the RBAC grant/revoke forms). Disable and Revoke
-// carry data-fui-confirm, the existing destructive-action affordance, no
+// carry data-cui-confirm, the existing destructive-action affordance, no
 // new JS. Enable/Disable choose based on state so the operator is offered
 // the action that actually changes something.
 func moduleActionsCell(prefix, csrf string, m framework.ProcessModuleInfo) render.HTML {
@@ -229,12 +229,12 @@ func moduleIsDisabled(state framework.ProcessState) bool {
 }
 
 // moduleActionForm renders a single-submit inline form for a named action.
-// confirm, when non-empty, sets data-fui-confirm (the existing runtime
+// confirm, when non-empty, sets data-cui-confirm (the existing runtime
 // affordance, no new JS). variant picks the ui.Button treatment.
 func moduleActionForm(prefix, csrf, name, action, label, confirm string, variant ui.ButtonVariant) render.HTML {
 	attrs := html.Attrs{}
 	if confirm != "" {
-		attrs["data-fui-confirm"] = confirm
+		attrs["data-cui-confirm"] = confirm
 	}
 	return render.HTML(html.Form(html.FormConfig{
 		Method: "post",
@@ -252,7 +252,7 @@ func moduleActionForm(prefix, csrf, name, action, label, confirm string, variant
 }
 
 // moduleRevokeForm renders the revoke-grant inline form: a free-text
-// resource:verb input plus the revoke submit. Destructive → data-fui-confirm.
+// resource:verb input plus the revoke submit. Destructive → data-cui-confirm.
 func moduleRevokeForm(prefix, csrf, name string) render.HTML {
 	return render.HTML(html.Form(html.FormConfig{
 		Method: "post",
@@ -273,7 +273,7 @@ func moduleRevokeForm(prefix, csrf, name string) render.HTML {
 			Type:       "submit",
 			Variant:    ui.ButtonDanger,
 			Size:       ui.ButtonSizeSmall,
-			ExtraAttrs: html.Attrs{"data-fui-confirm": "Revoke this capability from " + name + "? Its generation bumps and the child restarts."},
+			ExtraAttrs: html.Attrs{"data-cui-confirm": "Revoke this capability from " + name + "? Its generation bumps and the child restarts."},
 		}),
 	))
 }

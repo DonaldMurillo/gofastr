@@ -354,7 +354,7 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 // Scope, deliberately narrow on the input side so the output side can
 // be strict:
 //
-//   - <a href> only. Form actions and data-fui-rpc attributes target
+//   - <a href> only. Form actions and data-cui-rpc attributes target
 //     handlers, not pages; flagging them would misfire on every CRUD
 //     form and API post in the chrome.
 //   - A chrome component whose render fails is skipped with a warning,

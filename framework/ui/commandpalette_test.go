@@ -11,7 +11,7 @@ func TestCommandPaletteTrigger(t *testing.T) {
 	trigger, _ := CommandPalette(CommandPaletteConfig{RPCPath: "/commands/search", FallbackHref: "/search"})
 	out := string(trigger)
 	wants := []string{
-		`data-fui-open="command-palette"`,
+		`data-cui-open="command-palette"`,
 		`data-hui-shortcut-click="Meta+K"`,
 		`aria-label="Open command palette"`,
 		`class="fui-visually-hidden"`,
@@ -61,9 +61,9 @@ func TestCommandPaletteSlotRendersCombobox(t *testing.T) {
 		`role="listbox"`,
 		`id="cp-input"`,
 		`id="cp-input-listbox"`,
-		`data-fui-rpc="/commands/search"`,
-		`data-fui-rpc-debounce-ms="100"`,
-		`data-fui-rpc-signal="cp-results"`,
+		`data-cui-rpc="/commands/search"`,
+		`data-cui-rpc-debounce-ms="100"`,
+		`data-cui-rpc-signal="cp-results"`,
 		`placeholder="Search…"`,
 		`>Command palette</h2>`,
 		`>Navigate<`,
@@ -103,15 +103,15 @@ func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {
 }
 
 // TestCommandPaletteSlotRootIsBare: the palette opts out of the
-// centered-panel card chrome through .fui-slot-bare as a whole class
+// centered-panel card chrome through .cui-slot-bare as a whole class
 // token on its slot root — the generic escape hatch, so the
 // always-shipped panel CSS names no framework/ui component.
 func TestCommandPaletteSlotRootIsBare(t *testing.T) {
 	_, b := CommandPalette(CommandPaletteConfig{RPCPath: "/search", FallbackHref: "/search"})
 	h := string(b.Definition().Slots[0].Component.Render())
 	root := h[:strings.Index(h, ">")+1]
-	if !classTokenPresent(root, "fui-slot-bare") {
-		t.Errorf("palette slot root missing fui-slot-bare token:\n%s", root)
+	if !classTokenPresent(root, "cui-slot-bare") {
+		t.Errorf("palette slot root missing cui-slot-bare token:\n%s", root)
 	}
 	if !classTokenPresent(root, "fui-cmd-palette") {
 		t.Errorf("palette slot root missing fui-cmd-palette token:\n%s", root)
@@ -120,7 +120,7 @@ func TestCommandPaletteSlotRootIsBare(t *testing.T) {
 
 // TestCommandPaletteCloseControl pins the visible close affordance
 // (#325): a real <button> wired through the framework's declarative
-// widget-dismiss hook (data-fui-action="close", the same wiring the
+// widget-dismiss hook (data-cui-action="close", the same wiring the
 // section-menu drawer uses), named for assistive tech, decorative
 // icon — and not swallowed by an aria-hidden footer.
 func TestCommandPaletteCloseControl(t *testing.T) {
@@ -128,7 +128,7 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 	h := string(b.Definition().Slots[0].Component.Render())
 
 	for _, w := range []string{
-		`data-fui-action="close"`,
+		`data-cui-action="close"`,
 		`aria-label="Close"`,
 		`class="fui-cmd-palette__close"`,
 		`type="button"`,
@@ -138,7 +138,7 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 			t.Errorf("close control missing %q\nbody: %s", w, h)
 		}
 	}
-	if n := strings.Count(h, `data-fui-action="close"`); n != 1 {
+	if n := strings.Count(h, `data-cui-action="close"`); n != 1 {
 		t.Errorf("expected exactly one dismiss hook, found %d\nbody: %s", n, h)
 	}
 
@@ -206,9 +206,9 @@ func TestCommandPaletteCSSPadsTheInputRow(t *testing.T) {
 	// the input keeps its touch-target height. The retired rules
 	// targeted .combobox__* classes nothing renders and matched nothing.
 	for _, want := range []string{
-		"[data-fui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__combobox:has(> .fui-cmd-palette__input) {",
+		"[data-cui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__combobox:has(> .fui-cmd-palette__input) {",
 		"padding: var(--spacing-md, 8px);",
-		"[data-fui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__input {",
+		"[data-cui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__input {",
 		"min-block-size: var(--spacing-touch-target, 44px);",
 	} {
 		if !strings.Contains(css, want) {

@@ -15,11 +15,11 @@ func TestOnClickEmitsRPCAttributes(t *testing.T) {
 	result := OnClick(btn, Post("/api/like"))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc="/api/like"`) {
-		t.Errorf("missing data-fui-rpc attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc="/api/like"`) {
+		t.Errorf("missing data-cui-rpc attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-method="POST"`) {
-		t.Errorf("missing data-fui-rpc-method attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-method="POST"`) {
+		t.Errorf("missing data-cui-rpc-method attr: %s", s)
 	}
 	// Original content preserved
 	if !strings.Contains(s, "Like") {
@@ -35,7 +35,7 @@ func TestOnClickWithSignal(t *testing.T) {
 	result := OnClick(btn, Post("/api/vote").OnSuccess(SetSignal("count")))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc-signal="count"`) {
+	if !strings.Contains(s, `data-cui-rpc-signal="count"`) {
 		t.Errorf("missing signal attr: %s", s)
 	}
 }
@@ -48,10 +48,10 @@ func TestOnClickChainsMultipleEffects(t *testing.T) {
 	))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc-signal="result"`) {
+	if !strings.Contains(s, `data-cui-rpc-signal="result"`) {
 		t.Errorf("missing signal attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-close="true"`) {
+	if !strings.Contains(s, `data-cui-rpc-close="true"`) {
 		t.Errorf("missing close attr: %s", s)
 	}
 }
@@ -61,7 +61,7 @@ func TestOnClickOpenWidget(t *testing.T) {
 	result := OnClick(btn, Post("/api/edit").OnSuccess(OpenWidget("edit-drawer")))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc-open="edit-drawer"`) {
+	if !strings.Contains(s, `data-cui-rpc-open="edit-drawer"`) {
 		t.Errorf("missing rpc-open attr: %s", s)
 	}
 }
@@ -78,16 +78,16 @@ func TestOnSubmitForm(t *testing.T) {
 	))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc="/api/posts"`) {
+	if !strings.Contains(s, `data-cui-rpc="/api/posts"`) {
 		t.Errorf("missing rpc attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-signal="post-result"`) {
+	if !strings.Contains(s, `data-cui-rpc-signal="post-result"`) {
 		t.Errorf("missing signal attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-close="true"`) {
+	if !strings.Contains(s, `data-cui-rpc-close="true"`) {
 		t.Errorf("missing close attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-reset="true"`) {
+	if !strings.Contains(s, `data-cui-rpc-reset="true"`) {
 		t.Errorf("missing reset attr: %s", s)
 	}
 }
@@ -97,7 +97,7 @@ func TestNavigate(t *testing.T) {
 	result := OnClick(btn, Post("/api/action").OnSuccess(Navigate("/dashboard")))
 	s := string(result)
 
-	if !strings.Contains(s, `data-fui-rpc-navigate="/dashboard"`) {
+	if !strings.Contains(s, `data-cui-rpc-navigate="/dashboard"`) {
 		t.Errorf("missing navigate attr: %s", s)
 	}
 }
@@ -115,8 +115,8 @@ func TestHTTPMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		attrs := tt.action.attrs()
-		if attrs["data-fui-rpc-method"] != tt.method {
-			t.Errorf("%s: got method %q, want %q", tt.method, attrs["data-fui-rpc-method"], tt.method)
+		if attrs["data-cui-rpc-method"] != tt.method {
+			t.Errorf("%s: got method %q, want %q", tt.method, attrs["data-cui-rpc-method"], tt.method)
 		}
 	}
 }
@@ -131,13 +131,13 @@ func TestEmptyActionNoModification(t *testing.T) {
 
 func TestAttrSafety(t *testing.T) {
 	// Verify that render.Attr is used (drops unsafe keys)
-	// by checking that our data-fui-* keys pass through.
+	// by checking that our data-cui-* keys pass through.
 	btn := render.Tag("button", nil, render.Text("Safe"))
 	result := OnClick(btn, Post("/api/x").OnSuccess(SetSignal("sig1")))
 	s := string(result)
 
-	// data-fui-rpc contains a path with no injection
-	if !strings.Contains(s, `data-fui-rpc="/api/x"`) {
+	// data-cui-rpc contains a path with no injection
+	if !strings.Contains(s, `data-cui-rpc="/api/x"`) {
 		t.Errorf("safe attr dropped: %s", s)
 	}
 }
@@ -168,7 +168,7 @@ func TestWrapGTInAttributeValue(t *testing.T) {
 		t.Errorf("attribute with > broken: %s", s)
 	}
 	// RPC attributes must appear after the full opening tag.
-	if !strings.Contains(s, `data-fui-rpc="/api/t"`) {
+	if !strings.Contains(s, `data-cui-rpc="/api/t"`) {
 		t.Errorf("rpc attr missing: %s", s)
 	}
 	// Original text preserved.
@@ -187,13 +187,13 @@ func TestWrapRawHTMLGTInAttrValue(t *testing.T) {
 
 	// RPC attributes must appear before the real '>' that closes the tag,
 	// not before the '>' inside the title value. Use Contains because
-	// map iteration order is non-deterministic, so the two data-fui-*
+	// map iteration order is non-deterministic, so the two data-cui-*
 	// attributes can appear in either order.
-	if !strings.Contains(s, `data-fui-rpc="/api/raw"`) {
-		t.Errorf("missing data-fui-rpc attribute:\n got: %s", s)
+	if !strings.Contains(s, `data-cui-rpc="/api/raw"`) {
+		t.Errorf("missing data-cui-rpc attribute:\n got: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-method="POST"`) {
-		t.Errorf("missing data-fui-rpc-method attribute:\n got: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-method="POST"`) {
+		t.Errorf("missing data-cui-rpc-method attribute:\n got: %s", s)
 	}
 	if !strings.Contains(s, `title="1>2"`) {
 		t.Error(`want title="1>2" preserved in output`)
@@ -211,7 +211,7 @@ func TestWrapLeadingWhitespace(t *testing.T) {
 	if !strings.HasPrefix(s, "  <button") {
 		t.Errorf("leading whitespace lost: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc="/api/x"`) {
+	if !strings.Contains(s, `data-cui-rpc="/api/x"`) {
 		t.Errorf("rpc attr missing: %s", s)
 	}
 }
@@ -256,18 +256,18 @@ func TestSetSignalValidation(t *testing.T) {
 func TestSetLocal(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Set"))
 	result := SetLocal(btn, "tab", "settings")
-	if !strings.Contains(string(result), `data-fui-signal-set="tab:settings"`) {
+	if !strings.Contains(string(result), `data-cui-signal-set="tab:settings"`) {
 		t.Fatalf("SetLocal missing attribute: %s", result)
 	}
-	if strings.Contains(string(result), "data-fui-rpc") {
-		t.Fatal("SetLocal should not emit data-fui-rpc")
+	if strings.Contains(string(result), "data-cui-rpc") {
+		t.Fatal("SetLocal should not emit data-cui-rpc")
 	}
 }
 
 func TestIncLocal(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("+"))
 	result := IncLocal(btn, "count", 1)
-	if !strings.Contains(string(result), `data-fui-signal-inc="count"`) {
+	if !strings.Contains(string(result), `data-cui-signal-inc="count"`) {
 		t.Fatalf("IncLocal(delta=1) missing attribute: %s", result)
 	}
 }
@@ -275,7 +275,7 @@ func TestIncLocal(t *testing.T) {
 func TestIncLocalWithDelta(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("-"))
 	result := IncLocal(btn, "count", -1)
-	if !strings.Contains(string(result), `data-fui-signal-inc="count:-1"`) {
+	if !strings.Contains(string(result), `data-cui-signal-inc="count:-1"`) {
 		t.Fatalf("IncLocal(delta=-1) missing attribute: %s", result)
 	}
 }
@@ -283,11 +283,11 @@ func TestIncLocalWithDelta(t *testing.T) {
 func TestToggleLocal(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Toggle"))
 	result := ToggleLocal(btn, "dark-mode")
-	if !strings.Contains(string(result), `data-fui-signal-toggle="dark-mode"`) {
+	if !strings.Contains(string(result), `data-cui-signal-toggle="dark-mode"`) {
 		t.Fatalf("ToggleLocal missing attribute: %s", result)
 	}
-	if strings.Contains(string(result), "data-fui-rpc") {
-		t.Fatal("ToggleLocal should not emit data-fui-rpc")
+	if strings.Contains(string(result), "data-cui-rpc") {
+		t.Fatal("ToggleLocal should not emit data-cui-rpc")
 	}
 }
 
@@ -302,14 +302,14 @@ func TestEditToggle(t *testing.T) {
 	span := render.Tag("span", nil, render.Text("Click to edit"))
 	result := EditToggle(span, "editing")
 	s := string(result)
-	if !strings.Contains(s, `data-fui-signal-toggle="editing"`) {
+	if !strings.Contains(s, `data-cui-signal-toggle="editing"`) {
 		t.Fatalf("EditToggle missing attribute: %s", s)
 	}
 	if !strings.Contains(s, "Click to edit") {
 		t.Fatal("EditToggle lost original content")
 	}
-	if strings.Contains(s, "data-fui-rpc") {
-		t.Fatal("EditToggle should not emit data-fui-rpc")
+	if strings.Contains(s, "data-cui-rpc") {
+		t.Fatal("EditToggle should not emit data-cui-rpc")
 	}
 }
 
@@ -317,14 +317,14 @@ func TestCancelEdit(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Cancel"))
 	result := CancelEdit(btn, "editing")
 	s := string(result)
-	if !strings.Contains(s, `data-fui-signal-set="editing:false"`) {
+	if !strings.Contains(s, `data-cui-signal-set="editing:false"`) {
 		t.Fatalf("CancelEdit missing attribute: %s", s)
 	}
 	if !strings.Contains(s, "Cancel") {
 		t.Fatal("CancelEdit lost original content")
 	}
-	if strings.Contains(s, "data-fui-rpc") {
-		t.Fatal("CancelEdit should not emit data-fui-rpc")
+	if strings.Contains(s, "data-cui-rpc") {
+		t.Fatal("CancelEdit should not emit data-cui-rpc")
 	}
 }
 
@@ -336,8 +336,8 @@ func TestRevealInjectsAttr(t *testing.T) {
 	div := render.Tag("div", nil, render.Text("hello"))
 	result := Reveal(div, "fade-up")
 	s := string(result)
-	if !strings.Contains(s, `data-fui-reveal="fade-up"`) {
-		t.Fatalf("missing data-fui-reveal attr: %s", s)
+	if !strings.Contains(s, `data-cui-reveal="fade-up"`) {
+		t.Fatalf("missing data-cui-reveal attr: %s", s)
 	}
 }
 
@@ -345,7 +345,7 @@ func TestRevealDefaultAnimation(t *testing.T) {
 	div := render.Tag("div", nil, render.Text("hello"))
 	result := Reveal(div, "")
 	s := string(result)
-	if !strings.Contains(s, `data-fui-reveal="fade-in"`) {
+	if !strings.Contains(s, `data-cui-reveal="fade-in"`) {
 		t.Fatalf("expected default fade-in animation: %s", s)
 	}
 }
@@ -363,18 +363,18 @@ func TestRevealPreservesContent(t *testing.T) {
 }
 
 // TestRevealStampsCompMarkerAndCSS guards the framework fix: Reveal must
-// stamp the data-fui-comp marker so the host loads the registered CSS, and
+// stamp the data-cui-comp marker so the host loads the registered CSS, and
 // that CSS must actually style the hidden/revealed states (without it the
 // reveal.js classes are inert and the animation does nothing).
 func TestRevealStampsCompMarkerAndCSS(t *testing.T) {
 	s := string(Reveal(render.Tag("div", nil, render.Text("x")), "fade-up"))
-	if !strings.Contains(s, `data-fui-comp="fui-reveal"`) {
-		t.Fatalf("Reveal must stamp data-fui-comp=\"fui-reveal\" so the CSS loads: %s", s)
+	if !strings.Contains(s, `data-cui-comp="cui-reveal"`) {
+		t.Fatalf("Reveal must stamp data-cui-comp=\"cui-reveal\" so the CSS loads: %s", s)
 	}
 	css := revealStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-fui-comp="fui-reveal"].fui-hidden{opacity:0}`,
-		`.fui-revealed{opacity:1`,
+		`[data-cui-comp="cui-reveal"].cui-hidden{opacity:0}`,
+		`.cui-revealed{opacity:1`,
 		`prefers-reduced-motion`,
 	} {
 		if !strings.Contains(css, sel) {
@@ -391,13 +391,13 @@ func TestDropdownStampsCompMarkerAndCSS(t *testing.T) {
 	trigger := render.Tag("button", nil, render.Text("Menu"))
 	panel := render.Tag("div", nil, render.Tag("a", map[string]string{"href": "#"}, render.Text("Edit")))
 	s := string(Dropdown(trigger, panel))
-	if !strings.Contains(s, `data-fui-comp="fui-dropdown"`) {
+	if !strings.Contains(s, `data-cui-comp="cui-dropdown"`) {
 		t.Fatalf("Dropdown must stamp the comp marker so its CSS loads: %s", s)
 	}
 	css := dropdownStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-fui-comp="fui-dropdown"]{position:relative`,
-		`[data-fui-dropdown-panel]{position:absolute`,
+		`[data-cui-comp="cui-dropdown"]{position:relative`,
+		`[data-cui-dropdown-panel]{position:absolute`,
 		`box-shadow:`,
 	} {
 		if !strings.Contains(css, sel) {
@@ -412,8 +412,8 @@ func TestLiveSearchInjectsTriggerAttr(t *testing.T) {
 	)
 	result := LiveSearch(form, Post("/api/search").OnSuccess(SetSignal("results")), 300)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-trigger="input"`) {
-		t.Fatalf("missing data-fui-rpc-trigger attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-trigger="input"`) {
+		t.Fatalf("missing data-cui-rpc-trigger attr: %s", s)
 	}
 }
 
@@ -423,14 +423,14 @@ func TestLiveSearchInjectsRPCAttrs(t *testing.T) {
 	)
 	result := LiveSearch(form, Post("/api/search").OnSuccess(SetSignal("results")), 300)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc="/api/search"`) {
-		t.Fatalf("missing data-fui-rpc attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc="/api/search"`) {
+		t.Fatalf("missing data-cui-rpc attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-method="POST"`) {
-		t.Fatalf("missing data-fui-rpc-method attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-method="POST"`) {
+		t.Fatalf("missing data-cui-rpc-method attr: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-signal="results"`) {
-		t.Fatalf("missing data-fui-rpc-signal attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-signal="results"`) {
+		t.Fatalf("missing data-cui-rpc-signal attr: %s", s)
 	}
 }
 
@@ -440,12 +440,12 @@ func TestLiveSearchDefaultDebounce(t *testing.T) {
 	)
 	result := LiveSearch(form, Post("/api/search"), 0)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-debounce-ms="300"`) {
-		t.Fatalf("expected default 300ms debounce attr data-fui-rpc-debounce-ms: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-debounce-ms="300"`) {
+		t.Fatalf("expected default 300ms debounce attr data-cui-rpc-debounce-ms: %s", s)
 	}
 	// old wrong name must NOT appear
-	if strings.Contains(s, `data-fui-rpc-debounce="`) {
-		t.Fatalf("emitted stale data-fui-rpc-debounce (without -ms suffix): %s", s)
+	if strings.Contains(s, `data-cui-rpc-debounce="`) {
+		t.Fatalf("emitted stale data-cui-rpc-debounce (without -ms suffix): %s", s)
 	}
 }
 
@@ -455,22 +455,22 @@ func TestLiveSearchCustomDebounce(t *testing.T) {
 	)
 	result := LiveSearch(form, Get("/api/search"), 500)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-debounce-ms="500"`) {
-		t.Fatalf("expected custom 500ms attr data-fui-rpc-debounce-ms: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-debounce-ms="500"`) {
+		t.Fatalf("expected custom 500ms attr data-cui-rpc-debounce-ms: %s", s)
 	}
-	if strings.Contains(s, `data-fui-rpc-debounce="`) {
-		t.Fatalf("should not emit stale data-fui-rpc-debounce (without -ms suffix): %s", s)
+	if strings.Contains(s, `data-cui-rpc-debounce="`) {
+		t.Fatalf("should not emit stale data-cui-rpc-debounce (without -ms suffix): %s", s)
 	}
 }
 
 // TestLiveSearchAttrMatchesRuntime pins that the attr LiveSearch emits
-// matches exactly what runtime.js reads (data-fui-rpc-debounce-ms).
+// matches exactly what runtime.js reads (data-cui-rpc-debounce-ms).
 func TestLiveSearchAttrMatchesRuntime(t *testing.T) {
 	form := render.Tag("form", nil, render.Tag("input", nil))
 	s := string(LiveSearch(form, Post("/api/q"), 400))
-	// Runtime reads data-fui-rpc-debounce-ms (confirmed in runtime.js line ~448).
-	if !strings.Contains(s, `data-fui-rpc-debounce-ms="400"`) {
-		t.Fatalf("LiveSearch must emit data-fui-rpc-debounce-ms to match runtime reader: %s", s)
+	// Runtime reads data-cui-rpc-debounce-ms (confirmed in runtime.js line ~448).
+	if !strings.Contains(s, `data-cui-rpc-debounce-ms="400"`) {
+		t.Fatalf("LiveSearch must emit data-cui-rpc-debounce-ms to match runtime reader: %s", s)
 	}
 }
 
@@ -485,7 +485,7 @@ func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
 	s := string(result)
 	// Must have the component marker the runtime scans for.
 	if !strings.Contains(s, `data-hui-action=""`) {
-		t.Fatalf("missing data-fui-comp attr: %s", s)
+		t.Fatalf("missing data-cui-comp attr: %s", s)
 	}
 	// Must start in idle state.
 	if !strings.Contains(s, `data-state="idle"`) {
@@ -570,11 +570,11 @@ func TestAnimateOnSignalInjectsAttrs(t *testing.T) {
 	div := render.Tag("div", nil, render.Text("panel"))
 	result := AnimateOnSignal(div, "open", "fui-slide-down")
 	s := string(result)
-	if !strings.Contains(s, `data-fui-animate-signal="open"`) {
-		t.Fatalf("missing data-fui-animate-signal: %s", s)
+	if !strings.Contains(s, `data-cui-animate-signal="open"`) {
+		t.Fatalf("missing data-cui-animate-signal: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-animate-class="fui-slide-down"`) {
-		t.Fatalf("missing data-fui-animate-class: %s", s)
+	if !strings.Contains(s, `data-cui-animate-class="fui-slide-down"`) {
+		t.Fatalf("missing data-cui-animate-class: %s", s)
 	}
 }
 
@@ -617,7 +617,7 @@ func TestDropdownTriggerAttrs(t *testing.T) {
 	result := Dropdown(trigger, panel)
 	s := string(result)
 	for _, attr := range []string{
-		`data-fui-dropdown`,
+		`data-cui-dropdown`,
 		`aria-expanded="false"`,
 		`aria-haspopup="true"`,
 	} {
@@ -632,8 +632,8 @@ func TestDropdownPanelAttrs(t *testing.T) {
 	panel := render.Tag("div", nil, render.Text("Content"))
 	result := Dropdown(trigger, panel)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-dropdown-panel`) {
-		t.Errorf("dropdown panel missing data-fui-dropdown-panel in:\n%s", s)
+	if !strings.Contains(s, `data-cui-dropdown-panel`) {
+		t.Errorf("dropdown panel missing data-cui-dropdown-panel in:\n%s", s)
 	}
 }
 
@@ -642,8 +642,8 @@ func TestDropdownWrapsBoth(t *testing.T) {
 	panel := render.Tag("div", nil, render.Text("Content"))
 	result := Dropdown(trigger, panel)
 	s := string(result)
-	if !strings.Contains(s, `data-fui-dropdown-wrap`) {
-		t.Errorf("dropdown missing wrapper data-fui-dropdown-wrap in:\n%s", s)
+	if !strings.Contains(s, `data-cui-dropdown-wrap`) {
+		t.Errorf("dropdown missing wrapper data-cui-dropdown-wrap in:\n%s", s)
 	}
 	if !strings.Contains(s, "Menu") {
 		t.Errorf("dropdown missing trigger content in:\n%s", s)
@@ -660,11 +660,11 @@ func TestWithConfirmEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Delete"))
 	result := OnClick(btn, Delete("/api/item/1").WithConfirm("Sure?"))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-confirm="Sure?"`) {
-		t.Fatalf("WithConfirm must emit data-fui-confirm attr: %s", s)
+	if !strings.Contains(s, `data-cui-confirm="Sure?"`) {
+		t.Fatalf("WithConfirm must emit data-cui-confirm attr: %s", s)
 	}
-	if strings.Contains(s, "data-fui-rpc-confirm") {
-		t.Fatalf("WithConfirm must NOT emit data-fui-rpc-confirm (wrong prefix): %s", s)
+	if strings.Contains(s, "data-cui-rpc-confirm") {
+		t.Fatalf("WithConfirm must NOT emit data-cui-rpc-confirm (wrong prefix): %s", s)
 	}
 }
 
@@ -672,8 +672,8 @@ func TestAfterTextEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Save"))
 	result := OnClick(btn, Post("/api/save").OnSuccess(AfterText("Saved ✓")))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-after-text="Saved ✓"`) {
-		t.Fatalf("AfterText must emit data-fui-rpc-after-text attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-after-text="Saved ✓"`) {
+		t.Fatalf("AfterText must emit data-cui-rpc-after-text attr: %s", s)
 	}
 }
 
@@ -681,8 +681,8 @@ func TestAfterDisableEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Submit"))
 	result := OnClick(btn, Post("/api/submit").OnSuccess(AfterDisable()))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-after-disable`) {
-		t.Fatalf("AfterDisable must emit data-fui-rpc-after-disable attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-after-disable`) {
+		t.Fatalf("AfterDisable must emit data-cui-rpc-after-disable attr: %s", s)
 	}
 }
 
@@ -690,8 +690,8 @@ func TestScrollToEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Add"))
 	result := OnClick(btn, Post("/api/add").OnSuccess(ScrollTo("#results")))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-scroll-to="#results"`) {
-		t.Fatalf("ScrollTo must emit data-fui-rpc-scroll-to attr: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-scroll-to="#results"`) {
+		t.Fatalf("ScrollTo must emit data-cui-rpc-scroll-to attr: %s", s)
 	}
 }
 
@@ -699,11 +699,11 @@ func TestPushStateEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Page 2"))
 	result := OnClick(btn, Post("/api/page").OnSuccess(PushState("?p=2")))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-push-state="?p=2"`) {
-		t.Fatalf("PushState must emit data-fui-push-state attr: %s", s)
+	if !strings.Contains(s, `data-cui-push-state="?p=2"`) {
+		t.Fatalf("PushState must emit data-cui-push-state attr: %s", s)
 	}
-	if strings.Contains(s, "data-fui-rpc-push-state") {
-		t.Fatalf("PushState must NOT emit data-fui-rpc-push-state (wrong name): %s", s)
+	if strings.Contains(s, "data-cui-rpc-push-state") {
+		t.Fatalf("PushState must NOT emit data-cui-rpc-push-state (wrong name): %s", s)
 	}
 }
 
@@ -711,10 +711,10 @@ func TestAfterTextAndDisableCombine(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Send"))
 	result := OnClick(btn, Post("/api/send").OnSuccess(AfterText("Sent ✓"), AfterDisable()))
 	s := string(result)
-	if !strings.Contains(s, `data-fui-rpc-after-text="Sent ✓"`) {
+	if !strings.Contains(s, `data-cui-rpc-after-text="Sent ✓"`) {
 		t.Fatalf("missing after-text: %s", s)
 	}
-	if !strings.Contains(s, `data-fui-rpc-after-disable`) {
+	if !strings.Contains(s, `data-cui-rpc-after-disable`) {
 		t.Fatalf("missing after-disable: %s", s)
 	}
 }
@@ -725,10 +725,10 @@ func TestDropdownPanelInitiallyHidden(t *testing.T) {
 	result := Dropdown(trigger, panel)
 	s := string(result)
 	// The panel's <div> should have a hidden attribute.
-	// Find data-fui-dropdown-panel and check hidden is on same tag.
-	idx := strings.Index(s, `data-fui-dropdown-panel`)
+	// Find data-cui-dropdown-panel and check hidden is on same tag.
+	idx := strings.Index(s, `data-cui-dropdown-panel`)
 	if idx == -1 {
-		t.Fatalf("missing data-fui-dropdown-panel")
+		t.Fatalf("missing data-cui-dropdown-panel")
 	}
 	// Look backwards for the opening < and forwards for > around this attr.
 	tagStart := strings.LastIndex(s[:idx], "<")

@@ -13,7 +13,7 @@ import (
 // `:focus-within` rules on the wrapper, no JavaScript required, no
 // runtime callouts, no flash-on-mount.
 //
-// The wrapper carries data-fui-comp="ui-tooltip" so the stylesheet
+// The wrapper carries data-cui-comp="ui-tooltip" so the stylesheet
 // loads lazily on first appearance. The popped element is wired via
 // aria-describedby so screen readers announce the tooltip alongside
 // the trigger.
@@ -46,7 +46,7 @@ type TooltipConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the tooltip's root
 	// wrapper <span>. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-fui-*.
+	// and id (use Class / ID), data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -86,7 +86,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	pop := html.Span(html.TextConfig{
 		Class:      "fui-tooltip__pop",
 		ID:         id,
-		ExtraAttrs: html.Attrs{"role": "tooltip", "data-fui-internal": ""},
+		ExtraAttrs: html.Attrs{"role": "tooltip", "data-cui-internal": ""},
 	}, render.Text(cfg.Text))
 
 	return tooltipStyle.WrapHTML(html.Span(html.TextConfig{

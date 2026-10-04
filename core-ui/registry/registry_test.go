@@ -122,7 +122,7 @@ func TestRenderInjectsMarker(t *testing.T) {
 	reset()
 	h := RegisterStyle("modal", func(t style.Theme) string { return "" })
 	got := h.Render(&stubComponent{html: `<div class="x">hi</div>`})
-	if !strings.Contains(string(got), `data-fui-comp="modal"`) {
+	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
 		t.Errorf("marker not injected: %s", got)
 	}
 }
@@ -148,13 +148,13 @@ func TestRenderRejectsMultiSibling(t *testing.T) {
 	reset()
 	h := RegisterStyle("multi", func(t style.Theme) string { return "" })
 	got := h.Render(&stubComponent{html: `<a></a><b></b>`})
-	if !strings.Contains(string(got), `<a data-fui-comp="multi">`) {
+	if !strings.Contains(string(got), `<a data-cui-comp="multi">`) {
 		t.Errorf("first tag must carry marker: %s", got)
 	}
 }
 
 func TestScanFindsAllMarkers(t *testing.T) {
-	html := `<div data-fui-comp="modal"><span data-fui-comp="badge"></span><p data-fui-comp="modal"></p></div>`
+	html := `<div data-cui-comp="modal"><span data-cui-comp="badge"></span><p data-cui-comp="modal"></p></div>`
 	got := Scan(html)
 	want := []string{"badge", "modal"}
 	if len(got) != len(want) {
@@ -167,10 +167,10 @@ func TestScanFindsAllMarkers(t *testing.T) {
 	}
 }
 
-// An owned style's root carries data-fui-scope; its sheet loads the
+// An owned style's root carries data-cui-scope; its sheet loads the
 // same way a kit component's does. One element may carry both.
 func TestScanReadsScopeMarkers(t *testing.T) {
-	html := `<div data-fui-scope="board"><article class="fui-card" data-fui-comp="card" data-fui-scope="review"></article></div>`
+	html := `<div data-cui-scope="board"><article class="fui-card" data-cui-comp="card" data-cui-scope="review"></article></div>`
 	got := strings.Join(Scan(html), ",")
 	if got != "board,card,review" {
 		t.Fatalf("Scan got %q, want board,card,review", got)
@@ -179,11 +179,11 @@ func TestScanReadsScopeMarkers(t *testing.T) {
 
 func TestScanRefusesUnsafeScopeNames(t *testing.T) {
 	for _, html := range []string{
-		`<div data-fui-scope="../x"></div>`,
-		`<div data-fui-scope="a b"></div>`,
-		`<div data-fui-scope="a?b"></div>`,
-		`<div data-fui-scope=""></div>`,
-		`<div xdata-fui-scope="masquerade"></div>`,
+		`<div data-cui-scope="../x"></div>`,
+		`<div data-cui-scope="a b"></div>`,
+		`<div data-cui-scope="a?b"></div>`,
+		`<div data-cui-scope=""></div>`,
+		`<div xdata-cui-scope="masquerade"></div>`,
 	} {
 		if got := Scan(html); len(got) != 0 {
 			t.Errorf("Scan(%s) = %v, want none", html, got)
@@ -192,7 +192,7 @@ func TestScanRefusesUnsafeScopeNames(t *testing.T) {
 }
 
 func TestScanIgnoresOtherAttrs(t *testing.T) {
-	html := `<div data-fui-rpc="/x" data-other="modal" class="modal"></div>`
+	html := `<div data-cui-rpc="/x" data-other="modal" class="modal"></div>`
 	got := Scan(html)
 	if len(got) != 0 {
 		t.Errorf("Scan should ignore non-comp attrs: %v", got)
@@ -200,16 +200,16 @@ func TestScanIgnoresOtherAttrs(t *testing.T) {
 }
 
 func TestScanRequiresAttributeBoundary(t *testing.T) {
-	// xdata-fui-comp="y" must NOT match, the anchor requires a
+	// xdata-cui-comp="y" must NOT match, the anchor requires a
 	// preceding whitespace or `/`, so an attribute-name prefix
-	// like xdata-fui-comp doesn't masquerade as the marker.
-	htmlBad := `<div xdata-fui-comp="masquerade"></div>`
+	// like xdata-cui-comp doesn't masquerade as the marker.
+	htmlBad := `<div xdata-cui-comp="masquerade"></div>`
 	got := Scan(htmlBad)
 	if len(got) != 0 {
 		t.Errorf("Scan must not match unanchored attribute name, got %v", got)
 	}
 	// A legitimate marker still hits.
-	htmlGood := `<div data-fui-comp="real"></div>`
+	htmlGood := `<div data-cui-comp="real"></div>`
 	got = Scan(htmlGood)
 	if len(got) != 1 || got[0] != "real" {
 		t.Errorf("Scan must match anchored marker, got %v", got)
@@ -221,7 +221,7 @@ func TestScanRequiresAttributeBoundary(t *testing.T) {
 // text content"). Harmless in practice because componentCSSTags
 // filters every name through registry.Lookup before emitting a
 // <link>, and the runtime's client-side scan uses
-// querySelectorAll('[data-fui-comp]') which is DOM-attribute-only.
+// querySelectorAll('[data-cui-comp]') which is DOM-attribute-only.
 
 func TestEagerNamesOnlyLoadAlways(t *testing.T) {
 	reset()

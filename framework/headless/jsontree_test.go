@@ -32,7 +32,7 @@ func TestJSONTreeRendersNativeDetailsAndWords(t *testing.T) {
 		"empty": []any{},
 	}})
 	for _, want := range []string{
-		`<details data-fui-internal="" open`, `<summary`, `Object`, `Array`,
+		`<details data-cui-internal="" open`, `<summary`, `Object`, `Array`,
 		`<li>`, "null", "[]",
 	} {
 		if !strings.Contains(h, want) {
@@ -46,13 +46,13 @@ func TestJSONTreeOpenDepthAndTruncation(t *testing.T) {
 		"in": map[string]any{"leaf": 1},
 	}, OpenDepth: 0})
 	// Only the top details carries the mark; a nested one reads plain.
-	if want := 1; strings.Count(deep, `<details data-fui-internal="" open`) != want {
-		t.Errorf("OpenDepth 0 should open exactly the root, got %d:\n%s", strings.Count(deep, `<details data-fui-internal="" open`), deep)
+	if want := 1; strings.Count(deep, `<details data-cui-internal="" open`) != want {
+		t.Errorf("OpenDepth 0 should open exactly the root, got %d:\n%s", strings.Count(deep, `<details data-cui-internal="" open`), deep)
 	}
 	all := renderTree(JSONTreeProps{Value: map[string]any{
 		"in": map[string]any{"leaf": 1},
 	}, OpenDepth: -1})
-	if strings.Count(all, `<details data-fui-internal="" open`)+strings.Count(all, "<details open") != 2 {
+	if strings.Count(all, `<details data-cui-internal="" open`)+strings.Count(all, "<details open") != 2 {
 		t.Errorf("OpenDepth -1 should open everything:\n%s", all)
 	}
 	trunc := renderTree(JSONTreeProps{Value: map[string]any{

@@ -80,7 +80,7 @@ func TestSlugDerivedIDsCollideOnRepeat(t *testing.T) {
 // way concurrent HTTP requests do. Surfaces: the two framework/ui
 // widgets that call autoID — Carousel (wrapper id, also the
 // aria-controls target of every nav button and dot) and Repeater (the
-// -items region id, also the data-fui-rpc-signal target).
+// -items region id, also the data-cui-rpc-signal target).
 func TestAutoIDUniqueAcrossConcurrent(t *testing.T) {
 	const goroutines = 32
 	const perG = 4

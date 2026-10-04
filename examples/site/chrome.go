@@ -18,7 +18,7 @@ import (
 
 // siteHeader renders the top bar around the request's context (i18n for
 // the nav labels). The CommandPalette widget is mounted globally in
-// main.go; the header's own search controls open it (data-fui-open) and
+// main.go; the header's own search controls open it (data-cui-open) and
 // bind ⌘K, so the header needs no injected trigger.
 func siteHeader(ctx context.Context) render.HTML {
 	return siteheader.Render(siteheader.Config{

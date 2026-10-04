@@ -77,7 +77,7 @@ func TestBannerDefaults(t *testing.T) {
 }
 
 func TestToastStackSlotEscapesName(t *testing.T) {
-	// The stack name is rendered into the data-fui-toast-stack
+	// The stack name is rendered into the data-cui-toast-stack
 	// attribute. If unescaped, a name containing `"` breaks out of
 	// the attribute (and via " onload=… could execute on browsers
 	// that load this attr lazily).

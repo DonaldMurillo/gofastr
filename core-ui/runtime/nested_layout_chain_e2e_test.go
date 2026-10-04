@@ -60,28 +60,28 @@ const chainRoutes = `<script type="application/json" id="gofastr-routes">[` +
 
 // docsLayer renders the docs group layer (sidebar + slot) around content.
 func docsLayer(content string) string {
-	return `<div class="fui-screen-group" data-fui-screen-group="/docs/">` +
-		`<div data-fui-layout="docs" data-fui-layout-key="g:/docs/:docs" class="layout-docs">` +
+	return `<div class="cui-screen-group" data-cui-screen-group="/docs/">` +
+		`<div data-cui-layout="docs" data-cui-layout-key="g:/docs/:docs" class="layout-docs">` +
 		`<nav id="docs-sidebar" aria-label="Sidebar"><a id="to-a" href="/docs/a">A</a><a id="to-b" href="/docs/b">B</a></nav>` +
-		`<div class="layout-content" tabindex="-1" data-fui-layout-slot="g:/docs/:docs">` + content + `</div>` +
+		`<div class="layout-content" tabindex="-1" data-cui-layout-slot="g:/docs/:docs">` + content + `</div>` +
 		`</div></div>`
 }
 
 // sitePage renders the full document: site shell (layer 0) around inner.
 func sitePage(inner string) string {
 	return `<!doctype html><html><head><title>t</title>` + chainRoutes + `</head><body>` +
-		`<div data-fui-layout="site" data-fui-layout-key="l:site" class="layout-site">` +
+		`<div data-cui-layout="site" data-cui-layout-key="l:site" class="layout-site">` +
 		`<header id="site-header"><a id="to-account" href="/account">Account</a>` +
 		`<a id="to-item" href="/items/42">Item</a><a id="to-app" href="/app">App</a>` +
 		`<a id="to-legal" href="/legal">Legal</a></header>` +
-		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` + inner + `</main>` +
+		`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` + inner + `</main>` +
 		`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 }
 
 func appPage() string {
 	return `<!doctype html><html><head><title>app</title>` + chainRoutes + `</head><body>` +
-		`<div data-fui-layout="app" data-fui-layout-key="l:app" class="layout-app">` +
-		`<main role="main" tabindex="-1" data-fui-layout-slot="l:app"><h1 id="app-screen">App</h1></main>` +
+		`<div data-cui-layout="app" data-cui-layout-key="l:app" class="layout-app">` +
+		`<main role="main" tabindex="-1" data-cui-layout-slot="l:app"><h1 id="app-screen">App</h1></main>` +
 		`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 }
 
@@ -347,7 +347,7 @@ func TestChainToPlainPageDropsShell(t *testing.T) {
 		chromedp.Click(`#to-legal`, chromedp.ByID),
 		chromedp.WaitVisible(`#legal-screen`, chromedp.ByID),
 		chromedp.Evaluate(`document.querySelectorAll('#site-header').length`, &headerCount),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-layout-key]').length`, &keyCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-cui-layout-key]').length`, &keyCount),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -378,8 +378,8 @@ func TestSwapEchoMismatchRecovers(t *testing.T) {
 		return `<!doctype html><html><head><title>t</title>` +
 			`<script type="application/json" id="gofastr-routes">` +
 			`[{"path":"/x","layouts":["l:site"]},{"path":"/y","layouts":["l:site"]}]</script>` +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` + inner + `</main>` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux.HandleFunc("/x", func(w http.ResponseWriter, _ *http.Request) {

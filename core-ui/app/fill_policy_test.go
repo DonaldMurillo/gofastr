@@ -197,7 +197,7 @@ func TestP2FillRenderPanic(t *testing.T) {
 	if !strings.Contains(html, "[HELP]") {
 		t.Errorf("aside must degrade to its Default: %s", html)
 	}
-	if strings.Contains(html, "fui-render-error") {
+	if strings.Contains(html, "cui-render-error") {
 		t.Errorf("generic error box leaked into a contained outlet: %s", html)
 	}
 	if !strings.Contains(logs.String(), "app: fill failed; outlet degraded to fallback") {
@@ -309,10 +309,10 @@ type shellOutlets struct {
 }
 
 // outletCell extracts one outlet's rendered content from a page by its
-// data-fui-outlet address.
+// data-cui-outlet address.
 func outletCell(t *testing.T, html, addr string) string {
 	t.Helper()
-	i := strings.Index(html, `data-fui-outlet="`+addr+`"`)
+	i := strings.Index(html, `data-cui-outlet="`+addr+`"`)
 	if i < 0 {
 		t.Fatalf("outlet %s missing from %s", addr, html)
 	}

@@ -22,7 +22,7 @@ func TestCheckboxRequiresLabel(t *testing.T) {
 func TestCheckboxRendersWrappedLabel(t *testing.T) {
 	h := Checkbox(ToggleConfig{Name: "notify", Label: "Email me"})
 	for _, want := range []string{
-		`data-fui-comp="ui-toggle"`,
+		`data-cui-comp="ui-toggle"`,
 		`type="checkbox"`,
 		`name="notify"`,
 		`id="notify"`,

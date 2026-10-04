@@ -36,7 +36,7 @@ type LayoutLayer struct {
 // layout's declared Key when set, else its Name. Declaring Key lets one
 // layout shape re-render per context (the #408 case: a shell per
 // language, same Name, one CSS contract) while the name keeps driving
-// data-fui-layout. The identity is part of a group level's key so a
+// data-cui-layout. The identity is part of a group level's key so a
 // per-screen layout override inside a group compares as a DIFFERENT
 // layer than its siblings, navigating between them re-renders the shell
 // instead of silently keeping whichever one happened to be on screen.
@@ -180,8 +180,8 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 // from > 0 the outermost shared layers are already in the caller's DOM
 // (subtree partials), so every rendered layer nests, none emits <main>.
 // The layer at index from is the root of the payload the client swaps
-// in, so it carries the doc markers (data-fui-lang /
-// data-fui-skip-label) from the render context; without a fresh carrier
+// in, so it carries the doc markers (data-cui-lang /
+// data-cui-skip-label) from the render context; without a fresh carrier
 // the document language and skip link could never change on an in-chain
 // navigation.
 //
@@ -210,13 +210,13 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 			out = wrapped
 		}
 		if layer.GroupPrefix != "" {
-			attrs := map[string]string{"data-fui-screen-group": layer.GroupPrefix}
+			attrs := map[string]string{"data-cui-screen-group": layer.GroupPrefix}
 			if layer.Layout == nil && key != "" {
 				// Marker-only level: the group wrapper is both the layer
 				// element and its content cell, so sibling navigation can
 				// still target the level by key (and focus it after a swap).
-				attrs["data-fui-layout-key"] = key
-				attrs["data-fui-layout-slot"] = key
+				attrs["data-cui-layout-key"] = key
+				attrs["data-cui-layout-slot"] = key
 				attrs["tabindex"] = "-1"
 			}
 			if i == from && layer.Layout == nil {
@@ -228,7 +228,7 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 				}
 			}
 			out = html.Div(html.DivConfig{
-				Class:      "fui-screen-group",
+				Class:      "cui-screen-group",
 				ExtraAttrs: attrs,
 			}, out)
 		}

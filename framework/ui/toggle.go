@@ -68,7 +68,7 @@ type ToggleConfig struct {
 	// ExtraAttrs forwards additional attributes to the control's
 	// <input> element — the control that submits. Keys the component
 	// owns are dropped (type, name, id, value and the state
-	// attributes, plus every data-fui-* and data-hui-* key); the
+	// attributes, plus every data-cui-* and data-hui-* key); the
 	// label that wraps the control offers no attribute seam of its
 	// own, so what rides here rides on the input.
 	ExtraAttrs html.Attrs
@@ -219,7 +219,7 @@ func erroredRun(run render.HTML, helpText, errText, id string) render.HTML {
 			render.Tag("p", map[string]string{
 				"id":                id + "-hint",
 				"class":             "fui-choice-field__hint",
-				"data-fui-internal": "",
+				"data-cui-internal": "",
 			}, render.Text(helpText)))
 	default:
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run)
@@ -263,7 +263,7 @@ type RadioGroupConfig struct {
 	// <fieldset> element. Keys the component owns are dropped: class
 	// and id (use Class / ID), role (the fieldset is the native group
 	// semantic; headless renders no role on it), aria-describedby
-	// (wired to the group's message), and every data-fui-* key.
+	// (wired to the group's message), and every data-cui-* key.
 	ExtraAttrs html.Attrs
 }
 
@@ -430,7 +430,7 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 			"id":                id + "-error",
 			"class":             "fui-choice-group__error",
 			"role":              "alert",
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		}, render.Text(spec.errText)))
 		extra["aria-describedby"] = id + "-error"
 		hasMsg = true
@@ -438,7 +438,7 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 		msg = string(render.Tag("p", map[string]string{
 			"id":                id + "-hint",
 			"class":             "fui-choice-group__hint",
-			"data-fui-internal": "",
+			"data-cui-internal": "",
 		}, render.Text(spec.help)))
 		extra["aria-describedby"] = id + "-hint"
 		hasMsg = true

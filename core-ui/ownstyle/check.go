@@ -39,7 +39,7 @@ const (
 	// a scale token at a value the theme does not declare.
 	RuleFallbackDrift = "GOFASTR1808"
 	// RuleKitClassSelector is GOFASTR1810: a selector naming a kit
-	// class (.fui-*) or a runtime attribute ([data-fui-*]).
+	// class (.fui-*) or a runtime attribute ([data-cui-*]).
 	RuleKitClassSelector = "GOFASTR1810"
 	// RuleImportant is GOFASTR1811: !important.
 	RuleImportant = "GOFASTR1811"

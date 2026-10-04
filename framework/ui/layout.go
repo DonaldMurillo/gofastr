@@ -107,7 +107,7 @@ type StackConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the stack's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-fui-* and the data-hui-* hooks.
+	// ID), style, data-cui-* and the data-hui-* hooks.
 	ExtraAttrs html.Attrs
 }
 
@@ -148,7 +148,7 @@ type ClusterConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the cluster's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-fui-* and the data-hui-* hooks.
+	// ID), style, data-cui-* and the data-hui-* hooks.
 	ExtraAttrs html.Attrs
 }
 
@@ -182,7 +182,7 @@ type GridConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the grid's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-fui-*, data-hui-* and data-min (use Min).
+	// ID), style, data-cui-*, data-hui-* and data-min (use Min).
 	ExtraAttrs html.Attrs
 }
 
@@ -229,7 +229,7 @@ type CenterConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the region's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-fui-*.
+	// ID), style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -284,7 +284,7 @@ type BoxConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the box's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-fui-*.
+	// ID), style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -372,7 +372,7 @@ type StickyConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the sticky wrapper's root
 	// <div>. Keys the component owns are dropped: class and id (use
-	// Class / ID), style and data-fui-* (which covers the derived
+	// Class / ID), style and data-cui-* (which covers the derived
 	// data-fui-z-tier).
 	ExtraAttrs html.Attrs
 }
@@ -449,7 +449,7 @@ type AspectRatioConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the wrapper's root <div>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-fui-*.
+	// ID), style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -468,7 +468,7 @@ func AspectRatioComponent(cfg AspectRatioConfig, child render.HTML) render.HTML 
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
-	attrs["data-fui-comp"] = "ui-aspect-ratio"
+	attrs["data-cui-comp"] = "ui-aspect-ratio"
 	attrs["class"] = cls
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID

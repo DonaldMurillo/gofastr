@@ -112,7 +112,7 @@ type BackToTopConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <button>. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, type, aria-label (use Label), and inert (the
+	// data-cui-*, type, aria-label (use Label), and inert (the
 	// runtime's initial-hidden wiring).
 	ExtraAttrs html.Attrs
 }

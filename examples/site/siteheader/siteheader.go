@@ -15,7 +15,7 @@
 //     the phone menu — the headless-disclosure module closes it on
 //     Escape, on a link tap and on navigation, and traps focus while it
 //     is open — and the runtime's active-link pass sets aria-current on
-//     the nav links (data-fui-match-prefix keeps a section link lit).
+//     the nav links (data-cui-match-prefix keeps a section link lit).
 //
 // The bar is the page's banner landmark and a direct child of the
 // page-tall ui.Stack, which is what lets it stay pinned for the whole
@@ -38,7 +38,7 @@ type Link struct {
 	Label, Href string
 	// Section keeps the link current on every page under Href (Framework
 	// stays lit on /framework/getting-started), through the runtime's
-	// data-fui-match-prefix.
+	// data-cui-match-prefix.
 	Section bool
 	// External opens in a new tab; only honored in the phone menu.
 	External bool
@@ -64,12 +64,12 @@ const githubMark = `<svg width="16" height="16" viewBox="0 0 24 24" fill="curren
 // search trigger.
 const searchGlyph = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
 
-// navLink renders one Link; data-fui-match-prefix and rel=external ride
+// navLink renders one Link; data-cui-match-prefix and rel=external ride
 // the typed fields, never caller markup.
 func navLink(l Link) render.HTML {
 	attrs := html.Attrs{}
 	if l.Section {
-		attrs["data-fui-match-prefix"] = ""
+		attrs["data-cui-match-prefix"] = ""
 	}
 	if l.External {
 		attrs["rel"] = "external"
@@ -79,14 +79,14 @@ func navLink(l Link) render.HTML {
 }
 
 // searchAttrs are the contract both search controls share: one trigger
-// that opens the CommandPalette on click (data-fui-open) and binds ⌘K
+// that opens the CommandPalette on click (data-cui-open) and binds ⌘K
 // directly (data-hui-shortcut-click), so there is exactly one "open
 // search" affordance per surface.
 func searchAttrs() map[string]string {
 	return map[string]string{
 		"type":                    "button",
 		"aria-label":              "Open search to find a doc, component, or example",
-		"data-fui-open":           "site-command-palette",
+		"data-cui-open":           "site-command-palette",
 		"data-hui-shortcut-click": "Meta+K",
 	}
 }

@@ -8,7 +8,7 @@ import (
 func TestLineChartEmptyRendersEmptyState(t *testing.T) {
 	// No series is a normal data-bound zero state, not misuse.
 	h := string(LineChart(LineChartConfig{}))
-	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-chart-empty"`) {
 		t.Errorf("empty LineChart should render the chart empty state:\n%s", h)
 	}
 }
@@ -28,7 +28,7 @@ func TestLineChartTooFewPointsRendersEmptyState(t *testing.T) {
 	h := string(LineChart(LineChartConfig{Series: []LineSeries{
 		{Name: "S", Values: []float64{1}},
 	}}))
-	if !strings.Contains(h, `data-fui-comp="ui-chart-empty"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-chart-empty"`) {
 		t.Errorf("sparse LineChart should render the chart empty state:\n%s", h)
 	}
 }

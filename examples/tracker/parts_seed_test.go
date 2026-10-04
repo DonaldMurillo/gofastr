@@ -56,7 +56,7 @@ func TestPartAnswerCarriesFillWithoutRepeatedRouteSeed(t *testing.T) {
 	if sc := res.Header.Get("Set-Cookie"); sc != "" {
 		t.Errorf("part minted a session (Set-Cookie %q); only the page request mints", sc)
 	}
-	if !strings.Contains(part, `<template data-fui-fill="l:shell#aside">`) {
+	if !strings.Contains(part, `<template data-cui-fill="l:shell#aside">`) {
 		t.Fatalf("part body must be one fill template:\n%s", part)
 	}
 	if !strings.Contains(part, "Activity") {
@@ -92,7 +92,7 @@ func TestDeferredPageRequestShipsLoadingContent(t *testing.T) {
 	res.Body.Close()
 	page := string(body)
 
-	if !strings.Contains(page, `<template data-fui-fill="l:shell#aside">`) {
+	if !strings.Contains(page, `<template data-cui-fill="l:shell#aside">`) {
 		t.Fatalf("deferred page answer must carry the aside's fill slot:\n%.600s", page)
 	}
 	if strings.Contains(page, "reported this issue") {

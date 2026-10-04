@@ -32,7 +32,7 @@ fetch interception or via the playwright API directly where available):
    - Does the initial page paint progressively or stay blank?
    - Is there any loading indicator? Skeleton?
    - Does the runtime.js block first paint?
-   - Does `data-fui-comp` lazy-load CSS show unstyled content while
+   - Does `data-cui-comp` lazy-load CSS show unstyled content while
      the link element fetches?
 2. **CPU throttling 6×**: same routes again.
    - Do hydration callbacks finish in under 100ms?

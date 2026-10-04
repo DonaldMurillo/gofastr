@@ -28,8 +28,8 @@ func TestE2E_Card_HeadingInsideTheCard(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/card"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"] h3')?.textContent.trim() || ''`, &headingText),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-card"] h3')?.textContent.trim() || ''`, &headingText),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-card"]')?.getAttribute('role') || ''`, &role),
 	); err != nil {
 		t.Fatalf("card: %v", err)
 	}
@@ -49,8 +49,8 @@ func TestE2E_Card_InteractiveIsAnchor(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/card"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('a[data-fui-comp="ui-card"]')?.tagName || ''`, &tag),
-		chromedp.Evaluate(`document.querySelector('a[data-fui-comp="ui-card"]')?.getAttribute('href') || ''`, &href),
+		chromedp.Evaluate(`document.querySelector('a[data-cui-comp="ui-card"]')?.tagName || ''`, &tag),
+		chromedp.Evaluate(`document.querySelector('a[data-cui-comp="ui-card"]')?.getAttribute('href') || ''`, &href),
 	); err != nil {
 		t.Fatalf("card interactive: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestE2E_Tooltip_TriggerHasAriaDescribedBy(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/tooltip"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-tooltip"] button')?.getAttribute('aria-describedby') || ''`, &describedBy),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-tooltip"] button')?.getAttribute('aria-describedby') || ''`, &describedBy),
 		chromedp.Evaluate(`document.querySelector('.fui-tooltip__pop')?.getAttribute('role') || ''`, &popRole),
 	); err != nil {
 		t.Fatalf("tooltip: %v", err)
@@ -132,7 +132,7 @@ func TestE2E_Tag_DismissButtonHasAccessibleLabel(t *testing.T) {
 		t.Errorf("dismiss aria-label = %q, want 'Remove …'", ariaLabel)
 	}
 	if rpcPath == "" {
-		t.Errorf("dismiss button should carry data-fui-rpc")
+		t.Errorf("dismiss button should carry data-cui-rpc")
 	}
 }
 
@@ -146,8 +146,8 @@ func TestE2E_Spinner_HasStatusRoleAndAriaBusy(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/spinner"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('role') || ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .fui-visually-hidden')?.textContent || ''`, &hiddenLabel),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-spinner"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-spinner"] .fui-visually-hidden')?.textContent || ''`, &hiddenLabel),
 	); err != nil {
 		t.Fatalf("spinner: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestE2E_Divider_PlainUsesHR(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/divider"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('hr[data-fui-comp="ui-divider"]')?.tagName || ''`, &tag),
+		chromedp.Evaluate(`document.querySelector('hr[data-cui-comp="ui-divider"]')?.tagName || ''`, &tag),
 	); err != nil {
 		t.Fatalf("divider: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestE2E_FileUpload_PreviewShowsFilename(t *testing.T) {
 			return '';
 		})()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || ''`, &preview),
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || ''`, &preview),
 	); err != nil {
 		t.Fatalf("fileupload preview: %v", err)
 	}

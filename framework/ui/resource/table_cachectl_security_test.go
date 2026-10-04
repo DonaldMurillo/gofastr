@@ -16,7 +16,7 @@ package resource
 // route for EVERY list-bearing entity in every generated app (e.g.
 // examples/meridian/app.go:317 wires customersList behind cookie login) —
 // a shared cache that stores no-freshness 200s replays user A's row
-// fragment at user B's URL; the fragment is also the data-fui-poll/rpc
+// fragment at user B's URL; the fragment is also the data-cui-poll/rpc
 // freshness source.
 // Fix direction: Cache-Control: no-store beside the Content-Type set.
 

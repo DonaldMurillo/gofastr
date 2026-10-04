@@ -21,7 +21,7 @@ func TestTOCEmitsNavAndServerRenderedList(t *testing.T) {
 	}))
 	for _, want := range []string{
 		"<nav ",
-		`data-fui-comp="ui-toc"`,
+		`data-cui-comp="ui-toc"`,
 		`aria-label="On this page"`,
 		`data-hui-toc="" data-hui-toc-target="main"`,
 		`<a class="fui-toc__link" href="#overview">Overview</a>`,
@@ -32,7 +32,7 @@ func TestTOCEmitsNavAndServerRenderedList(t *testing.T) {
 		}
 	}
 	// The whole list is server-rendered: no runtime hook fills it.
-	if strings.Contains(h, "data-fui-toc") {
+	if strings.Contains(h, "data-cui-toc") {
 		t.Errorf("the retired runtime-filled TOC wiring is still rendered:\n%s", h)
 	}
 }

@@ -199,7 +199,7 @@ on this 404 page, which is exactly the honest answer for a static copy.
 
 ## Static mode: what works, what's disabled
 
-Every exported page is stamped with `<html data-fui-static>`. The runtime
+Every exported page is stamped with `<html data-cui-static>`. The runtime
 reads this marker once at boot and, when present, **skips server-backed
 dispatches** so a click on a dead demo doesn't fire a request that 404s
 against the serverless host:
@@ -210,8 +210,8 @@ against the serverless host:
 | Copy-to-clipboard | ✓ works | client-only module |
 | Signal mutations (`set`/`inc`/`toggle`) | ✓ works | client-only |
 | SPA navigation | ✓ works | fetches pre-rendered pages |
-| `data-fui-rpc` (island round-trips) | disabled | needs the Go handler |
-| `data-fui-open` (modals, ⌘K palette) | disabled | widget catalog needs the server |
+| `data-cui-rpc` (island round-trips) | disabled | needs the Go handler |
+| `data-cui-open` (modals, ⌘K palette) | disabled | widget catalog needs the server |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
 
 A dismissible "Static preview — run locally" banner (using the shared

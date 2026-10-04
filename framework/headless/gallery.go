@@ -12,7 +12,7 @@ import (
 // The gallery: a list of images where every item is a link — to the
 // full image, or to whatever the caller's href says. No module: a
 // click that opens a Lightbox travels the widget runtime's open
-// contract (data-fui-open), which the adapter carries; the primitive
+// contract (data-cui-open), which the adapter carries; the primitive
 // guarantees the semantics (a named list, alt text on every image, a
 // safe href on every link, intrinsic sizes so the layout does not
 // shift under the images).
@@ -65,13 +65,13 @@ type GalleryProps struct {
 }
 
 // GalleryLightbox names the lightbox a gallery's items open. It is a
-// typed prop rather than per-item extra attrs because the data-fui-*
+// typed prop rather than per-item extra attrs because the data-cui-*
 // keys it renders are the widget runtime's open contract, which the
 // extra-attrs surface refuses on purpose — a caller's decoration can
 // never become a request, but a lightbox trigger is a first-class
 // intent, so it is named here where it is reviewable.
 type GalleryLightbox struct {
-	// Name is the lightbox to open: the data-fui-open value, the Name
+	// Name is the lightbox to open: the data-cui-open value, the Name
 	// of a mounted framework/ui.Lightbox. Required when the wiring is
 	// set; a zero GalleryLightbox renders plain links.
 	Name string
@@ -143,14 +143,14 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 	// Caller-supplied per-item attrs go through the same refusal every
 	// extra-attrs surface here goes through: the anchor's own keys
 	// (href) are owned, and the refused families (on*, style, the
-	// data-hui-*/data-fui-* wiring) never ride an anchor the caller
+	// data-hui-*/data-cui-* wiring) never ride an anchor the caller
 	// did not build. Safe folds and refuses; its own two-spellings
 	// check subsumes the walk this replaced.
 	for k, v := range Safe(p.ExtraAttrsPerItem[i], "href") {
 		linkAttrs[k] = v
 	}
 	// The lightbox wiring rides as the component's own attrs, after the
-	// refusal: the data-fui-* family is the widget runtime's open
+	// refusal: the data-cui-* family is the widget runtime's open
 	// contract, not a caller's decoration, which is why it is a typed
 	// prop (GalleryLightbox) rather than an extra attr. The deeplink
 	// carries what the viewer shows — src, alt, caption and the group

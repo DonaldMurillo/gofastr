@@ -69,11 +69,11 @@ func TestHeaderLayoutPromises(t *testing.T) {
 	ctx := chromedptest.Context(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const h='[data-fui-scope="meridian-siteheader"]';
+const h='[data-cui-scope="meridian-siteheader"]';
 return JSON.stringify({ViewW:innerWidth,ViewH:innerHeight,ScrollW:document.documentElement.scrollWidth,
 Header:r(h),Nav:r(h+' nav[aria-label="Primary"]'),Toggle:r(h+' summary'),
-Panel:r(h+' details[open] > summary + *'),PanelToggle:r(h+' details[open] .panel-actions [data-fui-comp="ui-theme-toggle"]'),
-BarToggle:r(h+' .bar-actions [data-fui-comp="ui-theme-toggle"]'),Persistent:r(h+' .end a[href="/login"]'),
+Panel:r(h+' details[open] > summary + *'),PanelToggle:r(h+' details[open] .panel-actions [data-cui-comp="ui-theme-toggle"]'),
+BarToggle:r(h+' .bar-actions [data-cui-comp="ui-theme-toggle"]'),Persistent:r(h+' .end a[href="/login"]'),
 Brand:r(h+' .brand'),Column:r('main p'),
 PanelSignIn:r(h+' details[open] a[href="/login"]')})})()`
 	at := func(width int64, act ...chromedp.Action) geometry {
@@ -146,8 +146,8 @@ PanelSignIn:r(h+' details[open] a[href="/login"]')})})()`
 	})
 
 	t.Run("phone-menu-open", func(t *testing.T) {
-		g := at(390, chromedp.Click(`[data-fui-scope="meridian-siteheader"] summary`, chromedp.NodeVisible),
-			chromedp.Poll(`!!document.querySelector('[data-fui-scope="meridian-siteheader"] details[open]')`, nil),
+		g := at(390, chromedp.Click(`[data-cui-scope="meridian-siteheader"] summary`, chromedp.NodeVisible),
+			chromedp.Poll(`!!document.querySelector('[data-cui-scope="meridian-siteheader"] details[open]')`, nil),
 			// The panel slides in; measure where it settles.
 			chromedp.Poll(`document.getAnimations().every(a => a.playState === 'finished')`, nil))
 		if !shown(g.Panel) {
@@ -174,11 +174,11 @@ PanelSignIn:r(h+' details[open] a[href="/login"]')})})()`
 		Props   []string
 		Drawn   bool
 	}
-	const probe = `(()=>{const p=document.querySelector('[data-fui-scope="meridian-siteheader"] details > summary + *');
+	const probe = `(()=>{const p=document.querySelector('[data-cui-scope="meridian-siteheader"] details > summary + *');
 const as=p.getAnimations({subtree:true});
 return JSON.stringify({Longest:Math.max(0,...as.map(a=>{const t=a.effect.getComputedTiming();return t.delay+t.duration})),
 Props:as.filter(a=>a.effect.target===p).map(a=>a.transitionProperty),Drawn:p.getBoundingClientRect().height>0})})()`
-	toggle := chromedp.Click(`[data-fui-scope="meridian-siteheader"] summary`, chromedp.NodeVisible)
+	toggle := chromedp.Click(`[data-cui-scope="meridian-siteheader"] summary`, chromedp.NodeVisible)
 	settled := chromedp.Poll(`document.getAnimations().every(a => a.playState === 'finished')`, nil)
 	run := func(reduce, closing bool) motion {
 		t.Helper()

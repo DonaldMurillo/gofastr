@@ -138,7 +138,7 @@ func TestGroupScreenHonorsExplicitLayoutOverride(t *testing.T) {
 		t.Errorf("default group layout must be replaced by explicit override, but GROUP_SHELL leaked: %s", s)
 	}
 	// The group marker still appears so sibling-nav within /shop keeps the override layout shell.
-	if !contains(s, `data-fui-screen-group="/shop/"`) {
+	if !contains(s, `data-cui-screen-group="/shop/"`) {
 		t.Errorf("group marker still required when an override is used: %s", s)
 	}
 	if !contains(s, "CHECKOUT") {
@@ -166,12 +166,12 @@ func TestNestedGroupRendersNestedLayoutShells(t *testing.T) {
 	if !contains(s, "PARENT_SHELL") || !contains(s, "CHILD_SHELL") {
 		t.Errorf("nested groups must render both layout shells, got: %s", s)
 	}
-	// The data-fui-screen-group markers must be present at BOTH levels so
+	// The data-cui-screen-group markers must be present at BOTH levels so
 	// the runtime can pick the deepest match during sibling nav.
-	if !contains(s, `data-fui-screen-group="/settings/"`) {
+	if !contains(s, `data-cui-screen-group="/settings/"`) {
 		t.Errorf("outer group marker missing: %s", s)
 	}
-	if !contains(s, `data-fui-screen-group="/settings/advanced/"`) {
+	if !contains(s, `data-cui-screen-group="/settings/advanced/"`) {
 		t.Errorf("inner group marker missing: %s", s)
 	}
 	// Content must be present.
@@ -179,8 +179,8 @@ func TestNestedGroupRendersNestedLayoutShells(t *testing.T) {
 		t.Errorf("screen content missing: %s", s)
 	}
 	// Outer marker must appear BEFORE inner marker (outer wraps inner).
-	outerAt := indexOf(s, `data-fui-screen-group="/settings/"`)
-	innerAt := indexOf(s, `data-fui-screen-group="/settings/advanced/"`)
+	outerAt := indexOf(s, `data-cui-screen-group="/settings/"`)
+	innerAt := indexOf(s, `data-cui-screen-group="/settings/advanced/"`)
 	if outerAt < 0 || innerAt < 0 || outerAt >= innerAt {
 		t.Errorf("expected outer marker (pos %d) to appear before inner marker (pos %d)", outerAt, innerAt)
 	}
@@ -226,8 +226,8 @@ func TestScreenGroupRenderLayout(t *testing.T) {
 		t.Fatal("RenderLayout returned empty string")
 	}
 	// Should contain the group marker
-	if !contains(str, "data-fui-screen-group") {
-		t.Error("RenderLayout should include data-fui-screen-group attribute")
+	if !contains(str, "data-cui-screen-group") {
+		t.Error("RenderLayout should include data-cui-screen-group attribute")
 	}
 	// Should contain the layout header
 	if !contains(str, "<h1>Header</h1>") {
@@ -268,17 +268,17 @@ func TestNestedGroupChainEmitsLayerKeys(t *testing.T) {
 
 	for _, want := range []string{
 		"Outer", "Inner", "<p>Content</p>",
-		`data-fui-layout-key="g:/app/:outer"`,
-		`data-fui-layout-key="g:/app/settings/:inner"`,
-		`data-fui-layout-slot="g:/app/:outer"`,
-		`data-fui-layout-slot="g:/app/settings/:inner"`,
+		`data-cui-layout-key="g:/app/:outer"`,
+		`data-cui-layout-key="g:/app/settings/:inner"`,
+		`data-cui-layout-slot="g:/app/:outer"`,
+		`data-cui-layout-slot="g:/app/settings/:inner"`,
 	} {
 		if !contains(s, want) {
 			t.Errorf("missing %q in: %s", want, s)
 		}
 	}
 	// Outer key must appear before inner key (outer wraps inner).
-	if indexOf(s, `data-fui-layout-key="g:/app/:outer"`) >= indexOf(s, `data-fui-layout-key="g:/app/settings/:inner"`) {
+	if indexOf(s, `data-cui-layout-key="g:/app/:outer"`) >= indexOf(s, `data-cui-layout-key="g:/app/settings/:inner"`) {
 		t.Errorf("outer layer must wrap inner layer: %s", s)
 	}
 }

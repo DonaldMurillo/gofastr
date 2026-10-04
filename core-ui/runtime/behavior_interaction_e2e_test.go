@@ -336,7 +336,7 @@ func TestBehaviorMalformedInteractionsLeaveKernelStanding(t *testing.T) {
 	head := `<script>window.__gofastr_behaviors = {"probe-ia": {"s": ["[data-ia]"], "x": "garbage"}};</script>`
 	s := startIAServer(t, head, `
 <p data-ia>probe target</p>
-<p data-fui-reveal="fade-up" id="rev">reveal marker</p>`, "")
+<p data-cui-reveal="fade-up" id="rev">reveal marker</p>`, "")
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	iaGoto(t, ctx, s.srv.URL+"/")
 
@@ -373,7 +373,7 @@ func TestBehaviorUnresolvableSelectorLeavesThePageWorking(t *testing.T) {
 <p data-ia>probe target</p>
 <button id="go" data-ia-go>go</button>
 <input id="k">
-<p data-fui-reveal="fade-up" id="rev">reveal marker</p>`, "")
+<p data-cui-reveal="fade-up" id="rev">reveal marker</p>`, "")
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	iaGoto(t, ctx, s.srv.URL+"/")
 

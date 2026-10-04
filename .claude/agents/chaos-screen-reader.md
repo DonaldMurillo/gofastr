@@ -44,7 +44,7 @@ For every page:
    a validation error by submitting an empty form.
 6. **Link purpose**: every `<a>` should have meaningful text. "Click
    here" / "read more" / unlabeled icon-only links fail WCAG 2.4.4.
-7. **Live-region behavior**: Find `#fui-route-announce`. SPA-navigate.
+7. **Live-region behavior**: Find `#cui-route-announce`. SPA-navigate.
    Does its textContent update with the new page title within a
    reasonable window?
 8. **Alt text**: every `<img>` (use `browser_evaluate` to grab the
@@ -88,7 +88,7 @@ For every reachable route:
 List with selectors and the page where they appear.
 
 ## Live-region behavior
-SPA-nav from / → /about. Did #fui-route-announce update?
+SPA-nav from / → /about. Did #cui-route-announce update?
 Expected: textContent matches new <title> within 200ms.
 Actual: …
 

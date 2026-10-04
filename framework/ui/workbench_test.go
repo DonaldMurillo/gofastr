@@ -15,11 +15,11 @@ import (
 // page beside a preview nobody could see.
 func TestWorkbenchRailScrollsIndependently(t *testing.T) {
 	css := workbenchCSS(style.Theme{})
-	rail := sectionOf(t, css, `[data-fui-comp="ui-workbench"] .fui-workbench__rail`)
+	rail := sectionOf(t, css, `[data-cui-comp="ui-workbench"] .fui-workbench__rail`)
 	if !strings.Contains(rail, "overflow-y: auto") {
 		t.Fatalf("the rail does not scroll on its own:\n%s", rail)
 	}
-	root := sectionOf(t, css, `[data-fui-comp="ui-workbench"] {`)
+	root := sectionOf(t, css, `[data-cui-comp="ui-workbench"] {`)
 	if !strings.Contains(root, "block-size: 100dvh") {
 		t.Fatalf("the shell is not viewport-height, so the rail has nothing to scroll within:\n%s", root)
 	}
@@ -33,7 +33,7 @@ func TestWorkbenchRailScrollsIndependently(t *testing.T) {
 // first caller that forgets ships a postage-stamp preview.
 func TestWorkbenchPaneFillsAnIframe(t *testing.T) {
 	rule := sectionOf(t, workbenchCSS(style.Theme{}),
-		`[data-fui-comp="ui-workbench"] .fui-workbench__pane > iframe`)
+		`[data-cui-comp="ui-workbench"] .fui-workbench__pane > iframe`)
 	for _, want := range []string{"inline-size: 100%", "block-size: 100%", "border: 0"} {
 		if !strings.Contains(rule, want) {
 			t.Fatalf("iframe rule is missing %q:\n%s", want, rule)
@@ -66,7 +66,7 @@ func TestWorkbenchRendersBothRegions(t *testing.T) {
 		Pane:       render.Text("PANECONTENT"),
 		ExtraAttrs: html.Attrs{"aria-label": "Inspector"},
 	}))
-	if !strings.Contains(out, `data-fui-comp="ui-workbench"`) {
+	if !strings.Contains(out, `data-cui-comp="ui-workbench"`) {
 		t.Fatalf("missing the component marker the stylesheet keys on:\n%s", out)
 	}
 	if !strings.Contains(out, `aria-label="Inspector"`) {
@@ -118,7 +118,7 @@ func TestWorkbenchExtraAttrsCannotOverrideOwned(t *testing.T) {
 		RailWidth: "480px", Class: "mine",
 		Rail: render.Text("rail"), Pane: render.Text("pane"),
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "style": "evil", "Class": "evil", "data-fui-comp": "spoof",
+			"data-test": "hook", "style": "evil", "Class": "evil", "data-cui-comp": "spoof",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]

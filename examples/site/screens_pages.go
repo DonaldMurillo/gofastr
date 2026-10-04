@@ -535,7 +535,7 @@ func exRowItems() []render.HTML {
 			})),
 		exRow("10", "examples/backoffice", "Entity admin", "battery/admin", locBadge("backoffice", ""),
 			"Three entities and one admin.New call: the whole back-office (list, create, edit, delete) is generated with defaults, behind a demo login. No bespoke JavaScript anywhere in the app.",
-			[]string{"admin.New with AllEntities: true generates every screen", "DataTable island paginates without a reload", "Delete is a data-fui-confirm button; forms are server-rendered"},
+			[]string{"admin.New with AllEntities: true generates every screen", "DataTable island paginates without a reload", "Delete is a data-cui-confirm button; forms are server-rendered"},
 			"cd examples/backoffice && gofastr dev",
 			codeBlock("examples/backoffice/main.go", []render.HTML{
 				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"products"`), pn(","), render.Text(" …"), pn(")")),

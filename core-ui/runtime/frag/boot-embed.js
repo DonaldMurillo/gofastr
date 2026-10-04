@@ -48,7 +48,7 @@
 
     const fail = (code, detail) => {
       if (root) {
-        root.setAttribute('data-fui-embed-state', 'error');
+        root.setAttribute('data-cui-embed-state', 'error');
         root.textContent = 'This panel could not load. Error: ' + code + '.';
       }
       post({ type: 'error', code: code });
@@ -69,7 +69,7 @@
     // rendered, and blanking a panel because a token aged out loses the user
     // their view for no safety gain.
     const expire = () => {
-      if (root) root.setAttribute('data-fui-embed-state', 'expired');
+      if (root) root.setAttribute('data-cui-embed-state', 'expired');
       post({ type: 'expired' });
       console.warn('[gofastr/embed] grant expired — reload the host page for a fresh nonce');
     };
@@ -241,7 +241,7 @@
         });
         if (!r.ok) { fail('content-failed', r.status); return; }
         root.innerHTML = html;
-        root.setAttribute('data-fui-embed-state', 'ready');
+        root.setAttribute('data-cui-embed-state', 'ready');
         // The MutationObserver installed by boot handles hydration and
         // demand-loading modules for the injected subtree; component CSS is
         // not part of that pass, so scan for it explicitly.
@@ -430,8 +430,8 @@
       const form = e.target;
       if (!form || form.tagName !== 'FORM') return;
       const enctype = (form.getAttribute('enctype') || '').toLowerCase();
-      if (form.hasAttribute('data-fui-rpc') ||
-          form.hasAttribute('data-fui-spa') ||
+      if (form.hasAttribute('data-cui-rpc') ||
+          form.hasAttribute('data-cui-spa') ||
           enctype === 'application/json') return;
       e.preventDefault();
       showBlockedNavigation('form', form.action || '');

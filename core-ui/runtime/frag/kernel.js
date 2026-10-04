@@ -1,6 +1,6 @@
 // kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
-// data-fui-comp / data-fui-scope CSS scanner, window.__gofastr namespace CREATION (other
+// data-cui-comp / data-cui-scope CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
 // component-action dispatch helpers.
 // Composed FIRST; every other fragment depends on it.
@@ -20,10 +20,10 @@
   //   - data-color-scheme is WRITTEN by colorscheme.js, the separate
   //     synchronous <head> bootstrap that must run before first paint
   //     (FOUC). It is enumerated here as documentation only.
-  //   - data-fui-static is written by the static exporter (Go), never
+  //   - data-cui-static is written by the static exporter (Go), never
   //     by the runtime. Enumerated as documentation only.
   //   - Transient DOM (e.g. the feedback module's copy textarea) and
-  //     pure reads (#fui-route-announce) stay unwrapped.
+  //     pure reads (#cui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
   // concurrent lockers, a modal over an image overlay, a drawer over a
@@ -35,7 +35,7 @@
   // singleton(id, factory) returns the existing body child with that id
   // (SSR-provided or previously created) or creates+appends it once.
   // reattach() re-appends any created singleton that lost its parent,
-  // the SPA full-shell swap calls it after replacing [data-fui-layout],
+  // the SPA full-shell swap calls it after replacing [data-cui-layout],
   // covering layouts that (incorrectly but survivably) nest chrome the
   // runtime hung on <body>.
   // docEl is the shared <html> handle for the whole core runtime,
@@ -83,7 +83,7 @@
     },
   };
 
-  // OS hint on <html data-fui-os="mac|other"> so SSR-rendered
+  // OS hint on <html data-cui-os="mac|other"> so SSR-rendered
   // shortcut hints (framework/ui.ShortcutHint) can display
   // platform-correct mod-key glyphs (⌘ on Mac, Ctrl elsewhere)
   // without per-component JS. Detection is best-effort; functional
@@ -92,10 +92,10 @@
   try {
     const ua = (navigator.userAgentData && navigator.userAgentData.platform) ||
                navigator.platform || '';
-    doc.setHtmlAttr('data-fui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
+    doc.setHtmlAttr('data-cui-os', /Mac|iPhone|iPad|iPod/.test(ua) ? 'mac' : 'other');
   } catch (_) { /* SSR / non-browser */ }
 
-  // data-fui-static on <html> is still written by the static exporter
+  // data-cui-static on <html> is still written by the static exporter
   // (framework/static.Builder) and read by the widgets demand module
   // (src/widgets.js) for its missing-widget fallback toast. The runtime
   // itself no longer branches on it, composition selects the `static`
@@ -128,7 +128,7 @@
         redirect: r.redirect ?? r.Redirect ?? '',
         // Document-lifetime scripts in scope for this route (src
         // values). Nav compares the destination's set against the live
-        // document's data-fui-doc scripts; a difference is a document
+        // document's data-cui-doc scripts; a difference is a document
         // boundary, never a partial swap.
         docScripts: r.docScripts ?? r.DocScripts ?? [],
       });
@@ -403,7 +403,7 @@
      * /__gofastr/comp/<name>.css from the SSR-emitted <link>. */
     loadCSS(_screenPath) { /* no-op */ },
 
-    // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
+    // Component CSS: three modes share _pendingLinks + data-cui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
     // Page-lifetime conjunction of every component stylesheet load, awaited
@@ -413,7 +413,7 @@
     _stylesReady: Promise.resolve(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
+      if (document.querySelector('link[data-cui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);
@@ -426,8 +426,8 @@
       // unknown theme key AND an absent version, silently serving the app
       // palette with no immutable caching.
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
-      link.setAttribute('data-fui-style', name);
-      link.id = 'fui-css-' + name;
+      link.setAttribute('data-cui-style', name);
+      link.id = 'cui-css-' + name;
       // Each link's promise is BOUNDED: a stalled fetch (connection
       // accepted, response never arriving) fires neither onload nor
       // onerror and <link> has no network timeout of its own, so an
@@ -441,15 +441,15 @@
       })]).then(() => {});
       document.head.appendChild(link);
     },
-    // Loads the sheet each kit root (data-fui-comp) and owned-style
-    // root (data-fui-scope) under root names. Descendants only: a
+    // Loads the sheet each kit root (data-cui-comp) and owned-style
+    // root (data-cui-scope) under root names. Descendants only: a
     // caller whose swapped element may itself be a root scans its
     // parent (swapShell).
     scanAndLoadCSS(root) {
       if (!root?.querySelectorAll) return;
-      root.querySelectorAll('[data-fui-comp],[data-fui-scope]').forEach((el) => {
-        this.loadComponentCSS(el.dataset.fuiComp);
-        this.loadComponentCSS(el.dataset.fuiScope);
+      root.querySelectorAll('[data-cui-comp],[data-cui-scope]').forEach((el) => {
+        this.loadComponentCSS(el.dataset.cuiComp);
+        this.loadComponentCSS(el.dataset.cuiScope);
       });
     },
     _idleQueue: [],
@@ -531,7 +531,7 @@
     // headless-feedback (framework/headless/feedback.js), which
     // replaced the retired core-ui/runtime src/toasts.js. The module
     // self-registers those on window.__gofastr when it loads. Core
-    // code that calls them (the click delegator for data-fui-toast,
+    // code that calls them (the click delegator for data-cui-toast,
     // the X-Gofastr-Toast header dispatch in dispatchRPC) awaits
     // loadModule('headless-feedback') first so the very first toast on
     // a cold cache still fires.
@@ -584,11 +584,11 @@
     _fallbackToast(cfg) {
       if (!cfg || !cfg.title) return null;
       // Body singleton (doc.MANIFEST), distinct from the styled
-      // [data-fui-toast-stack] container the toasts module owns; the
+      // [data-cui-toast-stack] container the toasts module owns; the
       // fallback stays deliberately unstyled + module-free.
-      const container = doc.singleton('fui-toast-fallback', () => {
+      const container = doc.singleton('cui-toast-fallback', () => {
         const c = document.createElement('div');
-        c.setAttribute('data-fui-toast-fallback', '');
+        c.setAttribute('data-cui-toast-fallback', '');
         c.setAttribute('role', 'region');
         c.setAttribute('aria-label', 'Notifications');
         c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';

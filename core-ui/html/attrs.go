@@ -41,13 +41,13 @@ func Classes(classes map[string]bool) Attrs {
 // SafeExtraAttrs returns a copy of a component config's ExtraAttrs with
 // the keys the component owns removed, ready to forward to the
 // component's root element. Dropped: every case-variant of "class",
-// "id", and the listed protected keys, plus any "data-fui-*" key.
+// "id", and the listed protected keys, plus any "data-cui-*" key.
 //
 // Case-variants must go, not just exact matches: HTML attribute names
 // are case-insensitive, so a "Class" or "Type" entry survives a
 // lowercase-only overwrite as a distinct map key, renders as a second
 // attribute, and folds back onto the protected one in the parser.
-// "data-fui-*" is reserved for runtime wiring; a caller-supplied value
+// "data-cui-*" is reserved for runtime wiring; a caller-supplied value
 // would collide with the marker WrapHTML injects into the root tag.
 //
 // Returns nil when nothing survives, which every ExtraAttrs consumer
@@ -84,13 +84,13 @@ func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 
 // SafeCarrierAttrs is SafeExtraAttrs for wiring carriers: components
 // whose ExtraAttrs are the documented attachment point for runtime
-// wiring (interactive.Action.Attrs(), data-fui-open, …) and that emit
-// no data-fui-* wiring of their own. It drops every case-variant of
-// "class", "id", "data-fui-comp" (the style-scope marker WrapHTML
+// wiring (interactive.Action.Attrs(), data-cui-open, …) and that emit
+// no data-cui-* wiring of their own. It drops every case-variant of
+// "class", "id", "data-cui-comp" (the style-scope marker WrapHTML
 // injects), and the listed protected keys, but keeps the rest of
-// "data-fui-*" so the interactive package's attrs pass through.
+// "data-cui-*" so the interactive package's attrs pass through.
 // ui.Button and ui.Link are the carriers; a component that renders its
-// own data-fui-* attributes must use SafeExtraAttrs instead, or a
+// own data-cui-* attributes must use SafeExtraAttrs instead, or a
 // caller could spoof its wiring.
 func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
 	if len(attrs) == 0 {
@@ -99,7 +99,7 @@ func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
 	out := make(Attrs, len(attrs))
 	for k, v := range attrs {
 		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") ||
-			strings.EqualFold(k, "data-fui-comp") {
+			strings.EqualFold(k, "data-cui-comp") {
 			continue
 		}
 		drop := false

@@ -70,7 +70,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   explicit origin), `Config.Widgets` opens floating widget windows at
   launch, `desktop.Widget(path, w, h)` builds the typical spec, and
   `windows.open` accepts a `style` object from the page. A borderless
-  window drags through the page: the `data-fui-window-drag` attribute
+  window drags through the page: the `data-cui-window-drag` attribute
   on any element makes mousedown there start a native window drag.
   Every window now carries its own user script, so a page can learn
   which window it lives in (`window.__gofastr_desktop.window`).

@@ -298,8 +298,8 @@ func widgetCSS() string {
 		Set("background", "rgba(220, 80, 80, 0.30)").
 		End()
 
-	// Generic flash animation used by data-fui-flash-on-update.
-	ss.Rule(".fui-flash").
+	// Generic flash animation used by data-cui-flash-on-update.
+	ss.Rule(".cui-flash").
 		Set("animation", "fuiFlashPulse 0.6s ease-out").
 		End()
 	ss.Keyframes("fuiFlashPulse",
@@ -363,10 +363,10 @@ func widgetCSS() string {
 			"transition", "background 0.2s ease",
 		).
 		End()
-	ss.Rule("body.fui-sse-up .kiln-panel-conn").
+	ss.Rule("body.cui-sse-up .kiln-panel-conn").
 		Set("background", "rgba(110, 220, 150, 0.85)").
 		End()
-	ss.Rule("body.fui-sse-down .kiln-panel-conn").
+	ss.Rule("body.cui-sse-down .kiln-panel-conn").
 		Set("background", "{colors.kiln-bad}", "animation", "kilnPulse 1.2s ease-in-out infinite").
 		End()
 
@@ -1026,7 +1026,7 @@ func widgetCSS() string {
 		).
 		End()
 
-	ss.Rule(".kiln-build-banner:has(#kiln-build-label.fui-flash)").
+	ss.Rule(".kiln-build-banner:has(#kiln-build-label.cui-flash)").
 		Set("transform", "translateY(0)", "opacity", "1").
 		End()
 

@@ -40,7 +40,7 @@ reviews:
       instructions: |
         Component configs carry ExtraAttrs forwarded to the root element
         through html.SafeExtraAttrs (extras first, owned keys re-asserted;
-        class/id/data-fui-* dropped case-insensitively). The gates in
+        class/id/data-cui-* dropped case-insensitively). The gates in
         framework/ui/extraattrs_contract_test.go enforce this; flag code
         that forwards ExtraAttrs raw outside the extraAttrsRawLegacy
         allow-list. SSR output must be byte-deterministic: never range a

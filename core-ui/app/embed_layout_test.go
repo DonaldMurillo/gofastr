@@ -19,7 +19,7 @@ import (
 // this pins the structural fact the screenshot depended on.
 func TestEmbedLayoutIsNotViewportTall(t *testing.T) {
 	out := string(EmbedLayout().WrapCtx(context.Background(), "<p>body</p>"))
-	for _, cls := range []string{`class="layout-body"`, `data-fui-comp="ui-shell"`} {
+	for _, cls := range []string{`class="layout-body"`, `data-cui-comp="ui-shell"`} {
 		if strings.Contains(out, cls) {
 			t.Fatalf("EmbedLayout emitted a structural shell (%s) a stylesheet could size to the viewport — the frame would ratchet its own height open:\n%s", cls, out)
 		}
@@ -35,7 +35,7 @@ func TestEmbedLayoutIsNotViewportTall(t *testing.T) {
 // the contract lookup and the constant, so renaming the constant silently
 // orphans every rule a host app wrote against .layout-embed, all while
 // the test reports success. This pins the emitted name, class, and the
-// data-fui-layout marker to the constant.
+// data-cui-layout marker to the constant.
 func TestEmbedLayoutCSSMatchesTheEmittedLayoutName(t *testing.T) {
 	l := EmbedLayout()
 	if got := l.Name; got != EmbedLayoutName {
@@ -43,7 +43,7 @@ func TestEmbedLayoutCSSMatchesTheEmittedLayoutName(t *testing.T) {
 	}
 	out := string(l.WrapCtx(context.Background(), "<p>body</p>"))
 	wantClass := `class="layout-` + EmbedLayoutName + `"`
-	wantAttr := `data-fui-layout="` + EmbedLayoutName + `"`
+	wantAttr := `data-cui-layout="` + EmbedLayoutName + `"`
 	if !strings.Contains(out, wantClass) || !strings.Contains(out, wantAttr) {
 		t.Fatalf("EmbedLayout's wrapper must carry the CSS contract %q and %q:\n%s", wantClass, wantAttr, out)
 	}

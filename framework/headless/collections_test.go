@@ -53,15 +53,15 @@ func TestRepeaterIslandEmitsTheRPCContract(t *testing.T) {
 		Items:  []RepeaterItem{{Fields: []render.HTML{render.Text("")}}},
 		Action: "/island/guests",
 		Island: Island{Endpoint: "/island/guests", Signal: "guests"}}, nil)
-	has(t, got, `data-fui-rpc="/island/guests?op=add"`, "the add operation is not in the endpoint's query")
-	has(t, got, `data-fui-rpc="/island/guests?index=0&amp;op=remove"`, "the remove operation's row did not reach the endpoint's query")
-	has(t, got, `data-fui-rpc-signal="guests"`, "the buttons do not name the region they update")
+	has(t, got, `data-cui-rpc="/island/guests?op=add"`, "the add operation is not in the endpoint's query")
+	has(t, got, `data-cui-rpc="/island/guests?index=0&amp;op=remove"`, "the remove operation's row did not reach the endpoint's query")
+	has(t, got, `data-cui-rpc-signal="guests"`, "the buttons do not name the region they update")
 
 	// A plain repeater emits no RPC at all: the surrounding form is
 	// the destination.
 	plain := Repeater(RepeaterProps{Name: "links",
 		Items: []RepeaterItem{{Fields: []render.HTML{render.Text("")}}}}, nil)
-	hasNot(t, plain, "data-fui-rpc", "a plain repeater carries the RPC contract with no island")
+	hasNot(t, plain, "data-cui-rpc", "a plain repeater carries the RPC contract with no island")
 }
 
 func TestRepeaterRefusesBrokenConfigurations(t *testing.T) {

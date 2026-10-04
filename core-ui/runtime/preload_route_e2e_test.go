@@ -46,8 +46,8 @@ func newPreloadSite(t *testing.T) (*httptest.Server, func() []preloadReq) {
 		`]</script>`
 	page := func(inner string) string {
 		return `<!doctype html><html><head><title>t</title>` + routes +
-			`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` + inner + `</main>` +
+			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` + inner + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	hubInner := `<h1 id="hub-screen">Hub</h1>` +

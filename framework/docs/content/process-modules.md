@@ -216,20 +216,20 @@ A module owns *screen logic* only. It returns a bounded, declarative
 `ui.node.v1` node tree, a closed, host-owned component enum with typed
 scalar props, which the host validates, maps to design-system components,
 renders, and hydrates. The module never emits raw HTML/CSS/JS or
-`data-fui-*` attributes; action references resolve to installed routes,
+`data-cui-*` attributes; action references resolve to installed routes,
 which the host maps to the real runtime RPC URLs.
 
 The closed validator lives in [`core-ui/uinodev1`](../../../core-ui/uinodev1)
 (`uinodev1.Validate`): it enforces the whole-tree caps (depth ≈ 32, nodes ≈
 500, per-prop strings ≈ 4 KiB), the closed component enum, typed scalar
-props (no `id`/`class`/`style`/`data-*` passthrough: `data-fui-*` and `on*`
+props (no `id`/`class`/`style`/`data-*` passthrough: `data-cui-*` and `on*`
 are *unrepresentable*, not merely denied), host-relative-only URL schemes,
 and action_ref shape. A forged tree is whole-tree rejected.
 
 The proxy renders a validated tree through
 [`framework/uihost/uinoderender`](../../uihost/uinoderender): each component
 maps to a `framework/ui` / `core-ui/html` primitive with the host assigning
-every id, class, ARIA attribute, and `data-fui-rpc` URL; the module supplies
+every id, class, ARIA attribute, and `data-cui-rpc` URL; the module supplies
 none. A node's `action_ref` resolves against the module's own declared
 routes; a ref naming no declared route fails the render **closed** (a buffered
 503), and any validation or render error is likewise fail-safe; the forged

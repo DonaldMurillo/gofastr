@@ -116,7 +116,7 @@ func TestInputGroupCustomClass(t *testing.T) {
 // TestInputGroupComposesPrependInputAppend asserts the rendered DOM
 // for a prepend + input + append composition: a single ui-input-group
 // wrapper whose children appear in source order, each addon carries
-// the right class, and the wrapper carries the data-fui-comp marker
+// the right class, and the wrapper carries the data-cui-comp marker
 // the runtime expects so the CSS for the visual join is applied.
 func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 	in := html.Input(html.InputConfig{Type: "text", Name: "price", ID: "price"})
@@ -127,10 +127,10 @@ func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 	}))
 
 	// The runtime style hook + CSS selectors all key off this
-	// data-fui-comp marker. Its absence would silently strip the
+	// data-cui-comp marker. Its absence would silently strip the
 	// visual join (regression seen on prior shipped components).
-	if !strings.Contains(h, `data-fui-comp="ui-input-group"`) {
-		t.Errorf("missing data-fui-comp=\"ui-input-group\" marker:\n%s", h)
+	if !strings.Contains(h, `data-cui-comp="ui-input-group"`) {
+		t.Errorf("missing data-cui-comp=\"ui-input-group\" marker:\n%s", h)
 	}
 
 	prependIdx := classTokenIndex(h, "fui-input-group__prepend")

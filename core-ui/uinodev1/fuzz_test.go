@@ -22,7 +22,7 @@ func FuzzValidate(f *testing.F) {
 		`{"component":"data-table","props":{"columns":[{"key":"a","label":"A"}],"rows":[{"cells":[{"text":"1"}]}]}}`,
 		// adversarial shapes the fuzzer should mutate from
 		`{"component":"script","props":{}}`,
-		`{"component":"heading","props":{"data-fui-rpc":"/evil"}}`,
+		`{"component":"heading","props":{"data-cui-rpc":"/evil"}}`,
 		`{"component":"link","props":{"to":"javascript:alert(1)","text":"x"}}`,
 		`{"component":"link","props":{"to":"//evil.com","text":"x"}}`,
 		`{"component":"divider","onclick":"evil()"}`,

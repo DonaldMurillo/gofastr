@@ -27,7 +27,7 @@ import (
 //     by the time the user interacts. The marker scanner fires on
 //     DOMContentLoaded + SPA-nav so a cold-cache visit still has the
 //     module ready when the user clicks.
-//   - Hovering a data-fui-prefetch="<module>" element triggers the
+//   - Hovering a data-cui-prefetch="<module>" element triggers the
 //     module fetch before any click, the "warm the cache on hover"
 //     path.
 //   - The manifest emitted in <head> binds each module to its content-
@@ -232,7 +232,7 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 	}
 }
 
-// A user who clicks a `data-fui-open` button BEFORE the framework's
+// A user who clicks a `data-cui-open` button BEFORE the framework's
 // /__gofastr/widgets catalog fetch resolves must not lose the click.
 // Today the click delegator is installed inside the catalog .then()
 // callback, meaning on slow networks (Slow 3G, cold cache, a deploy
@@ -269,13 +269,13 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 	var opened bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/drawer"),
-		chromedp.WaitVisible(`button[data-fui-open="site-demo-drawer"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`button[data-cui-open="site-demo-drawer"]`, chromedp.ByQuery),
 		// Click during the catalog stall. Must be queued (awaited),
 		// not lost. After the stall + grace window, widget MUST be open.
-		chromedp.Evaluate(`document.querySelector('button[data-fui-open="site-demo-drawer"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-drawer"]').click()`, nil),
 		chromedp.Sleep(2000*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-            const w = document.querySelector('[data-fui-widget="site-demo-drawer"]');
+            const w = document.querySelector('[data-cui-widget="site-demo-drawer"]');
             if (!w) return false;
             return !w.hasAttribute('hidden');
         })()`, &opened),
@@ -283,7 +283,7 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if !opened {
-		t.Errorf("data-fui-open click fired before /__gofastr/widgets catalog resolved did NOT open " +
+		t.Errorf("data-cui-open click fired before /__gofastr/widgets catalog resolved did NOT open " +
 			"the widget — click delegator is gated on catalog .then() and drops cold-cache clicks.")
 	}
 }
@@ -376,7 +376,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		chromedp.Evaluate(`window.__toastFallbackPoll = new Promise((resolve) => {
             const t0 = performance.now();
             const tick = () => {
-                const fallback = document.querySelector('[data-fui-toast-fallback]');
+                const fallback = document.querySelector('[data-cui-toast-fallback]');
                 if (fallback && fallback.textContent.includes('Saved')) { resolve('ok'); return; }
                 if (performance.now() - t0 > 30000) {
                     resolve(JSON.stringify({
@@ -538,7 +538,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		chromedp.Evaluate(`window.__toastFallbackPoll = new Promise((resolve) => {
             const t0 = performance.now();
             const tick = () => {
-                const fallback = document.querySelector('[data-fui-toast-fallback]');
+                const fallback = document.querySelector('[data-cui-toast-fallback]');
                 if (fallback && fallback.textContent.includes('Saved')) { resolve('ok'); return; }
                 if (performance.now() - t0 > 30000) {
                     resolve(JSON.stringify({
@@ -673,7 +673,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 		// a stack the module never saw at load time.
 		chromedp.Evaluate(`(() => {
             const stack = document.createElement('div');
-            stack.setAttribute('data-fui-toast-stack', 'spa-nav-rescan-test');
+            stack.setAttribute('data-cui-toast-stack', 'spa-nav-rescan-test');
                 '<div class="fui-notification fui-notification--info">SPA nav rescan target</div>' +
                 '</div>';
             document.body.appendChild(stack);
@@ -693,7 +693,7 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 	}
 }
 
-// Hovering an element with data-fui-prefetch fires loadModule for the
+// Hovering an element with data-cui-prefetch fires loadModule for the
 // named module, the "warm the cache before click" contract. We
 // dispatch a synthetic pointerover (no actual mouse needed) and
 // verify the module URL appears in the request log.
@@ -711,13 +711,13 @@ func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {
 		network.Enable(),
 		// /components/ index has no popover triggers, so popover
 		// won't be auto-loaded by the marker scanner. Inject a
-		// synthetic data-fui-prefetch element and dispatch a hover
+		// synthetic data-cui-prefetch element and dispatch a hover
 		// event to prove the prefetch path is wired.
 		chromedp.Navigate(base+"/"),
 		pageReady(),
 		chromedp.Evaluate(`(() => {
             const btn = document.createElement('button');
-            btn.setAttribute('data-fui-prefetch', 'popover');
+            btn.setAttribute('data-cui-prefetch', 'popover');
             btn.textContent = 'prefetch test';
             document.body.appendChild(btn);
             btn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
@@ -737,6 +737,6 @@ func TestE2E_RuntimeSplit_HoverPrefetch(t *testing.T) {
 	if !found {
 		var listed []string
 		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
-		t.Errorf("pointerover on data-fui-prefetch element should fetch the popover module; runtime urls observed: %v", listed)
+		t.Errorf("pointerover on data-cui-prefetch element should fetch the popover module; runtime urls observed: %v", listed)
 	}
 }

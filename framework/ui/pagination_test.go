@@ -20,7 +20,7 @@ import (
 // landmark or the anchors, which the sheet reaches by tag.
 func TestPaginationClassMapKeepsTheSheetsNames(t *testing.T) {
 	h := string(Pagination(PaginationConfig{Page: 5, Pages: 12}))
-	if !strings.Contains(h, `<div class="pagination" data-fui-internal="">`) {
+	if !strings.Contains(h, `<div class="pagination" data-cui-internal="">`) {
 		t.Errorf("the list did not carry the sheet's pagination class:\n%s", h)
 	}
 	if !strings.Contains(h, `class="pagination-gap"`) {
@@ -35,7 +35,7 @@ func TestPaginationClassMapKeepsTheSheetsNames(t *testing.T) {
 		t.Errorf("%d anchors carry a class no selector reads:\n%s", n, h)
 	}
 	// The marker fetches the sheet.
-	if !strings.Contains(h, `data-fui-comp="ui-pagination"`) {
+	if !strings.Contains(h, `data-cui-comp="ui-pagination"`) {
 		t.Errorf("the pager did not carry its sheet's marker:\n%s", h)
 	}
 }
@@ -66,7 +66,7 @@ func TestPaginationLabelsResolveThroughI18n(t *testing.T) {
 func TestPaginationExtrasAreSanitised(t *testing.T) {
 	h := string(Pagination(PaginationConfig{Page: 1, Pages: 2,
 		ExtraAttrs: map[string]string{
-			"data-fui-rpc": "/evil", "data-hui-page": "9", "id": "x", "data-testid": "pager",
+			"data-cui-rpc": "/evil", "data-hui-page": "9", "id": "x", "data-testid": "pager",
 		}}))
 	for _, banned := range []string{"/evil", `data-hui-page="9"`, `id="x"`} {
 		if strings.Contains(h, banned) {
@@ -101,15 +101,15 @@ func TestPaginationTypedPropsAndIslandPosture(t *testing.T) {
 	if !strings.Contains(h, `href="/apps?p=2&amp;q=x"`) {
 		t.Errorf("the carry did not survive the page turn:\n%s", h)
 	}
-	if strings.Contains(h, "data-fui-rpc") || strings.Contains(h, "data-hui-page") {
+	if strings.Contains(h, "data-cui-rpc") || strings.Contains(h, "data-hui-page") {
 		t.Errorf("a pager with no Island carried a contract or a hook:\n%s", h)
 	}
 
 	isled := string(Pagination(PaginationConfig{Page: 1, Pages: 2, Path: "/apps",
 		Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"}}))
 	for _, want := range []string{
-		`data-fui-rpc="/island/apps?p=2"`,
-		`data-fui-push-state="/apps?p=2"`,
+		`data-cui-rpc="/island/apps?p=2"`,
+		`data-cui-push-state="/apps?p=2"`,
 		`data-hui-page="2"`,
 		`href="/apps?p=2"`,
 	} {
@@ -128,7 +128,7 @@ func TestDataTableSharesItsIslandWithThePager(t *testing.T) {
 		Island:     headless.Island{Endpoint: "/island/rows", Signal: "rows"},
 		Pagination: &PaginationConfig{Pages: 2, Page: 1},
 	}))
-	if !strings.Contains(h, `data-fui-rpc="/island/rows?p=2"`) {
+	if !strings.Contains(h, `data-cui-rpc="/island/rows?p=2"`) {
 		t.Errorf("the pager did not inherit the table's island:\n%s", h)
 	}
 	if !strings.Contains(h, `data-hui-table-signal="rows"`) {

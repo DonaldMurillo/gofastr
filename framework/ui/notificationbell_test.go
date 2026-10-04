@@ -69,15 +69,15 @@ func TestNotificationBellEmitsButtonWithAnchorTrigger(t *testing.T) {
 	})
 	h := string(trigger)
 	// The trigger is the primitive's ANCHOR: the href is the
-	// no-script destination and data-fui-open the popover with
+	// no-script destination and data-cui-open the popover with
 	// script — the same element is both.
 	if !strings.Contains(h, `<a `) || !strings.Contains(h, `href="/notifications"`) {
 		t.Errorf("trigger should be an anchor to the notifications page:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-open="bell"`) {
-		t.Errorf("trigger should open the paired popover via data-fui-open:\n%s", h)
+	if !strings.Contains(h, `data-cui-open="bell"`) {
+		t.Errorf("trigger should open the paired popover via data-cui-open:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-popover-anchor="bottom"`) {
+	if !strings.Contains(h, `data-cui-popover-anchor="bottom"`) {
 		t.Errorf("trigger should anchor the popover below the bell:\n%s", h)
 	}
 	if !strings.Contains(h, `aria-label="0 unread notifications"`) {
@@ -129,7 +129,7 @@ func TestNotificationBellSignalBindings(t *testing.T) {
 		Href:         "/notifications",
 	})
 	h := string(trigger)
-	if !strings.Contains(h, `data-fui-signal="unread-count"`) {
+	if !strings.Contains(h, `data-cui-signal="unread-count"`) {
 		t.Errorf("SignalUnread should bind badge to signal:\n%s", h)
 	}
 }

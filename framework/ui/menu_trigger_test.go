@@ -32,10 +32,10 @@ func triggerMenu(cfg ui.MenuConfig) render.HTML {
 func TestMenuTriggerElementMarkup(t *testing.T) {
 	out := string(triggerMenu(ui.MenuConfig{ID: "um"}))
 	for _, want := range []string{
-		`<div class="fui-menu fui-menu--bottom-start" data-fui-comp="ui-menu">`,
+		`<div class="fui-menu fui-menu--bottom-start" data-cui-comp="ui-menu">`,
 		`<div data-hui-menu-trigger="um" role="presentation">` + triggerBtn + `</div>`,
 		`<details data-hui-disclosure="" data-hui-menu="um">`,
-		`<div class="fui-menu__panel" data-fui-internal="" data-hui-menu-panel="" id="um-panel" role="menu">`,
+		`<div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="um-panel" role="menu">`,
 		`role="menuitem"`,
 	} {
 		if !strings.Contains(out, want) {
@@ -159,7 +159,7 @@ func menuTriggerID(t *testing.T, out string) string {
 
 // TestMenuTriggerExtraAttrsOnRoot: ExtraAttrs land on the trigger
 // path's root div (the summary path's root is the details; the
-// ownership contract — class, id, data-fui-* dropped — is the same).
+// ownership contract — class, id, data-cui-* dropped — is the same).
 func TestMenuTriggerExtraAttrsOnRoot(t *testing.T) {
 	out := string(triggerMenu(ui.MenuConfig{
 		ID:         "um",
@@ -191,7 +191,7 @@ func TestMenuTriggerGoldenBytes(t *testing.T) {
 			}},
 		},
 	}))
-	want := `<div class="fui-menu fui-menu--bottom-start" data-fui-comp="ui-menu"><div data-hui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-hui-disclosure="" data-hui-menu="um"><div class="fui-menu__panel" data-fui-internal="" data-hui-menu-panel="" id="um-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="um-panel-sub-1"><summary aria-controls="um-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel-sub-1-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details></div>`
+	want := `<div class="fui-menu fui-menu--bottom-start" data-cui-comp="ui-menu"><div data-hui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-hui-disclosure="" data-hui-menu="um"><div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="um-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="um-panel-sub-1"><summary aria-controls="um-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel-sub-1-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details></div>`
 	if got != want {
 		t.Errorf("trigger menu bytes drifted:\n--got--\n%s\n--want--\n%s", got, want)
 	}

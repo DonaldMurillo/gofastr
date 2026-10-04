@@ -156,7 +156,7 @@ func (s *noteEditorScreen) RenderCtx(ctx context.Context) render.HTML {
 	form := notesFormResource(s.src).Form(ctx, s.id)
 	// Copy link rides along on a plain Button with a data attribute;
 	// static/desktop-notes.js owns the click. The attribute cannot
-	// spoof runtime wiring (SafeCarrierAttrs drops data-fui-*).
+	// spoof runtime wiring (SafeCarrierAttrs drops data-cui-*).
 	copyLink := ui.Button(ui.ButtonConfig{
 		Label:      "Copy link",
 		Variant:    ui.ButtonSecondary,
@@ -174,7 +174,7 @@ func (s *noteEditorScreen) RenderCtx(ctx context.Context) render.HTML {
 // The window is borderless, transparent, and non-activating
 // (desktop.Widget), so this screen owns the whole surface: a ui.Card
 // is the visual chrome, its header strip is the drag handle
-// (data-fui-window-drag, wired by the runtime's desktop module), and
+// (data-cui-window-drag, wired by the runtime's desktop module), and
 // the close button goes through the page script because only the page
 // knows its own window id. Design-system components only (hard rules
 // 7 and 8).
@@ -189,9 +189,9 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 	header := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		// The drag surface: mousedown here (or on a child) starts a
 		// native window drag. html.Div is the 1:1 tag primitive; the
-		// design-system components strip data-fui-* from ExtraAttrs,
+		// design-system components strip data-cui-* from ExtraAttrs,
 		// and a drag handle is not a button.
-		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-fui-window-drag": ""}},
+		html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
 			render.Text("Quick note")),
 		ui.Spacer(),
 		ui.Button(ui.ButtonConfig{

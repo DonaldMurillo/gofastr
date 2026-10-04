@@ -3,7 +3,7 @@
 // The fills envelope, snapshots, leave-capture and element scroll
 // anchors (spike/layout-proto, layout-client, layout-motion P12,
 // layout-static P13). Loaded when the document holds an outlet or
-// area marker ([data-fui-outlet] / [data-fui-area]) — at boot or
+// area marker ([data-cui-outlet] / [data-cui-area]) — at boot or
 // after any apply, the kernel's marker scan covers both.
 //
 // Before it loads the navigator sends no X-Gofastr-Fills header (the
@@ -23,8 +23,8 @@
   // escaping.
   const findFillTarget = (addr) => {
     if (!addr) return null;
-    for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area]')) {
-      if (el.getAttribute('data-fui-outlet') === addr || el.getAttribute('data-fui-area') === addr) return el;
+    for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
+      if (el.getAttribute('data-cui-outlet') === addr || el.getAttribute('data-cui-area') === addr) return el;
     }
     return null;
   };
@@ -35,15 +35,15 @@
   // live here, not in the core bundle.
   const domChainKeys = (d) => {
     const out = [];
-    for (const el of (d || document).querySelectorAll('[data-fui-layout-key]')) {
-      out.push(el.getAttribute('data-fui-layout-key'));
+    for (const el of (d || document).querySelectorAll('[data-cui-layout-key]')) {
+      out.push(el.getAttribute('data-cui-layout-key'));
     }
     return out;
   };
   const findSlot = (key, d) => {
     if (!key) return null;
-    for (const el of (d || document).querySelectorAll('[data-fui-layout-slot]')) {
-      if (el.getAttribute('data-fui-layout-slot') === key) return el;
+    for (const el of (d || document).querySelectorAll('[data-cui-layout-slot]')) {
+      if (el.getAttribute('data-cui-layout-slot') === key) return el;
     }
     return null;
   };
@@ -134,7 +134,7 @@
 
   let _announceTimer = 0;
   const announceRoute = (title) => {
-    const r = document.getElementById('fui-route-announce');
+    const r = document.getElementById('cui-route-announce');
     if (!r || !title) return;
     if (_announceTimer) { clearTimeout(_announceTimer); _announceTimer = 0; }
     if (r.textContent === title) return;
@@ -143,9 +143,9 @@
   };
 
   const _showNavToast = (msg) => {
-    const t = NS.doc.singleton('fui-nav-toast', () => {
+    const t = NS.doc.singleton('cui-nav-toast', () => {
       const d = document.createElement('div');
-      d.className = 'fui-nav-toast';
+      d.className = 'cui-nav-toast';
       d.setAttribute('role', 'alert');
       return d;
     });
@@ -173,7 +173,7 @@
     _focusSwapTarget(slot);
     return slot;
   };
-  const shellEl = (d) => (d || document).querySelector('[data-fui-layout-key], [data-fui-screen-group]');
+  const shellEl = (d) => (d || document).querySelector('[data-cui-layout-key], [data-cui-screen-group]');
   const swapShell = (newRoot) => {
     const cur = shellEl() || _mainEl();
     if (!cur || !newRoot) return null;
@@ -182,19 +182,19 @@
     NS.doc.reattach();
     mergeSeedFromDOM(el);
     // The parent: the new shell root itself carries its layout's
-    // data-fui-scope, and the scan reads descendants only.
+    // data-cui-scope, and the scan reads descendants only.
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
     if (m && m.focus) _focusSwapTarget(m);
     return el;
   };
   const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-fui-lang],[data-fui-skip-label]')
-      ? root : root.querySelector('[data-fui-lang],[data-fui-skip-label]'));
+    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
+      ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (c) {
-      const lang = c.getAttribute('data-fui-lang');
+      const lang = c.getAttribute('data-cui-lang');
       if (lang) NS.doc.setHtmlAttr('lang', lang);
-      const skip = c.getAttribute('data-fui-skip-label');
+      const skip = c.getAttribute('data-cui-skip-label');
       const link = skip && document.querySelector('[data-skip-link]');
       if (link) link.textContent = skip;
     }
@@ -245,7 +245,7 @@
         continue;
       }
       if (el.tagName !== 'TEMPLATE') continue;
-      const addr = el.getAttribute('data-fui-fill');
+      const addr = el.getAttribute('data-cui-fill');
       if (!addr) continue;
       const fill = { addr, html: el.innerHTML };
       if (addr === primaryAddr) out.primary = fill;
@@ -309,9 +309,9 @@
   // reader reads the fetched one).
   const captureLiveFills = (slot, d) => {
     const fills = [];
-    for (const el of (d || document).querySelectorAll('[data-fui-outlet],[data-fui-area]')) {
+    for (const el of (d || document).querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
       if (slot && slot.contains(el)) continue;
-      const addr = el.getAttribute('data-fui-outlet') || el.getAttribute('data-fui-area');
+      const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area');
       if (!addr) continue;
       fills.push({ addr, html: el.innerHTML });
     }
@@ -430,7 +430,7 @@
   // ABOVE the position changing height on Back; pixels do not.
 
   // _domPath: steps joined on '|', walking UP from the element to the
-  // nearest [data-fui-layout-key] ancestor ('K<key>') or the body
+  // nearest [data-cui-layout-key] ancestor ('K<key>') or the body
   // ('B'). A step is TAG+occurrence among same-tag siblings. The
   // layout key makes the path addressable without a CSS selector
   // (keys contain ':' and '/', selector-hostile) and stable across the
@@ -438,8 +438,8 @@
   const _domPath = (el) => {
     const steps = [];
     for (let n = el; n && n.nodeType === 1 && n !== document.body; n = n.parentElement) {
-      if (n.hasAttribute && n.hasAttribute('data-fui-layout-key')) {
-        return 'K' + n.getAttribute('data-fui-layout-key') + '|' + steps.join('|');
+      if (n.hasAttribute && n.hasAttribute('data-cui-layout-key')) {
+        return 'K' + n.getAttribute('data-cui-layout-key') + '|' + steps.join('|');
       }
       let i = 0;
       for (let s = n; s; s = s.previousElementSibling) if (s.tagName === n.tagName) i++;
@@ -455,8 +455,8 @@
     if (steps[0].charAt(0) === 'K') {
       const key = steps[0].slice(1);
       node = null;
-      for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
-        if (el.getAttribute('data-fui-layout-key') === key) { node = el; break; }
+      for (const el of document.querySelectorAll('[data-cui-layout-key]')) {
+        if (el.getAttribute('data-cui-layout-key') === key) { node = el; break; }
       }
       if (!node) return null;
     }
@@ -516,7 +516,7 @@
   };
   const _anchorAt = (edgeY) => {
     let cand = null;
-    for (const el of document.querySelectorAll('main *, [data-fui-outlet] *, [data-fui-area] *')) {
+    for (const el of document.querySelectorAll('main *, [data-cui-outlet] *, [data-cui-area] *')) {
       if (_crosses(el, edgeY)) { cand = el; break; }
     }
     if (!cand) return null;
@@ -696,8 +696,8 @@
     const busyDepth = sharedDepth(routeLayouts(path));
     if (busyDepth > 0) {
       const keys = domChainKeys();
-      for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area]')) {
-        const addr = el.getAttribute('data-fui-outlet') || el.getAttribute('data-fui-area') || '';
+      for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
+        const addr = el.getAttribute('data-cui-outlet') || el.getAttribute('data-cui-area') || '';
         for (let i = 0; i < busyDepth; i++) {
           if (addr.startsWith(keys[i] + '#') || addr.startsWith(keys[i] + '~')) {
             el.setAttribute('aria-busy', 'true');
@@ -883,7 +883,7 @@
           if (fr.ok) {
             const fsnap = captureEnvelopeSnapshot(_mainEl());
             cacheScreen(dest, nm ? nm.innerHTML : '', t,
-              nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '', fsnap.fills, fsnap.seed);
+              nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '', fsnap.fills, fsnap.seed);
           }
           _done(dest, prevPath, false, el || _mainEl(), ps, !fr.ok);
         }, null);
@@ -1008,7 +1008,7 @@
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
         body = nm?.innerHTML ?? '';
-        swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
+        swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? _mainEl() : null);
       if (!slot) {
@@ -1025,7 +1025,7 @@
       // the slot here means the server cannot refresh them: recover
       // with a full-document load instead of applying.
       if (partial) {
-        for (const el of document.querySelectorAll('[data-fui-outlet],[data-fui-area]')) {
+        for (const el of document.querySelectorAll('[data-cui-outlet],[data-cui-area]')) {
           if (!slot.contains(el)) {
             _pend.delete(path);
             return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
@@ -1199,7 +1199,7 @@
   // template it can never schedule. Started at evaluation (not in
   // frag/boot.js) so the very first navigation's scheduler finds it
   // (the wait above).
-  const _loadingReady = document.querySelector('template[data-fui-loading]')
+  const _loadingReady = document.querySelector('template[data-cui-loading]')
     ? NS.loadModule('loading').catch(() => null) : null;
 
   // The module loads before any of its navigations applies, so the DOM
@@ -1213,7 +1213,7 @@
     if (m) {
       const snap = captureEnvelopeSnapshot(m);
       cacheScreen(_liveDomPath, m.innerHTML, document.title,
-        m.getAttribute('data-fui-layout-slot') || '', snap.fills, snap.seed);
+        m.getAttribute('data-cui-layout-slot') || '', snap.fills, snap.seed);
     }
     recordScroll(_liveDomPath);
   }

@@ -44,16 +44,16 @@ func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
 	shell := func(main string) string {
 		vtKinds := ""
 		if vt {
-			vtKinds = ` data-fui-vt-kinds="fade"`
+			vtKinds = ` data-cui-vt-kinds="fade"`
 		}
 		return `<!doctype html><html lang="en"` + vtKinds + `><head><title>dc</title>` +
 			`<script type="application/json" id="gofastr-routes">[` +
 			`{"path":"/"},{"path":"/a","layouts":["l:site"]},{"path":"/b","layouts":["l:site"]}` +
 			`]</script></head><body>` +
-			`<div data-fui-layout="site" data-fui-layout-key="l:site">` +
+			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a><a id="goB" href="/b">B</a></nav>` +
-			`<div data-fui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>` +
-			`<main role="main" tabindex="-1" data-fui-layout-slot="l:site" id="main">` + main + `</main>` +
+			`<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>` +
+			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + main + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	mux := http.NewServeMux()
@@ -93,8 +93,8 @@ func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
 			w.Header().Set("X-Gofastr-Title", strings.ToUpper(req.URL.Path))
 			w.Header().Set("X-Gofastr-Swap", "l:site")
 			w.Header().Set("X-Gofastr-Envelope", "2")
-			fmt.Fprintf(w, `<template data-fui-fill="l:site">MAIN-%s</template>`+
-				`<template data-fui-fill="l:site#aside">ASIDE-%s</template>`,
+			fmt.Fprintf(w, `<template data-cui-fill="l:site">MAIN-%s</template>`+
+				`<template data-cui-fill="l:site#aside">ASIDE-%s</template>`,
 				strings.ToUpper(strings.TrimPrefix(req.URL.Path, "/")),
 				strings.ToUpper(strings.TrimPrefix(req.URL.Path, "/")))
 			return

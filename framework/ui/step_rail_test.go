@@ -18,7 +18,7 @@ func TestStepRailRendersItemsAndMarksActive(t *testing.T) {
 	}))
 
 	for _, want := range []string{
-		`data-fui-comp="ui-step-rail"`,
+		`data-cui-comp="ui-step-rail"`,
 		`role="complementary"`,
 		`aria-label="The path"`,
 		`class="fui-step-rail__title"`,
@@ -87,7 +87,7 @@ func TestStepRailMetaHrefRendersLink(t *testing.T) {
 		ActiveIndex: 0,
 		Meta:        "Plain note",
 	}))
-	if !strings.Contains(plain, `fui-step-rail__meta" data-fui-internal="">Plain note</div>`) {
+	if !strings.Contains(plain, `fui-step-rail__meta" data-cui-internal="">Plain note</div>`) {
 		t.Fatalf("Meta without MetaHref should be plain text in the meta div; got %q", plain)
 	}
 }

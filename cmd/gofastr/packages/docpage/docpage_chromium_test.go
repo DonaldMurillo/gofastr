@@ -106,7 +106,7 @@ func TestDocPageLayoutPromises(t *testing.T) {
 	browser := axetest.NewBrowser(t)
 
 	const measure = `(()=>{const r=s=>{const e=document.querySelector(s);if(!e)return null;const b=e.getBoundingClientRect();return [b.x,b.y,b.width,b.height]};
-const d='[data-fui-scope="docpage"]';
+const d='[data-cui-scope="docpage"]';
 const toc=document.querySelector(d+' .toc');
 return JSON.stringify({ViewW:innerWidth,ScrollW:document.documentElement.scrollWidth,
 Nav:r(d+' .nav'),Article:r(d+' .article'),Toc:r(d+' .toc'),TocDisplay:toc?getComputedStyle(toc).display:null,

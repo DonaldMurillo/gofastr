@@ -12,7 +12,7 @@ func TestAnchoredRailRendersThroughHeadlessRail(t *testing.T) {
 		ObserveSelector: "#docs-sections",
 	}))
 	for _, want := range []string{
-		`<aside aria-label="On this page" class="fui-anchored-rail" data-hui-rail="" data-hui-rail-observe="#docs-sections" data-hui-rail-target=".fui-section[id]" data-fui-comp="ui-anchored-rail">`,
+		`<aside aria-label="On this page" class="fui-anchored-rail" data-hui-rail="" data-hui-rail-observe="#docs-sections" data-hui-rail-target=".fui-section[id]" data-cui-comp="ui-anchored-rail">`,
 		`<a class="fui-anchored-rail__link" href="#overview"><span class="fui-anchored-rail__eyebrow">01</span>Overview<span class="fui-anchored-rail__count">9</span></a>`,
 	} {
 		if !strings.Contains(h, want) {
@@ -21,7 +21,7 @@ func TestAnchoredRailRendersThroughHeadlessRail(t *testing.T) {
 	}
 	// The retired scrollspy wrapper is gone: the aside itself is the
 	// layout item the caller composes.
-	if strings.Contains(h, "data-fui-scrollspy") || strings.Contains(h, `class="scrollspy`) {
+	if strings.Contains(h, "data-cui-scrollspy") || strings.Contains(h, `class="scrollspy`) {
 		t.Errorf("the retired scrollspy wrapper is still rendered:\n%s", h)
 	}
 }

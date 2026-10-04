@@ -35,7 +35,7 @@ func sampleList() desktopui.SourceListConfig {
 func TestSourceListMarkup(t *testing.T) {
 	out := string(desktopui.SourceList(sampleList()))
 	for _, w := range []string{
-		`data-fui-comp="desktopui-sourcelist"`,
+		`data-cui-comp="desktopui-sourcelist"`,
 		`class="desktopui-sourcelist__header"`,
 		`>Views</h2>`,
 		`href="/history"`,

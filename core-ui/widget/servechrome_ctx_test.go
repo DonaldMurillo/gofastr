@@ -35,7 +35,7 @@ func ctxEchoDef() Definition {
 }
 
 // TestServeChromeThreadsTriggerCtx (#321): the open trigger's context
-// (`data-fui-ctx`, forwarded by the runtime as ?ctx=…) must reach the slot
+// (`data-cui-ctx`, forwarded by the runtime as ?ctx=…) must reach the slot
 // render. Per-entity dialog chrome (a form whose action embeds the entity id)
 // is impossible without it: serveChrome has no other knowledge of the
 // originating page or row.

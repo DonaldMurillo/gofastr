@@ -14,10 +14,10 @@ func TestPublishWiresRPCSignal(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Rename"))
 	html := string(interactive.OnClick(btn, sl.Publish(interactive.Post("/island/org/rename"))))
 
-	if !strings.Contains(html, `data-fui-rpc="/island/org/rename"`) {
+	if !strings.Contains(html, `data-cui-rpc="/island/org/rename"`) {
 		t.Errorf("missing rpc path: %s", html)
 	}
-	if !strings.Contains(html, `data-fui-rpc-signal="org.companyName"`) {
+	if !strings.Contains(html, `data-cui-rpc-signal="org.companyName"`) {
 		t.Errorf("Publish did not wire the qualified signal name: %s", html)
 	}
 }

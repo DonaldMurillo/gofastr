@@ -47,8 +47,8 @@ func TestStepWizardIslandCarriesTheRPCContract(t *testing.T) {
 	got := StepWizard(StepWizardProps{Action: "/setup", ID: "w",
 		Steps:  []WizardStep{{Heading: "Source"}},
 		Island: Island{Endpoint: "/island/setup", Signal: "setup"}}, nil)
-	has(t, got, `data-fui-rpc="/island/setup"`, "the island submit does not carry the RPC contract")
-	has(t, got, `data-fui-rpc-signal="setup"`, "the submit does not name the region it updates")
+	has(t, got, `data-cui-rpc="/island/setup"`, "the island submit does not carry the RPC contract")
+	has(t, got, `data-cui-rpc-signal="setup"`, "the submit does not name the region it updates")
 }
 
 func TestStepWizardRefusesBrokenFlows(t *testing.T) {

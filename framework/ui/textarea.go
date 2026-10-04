@@ -19,9 +19,9 @@ import (
 // wherever a TextArea renders, inside a Form or alone.
 //
 // Autogrow is ui-only surface with its own runtime module
-// (textarea.js, bound on data-fui-autogrow), so it reaches the
+// (textarea.js, bound on data-cui-autogrow), so it reaches the
 // control through headless.Textarea's typed Autogrow prop — the one
-// seam that survives the data-fui-* refusal every caller-reachable
+// seam that survives the data-cui-* refusal every caller-reachable
 // extra goes through.
 
 // TextAreaConfig configures a TextArea.
@@ -54,7 +54,7 @@ type TextAreaConfig struct {
 	Class     string
 	// ExtraAttrs forwards additional attributes to the <textarea>
 	// element. Keys the component owns are dropped: class and id (use
-	// Class / ID), data-fui-* (incl. the autogrow wiring), name, rows,
+	// Class / ID), data-cui-* (incl. the autogrow wiring), name, rows,
 	// placeholder, disabled, required, maxlength, aria-invalid, and
 	// aria-describedby.
 	ExtraAttrs html.Attrs
@@ -129,7 +129,7 @@ func textAreaCSS(_ style.Theme) string {
   min-block-size: var(--fui-density-control-h);
   line-height: 1.5;
 }
-.fui-textarea[data-fui-autogrow] {
+.fui-textarea[data-cui-autogrow] {
   /* Autogrow rules the height; user resize would fight the JS. */
   resize: none;
   overflow: hidden;

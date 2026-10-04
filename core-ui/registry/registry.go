@@ -20,14 +20,14 @@
 //	    return modal.Style.Render(&modal.Modal{Title: "Hi"})
 //	}
 //
-// Style.Render wraps the component, injects data-fui-comp="<name>"
+// Style.Render wraps the component, injects data-cui-comp="<name>"
 // onto its outermost tag (no extra DOM node), and records the name
 // into a request-scoped collector so the SSR host can emit a <link>
 // in <head> before first paint. After hydration, the runtime takes
-// over: any data-fui-comp marker in newly inserted DOM triggers
-// loadComponentCSS, which dedups on the link's data-fui-style attr.
+// over: any data-cui-comp marker in newly inserted DOM triggers
+// loadComponentCSS, which dedups on the link's data-cui-style attr.
 //
-// Component CSS is always scoped to [data-fui-comp="<name>"]. Global
+// Component CSS is always scoped to [data-cui-comp="<name>"]. Global
 // rules belong in theme.css or WithCustomCSS. See the design doc at
 // core-ui/ARCHITECTURE.md.
 package registry

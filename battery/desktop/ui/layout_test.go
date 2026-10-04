@@ -32,7 +32,7 @@ func TestLayoutRendersFrame(t *testing.T) {
 	out := string(desktopui.Layout(sidebarComp{}).WrapCtx(context.Background(), plain("<p>content</p>")))
 	for _, w := range []string{
 		"layout-desktop",
-		`data-fui-layout="desktop"`,
+		`data-cui-layout="desktop"`,
 		`class="desktopui-frame"`,
 		`aria-label="Sidebar"`,
 		"desktopui-frame__sidebar",

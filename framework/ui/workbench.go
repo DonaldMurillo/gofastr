@@ -45,7 +45,7 @@ type WorkbenchConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and style (RailWidth owns the inline custom
+	// ID), data-cui-*, and style (RailWidth owns the inline custom
 	// property).
 	ExtraAttrs html.Attrs
 }
@@ -73,11 +73,11 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 	railAttrs := html.Attrs{"class": "fui-workbench__rail"}
 	if cfg.Rail == "" {
-		railAttrs["data-fui-internal"] = ""
+		railAttrs["data-cui-internal"] = ""
 	}
 	paneAttrs := html.Attrs{"class": "fui-workbench__pane"}
 	if cfg.Pane == "" {
-		paneAttrs["data-fui-internal"] = ""
+		paneAttrs["data-cui-internal"] = ""
 	}
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,
 		render.Tag("div", railAttrs, cfg.Rail),
@@ -88,7 +88,7 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 var workbenchStyle = registry.RegisterStyle("ui-workbench", workbenchCSS)
 
 func workbenchCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-workbench"] {
+	return `[data-cui-comp="ui-workbench"] {
   display: flex;
   align-items: stretch;
   block-size: 100dvh;
@@ -97,7 +97,7 @@ func workbenchCSS(_ style.Theme) string {
   box-sizing: border-box;
 }
 
-[data-fui-comp="ui-workbench"] .fui-workbench__rail {
+[data-cui-comp="ui-workbench"] .fui-workbench__rail {
   flex: 0 0 auto;
   inline-size: var(--ui-workbench-rail, 320px);
   min-inline-size: 0;
@@ -112,7 +112,7 @@ func workbenchCSS(_ style.Theme) string {
   border-inline-end: 1px solid var(--color-border, #e4e4e7);
 }
 
-[data-fui-comp="ui-workbench"] .fui-workbench__pane {
+[data-cui-comp="ui-workbench"] .fui-workbench__pane {
   flex: 1 1 auto;
   min-inline-size: 0;
   block-size: 100%;
@@ -122,7 +122,7 @@ func workbenchCSS(_ style.Theme) string {
 
 /* An iframe is the pane's motivating occupant and defaults to a small bordered
    box, so fill it here rather than making every caller remember. */
-[data-fui-comp="ui-workbench"] .fui-workbench__pane > iframe {
+[data-cui-comp="ui-workbench"] .fui-workbench__pane > iframe {
   display: block;
   inline-size: 100%;
   block-size: 100%;
@@ -132,18 +132,18 @@ func workbenchCSS(_ style.Theme) string {
 /* Below the split point the rail sits above the pane and the page scrolls
    normally — a 320px rail beside anything is unusable on a phone. */
 @media (max-width: 720px) {
-  [data-fui-comp="ui-workbench"] {
+  [data-cui-comp="ui-workbench"] {
     display: block;
     block-size: auto;
     overflow: visible;
   }
-  [data-fui-comp="ui-workbench"] .fui-workbench__rail {
+  [data-cui-comp="ui-workbench"] .fui-workbench__rail {
     inline-size: 100%;
     overflow-y: visible;
     border-inline-end: none;
     border-block-end: 1px solid var(--color-border, #e4e4e7);
   }
-  [data-fui-comp="ui-workbench"] .fui-workbench__pane {
+  [data-cui-comp="ui-workbench"] .fui-workbench__pane {
     block-size: 70vh;
   }
 }`

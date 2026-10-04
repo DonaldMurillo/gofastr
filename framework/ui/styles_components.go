@@ -7,7 +7,7 @@ import (
 
 // Per-component CSS handles. Each function returns a self-contained
 // stylesheet whose top-level selectors are already scoped to
-// [data-fui-comp="<name>"]. The framework registers each handle at
+// [data-cui-comp="<name>"]. The framework registers each handle at
 // package init; rendering through Style.WrapHTML emits the marker on
 // the outermost tag, and the runtime auto-loads the sheet on first
 // appearance.
@@ -42,7 +42,7 @@ var (
 
 // buttonCSS is the Button/LinkButton stylesheet, on class selectors:
 // the buttonClasses map names the classes, this sheet matches them,
-// and the data-fui-comp="ui-button" marker (Style.WrapHTML) is only
+// and the data-cui-comp="ui-button" marker (Style.WrapHTML) is only
 // what fetches the sheet — ToggleAction and OptimisticAction wear the
 // same classes under their own markers, so every rule here is a plain
 // class rule that matches under any marker. It is LoadAlways because
@@ -194,7 +194,7 @@ func codeBlockCSS(_ style.Theme) string {
 	// page Text/Background pair. Light-mode fallback values keep the
 	// classic "dark inkwell" feel; dark-mode apps redefine the tokens
 	// in their app stylesheet under [data-color-scheme="dark"].
-	return `[data-fui-comp="ui-code-block"] {
+	return `[data-cui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
   margin: 0;
@@ -209,35 +209,35 @@ func codeBlockCSS(_ style.Theme) string {
   white-space: pre;
   -webkit-text-size-adjust: 100%;
 }
-[data-fui-comp="ui-code-block"] .tok-kw     { color: var(--tk-kw, #C792EA); }
-[data-fui-comp="ui-code-block"] .tok-fn     { color: var(--tk-fn, #82AAFF); }
-[data-fui-comp="ui-code-block"] .tok-str    { color: var(--tk-str, #C3E88D); }
-[data-fui-comp="ui-code-block"] .tok-num    { color: var(--tk-num, #F78C6C); }
-[data-fui-comp="ui-code-block"] .tok-com    { color: var(--tk-com, #8C93B0); font-style: italic; }
-[data-fui-comp="ui-code-block"] .tok-name   { color: var(--tk-type, #FFCB6B); }
+[data-cui-comp="ui-code-block"] .tok-kw     { color: var(--tk-kw, #C792EA); }
+[data-cui-comp="ui-code-block"] .tok-fn     { color: var(--tk-fn, #82AAFF); }
+[data-cui-comp="ui-code-block"] .tok-str    { color: var(--tk-str, #C3E88D); }
+[data-cui-comp="ui-code-block"] .tok-num    { color: var(--tk-num, #F78C6C); }
+[data-cui-comp="ui-code-block"] .tok-com    { color: var(--tk-com, #8C93B0); font-style: italic; }
+[data-cui-comp="ui-code-block"] .tok-name   { color: var(--tk-type, #FFCB6B); }
 /* Theme token palette (emitted by the framework highlighter / markdown code
    blocks). The --tk-* vars are theme slots (style.Theme.Code, dark values in
    Theme.DarkCode) whose defaults equal these fallbacks; hosts re-skin or
    dark-adapt code blocks by overriding the slots. The fallbacks keep bare
    hosts (no :root theme block) colored. */
-[data-fui-comp="ui-code-block"] .tk-kw   { color: var(--tk-kw, #C792EA); }
-[data-fui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
-[data-fui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
-[data-fui-comp="ui-code-block"] .tk-num  { color: var(--tk-num, #F78C6C); }
+[data-cui-comp="ui-code-block"] .tk-kw   { color: var(--tk-kw, #C792EA); }
+[data-cui-comp="ui-code-block"] .tk-fn   { color: var(--tk-fn, #82AAFF); }
+[data-cui-comp="ui-code-block"] .tk-str  { color: var(--tk-str, #C3E88D); }
+[data-cui-comp="ui-code-block"] .tk-num  { color: var(--tk-num, #F78C6C); }
 /* Comment default must hold ≥4.5:1 on --color-code-surface (#18181B):
    #676E95 measured 3.6:1 and failed axe on the SDK docs pages. */
-[data-fui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #8C93B0); font-style: italic; }
-[data-fui-comp="ui-code-block"] .tk-type { color: var(--tk-type, #FFCB6B); }
-[data-fui-comp="ui-code-block"] .tk-pn   { color: var(--tk-pn, inherit); }
+[data-cui-comp="ui-code-block"] .tk-com  { color: var(--tk-com, #8C93B0); font-style: italic; }
+[data-cui-comp="ui-code-block"] .tk-type { color: var(--tk-type, #FFCB6B); }
+[data-cui-comp="ui-code-block"] .tk-pn   { color: var(--tk-pn, inherit); }
 
 /* Framed variant: a container with a chrome header (filename + copy) over a
    scrollable body. The container owns the surface; the body owns padding. */
-[data-fui-comp="ui-code-block"].fui-code-block--framed {
+[data-cui-comp="ui-code-block"].fui-code-block--framed {
   padding: 0;
   overflow: hidden;
   white-space: normal;
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__head {
+[data-cui-comp="ui-code-block"] .fui-code-block__head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -247,20 +247,20 @@ func codeBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 12px);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__status {
+[data-cui-comp="ui-code-block"] .fui-code-block__status {
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-text, #18181B); }
-[data-fui-comp="ui-code-block"] .fui-code-block__meta {
+[data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-text, #18181B); }
+[data-cui-comp="ui-code-block"] .fui-code-block__meta {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__body {
+[data-cui-comp="ui-code-block"] .fui-code-block__body {
   display: block;
   margin: 0;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
@@ -269,11 +269,11 @@ func codeBlockCSS(_ style.Theme) string {
   white-space: pre;
   overflow-x: auto;
 }
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__body {
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__body {
   counter-reset: ui-cb-ln;
   padding-left: 52px;
 }
-[data-fui-comp="ui-code-block"].fui-code-block--scroll .fui-code-block__body {
+[data-cui-comp="ui-code-block"].fui-code-block--scroll .fui-code-block__body {
   /* Cap the body so a long file scrolls internally instead of dominating the
      page. Override per-page via --ui-code-block-scroll-max if a taller/shorter
      window is wanted. Horizontal panning still works (overflow-x above). */
@@ -282,8 +282,8 @@ func codeBlockCSS(_ style.Theme) string {
 }
 /* A blank source line is an empty span with no line box; min-block-size
    keeps its row, so its gutter number does not land on the next line's. */
-[data-fui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; min-block-size: 1lh; }
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line::before {
+[data-cui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; min-block-size: 1lh; }
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line::before {
   counter-increment: ui-cb-ln;
   content: counter(ui-cb-ln);
   position: absolute;
@@ -304,48 +304,48 @@ func codeBlockCSS(_ style.Theme) string {
    under the gutter too and the ::before number is re-anchored to the
    same visual spot. Colours derive from the theme's status tokens
    through overridable knobs. */
-[data-fui-comp="ui-code-block"] .fui-code-block__line--highlight {
+[data-cui-comp="ui-code-block"] .fui-code-block__line--highlight {
   background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #4F46E5) 14%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__line--added {
+[data-cui-comp="ui-code-block"] .fui-code-block__line--added {
   background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__line--removed {
+[data-cui-comp="ui-code-block"] .fui-code-block__line--removed {
   background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight,
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added,
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed {
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight,
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added,
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed {
   margin-inline-start: -52px;
   padding-inline-start: 52px;
 }
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight::before,
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added::before,
-[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight::before,
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added::before,
+[data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
   left: 16px;
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__mark {
+[data-cui-comp="ui-code-block"] .fui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
   color: inherit;
   border-radius: var(--radii-sm, 4px);
 }
 /* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
    The bare <pre> IS the root; the framed variant's body is the <pre>. */
-[data-fui-comp="ui-code-block"].fui-code-block--wrap,
-[data-fui-comp="ui-code-block"].fui-code-block--wrap .fui-code-block__body {
+[data-cui-comp="ui-code-block"].fui-code-block--wrap,
+[data-cui-comp="ui-code-block"].fui-code-block--wrap .fui-code-block__body {
   white-space: pre-wrap;
 }
 `
 }
 
 func sectionCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-section"] {
+	return `[data-cui-comp="ui-section"] {
   display: grid;
   /* A section a parent grid stretches keeps its head on its body: the
      spare height goes below the body, not between the rows. */
@@ -357,12 +357,12 @@ func sectionCSS(_ style.Theme) string {
      with a fixed header set --ui-section-scroll-margin to its height. */
   scroll-margin-top: var(--ui-section-scroll-margin, 0);
 }
-:where([data-fui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
-[data-fui-comp="ui-section"] .fui-section__head {
+:where([data-cui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
+[data-cui-comp="ui-section"] .fui-section__head {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-section"] .fui-section__eyebrow {
+[data-cui-comp="ui-section"] .fui-section__eyebrow {
   /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color let a
      host retune the kicker (e.g. body face instead of mono) without
      restyling the component's internals. */
@@ -372,7 +372,7 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-eyebrow-tracking, 0.04em);
   color: var(--ui-section-eyebrow-color, var(--color-text-subtle, #71717A));
 }
-[data-fui-comp="ui-section"] .fui-section__heading {
+[data-cui-comp="ui-section"] .fui-section__heading {
   /* Knobs: --ui-section-heading-size/-weight/-tracking scale the heading
      up to display type on marketing surfaces. */
   margin: 0;
@@ -381,11 +381,11 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, normal);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-section"] .fui-section__description {
+[data-cui-comp="ui-section"] .fui-section__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-section"] .fui-section__body {
+[data-cui-comp="ui-section"] .fui-section__body {
   display: grid;
   gap: var(--spacing-md, 8px);
 }`
@@ -393,7 +393,7 @@ func sectionCSS(_ style.Theme) string {
 
 // formFieldCSS is the field stylesheet, on class selectors: the
 // fieldClasses map names the classes, this sheet matches them, and
-// the data-fui-comp="ui-form-field" marker is only what fetches the
+// the data-cui-comp="ui-form-field" marker is only what fetches the
 // sheet.
 //
 // FieldOptions (--fui-field-columns, --fui-field-message-column,
@@ -524,7 +524,7 @@ func formSectionCSS(_ style.Theme) string {
 }
 
 func statusBadgeCSS(t style.Theme) string {
-	return `[data-fui-comp="ui-badge"] {
+	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   align-items: center;
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
@@ -538,7 +538,7 @@ func statusBadgeCSS(t style.Theme) string {
      it (a detail-list value column, a table cell). */
   white-space: nowrap;
 }
-[data-fui-comp="ui-badge"].fui-badge--success {
+[data-cui-comp="ui-badge"].fui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
   /* Text mixes the status hue toward --color-text so it darkens on a
      light scheme and lightens on a dark one — AA contrast on the 15%
@@ -547,22 +547,22 @@ func statusBadgeCSS(t style.Theme) string {
   color: color-mix(in oklab, var(--color-success, #16A34A) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].fui-badge--warning {
+[data-cui-comp="ui-badge"].fui-badge--warning {
   background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-warning, #CA8A04) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].fui-badge--danger {
+[data-cui-comp="ui-badge"].fui-badge--danger {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].fui-badge--info {
+[data-cui-comp="ui-badge"].fui-badge--info {
   background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-info, #2563EB) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].fui-badge--neutral {
+[data-cui-comp="ui-badge"].fui-badge--neutral {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   border-color: var(--color-border, #E4E4E7);
@@ -570,7 +570,7 @@ func statusBadgeCSS(t style.Theme) string {
 }
 
 func emptyStateCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-empty-state"] {
+	return `[data-cui-comp="ui-empty-state"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   justify-items: center;
@@ -580,18 +580,18 @@ func emptyStateCSS(_ style.Theme) string {
   border: 1px dashed var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 12px);
 }
-[data-fui-comp="ui-empty-state"] .fui-empty-state__title {
+[data-cui-comp="ui-empty-state"] .fui-empty-state__title {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-empty-state"] .fui-empty-state__description {
+[data-cui-comp="ui-empty-state"] .fui-empty-state__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
   max-inline-size: 36ch;
 }
-[data-fui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
+[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
 }
 
 func calloutCSS(t style.Theme) string {
@@ -600,7 +600,7 @@ func calloutCSS(t style.Theme) string {
 	// admonitions are a recognizable AI-template tell; the framework
 	// avoids them. The full border stays neutral; the surface tint
 	// carries the variant cue at adequate contrast.
-	return `[data-fui-comp="ui-callout"] {
+	return `[data-cui-comp="ui-callout"] {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
@@ -614,10 +614,10 @@ func calloutCSS(t style.Theme) string {
 /* display:grid above outranks the UA's [hidden] { display: none }, so
    a server-rendered notice that starts hidden showed as an empty bar;
    same fix as the sidebar sublist and the combobox listbox. */
-[data-fui-comp="ui-callout"][hidden] {
+[data-cui-comp="ui-callout"][hidden] {
   display: none;
 }
-[data-fui-comp="ui-callout"]::before {
+[data-cui-comp="ui-callout"]::before {
   content: var(--ui-callout-icon, "i");
   grid-row: 1 / span 2;
   display: inline-grid;
@@ -635,15 +635,15 @@ func calloutCSS(t style.Theme) string {
   border: 1px solid color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 28%, transparent);
   border-radius: 999px;
 }
-[data-fui-comp="ui-callout"] .fui-callout__head {
+[data-cui-comp="ui-callout"] .fui-callout__head {
   grid-column: 2;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
 /* The primitive always draws the head node; empty (a titleless
    callout) it takes no space. */
-[data-fui-comp="ui-callout"] .fui-callout__head:empty { display: none; }
-[data-fui-comp="ui-callout"] .fui-callout__title {
+[data-cui-comp="ui-callout"] .fui-callout__head:empty { display: none; }
+[data-cui-comp="ui-callout"] .fui-callout__title {
   margin: 0;
   /* The primitive renders the title as a p; a host's global p rule
      must not retune its metrics — the rhythm is the family's. */
@@ -652,26 +652,26 @@ func calloutCSS(t style.Theme) string {
   font-weight: var(--font-weight-bold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-callout"] .fui-callout__body {
+[data-cui-comp="ui-callout"] .fui-callout__body {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   grid-column: 2;
 }
-[data-fui-comp="ui-callout"] .fui-callout__desc {
+[data-cui-comp="ui-callout"] .fui-callout__desc {
   margin: 0;
   grid-column: 2;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-callout"].fui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
-[data-fui-comp="ui-callout"].fui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
-[data-fui-comp="ui-callout"].fui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
-[data-fui-comp="ui-callout"].fui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
-[data-fui-comp="ui-callout"].fui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", "fui-callout", t)
+[data-cui-comp="ui-callout"].fui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
+[data-cui-comp="ui-callout"].fui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
+[data-cui-comp="ui-callout"].fui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
+[data-cui-comp="ui-callout"].fui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
+[data-cui-comp="ui-callout"].fui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", "fui-callout", t)
 }
 
 func statCardCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-stat-card"] {
+	return `[data-cui-comp="ui-stat-card"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-lg, 16px);
@@ -679,7 +679,7 @@ func statCardCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
 }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__label {
+[data-cui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
@@ -687,28 +687,28 @@ func statCardCSS(_ style.Theme) string {
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__value {
+[data-cui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
   font-size: 1.75rem;
   font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__trend {
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
 }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--flat { color: var(--color-text-muted, #52525B); }`
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--flat { color: var(--color-text-muted, #52525B); }`
 }
 
 func avatarCSS(_ style.Theme) string {
 	// The root is position:relative (not overflow:hidden) so the presence
 	// dot can sit in the corner without being clipped; the circular clip
 	// moves onto the image itself via border-radius.
-	return `[data-fui-comp="ui-avatar"] {
+	return `[data-cui-comp="ui-avatar"] {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -722,22 +722,22 @@ func avatarCSS(_ style.Theme) string {
   inline-size: 2.5rem;
   block-size:  2.5rem;
 }
-:where([data-fui-comp="ui-avatar"]).fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
-:where([data-fui-comp="ui-avatar"]).fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
-:where([data-fui-comp="ui-avatar"]).fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
-[data-fui-comp="ui-avatar"] .fui-avatar__img {
+:where([data-cui-comp="ui-avatar"]).fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
+[data-cui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: var(--radii-full, 9999px);
 }
-[data-fui-comp="ui-avatar"] .fui-avatar__initials {
+[data-cui-comp="ui-avatar"] .fui-avatar__initials {
   letter-spacing: 0.04em;
 }
 /* Presence dot: sized as a fraction of the avatar so it scales with
    every size variant, with a ring in the surface color so it reads as
    an overlay. Colors come from the status tokens. */
-[data-fui-comp="ui-avatar"] .fui-avatar__status {
+[data-cui-comp="ui-avatar"] .fui-avatar__status {
   position: absolute;
   inset-block-end: 0.0625rem;
   inset-inline-end: 0.0625rem;
@@ -750,10 +750,10 @@ func avatarCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
 }
-[data-fui-comp="ui-avatar"] .fui-avatar__status--online  { background: var(--color-success, #16A34A); }
-[data-fui-comp="ui-avatar"] .fui-avatar__status--away     { background: var(--color-warning, #D97706); }
-[data-fui-comp="ui-avatar"] .fui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-avatar"] .fui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
+[data-cui-comp="ui-avatar"] .fui-avatar__status--online  { background: var(--color-success, #16A34A); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--away     { background: var(--color-warning, #D97706); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
 }
 
 func formCSS(_ style.Theme) string {
@@ -775,7 +775,7 @@ func formCSS(_ style.Theme) string {
 }
 
 func notificationCSS(t style.Theme) string {
-	return `[data-fui-comp="ui-notification"] .fui-visually-hidden {
+	return `[data-cui-comp="ui-notification"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -785,7 +785,7 @@ func notificationCSS(t style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-fui-comp="ui-notification"] {
+[data-cui-comp="ui-notification"] {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: start;
@@ -799,7 +799,7 @@ func notificationCSS(t style.Theme) string {
   box-shadow: 0 4px 12px rgba(0,0,0,0.06);
   max-inline-size: 28rem;
 }
-[data-fui-comp="ui-notification"] .fui-notification__icon {
+[data-cui-comp="ui-notification"] .fui-notification__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -815,21 +815,21 @@ func notificationCSS(t style.Theme) string {
 /* The toast's parts are the row's own children — no text wrapper —
    so the grid places them: icon and dismiss span both rows, title
    above body. The tone word is read, not shown. */
-[data-fui-comp="ui-notification"] > .fui-notification__icon { grid-column: 1; grid-row: 1 / span 2; }
-[data-fui-comp="ui-notification"] > .fui-notification__title { grid-column: 2; grid-row: 1; }
-[data-fui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
-[data-fui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
-[data-fui-comp="ui-notification"] .fui-notification__title {
+[data-cui-comp="ui-notification"] > .fui-notification__icon { grid-column: 1; grid-row: 1 / span 2; }
+[data-cui-comp="ui-notification"] > .fui-notification__title { grid-column: 2; grid-row: 1; }
+[data-cui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
+[data-cui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
+[data-cui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-bold);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-notification"] .fui-notification__body {
+[data-cui-comp="ui-notification"] .fui-notification__body {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-notification"] .fui-notification__dismiss {
+[data-cui-comp="ui-notification"] .fui-notification__dismiss {
   align-self: start;
   display: inline-flex;
   align-items: center;
@@ -844,40 +844,40 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
-[data-fui-comp="ui-notification"] .fui-notification__dismiss:hover {
+[data-cui-comp="ui-notification"] .fui-notification__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-fui-comp="ui-notification"].fui-notification--success { border-inline-start-color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-notification"].fui-notification--success .fui-notification__icon { background: var(--color-success, #16A34A); }
-[data-fui-comp="ui-notification"].fui-notification--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
-[data-fui-comp="ui-notification"].fui-notification--warning .fui-notification__icon { background: var(--color-warning, #CA8A04); }
-[data-fui-comp="ui-notification"].fui-notification--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-notification"].fui-notification--danger  .fui-notification__icon { background: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-notification"].fui-notification--info    { border-inline-start-color: var(--color-info, #2563EB); }
-[data-fui-comp="ui-notification"].fui-notification--info    .fui-notification__icon { background: var(--color-info, #2563EB); }
-[data-fui-comp="ui-notification"].fui-notification--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }
-[data-fui-comp="ui-notification"].fui-notification--neutral .fui-notification__icon {
+[data-cui-comp="ui-notification"].fui-notification--success { border-inline-start-color: var(--color-success, #16A34A); }
+[data-cui-comp="ui-notification"].fui-notification--success .fui-notification__icon { background: var(--color-success, #16A34A); }
+[data-cui-comp="ui-notification"].fui-notification--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
+[data-cui-comp="ui-notification"].fui-notification--warning .fui-notification__icon { background: var(--color-warning, #CA8A04); }
+[data-cui-comp="ui-notification"].fui-notification--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-notification"].fui-notification--danger  .fui-notification__icon { background: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-notification"].fui-notification--info    { border-inline-start-color: var(--color-info, #2563EB); }
+[data-cui-comp="ui-notification"].fui-notification--info    .fui-notification__icon { background: var(--color-info, #2563EB); }
+[data-cui-comp="ui-notification"].fui-notification--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }
+[data-cui-comp="ui-notification"].fui-notification--neutral .fui-notification__icon {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
 }
-:where([data-fui-comp="ui-notification"]).fui-notification--floating {
+:where([data-cui-comp="ui-notification"]).fui-notification--floating {
   position: fixed;
   z-index: 1000;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   animation: ui-notification-slide-in 220ms ease-out;
 }
-:where([data-fui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
-:where([data-fui-comp="ui-notification"]).fui-notification--at-top-left     { top: 1rem; left: 1rem; }
-:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
-:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: 1rem; left: 1rem; }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
 @keyframes ui-notification-slide-in {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-right,
-:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-left {
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right,
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left {
   animation-name: ui-notification-slide-in-up;
 }
 @keyframes ui-notification-slide-in-up {
@@ -885,7 +885,7 @@ func notificationCSS(t style.Theme) string {
   to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  :where([data-fui-comp="ui-notification"]).fui-notification--floating { animation: none; }
+  :where([data-cui-comp="ui-notification"]).fui-notification--floating { animation: none; }
 }` + customStatusCSS("ui-notification", "fui-notification", t)
 }
 
@@ -895,7 +895,7 @@ func notificationCSS(t style.Theme) string {
 // All animation values come from theme tokens so a single theme tweak
 // retunes every toast at once.
 func toastStackCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-toast-stack"] .fui-visually-hidden {
+	return `[data-cui-comp="ui-toast-stack"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -905,13 +905,13 @@ func toastStackCSS(_ style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-fui-comp="ui-toast-stack"] {
+[data-cui-comp="ui-toast-stack"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   pointer-events: none;
   max-width: min(360px, calc(100vw - 2rem));
 }
-[data-fui-comp="ui-toast-stack"] .fui-toast-stack__item {
+[data-cui-comp="ui-toast-stack"] .fui-toast-stack__item {
   pointer-events: auto;
   animation: fui-toast-stack-in var(--duration-toast-enter, 220ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
@@ -938,8 +938,8 @@ func toastStackCSS(_ style.Theme) string {
 }
 
 func dataTableCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
-[data-fui-comp="ui-data-table"] .fui-data-table__scroll {
+	return `[data-cui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
+[data-cui-comp="ui-data-table"] .fui-data-table__scroll {
   overflow-x: auto;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -948,16 +948,16 @@ func dataTableCSS(_ style.Theme) string {
 /* The scroll region is a keyboard tab stop (tabindex=0, so it can be
    scrolled by keyboard whenever it overflows), so its focus state
    must be visible. */
-[data-fui-comp="ui-data-table"] .fui-data-table__scroll:focus-visible {
+[data-cui-comp="ui-data-table"] .fui-data-table__scroll:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table {
+[data-cui-comp="ui-data-table"] .fui-data-table__table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-base, 1rem);
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__caption {
+[data-cui-comp="ui-data-table"] .fui-data-table__caption {
   text-align: start;
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   font-size: var(--text-xs, 0.75rem);
@@ -969,17 +969,17 @@ func dataTableCSS(_ style.Theme) string {
   border-bottom: 1px solid var(--color-border, #E4E4E7);
   caption-side: top;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table th,
-[data-fui-comp="ui-data-table"] .fui-data-table__table td {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th,
+[data-cui-comp="ui-data-table"] .fui-data-table__table td {
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
   border-bottom: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
+[data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table th {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface-soft, #F4F4F5);
@@ -987,12 +987,12 @@ func dataTableCSS(_ style.Theme) string {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
+[data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
-[data-fui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
-[data-fui-comp="ui-data-table"] .fui-data-table__sort {
+[data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
+[data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
+[data-cui-comp="ui-data-table"] .fui-data-table__sort {
   display: inline-flex;
   align-items: center;
   /* Token-scaled tap target. Sort headers are the most-tapped
@@ -1011,33 +1011,33 @@ func dataTableCSS(_ style.Theme) string {
   text-decoration: none;
   cursor: pointer;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__sort:hover {
+[data-cui-comp="ui-data-table"] .fui-data-table__sort:hover {
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
+[data-cui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
    one source and cannot disagree. The markup carries no glyph. */
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
   font-size: 0.7em;
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   content: "↑";
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
   content: "↓";
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
-[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-data-table"] .fui-data-table__footer {
+[data-cui-comp="ui-data-table"] .fui-data-table__footer {
   display: flex;
   justify-content: flex-end;
 }
@@ -1047,7 +1047,7 @@ func dataTableCSS(_ style.Theme) string {
    so the table responds to its own container's inline size — not the
    viewport. A wide table in a narrow sidebar collapses to cards even
    when the page itself is wide. */
-[data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__scroll {
+[data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__scroll {
   container-type: inline-size;
   /* Keep horizontal scroll: at container widths > 640px the table is still a
      table and can be wider than its column — it must scroll WITHIN this
@@ -1057,14 +1057,14 @@ func dataTableCSS(_ style.Theme) string {
 }
 
 @container (max-width: 640px) {
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table,
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody,
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr,
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: block;
     inline-size: 100%;
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via
        data-label and the ::before pseudo. Keep it accessible for screen
        readers via clip-path so column semantics aren't lost. */
@@ -1075,17 +1075,17 @@ func dataTableCSS(_ style.Theme) string {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
     border: 1px solid var(--color-border, #E4E4E7);
     border-radius: var(--radii-md, 8px);
     margin-block-end: var(--spacing-md, 8px);
     padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
     background: var(--color-surface, #FFFFFF);
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody tr:hover {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody tr:hover {
     background: var(--color-surface, #FFFFFF);
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -1095,10 +1095,10 @@ func dataTableCSS(_ style.Theme) string {
     border-block-end: 1px solid var(--color-border, #F4F4F5);
     text-align: end;
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
     border-block-end: 0;
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td::before {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td::before {
     content: attr(data-label);
     font-weight: var(--font-weight-semibold);
     font-size: var(--text-xs, 0.75rem);
@@ -1110,10 +1110,10 @@ func dataTableCSS(_ style.Theme) string {
   }
   /* Cells without a data-label (e.g. the Actions column) drop the
      header pseudo and fill the row. */
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label])::before {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label])::before {
     content: none;
   }
-  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
     justify-content: flex-end;
   }
 }`
@@ -1129,7 +1129,7 @@ func dataTableCSS(_ style.Theme) string {
 // --color-text, --color-primary, --color-border, --color-text-muted,
 // --radii-md, --spacing-xs, --spacing-sm, --spacing-touch-target.
 func paginationCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-pagination"] .pagination {
+	return `[data-cui-comp="ui-pagination"] .pagination {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
@@ -1138,8 +1138,8 @@ func paginationCSS(_ style.Theme) string {
 }
 /* The anchors are the controls; the spans are the gaps, which are
    decoration and say nothing. */
-[data-fui-comp="ui-pagination"] .pagination a,
-[data-fui-comp="ui-pagination"] .pagination span {
+[data-cui-comp="ui-pagination"] .pagination a,
+[data-cui-comp="ui-pagination"] .pagination span {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1156,30 +1156,30 @@ func paginationCSS(_ style.Theme) string {
   font-size: inherit;
   cursor: pointer;
 }
-[data-fui-comp="ui-pagination"] .pagination span { cursor: default; }
-[data-fui-comp="ui-pagination"] .pagination a:hover {
+[data-cui-comp="ui-pagination"] .pagination span { cursor: default; }
+[data-cui-comp="ui-pagination"] .pagination a:hover {
   background: var(--color-surface, #FFFFFF);
   border-color: var(--color-border, #E5E7EB);
 }
 /* :focus-visible is critical — without an explicit rule the focus
    indicator on the active page (white-on-primary) is invisible because
    the UA default outline blends with the primary background. */
-[data-fui-comp="ui-pagination"] .pagination a:focus-visible {
+[data-cui-comp="ui-pagination"] .pagination a:focus-visible {
   outline: 2px solid var(--color-text, #1F2937);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-pagination"] .pagination [aria-current="page"] {
+[data-cui-comp="ui-pagination"] .pagination [aria-current="page"] {
   background: var(--color-primary, #4F46E5);
   color: white;
   font-weight: var(--font-weight-semibold);
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
+[data-cui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
   color: var(--color-text-muted, #6B7280);
   opacity: 0.5;
   cursor: not-allowed;
 }
-[data-fui-comp="ui-pagination"] .pagination-gap {
+[data-cui-comp="ui-pagination"] .pagination-gap {
   border: 0;
   cursor: default;
 }
@@ -1187,7 +1187,7 @@ func paginationCSS(_ style.Theme) string {
 }
 
 func skipLinkCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-skip-link"] {
+	return `[data-cui-comp="ui-skip-link"] {
   position: absolute;
   left: -9999px;
   top: auto;
@@ -1196,7 +1196,7 @@ func skipLinkCSS(_ style.Theme) string {
   overflow: hidden;
   z-index: 9999;
 }
-:where([data-fui-comp="ui-skip-link"]):focus {
+:where([data-cui-comp="ui-skip-link"]):focus {
   position: fixed;
   top: var(--spacing-sm, 4px);
   left: var(--spacing-sm, 4px);
@@ -1214,14 +1214,14 @@ func skipLinkCSS(_ style.Theme) string {
 }
 
 func themeToggleCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-theme-toggle"] {
+	return `[data-cui-comp="ui-theme-toggle"] {
   display: inline-flex;
 }
-/* The styled button is the data-fui-comp element itself for the icon/label
-   variants (button[data-fui-comp]) and a descendant for the pill variant
-   ([data-fui-comp] button) — target both. */
-[data-fui-comp="ui-theme-toggle"] button,
-:where(button)[data-fui-comp="ui-theme-toggle"] {
+/* The styled button is the data-cui-comp element itself for the icon/label
+   variants (button[data-cui-comp]) and a descendant for the pill variant
+   ([data-cui-comp] button) — target both. */
+[data-cui-comp="ui-theme-toggle"] button,
+:where(button)[data-cui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -1235,12 +1235,12 @@ func themeToggleCSS(_ style.Theme) string {
   justify-content: center;
   transition: background 0.15s, border-color 0.15s;
 }
-[data-fui-comp="ui-theme-toggle"] button:hover,
-button[data-fui-comp="ui-theme-toggle"]:hover {
+[data-cui-comp="ui-theme-toggle"] button:hover,
+button[data-cui-comp="ui-theme-toggle"]:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-theme-toggle"] button:focus-visible,
-button[data-fui-comp="ui-theme-toggle"]:focus-visible {
+[data-cui-comp="ui-theme-toggle"] button:focus-visible,
+button[data-cui-comp="ui-theme-toggle"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
@@ -1248,44 +1248,44 @@ button[data-fui-comp="ui-theme-toggle"]:focus-visible {
 /* Icon variant: a ghost button — transparent, borderless, just the sun/moon
    glyph in the current text color, with a subtle hover wash. Reads as a calm
    header affordance rather than a heavy bordered box. The variant class sits on
-   the same element as data-fui-comp, so match it as a compound selector. */
-[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--icon {
+   the same element as data-cui-comp, so match it as a compound selector. */
+[data-cui-comp="ui-theme-toggle"].fui-theme-toggle--icon {
   background: transparent;
   border-color: transparent;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--icon:hover {
+[data-cui-comp="ui-theme-toggle"].fui-theme-toggle--icon:hover {
   background: color-mix(in oklab, var(--color-text, #18181B) 7%, transparent);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-theme-toggle"] svg {
+[data-cui-comp="ui-theme-toggle"] svg {
   width: 18px;
   height: 18px;
 }
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: none; }
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: block; }
-html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: block; }
-html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: none; }
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: none; }
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: block; }
+html[data-color-scheme="light"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: block; }
+html[data-color-scheme="light"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: none; }
 
 /* Label variant: the base padding is sized for an icon square; a text
    label needs room to breathe on both sides of the word. */
-[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--label {
+[data-cui-comp="ui-theme-toggle"].fui-theme-toggle--label {
   padding-inline: var(--spacing-md, 8px);
 }
 /* Label variant: show correct text */
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: none; }
-html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__light { display: none; }
-html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: none; }
+html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__light { display: none; }
+html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
 /* Pill variant */
-:where([data-fui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
+:where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
   display: inline-flex;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: 999px;
   overflow: hidden;
   background: var(--color-surface, #fff);
 }
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;
   border-radius: 999px;
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
@@ -1295,14 +1295,14 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-togg
   min-block-size: 36px;
   background: transparent;
 }
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #fff);
 }`
 }
 
 func backToTopCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-back-to-top"] {
+	return `[data-cui-comp="ui-back-to-top"] {
   position: fixed;
   z-index: var(--z-sticky, 200);
   border: none;
@@ -1324,7 +1324,7 @@ func backToTopCSS(_ style.Theme) string {
 }
 
 /* ── Visible state (written by headless-navigation) ── */
-:where([data-fui-comp="ui-back-to-top"])[data-hui-back-to-top-visible] {
+:where([data-cui-comp="ui-back-to-top"])[data-hui-back-to-top-visible] {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -1332,19 +1332,19 @@ func backToTopCSS(_ style.Theme) string {
 }
 
 /* ── Interaction ── */
-[data-fui-comp="ui-back-to-top"]:hover {
+[data-cui-comp="ui-back-to-top"]:hover {
   background: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
 }
-[data-fui-comp="ui-back-to-top"]:focus-visible {
+[data-cui-comp="ui-back-to-top"]:focus-visible {
   outline: var(--ring-width, 2px) solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-back-to-top"] svg {
+[data-cui-comp="ui-back-to-top"] svg {
   pointer-events: none;
 }
 /* Inside demo frames, show BackToTop inline (not fixed). */
-:where(.demo-live) [data-fui-comp="ui-back-to-top"] {
+:where(.demo-live) [data-cui-comp="ui-back-to-top"] {
   position: relative;
   opacity: 1;
   visibility: visible;
@@ -1469,7 +1469,7 @@ func backToTopCSS(_ style.Theme) string {
 
 /* Scoped copy of the visually-hidden recipe: the link's accessible
    name must not be seen on a page that loads only this sheet. */
-[data-fui-comp="ui-back-to-top"] .fui-visually-hidden {
+[data-cui-comp="ui-back-to-top"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

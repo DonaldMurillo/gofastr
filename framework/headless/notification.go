@@ -190,7 +190,7 @@ type ToastStackProps struct {
 
 // ToastStack renders the region the toasts live in.
 //
-// The stack carries the framework's data-fui-toast-stack name beside
+// The stack carries the framework's data-cui-toast-stack name beside
 // its own: the kernel's response-header toast path and the runtime's
 // auto-mount look for the framework's name, and the module that owns
 // the component lifecycle looks for this package's. One region, two
@@ -208,7 +208,7 @@ func ToastStack(p ToastStackProps, s Classes) render.HTML {
 		"role":                 "region",
 		"aria-label":           p.Label,
 		"id":                   p.ID,
-		"data-fui-toast-stack": p.Label,
+		"data-cui-toast-stack": p.Label,
 	}))
 	Mark(own, "data-hui-toast-stack")
 	if p.Max > 0 {
@@ -249,7 +249,7 @@ type NotificationBellProps struct {
 	UnreadBind *Bind
 	// Opens, when set, is the widget name the anchor opens with
 	// script: the same element is the no-script link (Href) and the
-	// widget's trigger, rendered as the kernel's data-fui-open and a
+	// widget's trigger, rendered as the kernel's data-cui-open and a
 	// bottom-anchored popover. A name carrying control bytes or
 	// whitespace is refused — it is a widget key, not free text.
 	Opens string
@@ -312,8 +312,8 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 		if strings.ContainsAny(p.Opens, " \t\n\r\x00") {
 			panic("headless: NotificationBell Opens " + strconv.Quote(p.Opens) + " is not a widget name — whitespace and control bytes are not keys")
 		}
-		own["data-fui-open"] = p.Opens
-		own["data-fui-popover-anchor"] = "bottom"
+		own["data-cui-open"] = p.Opens
+		own["data-cui-popover-anchor"] = "bottom"
 	}
 
 	// The glyph span carries the badge INSIDE it: the marker is laid
@@ -417,7 +417,7 @@ func init() {
 					Label: "Notifications", UnreadCount: 3}, s),
 			}, {
 				Name: "a widget trigger",
-				Why:  "Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-fui-open spelling typed from a prop",
+				Why:  "Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-cui-open spelling typed from a prop",
 				HTML: NotificationBell(NotificationBellProps{Href: "/notifications",
 					Label: "Notifications", UnreadCount: 1, Opens: "bell-panel"}, s),
 			}, {

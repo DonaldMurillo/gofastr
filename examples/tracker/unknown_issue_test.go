@@ -46,7 +46,7 @@ func TestUnknownIssueShowsProjectToolbarAndCrumbs(t *testing.T) {
 		}
 		// The breadcrumb ends at the project: the project crumb is the
 		// current one and no issue-key crumb follows it.
-		toolbar := page[strings.Index(page, `data-fui-area="l:shell~crumbs"`):]
+		toolbar := page[strings.Index(page, `data-cui-area="l:shell~crumbs"`):]
 		end := strings.Index(toolbar, "</nav>")
 		if end >= 0 {
 			toolbar = toolbar[:end]

@@ -23,8 +23,8 @@ func TestFormDispatcher_SingleSourceOfTruth(t *testing.T) {
 		t.Fatal("rpc module not embedded")
 	}
 
-	if !strings.Contains(runtimeJS, "data-fui-rpc") {
-		t.Error("runtime.js missing data-fui-rpc form-submit branch")
+	if !strings.Contains(runtimeJS, "data-cui-rpc") {
+		t.Error("runtime.js missing data-cui-rpc form-submit branch")
 	}
 	if strings.Count(runtimeJS, `document.addEventListener('submit'`) != 1 {
 		t.Error("runtime.js must install exactly one document-level submit bridge")

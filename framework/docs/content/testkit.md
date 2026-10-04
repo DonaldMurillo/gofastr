@@ -72,7 +72,7 @@ the existing fallback HTML and HTTP status behavior do not change.
 ## Retired markup
 
 `TestHarness` also fails `t` when a rendered response carries markup
-the upgrade registry has retired: a class name or `data-fui-*`
+the upgrade registry has retired: a class name or `data-cui-*`
 attribute no longer emitted by the kit. This is what catches the names
 a source scan cannot see — a class built at run time
 (`fmt.Sprintf("ui-%s", kind)`), one read from the database, a template
@@ -84,7 +84,7 @@ are fui-button*; the ui-button class no longer exists in any emitted markup
 or stylesheet); run gofastr upgrade
 ```
 
-Attribute values never match — `data-fui-comp="ui-sidebar"` is a kept
+Attribute values never match — `data-cui-comp="ui-sidebar"` is a kept
 component marker, not the retired `ui-sidebar` class — and a migrated
 spelling reports nothing.
 

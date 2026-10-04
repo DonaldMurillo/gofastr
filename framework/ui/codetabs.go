@@ -42,7 +42,7 @@ type CodeTabsConfig struct {
 	// analytics markers, ARIA overrides) to the tab group's root
 	// element. Keys the component owns are dropped: class (use
 	// Class), id (ID tags the inner tabset, not the root), and
-	// data-fui-*.
+	// data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
@@ -118,17 +118,17 @@ func codeTabsCSS(_ style.Theme) string {
 	// The strip carries the retired tabs pattern's look on the new
 	// class names: spaced labels, a 2px underline on the active tab,
 	// and only the active panel visible. Panel visibility keys on the
-	// same data-active/data-fui-tab-index pair ui.Tabs generates its
+	// same data-active/data-cui-tab-index pair ui.Tabs generates its
 	// rules from, pre-generated to the primitive's ceiling.
 	var b strings.Builder
 	b.WriteString(`
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__nav {
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {
   display: flex;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border, #E5E7EB);
   margin-bottom: 0;
 }
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__tab {
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab {
   display: inline-flex;
   align-items: center;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
@@ -141,25 +141,25 @@ func codeTabsCSS(_ style.Theme) string {
   white-space: nowrap;
   text-decoration: none;
 }
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__tab:hover { color: var(--color-text, #1F2937); }
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__tab:focus-visible {
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:hover { color: var(--color-text, #1F2937); }
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
   border-radius: var(--radii-md, 8px);
 }
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__panels {
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panels {
   padding-top: var(--spacing-md, 8px);
   min-width: 0;
 }
-[data-fui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
 `)
 	for i := range headless.TabsMaxPanels() {
-		b.WriteString(fmt.Sprintf(`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-fui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:var(--font-weight-semibold)}`,
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:var(--font-weight-semibold)}`,
 			i, i))
-		b.WriteString(fmt.Sprintf(`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-fui-tab-index="%d"]{display:block}`,
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-cui-tab-index="%d"]{display:block}`,
 			i, i))
 	}
 	b.WriteString("\n@media (prefers-reduced-motion: reduce) {\n" +
-		`  [data-fui-comp="ui-code-tabs"] .fui-code-tabs__tab { transition: none; }` + "\n}\n")
+		`  [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab { transition: none; }` + "\n}\n")
 	return b.String()
 }

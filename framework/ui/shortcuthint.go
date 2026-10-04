@@ -16,7 +16,7 @@ import (
 // to triggers: Command Palette buttons, search inputs, menu items.
 //
 // Mod-key glyphs auto-resolve to ⌘ on Mac / Ctrl elsewhere via the
-// runtime-set <html data-fui-os> attribute, with both labels rendered
+// runtime-set <html data-cui-os> attribute, with both labels rendered
 // in the SSR output and the wrong one hidden via CSS. Screen readers
 // see the SR-only label exactly once via aria-label on the wrapper.
 //
@@ -48,7 +48,7 @@ type ShortcutHintConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the hint's root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and aria-hidden — the wrapper must stay in the
+	// ID), data-cui-*, and aria-hidden — the wrapper must stay in the
 	// accessibility tree for its SR-only label.
 	ExtraAttrs html.Attrs
 }
@@ -80,7 +80,7 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	for _, p := range parts {
 		chips = append(chips, renderChordPart(p))
 	}
-	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, render.Text("Shortcut: "+srLabel)))
+	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text("Shortcut: "+srLabel)))
 
 	extras := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden", "data-hui-shortcut-hint")
 	if extras == nil {
@@ -181,7 +181,7 @@ func renderChordPart(p chordPart) render.HTML {
 		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key fui-shortcut-hint__key--mod",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		},
 			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-mac"}, render.Text("⌘")),
 			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-other"}, render.Text("Ctrl")),
@@ -189,17 +189,17 @@ func renderChordPart(p chordPart) render.HTML {
 	case "shift":
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		}, render.Text("⇧"))
 	case "alt":
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		}, render.Text("⌥"))
 	default:
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
 		}, render.Text(p.key))
 	}
 }
@@ -237,14 +237,14 @@ func humanizeChord(parts []chordPart) string {
 var shortcutHintStyle = registry.RegisterStyle("ui-shortcut-hint", shortcutHintCSS)
 
 func shortcutHintCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-shortcut-hint"] {
+	return `[data-cui-comp="ui-shortcut-hint"] {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
   font-family: var(--fonts-mono, ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace);
   vertical-align: middle;
 }
-[data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__key {
+[data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -260,18 +260,18 @@ func shortcutHintCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   line-height: 1;
 }
-[data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac,
-[data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other {
+[data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac,
+[data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other {
   display: inline;
 }
-html[data-fui-os="mac"] [data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other { display: none; }
-html[data-fui-os="other"] [data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac { display: none; }
+html[data-cui-os="mac"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other { display: none; }
+html[data-cui-os="other"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac { display: none; }
 /* Default (SSR before runtime boots, or non-JS): show Mac symbol. */
-html:not([data-fui-os]) [data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other { display: none; }
+html:not([data-cui-os]) [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other { display: none; }
 
 /* Touch devices have no physical keyboard — hide hints to avoid confusion. */
 @media (pointer: coarse) and (hover: none) {
-  [data-fui-comp="ui-shortcut-hint"] { display: none; }
+  [data-cui-comp="ui-shortcut-hint"] { display: none; }
 }
 `
 }

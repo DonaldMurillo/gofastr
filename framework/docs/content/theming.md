@@ -464,7 +464,7 @@ ui.Themed(Dark,
 )
 ```
 
-`Themed` wraps the content in a `<div class="fui-theme-<hash>">`. The
+`Themed` wraps the content in a `<div class="cui-theme-<hash>">`. The
 override's token block ships in `app.css` scoped to that class, and
 every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
@@ -475,7 +475,7 @@ same handle, so its CSS only ships once.
 A registered override with a dark palette (`DarkColors` or `DarkCode`)
 follows the document's scheme, not the wrapper's: the same two
 selectors that flip the root theme flip the scope —
-`[data-color-scheme="dark"] .fui-theme-<hash>` for the explicit toggle
+`[data-color-scheme="dark"] .cui-theme-<hash>` for the explicit toggle
 and a `prefers-color-scheme` fallback that stops applying once the
 user forced light. Flip `ui.ThemeToggle` (or set
 `data-color-scheme` on `<html>`) and every scoped theme with a dark
@@ -603,7 +603,7 @@ The cascade rule: **theme boundaries declare the option variables,
 component rules consume them.** A component stylesheet writes
 `border-radius: var(--fui-button-radius)` and never redeclares the
 variable; a treatment that changes fill, text and border together is
-three variables, never a descendant rule (`.fui-theme-a .fui-button`
+three variables, never a descendant rule (`.cui-theme-a .fui-button`
 would outrank the component's own variant and state selectors, and
 could not nest). Because every theme declares the complete set, an
 inner `ui.Themed` scope redeclares all of it and wins by proximity:

@@ -81,13 +81,13 @@ func TestTransitionPickedPerRender(t *testing.T) {
 		}
 		return string(res.HTML)
 	}
-	if s := render("slide"); !strings.Contains(s, `data-fui-vt="vt-shell-primary-slide"`) {
+	if s := render("slide"); !strings.Contains(s, `data-cui-vt="vt-shell-primary-slide"`) {
 		t.Errorf("the picked entry's keyed name must mark the cell: %s", s)
 	}
-	if s := render("fade"); !strings.Contains(s, `data-fui-vt="vt-shell-primary-fade"`) {
+	if s := render("fade"); !strings.Contains(s, `data-cui-vt="vt-shell-primary-fade"`) {
 		t.Errorf("another pick carries its own keyed name: %s", s)
 	}
-	if s := render("nosuch"); strings.Contains(s, "data-fui-vt=") {
+	if s := render("nosuch"); strings.Contains(s, "data-cui-vt=") {
 		t.Errorf("an unknown pick transitions nothing: %s", s)
 	}
 	// The stylesheet is pick-independent and sorted: slide < softer is
@@ -106,7 +106,7 @@ func TestTransitionPickedPerRender(t *testing.T) {
 
 // TestTransitionPickCarriedOnPartialAnswer pins the wire: a partial's
 // answer carries the picked name in X-Gofastr-Transition and the
-// document declares its vocabulary (data-fui-vt-kinds, sorted) both on
+// document declares its vocabulary (data-cui-vt-kinds, sorted) both on
 // <html> at first paint and on the swapped payload's root layer.
 func TestTransitionPickCarriedOnPartialAnswer(t *testing.T) {
 	a := app.NewApp("t")
@@ -128,7 +128,7 @@ func TestTransitionPickCarriedOnPartialAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(res.HTML), `data-fui-vt-kinds="fade slide"`) {
+	if !strings.Contains(string(res.HTML), `data-cui-vt-kinds="fade slide"`) {
 		t.Errorf("the document declares its sorted vocabulary on <html>: %s", res.HTML)
 	}
 

@@ -23,7 +23,7 @@ func TestCodeBlockDefaultStaysBarePre(t *testing.T) {
 func TestCodeBlockFilenameRendersHead(t *testing.T) {
 	h := string(CodeBlock(CodeBlockConfig{Filename: "main.go", Code: "x"}))
 	for _, want := range []string{
-		`data-fui-comp="ui-code-block"`,
+		`data-cui-comp="ui-code-block"`,
 		"fui-code-block--framed",
 		"fui-code-block__head",
 		"fui-code-block__file",

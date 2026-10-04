@@ -1,14 +1,14 @@
 // nav.js: SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
 // layout-chain-aware swaps (deepest shared layer), document-lifetime
-// script boundaries (hard document load at a data-fui-doc scope edge),
+// script boundaries (hard document load at a data-cui-doc scope edge),
 // updateActiveLink, document.title writes, the navigate() namespace
 // member.
 //
 // This is the PLAIN navigator: byte-for-byte the pre-layout source
 // plus the itemised fixes every page needs (error pages through the
 // swap path, pointer-modality focus, the atomic seed merge, the
-// data-fui-open anchor guard) and two seams the demand modules own —
+// data-cui-open anchor guard) and two seams the demand modules own —
 // the commit seam (_swapCommit delegates to the transition module so a
 // plain page declaring a transition gets one) and the opt-in
 // stand-down (a document holding an outlet or area marker hands its
@@ -48,15 +48,15 @@
   };
 
   // --- Layout chain primitives ---
-  // The server marks every layout layer with data-fui-layout-key (its
-  // identity) and the layer's content cell with data-fui-layout-slot (the
+  // The server marks every layout layer with data-cui-layout-key (its
+  // identity) and the layer's content cell with data-cui-layout-slot (the
   // swap target). The route manifest carries each route's chain in
   // `layouts` (outermost → innermost). Document order of the key-marked
   // elements IS the chain order, a wrapper precedes its descendants.
   const domChainKeys = () => {
     const out = [];
-    for (const el of document.querySelectorAll('[data-fui-layout-key]')) {
-      out.push(el.getAttribute('data-fui-layout-key'));
+    for (const el of document.querySelectorAll('[data-cui-layout-key]')) {
+      out.push(el.getAttribute('data-cui-layout-key'));
     }
     return out;
   };
@@ -64,15 +64,15 @@
   // contain '/' and ':', and getAttribute needs no escaping.
   const findSlot = (key) => {
     if (!key) return null;
-    for (const el of document.querySelectorAll('[data-fui-layout-slot]')) {
-      if (el.getAttribute('data-fui-layout-slot') === key) return el;
+    for (const el of document.querySelectorAll('[data-cui-layout-slot]')) {
+      if (el.getAttribute('data-cui-layout-slot') === key) return el;
     }
     return null;
   };
   const mainEl = () => document.querySelector('[role="main"]') ?? document.querySelector('main');
   const mainSlotKey = () => {
     const m = mainEl();
-    return (m && m.getAttribute('data-fui-layout-slot')) || '';
+    return (m && m.getAttribute('data-cui-layout-slot')) || '';
   };
   // routeEntry: manifest lookup with trailing-slash tolerance and dynamic
   // patterns. Pattern awareness matters for chains, a concrete URL of a
@@ -117,7 +117,7 @@
 
   // --- Document-lifetime scripts (capability boundary) ---
   // A script the host registers with a page scope rides the rail as
-  // <script src data-fui-doc>, and the route manifest carries each
+  // <script src data-cui-doc>, and the route manifest carries each
   // route's set as docScripts. Such a script installs capabilities
   // INTO the document (WebMCP's navigator.modelContext tools are the
   // driving case), and two browser facts make its scope edge a
@@ -137,7 +137,7 @@
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
-    for (const s of document.querySelectorAll('script[data-fui-doc]')) {
+    for (const s of document.querySelectorAll('script[data-cui-doc]')) {
       const v = s.getAttribute('src');
       if (v) srcs.push(v);
     }
@@ -212,12 +212,12 @@
   const _navLive = (epoch) => epoch === window.__gofastr._navEpoch;
 
   // Mini toast used by loadPage failures, strict-CSP-clean (no
-  // inline styles since the .fui-nav-toast class is shipped via
+  // inline styles since the .cui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
   const _showNavToast = (msg) => {
-    const t = doc.singleton('fui-nav-toast', () => {
+    const t = doc.singleton('cui-nav-toast', () => {
       const d = document.createElement('div');
-      d.className = 'fui-nav-toast';
+      d.className = 'cui-nav-toast';
       d.setAttribute('role', 'alert');
       return d;
     });
@@ -370,7 +370,7 @@
   // chain for a plain page drops the old chrome instead of keeping it.
   // Delegated chrome handlers survive the swap; no hard reload (hard
   // rule 4).
-  const shellEl = (d) => (d || document).querySelector('[data-fui-layout-key], [data-fui-screen-group]');
+  const shellEl = (d) => (d || document).querySelector('[data-cui-layout-key], [data-cui-screen-group]');
   const swapShell = (newRoot) => {
     const cur = shellEl() || mainEl();
     if (!cur || !newRoot) return null;
@@ -382,7 +382,7 @@
     doc.reattach();
     mergeSeedFromDOM(el);
     // The parent: the new shell root itself carries its layout's
-    // data-fui-scope, and the scan reads descendants only.
+    // data-cui-scope, and the scan reads descendants only.
     window.__gofastr.scanAndLoadCSS(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
     if (m) _focusSwapTarget(m);
@@ -391,19 +391,19 @@
   // applyDocShell syncs the document-level markers that ride the swapped
   // payload onto the document itself. <html lang> and the skip link live
   // OUTSIDE the shell the runtime swaps, so the server carries the
-  // destination's values (data-fui-lang / data-fui-skip-label, from
+  // destination's values (data-cui-lang / data-cui-skip-label, from
   // App.LangForPath + SkipLabelForPath) on the outermost layer it
   // renders; after any swap this copies them onto documentElement.lang
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
   const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-fui-lang],[data-fui-skip-label]')
-      ? root : root.querySelector('[data-fui-lang],[data-fui-skip-label]'));
+    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
+      ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
-    const lang = c.getAttribute('data-fui-lang');
+    const lang = c.getAttribute('data-cui-lang');
     if (lang) doc.setHtmlAttr('lang', lang);
-    const skip = c.getAttribute('data-fui-skip-label');
+    const skip = c.getAttribute('data-cui-skip-label');
     const link = skip && document.querySelector('[data-skip-link]');
     if (link) link.textContent = skip;
   };
@@ -443,7 +443,7 @@
       own origin (and X-Gofastr-From would stop naming the real one). */
   // The commit seam: one navigation's commit routes through the
   // transition module's wrapper when the document declared a
-  // transition (a plain page declaring data-fui-vt runs this — its
+  // transition (a plain page declaring data-cui-vt runs this — its
   // swaps animate); without the module the commit applies directly,
   // the pre-layout behaviour, behind the supersede rule's check.
   const _swapCommit = (epoch, from, to, apply, pickSrc) => {
@@ -466,7 +466,7 @@
     // to a whole-document load of the destination.
     const G0 = window.__gofastr;
     const N = G0._navHooks.envelope?.nav;
-    if (N || document.querySelector('[data-fui-outlet],[data-fui-area]')) {
+    if (N || document.querySelector('[data-cui-outlet],[data-cui-area]')) {
       // The pointer modality core recorded for THIS navigation rides
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
@@ -482,7 +482,7 @@
   };
   const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
-    // comes from an href / a data-fui-* attribute / a server header,
+    // comes from an href / a data-cui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
     // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
@@ -514,7 +514,7 @@
 
     try {
       const layouts = routeLayouts(path);
-      // bypassCache: post-mutation navigation (data-fui-rpc-navigate,
+      // bypassCache: post-mutation navigation (data-cui-rpc-navigate,
       // navigate({force:true})) must show fresh server state, never the
       // cached copy captured before the mutation.
       const cached = (bypassCache || forceFull) ? null : getCachedScreen(path);
@@ -597,7 +597,7 @@
             const m = mainEl();
             if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
           }
-          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
+          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
         }, null);
         return;
@@ -663,7 +663,7 @@
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
         body = nm?.innerHTML ?? '';
-        swapKey = nm?.getAttribute('data-fui-layout-slot') || '';
+        swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
       // manifest and server disagree (deploy skew), recover with a
@@ -704,7 +704,7 @@
   // aren't reported on most screen readers).
   let _announceTimer = 0;
   const announceRoute = (title) => {
-    const r = document.getElementById('fui-route-announce');
+    const r = document.getElementById('cui-route-announce');
     if (!r || !title) return;
     // Cancel any in-flight timer from a previous nav so rapid A→B→C
     // navs don't race and leave the live region on the wrong title.
@@ -765,7 +765,7 @@
   // handled client-side via partial fetch + cache. No hard refresh.
   // This is the Angular-router-style behavior described in
   // core-ui/ARCHITECTURE.md ("Page → page navigation"). In-page state
-  // changes are NOT routes, they go through data-fui-rpc on islands
+  // changes are NOT routes, they go through data-cui-rpc on islands
   // and never hit this handler.
   //
   // Cmd/Ctrl/Shift/Alt-click, target=_blank, external links, and
@@ -797,18 +797,18 @@
     // browser) instead of turning a rare element into a broken page.
     if (anchor.target && String(anchor.target).toLowerCase() !== '_self') return;
     if (!isKnownRoute(href)) return;
-    // data-fui-rpc anchors are RPC triggers, not navigation.
-    if (anchor.hasAttribute('data-fui-rpc')) return;
-    // data-fui-open anchors are widget triggers, not navigation: the
+    // data-cui-rpc anchors are RPC triggers, not navigation.
+    if (anchor.hasAttribute('data-cui-rpc')) return;
+    // data-cui-open anchors are widget triggers, not navigation: the
     // widgets-boot delegator preventDefaults the click and opens the
     // widget, and the no-script page keeps the href as the fallback
     // destination. A hijacked SPA navigation here meant one click BOTH
     // navigated and opened the widget.
-    if (anchor.hasAttribute('data-fui-open')) return;
-    // data-fui-nav="off" opts a link out of SPA navigation entirely:
+    if (anchor.hasAttribute('data-cui-open')) return;
+    // data-cui-nav="off" opts a link out of SPA navigation entirely:
     // hosts whose destination page depends on full-load scripts (legacy
     // page-runtime initializers) need a real document load.
-    if (anchor.getAttribute('data-fui-nav') === 'off') return;
+    if (anchor.getAttribute('data-cui-nav') === 'off') return;
 
     const fullPath = resolvePath(href);
     if (fullPath === currentPath) {
@@ -818,7 +818,7 @@
     // A document-lifetime script's scope edge is a document boundary.
     // Stand down BEFORE preventDefault so the browser performs a real
     // navigation with ordinary link semantics (history, focus, target),
-    // exactly like a data-fui-nav="off" link.
+    // exactly like a data-cui-nav="off" link.
     if (crossesDocBoundary(fullPath)) return;
     // Preserve the #fragment: resolvePath strips it (path-only is what
     // route matching + cache keys want), but the URL bar and the
@@ -951,7 +951,7 @@
     navigate(path, { replace = false, force = false } = {}) {
       if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
-      // touching the URL bar. Server-rendered data-fui-push-state
+      // touching the URL bar. Server-rendered data-cui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
       // hrefs are the trust boundary; navigate() is the choke point
       // for all programmatic SPA navigation, so the guard lives

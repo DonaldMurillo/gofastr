@@ -88,8 +88,8 @@ func TestAddToastErrorIsPersistent(t *testing.T) {
 func TestToastSlotRendersEmptyContainer(t *testing.T) {
 	html := string(ui.ToastSlot("site-toasts").Render())
 	for _, want := range []string{
-		`data-fui-comp="ui-toast-stack"`,
-		`data-fui-toast-stack="site-toasts"`,
+		`data-cui-comp="ui-toast-stack"`,
+		`data-cui-toast-stack="site-toasts"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("ToastSlot HTML missing %q\n--\n%s", want, html)

@@ -7,24 +7,24 @@ import (
 	"testing"
 )
 
-// Pins: malformed data-fui-* attribute values degrade to a no-op — never
-// throw out of delegated handlers. Every data-fui-deeplink decode routes
+// Pins: malformed data-cui-* attribute values degrade to a no-op — never
+// throw out of delegated handlers. Every data-cui-deeplink decode routes
 // through a same-file safeDecode helper (frag twins, composed runtime.js,
 // framework/ui/lightbox.js). (2026-09-06 adversarial pass, round 5.)
-// Property: malformed data-fui-* attribute values degrade to a no-op — never throw out of
+// Property: malformed data-cui-* attribute values degrade to a no-op — never throw out of
 // delegated handlers. The family is pinned for selectors (TestSelectorByDesignLookupsGuarded);
-// the data-fui-deeplink decode sites are unguarded.
-// Surfaces: runtime.js::_installEagerWidgetDelegators [data-fui-open] click handler (composed
+// the data-cui-deeplink decode sites are unguarded.
+// Surfaces: runtime.js::_installEagerWidgetDelegators [data-cui-open] click handler (composed
 // byte-identical with its fragment twins frag/widgets-boot.js and frag/widgets-boot-static.js —
 // all three asserted so the pin holds at whichever a fix lands on first);
 // src/lightbox.js::parseDeeplink and ::srcOf (called from step() click/keydown handlers and
 // recordOpen's MutationObserver).
-// Finding: [deeplink-decode-throws] the click handler decodes data-fui-deeplink pairs with
+// Finding: [deeplink-decode-throws] the click handler decodes data-cui-deeplink pairs with
 // decodeURIComponent under no try, AFTER preventDefault() — decodeURIComponent('%E0%A4')
 // throws URIError, so the widget open is consumed and nothing opens. [lightbox-decode-throws]
 // src/lightbox.js decodes the same attribute from parseDeeplink and srcOf unguarded — one
 // malformed escape kills gallery nav.
-// Fix direction: wrap every data-fui-deeplink decode in try/catch (or route it through a
+// Fix direction: wrap every data-cui-deeplink decode in try/catch (or route it through a
 // same-file safeDecode helper whose body wraps decodeURIComponent in try), mirroring the
 // selector guard family.
 
@@ -39,7 +39,7 @@ func redDecodeFindings(t *testing.T, fileSrc, window, where string) []string {
 	const dec = "decodeURIComponent("
 	if strings.Count(window, dec) == 0 {
 		if !redWindowRoutesGuardedHelper(fileSrc, window) {
-			t.Fatalf("setup broken: %s no longer decodes data-fui-deeplink and calls no same-file decode helper — surface drifted", where)
+			t.Fatalf("setup broken: %s no longer decodes data-cui-deeplink and calls no same-file decode helper — surface drifted", where)
 		}
 		return nil
 	}
@@ -98,7 +98,7 @@ func redWindowRoutesGuardedHelper(fileSrc, window string) bool {
 }
 
 // TestDeeplinkRedDecodeThrows pins the eager widget-open delegator's
-// deeplink parse: every decodeURIComponent on data-fui-deeplink pairs runs
+// deeplink parse: every decodeURIComponent on data-cui-deeplink pairs runs
 // inside a try (or a guarded same-file helper), because the decode happens
 // AFTER preventDefault() — a malformed escape (%E0%A4) throws URIError, the
 // default navigation is already suppressed, and nothing opens. Asserted on
@@ -113,23 +113,23 @@ func TestDeeplinkRedDecodeThrows(t *testing.T) {
 		"frag/widgets-boot-static.js",
 	} {
 		src := readSrc(t, rel)
-		start := strings.Index(src, "const raw = btn.getAttribute('data-fui-deeplink') || '';")
+		start := strings.Index(src, "const raw = btn.getAttribute('data-cui-deeplink') || '';")
 		if start < 0 {
-			t.Fatalf("setup broken: could not locate the data-fui-deeplink read in %s", rel)
+			t.Fatalf("setup broken: could not locate the data-cui-deeplink read in %s", rel)
 		}
 		endRel := strings.Index(src[start:], "const anchorPref")
 		if endRel < 0 {
 			t.Fatalf("setup broken: could not locate 'const anchorPref' after the deeplink read in %s", rel)
 		}
 		window := src[start : start+endRel]
-		for range redDecodeFindings(t, src, window, rel+" [data-fui-open] handler") {
-			t.Errorf("SECURITY: [deeplink-decode-throws] %s: data-fui-deeplink pairs decoded with bare decodeURIComponent after preventDefault() — decodeURIComponent('%%E0%%A4') throws URIError, the open click is already consumed, and the widget never opens; the degrade-don't-throw family pinned for selectors (TestSelectorByDesignLookupsGuarded) must cover decode sites too", rel)
+		for range redDecodeFindings(t, src, window, rel+" [data-cui-open] handler") {
+			t.Errorf("SECURITY: [deeplink-decode-throws] %s: data-cui-deeplink pairs decoded with bare decodeURIComponent after preventDefault() — decodeURIComponent('%%E0%%A4') throws URIError, the open click is already consumed, and the widget never opens; the degrade-don't-throw family pinned for selectors (TestSelectorByDesignLookupsGuarded) must cover decode sites too", rel)
 		}
 	}
 
 	// Vacuity control: the check must keep firing on the pre-fix spelling.
 	preSrc := "function onClick(btn) {\n" +
-		"  const raw = btn.getAttribute('data-fui-deeplink') || '';\n" +
+		"  const raw = btn.getAttribute('data-cui-deeplink') || '';\n" +
 		"  const overrides = {};\n" +
 		"  if (raw) {\n" +
 		"    for (const pair of raw.split('&')) {\n" +
@@ -158,7 +158,7 @@ func TestDeeplinkRedDecodeThrows(t *testing.T) {
 }
 
 // TestLightboxRedDecodeThrows pins the lightbox module's deeplink decode:
-// parseDeeplink and srcOf both split data-fui-deeplink and decode each pair
+// parseDeeplink and srcOf both split data-cui-deeplink and decode each pair
 // bare; parseDeeplink runs from step() (gallery prev/next click and
 // keydown) and recordOpen (MutationObserver), srcOf from the lightbox
 // chrome. A malformed escape throws out of those handlers and kills gallery
@@ -182,13 +182,13 @@ func TestLightboxRedDecodeThrows(t *testing.T) {
 		}
 		window := src[start : start+endRel]
 		for range redDecodeFindings(t, src, window, "framework/ui/lightbox.js "+w[0]) {
-			t.Errorf("SECURITY: [lightbox-decode-throws] framework/ui/lightbox.js %s decodes data-fui-deeplink pairs with bare decodeURIComponent — a malformed escape (decodeURIComponent('%%E0%%A4') throws URIError) throws out of step()'s click/keydown handlers and recordOpen's MutationObserver, killing gallery nav instead of degrading to a no-op", w[0])
+			t.Errorf("SECURITY: [lightbox-decode-throws] framework/ui/lightbox.js %s decodes data-cui-deeplink pairs with bare decodeURIComponent — a malformed escape (decodeURIComponent('%%E0%%A4') throws URIError) throws out of step()'s click/keydown handlers and recordOpen's MutationObserver, killing gallery nav instead of degrading to a no-op", w[0])
 		}
 	}
 }
 
 // TestLightboxParseDeeplinkReservedKey pins the parse map's write: the
-// decoded key is data-fui-borne, so a pair named __proto__ (or
+// decoded key is data-cui-borne, so a pair named __proto__ (or
 // constructor/prototype) must be skipped before the bracket write — the
 // same reserved-key discipline the kernel's setSignal and seed loops
 // carry (TestSeedLoopsSkipReservedKeys, TestAnimateRedReservedKeyWrite).
@@ -215,7 +215,7 @@ func TestLightboxParseDeeplinkReservedKey(t *testing.T) {
 		// The pre-fix spelling (decoded key straight into the bracket) is
 		// the finding, not setup drift.
 		if strings.Contains(body, "out[safeDecode(") {
-			t.Errorf("SECURITY: [lightbox-parse-proto-write] parseDeeplink writes the decoded key straight into a plain object (out[safeDecode(…)] = …) — a data-fui-deeplink pair named __proto__ re-parents the parsed map via the setter; skip reserved keys before the write. Body:\n%s", body)
+			t.Errorf("SECURITY: [lightbox-parse-proto-write] parseDeeplink writes the decoded key straight into a plain object (out[safeDecode(…)] = …) — a data-cui-deeplink pair named __proto__ re-parents the parsed map via the setter; skip reserved keys before the write. Body:\n%s", body)
 		} else {
 			t.Fatalf("setup broken: could not locate the parse map's write in framework/ui/lightbox.js parseDeeplink()")
 		}
@@ -227,6 +227,6 @@ func TestLightboxParseDeeplinkReservedKey(t *testing.T) {
 		strings.Contains(region, "constructor") &&
 		strings.Contains(region, "prototype")
 	if !hasHelper && !hasInline {
-		t.Errorf("SECURITY: [lightbox-parse-proto-write] parseDeeplink writes out[k] with no reserved-key guard before it — a data-fui-deeplink pair named __proto__ re-parents the parsed map via the __proto__ setter and the openWidget params walk misbehaves (the kernel guards setSignal and both seed loops with isReservedSignalKey). Region:\n%s", region)
+		t.Errorf("SECURITY: [lightbox-parse-proto-write] parseDeeplink writes out[k] with no reserved-key guard before it — a data-cui-deeplink pair named __proto__ re-parents the parsed map via the __proto__ setter and the openWidget params walk misbehaves (the kernel guards setSignal and both seed loops with isReservedSignalKey). Region:\n%s", region)
 	}
 }

@@ -6,9 +6,9 @@ import (
 )
 
 // strictDecode unmarshals raw into dst with DisallowUnknownFields. This is
-// the load-bearing control that makes data-fui-*, on*, and arbitrary
+// the load-bearing control that makes data-cui-*, on*, and arbitrary
 // attacker-supplied prop keys UNREPRESENTABLE: no prop struct has a field
-// named "data-fui-rpc" / "onclick" / etc., so the decoder rejects them.
+// named "data-cui-rpc" / "onclick" / etc., so the decoder rejects them.
 //
 // We use a fresh json.Decoder per call rather than json.Unmarshal directly
 // because json.Unmarshal does not expose DisallowUnknownFields.

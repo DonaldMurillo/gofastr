@@ -1,7 +1,7 @@
 package runtime
 
 // The activelink ownership handover: a link carrying
-// data-fui-match-prefix (ui.Sidebar emits its MatchPath there) is
+// data-cui-match-prefix (ui.Sidebar emits its MatchPath there) is
 // activelink's to mark AND CLEAR — a server-rendered first-paint
 // aria-current on it must not survive a navigation that moved
 // elsewhere, or a kept sidebar shows two lit entries. A link with
@@ -25,10 +25,10 @@ func activelinkHandoverPage() string {
   <nav aria-label="Primary">
     <!-- The kept-sidebar shape: the STALE first-paint mark sits on a
          link the live route is NOT at, beside the handover attribute
-         (ui.Sidebar emits data-fui-match-prefix). Landing on /, the
+         (ui.Sidebar emits data-cui-match-prefix). Landing on /, the
          sweep must clear Other's inherited mark while marking Home. -->
-    <a id="home" href="/" data-fui-match-prefix="/">Home</a>
-    <a id="other" href="/other" aria-current="page" data-fui-match-prefix="/other">Other</a>
+    <a id="home" href="/" data-cui-match-prefix="/">Home</a>
+    <a id="other" href="/other" aria-current="page" data-cui-match-prefix="/other">Other</a>
     <!-- A host-owned mark with no handover: pagination's shape. -->
     <a id="owned" href="/owned" aria-current="page">Owned</a>
   </nav>
@@ -69,7 +69,7 @@ func activelinkHandoverServer(t *testing.T) *httptest.Server {
 
 // TestActiveLinkClearsHandedOverMarks: the load-time sweep marks the
 // current link and clears the STALE first-paint mark a kept layer
-// carries (the sidebar shape: aria-current + data-fui-match-prefix),
+// carries (the sidebar shape: aria-current + data-cui-match-prefix),
 // while a host-owned mark with no handover attribute keeps its own
 // aria-current untouched. Mutation it catches: reverting the clear
 // branch to the module's own .active class only leaves the stale SSR

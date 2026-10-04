@@ -124,7 +124,7 @@ this pattern (its conflict endpoint returns fresh `<li>` HTML that
 reconciles a column, including to zero items). A general-purpose
 "optimistic insert" runtime attribute is not yet shipped; today you
 compose it from an island RPC that returns the authoritative row HTML and
-a signal swap (`data-fui-rpc-signal` with `data-fui-signal-mode="html"`).
+a signal swap (`data-cui-rpc-signal` with `data-cui-signal-mode="html"`).
 The temp-ID discipline is a contract between your handler and your island
 code; see [Recipe 3](#recipe-3-optimistic-create-with-a-temporary-row).
 
@@ -315,7 +315,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 known) pending value is acceptable, 4xx otherwise. The runtime shakes +
 reverts on non-2xx. To transmit the actual edited value, use a sibling
 `interactive.OnSubmit` form posting to `/api/rename` whose response
-swaps the display region (`data-fui-rpc-signal` with `mode=html`).
+swaps the display region (`data-cui-rpc-signal` with `mode=html`).
 
 **Authorization:** the input and the button render for any viewer; the
 handler enforces "can edit this field." A 4xx response is the auth path
@@ -334,7 +334,7 @@ hits an endpoint that returns 4xx (the button shakes and reverts). E2E:
 user expects the new row to appear instantly and the server assigns the
 durable ID.
 
-**Primitive:** `interactive.OnClick` + `data-fui-rpc-signal` (mode
+**Primitive:** `interactive.OnClick` + `data-cui-rpc-signal` (mode
 `html`) for the round-trip; the temp-ID discipline is a contract between
 your handler and the row template you render. There is no general-purpose
 "optimistic insert" runtime attribute today; you compose it.
@@ -346,8 +346,8 @@ your handler and the row template you render. There is no general-purpose
 // RPC swaps that region with authoritative HTML on 2xx.
 html.Div(html.DivConfig{
     ExtraAttrs: html.Attrs{
-        "data-fui-signal":      "opt-create-list",
-        "data-fui-signal-mode": "html",
+        "data-cui-signal":      "opt-create-list",
+        "data-cui-signal-mode": "html",
     },
 }, renderOptItemList())
 
@@ -374,7 +374,7 @@ human-readable "Error: <status> — <text>" line.
 create paints the row before the fetch resolves. That requires an
 island with a small amount of registered JS that mints a `temp:<id>`
 row, fires the RPC, and swaps the temp row for the authoritative one on
-2xx (the retired `data-fui-optimistic-*` family never shipped; the
+2xx (the retired `data-cui-optimistic-*` family never shipped; the
 headless action contract — `data-hui-action*` — announces the trigger's
 busy/committed/rollback states, and the temp-row swap stays the
 island's). The pattern's invariants:
@@ -407,9 +407,9 @@ second click.
 
 **Primitive:** `ui.ConfirmAction` for both the gate and the round-trip.
 Pass `SuccessSignal: "<list-signal>"` and the Confirm button emits
-`data-fui-rpc-signal="<list-signal>"`; on 2xx the runtime broadcasts
-the response body into every `data-fui-signal="<list-signal>"
-data-fui-signal-mode="html"` region, swapping in the authoritative
+`data-cui-rpc-signal="<list-signal>"`; on 2xx the runtime broadcasts
+the response body into every `data-cui-signal="<list-signal>"
+data-cui-signal-mode="html"` region, swapping in the authoritative
 shorter list. The "restore" falls out of the model: the list is not
 swapped until 2xx, so a failure leaves the row exactly where it was.
 
@@ -437,8 +437,8 @@ to apply the response:
 ```go
 listRegion := html.Div(html.DivConfig{
     ExtraAttrs: html.Attrs{
-        "data-fui-signal":      "item-list",
-        "data-fui-signal-mode": "html",
+        "data-cui-signal":      "item-list",
+        "data-cui-signal-mode": "html",
     },
 }, renderItems())
 ```
@@ -755,7 +755,7 @@ should be undertaken deliberately, not as a side effect of a docs pass.
 ## See also
 
 - [Interactive patterns](interactive-patterns.md): the full
-  `data-fui-*` vocabulary, including the sortable list and ConfirmAction
+  `data-cui-*` vocabulary, including the sortable list and ConfirmAction
   reference.
 - [Reactivity model](reactivity.md): the four ways to make a page
   change after first paint (signals, RPC, polling, SSE) and the
@@ -763,7 +763,7 @@ should be undertaken deliberately, not as a side effect of a docs pass.
 - [UI capability map](ui-capability-map.md): the wider state boundary
   and where optimistic state lives.
 - [Runtime contract](runtime-contract.md): the SSR/hydration/island/SSE
-  model and the `data-fui-*` attribute reference.
+  model and the `data-cui-*` attribute reference.
 - [UI composition recipes](ui-composition-recipes.md): page grammar for
   the surfaces these recipes compose into.
 - [Idempotency](idempotency.md): the server-side `Idempotency-Key`

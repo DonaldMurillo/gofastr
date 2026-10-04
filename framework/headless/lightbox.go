@@ -18,7 +18,7 @@ import (
 // vocabularies are mutually exclusive: zero Wiring renders the hui
 // family, and a set Wiring renders the data-fui-lightbox* family for
 // the framework's own module — framework/ui's registered lightbox
-// behaviour, which binds data-fui-* hooks only — and suppresses the
+// behaviour, which binds data-cui-* hooks only — and suppresses the
 // hui twins, because a host module binding those beside the
 // framework's would double-bind the gallery the shipped module steps
 // and fight its pinch-zoom on the same image.
@@ -40,7 +40,7 @@ const (
 // a host shipping its own viewer module against the hooks leaves
 // Wiring zero and none of the framework's attributes render. A set
 // Wiring renders the data-fui-lightbox* family instead — for
-// framework/ui's lightbox module, which binds data-fui-* hooks only —
+// framework/ui's lightbox module, which binds data-cui-* hooks only —
 // and suppresses the hui twins: the two vocabularies name the same
 // facts, and a viewer that rendered both would invite a host module to
 // double-bind the gallery the framework module steps.

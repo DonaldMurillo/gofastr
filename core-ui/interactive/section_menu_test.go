@@ -28,12 +28,12 @@ func sampleMenu() SectionMenuConfig {
 func TestSectionMenuRendersLandmarkRailAndTrigger(t *testing.T) {
 	h := string(SectionMenu(sampleMenu()))
 	for _, want := range []string{
-		`data-fui-comp="fui-section-menu"`,
+		`data-cui-comp="cui-section-menu"`,
 		`<nav`,
 		`aria-label="Documentation sections"`,
-		`class="fui-section-menu__trigger"`,
-		`data-fui-open="docs-section-menu"`, // opens the mounted drawer widget
-		`class="fui-section-menu__rail"`,
+		`class="cui-section-menu__trigger"`,
+		`data-cui-open="docs-section-menu"`, // opens the mounted drawer widget
+		`class="cui-section-menu__rail"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("SectionMenu missing %q\n%s", want, h)
@@ -45,7 +45,7 @@ func TestSectionMenuNoTriggerWithoutDrawerName(t *testing.T) {
 	cfg := sampleMenu()
 	cfg.DrawerName = ""
 	h := string(SectionMenu(cfg))
-	if strings.Contains(h, "fui-section-menu__trigger") {
+	if strings.Contains(h, "cui-section-menu__trigger") {
 		t.Errorf("no DrawerName should omit the mobile trigger:\n%s", h)
 	}
 }
@@ -78,7 +78,7 @@ func TestSectionMenuCollapsedGroupClosed(t *testing.T) {
 		},
 	}
 	groupTag := func(h string) string {
-		start := strings.Index(h, `class="fui-section-menu__group"`)
+		start := strings.Index(h, `class="cui-section-menu__group"`)
 		if start == -1 {
 			t.Fatalf("no group rendered:\n%s", h)
 		}
@@ -94,10 +94,10 @@ func TestSectionMenuCollapsedGroupClosed(t *testing.T) {
 
 func TestSectionMenuLeadAndEyebrow(t *testing.T) {
 	h := string(SectionMenu(sampleMenu()))
-	if !strings.Contains(h, "fui-section-menu__lead") || !strings.Contains(h, "Overview") {
+	if !strings.Contains(h, "cui-section-menu__lead") || !strings.Contains(h, "Overview") {
 		t.Errorf("lead item should render:\n%s", h)
 	}
-	if !strings.Contains(h, "fui-section-menu__eyebrow") || !strings.Contains(h, ">01<") {
+	if !strings.Contains(h, "cui-section-menu__eyebrow") || !strings.Contains(h, ">01<") {
 		t.Errorf("group eyebrow should render:\n%s", h)
 	}
 }
@@ -122,12 +122,12 @@ func TestSectionMenuDrawerIsADismissibleWidget(t *testing.T) {
 
 func TestSectionMenuDrawerHasVisibleCloseButton(t *testing.T) {
 	h := string(sectionMenuDrawerSlot{cfg: sampleMenu()}.Render())
-	if !strings.Contains(h, "fui-section-menu__close") {
+	if !strings.Contains(h, "cui-section-menu__close") {
 		t.Errorf("drawer should render a close button:\n%s", h)
 	}
 	// Uses the framework's declarative widget-dismiss hook.
-	if !strings.Contains(h, `data-fui-action="close"`) {
-		t.Errorf("close button must use data-fui-action=close to dismiss the widget:\n%s", h)
+	if !strings.Contains(h, `data-cui-action="close"`) {
+		t.Errorf("close button must use data-cui-action=close to dismiss the widget:\n%s", h)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestSectionMenuDrawerRequiresName(t *testing.T) {
 
 func TestSectionMenuCSSScopedRailAndTrigger(t *testing.T) {
 	css := sectionMenuCSS(style.Theme{})
-	if !strings.Contains(css, `[data-fui-comp="fui-section-menu"]`) {
+	if !strings.Contains(css, `[data-cui-comp="cui-section-menu"]`) {
 		t.Fatal("CSS must be scoped to the component marker")
 	}
 	for _, want := range []string{

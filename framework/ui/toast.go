@@ -17,7 +17,7 @@ import (
 //     called from inline JS or component bindings.
 //  2. **Server response header**: any HTTP response, typically an RPC
 //     handler's reply, can set `X-Gofastr-Toast: <json>`; the runtime
-//     scans every `data-fui-rpc` response for the header and dispatches
+//     scans every `data-cui-rpc` response for the header and dispatches
 //     it through the same client API.
 //
 // Both paths converge on `__gofastr.toast(cfg)`, which builds the item
@@ -45,7 +45,7 @@ type ToastTrigger struct {
 
 // AddToast appends a toast trigger to the X-Gofastr-Toast response
 // header. The runtime fires the toast on the client when the matching
-// data-fui-rpc fetch resolves with 2xx.
+// data-cui-rpc fetch resolves with 2xx.
 //
 // Multiple AddToast calls accumulate into a single header whose value
 // is a JSON array, unaffected by fetch's header-value coalescing
@@ -53,7 +53,7 @@ type ToastTrigger struct {
 // handler just call AddToast multiple times.
 //
 // Apps can call this from any HTTP handler that's reached via
-// data-fui-rpc; the toast travels back on the response that the
+// data-cui-rpc; the toast travels back on the response that the
 func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	if t.Title == "" {
 		return

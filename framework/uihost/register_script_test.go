@@ -158,7 +158,7 @@ type setParamsComp struct{ testHomeComp }
 func (setParamsComp) SetParams(map[string]string) {}
 
 // A document-lifetime script ships only on pages its scope accepts,
-// and the tag carries data-fui-doc so the runtime can read the live
+// and the tag carries data-cui-doc so the runtime can read the live
 // document's capability set from the DOM.
 func TestDocumentScriptScopedEmission(t *testing.T) {
 	ds := newTestUIHost()
@@ -180,7 +180,7 @@ func TestDocumentScriptScopedEmission(t *testing.T) {
 	}
 
 	// In scope, pattern AND concrete path: tagged, exactly once.
-	tag := `<script src="/cap.js" data-fui-doc></script>`
+	tag := `<script src="/cap.js" data-cui-doc></script>`
 	for _, p := range []string{"/session/42", "/session/7"} {
 		if n := strings.Count(page(p), tag); n != 1 {
 			t.Errorf("%s emits the document script %d times, want 1:\n%s", p, n, truncate(page(p), 400))
@@ -300,7 +300,7 @@ func TestDocumentScriptScopeSeesRoutePattern(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/session/42", nil))
 	body := w.Body.String()
-	if !strings.Contains(body, `<script src="/pat.js" data-fui-doc></script>`) {
+	if !strings.Contains(body, `<script src="/pat.js" data-cui-doc></script>`) {
 		t.Errorf("pattern-scoped script must emit on the concrete page:\n%s", truncate(body, 400))
 	}
 	if strings.Contains(body, `src="/concrete.js"`) {

@@ -106,7 +106,7 @@ type Config struct {
 	Transitions []Transition  // status-transition workflow buttons on the detail page
 
 	// ExtraActions are appended to the list page header's action cluster
-	// (e.g. a data-fui-open trigger for a quick-add modal).
+	// (e.g. a data-cui-open trigger for a quick-add modal).
 	ExtraActions []render.HTML
 
 	// IslandPath, when set, renders the list's DataTable in island mode:
@@ -389,8 +389,8 @@ func (c Config) List(ctx context.Context) render.HTML {
 		// The island wrapper: sort/page RPC responses (the same Table HTML,
 		// served by TableHandler) replace this element's innerHTML.
 		table = render.Tag("div", map[string]string{
-			"data-fui-signal":      c.islandSignal(),
-			"data-fui-signal-mode": "html",
+			"data-cui-signal":      c.islandSignal(),
+			"data-cui-signal-mode": "html",
 		}, table)
 	}
 	body = append(body, table)
@@ -536,7 +536,7 @@ func (c Config) table(ctx context.Context, total int, known bool) render.HTML {
 
 // TableHandler serves the island endpoint: it renders the same table HTML
 // List paints, for the RPC's query string. The runtime writes the response
-// into the island's data-fui-signal wrapper: no document navigation.
+// into the island's data-cui-signal wrapper: no document navigation.
 //
 // It is a SECOND route onto the rows the screen shows, so it repeats every
 // gate the screen and the JSON API apply: sign-in, the screen's own policy
@@ -597,7 +597,7 @@ func (c Config) TableHandler() http.HandlerFunc {
 		// cache must never be able to retain one viewer's fragment and
 		// replay it at another's URL — the same pin the admin battery
 		// holds for its twin fragment, and the fragment is the
-		// data-fui-poll/rpc freshness source, so stale reuse would also
+		// data-cui-poll/rpc freshness source, so stale reuse would also
 		// defeat the refresh contract.
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = io.WriteString(w, string(c.Table(appui.WithRequest(r.Context(), r))))
@@ -838,7 +838,7 @@ func relatedRelationLabels(ctx context.Context, rels map[string]Relation) map[st
 }
 
 // Form renders the create (id == "") or edit (id != "") form for one record.
-// It submits as an island: data-fui-rpc posts/puts JSON to the entity's
+// It submits as an island: data-cui-rpc posts/puts JSON to the entity's
 // auto-CRUD endpoint, then SPA-navigates back to the list/detail on success.
 func (c Config) Form(ctx context.Context, id string) render.HTML {
 	// An edit form pre-fills from the record, so it is a read of that row:

@@ -256,7 +256,7 @@
     const d = e && e.detail;
     if (!d || typeof d.name !== 'string') return;
     for (const bell of document.querySelectorAll('[data-hui-notification-bell]')) {
-      if (bell.getAttribute('data-fui-signal') !== d.name) continue;
+      if (bell.getAttribute('data-cui-signal') !== d.name) continue;
       const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
       const n = parseInt(d.value, 10);
       if (!Number.isFinite(n)) return;
@@ -309,7 +309,7 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    for (const c of within(scope, '[data-hui-toast-stack],[data-fui-toast-stack]')) NS._initToasts(c);
+    for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
   }
 
   scan(document);

@@ -98,7 +98,7 @@ var actionLifecycleAttrs = []string{
 }
 
 // safeActionExtras is Safe with the prefixes the lifecycle owns added:
-// a caller may not forge a data-hui-* hook any more than a data-fui-*
+// a caller may not forge a data-hui-* hook any more than a data-cui-*
 // one, and the names Safe takes exactly — type, disabled, data-state,
 // aria-busy, aria-pressed, aria-live — are the ones the runtime
 // rewrites as the mutation moves. An extra that won any of them would

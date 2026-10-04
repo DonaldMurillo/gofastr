@@ -17,8 +17,8 @@ func TestFilterChipBarRendersChips(t *testing.T) {
 		`aria-label="Active filters"`,
 		`Status: Active`,
 		`Tag: urgent`,
-		`data-fui-rpc="/filters/status/clear"`,
-		`data-fui-rpc="/filters/tag/urgent/clear"`,
+		`data-cui-rpc="/filters/status/clear"`,
+		`data-cui-rpc="/filters/tag/urgent/clear"`,
 		`aria-label="Remove filter Status: Active"`,
 		`aria-label="Remove filter Tag: urgent"`,
 		`ui-tag--warning`,
@@ -49,7 +49,7 @@ func TestFilterChipBarClearAll(t *testing.T) {
 		ClearAllLabel: "Reset filters",
 	}))
 	wants := []string{
-		`data-fui-rpc="/filters/clear-all"`,
+		`data-cui-rpc="/filters/clear-all"`,
 		`>Reset filters</a>`,
 		`fui-filter-bar__clear`,
 	}
@@ -79,9 +79,9 @@ func TestFilterChipBarRPCSignal(t *testing.T) {
 		ClearAllPath: "/clear",
 	}))
 	for _, w := range []string{
-		`data-fui-rpc-signal="filter-bar"`,
-		`data-fui-signal="filter-bar"`,
-		`data-fui-signal-mode="html"`,
+		`data-cui-rpc-signal="filter-bar"`,
+		`data-cui-signal="filter-bar"`,
+		`data-cui-signal-mode="html"`,
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("missing %q in: %s", w, out)
@@ -141,10 +141,10 @@ func TestFilterChipBarIslandSwapContract(t *testing.T) {
 		ClearAllPath: "/filters/clear",
 		Filters:      []FilterChip{{Label: "Open", DismissPath: "/filters/open"}},
 	}))
-	if !strings.Contains(h, `data-fui-signal="chips"`) || !strings.Contains(h, `data-fui-signal-mode="html"`) {
+	if !strings.Contains(h, `data-cui-signal="chips"`) || !strings.Contains(h, `data-cui-signal-mode="html"`) {
 		t.Errorf("the bar must swap wholesale through its signal:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-rpc="/filters/clear"`) || !strings.Contains(h, `data-fui-rpc-method="POST"`) {
+	if !strings.Contains(h, `data-cui-rpc="/filters/clear"`) || !strings.Contains(h, `data-cui-rpc-method="POST"`) {
 		t.Errorf("clear-all must ride the RPC rail:\n%s", h)
 	}
 	// No bespoke handler: the surface carries no onclick, no inline

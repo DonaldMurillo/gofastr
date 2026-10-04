@@ -16,7 +16,7 @@ they remain compatible with the default CSP and immutable browser caching.
 | `window.__gofastr.compute.task(worker, fn, payload)` | Send one request and return a `Promise` for its result. |
 | `window.__gofastr.compute.wasmURL(name)` | Return the registered module's versioned same-origin URL. |
 | `window.__gofastr.compute.dispose(worker)` | Terminate the cached worker and reject its pending tasks. |
-| `data-fui-compute` | Demand-load the client module. It is a trigger only. |
+| `data-cui-compute` | Demand-load the client module. It is a trigger only. |
 
 Names are 1–64 lowercase ASCII letters, digits, `-`, or `_`. Registration
 copies the input bytes and computes a full SHA-256 hash. Re-registering the
@@ -78,7 +78,7 @@ import "github.com/DonaldMurillo/gofastr/core-ui/html"
 -->
 ```go
 html.Div(html.DivConfig{
-	ExtraAttrs: html.Attrs{"data-fui-compute": ""},
+	ExtraAttrs: html.Attrs{"data-cui-compute": ""},
 },
 	html.Button(html.ButtonConfig{ID: "run-sum", Label: "Add 19 + 23"}),
 	html.Span(html.TextConfig{ID: "sum-result"}),
@@ -257,7 +257,7 @@ No COEP header is added by compute registration.
 
 ## Common mistakes
 
-- **No `data-fui-compute` marker and no explicit `loadModule("compute")`:**
+- **No `data-cui-compute` marker and no explicit `loadModule("compute")`:**
   `window.__gofastr.compute` has not been installed yet.
 - **Returning without a response:** every request must eventually post an
   `ok: true` or `ok: false` response with the original `id`; otherwise it
