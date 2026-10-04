@@ -68,7 +68,8 @@ type Builder struct {
 	// fails the build, since every exported page would 404 on it.
 	// App.ExportStatic passes the app's router. A script this build
 	// already wrote (a framework asset, the static dir) is not fetched,
-	// nor is a src that is not a same-origin path (a CDN URL).
+	// nor is a src that is not a same-origin path (a CDN URL), nor a
+	// document-scoped script whose scope accepts no exported route.
 	Handler http.Handler
 }
 
@@ -92,6 +93,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	res := Result{}
+	// Route patterns with at least one exported page: the identities a
+	// document-scoped rail script's scope is asked about.
+	var renderedRoutes []string
 
 	// Pages.
 	for _, route := range b.Host.App.Routes() {
@@ -153,6 +157,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			}
 			b.log("rendered %s -> %s", p, dst)
 			res.Pages = append(res.Pages, p)
+			if len(renderedRoutes) == 0 || renderedRoutes[len(renderedRoutes)-1] != route.Path {
+				renderedRoutes = append(renderedRoutes, route.Path)
+			}
 		}
 	}
 
@@ -349,7 +356,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := b.dumpExtraDirs(&res); err != nil {
 		return res, err
 	}
-	if err := b.dumpRailScripts(ctx, &res); err != nil {
+	if err := b.dumpRailScripts(ctx, &res, renderedRoutes); err != nil {
 		return res, err
 	}
 
@@ -914,7 +921,7 @@ func pathToLLMFile(p string) string {
 // is skipped because dumpPWAAssets writes its base-path-aware copy, and
 // a src that is not a same-origin path (a CDN URL, a relative src) is
 // not the app's to serve and is left to the browser.
-func (b *Builder) dumpRailScripts(ctx context.Context, res *Result) error {
+func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []string) error {
 	if b.Handler == nil {
 		return nil
 	}
@@ -922,7 +929,11 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result) error {
 	for _, p := range res.Assets {
 		written[p] = true
 	}
-	for _, src := range b.Host.ExtraScriptSrcs() {
+	pages := make(map[string]bool, len(res.Pages))
+	for _, p := range res.Pages {
+		pages["/"+filepath.ToSlash(pathToFile(p))] = true
+	}
+	for _, src := range b.Host.ExtraScriptSrcs(routes) {
 		u, err := url.Parse(src)
 		if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(src, "/") || strings.HasPrefix(src, "//") || strings.HasPrefix(src, "/\\") {
 			continue
@@ -930,10 +941,17 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result) error {
 		// The file goes under the decoded path, the name a static host
 		// resolves the request to.
 		urlPath := u.Path
+		if pages[urlPath] {
+			return fmt.Errorf("static: extra script %s would overwrite the exported page at the same path", urlPath)
+		}
 		if written[urlPath] || (urlPath == pwaRegisterJS && b.Host.PWAEnabled()) {
 			continue
 		}
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet, u.EscapedPath(), nil)
+		target := u.EscapedPath()
+		if u.RawQuery != "" {
+			target += "?" + u.RawQuery
+		}
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 		rec := httptest.NewRecorder()
 		b.Handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -943,6 +961,7 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result) error {
 			return err
 		}
 		res.Assets = append(res.Assets, urlPath)
+		written[urlPath] = true
 		b.log("script %s", urlPath)
 	}
 	return nil

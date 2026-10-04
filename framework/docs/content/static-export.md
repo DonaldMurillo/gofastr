@@ -158,17 +158,22 @@ route: drive `static.Builder` directly when a route set needs exclusions.
 ## Scripts the app serves itself
 
 Every page carries the extra-script rail (`uihost.WithExtraScripts`,
-`RegisterExternalScript`). A rail script the build has not already
-written, such as one the app serves from its own router
+`RegisterExternalScript`, and `RegisterDocumentScript` on the pages its
+scope accepts). A rail script the build has not already written, such
+as one the app serves from its own router
 (`WithExtraScripts("/__site/reducers.js")` plus a `Router().Get` for
-that path) or the plugin broker, is fetched through `Builder.Handler`
-and written into the export. A copy left in a reused output directory
-by an earlier build is replaced. A src that is not a same-origin path
-(a CDN URL, a protocol-relative or relative src) is left to the browser
-and never fetched. `App.ExportStatic` sets `Handler` to the app's
-router. A rail script that does not answer 200 fails the build, since
-every exported page would 404 on it. A `static.Builder` built by hand
-with no `Handler` skips these scripts.
+that path) or the plugin broker, is fetched through `Builder.Handler`,
+query string included, and written into the export under its path. A
+document-scoped script is fetched only when its scope accepts a route
+the export rendered. A copy left in a reused output directory by an
+earlier build is replaced; two srcs that differ only in their query
+share one file, and the first wins. A src that is not a same-origin
+path (a CDN URL, a protocol-relative or relative src) is left to the
+browser and never fetched. `App.ExportStatic` sets `Handler` to the
+app's router. A rail script that does not answer 200 fails the build,
+since every exported page would 404 on it, and so does one whose path
+is an exported page. A `static.Builder` built by hand with no `Handler`
+skips these scripts.
 
 ## SPA navigation reads whole documents as envelopes
 

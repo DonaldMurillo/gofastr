@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -94,11 +95,16 @@ func main() {
 	}
 }
 
-// siteURL is the browser URL for a listen address: a bare ":8083" binds
-// every interface and is opened as localhost, a host:port as given.
+// siteURL is the browser URL for a listen address: one that binds every
+// interface (":8083", "0.0.0.0:8083", "[::]:8083") is opened as
+// localhost, any other host:port as given.
 func siteURL(addr string) string {
-	if strings.HasPrefix(addr, ":") {
-		return "http://localhost" + addr
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		return "http://" + net.JoinHostPort("localhost", port)
 	}
 	return "http://" + addr
 }

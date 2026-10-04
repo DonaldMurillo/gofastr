@@ -21,12 +21,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`core/static.Config.NotFoundFile`**: answer a miss with a file from
   the served `FS` (a static export's `404.html`) under status 404. A
   conditional request cannot turn it into a 304, and SPA mode ignores it.
-- **`static.Builder.Handler` and `UIHost.ExtraScriptSrcs`**: the export
-  fetches each extra-script rail entry the build has not already written
-  (a script the app serves from its own router, the plugin broker)
-  through `Handler` and writes it into the tree, replacing a stale copy
-  in a reused output directory; `App.ExportStatic` passes the app's
-  router. A same-origin rail script that does not answer 200 fails the
+- **`static.Builder.Handler` and `UIHost.ExtraScriptSrcs(routes)`**: the
+  export fetches each extra-script rail entry the exported pages load and
+  the build has not already written (a script the app serves from its
+  own router, the plugin broker, a document-scoped script whose scope
+  accepts a rendered route) through `Handler`, query included, and writes
+  it into the tree, replacing a stale copy in a reused output directory;
+  `App.ExportStatic` passes the app's router. A same-origin rail script
+  that does not answer 200, or whose path is an exported page, fails the
   build; a CDN or relative src is left to the browser.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
@@ -406,7 +408,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   route; the export skipped it, so every exported page (GitHub Pages
   included) logged a 404 and a refused script. It is now exported.
 - **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
-  when `PORT` held a host:port.
+  when `PORT` held a host:port. A wildcard bind (`0.0.0.0`, `[::]`) now
+  prints localhost.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the

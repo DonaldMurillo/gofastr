@@ -153,3 +153,92 @@ func TestBuildWritesDecodedRailScriptName(t *testing.T) {
 		t.Fatalf("exported script = %q, %v", got, err)
 	}
 }
+
+// A document-scoped script is fetched only when an exported route is in
+// its scope: one scoped to a route the export skips must not fail it.
+func TestBuildFetchesOnlyInScopeDocScripts(t *testing.T) {
+	a := coreapp.NewApp("Rail")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/admin", &homeScreen{}, nil)
+	host := uihost.New(a)
+	if err := host.RegisterDocumentScript("/__site/home.js", func(p string) bool { return p == "/" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RegisterDocumentScript("/__site/admin.js", func(p string) bool { return p == "/admin" }); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /__site/home.js", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("home"))
+	})
+
+	out := t.TempDir()
+	b := &Builder{Host: host, OutDir: out, Handler: mux, ExcludeRoutes: []string{"/admin"}}
+	if _, err := b.Build(context.Background()); err != nil {
+		t.Fatalf("a script scoped to an excluded route failed the export: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(out, "__site", "home.js")); err != nil || string(got) != "home" {
+		t.Fatalf("in-scope document script = %q, %v", got, err)
+	}
+}
+
+// The handler sees the src's query, as it would from a browser.
+func TestBuildPassesRailScriptQuery(t *testing.T) {
+	a := coreapp.NewApp("Rail")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithExtraScripts("/__site/v.js?variant=beta"))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /__site/v.js", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.Query().Get("variant")))
+	})
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, Handler: mux}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(out, "__site", "v.js")); string(got) != "beta" {
+		t.Fatalf("exported script = %q, want the beta variant", got)
+	}
+}
+
+// Two srcs that differ only in query share one file: the first written
+// wins and the second is not fetched over it.
+func TestBuildWritesOneFilePerRailPath(t *testing.T) {
+	a := coreapp.NewApp("Rail")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithExtraScripts("/__site/v.js?v=1", "/__site/v.js?v=2"))
+	var fetches int
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /__site/v.js", func(w http.ResponseWriter, r *http.Request) {
+		fetches++
+		_, _ = w.Write([]byte(r.URL.Query().Get("v")))
+	})
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, Handler: mux}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fetches != 1 {
+		t.Fatalf("fetched %d times, want 1", fetches)
+	}
+}
+
+// A rail src that lands on a rendered page would overwrite it.
+func TestBuildRefusesRailScriptOnPage(t *testing.T) {
+	a := coreapp.NewApp("Rail")
+	a.Register("/", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithExtraScripts("/index.html"))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /index.html", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("clobber"))
+	})
+
+	out := t.TempDir()
+	_, err := (&Builder{Host: host, OutDir: out, Handler: mux}).Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "/index.html") {
+		t.Fatalf("err = %v, want the page collision named", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(out, "index.html")); string(got) == "clobber" {
+		t.Fatal("the rail script overwrote the rendered page")
+	}
+}
