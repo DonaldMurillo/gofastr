@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,6 +68,141 @@ func TestCreate_TenantMissing(t *testing.T) {
 	ch.Create()(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("tenant-missing create = %d, want 401", rec.Code)
+	}
+}
+
+func TestCreate_ExplicitTenantField_NoDuplicateColumn(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE mt_explicit (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
+	ent := entity.Define("mt_explicit", entity.EntityConfig{
+		Name:  "mt_explicit",
+		Table: "mt_explicit",
+		Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	rec := &insertRecorder{db: db}
+	ch := NewCrudHandler(ent, rec).WithJSONCase(CaseSnake)
+
+	ctx := tenant.SetTenantID(context.Background(), "tenant-xyz")
+	created, err := ch.CreateOne(ctx, map[string]any{"body": "hello"})
+	if err != nil {
+		t.Fatalf("CreateOne with explicit tenant field failed: %v", err)
+	}
+	if created["body"] != "hello" {
+		t.Errorf("got body %v, want hello", created["body"])
+	}
+	rec.assertTenantOnce(t)
+
+	var storedTenant string
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit WHERE id = $1", created["id"]).Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
+	}
+}
+
+// insertRecorder captures the INSERT statements a handler sends. It is not a
+// db.Beginner, so inTx runs the operation on it directly.
+type insertRecorder struct {
+	db      *sql.DB
+	inserts []string
+}
+
+func (r *insertRecorder) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	r.note(q)
+	return r.db.QueryContext(ctx, q, args...)
+}
+
+func (r *insertRecorder) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	r.note(q)
+	return r.db.QueryRowContext(ctx, q, args...)
+}
+
+func (r *insertRecorder) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	r.note(q)
+	return r.db.ExecContext(ctx, q, args...)
+}
+
+func (r *insertRecorder) note(q string) {
+	if strings.HasPrefix(strings.TrimSpace(q), "INSERT") {
+		r.inserts = append(r.inserts, q)
+	}
+}
+
+// assertTenantOnce: InjectTenant writes the context tenant into the body, so
+// the field loop meets tenant_id before the context append adds it again.
+// SQLite accepts a repeated INSERT column and keeps the first value; Postgres
+// refuses the statement. The stored row cannot show the difference, so the
+// column list is what the tenant tests read.
+func (r *insertRecorder) assertTenantOnce(t *testing.T) {
+	t.Helper()
+	if len(r.inserts) != 1 {
+		t.Fatalf("recorded %d INSERTs, want 1: %q", len(r.inserts), r.inserts)
+	}
+	q := r.inserts[0]
+	if n := strings.Count(q[:strings.Index(q, ")")], "tenant_id"); n != 1 {
+		t.Errorf("INSERT names tenant_id %d times, want 1: %s", n, q)
+	}
+	r.inserts = nil
+}
+
+func TestUpsert_ExplicitTenantField_NoDuplicateColumn(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE mt_explicit_upsert (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
+	ent := entity.Define("mt_explicit_upsert", entity.EntityConfig{
+		Name:  "mt_explicit_upsert",
+		Table: "mt_explicit_upsert",
+		Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "body", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	rec := &insertRecorder{db: db}
+	ch := NewCrudHandler(ent, rec).WithJSONCase(CaseSnake)
+
+	ctx := tenant.SetTenantID(context.Background(), "tenant-xyz")
+	// 1. Initial upsert (insert path)
+	created, err := ch.UpsertOne(ctx, map[string]any{"id": "up-1", "body": "hello"})
+	if err != nil {
+		t.Fatalf("UpsertOne (insert) with explicit tenant field failed: %v", err)
+	}
+	if created["body"] != "hello" {
+		t.Errorf("got body %v, want hello", created["body"])
+	}
+	rec.assertTenantOnce(t)
+
+	var storedTenant string
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit_upsert WHERE id = 'up-1'").Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
+	}
+
+	// 2. Subsequent upsert (update path)
+	updated, err := ch.UpsertOne(ctx, map[string]any{"id": "up-1", "body": "hello-again"})
+	if err != nil {
+		t.Fatalf("UpsertOne (update) with explicit tenant field failed: %v", err)
+	}
+	if updated["body"] != "hello-again" {
+		t.Errorf("got body %v, want hello-again", updated["body"])
+	}
+	rec.assertTenantOnce(t)
+
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit_upsert WHERE id = 'up-1'").Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
 	}
 }
 

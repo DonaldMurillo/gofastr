@@ -177,6 +177,37 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 		tables = append(tables, s)
 	}
 
+	return withSQLiteRebuildConn(ctx, db, func(conn *sql.Conn) error {
+		for _, s := range tables {
+			if err := rebuildWithoutOwnerFK(ctx, conn, s); err != nil {
+				return fmt.Errorf("repair %s: %w", s.Table, err)
+			}
+		}
+		// A rebuild that leaves a violation behind has not repaired anything,
+		// and the next write would be the one to find out.
+		violations, err := foreignKeyViolations(ctx, conn)
+		if err != nil {
+			return fmt.Errorf("verify foreign keys after the rebuild: %w", err)
+		}
+		if len(violations) > 0 {
+			return fmt.Errorf("the rebuilt schema still has %d foreign key violation(s): %s — these are dangling rows, not stale constraints; fix or delete them",
+				len(violations), strings.Join(violations, ", "))
+		}
+		return nil
+	})
+}
+
+// withSQLiteRebuildConn runs fn on one dedicated connection with
+// foreign_keys OFF and legacy_alter_table ON, then restores both. A SQLite
+// table rebuild (create the replacement, copy, drop, rename) needs both:
+// the intermediate states violate foreign keys by construction, and with
+// enforcement on the DROP TABLE runs every ON DELETE action against the
+// rows that reference the table, so CASCADE deletes them and SET NULL
+// clears them. PRAGMA foreign_keys is a no-op inside a transaction, so it
+// is set on a dedicated connection that also runs the rebuild: setting it
+// on the pool and hoping the same connection serves the transaction is the
+// version of this that works until it does not.
+func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Conn) error) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return err
@@ -253,42 +284,34 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 	// connection is what driver.ErrBadConn from Raw is for, so a connection
 	// whose pragma could not be restored is marked bad and never serves
 	// another query.
-
-	for _, s := range tables {
-		if err := rebuildWithoutOwnerFK(ctx, conn, s); err != nil {
-			if rerr := restore(); rerr != nil {
-				return fmt.Errorf("repair %s: %w; additionally: %v", s.Table, err, rerr)
-			}
-			return fmt.Errorf("repair %s: %w", s.Table, err)
+	if err := fn(conn); err != nil {
+		if rerr := restore(); rerr != nil {
+			return fmt.Errorf("%w; additionally: %v", err, rerr)
 		}
-	}
-	if err := restore(); err != nil {
 		return err
 	}
+	return restore()
+}
 
-	// A rebuild that leaves a violation behind has not repaired anything, and
-	// the next write would be the one to find out.
-	rows, err := conn.QueryContext(ctx, "PRAGMA foreign_key_check")
+// foreignKeyViolations runs PRAGMA foreign_key_check and names each
+// violation as "child → parent". The pragma reports regardless of whether
+// enforcement is on, and inside a transaction it sees that transaction's
+// writes.
+func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
+	rows, err := q.QueryContext(ctx, "PRAGMA foreign_key_check")
 	if err != nil {
-		return fmt.Errorf("verify foreign keys after the rebuild: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 	var violations []string
 	for rows.Next() {
 		var table, rowid, parent, fkid any
 		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
-			return err
+			return nil, err
 		}
 		violations = append(violations, fmt.Sprintf("%v → %v", table, parent))
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if len(violations) > 0 {
-		return fmt.Errorf("the rebuilt schema still has %d foreign key violation(s): %s — these are dangling rows, not stale constraints; fix or delete them",
-			len(violations), strings.Join(violations, ", "))
-	}
-	return nil
+	return violations, rows.Err()
 }
 
 // rebuildWithoutOwnerFK performs one table's rebuild inside a transaction, so

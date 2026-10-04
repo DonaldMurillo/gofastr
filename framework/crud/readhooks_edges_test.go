@@ -301,3 +301,102 @@ func TestRedactEventRecordSkipsWithoutHooks(t *testing.T) {
 		t.Fatal("the delivery was dropped when there was nothing to redact")
 	}
 }
+
+func TestApplyCascadeChildReadHooks_RedactsChildren(t *testing.T) {
+	child := entity.Define("profiles", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "secret", Type: schema.String},
+		},
+	})
+	parent := entity.Define("users", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "id", Type: schema.String}},
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id").WithCascadeWrite(true),
+		},
+	})
+
+	childReg := hook.NewHookRegistry()
+	childReg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
+		payload, ok := data.(*hook.GetPayload)
+		if !ok {
+			return nil
+		}
+		delete(payload.Result, "secret")
+		return nil
+	})
+
+	ch := &CrudHandler{
+		Entity:     parent,
+		PrimaryKey: "id",
+		Registry:   stubRegistry{byName: map[string]*entity.Entity{"users": parent, "profiles": child}},
+		ChildHooks: func(name string) *hook.HookRegistry {
+			if name == "profiles" {
+				return childReg
+			}
+			return nil
+		},
+	}
+
+	result := map[string]any{
+		"id": "u1",
+		"profile": map[string]any{
+			"id":     "p1",
+			"secret": "topsecret",
+		},
+	}
+
+	ctx := WithReadHooks(context.Background())
+	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
+		t.Fatalf("applyCascadeChildReadHooks: %v", err)
+	}
+
+	prof, ok := result["profile"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected profile map, got: %#v", result["profile"])
+	}
+	if _, hasSecret := prof["secret"]; hasSecret {
+		t.Fatalf("expected child secret to be redacted by child AfterGet hook, but got: %#v", prof)
+	}
+}
+
+// dataOutbox keeps the staged payloads so a test can read what a durable
+// consumer would receive.
+type dataOutbox struct{ staged []any }
+
+func (o *dataOutbox) Append(_ context.Context, _ DBExecutor, _ string, data any) (string, error) {
+	o.staged = append(o.staged, data)
+	return "1", nil
+}
+func (o *dataOutbox) Nudge() {}
+
+func TestStageEventDropsCascadeChildren(t *testing.T) {
+	parent := entity.Define("users", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+		Relations: []entity.Relation{
+			entity.HasOne("profile", "profiles", "user_id").WithCascadeWrite(true),
+			entity.HasMany("posts", "posts", "user_id"),
+		},
+	})
+	ob := &dataOutbox{}
+	ch := &CrudHandler{Entity: parent, PrimaryKey: "id", Outbox: ob}
+	row := map[string]any{
+		"id":      "u1",
+		"name":    "Ann",
+		"profile": map[string]any{"id": "p1", "bio": "private"},
+		"posts":   []any{"kept: not a cascade relation"},
+	}
+	if err := ch.StageEvent(context.Background(), event.EntityCreated, row); err != nil {
+		t.Fatal(err)
+	}
+	rec := ob.staged[0].(map[string]any)["record"].(map[string]any)
+	if _, leaked := rec["profile"]; leaked {
+		t.Fatalf("staged parent event carries the cascade child: %v", rec)
+	}
+	if rec["name"] != "Ann" || rec["posts"] == nil {
+		t.Fatalf("staged parent event lost a parent key: %v", rec)
+	}
+	if _, ok := row["profile"]; !ok {
+		t.Fatal("StageEvent stripped the caller's row; the response needs the child")
+	}
+}

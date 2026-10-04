@@ -336,6 +336,12 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			putStr(rm, "through", r.Through)
 			putStr(rm, "local_key", r.LocalKey)
 			putStr(rm, "foreign_key_target", r.ForeignKeyTarget)
+			if r.OnDelete != "" {
+				putStr(rm, "on_delete", string(r.OnDelete))
+			}
+			if r.CascadeWrite {
+				putBool(rm, "cascade_write", r.CascadeWrite)
+			}
 			rels[i] = rm
 		}
 		m["relations"] = rels
@@ -850,7 +856,7 @@ var (
 	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder     = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
 	blockOrder      = []string{"kind", "type", "text", "level", "entity", "fields", "search", "filters", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
-	relationOrder   = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target"}
+	relationOrder   = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
 	indexOrder      = []string{"name", "columns", "unique"}
 	navOrder        = []string{"label", "href", "icon", "role", "items"}
 	accessOrder     = []string{"auth", "role", "read", "create", "update", "delete"}
@@ -1199,7 +1205,11 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 		if !ok {
 			continue // not an entity file
 		}
-		found = append(found, ordered{order: packEntityOrder(file), decl: packEntityDeclFromCall(call)})
+		decl, err := packEntityDeclFromCall(call)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", rel, err)
+		}
+		found = append(found, ordered{order: packEntityOrder(file), decl: decl})
 	}
 	if len(found) == 0 {
 		return nil, nil
@@ -1276,7 +1286,7 @@ func packEntityOrder(file *ast.File) int {
 
 // packEntityDeclFromCall rebuilds an EntityDeclaration from an
 // app.Entity(name, config) call expression.
-func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
+func packEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, error) {
 	decl := framework.EntityDeclaration{Name: astString(call.Args[0])}
 	_, builders := unwrapBuilderCalls(call.Args[1])
 	cfg := fieldVals(call.Args[1])
@@ -1371,9 +1381,13 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 		decl.Indices = packReadIndices(v)
 	}
 	if v, ok := cfg["Relations"]; ok {
-		decl.Relations = packReadRelations(v)
+		var err error
+		decl.Relations, err = packReadRelations(v)
+		if err != nil {
+			return decl, err
+		}
 	}
-	return decl
+	return decl, nil
 }
 
 // packReadLegacyRegister reads the legacy aggregated register.go whose
@@ -1404,7 +1418,11 @@ func packReadLegacyRegister(root *os.Root, rel string) ([]framework.EntityDeclar
 		if !ok || sel.Sel.Name != "Entity" || len(call.Args) != 2 {
 			continue
 		}
-		out = append(out, packEntityDeclFromCall(call))
+		decl, err := packEntityDeclFromCall(call)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", rel, err)
+		}
+		out = append(out, decl)
 	}
 	return out, nil
 }
@@ -1489,14 +1507,30 @@ func packReadIndices(e ast.Expr) []framework.Index {
 	return out
 }
 
-func packReadRelations(e ast.Expr) []framework.Relation {
+func packReadRelations(e ast.Expr) ([]framework.Relation, error) {
 	cl, ok := e.(*ast.CompositeLit)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	out := make([]framework.Relation, 0, len(cl.Elts))
 	for _, el := range cl.Elts {
 		rv := fieldVals(el)
+		var onDelete framework.OnDeleteAction
+		if rawOD, ok := rv["OnDelete"]; ok && rawOD != nil {
+			od := astSelName(rawOD)
+			switch od {
+			case "OnDeleteCascade":
+				onDelete = framework.OnDeleteCascade
+			case "OnDeleteSetNull":
+				onDelete = framework.OnDeleteSetNull
+			case "OnDeleteRestrict":
+				onDelete = framework.OnDeleteRestrict
+			case "OnDeleteNoAction":
+				onDelete = framework.OnDeleteNoAction
+			default:
+				return nil, fmt.Errorf("unsupported OnDelete action %q", od)
+			}
+		}
 		out = append(out, framework.Relation{
 			Type:             relationTypeFromConstName(astSelName(rv["Type"])),
 			Name:             astString(rv["Name"]),
@@ -1505,9 +1539,11 @@ func packReadRelations(e ast.Expr) []framework.Relation {
 			Through:          astString(rv["Through"]),
 			LocalKey:         astString(rv["LocalKey"]),
 			ForeignKeyTarget: astString(rv["ForeignKeyTarget"]),
+			OnDelete:         onDelete,
+			CascadeWrite:     astBool(rv["CascadeWrite"]),
 		})
 	}
-	return out
+	return out, nil
 }
 
 // returnValue returns the first expression of the named func's return stmt.

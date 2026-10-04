@@ -434,10 +434,17 @@ func TestActionGroupConcurrentClicksConvergeOnOne(t *testing.T) {
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if !pollTrue(ctx, `['g1','g2'].filter(function (id) { return document.getElementById(id).getAttribute('data-state') === 'committed'; }).length === 1`) {
+	// Wait for both requests to settle, not for the first commit: each
+	// /slow request sleeps from its own arrival, so the first click
+	// commits while the second is still pending, and under load the gap
+	// is wide enough for a snapshot to land in it.
+	if !pollTrue(ctx, `(() => {
+  const s = ['g1','g2'].map(function (id) { return document.getElementById(id).getAttribute('data-state'); });
+  return s.indexOf('pending') === -1 && s.filter(function (v) { return v === 'committed'; }).length >= 1;
+})()`) {
 		var states string
 		chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('g1').getAttribute('data-state') + '/' + document.getElementById('g2').getAttribute('data-state')`, &states))
-		t.Fatalf("after two concurrent commits the states were %s, want exactly one committed", states)
+		t.Fatalf("after two concurrent commits the states were %s, want both settled with one committed", states)
 	}
 	var probe struct {
 		Committed string `json:"committed"`

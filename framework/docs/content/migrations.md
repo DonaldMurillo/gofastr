@@ -288,8 +288,19 @@ needs a data-specific `USING` clause, so review and hand-tighten. On SQLite,
 which has no in-place column retyping, the generator emits the real table
 rebuild: create the new table from the entity, `INSERT … SELECT` the shared
 columns across (values convert by SQLite column affinity), drop the old
-table, rename, and recreate the entity's declared indices. Rows are carried
-over, not regenerated; a required-but-undefaulted column added in the same
+table, rename, and recreate the entity's indices (the declared ones and the
+automatic belongs_to foreign-key indices). Dropping the old table runs every
+`ON DELETE` action onto it while foreign keys are on, so a `CASCADE` child
+(every many_to_many pivot) would lose its rows and a `SET NULL` child its
+links. `ApplySchemaDiffWithOptions` therefore runs a rebuild on one
+connection with foreign keys off and rolls it back if `PRAGMA
+foreign_key_check` finds a violation the change introduced. `migrate
+generate` cannot do the same, because the runner applies each file inside a
+transaction, where the pragma has no effect: it refuses a rebuild that a
+`CASCADE` or `SET NULL` key references and names those tables. Write that
+migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
+foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
+Rows are carried over, not regenerated; a required-but-undefaulted column added in the same
 change still fails loud on a populated table until you backfill it, and the
 change ships no `Down` (the pre-migration constraints are not recoverable),
 so a SQLite retype is forward-only. Renames: declare
@@ -324,9 +335,49 @@ whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY
 (no sequence) is not auto-upgraded to `SERIAL`. Bring it up with a one-time
 `ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
 
-The snapshot is offline
-state. Pick `--driver` to match your production engine so the emitted types are
-right.
+The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
+
+### Snapshot file format (`schema.snapshot.json`)
+
+The schema snapshot file records the declarative state migrations have been generated up to:
+
+```json
+{
+  "tables": {
+    "posts": {
+      "id": "TEXT",
+      "title": "TEXT",
+      "published": "BOOLEAN"
+    }
+  },
+  "table_ddl": {
+    "posts": "CREATE TABLE posts (...)"
+  },
+  "indices": {
+    "posts": [
+      "CREATE INDEX idx_posts_title ON posts(title)"
+    ]
+  },
+  "views": {
+    "published_posts": {
+      "up": "CREATE VIEW published_posts AS SELECT ...",
+      "down": "DROP VIEW IF EXISTS published_posts"
+    }
+  },
+  "routines": {
+    "refresh_post_stats": {
+      "up": "CREATE PROCEDURE refresh_post_stats() ...",
+      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats"
+    }
+  }
+}
+```
+
+- `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
+- `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
+- `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
+- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
+- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default

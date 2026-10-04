@@ -252,38 +252,56 @@ func TestE2E_CarouselRotationAdvancesAndPauses(t *testing.T) {
 	if slowStepped {
 		t.Fatal("the 4000ms carousel stepped when the 300ms one did — one timer per carousel, not a shared sweep")
 	}
-	// Focus inside the fast carousel pauses it: reset to slide 0 by
-	// clicking its first dot, focus the track, wait a second, assert
-	// it stayed.
+	// Each pause is checked by counting steps, not by reading which slide
+	// is current: with two slides, an unpaused carousel that steps an even
+	// number of times in the wait lands back on slide 0 and looks paused.
+	steps := func() int {
+		var n int
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__rotSteps`, &n))
+		return n
+	}
+	// Focus inside the fast carousel pauses it. One script resets to
+	// slide 0, focuses the track and starts counting, so no unpaused gap
+	// sits between the steps.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('#rot-fast [data-hui-carousel-goto="0"]').click()`, nil),
-		chromedp.Evaluate(`document.querySelector('#rot-fast [data-hui-carousel-track]').focus()`, nil),
+		chromedp.Evaluate(`document.querySelector('#rot-fast [data-hui-carousel-goto="0"]').click();
+			document.querySelector('#rot-fast [data-hui-carousel-track]').focus();`+countRotStepsJS, nil),
 		chromedp.Sleep(1100*1e6),
 	); err != nil {
 		t.Fatal(err)
 	}
-	var stayed bool
-	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.querySelectorAll('#rot-fast [data-hui-carousel-track] > [aria-label]')[0].getAttribute('aria-current') === 'true'`, &stayed))
-	if !stayed {
-		t.Fatal("the carousel rotated while focus was inside it — the focus pause is not honoured")
+	if n := steps(); n != 0 {
+		t.Fatalf("the carousel stepped %d times while focus was inside it — the focus pause is not honoured", n)
 	}
-	// Reduced motion pauses it too.
+	// Reduced motion pauses it too. Emulate it before the blur lifts the
+	// focus pause: the other order leaves a gap of one CDP round trip in
+	// which the carousel is legitimately unpaused, and under load that
+	// gap outlasts the 300ms interval.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.getElementById('rot-fast').blur && document.activeElement.blur()`, nil),
 		emulateReducedMotion(),
+		chromedp.Evaluate(`document.activeElement.blur();`+countRotStepsJS, nil),
 		chromedp.Sleep(1100*1e6),
 	); err != nil {
 		t.Fatal(err)
 	}
-	var stillFirst bool
-	_ = chromedp.Run(ctx, chromedp.Evaluate(
-		`document.querySelectorAll('#rot-fast [data-hui-carousel-track] > [aria-label]')[0].getAttribute('aria-current') === 'true'`, &stillFirst))
-	if !stillFirst {
-		t.Fatal("the carousel rotated under prefers-reduced-motion: reduce")
+	if n := steps(); n != 0 {
+		t.Fatalf("the carousel stepped %d times under prefers-reduced-motion: reduce", n)
 	}
 	_ = cur
 }
+
+// countRotStepsJS resets window.__rotSteps and counts each slide of
+// #rot-fast that becomes current from here on.
+const countRotStepsJS = `
+(() => {
+	if (window.__rotObs) window.__rotObs.disconnect();
+	window.__rotSteps = 0;
+	window.__rotObs = new MutationObserver((ms) => {
+		for (const m of ms) if (m.target.getAttribute('aria-current') === 'true') window.__rotSteps++;
+	});
+	window.__rotObs.observe(document.querySelector('#rot-fast [data-hui-carousel-track]'),
+		{ attributes: true, subtree: true, attributeFilter: ['aria-current'] });
+})();`
 
 // emulateReducedMotion sets the media emulation for the tab.
 func emulateReducedMotion() chromedp.Action {

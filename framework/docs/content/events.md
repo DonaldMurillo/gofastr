@@ -293,6 +293,8 @@ handler)` + `ob.StartRelay(ctx)`.
   field hidden by a read hook never reaches a subscriber in the clear.
   A webhook bridge, audit sink, or search indexer that forwards outbox
   records on to a less-trusted surface must apply its own masking.
+  The staged row is the entity's own: children a cascade write nested
+  into the response are left out, and each arrives as its own event.
 - **At-least-once, per consumer.** The relay invokes each consumer's
   handler, then marks that consumer's delivery dispatched only after it
   returns nil. A crash between the two re-delivers, so consumers **must be

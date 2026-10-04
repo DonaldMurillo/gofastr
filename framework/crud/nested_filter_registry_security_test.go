@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // A relation may legitimately point at a real table that is not a registered
@@ -85,4 +86,162 @@ func TestNestedFilterRefusesWithoutRegistry(t *testing.T) {
 	if _, err := parseNestedFiltersValues(q, posts, nil); err == nil {
 		t.Fatal("SECURITY: a nested filter was applied with no registry to validate it against")
 	}
+}
+
+func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
+	cases := []struct {
+		name string
+		nf   nestedFilter
+		ppk  string
+	}{
+		{
+			name: "unsafe foreign key in BelongsTo",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id; DROP TABLE users"},
+				Field:    "name",
+				Op:       "eq",
+				Value:    "alice",
+			},
+		},
+		{
+			name: "unsafe foreign key in HasMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id; DROP TABLE users"},
+				Field:    "content",
+				Op:       "eq",
+				Value:    "test",
+			},
+		},
+		{
+			name: "unsafe through in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags; DROP TABLE users",
+					LocalKey:         "post_id",
+					ForeignKeyTarget: "tag_id",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe local_key in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags",
+					LocalKey:         "post_id OR 1=1",
+					ForeignKeyTarget: "tag_id",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe target_key in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags",
+					LocalKey:         "post_id",
+					ForeignKeyTarget: "tag_id OR 1=1",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe parent pk",
+			ppk:  "id; SELECT 1",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id"},
+				Field:    "content",
+				Op:       "eq",
+				Value:    "test",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ppk := tc.ppk
+			if ppk == "" {
+				ppk = "id"
+			}
+			sql, _ := buildExistsSubquery("posts", ppk, tc.nf)
+			if strings.Contains(sql, ";") || strings.Contains(sql, "DROP") || strings.Contains(sql, "OR 1=1") {
+				t.Fatalf("SECURITY: unsafe SQL generated for %s: %s", tc.name, sql)
+			}
+			if sql != "1 = 0" {
+				t.Fatalf("expected '1 = 0' for unsafe identifier in %s, got %s", tc.name, sql)
+			}
+		})
+	}
+}
+
+// TestBuildExistsSubquery_UnsafeHopChain: the same fail-closed guards hold on
+// a populated hop chain, where the target primary key and each later hop's
+// scopes and keys feed the SQL too. A second-hop failure closes only that
+// hop's EXISTS, so the outer one carries "AND 1 = 0" and matches nothing.
+func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
+	toAuthor := relationHop{
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id"},
+		Target:   &entity.Entity{PrimaryKey: "id"},
+		Table:    "authors",
+	}
+	toTeam := relationHop{
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "teams", ForeignKey: "team_id"},
+		Target:   &entity.Entity{PrimaryKey: "id"},
+		Table:    "teams",
+	}
+	nf := func(hops ...relationHop) nestedFilter {
+		return nestedFilter{Hops: hops, Field: "name", Op: filter.OpEq, Value: "core"}
+	}
+	noInjection := func(t *testing.T, sql string) {
+		t.Helper()
+		if strings.Contains(sql, ";") || strings.Contains(sql, "DROP") || strings.Contains(sql, "OR 1=1") {
+			t.Fatalf("SECURITY: unsafe SQL generated: %s", sql)
+		}
+	}
+
+	if sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, toTeam)); !strings.Contains(sql, "EXISTS (SELECT 1 FROM teams") {
+		t.Fatalf("the safe chain did not render both hops: %s", sql)
+	}
+
+	t.Run("unsafe target primary key", func(t *testing.T) {
+		hop := toAuthor
+		hop.Target = &entity.Entity{PrimaryKey: "id; DROP TABLE users"}
+		sql, _ := buildExistsSubquery("posts", "id", nf(hop, toTeam))
+		noInjection(t, sql)
+		if sql != "1 = 0" {
+			t.Fatalf("want 1 = 0, got %s", sql)
+		}
+	})
+
+	t.Run("unsafe scope on a later hop", func(t *testing.T) {
+		hop := toTeam
+		hop.Scopes = []filter.ParsedFilter{{Field: "org_id OR 1=1", Op: filter.OpEq, Value: "o1"}}
+		sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, hop))
+		noInjection(t, sql)
+		if sql != "1 = 0" {
+			t.Fatalf("want 1 = 0, got %s", sql)
+		}
+	})
+
+	t.Run("unsafe key on the second hop", func(t *testing.T) {
+		hop := toTeam
+		hop.Relation.ForeignKey = "team_id; DROP TABLE users"
+		sql, _ := buildExistsSubquery("posts", "id", nf(toAuthor, hop))
+		noInjection(t, sql)
+		if !strings.HasPrefix(sql, "EXISTS (SELECT 1 FROM authors") || !strings.HasSuffix(sql, "AND 1 = 0)") {
+			t.Fatalf("want the outer EXISTS closed with AND 1 = 0, got %s", sql)
+		}
+	})
 }

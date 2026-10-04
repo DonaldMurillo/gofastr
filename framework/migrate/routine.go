@@ -26,10 +26,9 @@ type Routine struct {
 	Dialect Dialect
 }
 
-// Plan is the full migration surface: tables (entities and/or raw Tables, via a
-// registry) plus stored routines. It's what AutoMigratePlanContext and
-// GeneratePlan consume so non-entity tables and routines reconcile with
-// entities in one pass.
+// Plan is the full migration surface: tables (entities via a registry), views,
+// plus stored routines. It's what AutoMigratePlanContext and GeneratePlan consume
+// so tables, views, and routines reconcile in one pass.
 type Plan struct {
 	Registry entity.Registry
 	Views    []View
