@@ -25,8 +25,10 @@ package localentity
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
@@ -224,6 +226,11 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 		if !ok {
 			panic(fmt.Sprintf("localentity: %s: field %q has a type a local entity cannot store (use String, Text, Int, Float, Bool, Enum, Date or Timestamp)", name, f.Name))
 		}
+		if f.Pattern != "" {
+			if err := checkPattern(f.Pattern); err != nil {
+				panic(fmt.Sprintf("localentity: %s: field %q: %v", name, f.Name, err))
+			}
+		}
 		if f.Type == schema.Enum && len(f.Values) == 0 {
 			panic(fmt.Sprintf("localentity: %s: enum field %q lists no Values", name, f.Name))
 		}
@@ -239,6 +246,9 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 		localdb.Index(indexName(FieldUpdatedAt), FieldUpdatedAt),
 	}
 	for _, f := range o.indexed {
+		if f == FieldCreatedAt || f == FieldUpdatedAt {
+			continue // always indexed
+		}
 		def, ok := fieldByName(fields, f)
 		if !ok {
 			panic(fmt.Sprintf("localentity: %s: Indexed names unknown field %q", name, f))
@@ -409,6 +419,39 @@ func (e *Entity) Count() render.HTML {
 }
 
 func indexName(field string) string { return "by_" + field }
+
+// checkPattern refuses a Pattern the browser would read differently
+// from the server. The pattern must compile as Go (core/schema checks
+// it there) and must avoid the RE2 spellings JavaScript lacks or reads
+// otherwise: inline flags and (?P<name>) groups, \A and \z, POSIX
+// classes, \Q…\E, \C, the brace-less \pL, and \x{…}. What is left is
+// the shared subset (classes, groups, (?:…), quantifiers, ^ and $,
+// \d \w \s, \p{…}), which the behaviour compiles with the u flag.
+func checkPattern(p string) error {
+	if _, err := regexp.Compile(p); err != nil {
+		return fmt.Errorf("Pattern does not compile: %v", err)
+	}
+	for i := 0; i < len(p); i++ {
+		switch {
+		case p[i] == '\\' && i+1 < len(p):
+			next := p[i+1]
+			switch {
+			case next == 'A' || next == 'z' || next == 'Q' || next == 'E' || next == 'C':
+				return fmt.Errorf("Pattern uses \\%c, which JavaScript does not read the same way", next)
+			case (next == 'p' || next == 'P') && (i+2 >= len(p) || p[i+2] != '{'):
+				return fmt.Errorf("Pattern uses \\%c without braces; write \\%c{…}", next, next)
+			case next == 'x' && i+2 < len(p) && p[i+2] == '{':
+				return fmt.Errorf("Pattern uses \\x{…}; write \\u{…} or the character itself")
+			}
+			i++
+		case strings.HasPrefix(p[i:], "(?") && !strings.HasPrefix(p[i:], "(?:"):
+			return fmt.Errorf("Pattern uses %q; JavaScript has no inline flags or (?P<name>) groups", p[i:min(i+4, len(p))])
+		case strings.HasPrefix(p[i:], "[[:"):
+			return fmt.Errorf("Pattern uses a POSIX class; JavaScript does not have them")
+		}
+	}
+	return nil
+}
 
 func fieldByName(fields []schema.Field, name string) (schema.Field, bool) {
 	for _, f := range fields {

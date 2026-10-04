@@ -87,6 +87,17 @@ Members.Form("team-form", ui.Form(ui.FormConfig{
 ))
 ```
 
+Field values follow the declaration: numbers are converted, a checked
+box saves `true` whatever its `value` attribute says (an unchecked one
+saves `false`), and string lengths count characters the way Go counts
+runes, so an emoji is one. When editing, an emptied optional field is
+removed from the record; a field the form has no control for is left
+as it was. `Default` applies only when creating a record. A `Pattern`
+must use syntax JavaScript and Go read the same way: `Define` refuses
+inline flags, `(?P<name>)`, `\A`, `\z`, POSIX classes and the brace-less
+`\pL` at startup, and a pattern the browser still cannot compile
+refuses every value rather than letting values through.
+
 On submit the browser's own validation runs first (the `required`,
 `maxlength`, `min` and `max` the fields render). Then the behaviour
 reads only the declared fields, converts each to its type, checks it

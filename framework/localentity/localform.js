@@ -41,15 +41,19 @@
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
 
   // coerce reads one field from the form and checks it against its
-  // declaration. Returns {value} (undefined value = leave unset) or
+  // declaration. It returns {value}, {empty} (a control with nothing in
+  // it: clears the field on an edit, takes the Default on a create),
+  // {absent} (no control for the field: an edit leaves it alone), or
   // {error}.
-  function coerce(f, data, msgs) {
+  function coerce(f, data, msgs, form) {
+    if (!form.elements.namedItem(f.name)) return { absent: true };
     if (f.t === 'bool') {
-      const all = data.getAll(f.name);
-      return { value: all.length ? all.includes('true') || all.includes('on') : f.def };
+      // A checked box submits its value (whatever it is: "true", "on",
+      // "yes"); the hidden "false" twin is the unchecked half.
+      return { value: data.getAll(f.name).some((x) => x !== 'false' && x !== '') };
     }
     const raw = data.get(f.name);
-    if (raw === null || raw === '') return f.req ? { error: msgs.required } : { value: f.def };
+    if (raw === null || raw === '') return f.req ? { error: msgs.required } : { empty: true };
     if (typeof raw !== 'string') return { error: msgs.required };
     if (f.t === 'int' || f.t === 'float') {
       const v = raw.trim() === '' ? NaN : Number(raw.trim());
@@ -64,12 +68,18 @@
         ((f.t === 'date' || f.t === 'timestamp') && !Number.isFinite(Date.parse(raw)))) {
       return { error: msgs.date };
     }
-    if (f.min !== undefined && raw.length < f.min) return { error: say(msgs.minlen, f.min) };
-    if (f.max !== undefined && raw.length > f.max) return { error: say(msgs.maxlen, f.max) };
+    // Lengths count code points, as core/schema counts runes: an emoji
+    // is one character on both sides.
+    const len = [...raw].length;
+    if (f.min !== undefined && len < f.min) return { error: say(msgs.minlen, f.min) };
+    if (f.max !== undefined && len > f.max) return { error: say(msgs.maxlen, f.max) };
     if (f.pattern) {
-      let re = null;
-      try { re = new RegExp(f.pattern, 'u'); } catch (_) { re = null; }
-      if (re && !re.test(raw)) return { error: msgs.pattern };
+      // Fails closed: a pattern this browser cannot compile refuses the
+      // value rather than letting anything through. Define refuses the
+      // RE2-only syntax it can see, so this is the last line.
+      let ok = false;
+      try { ok = new RegExp(f.pattern, 'u').test(raw); } catch (_) { ok = false; }
+      if (!ok) return { error: msgs.pattern };
     }
     return { value: raw };
   }
@@ -83,16 +93,23 @@
     const store = v.slice(i + 1);
     const msgs = spec.msgs;
     const data = new FormData(form);
-    const entries = [];
+    // set: the values to write; cleared: fields an edit empties;
+    // defaults: what a create writes for a field left empty or absent.
+    const set = [];
+    const cleared = [];
+    const defaults = [];
     const errors = {};
     let failed = false;
     for (const f of spec.fields) {
-      const r = coerce(f, data, msgs);
+      const r = coerce(f, data, msgs, form);
       if (r.error) {
         errors[f.name] = [r.error];
         failed = true;
-      } else if (r.value !== undefined) {
-        entries.push([f.name, r.value]);
+      } else if (r.empty || r.absent) {
+        if (r.empty) cleared.push(f.name);
+        if (f.def !== undefined) defaults.push([f.name, f.def]);
+      } else {
+        set.push([f.name, r.value]);
       }
     }
     const fe = NS._formErrors;
@@ -103,7 +120,7 @@
     }
     // fromEntries defines properties: a field name can never reach a
     // prototype setter (Go refuses any name that could spell one too).
-    const values = Object.fromEntries(entries);
+    const values = Object.fromEntries(set);
     const editing = wrap.getAttribute(P + 'editing');
     const now = new Date().toISOString();
     // The cap is decided inside the transaction, but localdb re-codes
@@ -112,17 +129,21 @@
     try {
       const db = await NS.localdb.open(dbName);
       await db.tx(store, 'readwrite', async (tx) => {
-        if (editing) {
-          const current = await tx.get(store, editing);
-          if (!current) throw new Error('gone');
-          await tx.put(store, Object.assign({}, current, values, { id: current.id, updated_at: now }));
+        // An edit whose record is gone (released here or in another
+        // tab) saves as a new record: the visitor's words are kept, and
+        // the reset below ends the stale edit.
+        const current = editing ? await tx.get(store, editing) : undefined;
+        if (current) {
+          const next = Object.assign({}, current, values, { id: current.id, updated_at: now });
+          for (const name of cleared) delete next[name];
+          await tx.put(store, next);
           return;
         }
         if (spec.max && (await tx.count(store)) >= spec.max) {
           full = true;
           throw new Error('full');
         }
-        await tx.put(store, Object.assign({}, values, { created_at: now, updated_at: now }));
+        await tx.put(store, Object.assign(Object.fromEntries(defaults), values, { created_at: now, updated_at: now }));
       });
     } catch (_) {
       if (typeof NS._toastOrFallback === 'function') {

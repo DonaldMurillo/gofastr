@@ -140,19 +140,20 @@ undeclared store or an unknown op is ignored.
 
 There is no version number to keep. When a page opens a database whose
 stored schema is missing a declared store or index, the module raises
-the IndexedDB version and creates it. An index whose definition changed
-is dropped and rebuilt; index contents are derived from the records, so
-nothing is lost.
+the IndexedDB version and creates it.
 
 Nothing is ever deleted. A tab still open on the previous deploy may
 need the store or index the new deploy removed, and a page from an
 older deploy opening a newer database finds everything it declares.
 Unused stores and indexes stay until the visitor clears site data.
 
-Changing a store's key path cannot be done in place, because every
-record would need a new key. Opening such a store rejects with code
-`schema`. Declare a new store under a new name and copy the records
-over in a page script.
+Changing a store's key path, or an existing index's key path or
+options, is not done in place. Opening such a store rejects with code
+`schema`. A key path change would need every record re-keyed; an index
+rebuilt in place would be rebuilt back by any tab still on the previous
+deploy, each tab's upgrade closing the other's connection. Declare the
+new shape under a new name (a new store, copying records over in a page
+script, or a new index name, which needs no copying).
 
 When another tab upgrades the database, this tab's open connection
 closes and the next call reopens it. `document` gets a
@@ -209,8 +210,9 @@ console.
 - **Treating a read-back record as trusted.** The visitor (or any
   script on your origin) can change it. Put values into the page with
   `textContent`, never `innerHTML`, and check types before using them.
-- **Changing a store's key path in place.** It rejects `schema`.
-  Declare a new store and copy the records across in a page script.
+- **Changing a store's key path or an index's definition in place.**
+  It rejects `schema`. Declare a new store (and copy the records across
+  in a page script) or a new index name.
 - **Storing the only copy of something important.** Browsers may
   delete site data, visitors clear it, and it never leaves the device.
   Call `persist()`, and keep a server copy of anything that matters.

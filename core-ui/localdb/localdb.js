@@ -15,9 +15,9 @@
 // #gofastr-localdb manifest. Only declared databases, stores and
 // indexes are reachable. The schema is applied additively: a missing
 // store or index bumps the IndexedDB version and is created, nothing
-// is ever deleted, and an index whose definition changed is rebuilt
-// (index contents are derived, so the rebuild loses nothing). When
-// another tab upgrades, this tab's connection steps aside
+// is ever deleted or rebuilt: a store whose key path changed, or an
+// index whose definition changed, rejects "schema" (declare it under a
+// new name). When another tab upgrades, this tab's connection steps aside
 // (versionchange) and the next operation reopens it.
 //
 // Writes notify watchers in this tab when their transaction commits,
@@ -103,9 +103,11 @@
     live.unique === !!w.unique && live.multiEntry === !!w.multiEntry;
 
   // drift reports whether the open database lacks a declared store or
-  // index (or holds a changed index). A store whose primary key path
-  // changed cannot be migrated in place (every record would need
-  // re-keying): that is a schema error naming the store.
+  // index. A store whose primary key path changed, or an index whose
+  // definition changed, is a schema error naming it: rebuilding it in
+  // place would undo the other deploy's version whenever tabs on two
+  // deploys meet, each upgrade closing the other's connection. Declare
+  // the new shape under a new name instead.
   const drift = (db, spec) => {
     const names = Object.keys(spec.stores);
     if (names.some((s) => !db.objectStoreNames.contains(s))) return true;
@@ -115,8 +117,11 @@
       const store = tx.objectStore(s);
       const want = spec.stores[s];
       if (store.keyPath !== want.keyPath) throw fail('schema', s);
-      return Object.keys(want.indexes || {}).some((ix) =>
-        !store.indexNames.contains(ix) || !sameIndex(store.index(ix), want.indexes[ix]));
+      return Object.keys(want.indexes || {}).some((ix) => {
+        if (!store.indexNames.contains(ix)) return true;
+        if (!sameIndex(store.index(ix), want.indexes[ix])) throw fail('schema', s + '.' + ix);
+        return false;
+      });
     });
   };
 
@@ -126,11 +131,9 @@
       const store = db.objectStoreNames.contains(s) ? tx.objectStore(s) : db.createObjectStore(s, { keyPath: want.keyPath });
       for (const ix of Object.keys(want.indexes || {})) {
         const w = want.indexes[ix];
-        if (store.indexNames.contains(ix)) {
-          if (sameIndex(store.index(ix), w)) continue;
-          store.deleteIndex(ix);
+        if (!store.indexNames.contains(ix)) {
+          store.createIndex(ix, ixPath(w), { unique: !!w.unique, multiEntry: !!w.multiEntry });
         }
-        store.createIndex(ix, ixPath(w), { unique: !!w.unique, multiEntry: !!w.multiEntry });
       }
     }
   };
@@ -327,8 +330,13 @@
           try { fn(event); } catch (_) { /* one watcher never breaks the others */ }
         }
       }
-      if (origin === 'local' && this._ch) {
-        try { this._ch.postMessage({ v: 1, changes: changes }); } catch (_) {}
+      // A writing tab announces even when it watches nothing itself:
+      // another tab's list must hear a save from a form-only page.
+      if (origin === 'local') {
+        this._listen();
+        if (this._ch) {
+          try { this._ch.postMessage({ v: 1, changes: changes }); } catch (_) {}
+        }
       }
     }
 

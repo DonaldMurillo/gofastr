@@ -87,6 +87,9 @@ type indexSpec struct {
 var (
 	mu  sync.RWMutex
 	dbs = map[string]*dbSpec{}
+	// manifest caches ManifestJSON: every page render asks for it and
+	// the declarations only change at init. New and Store clear it.
+	manifest []byte
 )
 
 // New declares a database. name is 1-64 bytes of lowercase letters,
@@ -104,6 +107,7 @@ func New(name string) *DB {
 		panic(fmt.Sprintf("localdb: database %q declared twice", name))
 	}
 	dbs[name] = &dbSpec{Stores: map[string]*storeSpec{}}
+	manifest = nil
 	return &DB{name: name}
 }
 
@@ -199,6 +203,7 @@ func (d *DB) Store(name string, opts ...StoreOption) *Store {
 		panic(fmt.Sprintf("localdb: store %q declared twice in database %q", name, d.name))
 	}
 	spec.Stores[name] = s
+	manifest = nil
 	return &Store{db: d.name, name: name}
 }
 
@@ -240,15 +245,24 @@ func Names() []string {
 // bytes are deterministic for a given set of declarations.
 func ManifestJSON() []byte {
 	mu.RLock()
-	defer mu.RUnlock()
+	cached := manifest
+	mu.RUnlock()
+	if cached != nil {
+		return cached
+	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(dbs) == 0 {
 		return nil
 	}
-	buf, err := json.Marshal(dbs)
-	if err != nil {
-		return nil
+	if manifest == nil {
+		buf, err := json.Marshal(dbs)
+		if err != nil {
+			return nil
+		}
+		manifest = buf
 	}
-	return buf
+	return manifest
 }
 
 // validName is the name grammar shared with runtime modules and
@@ -311,4 +325,5 @@ func reset() {
 	mu.Lock()
 	defer mu.Unlock()
 	dbs = map[string]*dbSpec{}
+	manifest = nil
 }

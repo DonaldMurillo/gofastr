@@ -187,3 +187,23 @@ func TestRefusals(t *testing.T) {
 	mustPanic(t, "unknown field", func() { l.Row(func(r Row) render.HTML { return r.Text("missing") }) })
 	mustPanic(t, "form carrier's id", func() { l.Row(func(r Row) render.HTML { return r.Edit("", "") }) })
 }
+
+// Indexed may name the built-ins (they are indexed anyway), and a
+// Pattern must be one the browser reads the way Go does.
+func TestIndexedBuiltinsAndPatterns(t *testing.T) {
+	db := localdb.New("localentity-review")
+	Define(db, "a", []schema.Field{{Name: "name", Type: schema.String}}, Indexed("updated_at", "created_at", "name"))
+	Define(db, "b", []schema.Field{{Name: "code", Type: schema.String, Pattern: `^(?:[A-Z]{2}|\p{Lu}\d)$`}})
+	for p, want := range map[string]string{
+		`(?i)^[a-z]+$`: "inline flags",
+		`(?P<x>a)`:     "inline flags",
+		`^a\z`:         `\z`,
+		`\Aa`:          `\A`,
+		`[[:alpha:]]`:  "POSIX",
+		`\pL`:          "without braces",
+		`\x{41}`:       `\x{`,
+		`a(`:           "does not compile",
+	} {
+		mustPanic(t, want, func() { Define(db, "p", []schema.Field{{Name: "code", Type: schema.String, Pattern: p}}) })
+	}
+}

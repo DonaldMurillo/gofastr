@@ -882,12 +882,13 @@ rejects with a coded error. The browser-side IndexedDB name is
 
 Schema changes are **additive and automatic**. A page whose declaration
 names a store or index the stored database lacks bumps the IndexedDB
-version itself and creates it; an index whose definition changed is
-rebuilt (index contents are derived, so nothing is lost). Nothing is
-ever deleted: a tab still running the previous deploy may need what the
-new one dropped, and an older page opening a newer database finds a
-superset and works. A store whose primary key path changed cannot be
-migrated in place and rejects `schema`. When another tab upgrades, this
+version itself and creates it. Nothing is ever deleted or rebuilt: a
+tab still running the previous deploy may need what the new one
+dropped, and an older page opening a newer database finds a superset
+and works. A store whose primary key path changed, or an index whose
+definition changed, rejects `schema`: rebuilding it in place would undo
+the other deploy's version whenever tabs on two deploys meet, so the
+new shape takes a new name. When another tab upgrades, this
 tab's connection closes on `versionchange` and the next operation
 reopens it; `document` sees a `gofastr:localdb` event
 (`detail: {type, db}`, type `versionchange`, `close` or `blocked`).

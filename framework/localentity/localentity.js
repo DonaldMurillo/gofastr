@@ -89,7 +89,7 @@
   async function renderList(el) {
     const t = target(el, 'list');
     if (!t) return;
-    let records = [];
+    let records;
     try {
       const q = { index: el.getAttribute(P + 'order') || undefined };
       if (el.getAttribute(P + 'dir') === 'prev') q.direction = 'prev';
@@ -98,7 +98,10 @@
       records = await (await open(t.db)).list(t.store, q);
       el.removeAttribute(P + 'state');
     } catch (e) {
+      // A failed read keeps what the list already shows: an error is
+      // not "no records". The state names the code for the page.
       el.setAttribute(P + 'state', (e && e.code) || 'failed');
+      return;
     }
     // Focus inside a row that is about to be replaced moves to the row
     // now at the same position, onto its same control.

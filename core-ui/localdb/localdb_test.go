@@ -93,3 +93,21 @@ func TestDeclarationRefusals(t *testing.T) {
 		db.Store("p12", addIndex("ix", &indexSpec{KeyPath: []string{"a", "b"}, MultiEntry: true}))
 	})
 }
+
+// ManifestJSON is cached per render path; a declaration made after a
+// read must still reach the next read.
+func TestManifestCacheFollowsDeclarations(t *testing.T) {
+	reset()
+	t.Cleanup(reset)
+	db := New("cache")
+	db.Store("a")
+	first := string(ManifestJSON())
+	db.Store("b")
+	if second := string(ManifestJSON()); second == first || !strings.Contains(second, `"b"`) {
+		t.Fatalf("manifest after a new store = %s (before: %s)", second, first)
+	}
+	New("cache2")
+	if !strings.Contains(string(ManifestJSON()), `"cache2"`) {
+		t.Fatal("a new database is missing from the manifest")
+	}
+}

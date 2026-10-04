@@ -257,6 +257,9 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
 	v1 := `{"shop":{"stores":{"items":{"keyPath":"id"}}}}`
 	v2 := `{"shop":{"stores":{"items":{"keyPath":"id","indexes":{"by_price":{"keyPath":["price"]}}},"carts":{"keyPath":"id"}}}}`
 	broken := `{"shop":{"stores":{"items":{"keyPath":"sku"}}}}`
+	// v2's by_price, redefined: rebuilt in place it would ping-pong
+	// with every tab still on v2.
+	reindexed := `{"shop":{"stores":{"items":{"keyPath":"id","indexes":{"by_price":{"keyPath":["price","id"]}}},"carts":{"keyPath":"id"}}}}`
 	base := ldbServer(t, map[string][2]string{
 		"/v1": {v1, ldbScript("shop", `
             await db.put('items', { id: 'a', price: 3 });
@@ -273,6 +276,15 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
             await db.put('items', { id: 'c', price: 2 });
             res.after = await db.count('items');
         `)},
+		"/index-changed": {reindexed, `
+            (async () => {
+              await __gofastr.loadModule('localdb');
+              const res = {};
+              try { await __gofastr.localdb.open('shop'); res.code = 'ok'; }
+              catch (e) { res.code = e.code; }
+              window.__res = res; window.__done = true;
+            })();
+        `},
 		"/keypath-changed": {broken, `
             (async () => {
               await __gofastr.loadModule('localdb');
@@ -307,6 +319,11 @@ func TestLocalDBAdditiveUpgradeAcrossDeploys(t *testing.T) {
 	ldbRun(t, ctx, base+"/v1-again", &r3)
 	if r3.Fatal != "" || r3.Count != 2 || r3.After != 3 {
 		t.Fatalf("a v1 page after the v2 upgrade = %+v; want it to read and write the newer database", r3)
+	}
+	var r5 struct{ Code string }
+	ldbRun(t, ctx, base+"/index-changed", &r5)
+	if r5.Code != "schema" {
+		t.Fatalf("an index whose definition changed opened with %q, want schema (a new shape takes a new name)", r5.Code)
 	}
 	var r4 struct{ Code string }
 	ldbRun(t, ctx, base+"/keypath-changed", &r4)
