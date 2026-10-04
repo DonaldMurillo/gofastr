@@ -208,7 +208,12 @@ framework/
 ├── db/              Executor + tx context primitives shared across
 │                    crud, slowquery, and the framework root tx wrapper
 ├── dev/             Dev-mode-only helpers (livereload, debug surfaces)
-├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`
+├── docs/            Embedded doc content (framework/docs/content/*.md) + `gofastr docs`.
+│                    Never imported by package framework (#470): a docs edit
+│                    must not widen the affected test set to every importer.
+│   └── mcptools/    `Register(*mcp.Server)`: the framework_docs_* MCP tools,
+│                    handed to framework.WithMCPTools. Imports core/mcp,
+│                    never the framework root.
 ├── dsl/             ?dsl=… query string parser/builder
 ├── embed/           Embeddable screens/islands: a customer pastes one
 │                    <script> tag and gets a live, themed, authenticated
@@ -774,7 +779,11 @@ If you add a subpackage, grep `core/` for name conflicts first.
 
 - **Do not** delete the facade re-export files. They are the seam
   that lets external code keep using `framework.X`. Removing them
-  is a breaking change for every consumer.
+  is a breaking change for every consumer. The root spelling is the
+  public API, not a shim awaiting removal. Generated code and the docs
+  write it (`framework.EntityConfig`, `framework.EntityDeclaration`);
+  the subpackage paths are for plugin authors and codegen that want a
+  narrow dependency graph.
 
 - **Do not** bypass the `entity.Registry` / `db.Executor` interfaces
   by adding a back-import to framework root. If a subpackage needs

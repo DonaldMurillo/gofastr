@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 )
 
@@ -24,21 +23,19 @@ func TestMCPIntrospectionDisabledByDefault(t *testing.T) {
 }
 
 // TestMCPIntrospectionRegistersTools pins that WithMCPIntrospection()
-// installs the introspection + docs tools.
+// installs the introspection tools (the docs tools are
+// framework.WithMCPTools(mcptools.Register) from framework/docs/mcptools, a separate opt-in).
 func TestMCPIntrospectionRegistersTools(t *testing.T) {
 	app := NewApp(WithMCPIntrospection())
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
 	want := map[string]bool{
-		"app_routes":            false,
-		"app_plugins":           false,
-		"app_batteries":         false,
-		"app_config":            false,
-		"app_readiness":         false,
-		"framework_docs_list":   false,
-		"framework_docs_get":    false,
-		"framework_docs_search": false,
+		"app_routes":    false,
+		"app_plugins":   false,
+		"app_batteries": false,
+		"app_config":    false,
+		"app_readiness": false,
 	}
 	for _, tool := range app.MCP.ListTools() {
 		if _, ok := want[tool.Name]; ok {
@@ -49,85 +46,6 @@ func TestMCPIntrospectionRegistersTools(t *testing.T) {
 		if !found {
 			t.Errorf("introspection tool %q was not registered", name)
 		}
-	}
-}
-
-// TestMCPFrameworkDocsListReturnsTopics verifies framework_docs_list
-// surfaces the embedded markdown tree.
-func TestMCPFrameworkDocsListReturnsTopics(t *testing.T) {
-	app := NewApp(WithMCPIntrospection())
-	if err := app.InitPlugins(); err != nil {
-		t.Fatalf("InitPlugins: %v", err)
-	}
-	result, err := app.MCP.CallTool(context.Background(), "framework_docs_list", map[string]any{})
-	if err != nil {
-		t.Fatalf("CallTool framework_docs_list: %v", err)
-	}
-	m := result.(map[string]any)
-	count := m["count"].(int)
-	if count == 0 {
-		t.Fatal("framework_docs_list returned 0 topics — embed broken?")
-	}
-}
-
-// TestMCPFrameworkDocsCapabilityMapDiscovery pins parity between the embedded
-// docs, task-oriented search, and the live app's MCP discovery surface.
-func TestMCPFrameworkDocsCapabilityMapDiscovery(t *testing.T) {
-	app := NewApp(WithMCPIntrospection())
-	if err := app.InitPlugins(); err != nil {
-		t.Fatalf("InitPlugins: %v", err)
-	}
-	result, err := app.MCP.CallTool(context.Background(), "framework_docs_get",
-		map[string]any{"topic": "ui-capability-map"})
-	if err != nil {
-		t.Fatalf("framework_docs_get ui-capability-map: %v", err)
-	}
-	if markdown, _ := result.(map[string]any)["markdown"].(string); !strings.Contains(markdown, "Live dashboards") {
-		t.Fatalf("MCP capability map is missing live-dashboard guidance")
-	}
-
-	result, err = app.MCP.CallTool(context.Background(), "framework_docs_search",
-		map[string]any{"term": "live dashboard"})
-	if err != nil {
-		t.Fatalf("framework_docs_search: %v", err)
-	}
-	hits := result.(map[string]any)["hits"].([]map[string]any)
-	found := false
-	for _, hit := range hits {
-		if hit["topic"] == "ui-capability-map" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("MCP search did not route live dashboard to ui-capability-map: %+v", hits)
-	}
-}
-
-// TestMCPFrameworkDocsGetReadsTopic exercises a known topic round-trip.
-func TestMCPFrameworkDocsGetReadsTopic(t *testing.T) {
-	app := NewApp(WithMCPIntrospection())
-	if err := app.InitPlugins(); err != nil {
-		t.Fatalf("InitPlugins: %v", err)
-	}
-	// List first to discover a real topic name (avoids hardcoding).
-	list, err := app.MCP.CallTool(context.Background(), "framework_docs_list", map[string]any{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	topics := list.(map[string]any)["topics"].([]map[string]any)
-	if len(topics) == 0 {
-		t.Skip("no embedded topics")
-	}
-	name := topics[0]["name"].(string)
-
-	result, err := app.MCP.CallTool(context.Background(), "framework_docs_get", map[string]any{"topic": name})
-	if err != nil {
-		t.Fatalf("CallTool framework_docs_get: %v", err)
-	}
-	m := result.(map[string]any)
-	if md, _ := m["markdown"].(string); md == "" {
-		t.Errorf("markdown body empty for topic %q", name)
 	}
 }
 

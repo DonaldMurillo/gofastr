@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"syscall"
@@ -295,10 +296,28 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 	}
 }
 
-// A child that dies mid-handshake crashed; it did not lie about itself.
-// Classing it terminal skipped the restart cycle and the circuit breaker,
-// and TestSupervisor_CircuitOpensAndGenResets failed whenever load let the
-// crash land inside the handshake instead of before it.
+// A child that dies while the handshake is in flight is a crash, not an
+// integrity fault: the error is "handshake:"-wrapped but its cause is the
+// transport (the peer closed, EOF, EPIPE from the write, the spawn
+// deadline), not a verdict the child answered.
+func TestIsIntegrityFault_HandshakeTransportFailureIsACrash(t *testing.T) {
+	causes := map[string]error{
+		"peer closed": moduleproto.ErrClosed,
+		"eof":         io.EOF,
+		"epipe":       &fs.PathError{Op: "write", Path: "|1", Err: syscall.EPIPE},
+		"deadline":    context.DeadlineExceeded,
+	}
+	for name, cause := range causes {
+		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", fmt.Errorf("moduleproto: write: %w", cause)))
+		if isIntegrityFault(err) {
+			t.Errorf("%s: a handshake transport failure classified as integrity (terminal): %v", name, err)
+		}
+	}
+}
+
+// Main's twin of the test above (PR #477 fixed the same classifier in
+// parallel): each transport cause wrapped the way the handshake wraps
+// it, and a wrapped mismatch that must stay terminal.
 func TestPeerGoneMidHandshakeIsCrash(t *testing.T) {
 	for _, cause := range []error{
 		moduleproto.ErrClosed,

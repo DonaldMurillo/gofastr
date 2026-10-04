@@ -103,7 +103,7 @@ generated guidance.
 | per-user background jobs the erase plane can delete, GDPR erasure reaching the queue | set `queue.Job.UserID` on enqueue; `App.EraseUserData` deletes matching `queue_jobs` rows. Rows enqueued before the field existed carry `''` and are treated as unowned |
 | structured request log, JSON logs to stdout for containers (`log.JSONSink`), panic recovery, log MCP debug tools | `battery/log` |
 | browser refresh on `gofastr dev` rebuild | auto-wired if your `main.go` uses `framework.NewApp` + `uihost.New`, no host code; for custom bootstraps call `dev.RegisterLiveReload(router)` manually |
-| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `framework_docs_search`, `contracts_list`/`contracts_explain`, …) + under dev the working pair `contracts_verify`/`contracts_fix` + control (`app_module_enable/disable`) + battery/log debug tools; opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` |
+| agent debugging under `gofastr dev` | auto-wired by `framework.NewApp`: /mcp mount + introspection (`app_routes`, `app_config`, `contracts_list`/`contracts_explain`, …; the `framework_docs_*` tools need `framework.WithMCPTools(mcptools.Register)` from `framework/docs/mcptools`) + under dev the working pair `contracts_verify`/`contracts_fix` + control (`app_module_enable/disable`) + battery/log debug tools; opt out with `GOFASTR_DEV_MCP=0`; production needs explicit `WithMCP`/`WithMCPIntrospection`/`WithMCPControl` (and `framework.WithMCPTools(mcptools.Register)`) |
 | load `.env` files | auto-wired by `framework.NewApp`; do nothing |
 | per-test isolated Postgres DB | `framework/testkit.NewIsolatedDB(t, adminDSN, migrate)` |
 | favicon, app icon, PWA icons | `uihost.WithAppIcon(pngBytes)`: one source image becomes 32/180/192/512 PNGs, `/favicon.ico`, head links, and the PWA manifest icons; generate placeholder art in code with `framework/image.NewGradient` (no committed binaries) |
@@ -192,7 +192,8 @@ a `featureflag.Store` adapter for server-side boolean gates.
 1. Search the project's `AGENTS.md` for the keyword first.
 2. Search the framework with `grep -rn <symbol> $(go env GOMODCACHE)/github.com/DonaldMurillo/gofastr@*`.
 3. Run `gofastr docs --grep <term>` to search the embedded docs, or `gofastr docs <topic>` to read one.
-4. Use the live `/mcp` introspection tools (`framework_docs_search`,
-   `app_routes`, `app_batteries`, etc.) if the app is running locally
-   with `framework.WithMCPIntrospection()`; blueprint-generated apps
-   wire it (plus `framework.WithMCP()`) by default.
+4. Use the live `/mcp` introspection tools (`app_routes`,
+   `app_batteries`, etc.) if the app is running locally with
+   `framework.WithMCPIntrospection()`, and `framework_docs_search` when
+   it also has `framework.WithMCPTools(mcptools.Register)`; blueprint-generated apps wire
+   both (plus `framework.WithMCP()`) by default.

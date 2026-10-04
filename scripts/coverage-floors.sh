@@ -55,11 +55,12 @@
 # internal/analyzers/internal/astx, internal/chromedptest, and
 # framework/experimental/harness/provider/providertest have no test
 # files of their own (0.0%; their behaviour is exercised through the
-# packages that import them), and core/textsafe measures 23.3% (only
-# recovered_test.go; its scrub helpers run through the many importers).
-# All below 70%, left unfloored deliberately: a floor under weak coverage
-# pins the weakness instead of catching drift. The no-test-file four
-# also cannot be floored in the COVERPROFILE form CI uses: they
+# packages that import them). All below 70%, left unfloored
+# deliberately: a floor under weak coverage pins the weakness instead of
+# catching drift. core/textsafe measured 23.3% that day (only
+# recovered_test.go); 2026-10-04 gave every helper its own tests, the
+# package measures 98.6, and it is floored below. The no-test-file four
+# cannot be floored in the COVERPROFILE form CI uses: they
 # contribute no statements to the Test step's merged profile, and an
 # affected floor with no statements in the profile fails the gate closed.
 #
@@ -146,6 +147,7 @@ FLOORS="
 ./core/schema/ 97.0
 ./core/static/ 80.1
 ./core/stream/ 89.5
+./core/textsafe/ 97.0
 ./core/upload/ 78.2
 ./core/yaml/ 84.1
 ./examples/backoffice/ 73.5

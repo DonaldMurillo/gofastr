@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -27,13 +26,17 @@ import (
 //   - app_routes:     list every (method, pattern) registered on the router.
 //   - app_plugins:    list registered plugins (name only).
 //   - app_batteries:  list registered batteries with deps + lifecycle status.
+//   - app_modules:    list modules with manifest metadata and enabled state.
 //   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
 //   - app_readiness:  run every registered readiness check and report results.
 //   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
-//   - framework_docs_list / framework_docs_get / framework_docs_search:
-//     expose the framework's markdown docs (embedded at
-//     build time, so they match the framework version
-//     this binary was built against, no GitHub fetch).
+//   - app_routines:   every registered stored routine with its ledger state.
+//
+// The framework's embedded docs (framework_docs_list / framework_docs_get
+// / framework_docs_search) are a separate opt-in,
+// WithMCPTools(mcptools.Register) from framework/docs/mcptools: framework itself never
+// imports the markdown corpus, so a docs edit does not rebuild or retest
+// every package that imports framework.
 func WithMCPIntrospection() AppOption {
 	return func(a *App) {
 		a.mcpIntrospection = true
@@ -94,37 +97,6 @@ func (a *App) registerIntrospectionTools() error {
 			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | skipped_for_dialect | unknown; skipped_for_dialect means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolRoutines,
-		},
-		{
-			name:        "framework_docs_list",
-			description: "List every framework documentation topic shipped with this binary. Returns name + title + summary for each topic. Pair with framework_docs_get to fetch the full markdown.",
-			schema:      map[string]any{"type": "object"},
-			handler:     a.toolDocsList,
-		},
-		{
-			name:        "framework_docs_get",
-			description: "Return the full markdown body of a framework doc topic by name. Pass the topic name without .md (e.g. \"entity-declarations\", \"hooks-and-transactions\"). Call framework_docs_list first to discover names.",
-			schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"topic": map[string]any{"type": "string", "description": "Topic name (no .md suffix)"},
-				},
-				"required": []string{"topic"},
-			},
-			handler: a.toolDocsGet,
-		},
-		{
-			name:        "framework_docs_search",
-			description: "Search across every framework doc topic for a substring (case-insensitive, min 3 chars). Returns matching lines with nearest-heading context, capped at `limit` hits (default 50). Use when you don't know which topic owns the answer.",
-			schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"term":  map[string]any{"type": "string", "description": "Search term (min 3 chars)"},
-					"limit": map[string]any{"type": "integer", "description": "Max hits to return (default 50, hard cap 200 to protect narrow-context clients)", "maximum": maxDocsSearchHits},
-				},
-				"required": []string{"term"},
-			},
-			handler: a.toolDocsSearch,
 		},
 	}
 	for _, t := range tools {
@@ -237,92 +209,6 @@ func (a *App) effectiveServerTimeoutsMs() map[string]int64 {
 		"write_ms":       w.Milliseconds(),
 		"idle_ms":        idle.Milliseconds(),
 	}
-}
-
-// toolDocsList enumerates every embedded framework doc topic. Each
-// entry has name (use with framework_docs_get), title (first H1 in the
-// file), summary (first non-heading paragraph), and bytes (raw size).
-func (a *App) toolDocsList(_ context.Context, _ map[string]any) (any, error) {
-	topics, err := docs.List()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(topics))
-	for _, t := range topics {
-		out = append(out, map[string]any{
-			"name":    t.Name,
-			"title":   t.Title,
-			"summary": t.Summary,
-			"bytes":   t.Bytes,
-		})
-	}
-	return map[string]any{
-		"topics": out,
-		"count":  len(out),
-	}, nil
-}
-
-// toolDocsGet returns the full markdown body for a named topic.
-func (a *App) toolDocsGet(_ context.Context, params map[string]any) (any, error) {
-	topic, _ := params["topic"].(string)
-	body, err := docs.Get(topic)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"name":     topic,
-		"markdown": string(body),
-		"bytes":    len(body),
-	}, nil
-}
-
-// toolDocsSearch greps every topic for a substring. The response shape
-// mirrors the SearchHit type, topic, line, heading, excerpt, but
-// keeps the payload size bounded by capping each excerpt at 240 chars.
-// maxDocsSearchHits is the hard ceiling the framework_docs_search schema
-// advertises. docs.SearchWithLimit honours any positive value and only
-// substitutes its own default for limit <= 0, so a caller asking for
-// 1e12 got every matching line in the embedded corpus -- ten thousand
-// hits against a term as ordinary as "the". The tool exists to be called
-// by agents with narrow contexts; a response that large is the failure
-// the cap is named for.
-const maxDocsSearchHits = 200
-
-func (a *App) toolDocsSearch(_ context.Context, params map[string]any) (any, error) {
-	term, _ := params["term"].(string)
-	limit := 0
-	switch v := params["limit"].(type) {
-	case int:
-		limit = v
-	case int64:
-		limit = int(v)
-	case float64:
-		limit = int(v)
-	}
-	// Clamp rather than reject: a caller asking for more than the tool
-	// will give is not making an error. A limit of 0 falls through
-	// unchanged, since that is how SearchWithLimit spells "default".
-	if limit > maxDocsSearchHits {
-		limit = maxDocsSearchHits
-	}
-	hits, err := docs.SearchWithLimit(term, limit)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, len(hits))
-	for _, h := range hits {
-		out = append(out, map[string]any{
-			"topic":   h.Topic,
-			"line":    h.Line,
-			"heading": h.Heading,
-			"excerpt": h.Excerpt,
-		})
-	}
-	return map[string]any{
-		"term":  term,
-		"hits":  out,
-		"count": len(out),
-	}, nil
 }
 
 func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, error) {

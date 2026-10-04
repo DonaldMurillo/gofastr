@@ -56,6 +56,12 @@ type fanoutMsg struct {
 	Status  json.RawMessage `json:"s,omitempty"` // status
 	Signal  *signalPayload  `json:"g,omitempty"` // signal
 	Members []PeerInfo      `json:"m,omitempty"` // roster
+	// At is the sender's clock at publish, unix nanoseconds. A join
+	// mirror older than the local socket it would displace is stale (the
+	// peer moved HERE after that mirror left) and is dropped; see
+	// remoteJoinLocked. Replica clocks therefore need to agree to within a
+	// client's reconnect time, the usual NTP posture for a cluster.
+	At int64 `json:"t,omitempty"`
 }
 
 // remoteEntry is one replica's contributed roster for a room plus its
@@ -70,6 +76,7 @@ type remoteEntry struct {
 // recover from; a failure is silently dropped (lossy lane).
 func publishFanout(send func([]byte), nodeID string, msg fanoutMsg) {
 	msg.Node = nodeID
+	msg.At = time.Now().UnixNano()
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return
@@ -400,6 +407,14 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 	}
 	if rm := s.rooms[msg.Room]; rm != nil {
 		if old := rm.peers[msg.Peer.ID]; old != nil {
+			// A mirror published before this socket joined is the peer's
+			// OLD seat announcing itself late (a bus that delivered one
+			// replica's lane behind the client's reconnect), not a move
+			// away: dropping it keeps the live socket. Order is the local
+			// join time in the same unit. #474.
+			if msg.At != 0 && msg.At < old.info.Order {
+				return
+			}
 			delete(rm.peers, msg.Peer.ID)
 			s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: msg.Peer.ID})
 			if len(rm.peers) == 0 {

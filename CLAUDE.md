@@ -31,7 +31,9 @@ in the same commit as the code change, not a follow-up. The docs
 live in `framework/docs/content/*.md` and are embedded into the
 `gofastr` binary at build time. `gofastr docs` browses them; the
 MCP tools `framework_docs_list` / `framework_docs_get` /
-`framework_docs_search` expose them to agents connected to a live app.**
+`framework_docs_search` (`framework.WithMCPTools(mcptools.Register)` from
+`framework/docs/mcptools`; package framework never imports the corpus)
+expose them to agents connected to a live app.**
 
 ## TL;DR of the architecture (read the full doc anyway)
 

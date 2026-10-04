@@ -10,7 +10,8 @@
 -->
 
 This page carries the runtime contract for readers of the embedded
-docs (`gofastr docs`, the `framework_docs_*` MCP tools): the
+docs (`gofastr docs`, the `framework_docs_*` MCP tools from
+`framework/docs/mcptools`): the
 SSR/hydration/island/SSE model and the full `data-cui-*` attribute
 reference. If you are working inside the framework repo, read
 `core-ui/ARCHITECTURE.md` instead; it is the authoritative version
