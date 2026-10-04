@@ -242,3 +242,19 @@ Usage of myapp gadgets create:
   -views int
     	views (int)
 
+== batch-delete without ids: gadgets batch-delete (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+usage: myapp gadgets batch-delete <id> [id...]
+
+== batch-delete flag after id: gadgets batch-delete --url http://127.0.0.1:9 rec-1 --json (exit 2)
+-- request
+(no request)
+-- stdout
+
+-- stderr
+myapp gadgets batch-delete: flags must precede trailing ids (got --json after an id)
+

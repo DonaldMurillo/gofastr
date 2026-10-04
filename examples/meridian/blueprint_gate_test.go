@@ -200,22 +200,25 @@ func TestGeneratedTreesMatchGenerator(t *testing.T) {
 		// Reverse: every committed file must be generator output
 		// (custom.go excepted), or it is a leftover the generator no
 		// longer emits.
-		committedFiles, err := filepath.Glob(filepath.Join(tree.committed, "*.go"))
-		if err != nil {
-			t.Fatalf("glob %s: %v", tree.committed, err)
-		}
-		for _, committedPath := range committedFiles {
+		err = filepath.Walk(tree.committed, func(committedPath string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(committedPath, ".go") {
+				return err
+			}
 			rel, relErr := filepath.Rel(tree.committed, committedPath)
 			if relErr != nil {
-				t.Fatalf("rel %s: %v", committedPath, relErr)
+				return relErr
 			}
 			if rel == "custom.go" {
-				continue
+				return nil
 			}
 			if _, statErr := os.Stat(filepath.Join(tree.generated, rel)); statErr != nil {
 				t.Errorf("%s is committed but the generator no longer emits it; delete it or move it into the hand-maintained part of the app",
 					committedPath)
 			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk committed %s: %v", tree.committed, err)
 		}
 	}
 	// A walk that matched nothing would make every assertion above vacuous and

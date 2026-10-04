@@ -78,6 +78,8 @@ var cliMutationCases = []struct {
 	{"update without id", []string{"gadgets", "update"}},
 	{"rejects unknown flag", []string{"gadgets", "create", "--nope"}},
 	{"read-only field not a mutation flag", []string{"gadgets", "create", "--sku", "S1"}},
+	{"batch-delete without ids", []string{"gadgets", "batch-delete"}},
+	{"batch-delete flag after id", []string{"gadgets", "batch-delete", "--url", "http://127.0.0.1:9", "rec-1", "--json"}},
 }
 
 // TestCLIMutationVerbBytesStable pins the observable behaviour of the

@@ -186,14 +186,6 @@ Generation is one-shot owned code: re-running refuses to overwrite and
 `--force` regenerates, **except `custom.go`, which is only ever
 created when absent**. That file is the extension seam:
 
-The rest of the tree is laid out the same way: each `<entity>.go` holds
-the command table, the per-entity filter and mutation-field tables, and
-one-line wrappers (`runPostsList`-style) binding them; `verbs.go` holds
-the shared verb bodies those wrappers call; `main.go`, `config.go`,
-`auth.go`, and `output.go` hold the dispatch, connection, and printing
-scaffold. Field names are data rows in the tables, never identifiers, so
-a field rename never changes the generated function names.
-
 - `customCommands()` is merged over the generated command table; an
   entry with a generated name (`"posts list"`) replaces that command,
   a new name adds one. Wrap rather than replace by calling the
@@ -203,6 +195,14 @@ a field rename never changes the generated function names.
   or retries.
 - Custom server endpoints are reachable via the client's raw
   `Do(ctx, method, path, body, out)` escape hatch.
+
+The rest of the tree is laid out the same way: each `<entity>.go` holds
+the command table, the per-entity filter and mutation-field tables, and
+one-line wrappers (`runPostsList`-style) binding them; `verbs.go` holds
+the shared verb bodies those wrappers call; `main.go`, `config.go`,
+`auth.go`, and `output.go` hold the dispatch, connection, and printing
+scaffold. Field names are data rows in the tables, never identifiers, so
+a field rename never changes the generated function names.
 
 Fields with `hidden: true` never appear; `read_only` fields appear as
 list filters but not as mutation flags. Image/file fields are excluded

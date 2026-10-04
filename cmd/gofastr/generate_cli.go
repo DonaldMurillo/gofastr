@@ -1600,6 +1600,9 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || get || del || mutation {
 		imports = append(imports, "\t\"net/url\"")
 	}
+	if batchDel {
+		imports = append(imports, "\t\"os\"") // usage errors go to stderr
+	}
 	if watch {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
 	}
@@ -1891,13 +1894,13 @@ func runBatchDeleteVerb(cmd, base string, args []string) int {
 	}
 	for _, id := range fs.Args() {
 		if id != "" && id[0] == '-' {
-			fmt.Println(binaryName + " " + cmd + ": flags must precede trailing ids (got " + id + " after an id)")
+			fmt.Fprintln(os.Stderr, binaryName+" "+cmd+": flags must precede trailing ids (got "+id+" after an id)")
 			return 2
 		}
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		fmt.Println("usage: " + binaryName + " " + cmd + " <id> [id...]")
+		fmt.Fprintln(os.Stderr, "usage: "+binaryName+" "+cmd+" <id> [id...]")
 		return 2
 	}
 	resp, code := doBatch(g, http.MethodDelete, base+"/_batch", map[string]any{"ids": ids})
