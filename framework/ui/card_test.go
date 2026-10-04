@@ -103,10 +103,8 @@ func TestCardHeadingContentRendersInTheHeadingElement(t *testing.T) {
 	if !strings.Contains(h, want) {
 		t.Fatalf("card = %s\nwant it to contain %s", h, want)
 	}
-	defer func() {
-		if r := recover(); r == nil || !strings.Contains(r.(string), "one heading, one source") {
-			t.Fatalf("Heading plus HeadingContent must panic, got %v", r)
-		}
-	}()
-	Card(CardConfig{Heading: "x", HeadingContent: render.HTML("<b>y</b>")})
+	both := string(Card(CardConfig{Heading: "x", HeadingContent: render.HTML("<b>y</b>")}))
+	if !strings.Contains(both, `<h3 class="fui-card__heading"><b>y</b></h3>`) || strings.Contains(both, ">x<") {
+		t.Fatalf("HeadingContent must win over Heading: %s", both)
+	}
 }

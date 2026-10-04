@@ -40,8 +40,8 @@ type CardConfig struct {
 	// HeadingContent is the heading as markup instead of text, for a
 	// heading whose words are filled in the browser: a local entity's
 	// Row.Text slot or a signal binding. It renders inside the card's
-	// own heading element with the heading's styles. Set Heading or
-	// HeadingContent, not both.
+	// own heading element with the heading's styles. It wins over
+	// Heading when both are set.
 	HeadingContent render.HTML
 
 	// HeadingLevel overrides the heading element level (default 3).
