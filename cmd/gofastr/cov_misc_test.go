@@ -168,7 +168,7 @@ func TestRenderBlueprintBlockTypes(t *testing.T) {
 		{BlueprintBlock{Type: "heading", Level: 2, Text: "H"}, "html.Heading"},
 		{BlueprintBlock{Type: "h3", Text: "H"}, "Level: 3"},
 		{BlueprintBlock{Type: "h6", Text: "H"}, "Level: 6"},
-		{BlueprintBlock{Type: "link", Href: "/x", Text: "L"}, "html.Link"},
+		{BlueprintBlock{Type: "link", Href: "/x", Text: "L"}, "ui.Link"},
 		{BlueprintBlock{Type: "section", Text: "S", Class: "c"}, "section"},
 		{BlueprintBlock{Type: "weird", Text: "D"}, "html.Div(html.DivConfig{Class: \"\"}, render.Text(\"D\"))"},
 		{BlueprintBlock{Type: "weird", Text: "D", Class: "k"}, "html.Div(html.DivConfig{Class: \"k\"}, render.Text(\"D\"))"},

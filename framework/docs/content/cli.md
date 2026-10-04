@@ -41,6 +41,8 @@ each command to the doc that covers it.
   as owned Go ([tutorial](tutorial-blueprint-app.md)). `generate --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
   files into an existing app; owned files are never touched.
+  `generate screen <name> --from-a11y=<file>` builds the screen from a
+  Playwright aria snapshot ([blueprints](blueprints.md)).
   `generate --config=<codegen.yml>` runs the configurable codegen engine
   ([codegen](codegen.md)); `generate --watch` re-runs on every change.
   `generate all` is the full-project path (same engine as `--from`).
