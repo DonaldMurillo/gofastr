@@ -201,6 +201,111 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and `--ui-detail-list-label-track` (default `minmax(7rem, 13rem)`) is
   `ui.DetailList`'s label column. Unset, both render as before.
 
+- **`gofastr upgrade` matches surviving symbols by shape.** A registry
+  note's `find.shapes` entry names a symbol and a regex over the type
+  its use resolves to, written for the shape the release replaced, so a
+  note on a symbol that survives with a new signature or field type
+  hits before the port and goes silent after it. `uses` fired on both
+  spellings, so a ported app could never go clean on such a note. An
+  app type implementing an interface method is read against its own
+  signature, and when the app no longer compiles against the version it
+  is moving to, a compile error on a line where the symbol resolved to
+  another shape is reported under the note with the error attached. The
+  notes on these symbols moved to it: v0.3.0 `Policy.Can` and
+  `RolePolicy.Can`, v0.30.0 `RolePolicy.Grant`, v0.38.0
+  `Manager.Subscribe` and `ConnectSession`, v0.50.0 `Host.MintNonce`,
+  `VerifyGrant` and `Refresh`, v0.54.0 `EntityConfig.Timestamps`,
+  v0.64.0 `IdempotencyStore.Finish`, v0.66.0 `Queue.Ack` and `Nack`,
+  v0.74.0 `EntityOpenAPI`, `RegistryLLMMD` and `RegistryLLMMDHandler`,
+  v0.78.0's llm.md generators, v0.82.0 `NewEntityTwoFAStore`, v0.86.0
+  `ThemeRef.Hash`, `FormFieldConfig.Input` and `app.NewLayout`. The
+  upgrade-fixtures symbol gate checks a `shapes` symbol against the
+  prior tag the way it checks `uses`, so a misspelled one fails instead
+  of passing silently. Documented in `gofastr docs cli` (#456, #457).
+- **Registry notes for changes the registry never carried.** v0.54.0:
+  the deleted `ui.BaseCSS` and `interactive.Confirm`, the bare pattern
+  component names (`disclosure`, `multiselect`, `sortablelist`), the
+  retired `data-fui-sticky` and `data-fui-viewport` markers, the deleted
+  experimental redis stores, harness `failover`/`routing`/`copilot`
+  providers, `render.Deferred` and `freeze.ErrGenerateViaBlueprint`,
+  the facade re-exports becoming functions, and `WithConfig` replacing
+  `AppConfig` wholesale. v0.62.0: the strict flat `multi_tenant`,
+  `soft_delete` and `app.auth.enabled` booleans. v0.74.0: the
+  `crudMounted` parameter on `openapi.EntityOpenAPI` and the llm.md
+  registry generators. v0.86.0: the deleted `PasswordInputConfig.Error`,
+  `ColorFieldConfig.SwatchValue`, `CalloutConfig.Landmark`,
+  `SectionConfig.Ctx`, `NetworkRetryBannerConfig.FailureThreshold` and
+  `SSESilenceMs`, `CarouselConfig`'s `VirtualScroll` family and
+  `SkeletonAvatarConfig.Size` fields, the checkbox/radio/switch family's
+  retired `ui-toggle*` classes, and nodetect notes for the required
+  no-script destinations on NotificationBell, GlobalSearch and
+  CommandPalette, StepWizard's `Errors`/`Summary`/`ID`, and the 4.5:1
+  contrast refusal at `WithTheme` (#456).
+- **`make dupl`: duplicate-code gate** (dupl v1.1.0, threshold 100;
+  examples, evals, testdata and `*.gen.go` excluded) over the repo's Go
+  files, baseline-gated by `scripts/dupl-baseline.txt`: it fails when
+  the clone-group count grows, and `scripts/dupl.sh --rebaseline`
+  rewrites the baseline. CI runs it in the blocking job beside the vet
+  gates (#413).
+- **`.githooks/pre-push` runs the heavy chromedp suites it used to
+  skip.** Affected heavy packages and the four `cmd/gofastr` browser
+  tests run serialized at `-p 1` after the coverage floors, the local
+  analog of CI's one-suite-per-runner browser isolation (#413).
+- **`ui.ParseButtonVariant`** resolves a caller-supplied variant string
+  and answers `ok=false` for an unregistered spelling; kiln's node
+  renderer, the generated resource screens and uihost's trusted node
+  renderer share it instead of three lookup tables. **`schema.FieldTypeLabel`**
+  is the one table behind the field-type prose in the entity llm.md
+  reference and the SDK reference screens, which carried two copies
+  (#417).
+- **`gofastr dev` prints a `Building <dir> (Ns)...` progress line every
+  ten seconds while a rebuild runs.** `go build` is silent however long
+  it takes and the startup banner already names an address, so a slow
+  build under load no longer looks like a hang; the dev-loop examples
+  e2e waits on the dev child's own behaviour (the answer, process exit,
+  a build-failure line, or output silence) instead of a fixed clock,
+  and prewarms each example's build cache first (#413, #456).
+
+### Changed
+- **examples/meridian: `entities/` and `cmd/meridian/` are
+  generator-owned again and gated for byte drift** (#416).
+  `TestGeneratedTreesMatchGenerator` regenerates both trees from
+  `gofastr.yml` with the in-tree generator and fails on any committed
+  file that differs or that the generator no longer emits;
+  `cmd/meridian/custom.go` stays the hand-owned seam and is excluded.
+  Both trees were refreshed to current generator output: per-entity
+  event helpers moved to `entities/events.go`, CLI verb bodies to
+  `cmd/meridian/verbs.go`, the generated CLI dropped the `--token` flag
+  (tokens never ride argv), refuses a corrupt `config.json` and runs
+  verbs under a Ctrl-C signal context, and the generated client no
+  longer carries `UserId` on owner-scoped entities (the owner column is
+  hidden and server-assigned). `doc.go` documents the split: two
+  generator-owned trees plus the hand-maintained surfaces.
+- **`gofastr generate cli` emits create, update and patch as one shared
+  body each** in the generated `verbs.go`, driven by a per-entity
+  `mutationField` table in `<entity>.go` (#417). Flags, defaults, usage
+  text, request bodies and exit codes are unchanged and pinned
+  byte-for-byte by a golden test; an entity whose selected verbs are
+  only create, update and patch now emits a file with no imports.
+- **The `gofastr upgrade` registry was audited against the changelog,
+  v0.3.0 to v0.86.0.** Matchers that fired on unaffected spellings were
+  narrowed: `_like=` hits only a value that sends a wildcard, `?cursor=`
+  only when a `sort=` rides along, `_in=` only a list of 500 or more
+  entries, the v0.85.0 widget-lifecycle note an observer attached to the
+  document rather than every `MutationObserver`, and `--token` no
+  longer matches another tool's `--tokens`. The v0.54.0 upload-metadata
+  note gained `uploaded_at` and bare `mime_type`; the v0.55.0 bootstrap
+  note names the `BootstrapMode` constants. The v0.3.0 access note
+  describes the dropped `Can` parameter instead of a helper that never
+  existed and is edit-tier; the v0.7.0 `api_prefix` note is nodetect
+  (the key was new in that release, so no earlier blueprint carried
+  it); the v0.60.0 catalog-scraping note is review-tier because static
+  export and embeds keep the endpoints it names. The v0.86.0
+  class-rename notes no longer tell an app to rename `.ui-*` selectors
+  to `.fui-*` (an owned sheet may not select kit classes, GOFASTR1810)
+  and point at the component's config, a variant or a theme option.
+  Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
+  names the actual remedy (#456).
 ### Fixed
 - **A screen that panics is a logged 500, never a silent 404.** A
   render or `Load` panic on any serving path (full page with or
@@ -276,6 +381,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   390px-wide banner a 94px title column beside a 149px action; the
   action now drops under the body and the dismiss spans the stack.
 
+- **`gofastr generate package docpage`: a rail left unset (zero `Nav`
+  or `Toc`) collapses like an empty one**, and a page with no rails
+  renders one centred reading column at the prose measure, the shape
+  the deleted `ui.DocLayout(ui.DocLayoutConfig{}, body)` gave blog
+  posts and standalone pages (#457).
+- **The upgrade scanner's build-constraint solver matches the go
+  command**, proven by a differential test against `go list`: it offers
+  only GOOS/GOARCH pairs the toolchain builds (a `//go:build solaris`
+  file on an arm64 host scans under solaris/amd64 instead of failing
+  the load), knows the `zos` filename suffix and satisfies pairless
+  platform names through `-tags`, honours the android/illumos/ios
+  filename-matching direction (`x_darwin.go` with `//go:build ios` scans
+  under GOOS=ios), and no longer claims `-tags boringcrypto` satisfies
+  `//go:build boringcrypto` (go/build remaps it to
+  `goexperiment.boringcrypto`) (#456).
+- **The uihost plaintext-origin session warning scrubs the request
+  Host with the full textsafe set** (C1 and bidi runes included), which
+  slog's JSON handler otherwise leaves raw in the logged line (#417).
 ### Security
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
