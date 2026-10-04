@@ -382,10 +382,16 @@ func (w *winWindow) Close() error {
 		return nil
 	}
 	return w.shell.Main(func() {
-		if w.hwnd != 0 && !w.closed.Load() {
-			win32.SendMessage(w.hwnd, wmClose, 0, 0)
-		}
+		closeWindowOnUIThread(w.hwnd, w.closed.Load(), func(hwnd uintptr, msg uint32, wp, lp uintptr) {
+			win32.SendMessage(hwnd, msg, wp, lp)
+		})
 	})
+}
+
+func closeWindowOnUIThread(hwnd uintptr, closed bool, send func(uintptr, uint32, uintptr, uintptr)) {
+	if hwnd != 0 && !closed {
+		send(hwnd, wmClose, 0, 0)
+	}
 }
 
 func errWindowClosed() error {

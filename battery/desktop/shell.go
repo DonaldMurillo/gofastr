@@ -246,6 +246,9 @@ type Tray struct {
 
 // the shell-level extras that hang off it.
 type WindowConfig struct {
+	// AppID is the stable application identity used for per-app embedded
+	// browser data. Empty preserves the shell's title-based fallback.
+	AppID  string
 	Title  string
 	Width  int
 	Height int

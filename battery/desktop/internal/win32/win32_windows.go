@@ -238,7 +238,7 @@ func SendKeyboardShortcut(key uint16, modifiers ...uint16) error {
 	for i := len(modifiers) - 1; i >= 0; i-- {
 		add(modifiers[i], 0x0002 /* KEYEVENTF_KEYUP */)
 	}
-	r, _, callErr := call(user32, "SendInput", uintptr(count), uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
+	r, callErr := sendInputCall(uintptr(count), unsafe.Pointer(&inputs[0]), unsafe.Sizeof(inputs[0]))
 	if r != uintptr(count) {
 		if callErr != nil {
 			return fmt.Errorf("SendInput: %w", lastError(callErr))
@@ -247,6 +247,12 @@ func SendKeyboardShortcut(key uint16, modifiers ...uint16) error {
 	}
 	return nil
 }
+
+var sendInputCall = func(count uintptr, inputs unsafe.Pointer, size uintptr) (uintptr, error) {
+	r, _, err := call(user32, "SendInput", count, uintptr(inputs), size)
+	return r, err
+}
+
 func ReleaseCapture() { _, _, _ = call(user32, "ReleaseCapture") }
 func SetWindowText(hwnd uintptr, title string) error {
 	p, err := UTF16(title)
@@ -570,6 +576,24 @@ func DwmSetWindowAttribute(hwnd uintptr, attribute uint32, value uint32) error {
 	r, _, _ := syscall.SyscallN(proc.Addr(), hwnd, uintptr(attribute), uintptr(unsafe.Pointer(&value)), unsafe.Sizeof(value))
 	if int32(r) < 0 {
 		return fmt.Errorf("DwmSetWindowAttribute: HRESULT 0x%08x", uint32(r))
+	}
+	return nil
+}
+
+// Margins describes the DWM frame extension, in physical pixels.
+type Margins struct {
+	Left, Right, Top, Bottom int32
+}
+
+func DwmExtendFrameIntoClientArea(hwnd uintptr, margins Margins) error {
+	dwm := syscall.NewLazyDLL("dwmapi.dll")
+	proc := dwm.NewProc("DwmExtendFrameIntoClientArea")
+	if err := proc.Find(); err != nil {
+		return err
+	}
+	r, _, _ := syscall.SyscallN(proc.Addr(), hwnd, uintptr(unsafe.Pointer(&margins)))
+	if int32(r) < 0 {
+		return fmt.Errorf("DwmExtendFrameIntoClientArea: HRESULT 0x%08x", uint32(r))
 	}
 	return nil
 }

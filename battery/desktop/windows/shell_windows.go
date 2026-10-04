@@ -4,6 +4,8 @@ package windows
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -30,6 +32,7 @@ const (
 	wmDestroy       = 0x0002
 	wmSize          = 0x0005
 	wmMove          = 0x0003
+	wmSettingChange = 0x001A
 	wmMoving        = 0x0216
 	wmMouseActivate = 0x0021
 	wmActivate      = 0x0006
@@ -224,6 +227,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	if err := s.installMenus(main.hwnd, cfg.Title, cfg.Menu, cfg.Settings != nil); err != nil {
 		s.closeRunError(err)
 	}
+	main.titlebarTransparent = applyWindowChrome(main.hwnd, main.style)
 	if main.customFrame() {
 		// Recalculate after attaching the menu so the custom frame can
 		// reserve the native caption and menu bands above the WebView.
@@ -243,7 +247,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 		s.closeRunError(err)
 	} else {
 		s.loader = loader
-		userData := webviewUserDataDir(cfg.Title)
+		userData := webviewUserDataDir(cfg.AppID, cfg.Title)
 		if err := os.MkdirAll(userData, 0o700); err != nil {
 			s.closeRunError(fmt.Errorf("desktop/windows: create WebView2 data folder: %w", err))
 		} else {
@@ -487,7 +491,20 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	if msg == wmDPIChanged && lparam != 0 {
 		rect := (*win32Rect)(unsafe.Pointer(lparam))
 		_ = win32.SetWindowPos(hwnd, rect.Left, rect.Top, rect.Right-rect.Left, rect.Bottom-rect.Top, win32.SWP_NOZORDER|win32.SWP_NOACTIVATE)
+		if value, ok := activeWindows.Load(hwnd); ok {
+			w := value.(*winWindow)
+			w.titlebarTransparent = applyWindowChrome(hwnd, w.style)
+			if w.customFrame() {
+				win32.FrameChanged(hwnd)
+			}
+		}
 		return 0
+	}
+	if isImmersiveColorSetMessage(msg, lparam) {
+		if value, ok := activeWindows.Load(hwnd); ok {
+			w := value.(*winWindow)
+			w.titlebarTransparent = applyWindowChrome(hwnd, w.style)
+		}
 	}
 	if value, ok := activeWindows.Load(hwnd); ok {
 		w := value.(*winWindow)
@@ -640,6 +657,10 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	}
 	return win32.DefWindowProc(hwnd, msg, wparam, lparam)
+}
+
+func isImmersiveColorSetMessage(msg uint32, lparam uintptr) bool {
+	return msg == wmSettingChange && lparam != 0 && win32.ReadUTF16(lparam, 64) == "ImmersiveColorSet"
 }
 
 func showWindow(hwnd uintptr, cmd uintptr) { win32.ShowWindowCmd(hwnd, int(cmd)) }
@@ -1124,17 +1145,12 @@ func (s *winShell) destroyWebView(w *winWindow) {
 func (s *winShell) Appearance() desktop.Appearance { return s.appearance }
 
 func findWebView2Loader() (uintptr, error) {
-	var candidates []string
-	if p := os.Getenv("GOFASTR_WEBVIEW2_LOADER"); p != "" {
-		candidates = append(candidates, p)
-	}
+	override := os.Getenv("GOFASTR_WEBVIEW2_LOADER")
+	executable := ""
 	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "WebView2Loader.dll"))
+		executable = exe
 	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "WebView2Loader.dll"))
-	}
-	for _, p := range candidates {
+	for _, p := range webView2LoaderCandidates(override, executable) {
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			return win32.LoadLibrary(p)
 		}
@@ -1142,19 +1158,40 @@ func findWebView2Loader() (uintptr, error) {
 	return 0, errors.New("desktop/windows: WebView2Loader.dll was not found; run `gofastr desktop build` or set GOFASTR_WEBVIEW2_LOADER")
 }
 
-func webviewUserDataDir(title string) string {
+func webView2LoaderCandidates(override, executable string) []string {
+	var candidates []string
+	if override != "" {
+		candidates = append(candidates, override)
+	}
+	if executable != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "WebView2Loader.dll"))
+	}
+	return candidates
+}
+
+func webviewUserDataDir(appID, title string) string {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		base = os.TempDir()
 	}
-	name := strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
-			return r
+	return webviewUserDataDirAt(base, appID, title)
+}
+
+func webviewUserDataDirAt(base, appID, title string) string {
+	name := title
+	if appID != "" {
+		sum := sha256.Sum256([]byte(appID))
+		name = "app-" + hex.EncodeToString(sum[:16])
+	} else {
+		name = strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+				return r
+			}
+			return '-'
+		}, title)
+		if name == "" {
+			name = "gofastr"
 		}
-		return '-'
-	}, title)
-	if name == "" {
-		name = "gofastr"
 	}
 	return filepath.Join(base, "gofastr", name, "WebView2")
 }

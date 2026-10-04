@@ -793,28 +793,61 @@ func showFileDialog(s *winShell, op *modalOperation, opts desktop.OpenOptions, s
 			return nil, err
 		}
 		defer win32.Release(array)
-		var count uint32
-		_, _ = win32.COMCall(array, 3, uintptr(unsafe.Pointer(&count)))
-		paths := make([]string, 0, count)
-		for i := uint32(0); i < count; i++ {
-			var item uintptr
-			if _, err := win32.COMCall(array, 4, uintptr(i), uintptr(unsafe.Pointer(&item))); err != nil {
-				return nil, err
-			}
-			p, e := shellItemPath(item)
-			win32.Release(item)
-			if e != nil {
-				return nil, e
-			}
-			paths = append(paths, p)
-		}
-		return paths, nil
+		return shellItemArrayPaths(array)
 	}
 	path, err := getDialogResultPath(dlg)
 	if err != nil {
 		return nil, err
 	}
 	return []string{path}, nil
+}
+
+type shellItemArrayAPI struct {
+	getCount  func(uintptr, *uint32) error
+	getItemAt func(uintptr, uint32, *uintptr) error
+	release   func(uintptr)
+	path      func(uintptr) (string, error)
+}
+
+const (
+	shellItemArrayGetCountSlot  = 7
+	shellItemArrayGetItemAtSlot = 8
+)
+
+func shellItemArrayPaths(array uintptr) ([]string, error) {
+	return readShellItemArray(array, shellItemArrayAPI{
+		getCount: func(array uintptr, count *uint32) error {
+			_, err := win32.COMCall(array, shellItemArrayGetCountSlot, uintptr(unsafe.Pointer(count)))
+			return err
+		},
+		getItemAt: func(array uintptr, index uint32, item *uintptr) error {
+			_, err := win32.COMCall(array, shellItemArrayGetItemAtSlot, uintptr(index), uintptr(unsafe.Pointer(item)))
+			return err
+		},
+		release: win32.Release,
+		path:    shellItemPath,
+	})
+}
+
+func readShellItemArray(array uintptr, api shellItemArrayAPI) ([]string, error) {
+	var count uint32
+	if err := api.getCount(array, &count); err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, count)
+	for i := uint32(0); i < count; i++ {
+		var item uintptr
+		if err := api.getItemAt(array, i, &item); err != nil {
+			return nil, err
+		}
+		p, err := api.path(item)
+		api.release(item)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, nil
 }
 
 func showSaveDialog(s *winShell, op *modalOperation, opts desktop.SaveOptions) (string, error) {

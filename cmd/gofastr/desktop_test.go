@@ -90,6 +90,25 @@ func TestDesktopBuildNameValidation(t *testing.T) {
 	}
 }
 
+func TestValidWindowsArtifactName(t *testing.T) {
+	for _, bad := range []string{
+		"bad<name", "bad>name", "bad:name", `bad"name`, "bad|name",
+		"bad?name", "bad*name", "bad/name", `bad\name`, "bad\nname",
+		"NUL.foo", "NUL .txt", "con.txt", "COM1.exe", "LPT9.log",
+		"COM¹", "COM².txt", "COM³.exe", "LPT¹", "LPT².log", "LPT³",
+		"name.", "name ", ".", "..",
+	} {
+		if validWindowsArtifactName(bad) {
+			t.Errorf("validWindowsArtifactName(%q) = true, want false", bad)
+		}
+	}
+	for _, good := range []string{"notes", "Notes & Co", "COM10", "LPT0", "ordinary.exe", ".NET Notes", ".notes", ".exe"} {
+		if !validWindowsArtifactName(good) {
+			t.Errorf("validWindowsArtifactName(%q) = false, want true", good)
+		}
+	}
+}
+
 func TestDesktopBuildRejectsBadIDBeforeBuilding(t *testing.T) {
 	var code int
 	out := covT_capStdout(t, func() {

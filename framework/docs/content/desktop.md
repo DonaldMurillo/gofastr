@@ -550,8 +550,10 @@ panel never becoming key, and the page learning its own window id
 
 On Windows, `ChromeHiddenTitle` and `ChromeUnified` use a custom frame
 while DWM keeps its native caption controls. Without a native menu, the
-WebView can fill the titlebar area. With a menu, the shell preserves the
+WebView can fill the title bar area. With a menu, the shell preserves the
 caption and menu bands above the WebView so the page cannot cover them.
+WebView2 browser data uses a profile derived from `Config.ID`, so apps with
+the same title keep separate browser state.
 The shell uses per-monitor DPI awareness so WebView2 text, menus, and
 controls render at the display scale. WebView2 accepts CSS
 `-webkit-app-region: drag` in this mode; the shared

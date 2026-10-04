@@ -135,64 +135,46 @@ func ThemeFor(goos string) style.Theme {
 	return t
 }
 
-func applyPlatformTokens(t *style.Theme, goos string) {
-	switch goos {
-	case "windows":
-		// Fluent's system UI font and the Windows 11 neutral surfaces.
-		// Accent is a static blue fallback; the Windows shell can replace
-		// it with the user's UISettings accent once native appearance
-		// values are wired into theme construction.
-		t.Fonts.Body.Value = "system-ui, 'Segoe UI', sans-serif"
-		t.Fonts.Heading.Value = "system-ui, 'Segoe UI', sans-serif"
-		t.Fonts.Mono.Value = "ui-monospace, 'Cascadia Mono', Consolas, monospace"
-		t.Colors.Background.Value = "#F3F3F3"
-		t.Colors.Surface.Value = "#FFFFFF"
-		t.Colors.SurfaceSoft.Value = "#F9F9F9"
-		t.Colors.Text.Value = "#1C1C1C"
-		t.Colors.Accent.Value = "#0078D4"
-		t.Colors.Primary.Value = "#0067C0"
-		t.Colors.PrimaryFg.Value = "#FFFFFF"
-		setDarkTokens(t, map[string]string{
-			"background":   "#202020",
-			"surface":      "#1C1C1C",
-			"surface-soft": "#282828",
-			"text":         "#FFFFFF",
-			"text-muted":   "#C5C5C5",
-			"text-subtle":  "#878787",
-			"accent":       "#60CDFF",
-			"primary":      "#0067C0",
-			"primary-fg":   "#FFFFFF",
-		})
-	case "linux":
-		// Adwaita documents these font families, surfaces, and blue
-		// accent variants. The stronger blue-4 is the filled-control
-		// primary because it clears the theme's 4.5:1 ink-pair floor.
-		t.Fonts.Body.Value = "system-ui, 'Adwaita Sans', Cantarell, sans-serif"
-		t.Fonts.Heading.Value = "system-ui, 'Adwaita Sans', Cantarell, sans-serif"
-		t.Fonts.Mono.Value = "ui-monospace, 'Adwaita Mono', monospace"
-		t.Colors.Background.Value = "#FAFAFB"
-		t.Colors.Surface.Value = "#FFFFFF"
-		t.Colors.SurfaceSoft.Value = "#EBEBED"
-		t.Colors.Text.Value = "#333334"
-		t.Colors.Accent.Value = "#0461BE"
-		t.Colors.Primary.Value = "#1C71D8"
-		t.Colors.PrimaryFg.Value = "#FFFFFF"
-		setDarkTokens(t, map[string]string{
-			"background":   "#222226",
-			"surface":      "#1D1D20",
-			"surface-soft": "#2E2E32",
-			"text":         "#FFFFFF",
-			"text-muted":   "#C5C5C5",
-			"text-subtle":  "#A0A0A0",
-			"accent":       "#81D0FF",
-			"primary":      "#1A5FB4",
-			"primary-fg":   "#FFFFFF",
-		})
-	}
+type platformThemeTokens struct {
+	fonts [3]string
+	light [7]string
+	dark  [9]string
 }
 
-func setDarkTokens(t *style.Theme, values map[string]string) {
-	for key, value := range values {
-		t.DarkColors[key] = value
+// Platform values live as data so the Windows and Linux presets share one
+// application path instead of parallel assignment blocks.
+var platformThemes = map[string]platformThemeTokens{
+	// Fluent's system UI font and Windows 11 neutral surfaces. Accent is a
+	// static blue fallback until native UISettings colors feed theme creation.
+	"windows": {
+		fonts: [3]string{"system-ui, 'Segoe UI', sans-serif", "system-ui, 'Segoe UI', sans-serif", "ui-monospace, 'Cascadia Mono', Consolas, monospace"},
+		light: [7]string{"#F3F3F3", "#FFFFFF", "#F9F9F9", "#1C1C1C", "#0078D4", "#0067C0", "#FFFFFF"},
+		dark:  [9]string{"#202020", "#1C1C1C", "#282828", "#FFFFFF", "#C5C5C5", "#878787", "#60CDFF", "#0067C0", "#FFFFFF"},
+	},
+	// Adwaita documents these fonts, surfaces, and blue accents. Blue-4 is
+	// the filled-control primary because it clears the 4.5:1 ink-pair floor.
+	"linux": {
+		fonts: [3]string{"system-ui, 'Adwaita Sans', Cantarell, sans-serif", "system-ui, 'Adwaita Sans', Cantarell, sans-serif", "ui-monospace, 'Adwaita Mono', monospace"},
+		light: [7]string{"#FAFAFB", "#FFFFFF", "#EBEBED", "#333334", "#0461BE", "#1C71D8", "#FFFFFF"},
+		dark:  [9]string{"#222226", "#1D1D20", "#2E2E32", "#FFFFFF", "#C5C5C5", "#A0A0A0", "#81D0FF", "#1A5FB4", "#FFFFFF"},
+	},
+}
+
+func applyPlatformTokens(t *style.Theme, goos string) {
+	p, ok := platformThemes[goos]
+	if !ok {
+		return
+	}
+	t.Fonts.Body.Value, t.Fonts.Heading.Value, t.Fonts.Mono.Value = p.fonts[0], p.fonts[1], p.fonts[2]
+	light := []*style.Color{
+		&t.Colors.Background, &t.Colors.Surface, &t.Colors.SurfaceSoft,
+		&t.Colors.Text, &t.Colors.Accent, &t.Colors.Primary, &t.Colors.PrimaryFg,
+	}
+	for i, color := range light {
+		color.Value = p.light[i]
+	}
+	darkKeys := [...]string{"background", "surface", "surface-soft", "text", "text-muted", "text-subtle", "accent", "primary", "primary-fg"}
+	for i, key := range darkKeys {
+		t.DarkColors[key] = p.dark[i]
 	}
 }

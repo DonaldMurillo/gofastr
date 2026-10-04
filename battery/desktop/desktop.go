@@ -974,6 +974,7 @@ func (b *Battery) Run(app *framework.App) error {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
 	shellErr := b.shell.Run(ctx, WindowConfig{
+		AppID:    b.cfg.ID,
 		Title:    b.windowTitle(),
 		Width:    b.windowWidth(),
 		Height:   b.windowHeight(),

@@ -83,18 +83,6 @@ func buildWindowsDesktop(f desktopBuildFlags, name string) error {
 	return nil
 }
 
-func validWindowsArtifactName(name string) bool {
-	base := strings.TrimRight(strings.ToUpper(name), ". ")
-	switch base {
-	case "CON", "PRN", "AUX", "NUL":
-		return false
-	}
-	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
-		return false
-	}
-	return base != ""
-}
-
 func fetchWebView2Loader() ([]byte, error) {
 	cacheBase, err := os.UserCacheDir()
 	if err != nil {

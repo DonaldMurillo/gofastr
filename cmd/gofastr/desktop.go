@@ -350,6 +350,30 @@ func validateDesktopName(name string) error {
 	return nil
 }
 
+func validWindowsArtifactName(name string) bool {
+	if name == "" || strings.ContainsAny(name, `<>:"/\\|?*`) || strings.TrimRight(name, ". ") != name {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 {
+			return false
+		}
+	}
+	base := strings.ToUpper(name)
+	if i := strings.IndexByte(base, '.'); i >= 0 {
+		base = strings.TrimRight(base[:i], ". ")
+	}
+	switch base {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+		"COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³":
+		return false
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
+		return false
+	}
+	return true
+}
+
 func runDesktopBuild(args []string) {
 	f := parseDesktopBuildFlags(args)
 	if err := validateDesktopID(f.id); err != nil {
