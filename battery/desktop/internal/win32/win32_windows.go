@@ -240,7 +240,7 @@ func SendKeyboardShortcut(key uint16, modifiers ...uint16) error {
 	}
 	r, _, callErr := call(user32, "SendInput", uintptr(count), uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
 	if r != uintptr(count) {
-		if callErr != 0 {
+		if callErr != nil {
 			return fmt.Errorf("SendInput: %w", lastError(callErr))
 		}
 		return fmt.Errorf("SendInput inserted %d of %d keyboard events", r, count)
