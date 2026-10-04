@@ -27,10 +27,10 @@ import (
 // Gate 1 checks the symbols the registry names. This is its inverse: it
 // diffs the exported API of the module's public packages between two
 // refs and fails on each removed identifier no note in the releases
-// between them finds. v0.86.0 shipped with ~280 removed exported
-// identifiers and notes for a fraction of them, so `gofastr upgrade
-// --from v0.85.0 --to v0.86.0` stayed silent while the app stopped
-// compiling. The gate reads source syntactically (go/parser over the
+// between them finds. v0.86.0 removed 68 exported identifiers from the
+// public packages and shipped notes for 48 of them: `gofastr upgrade
+// --from v0.85.0 --to v0.86.0` stayed silent on the other twenty while
+// the app stopped compiling. The gate reads source syntactically (go/parser over the
 // git object store), the same way gate 1 does.
 
 // removalGateFloor is the first release this gate audits. Releases below
