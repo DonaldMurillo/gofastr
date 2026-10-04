@@ -924,7 +924,7 @@ func toastStackCSS(_ style.Theme) string {
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   will-change: transform, opacity;
 }
-[data-fui-comp="ui-toast-stack"] .fui-toast-stack__item.is-leaving {
+[data-cui-comp="ui-toast-stack"] .fui-toast-stack__item[data-hui-toast-leaving] {
   animation: fui-toast-stack-out var(--duration-toast-exit, 180ms)
     var(--easing-ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
 }
@@ -937,8 +937,8 @@ func toastStackCSS(_ style.Theme) string {
   to   { opacity: 0; transform: translateY(-6px) scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-toast-stack"] .fui-toast-stack__item,
-  [data-fui-comp="ui-toast-stack"] .fui-toast-stack__item.is-leaving {
+  [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item,
+  [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item[data-hui-toast-leaving] {
     animation: none;
   }
 }`

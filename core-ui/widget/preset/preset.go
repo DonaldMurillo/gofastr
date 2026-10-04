@@ -7,7 +7,11 @@
 package preset
 
 import (
+	"context"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -64,22 +68,67 @@ func ToastStack(name string) *widget.Builder {
 		Slot("items", clientToastSlot{name: name})
 }
 
-// clientToastSlot renders the empty stack container. The runtime
-// appends items into this element when a toast fires.
+// ToastTemplate is the registry name of the row template a kit
+// registers (registry.RegisterTemplate) for the toasts the
+// headless-feedback module builds at runtime: the X-Gofastr-Toast
+// header path and window.__gofastr.toast. ToastSlotHTML renders the
+// registered template inside the stack container, and the module
+// clones a row from it, so every class and glyph a runtime toast wears
+// is the kit's and the module names hooks only. With no template
+// registered the module builds a bare, hook-only row.
+const ToastTemplate = "toast-stack"
+
+// ToastSlotHTML renders the stack container the runtime appends toast
+// rows into: the kernel's data-cui-toast-stack name, the style id the
+// kit's stack sheet keys on, and the kit's row template when one is
+// registered. This package ships no class of its own on it.
+func ToastSlotHTML(ctx context.Context, name string) render.HTML {
+	var b strings.Builder
+	// Escape the widget name before interpolating into the HTML
+	// attribute: callers control the name but a `"` would break out
+	// of the attribute. core-ui/widget's escAttr is unexported, so
+	// render.Escape (same set of replacements) does it.
+	b.WriteString(`<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="`)
+	b.WriteString(render.Escape(name))
+	b.WriteString(`">`)
+	if tpl, ok := registry.Template(ctx, ToastTemplate); ok {
+		b.WriteString(string(tpl))
+	}
+	b.WriteString(`</div>`)
+	return render.HTML(b.String())
+}
+
+// IsToastStack reports whether d is a stack this package built: a
+// host that mounts a default stack when the app mounted none asks
+// this, so it never mounts a second beside the app's own.
+func IsToastStack(d *widget.Definition) bool {
+	if d == nil {
+		return false
+	}
+	for _, sl := range d.Slots {
+		if _, ok := sl.Component.(clientToastSlot); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// clientToastSlot renders the stack container through ToastSlotHTML.
+// The runtime appends items into this element when a toast fires.
 type clientToastSlot struct{ name string }
 
 func (s clientToastSlot) Render() render.HTML {
-	// Escape the widget name before interpolating into the HTML
-	// attribute, callers control the name but a `"` would break out
-	// of the attribute. core-ui/widget's escAttr is unexported, so
-	// we use render.Escape (same set of replacements).
-	return render.HTML(
-		`<div class="fui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
-			render.Escape(s.name) + `"></div>`,
-	)
+	return ToastSlotHTML(context.Background(), s.name)
 }
 
-var _ component.Component = clientToastSlot{}
+func (s clientToastSlot) RenderCtx(ctx context.Context) render.HTML {
+	return ToastSlotHTML(ctx, s.name)
+}
+
+var (
+	_ component.Component        = clientToastSlot{}
+	_ component.ContextComponent = clientToastSlot{}
+)
 
 // Drawer is an edge-mounted sliding panel. Defaults to the left edge;
 // pass widget.EdgeRight to flip. Includes a backdrop, closes on

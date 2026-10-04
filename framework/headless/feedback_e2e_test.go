@@ -77,7 +77,9 @@ func TestE2E_NetworkRetryFailedProbeLeavesItShown(t *testing.T) {
 
 // A toast the module builds from a response header says its tone the
 // way a server-rendered one does: the word comes from the stack's
-// Strings, read and not shown, before the icon and the title.
+// Strings, read and not shown, before the title. With no template on
+// the page the row is bare hooks and no glyph, so the icon part goes
+// and the title follows the tone word.
 func TestE2E_RuntimeToastSaysItsTone(t *testing.T) {
 	b := startBehaviorServer(t, string(ToastStack(ToastStackProps{ID: "stack", Label: "Notifications"}, nil)))
 	ctx := behaviorPage(t, b)
@@ -88,9 +90,53 @@ func TestE2E_RuntimeToastSaysItsTone(t *testing.T) {
 		`window.__gofastr.toast({variant:'success', title:'Saved', body:'Your changes are persisted.'})`, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, `(function(){var s=document.querySelector('[data-hui-toast-stack] .fui-visually-hidden');`+
-		`return !!s && s.textContent==='Success: ' && s.nextElementSibling.className==='fui-notification__icon';})()`) {
-		t.Fatal("a runtime toast did not say its tone before its icon and title")
+	if !pollTrue(ctx, `(function(){var s=document.querySelector('[data-hui-toast-stack] [data-hui-toast-tone]');`+
+		`var n=s&&s.nextElementSibling;`+
+		`return !!s && s.textContent==='Success: ' && !!n && n.hasAttribute('data-hui-toast-title') && n.textContent==='Saved'`+
+		` && s.parentElement.className==='' && s.parentElement.querySelector('[data-hui-toast-icon]')===null;})()`) {
+		t.Fatal("a runtime toast did not say its tone before its title, bare of classes and icon")
+	}
+}
+
+// probeToastClasses is a kit's class map as a rig sees it: the
+// template carries these, the module copies them onto the row it
+// clones, and no class literal exists in the module.
+var probeToastClasses = Classes{
+	PartToastItem: "item", PartRoot: "row", PartToastToneWord: "tone", PartIcon: "ico",
+	PartTitle: "ttl", PartBody: "bdy", PartDismiss: "dis",
+	"root--success": "row--success", "root--danger": "row--danger",
+}
+
+// toastStackWithTemplate renders a stack carrying the row template
+// the way preset's slot does for a kit that registered one.
+func toastStackWithTemplate() string {
+	return string(ToastStack(ToastStackProps{ID: "stack", Label: "Notifications", Toasts: []render.HTML{
+		ToastTemplate(ToastTemplateProps{Glyphs: map[string]string{"success": "✓", "danger": "✕"}}, probeToastClasses),
+	}}, nil))
+}
+
+// A toast the module builds wears the template's skin: the item and
+// root classes, the tone's variant class, the glyph, and the dismiss
+// label from the stack's Strings. A part with nothing to say is gone.
+func TestE2E_RuntimeToastWearsTheTemplate(t *testing.T) {
+	b := startBehaviorServer(t, toastStackWithTemplate())
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
+		t.Fatal("the stack marker never loaded headless-feedback")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastr.toast({variant:'success', title:'Saved'})`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `(function(){var r=document.querySelector('[data-hui-toast-stack] [data-hui-toast-id] [data-hui-toast]');`+
+		`if(!r) return false; var ico=r.querySelector('[data-hui-toast-icon]'); var d=r.querySelector('[data-hui-toast-dismiss]');`+
+		`return r.className==='row row--success' && r.parentElement.className==='item' && r.getAttribute('role')==='status'`+
+		` && !!ico && ico.textContent==='✓' && ico.className==='ico'`+
+		` && r.querySelector('[data-hui-toast-title]').textContent==='Saved' && r.querySelector('[data-hui-toast-body]')===null`+
+		` && !!d && d.getAttribute('aria-label')==='Dismiss: Saved';})()`) {
+		var stack string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(document.querySelector('[data-hui-toast-stack]')||{}).outerHTML || ''`, &stack))
+		t.Fatalf("a runtime toast did not wear the template's classes, glyph and dismiss label; the stack holds:\n%s", stack)
 	}
 }
 

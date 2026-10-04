@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -161,12 +163,24 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 %s
 <span id="ready">ready</span>
 </main>
+%s
 <script src="/__gofastr/runtime.js"></script>
-</body></html>`, body)
+</body></html>`, body, toastStackHTML())
 	})
 	c.Srv = httptest.NewServer(mux)
 	t.Cleanup(c.Srv.Close)
 	return c
+}
+
+// toastStackHTML renders the stack a module-built toast lands in, with
+// the kit's row template: framework/ui is linked into this binary (the
+// registered-link gate imports it), so its registration under preset's
+// "toast-stack" name is in the registry, and this is the markup
+// preset's slot renders. preset itself imports widget, which imports
+// this package, so the slot cannot be called from here.
+func toastStackHTML() string {
+	tpl, _ := uiregistry.Template(context.Background(), "toast-stack")
+	return `<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="chromectx">` + string(tpl) + `</div>`
 }
 
 // closeWidget dismisses the open dialog and waits for its removal.

@@ -1,12 +1,17 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // Toast surface: client-driven, no SSE.
@@ -20,10 +25,13 @@ import (
 //     scans every `data-cui-rpc` response for the header and dispatches
 //     it through the same client API.
 //
-// Both paths converge on `__gofastr.toast(cfg)`, which builds the item
-// HTML inline from a small template, appends it to the stack
-// container, and wires the TTL + dismiss handlers. No server-side
-// queue, no SSE connection. The stack lives entirely in the browser.
+// Both paths converge on `__gofastr.toast(cfg)` (the headless-feedback
+// module), which clones a row from the <template> this package
+// registers below and preset's slot renders inside the stack, fills its
+// hooks, appends it to the stack container, and wires the TTL + dismiss
+// handlers. No server-side queue, no SSE connection. The stack lives
+// entirely in the browser, and every class a runtime toast wears is
+// this package's, carried by the template: the module names hooks only.
 //
 // Use AddToast from server handlers; use TriggerHeader / TriggerJSON
 // when composing the header value manually.
@@ -123,19 +131,50 @@ func AddToastWarning(w http.ResponseWriter, title, body string, ttlMs int) {
 	AddToast(w, ToastTrigger{Variant: StatusWarning, Title: title, Body: body, TTL: ttlMs})
 }
 
+// toastTemplateClasses dresses the row the headless-feedback module
+// clones for a runtime toast: the notification's own classes, plus the
+// stack item the ui-toast-stack sheet lays out and animates.
+var toastTemplateClasses = func() headless.Classes {
+	c := maps.Clone(notificationClasses)
+	c[headless.PartToastItem] = "fui-toast-stack__item"
+	return c
+}()
+
+// toastTemplate renders the row template preset's toast slot ships
+// inside every stack, in the request's language.
+func toastTemplate(ctx context.Context) render.HTML {
+	return headless.ToastTemplate(headless.ToastTemplateProps{
+		Glyphs: map[string]string{
+			"info":    notificationGlyph(StatusInfo),
+			"success": notificationGlyph(StatusSuccess),
+			"warning": notificationGlyph(StatusWarning),
+			"danger":  notificationGlyph(StatusDanger),
+		},
+		StyleName: notificationStyle.Name(),
+		Strings:   StringsFor(ctx),
+	}, toastTemplateClasses)
+}
+
+var _ = registry.RegisterTemplate(preset.ToastTemplate, toastTemplate)
+
 // toastSlot is the widget Slot component that renders the initial
-// empty stack container. The client-side `__gofastr.toast(cfg)` and
-// header-driven flow both append into this container.
+// stack container (preset.ToastSlotHTML: the container plus the row
+// template). The client-side `__gofastr.toast(cfg)` and header-driven
+// flow both append into this container.
 type toastSlot struct{ name string }
 
 func (t toastSlot) Render() render.HTML {
-	return render.HTML(
-		`<div class="fui-toast-stack" data-fui-comp="ui-toast-stack" data-fui-toast-stack="` +
-			render.Escape(t.name) + `"></div>`,
-	)
+	return preset.ToastSlotHTML(context.Background(), t.name)
 }
 
-var _ component.Component = toastSlot{}
+func (t toastSlot) RenderCtx(ctx context.Context) render.HTML {
+	return preset.ToastSlotHTML(ctx, t.name)
+}
+
+var (
+	_ component.Component        = toastSlot{}
+	_ component.ContextComponent = toastSlot{}
+)
 
 // ToastSlot exposes a fresh empty-stack slot Component for callers
 // composing a preset.ToastStack(name, ToastSlot(name)) manually.

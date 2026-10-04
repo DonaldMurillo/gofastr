@@ -54,9 +54,9 @@
   // name still writes (never break the page) but warns so the drift is
   // caught in review / e2e console audits.
   const M = Object.freeze({
-    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static lang'.split(' ')),
-    bodyClasses: Object.freeze('fui-sse-down fui-sse-up'.split(' ')),
-    singletons: Object.freeze('fui-backtotop-sentinel fui-nav-toast fui-toast-fallback fui-toast-stack-auto'.split(' ')),
+    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-cui-os data-cui-static lang'.split(' ')),
+    bodyClasses: Object.freeze('cui-sse-down cui-sse-up'.split(' ')),
+    singletons: Object.freeze('cui-backtotop-sentinel cui-nav-toast cui-toast-fallback'.split(' ')),
   });
   const _dc = (list, n) => {
     if (!list.includes(n)) console.warn('[gofastr] not in doc.MANIFEST: ' + n);
@@ -577,10 +577,18 @@
     },
 
     // _toastOrFallback dispatches a single toast cfg, falling back to
-    // the inline renderer if the toasts module isn't available.
+    // the inline renderer when the toasts module cannot load or has no
+    // stack on the page to render into (NS.toast answers null then:
+    // the module builds no container of its own; uihost renders a
+    // default stack into every shell, so the fallback is for a page
+    // that lost it).
     _toastOrFallback(cfg) {
       this.loadModule('headless-feedback')
-        .then(() => { try { this.toast(cfg); } catch (_) {} })
+        .then(() => {
+          let shown = null;
+          try { shown = this.toast(cfg); } catch (_) { shown = null; }
+          if (shown == null) { try { this._fallbackToast(cfg); } catch (_) {} }
+        })
         .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
     },
 

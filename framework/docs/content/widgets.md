@@ -13,7 +13,14 @@ Examples of widgets the framework already supports:
 
 - **FloatingPanel**: corner-anchored chat / devtools / agent panel
 - **Modal**: center dialog with backdrop, ESC + click-outside dismiss
-- **Toast**: ephemeral bottom notifications
+- **Toast**: ephemeral notifications. `preset.ToastStack(name)` mounts
+  the region; `framework/uihost` mounts one named
+  `uihost.DefaultToastStack` at boot when the app mounted none, so an
+  `X-Gofastr-Toast` header always lands somewhere. The rows a toast
+  builds are cloned from the row template the kit registers
+  (`preset.ToastTemplate`, via `registry.RegisterTemplate`), which
+  `preset.ToastSlotHTML` renders inside the stack; `preset.IsToastStack`
+  tells a host whether a widget definition is one.
 - **Drawer**: edge-mounted sliding panel
 - **Banner**: top strip for build progress, version warnings, etc.
 - **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.

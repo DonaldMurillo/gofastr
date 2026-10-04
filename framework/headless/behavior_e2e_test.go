@@ -131,7 +131,7 @@ func startBehaviorServer(t *testing.T, body string, extra ...func(mux *http.Serv
 		add(mux)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html><head><title>headless</title>`+
 			`<script type="application/json" id="gofastr-behaviors">%s</script></head><body>`+
 			`<main role="main"><span id="ready">ready</span>%s</main>`+

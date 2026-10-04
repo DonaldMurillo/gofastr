@@ -1,11 +1,14 @@
 package ui_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -94,5 +97,38 @@ func TestToastSlotRendersEmptyContainer(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Errorf("ToastSlot HTML missing %q\n--\n%s", want, html)
 		}
+	}
+}
+
+// The row a runtime toast is cloned from is this package's: the
+// template carries the notification classes, the stack item class and
+// the owned-style marker, and the slot ships it inside every stack so
+// the headless-feedback module never names a class.
+func TestToastTemplateCarriesTheKitSkin(t *testing.T) {
+	tpl, ok := registry.Template(context.Background(), preset.ToastTemplate)
+	if !ok {
+		t.Fatal("framework/ui registers no toast row template")
+	}
+	for _, want := range []string{
+		`<template data-hui-toast-dismiss-label="Dismiss: %s"`,
+		`data-hui-toast-template=""`,
+		`data-hui-toast-glyph-success="✓"`,
+		`data-hui-toast-variant-danger="fui-notification--danger"`,
+		`data-hui-toast-tone-warning="Warning"`,
+		`class="fui-toast-stack__item" data-cui-internal="" data-hui-toast-item=""`,
+		`class="fui-notification" data-cui-comp="ui-notification" data-hui-toast=""`,
+		`class="fui-notification__title" data-cui-internal="" data-hui-toast-title=""`,
+		`class="fui-notification__dismiss" data-cui-internal="" data-hui-toast-dismiss="" type="button">×</button>`,
+	} {
+		if !strings.Contains(string(tpl), want) {
+			t.Errorf("toast template missing %q\n--\n%s", want, tpl)
+		}
+	}
+	slot := string(ui.ToastSlot("site-toasts").Render())
+	if !strings.Contains(slot, string(tpl)) {
+		t.Errorf("ToastSlot does not ship the registered template:\n%s", slot)
+	}
+	if !strings.HasPrefix(slot, `<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="site-toasts">`) {
+		t.Errorf("the stack container carries more than the kernel name and the style id; the sheet keys on data-cui-comp:\n%s", slot)
 	}
 }

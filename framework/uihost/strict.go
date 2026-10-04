@@ -261,6 +261,8 @@ func (ds *UIHost) enforceStrict() {
 // nothing owns the "route table is complete" moment for such a host.
 // Panic contract matches every other strict check.
 func (ds *UIHost) ValidateBoot() {
+	// Strict or not: the toast region is a boot guarantee, not a check.
+	ds.ensureToastStack()
 	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
 		return
 	}

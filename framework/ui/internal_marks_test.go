@@ -806,6 +806,7 @@ var kitComponents = []kitComponent{
 	{name: "headless.Timeline", fn: headless.Timeline},
 	{name: "headless.Toast", fn: headless.Toast},
 	{name: "headless.ToastStack", fn: headless.ToastStack},
+	{name: "headless.ToastTemplate", fn: headless.ToastTemplate},
 	{name: "headless.ToggleAction", fn: headless.ToggleAction},
 	{name: "headless.Toolbar", fn: headless.Toolbar},
 	{name: "headless.ToolbarGroup", fn: headless.ToolbarGroup},

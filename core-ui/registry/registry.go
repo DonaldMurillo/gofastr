@@ -240,6 +240,7 @@ func reset() {
 	defer mu.Unlock()
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	templates = newTemplates()
 	frozen = false
 }
 
@@ -285,8 +286,10 @@ func IsolateForTest(t testCleanup) {
 	savedBehaviors := behaviors
 	savedReserved := reservedBehaviorNames
 	savedFrozen := frozen
+	savedTemplates := templates
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	templates = newTemplates()
 	// The isolated registry has no catalog yet, so it starts unfrozen.
 	frozen = false
 	// The reserved names go too, so a test can reach the merge-time
@@ -300,6 +303,7 @@ func IsolateForTest(t testCleanup) {
 		entries = saved
 		behaviors = savedBehaviors
 		reservedBehaviorNames = savedReserved
+		templates = savedTemplates
 		frozen = savedFrozen
 		mu.Unlock()
 	})

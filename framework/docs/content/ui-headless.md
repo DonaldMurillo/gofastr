@@ -270,7 +270,13 @@ the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
 SSR rows inside it are visible with no script, and it is the live
-region toasts announce by arriving in.
+region toasts announce by arriving in. The rows the module builds at
+runtime wear no class of this package's: `ToastTemplate` renders an
+inert `<template>` the kit dresses with its own class map and
+registers under `preset.ToastTemplate` (`registry.RegisterTemplate`,
+a renderer that takes the request context), `preset.ToastSlotHTML`
+ships it inside every stack, and `headless-feedback` clones a row
+from it. A page with no template gets the same row bare.
 
 The action buttons (`OptimisticAction`, `ToggleAction`, `Button`
 with an `Action`) keep the button contract: with no script they do
@@ -345,8 +351,8 @@ Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
-Repeater, Toast, ToastStack, NotificationBell, StepWizard and
-BackToTop. The navigation-behaviour members: Rail, TableOfContents,
+Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
+StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
 Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
 SidebarRegion, and the two pure-render trees JSONTree and Gallery.
 
@@ -493,9 +499,12 @@ families:
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
-  this module now), the bell's spoken count re-said when a signal
-  changes it, and the offline banner's retry link. It replaced the
-  retired `copy`, `toasts` and `networkretrybanner` runtime modules.
+  this module now; a row is cloned from the stack's `ToastTemplate` and
+  the module names no class and mounts no stack — with no stack on the
+  page it returns `null` and the kernel's fallback region takes the
+  toast), the bell's spoken count re-said when a signal changes it,
+  and the offline banner's retry link. It replaced the retired `copy`,
+  `toasts` and `networkretrybanner` runtime modules.
 - **headless-navigation** (`[data-hui-back-to-top]`,
   `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
   the document, the visibility mark, the focus return) and the theme
