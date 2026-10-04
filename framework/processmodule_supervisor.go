@@ -1578,8 +1578,15 @@ func isIntegrityFault(err error) bool {
 	}
 	// A handshake-stage error (round-trip mismatch surfaced as a wrapped
 	// error) is integrity; the spawn-stage error (exec failed) is not.
+	// Neither is a handshake call that never got an answer: a child that
+	// died or closed its pipe mid-handshake crashed, and must charge the
+	// restart circuit rather than be quarantined. An RPC error reply is an
+	// answer, so it stays integrity.
 	if errStr := err.Error(); strings.Contains(errStr, "handshake:") {
-		return true
+		if _, ok := errors.AsType[*moduleproto.Error](err); ok {
+			return true
+		}
+		return !strings.Contains(errStr, "handshake call:")
 	}
 	return false
 }

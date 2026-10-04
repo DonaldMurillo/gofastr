@@ -3,7 +3,9 @@ package framework
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -275,6 +277,19 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 	// A wrapped error whose message contains "handshake:" is treated as integrity.
 	if !isIntegrityFault(errors.New("handshake: boom")) {
 		t.Error("'handshake:' message should be integrity fault")
+	}
+	// A child that answered the handshake with an error is integrity; one
+	// that died mid-handshake (the pipe broke) is a crash and charges the
+	// restart circuit like any other early exit.
+	reply := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w",
+		&moduleproto.Error{Code: -32600, Message: "refused"}))
+	if !isIntegrityFault(reply) {
+		t.Error("an RPC error reply to the handshake is an integrity fault")
+	}
+	died := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w",
+		fmt.Errorf("moduleproto: write: %w", syscall.EPIPE)))
+	if isIntegrityFault(died) {
+		t.Error("a broken pipe mid-handshake is a crash, not an integrity fault")
 	}
 }
 

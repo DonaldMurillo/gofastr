@@ -373,6 +373,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A process module that died mid-handshake was quarantined as
+  tampered.** The supervisor filed every handshake-stage error as an
+  integrity fault (terminal Failed), so a child that crashed or closed
+  its pipe before answering never charged the restart circuit. A
+  handshake call that got no answer is now a crash; a mismatch, a
+  negotiation failure or an RPC error reply stays an integrity fault.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the
