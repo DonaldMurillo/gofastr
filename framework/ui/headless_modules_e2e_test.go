@@ -232,6 +232,31 @@ func TestIslandComboboxAnnouncesResults(t *testing.T) {
 	}
 }
 
+// The bell's spoken count follows its badge: when the unread signal
+// changes the number the badge shows, the anchor's accessible name
+// says the same number.
+func TestBellLabelFollowsUnreadSignal(t *testing.T) {
+	trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{Name: "bell", Href: "/notifications",
+		Label: "Notifications", UnreadCount: 2, SignalUnread: "unread", ID: "bell"})
+	ctx := moduleTestCtx(t, string(trigger))
+	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
+		t.Fatal("the bell marker never loaded headless-feedback")
+	}
+	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "2 unread notifications" {
+		t.Fatalf("SSR aria-label = %q, want \"2 unread notifications\"", got)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('unread', '7')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.querySelector('#bell [data-hui-notification-count]').textContent === '7'`) {
+		t.Fatal("the kernel never wrote 7 into the badge")
+	}
+	if !pollJS(ctx, `document.getElementById('bell').getAttribute('aria-label') === '7 unread notifications'`) {
+		t.Fatalf("after setSignal('unread','7') the bell says %q, want \"7 unread notifications\"",
+			evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`))
+	}
+}
+
 // toastProbeStatus is a status variant an app registers: a runtime
 // toast carrying it wears its class and glyph, the way a server
 // Notification does.

@@ -502,7 +502,9 @@ families:
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast), the bell's spoken count re-said when a signal changes it,
+  toast), the bell's spoken count re-said when a signal changes it
+  (the module watches the badge's text, which the `UnreadBind` signal
+  writes, and re-formats the anchor's `aria-label` from it),
   and the offline banner's retry link. It replaced the retired `copy`,
   `toasts` and `networkretrybanner` runtime modules.
 - **headless-navigation** (`[data-hui-back-to-top]`,

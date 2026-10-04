@@ -305,28 +305,34 @@
 
   // ─── notification bell ───────────────────────────────────────────
 
-  // The spoken count follows the signal the badge follows: the kernel
-  // writes the number into the bound nodes, and the module re-formats
-  // the anchor's accessible name through the sentence shape the
-  // component rendered.
-  document.addEventListener('gofastr:signal', function (e) {
-    const d = e && e.detail;
-    if (!d || typeof d.name !== 'string') return;
-    for (const bell of document.querySelectorAll('[data-hui-notification-bell]')) {
-      if (bell.getAttribute('data-cui-signal') !== d.name) continue;
-      const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
-      const n = parseInt(d.value, 10);
-      if (!Number.isFinite(n)) return;
-      if (fmt) {
-        bell.setAttribute('aria-label', fmt.replace('%d', String(n)).replace('%d', String(n)));
-      }
-      // The badge's count attribute follows the signal too, so the
-      // next reader of it (a stylesheet's 99+ shaping, a test) sees
-      // the same number the anchor says.
-      const badge = bell.querySelector('[data-hui-notification-count]');
-      if (badge) badge.setAttribute('data-hui-notification-count', String(n));
-    }
-  });
+  // The spoken count follows the badge: the kernel writes a bound
+  // signal's value into the badge span (UnreadBind puts the binding on
+  // the badge, not the anchor), and an observer on that span's text
+  // re-formats the anchor's accessible name through the sentence shape
+  // the component rendered. Watching the badge, not the signal store,
+  // means no subscription outlives a bell a navigation removed.
+  const bellsWatched = new WeakSet();
+  function sayBellCount(bell, badge) {
+    const text = (badge.textContent || '').trim();
+    // An empty badge is the signal's "nothing unread" (the sheet hides
+    // it); anything else that is not a number leaves the name alone.
+    const n = text === '' ? 0 : parseInt(text, 10);
+    if (!Number.isFinite(n) || n < 0) return;
+    const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
+    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(String(n)));
+    // The badge's count attribute follows too, so the next reader of
+    // it (a stylesheet's 99+ shaping, a test) sees the same number the
+    // anchor says. An attribute write, so the observer does not hear it.
+    badge.setAttribute('data-hui-notification-count', String(n));
+  }
+  function watchBell(bell) {
+    if (bellsWatched.has(bell) || typeof MutationObserver !== 'function') return;
+    const badge = bell.querySelector('[data-hui-notification-count]');
+    if (!badge) return;
+    bellsWatched.add(bell);
+    new MutationObserver(function () { sayBellCount(bell, badge); })
+      .observe(badge, { childList: true, characterData: true, subtree: true });
+  }
 
   // ─── network retry ───────────────────────────────────────────────
 
@@ -367,6 +373,7 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
+    for (const bell of within(scope, '[data-hui-notification-bell]')) watchBell(bell);
   }
 
   scan(document);
