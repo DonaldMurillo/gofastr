@@ -19,11 +19,14 @@ func TestPublicMCPListsFrameworkDocsTools(t *testing.T) {
 	fwApp := newTestApp(t)
 	ready := make(chan string, 1)
 	fwApp.OnReady(func(addr string) { ready <- addr })
-	go func() { _ = fwApp.Start("127.0.0.1:0") }()
+	startErr := make(chan error, 1)
+	go func() { startErr <- fwApp.Start("127.0.0.1:0") }()
 	var base string
 	select {
 	case addr := <-ready:
 		base = "http://" + addr
+	case err := <-startErr:
+		t.Fatalf("site exited before it was ready: %v", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("site did not start")
 	}

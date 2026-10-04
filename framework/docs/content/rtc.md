@@ -338,7 +338,10 @@ that arrives late, after the peer already reconnected here, is the old
 seat announcing itself and is dropped, so a bus delivering one
 replica's lane behind a client's reconnect cannot kick the live socket.
 Replica clocks need to agree to within that reconnect time, the usual
-NTP posture. A local socket that closes while a live remote seat holds
+NTP posture; a sender whose clock lags by more than that has its genuine
+move-away mirror dropped too, so the peer's old socket here stays in the
+roster until it closes, and that close publishes no leave because the
+remote seat holds the id. A local socket that closes while a live remote seat holds
 the same id publishes no leave: the merged roster never lost the peer. A room's local state is dropped
 `RoomIdleTTL` (default 1m) after its last local peer leaves, on its own
 timer, whether the last peer left or migrated to another replica; what

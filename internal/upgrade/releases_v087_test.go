@@ -186,6 +186,11 @@ func TestV087ExamplesStaySilent(t *testing.T) {
 		}
 	}
 	res := scantest.Run(t, "../../examples", notes, reg.MarkerSinks)
+	// Zero hits on a tree that did not type-check prove nothing: the
+	// attribute matcher needs the kit's Attrs type to see map keys.
+	if !res.TypeChecked || len(res.Broken) != 0 {
+		t.Fatalf("examples tree did not type-check: broken=%v", res.Broken)
+	}
 	for i, n := range notes {
 		for _, h := range scantest.Hits(res, n) {
 			t.Errorf("v0.87.0 note %d (%s): fires on the migrated examples tree: %s", i, n.Change, h)

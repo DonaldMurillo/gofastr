@@ -32,9 +32,6 @@ import (
 //   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
 //   - app_routines:   every registered stored routine with its ledger state.
 //
-// The framework_docs_* tools are not part of this set: an app adds them
-// with WithMCPTools(mcptools.Register) from framework/docs/mcptools.
-//
 // The framework's embedded docs (framework_docs_list / framework_docs_get
 // / framework_docs_search) are a separate opt-in,
 // WithMCPTools(mcptools.Register) from framework/docs/mcptools: framework itself never
