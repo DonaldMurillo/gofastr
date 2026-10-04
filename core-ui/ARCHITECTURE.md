@@ -1426,9 +1426,11 @@ variant's drawing.
 no `App.Theme` — still emits the styled layer's registered default
 option set at `:root`: `RegisterComponentOptionsCompiler` takes the
 complete default set as its second argument and the root emitter
-compiles it whenever a theme carries no options, so every host that
-links `framework/ui` ships the full `--fui-*` vocabulary and the
-component rules above resolve. The floor is root-only by design: a
+compiles the theme's own options merged over it key by key, so every
+host that links `framework/ui` ships the full `--fui-*` vocabulary and
+the component rules above resolve, including a host whose theme sets
+only some options (`{"density": "compact"}` keeps the default button
+and field variables). The floor is root-only by design: a
 scoped theme with no options emits nothing and inherits its parent's
 variables (the nesting contract), and a binary that links no styled
 layer registers no compiler and emits none of the variables. A theme's

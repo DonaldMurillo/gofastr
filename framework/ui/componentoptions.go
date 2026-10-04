@@ -48,10 +48,11 @@ import (
 // their own changes.
 func init() {
 	// The complete default set rides the registration: it is the :root
-	// floor every optionless theme (DefaultTheme, the theme-init
-	// scaffold, a host with no App.Theme) emits, so the component rules
-	// consuming the --fui-* variables resolve on every host that links
-	// this package.
+	// floor every theme's own options merge over, key by key (an
+	// optionless DefaultTheme, the theme-init scaffold, a host with no
+	// App.Theme, or a partial map such as {"density": "compact"}), so
+	// the component rules consuming the --fui-* variables resolve on
+	// every host that links this package.
 	style.RegisterComponentOptionsCompiler(componentOptionsCSS, theme.DefaultOptions.Flattened())
 }
 

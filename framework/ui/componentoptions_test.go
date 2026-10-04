@@ -196,6 +196,34 @@ func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
 	}
 }
 
+// A partial root map — Components{"density": "compact"}, the shape the
+// `gofastr theme init` scaffold invites ("declare Components only to
+// deviate") — must keep the rest of the default floor at :root. When
+// the floor applied only to an EMPTY map, this theme emitted the
+// density pair and nothing else: no --fui-button-primary-* trio and no
+// --fui-field-*, so primary and danger buttons drew with no fill and
+// Validate still returned nil.
+func TestPartialRootThemeKeepsDefaultFloor(t *testing.T) {
+	th := style.DefaultTheme()
+	th.Components = map[string]string{"density": "compact"}
+	css := th.CSSCustomProperties()
+	for _, want := range []string{
+		"--fui-density-control-h: 36px;",
+		"--fui-button-primary-bg: var(--color-primary);",
+		"--fui-button-danger-bg: var(--color-danger);",
+		"--fui-button-radius: var(--radii-md);",
+		"--fui-field-radius: var(--radii-md);",
+		"--fui-field-columns: minmax(0, 1fr);",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("partial Components dropped %s from the :root floor:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "--fui-density-control-h: var(--spacing-touch-target);") {
+		t.Error("the default floor overrode the theme's own compact density")
+	}
+}
+
 // A scoped theme with no options emits no option variables and inherits
 // its parent's — the nesting contract. The floor is a :root-only
 // guarantee; leaking it into scope blocks would block inheritance.

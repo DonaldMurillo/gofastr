@@ -84,15 +84,18 @@ func TestComponentOptionsRootEmission(t *testing.T) {
 	if css := ThemeOverrideCSS("floor", Theme{}); strings.Contains(css, "--fui-test") {
 		t.Error("the default set leaked into a scope block:\n" + css)
 	}
-	// A theme with options of its own emits those, not the defaults.
+	// A theme with options of its own merges them over the defaults
+	// key by key: its own value wins where it sets one, and the floor
+	// still fills every key it leaves out. A partial map must not
+	// suppress the rest of the floor.
 	stageTestCompiler(t, echoCompiler)
-	css := themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties()
-	want := ":root {\n  --fui-test-density: compact;\n}"
+	css := themeWithComponents(map[string]string{"density": "comfy"}).CSSCustomProperties()
+	want := ":root {\n  --fui-test-button-treatment: outline;\n  --fui-test-density: comfy;\n}"
 	if !strings.Contains(css, want) {
-		t.Errorf("root block missing compiled option\nwant substring:\n%s\ngot:\n%s", want, css)
+		t.Errorf("root block is not own-over-defaults\nwant substring:\n%s\ngot:\n%s", want, css)
 	}
-	if n := strings.Count(css, "--fui-test-density: compact;"); n != 1 {
-		t.Errorf("option emitted %d times, want exactly once (own options, not own + floor):\n%s", n, css)
+	if strings.Contains(css, "--fui-test-density: compact;") {
+		t.Errorf("the default density overrode the theme's own:\n%s", css)
 	}
 }
 

@@ -99,8 +99,8 @@ type Declaration struct {
 // componentCompiler is the process-wide registration state of the
 // component-options compiler. One compiler per process, registered from
 // a package init with its complete default option set, read (and frozen)
-// at the first theme-CSS emission. The defaults are the :root floor for
-// themes that carry no options of their own (see compiledOptionsCSS).
+// at the first theme-CSS emission. The defaults are the :root floor a
+// theme's own options merge over (see compiledOptionsCSS).
 var componentCompiler struct {
 	mu       sync.Mutex
 	fn       func(components map[string]string) []Declaration
@@ -181,6 +181,20 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 	}
 	componentCompiler.fn = fn
 	componentCompiler.defaults = maps.Clone(defaults)
+}
+
+// withDefaultOptions returns the registered default option set with own
+// merged over it, own winning per key. With no defaults registered it
+// returns own unchanged. The merged map is fresh; neither input is
+// written.
+func withDefaultOptions(own map[string]string) map[string]string {
+	defaults := componentCompilerDefaults()
+	if len(defaults) == 0 {
+		return own
+	}
+	merged := maps.Clone(defaults)
+	maps.Copy(merged, own)
+	return merged
 }
 
 // componentOptionDecls compiles one theme's Components into sorted
