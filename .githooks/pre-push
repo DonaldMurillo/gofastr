@@ -2,13 +2,11 @@
 # GoFastr pre-push hook: safety net behind pre-commit.
 #
 # Re-runs the deterministic CI test sweep when a commit skipped it
-# (GOFASTR_SKIP_COMMIT_TESTS=1 or --no-verify), then the coverage
-# floors, then the heavy chromedp suites serialized at -p 1 (CI's
-# browser-e2e isolation, one suite per runner there), then module
-# integrity and govulncheck. The old `go test -race ./...` is gone: it
-# took half an hour and swept the packages CI deliberately excludes as
-# flaky-by-design (core-ui/runtime, core-ui/widget, examples/site),
-# use `make test-race` for a deliberate race pass.
+# (GOFASTR_SKIP_COMMIT_TESTS=1 or --no-verify), then module integrity and
+# govulncheck. The old `go test -race ./...` is gone: it took half an
+# hour and swept the packages CI deliberately excludes as flaky-by-design
+# (core-ui/runtime, core-ui/widget, examples/site), use `make test-race`
+# for a deliberate race pass.
 #
 # Enable once per clone: make hooks
 # Skip the sweep once (CI still gates): GOFASTR_SKIP_PUSH_TESTS=1 git push
@@ -62,53 +60,24 @@ echo ""
 if [ "${GOFASTR_SKIP_PUSH_TESTS:-}" = "1" ]; then
   warn "test sweep skipped (GOFASTR_SKIP_PUSH_TESTS=1) — CI still gates"
 else
-  # CI's browser isolation set, in ONE variable: the chromedp packages
-  # the sweep below excludes are exactly the ones the serialized step
-  # after the floors re-runs via -match on the same regex, so the two
-  # lists cannot drift.
-  HEAVY_RE='gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
-  # The four cmd/gofastr tests CI runs serialized in its browser-e2e
-  # gofastr-cli shard: three drive a real Chrome over the dev livereload
-  # websocket, one builds and boots every example.
-  CLI_BROWSER_TESTS='TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
-
   echo "  → Deterministic test sweep..."
   # Affected packages only (cmd/affected: the import-graph closure of what
   # differs from origin/main; GOFASTR_TEST_ALL=1 widens to the whole tree).
   # No -count=1: cached PASSes on unchanged packages keep repeat pushes
   # fast (same content-addressed cache CI relies on). The -exclude list is
-  # CI's: the chromedp suites that run isolated in browser-e2e, and here
-  # serialized at -p 1 in the step below the floors. The merged
+  # CI's: the chromedp suites that run isolated in browser-e2e. The merged
   # coverprofile feeds the floors check below, so the suites run once.
   coverprofile=$(mktemp)
   trap 'rm -f "$coverprofile"' EXIT
   go run ./cmd/affected \
-    -exclude "$HEAVY_RE" \
+    -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
     -- go test -timeout=20m -coverprofile="$coverprofile" \
-    -skip "$CLI_BROWSER_TESTS"
+    -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
   pass "Deterministic tests passed"
 
   echo ""
   COVERPROFILE="$coverprofile" bash scripts/coverage-floors.sh
   pass "Coverage floors hold"
-
-  # ---- 1b. Serialized browser suites (CI's browser-e2e set) ----
-  # The packages the sweep excluded run here at -p 1: they contend for
-  # Chrome and the ephemeral-port range when they share a go-test run,
-  # which is why CI gives each one its own runner. cmd/affected skips
-  # the command when the change reaches nothing in the set, so pushes
-  # that touch no heavy package pay nothing here.
-  echo ""
-  echo "  → Serialized browser suites (affected heavy packages, -p 1)..."
-  go run ./cmd/affected -match "$HEAVY_RE" -- go test -p 1 -timeout=20m
-  pass "Serialized browser suites passed"
-
-  # The four cmd/gofastr browser tests the sweep skipped, serialized,
-  # only when cmd/gofastr is affected.
-  echo ""
-  echo "  → Serialized cmd/gofastr browser tests (-p 1)..."
-  go run ./cmd/affected -match 'gofastr/cmd/gofastr$' -- go test -p 1 -timeout=20m -run "$CLI_BROWSER_TESTS"
-  pass "Serialized cmd/gofastr browser tests passed"
 fi
 
 # ---- 2. Vulnerability check ----

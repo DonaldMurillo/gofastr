@@ -247,10 +247,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the clone-group count grows, and `scripts/dupl.sh --rebaseline`
   rewrites the baseline. CI runs it in the blocking job beside the vet
   gates (#413).
-- **`.githooks/pre-push` runs the heavy chromedp suites it used to
-  skip.** Affected heavy packages and the four `cmd/gofastr` browser
-  tests run serialized at `-p 1` after the coverage floors, the local
-  analog of CI's one-suite-per-runner browser isolation (#413).
+- **`scripts/test-all.sh` runs in CI's shape**: the non-heavy packages
+  in parallel, then the heavy chromedp suites and the four `cmd/gofastr`
+  browser tests serialized at `-p 1`, with the port-exhaustion self-heal
+  retrying only a pass's failed packages. `GOFASTR_TESTALL_DRYRUN=1`
+  prints the commands. The pre-push hook keeps excluding those suites;
+  CI runs each on its own runner (#413).
 - **`ui.ParseButtonVariant`** resolves a caller-supplied variant string,
   built-in or registered through `ui.RegisterButtonVariant`, and answers
   `ok=false` for any other spelling; kiln's node renderer, the generated
