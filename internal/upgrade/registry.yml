@@ -5,9 +5,11 @@
 # documented for contributors in framework/docs/content/cli.md, under
 # "The migration registry".
 #
-# Maintenance rule: EVERY release PR bumps `through` below; a release that
-# lands BREAKING changes also adds releases/<version>.yml (same policy as
-# CHANGELOG.md).
+# Maintenance rule: EVERY release PR bumps `through` below. A PR that lands
+# a BREAKING change adds its note to releases/<next version>.yml in the same
+# PR (the CHANGELOG policy: entries accrue under Unreleased); that one file
+# may sit above `through` until the release PR, which keeps or renames it to
+# the version that ships.
 
 # The registry is complete through this release: releases <= through with
 # no file under releases/ genuinely had no migration-relevant changes.

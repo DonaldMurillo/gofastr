@@ -60,6 +60,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   action that fails the anchor URL check, a `custom_form` inside
   another, an unlabelled `nav_links`, and a table row wider than its
   columns.
+- **`framework.WithMCPTools(register)`**: runs a `func(*mcp.Server) error`
+  against the app's MCP server during init, after plugins and before the
+  introspection set, so a package below the framework root can add tools
+  without importing it. A registrar error, a name collision included,
+  fails the boot.
+- **`framework/docs/mcptools`**: `Register`, the registrar that installs
+  `framework_docs_list`, `framework_docs_get` and `framework_docs_search`.
+  The blueprint and the examples pass it to `WithMCPTools` beside
+  `framework.WithMCPIntrospection()`.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
   the working tree and `origin/main`: the changed packages, their
@@ -328,6 +337,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   style, and validation now refuses an unsafe `href` (`javascript:`,
   `data:`, `//host`). Before, the generator accepted one and the page
   rendered the link with no `href`.
+- **BREAKING: the `framework_docs_*` MCP tools are opt-in** (#470).
+  `framework.WithMCPIntrospection()` no longer registers
+  `framework_docs_list` / `framework_docs_get` / `framework_docs_search`,
+  and neither does the `gofastr dev` loop: an app whose agents read the
+  framework docs over `/mcp` adds
+  `framework.WithMCPTools(mcptools.Register)` from
+  `framework/docs/mcptools` (the blueprint, `gofastr init` and the
+  examples do). Package framework no longer imports the docs corpus.
+  `gofastr upgrade` flags every `WithMCPIntrospection` call for review
+  with that guidance.
+- **`gofastr upgrade` reports fewer review-tier hits.** Five registry
+  notes whose matcher was a bare symbol every app uses (`App.Entity`,
+  the v0.48 `CrudHandler.ListAll` / `GetOne` / `CountAll` read-hook
+  note, the field `Default`, the v0.65 owner-column and the v0.68
+  `migrate repair` notes) now carry a `nodetect` reason instead of a
+  `find`, and the text matcher skips minified scripts, by name
+  (`.min.js`, `.min.mjs`, `.min.cjs`) and by line (a script line over
+  1000 bytes), so a vendored maplibre or monaco build no longer
+  produces hits. Long lines in data files (a `.jsonl` journal) still
+  count.
 - **BREAKING: every class and attribute carries the prefix of the
   tree that defines it** (#467). The kernel's attribute vocabulary is
   `data-cui-*`: every `data-fui-*` the runtime read is renamed
@@ -457,6 +486,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
   when `PORT` held a host:port. A wildcard bind (`0.0.0.0`, `[::]`) now
   prints localhost.
+- **`battery/rtc`: a late join mirror no longer kicks a peer that already
+  moved** (#474). With two replicas, a peer that joined R1 and
+  reconnected to R2 before R1's join mirror reached R2 had its live R2
+  socket closed when the mirror landed, and the room heard a second
+  leave. Lane messages carry the sender's clock now; a mirror older than
+  the local socket it would displace is dropped, and a socket that closes
+  while a live remote seat holds the same id publishes no leave.
+- **`textsafe.SanitizeControlBytes` dropped the continuation bytes of
+  non-ASCII text** (since v0.86.0): once a control byte had to be
+  removed, a rune-indexed loop copied only the first byte of each
+  multi-byte character, so `hé\tllo` came back as `h\xc3llo`. Input with
+  no control byte was returned unchanged and never showed it. The loop
+  walks bytes again, and the package is under a coverage floor.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the

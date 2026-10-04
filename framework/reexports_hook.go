@@ -2,8 +2,8 @@ package framework
 
 import "github.com/DonaldMurillo/gofastr/framework/hook"
 
-// Re-exports of framework/hook so existing callers using framework.X
-// keep compiling after the hook package extraction.
+// Root spellings of framework/hook. framework.X is the public API; the
+// extraction moved the implementation, not the name callers write.
 
 type (
 	HookType     = hook.HookType

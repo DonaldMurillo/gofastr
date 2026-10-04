@@ -86,7 +86,7 @@ Per fixture, `TestHistoricalUpgrades`:
      is invisible to bob.
    - Create stamps the owner from the session.
    - The entity_list sort round-trips (`?sort=` changes order) and a row-action
-     RPC (`DELETE /api/tags/{id}`, the `data-fui-rpc` target) round-trips.
+     RPC (`DELETE /api/tags/{id}`, the `data-cui-rpc` target) round-trips.
 
 `TestUpgradeFailsWhenMigrationSkipped` is the negative proof: it deliberately
 skips `migration.patch` and asserts `go build` fails with an actionable error

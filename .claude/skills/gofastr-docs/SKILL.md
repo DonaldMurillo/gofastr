@@ -128,7 +128,12 @@ was needed.
   of typed matchers, or a
   one-line `nodetect` reason when no spelling differs; the parser has
   no block scalars). `TestThroughMatchesChangelog`
-  gates it against the CHANGELOG's latest heading.
+  gates it against the CHANGELOG's latest heading. Between releases a
+  feature PR may add the note to a pending `releases/<next version>.yml`
+  above `through`: exactly one such file, its version the next patch,
+  minor or major of `through` (`TestThroughCoversNewestEntry`); the
+  release PR keeps or renames it to the version that ships, and every
+  file at or below `through` must name a CHANGELOG release.
 - SECURITY.md "Supported versions": the latest-minor line
 - If the release adds host-facing surface (a new battery, uihost
   option, or CLI capability a host-app agent should reach for):

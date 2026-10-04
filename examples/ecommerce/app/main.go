@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -54,15 +55,18 @@ func main() {
 		// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +
 		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
 		// WithMCPIntrospection adds read-only orientation tools
-		// (app_routes, app_readiness, framework_docs_search, …). The
+		// (app_routes, app_readiness, app_config, …). The
 		// introspection tools reveal the app's shape: remove the option
 		// if /mcp is reachable by untrusted callers in production.
+		// WithMCPTools(mcptools.Register) adds framework_docs_list/get/search over the
+		// embedded framework docs; drop it (and the import) to shrink the binary.
 		// Under `gofastr dev` the framework additionally auto-enables the
 		// mutating control tools + log debug tools (opt-out:
 		// GOFASTR_DEV_MCP=0); add framework.WithMCPControl() here to opt a
 		// trusted production /mcp into runtime control.
 		framework.WithMCP(),
 		framework.WithMCPIntrospection(),
+		framework.WithMCPTools(mcptools.Register),
 	}
 	if db != nil {
 		options = append(options, framework.WithDB(db))

@@ -383,6 +383,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -400,6 +401,11 @@ func main() {
 		// added below this line takes effect; above it, WithConfig would
 		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
+		// The framework's own docs as MCP tools (framework_docs_list /
+		// _get / _search), so the coding agent on /mcp reads them from the
+		// running app under `+"`gofastr dev`"+`. Drop this line to keep the docs
+		// corpus (about 2 MB) out of the binary.
+		framework.WithMCPTools(mcptools.Register),
 	)
 
 	// Wire the UI layer: site app + home screen + host.
@@ -464,6 +470,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -519,6 +526,11 @@ func main() {
 		// Turn this off before exposing the app to untrusted callers if you
 		// have not reviewed which entities set Exposure.MCP.
 		framework.WithMCP(),
+		// The framework's own docs as MCP tools (framework_docs_list /
+		// _get / _search), so the coding agent on /mcp reads them from the
+		// running app. Drop this line to keep the docs corpus (about 2 MB)
+		// out of the binary.
+		framework.WithMCPTools(mcptools.Register),
 	)
 
 	// Register entities from the entities package.
