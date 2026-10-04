@@ -4,8 +4,9 @@ package main
 // must expose the full agent-facing MCP contract rather than only entity
 // CRUD tools. The framework is AI-first: an agent pointed at a generated app
 // must be able to discover the server (server card), stream it (GET /mcp),
-// and orient inside it (the WithMCPIntrospection tool set: app_routes,
-// framework_docs_search, …), exactly like examples/site. Gated by -short.
+// and orient inside it (app_routes from WithMCPIntrospection,
+// framework_docs_search from WithMCPTools(mcptools.Register), …), exactly
+// like examples/site. Gated by -short.
 
 import (
 	"bytes"
@@ -87,9 +88,10 @@ func TestE2E_MCP_BlueprintApp(t *testing.T) {
 	base := "http://localhost:" + port
 	waitForBody(t, base+"/", 90*time.Second, &appOut)
 
-	// Contract 1: tools/list serves BOTH the per-entity CRUD tools and the
-	// introspection set. An agent must be able to orient (app_routes,
-	// framework_docs_*) on the same server it mutates through.
+	// Contract 1: tools/list serves the per-entity CRUD tools, the
+	// introspection set AND the docs tools. An agent must be able to
+	// orient (app_routes, framework_docs_*) on the same server it mutates
+	// through.
 	tools := mcpToolNames(t, base)
 	for _, want := range []string{
 		"posts_list", "posts_create", // entity CRUD (mcp: true in the blueprint)

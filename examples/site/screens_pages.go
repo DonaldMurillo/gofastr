@@ -223,7 +223,7 @@ func gsBody() render.HTML {
 				html.ListItem(html.ListItemConfig{}, render.Text("A posts entity: REST CRUD, session-gated by default")),
 				html.ListItem(html.ListItemConfig{}, render.Text("A versioned SQL migration, already applied")),
 				html.ListItem(html.ListItemConfig{}, render.Text("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)")),
-				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes and framework_docs_search, so your coding agent reads the running app")),
+				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes, and the framework docs through framework_docs_search (the generated main.go registers them), so your coding agent reads the running app")),
 				html.ListItem(html.ListItemConfig{}, render.Text("AGENTS.md + agents/ + DESIGN.md, generated for the agent you build with")),
 			),
 		),
