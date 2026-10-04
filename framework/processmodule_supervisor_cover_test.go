@@ -3,7 +3,11 @@ package framework
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"io/fs"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -275,6 +279,25 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 	// A wrapped error whose message contains "handshake:" is treated as integrity.
 	if !isIntegrityFault(errors.New("handshake: boom")) {
 		t.Error("'handshake:' message should be integrity fault")
+	}
+}
+
+// A child that dies while the handshake is in flight is a crash, not an
+// integrity fault: the error is "handshake:"-wrapped but its cause is the
+// transport (the peer closed, EOF, EPIPE from the write, the spawn
+// deadline), not a verdict the child answered.
+func TestIsIntegrityFault_HandshakeTransportFailureIsACrash(t *testing.T) {
+	causes := map[string]error{
+		"peer closed": moduleproto.ErrClosed,
+		"eof":         io.EOF,
+		"epipe":       &fs.PathError{Op: "write", Path: "|1", Err: syscall.EPIPE},
+		"deadline":    context.DeadlineExceeded,
+	}
+	for name, cause := range causes {
+		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", fmt.Errorf("moduleproto: write: %w", cause)))
+		if isIntegrityFault(err) {
+			t.Errorf("%s: a handshake transport failure classified as integrity (terminal): %v", name, err)
+		}
 	}
 }
 

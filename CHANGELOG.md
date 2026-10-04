@@ -395,9 +395,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A process module whose child dies during the handshake restarts
+  instead of going terminal.** The supervisor read every
+  `handshake:`-wrapped error as an integrity fault, the transport ones
+  included (the pipe closed, EOF, EPIPE, the spawn deadline), so a
+  crash-looping module escaped its circuit or stayed down for good
+  depending on which side of the handshake write it died. A transport
+  failure is a crash now, under backoff, and charges the circuit like one.
+- **`battery/rtc`: a late join mirror no longer kicks a peer that already
+  moved** (#474). With two replicas, a peer that joined R1 and
+  reconnected to R2 before R1's join mirror reached R2 had its live R2
+  socket closed when the mirror landed, and the room heard a second
+  leave. Lane messages carry the sender's clock now; a mirror older than
+  the local socket it would displace is dropped, and a socket that closes
+  while a live remote seat holds the same id publishes no leave.
 - **`textsafe.SanitizeControlBytes` dropped the continuation bytes of
-  non-ASCII text** (since v0.86.0): a rune-indexed loop skipped the bytes
-  a multi-byte character spans, so `héllo` came back as `hllo`. The loop
+  non-ASCII text** (since v0.86.0): once a control byte had to be
+  removed, a rune-indexed loop copied only the first byte of each
+  multi-byte character, so `hé\tllo` came back as `h\xc3llo`. Input with
+  no control byte was returned unchanged and never showed it. The loop
   walks bytes again, and the package is under a coverage floor.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks

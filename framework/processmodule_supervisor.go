@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
@@ -1576,12 +1578,31 @@ func isIntegrityFault(err error) bool {
 	if _, ok := errors.AsType[*ExecutableSHAMismatchError](err); ok {
 		return true
 	}
+	// A child that dies while the handshake is in flight surfaces as a
+	// transport failure wrapped in "handshake:" (the pipe closed, EOF,
+	// EPIPE, the spawn deadline). That is a crash, the same crash the
+	// exit watcher would have reported a few milliseconds later, and it
+	// restarts under backoff like one; a terminal verdict here let a
+	// crash-looping module escape its circuit depending on which side of
+	// the handshake write it died. Checked before the stage rule below.
+	if isTransportFailure(err) {
+		return false
+	}
 	// A handshake-stage error (round-trip mismatch surfaced as a wrapped
 	// error) is integrity; the spawn-stage error (exec failed) is not.
 	if errStr := err.Error(); strings.Contains(errStr, "handshake:") {
 		return true
 	}
 	return false
+}
+
+// isTransportFailure reports whether err is the peer going away or the
+// spawn budget running out, as opposed to a verdict the child answered.
+func isTransportFailure(err error) bool {
+	return errors.Is(err, moduleproto.ErrClosed) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 // teardownChild performs the §4.6 lift on a failed-spawn child: close
