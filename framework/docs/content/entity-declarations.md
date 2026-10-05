@@ -123,6 +123,14 @@ were mounted or not, and hooks and typed queries work as usual). Setting
 `MCP: true` alongside `CRUD: false` is a registration error, not a silent
 mismatch: MCP CRUD tools dispatch through the routes.
 
+No generated route reaches the rows of a `CRUD: false` entity, including
+routes that belong to OTHER entities. Another entity's `?include=` of a
+relation that targets it, and a `?rel.field=` filter across such a relation,
+answer **403** with the include refusal ("include targets entity users, which
+you may not read"). A cascade write through a parent route that would create,
+update or ManyToMany-link its rows is refused the same way. In-process Go
+(`app.CrudHandler`, typed repos, `EagerLoad`) is unaffected.
+
 `CRUD: false` turns off the **generated** surface, and only that. Anything in
 the entity's `Endpoints` list is registered either way, so an entity with
 `CRUD: false` and a declared endpoint still answers HTTP on that endpoint's
@@ -809,6 +817,14 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 app.Entity("users",    auth.UserEntityConfig())    // CRUD=false, MCP=false
 app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
 ```
+
+`CRUD=false` also keeps user rows off other entities' routes: a
+`BelongsTo("author", "users", "author_id")` relation on `posts` stays
+usable from Go, but `GET /posts?include=author` and
+`GET /posts?author.email_like=…` answer 403 instead of returning or
+filtering by user columns (`email`, `roles`). To show an author's name,
+put it on a separate entity with its own CRUD and access rules, or render
+it server-side.
 
 `auth.UserEntityFields()` and `auth.SessionEntityFields()` remain for
 hosts that want full control; the `*EntityConfig()` helpers are the

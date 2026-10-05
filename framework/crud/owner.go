@@ -141,14 +141,17 @@ func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool 
 // update this entity's record. It is the context-only twin of requireScope,
 // for a write that reaches this entity without passing its own route: owner,
 // tenant, the baseline session gate, then RBAC. WithServerWrites skips all of
-// them. The session gate is skipped for the in-process API (r built by
-// syntheticRequest), which never applies it to a parent either; every route,
-// MCP included, arrives with a real request. Checking RBAC alone let an
-// anonymous write to a Public parent create rows in a child whose own route
-// answers 401.
+// them. The session gate and relationReachable are skipped for the in-process
+// API (r built by syntheticRequest), which never applies them to a parent
+// either; every route, MCP included, arrives with a real request. Checking
+// RBAC alone let an anonymous write to a Public parent create rows in a child
+// whose own route answers 401.
 func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op crudOp, id string) bool {
 	if serverWrites(ctx) {
 		return true
+	}
+	if (r == nil || !inProcess(r)) && !ch.relationReachable(ctx, "write") {
+		return false
 	}
 	if ch.requireOwnerContext(ctx) != nil || ch.requireTenantContext(ctx) != nil {
 		return false
@@ -163,6 +166,23 @@ func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op 
 		return true
 	}
 	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+}
+
+// relationReachable answers the rule that binds a route reaching THIS entity
+// from another entity's route (?include=, ?rel.field= filters, cascade writes)
+// and that the entity's own posture checks cannot see, because it is about how
+// the request arrived rather than who made it.
+//
+// Exposure.CRUD=false means no generated surface reaches the rows. The
+// entity's own routes are never mounted, and a relation from a mounted entity
+// must not become the generated surface it opted out of. auth.UserEntityConfig
+// is the case that matters: users with CRUD off were still readable through
+// any ?include=author and filterable through ?author.email_like=.
+func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool {
+	if crud := ch.Entity.Config.Exposure.CRUD; crud != nil && !*crud {
+		return false
+	}
+	return true
 }
 
 // canReadEntityGate answers the part of the read posture that is a GATE rather

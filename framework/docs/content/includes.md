@@ -192,6 +192,10 @@ the entity that failed:
 {"code":403,"error":"access denied: include targets entity users, which you may not read","success":false}
 ```
 
+A target declared `Exposure.CRUD: false` (`auth.UserEntityConfig()` among them)
+is refused the same way for every caller: opting an entity out of generated
+routes also keeps it out of other entities' includes and nested filters.
+
 The check runs at every depth, so `?include=comments.author` cannot reach a
 gated `author` through a readable `comments`, and it runs before any rows are
 loaded, including before the shortcut for an empty parent, so the answer never

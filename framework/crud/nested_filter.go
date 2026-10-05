@@ -559,7 +559,7 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 				return &includeForbiddenError{Entity: filters[i].Relation.Entity}
 			}
 			probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
-			if checkPosture && !probe.CanReadScoped(ctx) {
+			if checkPosture && (!probe.relationReachable(ctx, "read") || !probe.CanReadScoped(ctx)) {
 				return &includeForbiddenError{Entity: target.GetName()}
 			}
 			var scopes []filter.ParsedFilter
@@ -581,7 +581,7 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 				filters[i].Hops[h].Target = target
 			}
 			probe := &CrudHandler{Entity: target, DB: ch.DB, Registry: ch.Registry}
-			if checkPosture && !probe.CanReadScoped(ctx) {
+			if checkPosture && (!probe.relationReachable(ctx, "read") || !probe.CanReadScoped(ctx)) {
 				return &includeForbiddenError{Entity: target.GetName()}
 			}
 			var scopes []filter.ParsedFilter
