@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade/scan"
+	"golang.org/x/mod/modfile"
 )
 
 // gofastrModule is the module path both go.mod inspection and the
@@ -28,39 +29,27 @@ const maxNoteHits = 20
 // goModGofastrVersion reads root/go.mod and returns the required
 // gofastr version plus whether a replace directive overrides it (a
 // local replace means the version in go.mod may not be what actually
-// builds).
+// builds). It parses with golang.org/x/mod/modfile, the go command's
+// own grammar, so only a require names the version: a gofastr line in
+// an exclude, retract or replace block (single-line or block form) is
+// never misread as one.
 func goModGofastrVersion(root string) (version string, replaced bool, err error) {
 	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return "", false, fmt.Errorf("read go.mod: %w", err)
 	}
-	inReplaceBlock := false
-	for _, raw := range strings.Split(string(body), "\n") {
-		line := strings.TrimSpace(raw)
-		switch {
-		case strings.HasPrefix(line, "replace ("):
-			inReplaceBlock = true
-			continue
-		case inReplaceBlock && line == ")":
-			inReplaceBlock = false
-			continue
-		case inReplaceBlock:
-			// Block-form replace: the module sits on its own line
-			// ("github.com/… => ../local"). Never parse versions here;
-			// the "=>" token would be misread as one.
-			if fields := strings.Fields(line); len(fields) > 0 && fields[0] == gofastrModule {
-				replaced = true
-			}
-			continue
-		case strings.HasPrefix(line, "replace "+gofastrModule+" ") || strings.HasPrefix(line, "replace "+gofastrModule+"=>"):
-			replaced = true
-			continue
+	f, err := modfile.Parse("go.mod", body, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("parse go.mod: %s", scrubTerminalOutput(err.Error()))
+	}
+	for _, r := range f.Require {
+		if r.Mod.Path == gofastrModule {
+			version = r.Mod.Version
 		}
-		// Matches both the require-block form ("\tmodule vX.Y.Z") and
-		// the single-line form ("require module vX.Y.Z").
-		fields := strings.Fields(strings.TrimPrefix(line, "require "))
-		if len(fields) >= 2 && fields[0] == gofastrModule {
-			version = fields[1]
+	}
+	for _, r := range f.Replace {
+		if r.Old.Path == gofastrModule {
+			replaced = true
 		}
 	}
 	if version == "" {

@@ -77,6 +77,29 @@ replace (
 	}
 }
 
+// Only a require names the current version: a gofastr line inside an
+// exclude (or retract) block is not one.
+func TestGoModVersionIgnoresExcludeBlock(t *testing.T) {
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "go.mod", `module example.com/app
+
+go 1.27
+
+require github.com/DonaldMurillo/gofastr v0.80.0
+
+exclude (
+	github.com/DonaldMurillo/gofastr v0.85.1
+)
+`)
+	v, replaced, err := goModGofastrVersion(dir)
+	if err != nil {
+		t.Fatalf("goModGofastrVersion: %v", err)
+	}
+	if v != "v0.80.0" || replaced {
+		t.Errorf("got v=%q replaced=%v, want v0.80.0 from the require", v, replaced)
+	}
+}
+
 func TestParseUpgradeArgsForms(t *testing.T) {
 	for _, args := range [][]string{{"--to", "v0.23.0"}, {"--to=v0.23.0"}} {
 		opts, bad := parseUpgradeArgs(args)
