@@ -109,18 +109,18 @@ func tagInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-tag-input"] .fui-tag-input__zone {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__zone:focus-within {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
-  border-color: var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__list {
   display: contents;
@@ -128,12 +128,14 @@ func tagInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-tag-input"] .fui-tag-input__chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px) var(--spacing-xs, 2px) 10px;
-  background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
-  border-radius: 999px;
-  font-size: var(--text-sm, 0.875rem);
+  gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-md, 8px);
+  /* A soft secondary chip, the shadcn badge-in-input look: the solid
+     primary chip shouted over the value it labels. */
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  border-radius: var(--radii-md, 8px);
+  font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
@@ -145,14 +147,15 @@ func tagInputCSS(_ style.Theme) string {
   border-radius: 999px;
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--color-text-muted, #52525B);
   cursor: pointer;
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1;
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove:hover {
-  background: color-mix(in srgb, var(--color-primary-fg, #FFFFFF) 25%, transparent);
+  color: var(--color-text, #09090B);
+  background: color-mix(in oklab, var(--color-text, #09090B) 8%, transparent);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__field {
   flex: 1 1 8rem;
@@ -160,10 +163,15 @@ func tagInputCSS(_ style.Theme) string {
   outline: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
   min-block-size: 28px;
   padding: 0;
+}
+[data-cui-comp="ui-tag-input"] .fui-tag-input__field::placeholder { color: var(--color-text-subtle); }
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) {
+  [data-cui-comp="ui-tag-input"] .fui-tag-input__field { font-size: var(--text-base, 1rem); }
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__add {
   display: inline-flex;
@@ -171,20 +179,21 @@ func tagInputCSS(_ style.Theme) string {
   justify-content: center;
   min-inline-size: 28px;
   min-block-size: 28px;
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface-soft, #F4F4F5);
+  border: 0;
+  border-radius: var(--radii-sm, 6px);
+  background: transparent;
   font: inherit;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted, #52525B);
   cursor: pointer;
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__add:hover {
-  background: var(--color-border, #E4E4E7);
+  color: var(--color-text, #09090B);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__add:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__help {
   margin: 0;

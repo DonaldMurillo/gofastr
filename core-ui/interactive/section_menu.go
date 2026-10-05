@@ -233,7 +233,7 @@ func sectionMenuCSS(_ style.Theme) string {
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__lead.is-active,
 [data-cui-comp="cui-section-menu"] .cui-section-menu__lead[aria-current="page"] {
-  color: var(--color-primary, currentColor);
+  color: var(--color-text, currentColor);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group {
   margin-bottom: var(--spacing-md, 8px);
@@ -250,10 +250,9 @@ func sectionMenuCSS(_ style.Theme) string {
      under it at 22px. */
   padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
   margin-bottom: var(--spacing-sm, 4px);
-  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 0.75rem);
-  letter-spacing: 0.02em;
-  color: var(--color-text-subtle, #71717A);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted, #52525B);
   user-select: none;
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-summary::-webkit-details-marker { display: none; }
@@ -270,24 +269,32 @@ func sectionMenuCSS(_ style.Theme) string {
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="cui-section-menu"] .cui-section-menu__chevron { transition: none; }
 }
+/* A group's links hang off a hairline rule under its label (12px in),
+   and the active link darkens its stretch of that rule. The rule sits
+   inside the rail, so the marker shows on a rail with no padding of its
+   own; the link text still starts at 22px. */
 [data-cui-comp="cui-section-menu"] .cui-section-menu__list {
   list-style: none;
   margin: 0;
+  margin-inline-start: 12px;
   padding: 0;
+  border-inline-start: 1px solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link {
   display: block;
-  padding: 3px 0 3px 22px;
+  padding-block: 3px;
+  padding-inline: 9px 0;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
-  border-left: 2px solid transparent;
-  margin-left: -2px;
+  border-inline-start: 1px solid transparent;
+  margin-inline-start: -1px;
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link:hover { color: var(--color-text, currentColor); }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link.is-active,
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link[aria-current="page"] {
   color: var(--color-text, #18181B);
-  border-left-color: var(--color-primary, currentColor);
+  font-weight: var(--font-weight-medium);
+  border-inline-start-color: var(--color-text, currentColor);
 }
 
 /* ── Mobile trigger button (hidden on the desktop rail) ───────────── */

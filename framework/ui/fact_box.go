@@ -2,7 +2,7 @@ package ui
 
 // FactBox: one labelled value tile. Single component, two variants:
 //
-//   FactStyleLabelFirst (default): small uppercase label on top, body-size
+//   FactStyleLabelFirst (default): small muted label on top, body-size
 //     value below. For parameters and specs ("Prereqs: Go 1.26+, git").
 //   FactStyleValueFirst: big display value on top, small caption label
 //     below. For KPIs and counts ("53 docs").
@@ -21,11 +21,11 @@ import (
 type FactStyle string
 
 const (
-	// FactStyleLabelFirst renders the label on top (small, uppercase)
+	// FactStyleLabelFirst renders the label on top (small, muted)
 	// and the value below (body-size). Default.
 	FactStyleLabelFirst FactStyle = ""
 	// FactStyleValueFirst renders the value on top (large display
-	// type) and the label below (small, uppercase). Use for KPI-style
+	// type) and the label below (small, muted). Use for KPI-style
 	// stat bands.
 	FactStyleValueFirst FactStyle = "value-first"
 )
@@ -118,12 +118,10 @@ func factBoxCSS(_ style.Theme) string {
 [data-cui-comp="ui-fact-box"] .fui-fact-box__label {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--color-text-muted, currentColor);
 }
 [data-cui-comp="ui-fact-box"] .fui-fact-box__value {
-  font-size: var(--font-size-md, 14px);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, currentColor);
   line-height: 1.5;
 }

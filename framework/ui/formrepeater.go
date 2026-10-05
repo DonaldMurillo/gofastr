@@ -160,7 +160,7 @@ func formRepeaterCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
-  outline: 2px solid var(--color-danger, #DC2626);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
@@ -187,7 +187,7 @@ func formRepeaterCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {

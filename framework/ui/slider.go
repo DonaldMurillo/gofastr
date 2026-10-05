@@ -137,14 +137,15 @@ func sliderCSS(_ style.Theme) string {
   width: 20px;
   height: 20px;
   border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  background: var(--color-surface, #FFFFFF);
+  border: 2px solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
   margin-top: -7px;
   cursor: pointer;
   transition: transform 100ms ease;
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:active::-webkit-slider-thumb {
   transform: scale(1.15);
@@ -159,12 +160,13 @@ func sliderCSS(_ style.Theme) string {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  background: var(--color-surface, #FFFFFF);
+  border: 2px solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-moz-range-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
 }
 
 [data-cui-comp="ui-slider"].is-disabled .fui-slider__input {

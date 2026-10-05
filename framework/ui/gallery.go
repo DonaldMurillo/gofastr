@@ -261,7 +261,7 @@ func galleryCSS(_ style.Theme) string {
   border-color: var(--color-primary, #4F46E5);
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__figure {

@@ -129,7 +129,7 @@ code.
 | `GOFASTR1818` | error | a screen's or layout's style handle used outside its own package and the one that attaches it |
 | `GOFASTR1819` | error | in `app.style.css`: a selector whose subject is not a class, or a custom property declaration |
 | `GOFASTR1820` | error | any owned sheet declaring a custom property named like a theme token (`--color-primary`) |
-| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #4F46E5` where `--color-primary` is `#4F46E5` |
+| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #18181B` where `--color-primary` is `#18181B` |
 | `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
 
 `GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when

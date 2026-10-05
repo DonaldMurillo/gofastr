@@ -189,7 +189,7 @@ html:has(.desktopui-frame) {
   gap: var(--spacing-lg, 16px);
   padding: var(--spacing-xl, 24px);
   background-color: var(--color-background, #FFFFFF);
-  border-start-start-radius: var(--radii-lg, 12px);
+  border-start-start-radius: var(--radii-lg, 10px);
 }
 
 /* The sidebar-less window: no zone, no opaque column. The window

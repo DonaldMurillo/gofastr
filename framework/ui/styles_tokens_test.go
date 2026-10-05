@@ -58,22 +58,32 @@ func TestBellBadgeColorTokens(t *testing.T) {
 }
 
 // ButtonSizeLarge must read a DIFFERENT scale token than the default
-// size. :root always emits --text-base (1rem), so mapping both base
-// and --large onto var(--text-base, …) collapses large into the
+// size. :root always emits every --text-* step, so mapping both base
+// and --large onto the same var(--text-*, …) collapses large into the
 // default size regardless of the fallback literal.
-func TestButtonLargeUsesTextLgToken(t *testing.T) {
+func TestButtonLargeUsesLargerTextToken(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
-	i := strings.Index(css, ".fui-button--large {")
-	if i < 0 {
-		t.Fatal("fui-button--large rule missing")
+	fontSize := func(selector string) string {
+		t.Helper()
+		i := strings.Index(css, selector+" {")
+		if i < 0 {
+			t.Fatalf("%s rule missing", selector)
+		}
+		rule := css[i:]
+		rule = rule[:strings.Index(rule, "}")]
+		j := strings.Index(rule, "font-size: ")
+		if j < 0 {
+			t.Fatalf("%s sets no font-size:\n%s", selector, rule)
+		}
+		v := rule[j+len("font-size: "):]
+		return v[:strings.Index(v, ";")]
 	}
-	rule := css[i:]
-	rule = rule[:strings.Index(rule, "}")]
-	if !strings.Contains(rule, "font-size: var(--text-lg, 1.125rem)") {
-		t.Errorf("large button must use var(--text-lg, 1.125rem), got rule:\n%s", rule)
+	base, large := fontSize(".fui-button"), fontSize(".fui-button--large")
+	if base != "var(--text-sm)" {
+		t.Errorf("default button font-size = %s, want var(--text-sm)", base)
 	}
-	if strings.Contains(rule, "font-size: var(--text-base") {
-		t.Errorf("large button must not read --text-base (that IS the default size), got rule:\n%s", rule)
+	if large != "var(--text-base)" {
+		t.Errorf("large button font-size = %s, want var(--text-base), one step above the default", large)
 	}
 }
 

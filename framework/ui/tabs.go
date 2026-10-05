@@ -106,14 +106,17 @@ func Tabs(cfg TabsConfig) render.HTML {
 func tabsCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`:where([data-cui-comp="fui-tabs"]).fui-tabs{margin:0}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border, var(--color-border, #e2e8f0));margin-bottom:0}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{padding:var(--spacing-md, .5rem) var(--spacing-lg, 1rem);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #64748b));transition:color .15s,border-color .15s;text-decoration:none;display:inline-block}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #0f172a))}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px;border-radius:2px}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:1rem}`)
+	// The strip is a muted track with raised segments, the same shape as
+	// SegmentedControl and the FilterToolbar pills, so every "pick one of
+	// these" control on a page reads as one family.
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:inline-flex;flex-wrap:wrap;gap:0;padding:var(--spacing-sm, 4px);background:var(--fui-muted-bg, var(--color-surface-soft, #F4F4F5));border-radius:var(--radii-lg, 10px);margin-bottom:0}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{display:inline-flex;align-items:center;justify-content:center;min-block-size:calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));padding:0 12px;background:transparent;border:1px solid transparent;border-radius:var(--radii-md, 8px);cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #52525B));transition:color .15s,background-color .15s,box-shadow .15s;text-decoration:none;white-space:nowrap}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #09090B))}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--color-text-subtle);outline-offset:2px}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:var(--spacing-lg, 16px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
 	for i := range tabsMaxPanels {
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-cui-tab-index="%d"]{color:var(--fui-primary, var(--color-primary, #3b82f6));border-bottom-color:var(--fui-primary, var(--color-primary, #3b82f6))}`, i, i))
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab[data-cui-tab-index="%d"]{color:var(--fui-foreground, var(--color-text, #09090B));background:var(--fui-surface, var(--color-surface, #FFFFFF));box-shadow:var(--shadow-xs)}`, i, i))
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"] .fui-tab-panel[data-cui-tab-index="%d"]{display:block}`, i, i))
 	}
 	return b.String()

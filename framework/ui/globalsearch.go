@@ -190,7 +190,7 @@ func globalSearchCSS(_ style.Theme) string {
   min-height: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-global-search"] .fui-global-search__input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 [data-cui-comp="ui-global-search"] .fui-global-search__listbox {
@@ -207,7 +207,7 @@ func globalSearchCSS(_ style.Theme) string {
   align-items: baseline;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   cursor: pointer;
   min-height: var(--spacing-touch-target, 44px);
 }
@@ -222,7 +222,7 @@ func globalSearchCSS(_ style.Theme) string {
   font-family: var(--font-mono, monospace);
   font-size: var(--text-xs, 0.75rem);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   padding: 1px 6px;
   background: var(--color-surface-soft, #F4F4F5);
 }`

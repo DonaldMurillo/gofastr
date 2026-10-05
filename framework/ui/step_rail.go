@@ -166,11 +166,9 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-subtle, currentColor);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, currentColor);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__list {
   list-style: none;
@@ -187,7 +185,7 @@ func stepRailCSS(_ style.Theme) string {
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   color: var(--color-text-subtle, currentColor);
   text-decoration: none;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:hover,
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {

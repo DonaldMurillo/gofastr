@@ -307,7 +307,7 @@ func markdownCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   padding: 0.12em 0.4em;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   font-size: 0.875em;
 }
 

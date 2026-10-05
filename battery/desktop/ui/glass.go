@@ -60,7 +60,7 @@ var glassStyle = registry.RegisterStyle("desktopui-glass", glassCSS)
 
 func glassCSS(_ style.Theme) string {
 	return `[data-cui-comp="desktopui-glass"] {
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-lg, 10px);
   /* Translucent fill: the surface under the blur, not an opaque paint.
      measured, unverified. */
   background: color-mix(in srgb, var(--color-surface, #FFFFFF) 64%, transparent);
@@ -78,7 +78,7 @@ func glassCSS(_ style.Theme) string {
     var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.06));
 }
 [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
-  border-radius: var(--radii-xl, 16px);
+  border-radius: var(--radii-xl, 14px);
   /* Thicker material for sheets and popovers: better contrast for fine
      features (HIG Materials). measured, unverified. */
   background: color-mix(in srgb, var(--color-surface, #FFFFFF) 82%, transparent);

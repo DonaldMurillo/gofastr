@@ -109,7 +109,7 @@
     "--font-body", "--font-heading", "--font-mono",
     "--font-weight-bold", "--font-weight-medium", "--font-weight-normal", "--font-weight-semibold",
     "--radii-full", "--radii-lg", "--radii-md", "--radii-none", "--radii-sm", "--radii-xl",
-    "--shadow-lg", "--shadow-md", "--shadow-none", "--shadow-sm", "--shadow-xl",
+    "--shadow-lg", "--shadow-md", "--shadow-none", "--shadow-sm", "--shadow-xl", "--shadow-xs",
     "--size-content-width", "--size-header-height", "--size-narrow-width", "--size-page-gutter",
     "--size-page-width", "--size-wide-width",
     "--spacing-2xl", "--spacing-3xl", "--spacing-lg", "--spacing-md", "--spacing-sm",

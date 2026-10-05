@@ -268,10 +268,10 @@ func TestGenerateStylesTokensFiles(t *testing.T) {
 
 	t.Run("a value another token holds is GOFASTR1821", func(t *testing.T) {
 		_, code, printed := runStylesCase(t, map[string]string{
-			"ui/acme.tokens.css": "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #4F46E5; }\n",
+			"ui/acme.tokens.css": "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #2563EB; }\n",
 			"ui/ui.go":           "package ui\n",
 		}, "ui/acme_tokens.gen.go")
-		if code != 1 || !strings.Contains(printed, "GOFASTR1821 --color-brand has the value of --color-primary") {
+		if code != 1 || !strings.Contains(printed, "GOFASTR1821 --color-brand has the value of --color-accent") {
 			t.Errorf("exit %d:\n%s", code, printed)
 		}
 	})
@@ -321,7 +321,7 @@ func TestGenerateStylesWritesTokensCSS(t *testing.T) {
 	css := string(body)
 	for _, want := range []string{
 		":root {",
-		"--color-primary: #4F46E5; /* dark: #A5B4FC */",
+		"--color-primary: #18181B; /* dark: #FAFAFA */",
 		"--spacing-md: 8px;",
 		"--breakpoint-md: 768px;",
 	} {

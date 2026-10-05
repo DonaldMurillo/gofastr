@@ -145,8 +145,14 @@ func numberInputCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
   width: fit-content;
+}
+/* The row is the control: typing in the value rings the whole group. */
+[data-cui-comp="ui-number-input"] .fui-number-input__row:has(.fui-number-input__input:focus-visible) {
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__input {
   appearance: textfield;
@@ -155,7 +161,9 @@ func numberInputCSS(_ style.Theme) string {
   background: transparent;
   text-align: center;
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
   width: 5ch;
@@ -168,7 +176,10 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__input:focus {
   outline: none;
-  background: var(--color-surface-soft, #F4F4F5);
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) {
+  [data-cui-comp="ui-number-input"] .fui-number-input__input { font-size: var(--text-base, 1rem); }
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment {
@@ -178,21 +189,25 @@ func numberInputCSS(_ style.Theme) string {
   /* WCAG 2.5.5 — each step button is independently tappable. */
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  background: var(--color-surface-soft, #F4F4F5);
+  /* Outline-button segments: hairline dividers, no gray fill. */
+  background: transparent;
   border: 0;
-  font-size: var(--text-xl, 1.25rem);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-muted, #52525B);
   cursor: pointer;
   user-select: none;
 }
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement { border-inline-end: 1px solid var(--color-border, #E4E4E7); }
+[data-cui-comp="ui-number-input"] .fui-number-input__increment { border-inline-start: 1px solid var(--color-border, #E4E4E7); }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:hover,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:hover {
-  background: var(--color-border, #E4E4E7);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: -2px;
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:disabled,

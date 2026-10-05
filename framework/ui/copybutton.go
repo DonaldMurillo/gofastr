@@ -229,34 +229,39 @@ func copyButtonCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-copy-btn"] {
   display: inline-block;
 }
+/* The --ui-copy-btn-* knobs let a host surface restyle the button
+   without reaching into it: the framed CodeBlock head sets them for a
+   quiet button on its dark chrome. */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-xs, 2px);
-  min-height: var(--spacing-touch-target, 44px);
-  min-width: var(--spacing-touch-target, 44px);
+  min-height: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
+  min-width: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
   padding: 6px var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #d0d0d8);
+  border: 1px solid var(--ui-copy-btn-border, var(--color-border, #E4E4E7));
   border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111);
+  background: var(--ui-copy-btn-bg, var(--color-surface, #fff));
+  color: var(--ui-copy-btn-color, var(--color-text, #09090B));
+  box-shadow: var(--ui-copy-btn-shadow, var(--shadow-xs));
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 /* Hover keeps the theme's own surface pair: surface-soft is defined by every
    theme in both schemes, so text set to --color-text stays readable (a rule
    that names an undefined token silently renders its fallback constant
    instead, which is how dark themes once got near-white on white here). */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn:hover {
-  background: var(--color-surface-soft, #f3f3f5);
-  border-color: var(--color-border-strong, var(--color-border, #d0d0d8));
+  background: var(--ui-copy-btn-hover-bg, var(--color-surface-soft, #F4F4F5));
+  color: var(--ui-copy-btn-hover-color, var(--ui-copy-btn-color, var(--color-text, #09090B)));
 }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__copied { display: none; }
 /* Success tint mixes the theme's own success color over the surface, so it

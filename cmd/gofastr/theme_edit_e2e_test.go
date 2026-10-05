@@ -295,7 +295,7 @@ func TestThemeEditPreviewReceivesEdit(t *testing.T) {
 
 	before := evalString(t, ctx, primaryColorJS)
 
-	// #166534 = rgb(22, 101, 52); the default primary is indigo (#4F46E5),
+	// #166534 = rgb(22, 101, 52); the default primary is near-black (#18181B),
 	// so a change here is unambiguous, and the green clears 7.13:1 under
 	// white ink: the theme guard refuses a primary pair below 4.5:1.
 	if err := chromedp.Run(ctx,

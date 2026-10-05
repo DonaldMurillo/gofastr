@@ -85,35 +85,38 @@ func authCardCSS(_ style.Theme) string {
   max-inline-size: 24rem;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md, 8px);
-  padding: clamp(20px, 5vw, 32px);
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e4e4e7);
-  border-radius: var(--radii-lg, 12px);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  gap: var(--spacing-xl, 24px);
+  padding: var(--spacing-xl, 24px);
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-xl, 14px);
+  box-shadow: var(--shadow-sm);
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
   font-size: var(--text-xl, 1.25rem);
-  letter-spacing: -0.01em;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__alert {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #b91c1c);
-  background: color-mix(in srgb, var(--color-danger, #b91c1c) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger, #b91c1c) 28%, transparent);
-  border-radius: var(--radii-md, 8px);
+  color: var(--color-danger, #DC2626);
+  background: color-mix(in srgb, var(--color-danger, #DC2626) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
+  border-radius: var(--radii-lg, 10px);
   padding: 0.625rem 0.75rem;
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__footer {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, inherit);
+  color: var(--color-text-muted, #52525B);
+  text-align: center;
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__footer a {
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-text, #09090B);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 4px;
 }
 `
 }

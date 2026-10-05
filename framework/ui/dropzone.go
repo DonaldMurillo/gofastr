@@ -279,7 +279,7 @@ func dropzoneCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
   border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   text-align: center;
   transition: border-color 120ms ease, background 120ms ease;
@@ -307,9 +307,9 @@ func dropzoneCSS(_ style.Theme) string {
   border: 0;
 }
 .fui-drop__input:focus-visible + .fui-drop__icon {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 4px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 .fui-drop__icon {
   color: var(--color-primary, #4F46E5);
@@ -350,7 +350,7 @@ func dropzoneCSS(_ style.Theme) string {
 .fui-drop__preview {
   width: 72px;
   height: 72px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #F4F4F5);
   object-fit: cover;
   border: 1px solid var(--color-border, #E4E4E7);

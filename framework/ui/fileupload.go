@@ -209,7 +209,7 @@ func fileUploadCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xl, 24px);
   border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text-muted, #52525B);
   text-align: center;
@@ -254,7 +254,7 @@ func fileUploadCSS(_ style.Theme) string {
 /* The zone is the visual control, so it is what the focus ring drawn
    for the input's focus has to sit on. */
 .fui-upload:has(.fui-upload__input:focus-visible) .fui-upload__zone {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 4px;
 }
 .fui-upload__list {

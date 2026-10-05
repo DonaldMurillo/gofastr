@@ -405,14 +405,14 @@ func commandPaletteCSS(_ style.Theme) string {
   border: 0;
   color: var(--color-text-muted, #6b7280);
   cursor: pointer;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:hover {
   background: var(--color-surface-soft, #f4f4f5);
   color: var(--color-text, #18181b);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hints {
@@ -427,11 +427,11 @@ func commandPaletteCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
-  font-family: var(--fonts-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   padding: 1px 6px;
   border: 1px solid var(--color-border, #d0d0d8);
   border-bottom-width: 2px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #fff);
   font-size: var(--text-xs, 0.75rem);
 }

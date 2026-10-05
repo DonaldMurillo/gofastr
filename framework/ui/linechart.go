@@ -143,6 +143,22 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		"viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
 	sb.WriteString(`>`)
 
+	// The line keeps a stroke's width clear of the top and bottom edges
+	// so its peaks and troughs are not shaved by the viewBox, and three
+	// hairlines (top, middle, base) give the trend a scale to read
+	// against, the same grid BarChart draws.
+	const linePad = 4.0
+	inner := plotH - 2*linePad
+	for _, gy := range []float64{linePad, linePad + inner/2, plotH - linePad} {
+		sb.WriteString(`<line x1="0" y1="`)
+		sb.WriteString(ftoa(gy))
+		sb.WriteString(`" x2="`)
+		sb.WriteString(ftoa(plotW))
+		sb.WriteString(`" y2="`)
+		sb.WriteString(ftoa(gy))
+		sb.WriteString(`" class="fui-line-chart__grid" data-cui-internal=""/>`)
+	}
+
 	palette := []string{"primary", "info", "success", "warning", "danger"}
 	for i, s := range cfg.Series {
 		color := s.Color
@@ -157,7 +173,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		pts := make([]string, 0, n)
 		for j, v := range s.Values {
 			x := float64(j) * plotW / float64(n-1)
-			y := plotH - ((v - min) / span * plotH)
+			y := linePad + inner - ((v - min) / span * inner)
 			pts = append(pts, ftoa(x)+","+ftoa(y))
 		}
 		var pathD strings.Builder
@@ -294,7 +310,7 @@ func lineChartCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-line-chart"] .fui-line-chart__line {
   fill: none;
-  stroke-width: 1.5;
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
@@ -304,6 +320,11 @@ func lineChartCSS(_ style.Theme) string {
 .fui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
 .fui-line-chart__line--danger  { stroke: var(--color-danger, #DC2626); }
 
+[data-cui-comp="ui-line-chart"] .fui-line-chart__grid {
+  stroke: var(--color-border, #E4E4E7);
+  stroke-width: 1;
+  opacity: 0.55;
+}
 [data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: 0.18; stroke: none; }
 .fui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
 .fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }

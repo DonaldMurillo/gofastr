@@ -139,7 +139,7 @@ func colorPickerCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
 [data-cui-comp="ui-color-picker"] .fui-color-picker__input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {

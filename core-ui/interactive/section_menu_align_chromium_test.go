@@ -117,3 +117,38 @@ func TestSectionMenuRailShowsCollapsedGroups(t *testing.T) {
 		t.Error("after a click shut the rail group, its link is no longer painted")
 	}
 }
+
+// The hairline rule under a group hung off physical left properties, so
+// in a right-to-left page it drew at the far left of the rail, a whole
+// column away from the right-aligned links it groups (caught in review).
+// The rule sits on the inline-start side, beside the links.
+func TestSectionMenuRuleFollowsRTL(t *testing.T) {
+	menu := SectionMenu(sampleMenu())
+	css := sectionMenuStyle.Entry().CSSFor(style.Theme{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
+<style>body{margin:0;font-family:sans-serif}</style>
+<style>%s</style><div dir="rtl" style="width:280px">%s</div>`, css, string(menu))
+	}))
+	defer srv.Close()
+
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	var m map[string]float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.Evaluate(`(() => {
+			const s = getComputedStyle(document.querySelector('.cui-section-menu__list'));
+			return {right: parseFloat(s.borderRightWidth), left: parseFloat(s.borderLeftWidth),
+				indent: parseFloat(s.marginRight)};
+		})()`, &m),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if m["right"] != 1 || m["left"] != 0 {
+		t.Errorf("rtl rule borders: right %.0fpx, left %.0fpx; want it on the right, the inline start", m["right"], m["left"])
+	}
+	if m["indent"] != 12 {
+		t.Errorf("rtl list indent is %.0fpx on the right, want 12px", m["indent"])
+	}
+}

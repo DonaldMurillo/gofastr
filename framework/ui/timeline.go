@@ -164,7 +164,9 @@ func timelineCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--color-text-muted, #52525B);
   border: 2px solid var(--color-background, #FFFFFF);
-  margin-top: var(--spacing-xs, 2px);
+  /* Centre the 12px dot on the title's first line (text-sm at the
+     body's 1.5 line height). */
+  margin-top: calc((var(--text-sm, 0.875rem) * 1.5 - 12px) / 2);
   align-self: start;
   justify-self: center;
   position: relative;
@@ -187,7 +189,8 @@ func timelineCSS(_ style.Theme) string {
   /* The title is a p; a host's global p rule must not retune its
      metrics — the rhythm is the family's, inherited. */
   line-height: inherit;
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__meta {

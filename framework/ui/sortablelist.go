@@ -121,7 +121,7 @@ func sortablelistCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
 }
 :where([data-cui-comp="ui-sortablelist"]) .fui-sortablelist__item {
   display: flex;
@@ -131,12 +131,14 @@ func sortablelistCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
+  box-shadow: var(--shadow-xs);
+  font-size: var(--text-sm, 0.875rem);
   cursor: default;
   user-select: none;
   min-block-size: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {

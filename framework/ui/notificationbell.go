@@ -292,7 +292,7 @@ func notificationBellCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
 }
 [data-cui-comp="ui-notification-bell"]:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-notification-bell"] .fui-notification-bell__icon {
@@ -345,10 +345,8 @@ func notificationBellCSS(_ style.Theme) string {
 .fui-notification-bell__title {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #52525B);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text, #09090B);
 }
 .fui-notification-bell__empty {
   margin: 0;
@@ -367,13 +365,16 @@ func notificationBellCSS(_ style.Theme) string {
 .fui-notification-bell__row {
   margin: 0;
 }
+/* Unread rows sit on the soft surface in medium weight; a side stripe
+   is the look the rest of the kit has dropped. */
 .fui-notification-bell__row.is-unread .fui-notification-bell__row-link {
-  border-inline-start: 3px solid var(--color-primary, #4F46E5);
+  background: var(--color-surface-soft, #F4F4F5);
+  font-weight: var(--font-weight-medium);
 }
 .fui-notification-bell__row-link {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   color: var(--color-text, #18181B);
   text-decoration: none;
 }

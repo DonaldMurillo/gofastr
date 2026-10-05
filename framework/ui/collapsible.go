@@ -20,17 +20,24 @@ var collapsibleClasses = headless.Classes{
 	headless.PartPanel:   "fui-collapsible__content",
 }
 
+// collapsibleChevron is the stroked down-chevron mask the summary draws.
+const collapsibleChevron = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat`
+
 func collapsibleCSS(_ style.Theme) string {
 	// Token chain: --fui-* (the interactive set's host override bridge,
 	// see TestFuiBridgeChainsToColorTokens) wins when a host sets it, then
 	// the canonical adaptive --color-* theme, then the light literal.
-	return `[data-cui-comp="fui-collapsible"]{border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md,.5rem);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));overflow:hidden}` +
-		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a));list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
+	// An accordion row: a hairline under each section, no box, so a run
+	// of sections reads as one list. The chevron is drawn by mask so it
+	// takes the muted color and turns over when the section opens.
+	return `[data-cui-comp="fui-collapsible"]{border-bottom:1px solid var(--fui-border, var(--color-border, #E4E4E7));color:var(--fui-foreground, var(--color-text, #09090B))}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary{display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-lg, 16px);min-block-size:var(--spacing-touch-target, 44px);padding:var(--spacing-md, 8px) 0;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-foreground, var(--color-text, #09090B));list-style:none;user-select:none}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:hover{text-decoration:underline;text-underline-offset:4px}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
-		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform var(--duration-fast,150ms) var(--easing-standard,ease);color:var(--fui-muted, var(--color-text-muted, #64748b))}` +
-		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(90deg)}` +
-		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}` +
-		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:.75rem var(--spacing-lg, 1rem);color:var(--fui-foreground, var(--color-text, #0f172a));border-top:1px solid var(--fui-border, var(--color-border, #e2e8f0))}`
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"";flex:none;inline-size:16px;block-size:16px;background:var(--fui-muted, var(--color-text-muted, #52525B));-webkit-mask:` + collapsibleChevron + `;mask:` + collapsibleChevron + `;transition:transform var(--duration-fast, 150ms) var(--easing-ease-out, ease)}` +
+		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(180deg)}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:2px solid var(--color-text-subtle);outline-offset:2px;border-radius:var(--radii-sm, 6px)}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:0 0 var(--spacing-lg, 16px);font-size:var(--text-sm, .875rem);color:var(--fui-foreground, var(--color-text, #09090B))}`
 }
 
 // ─── Collapsible ────────────────────────────────────────────────────

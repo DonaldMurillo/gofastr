@@ -84,14 +84,14 @@ func treeCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
   min-height: var(--spacing-touch-target, 44px);
   padding: var(--spacing-sm, 4px) 6px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 /* Focus ring only while focus is actually inside the row — the roving
    tabindex means one item ALWAYS carries tabindex="0", so keying the
    outline on the bare attribute painted a permanent ring on it. */
 [data-cui-comp="ui-tree"] .fui-tree__item:focus-visible > .fui-tree__row,
 [data-cui-comp="ui-tree"] .fui-tree__item:focus-within > .fui-tree__row {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: -2px;
 }
 [data-cui-comp="ui-tree"] .fui-tree__item[aria-selected="true"] > .fui-tree__row {
@@ -110,7 +110,7 @@ func treeCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
-  transition: transform var(--duration-fast, 150ms) var(--easing-standard, ease);
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-out, ease);
 }
 [data-cui-comp="ui-tree"] .fui-tree__item[aria-expanded="true"] > .fui-tree__row > .fui-tree__toggle {
   transform: rotate(90deg);

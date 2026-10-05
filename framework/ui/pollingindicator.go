@@ -88,7 +88,7 @@ const pollingIndicatorCSSText = `
 .fui-polling-indicator {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #6B7280);
   line-height: 1;

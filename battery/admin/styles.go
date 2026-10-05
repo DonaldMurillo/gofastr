@@ -196,7 +196,7 @@ func adminCSS(_ style.Theme) string {
   gap: 0;
   margin: 0;
   border: 1px solid var(--color-border, #2a2b2e);
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-lg, 10px);
   overflow: hidden;
   background: var(--color-surface, #17181a);
 }

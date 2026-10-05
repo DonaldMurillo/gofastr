@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
@@ -127,7 +128,7 @@ var starterDoc = []string{
 	"",
 	"Reference tokens at render sites:",
 	"  theme.App.Colors.Primary.CSS()  → \"var(--color-primary)\"",
-	"  theme.App.Colors.Primary.Value  → \"#4F46E5\" (literal)",
+	"  theme.App.Colors.Primary.Value  → {{primary}} (literal)",
 	"",
 	"Token names auto-derive from struct field paths",
 	"(Colors.PrimaryFg → --color-primary-fg) so you only write Value.",
@@ -140,7 +141,13 @@ func themeStarterSource() string {
 	// declares Components only to deviate from it.
 	t.Name = "app"
 	t.Components = nil
-	src, err := emitThemeGoSourceWithDoc(t, "theme", starterDoc)
+	// The header quotes the primary this file sets, so it cannot go
+	// stale when the default palette changes.
+	doc := make([]string, len(starterDoc))
+	for i, line := range starterDoc {
+		doc[i] = strings.ReplaceAll(line, "{{primary}}", strconv.Quote(t.Colors.Primary.Value))
+	}
+	src, err := emitThemeGoSourceWithDoc(t, "theme", doc)
 	if err != nil {
 		panic("gofastr: theme starter does not parse: " + err.Error())
 	}

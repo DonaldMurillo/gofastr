@@ -241,7 +241,7 @@ func shortcutHintCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
-  font-family: var(--fonts-mono, ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace);
   vertical-align: middle;
 }
 [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__key {
@@ -253,7 +253,7 @@ func shortcutHintCSS(_ style.Theme) string {
   padding: 0 6px;
   border: 1px solid var(--color-border, #d0d0d8);
   border-bottom-width: 2px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);

@@ -215,6 +215,7 @@ func emitBreakpointSet(b *strings.Builder, bp *style.BreakpointSet) {
 func emitShadowSet(b *strings.Builder, s *style.ShadowSet) {
 	b.WriteString("\tShadows: style.ShadowSet{\n")
 	emitShadow(b, "None", s.None)
+	emitShadow(b, "XS", s.XS)
 	emitShadow(b, "SM", s.SM)
 	emitShadow(b, "MD", s.MD)
 	emitShadow(b, "LG", s.LG)

@@ -130,9 +130,11 @@ type BreakpointSet struct {
 	SM, MD, LG, XL, XXL Breakpoint
 }
 
-// ShadowSet: box-shadow depth scale.
+// ShadowSet: box-shadow depth scale. XS is the hairline lift a resting
+// control (button, input, select) carries; SM sits under a card, MD
+// under a popover or menu, LG under a dialog.
 type ShadowSet struct {
-	None, SM, MD, LG, XL Shadow
+	None, XS, SM, MD, LG, XL Shadow
 }
 
 // ZIndexSet: named layers. Prevents the `z-index: 9999` arms race,
@@ -603,18 +605,24 @@ func DefaultTheme() Theme {
 	return Theme{
 		Name: "default",
 		Colors: ColorSet{
-			Primary:      Color{Name: "primary", Value: "#4F46E5"},
+			// A neutral zinc palette: near-black primary on a white page,
+			// one hairline border, one soft surface for hover and fills.
+			// Brand colour is the host's call (theme.Overrides.Primary).
+			Primary: Color{Name: "primary", Value: "#18181B"},
+			// Pure white, not an off-white: a host that overrides only
+			// Primary keeps this ink, and #FAFAFA dropped brand colours that
+			// clear AA under white below 4.5:1.
 			PrimaryFg:    Color{Name: "primary-fg", Value: "#FFFFFF"},
-			Secondary:    Color{Name: "secondary", Value: "#6B7280"},
-			SecondaryFg:  Color{Name: "secondary-fg", Value: "#FFFFFF"},
-			Background:   Color{Name: "background", Value: "#F9FAFB"},
+			Secondary:    Color{Name: "secondary", Value: "#F4F4F5"},
+			SecondaryFg:  Color{Name: "secondary-fg", Value: "#18181B"},
+			Background:   Color{Name: "background", Value: "#FFFFFF"},
 			Surface:      Color{Name: "surface", Value: "#FFFFFF"},
 			SurfaceSoft:  Color{Name: "surface-soft", Value: "#F4F4F5"},
-			Text:         Color{Name: "text", Value: "#18181B"},
+			Text:         Color{Name: "text", Value: "#09090B"},
 			TextMuted:    Color{Name: "text-muted", Value: "#52525B"},
-			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface, was #A1A1AA (2.56:1, fails AA)
+			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface, was #A1A1AA (2.56:1, fails AA); also the focus ring
 			Border:       Color{Name: "border", Value: "#E4E4E7"},
-			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
+			BorderStrong: Color{Name: "border-strong", Value: "#D4D4D8"},
 			// Status tones are used two ways by framework/ui components:
 			// as WHITE-TEXT FILLS (toasts, button--danger) and as LABEL
 			// TEXT on their own 15%-tinted chips (Badge, Tag, StatCard
@@ -631,7 +639,7 @@ func DefaultTheme() Theme {
 			Success:  Color{Name: "success", Value: "#166534"},   // 5.6:1 on its 15% chip, was #15803D (4.10:1)
 			Warning:  Color{Name: "warning", Value: "#854D0E"},   // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
 			Info:     Color{Name: "info", Value: "#1D4ED8"},      // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
-			Accent:   Color{Name: "accent", Value: "#7C3AED"},
+			Accent:   Color{Name: "accent", Value: "#2563EB"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
 			// inkwell look (classic IDE feel); dark mode shifts it a
@@ -653,16 +661,16 @@ func DefaultTheme() Theme {
 		},
 		Radii: RadiusSet{
 			None: Radius{Name: "none", Value: 0},
-			SM:   Radius{Name: "sm", Value: 4},
+			SM:   Radius{Name: "sm", Value: 6},
 			MD:   Radius{Name: "md", Value: 8},
-			LG:   Radius{Name: "lg", Value: 12},
-			XL:   Radius{Name: "xl", Value: 16},
+			LG:   Radius{Name: "lg", Value: 10},
+			XL:   Radius{Name: "xl", Value: 14},
 			Full: Radius{Name: "full", Value: 9999},
 		},
 		Fonts: FontSet{
-			Body:    Font{Name: "body", Value: "'Inter', system-ui, sans-serif"},
-			Heading: Font{Name: "heading", Value: "'Inter', system-ui, sans-serif"},
-			Mono:    Font{Name: "mono", Value: "'JetBrains Mono', monospace"},
+			Body:    Font{Name: "body", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},
+			Heading: Font{Name: "heading", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},
+			Mono:    Font{Name: "mono", Value: "ui-monospace, 'SF Mono', Menlo, Consolas, 'JetBrains Mono', monospace"},
 		},
 		Breakpoints: BreakpointSet{
 			SM:  Breakpoint{Name: "sm", Value: 640},
@@ -673,10 +681,11 @@ func DefaultTheme() Theme {
 		},
 		Shadows: ShadowSet{
 			None: Shadow{Name: "none", Value: "none"},
-			SM:   Shadow{Name: "sm", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"},
-			MD:   Shadow{Name: "md", Value: "0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -1px rgba(0,0,0,0.06)"},
-			LG:   Shadow{Name: "lg", Value: "0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -2px rgba(0,0,0,0.05)"},
-			XL:   Shadow{Name: "xl", Value: "0 20px 25px -5px rgba(0,0,0,0.10), 0 10px 10px -5px rgba(0,0,0,0.04)"},
+			XS:   Shadow{Name: "xs", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"},
+			SM:   Shadow{Name: "sm", Value: "0 1px 3px 0 rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.10)"},
+			MD:   Shadow{Name: "md", Value: "0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -2px rgba(0,0,0,0.10)"},
+			LG:   Shadow{Name: "lg", Value: "0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10)"},
+			XL:   Shadow{Name: "xl", Value: "0 20px 25px -5px rgba(0,0,0,0.10), 0 8px 10px -6px rgba(0,0,0,0.10)"},
 		},
 		ZIndex: ZIndexSet{
 			Dropdown: ZIndexValue{Name: "dropdown", Value: 100},

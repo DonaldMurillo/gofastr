@@ -608,6 +608,20 @@ func TestThemeEditGalleryPreviewRenders(t *testing.T) {
 	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
 		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", truncate(html, 400))
 	}
+	// Each demo sits in a plain block box after its name, as on the docs
+	// site, so a lone button keeps its own width instead of stretching
+	// across the stack's column.
+	demos := 0
+	for _, group := range gallery.Grouped() {
+		for _, entry := range group.Entries {
+			if !gallery.IsNoteOnly(entry.Slug) && entry.Demo != nil {
+				demos++
+			}
+		}
+	}
+	if boxed := strings.Count(html, "</span><div>"); boxed < demos {
+		t.Errorf("%d demos but only %d in a block box", demos, boxed)
+	}
 	for _, gone := range []string{"tp-category", "tp-demo", "tp-gallery", "tp-preview"} {
 		if strings.Contains(rendered, gone) {
 			t.Errorf("preview still carries the hand-rolled %q hook", gone)

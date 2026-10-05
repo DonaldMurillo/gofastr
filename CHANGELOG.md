@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Component knobs** `--ui-form-max` (`ui.Form`'s maximum width,
+  42rem), `--ui-copy-btn-*` (`ui.CopyButton`'s size and colours) and
+  `--ui-status-pill-font`.
 - **`gofastr generate screen <name> --from-a11y=<file>`** builds an
   owned screen from a Playwright aria snapshot (#434). The YAML that
   `locator.ariaSnapshot()` returns (a file, or `-` for stdin) is
@@ -301,6 +304,60 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and prewarms each example's build cache first (#413, #456).
 
 ### Changed
+- **BREAKING: the default theme is reskinned to a neutral zinc look.**
+  `style.DefaultTheme()` and `theme.Default()` now use a near-black
+  primary (`#18181B`, was indigo `#4F46E5`) on a white page, one
+  hairline border and one soft surface, with a matching dark palette
+  (near-white primary on `#09090B`). Fonts lead with the system stack
+  (`Inter` and `JetBrains Mono` remain only as later fallbacks), radii
+  are 6/8/10/14px (were 4/8/12/16) and the shadows are softer.
+  Three more tokens change value: `--color-accent` is blue `#2563EB`
+  in both themes (was violet `#7C3AED` in `style.DefaultTheme()`, cyan
+  `#0891B2` in `theme.Default()`, whose dark accent is now `#60A5FA`,
+  was `#67E8F9`); `--color-secondary` is a light fill `#F4F4F5` under
+  near-black `--color-secondary-fg` (was grey `#6B7280` under white);
+  and `--color-border-strong` is `#D4D4D8` (was `#A1A1AA`), a hover
+  edge rather than a 3:1 control edge, so host CSS that drew a control
+  border with it should move to `--color-text-subtle`.
+  `style.ShadowSet` gains an `XS` token (`--shadow-xs`), the lift under
+  a resting control, and like every token it is required: a theme built
+  field by field without `style.DefaultTheme()` must add `Shadows.XS` or
+  `Validate` refuses it. A `theme.go` written by an earlier
+  `gofastr theme init` or `gofastr theme edit` is such a theme and
+  panics at boot (`Theme.Shadows.XS: Shadow.Value is empty`) until it
+  gains `XS`; `gofastr upgrade` lists it.
+  Set `theme.Overrides.Primary` to keep a brand colour. Components follow
+  one set of rules: every focus ring is
+  `2px solid var(--color-text-subtle)` (about twenty sheets drew it in
+  the brand colour, the form repeater's remove button danger red, and
+  the slider thumbs a primary halo; the range slider also boxed its
+  whole track in the browser's own outline); checkbox and
+  radio borders clear WCAG's 3:1 for controls; primary and danger
+  buttons shade on hover under every button treatment; an inline
+  `ui.Link` is underlined, since the neutral primary is the text's own
+  colour; status badges, tags and chips are soft fills; and text
+  controls go back to 16px below the md breakpoint so iOS does not zoom
+  into a focused field. `ui.Form` is capped at 42rem (`--ui-form-max`;
+  it was full width), with 16px between fields (was 8px) and 24px above
+  its actions (was 16px).
+  Buttons, inputs, cards, tables, forms, the
+  Collapsible accordion, sliders, the code block head, Timeline,
+  LineChart (grid lines, inset plot), Carousel (arrows in a gutter beside
+  the slide), PricingCard (a ring marks the featured plan; cards in a row
+  share one height; the "Recommended" badge rides the plan name's line,
+  so the featured card's price lines up with its neighbours'), Carousel
+  slides per view (VisiblePerView is now a ceiling: a carousel narrower
+  than 40rem shows at most two slides and one narrower than 26rem shows
+  one, full width, with its arrows dropped for the dots and a swipe;
+  one with `NoDots` keeps its arrows, its only pointer control),
+  the rating glyphs (`--ui-rating-color` defaults to amber `#D97706`;
+  the dark `--color-warning` painted stars brown; set on an ancestor,
+  it reaches every rating under it, whatever its shape) and the
+  section menu (a hairline rule under each group, on the inline-start
+  side in either direction) are restyled to match. A checked
+  `ui.SignalToggle` thumb takes `--color-primary-fg`, since a white
+  thumb vanished on the near-white dark primary. Tags and badges keep their own
+  width inside a flex column.
 - **A blueprint `type: link` block renders `ui.Link`** instead of
   `html.Link`, so generated links pick up the design system's link
   style, and validation now refuses an unsafe `href` (`javascript:`,
@@ -408,6 +465,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **Six component sheets follow the theme again.** They read tokens
+  the theme never declares (`--radius-lg`, `--fonts-mono`,
+  `--easing-standard`, `--duration-medium`, `--font-size-md`), so each
+  fell back to its literal and ignored every re-theme.
+- **`ui.InputGroup` and `ui.SearchInput` addons pad on the correct side
+  in a right-to-left page.** Their padding was physical, so "$" and
+  "USD" sat against the border under `dir="rtl"`.
+- **A DataTable header row has no hairline seams** between cells at
+  fractional widths in Chromium.
 - **A catalog block under a node block is refused at validation.** A
   `type: div` (or any node-tree block) holding a `card`, `stack`, form
   control or other catalog kind passed validation and rendered as an

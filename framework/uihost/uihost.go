@@ -872,7 +872,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   z-index: 9999;
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
   text-decoration: none;
 }

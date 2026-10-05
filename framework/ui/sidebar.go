@@ -823,7 +823,7 @@ func sidebarCSS(_ style.Theme) string {
 .fui-sidebar-native__mobile { display: none; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
-[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-primary); border-inline-start-color: var(--color-primary); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-text); font-weight: var(--font-weight-medium); border-inline-start-color: var(--color-text); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
@@ -868,14 +868,14 @@ func sidebarCSS(_ style.Theme) string {
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
   font-size: var(--text-xl, 1.25rem);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
@@ -888,10 +888,10 @@ func sidebarCSS(_ style.Theme) string {
   min-width: 220px;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__title {
-  font-size: var(--text-sm, 0.875rem);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-muted, #52525B);
+  padding-inline: var(--spacing-md, 8px);
   margin: 0;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__list,
@@ -928,15 +928,18 @@ func sidebarCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
-  color: var(--color-text, #18181B);
+  border-radius: var(--radii-sm, 6px);
+  color: var(--color-text-muted, #52525B);
+  font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
   min-height: var(--spacing-touch-target, 44px);
   cursor: pointer;
+  transition: background-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:hover,
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   /* Visible focus ring on BOTH the default and the active
@@ -945,16 +948,17 @@ func sidebarCSS(_ style.Theme) string {
      (equal specificity, later source) overrode the focus background, and
      outline:none removed the ring — so a keyboard user could not see
      focus land on the current page's nav item. */
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link[aria-current="page"] {
-  /* Use the primary + primary-fg token pair so contrast is guaranteed
-     AA regardless of theme. The previous 12%-primary tinted bg + raw
-     primary text failed contrast for some primary hues. */
-  background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
-  font-weight: var(--font-weight-semibold);
+  /* The neutral surface-soft + text pair: contrast holds in every
+     theme because both are neutrals, and the current page reads as
+     selected without a saturated slab. (A 12%-primary tint with raw
+     primary text failed contrast for some primary hues.) */
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
@@ -1120,7 +1124,7 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 .fui-sidebar__drawer-close:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {

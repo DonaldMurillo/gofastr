@@ -258,7 +258,7 @@ func lightboxCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-lightbox"] .fui-lightbox__nav:focus-visible,
 [data-cui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }`
 }

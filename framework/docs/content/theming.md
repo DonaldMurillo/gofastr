@@ -27,7 +27,7 @@ out. Each group writes CSS variables with a fixed prefix:
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
 | `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full` |
-| `Shadows` | `--shadow-<name>` | `--shadow-sm` … `--shadow-xl` |
+| `Shadows` | `--shadow-<name>` | `--shadow-xs` … `--shadow-xl`: `xs` is the hairline lift under a resting control (button, input, select), `sm` sits under a card, `md` under a popover or menu, `lg` under a dialog |
 | `ZIndex` | `--z-<name>` | `--z-dropdown`, `--z-modal`, `--z-toast` |
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
@@ -59,6 +59,46 @@ The desktop layouts in `battery/desktop/ui` set
 `Layout.TouchTarget` to 24 (the comfortable density's control height),
 which is how the same framework controls come out near native size in
 a desktop window.
+
+## The default look
+
+`style.DefaultTheme()` and `theme.Default()` share one neutral zinc
+palette: a near-black primary (`#18181B`) on a white page, one hairline
+border (`#E4E4E7`), and one soft surface (`#F4F4F5`) for hover states,
+secondary buttons and filled chips. The dark palette in
+`theme.Default()` inverts it: a near-white primary on `#09090B`. Brand
+colour is the host's call (`theme.Overrides.Primary`); every component
+reads the tokens, so setting it re-colours primary buttons, links and
+selected states together. Fonts are the platform's system stack, so the
+default theme ships no font files.
+
+A few rules hold across every component, so a page built only from kit
+parts reads as one system:
+
+- **One radius scale.** Controls use `--radii-md` (8px), cards and
+  panels `--radii-lg` or `--radii-xl` (10px, 14px), small chips
+  `--radii-sm` (6px).
+- **One focus ring.** Every focusable part draws
+  `outline: 2px solid var(--color-text-subtle); outline-offset: 2px`
+  on `:focus-visible`, in neutral grey rather than the brand colour.
+  Re-skin it by changing `TextSubtle`, not per component.
+- **Soft tones for status.** Badges, tags, chips and the pricing
+  badge are soft fills: the tone tints the background and colours the
+  text, never a solid saturated block.
+- **Text controls are 16px on phones.** Inputs draw at `--text-sm` on
+  desktop. Below the md breakpoint (767.98px) every text control
+  (text field, textarea, select, combobox, tag, grouped, password,
+  number and time inputs, search) goes back to `--text-base`, because
+  iOS Safari zooms the page into a focused control whose text is under
+  16px.
+
+Two gate tests in `framework/ui` hold the second rule and the token
+spellings: `TestFocusRingIsNeutral` fails on any registered sheet that
+draws its ring in `--color-primary`, and `TestSheetVarsNameDeclaredTokens`
+fails on a `var(--x)` that no theme or sheet declares (a misspelt token
+falls back to its literal and ignores every re-theme). Component knobs
+(`--ui-*`, `--fui-*`, `--cui-*`, `--hui-*`) are exempt, since a host
+sets them. `TestTextControlsAreBaseSizeOnPhones` holds the phone rule.
 
 ## Setting the theme
 
@@ -243,8 +283,8 @@ one package can read a token declared in another.
   forms, and `flex-basis`). Padding, margin and gap compare against
   spacing only.
 - **GOFASTR1821**: an app token whose value is already another token's
-  value of the same type, built-in or app (`--color-brand: #4F46E5`
-  where `--color-primary` is `#4F46E5`). Read the other token, or give
+  value of the same type, built-in or app (`--color-brand: #18181B`
+  where `--color-primary` is `#18181B`). Read the other token, or give
   the new one its own value.
 - **GOFASTR1822** (warning): the same literal written in two or more
   owned sheets of one program for the same token type. Declare it once as a token and
@@ -644,7 +684,7 @@ Two surfaces need to move tokens in and out of a `style.Theme` as a flat
 `style.ThemeToTokens(t)` flattens a theme to a map keyed by the CSS
 custom-property identifier **without** the leading `--`:
 `"color-primary"`, `"spacing-md"`, `"duration-fast"`, `"tk-kw"`. The value
-is exactly what the `:root` block emits after the colon: `"#4F46E5"`,
+is exactly what the `:root` block emits after the colon: `"#18181B"`,
 `"8px"`, `"150ms"`. That key is chosen over a Go field-path key because it
 is what the CSS emits, what a UI control edits, and stable across struct
 reorganisations.
@@ -735,6 +775,16 @@ stylesheet without forking the component:
 A dimension every page shares is a theme token instead: the page
 column, its gutter, the header height and `ui.Container`'s caps live
 in `Theme.Layout` (`t.Layout.WideWidth.Value = "1240px"`).
+
+Some of the knobs:
+
+| Knob | Default | What it sets |
+|---|---|---|
+| `--ui-rating-color` | `#D97706` (amber) | the filled glyph colour of `ui.Rating` and `ui.RatingInput`; heart and fire shapes default to `--color-danger`, thumb to `--color-primary`, diamond to `--color-info`; a value set on the rating or any ancestor overrides every shape |
+| `--ui-form-max` | `42rem` | `ui.Form`'s maximum width, so a wide pane does not stretch every input across it; set `none` to fill |
+| `--ui-copy-btn-size`, `--ui-copy-btn-bg`, `--ui-copy-btn-border`, `--ui-copy-btn-color`, `--ui-copy-btn-shadow`, `--ui-copy-btn-hover-bg`, `--ui-copy-btn-hover-color` | the outline button look | `ui.CopyButton`'s size and colours; the framed `ui.CodeBlock` head sets them for a quiet button on its dark chrome |
+| `--ui-status-pill-font` | `inherit` | `ui.StatusPill`'s font family (set `var(--font-mono)` for a terminal-style pill) |
+| `--ui-pricing-card-badge-fg` | `var(--color-text)` | the text colour of `ui.PricingCard`'s Recommended badge |
 
 You can also scope them: set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each

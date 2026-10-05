@@ -143,7 +143,7 @@ func codeTabsCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:hover { color: var(--color-text, #1F2937); }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: -2px;
   border-radius: var(--radii-md, 8px);
 }

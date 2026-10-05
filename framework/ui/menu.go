@@ -339,34 +339,47 @@ func menuCSS(_ style.Theme) string {
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
   cursor: pointer;
   list-style: none;
   user-select: none;
-  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  padding: 0 var(--spacing-lg, 16px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
+  box-shadow: var(--shadow-xs);
   font: inherit;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   min-height: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
-[data-cui-comp="ui-menu"] .fui-menu__caret { font-size: 0.75em; opacity: 0.7; }
+/* The caret glyph stays in the markup for no-CSS readers; the sheet
+   draws the stroked chevron the Select uses in its place. */
+[data-cui-comp="ui-menu"] .fui-menu__caret {
+  inline-size: 12px;
+  block-size: 12px;
+  font-size: 0;
+  background: currentColor;
+  opacity: 0.6;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 [data-cui-comp="ui-menu"] .fui-menu__panel {
   position: absolute;
   z-index: var(--z-dropdown, 100);
   min-width: 12rem;
   max-width: min(20rem, calc(100vw - 2rem));
-  padding: var(--spacing-xs, 2px);
+  padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFF);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
+  border-radius: var(--radii-lg, 10px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -411,9 +424,10 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   background: transparent;
   color: inherit;
   border: 0;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-md, 8px);
   cursor: pointer;
   font: inherit;
+  font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
   min-height: var(--spacing-touch-target, 44px);
 }

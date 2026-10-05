@@ -1277,9 +1277,9 @@ custom property identifier) and a `Value` (the concrete value):
 
 ```go
 t := style.DefaultTheme()
-t.Colors.Primary // → style.Color{Name: "primary", Value: "#4F46E5"}
+t.Colors.Primary // → style.Color{Name: "primary", Value: "#18181B"}
 t.Colors.Primary.CSS()   // → "var(--color-primary)"
-t.Colors.Primary.Value   // → "#4F46E5"
+t.Colors.Primary.Value   // → "#18181B"
 ```
 
 ### The var-only contract

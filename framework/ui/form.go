@@ -391,19 +391,20 @@ func validationSummaryCSS(_ style.Theme) string {
 	return `.fui-validation-summary {
   display: grid;
   gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-inline-start: 4px solid var(--color-danger, #DC2626);
-  border-radius: var(--fui-field-radius);
-  background: color-mix(in oklab, var(--color-danger, #DC2626) 8%, var(--color-surface, #FFFFFF) 92%);
+  padding: 12px var(--spacing-lg, 16px);
+  /* The destructive-alert shape Banner uses: the danger hue tints the
+     hairline and the title, with no side stripe. */
+  border: 1px solid color-mix(in oklab, var(--color-danger, #DC2626) 35%, var(--color-border, #E4E4E7));
+  border-radius: var(--radii-lg, 10px);
+  background: var(--color-surface, #FFFFFF);
 }
 .fui-validation-summary:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 .fui-validation-summary__title {
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   margin: 0;
   color: var(--color-danger, #DC2626);
 }

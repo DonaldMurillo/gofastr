@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
@@ -25,6 +28,17 @@ var (
 )
 
 // ─── Layout ─────────────────────────────────────────────────────────
+
+// gridMinStepsCSS maps every whole-rem data-min from 1rem to 64rem onto
+// --ui-grid-min, the fallback for browsers without typed attr(). A Min
+// outside the ladder (px, fractional rem) gets the 16rem default there.
+func gridMinStepsCSS() string {
+	var b strings.Builder
+	for n := 1; n <= 64; n++ {
+		fmt.Fprintf(&b, "[data-cui-comp=\"ui-layout\"].fui-grid[data-min=\"%drem\"] { --ui-grid-min: %drem; }\n", n, n)
+	}
+	return b.String()
+}
 
 func layoutCSS(_ style.Theme) string {
 	// Layout primitives stack data-cui-comp="ui-layout" AND their own
@@ -59,8 +73,19 @@ func layoutCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-layout"]).fui-grid {
   display: grid;
   gap: var(--spacing-md, 8px);
-  grid-template-columns: repeat(auto-fit, minmax(var(--ui-grid-min, 16rem), 1fr));
+  /* min(…, 100%): a column minimum wider than the container (a 24rem
+     card grid on a phone) shrinks to the container instead of
+     overflowing it. */
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--ui-grid-min, 16rem), 100%), 1fr));
 }
+/* GridConfig.Min rides on data-min (no inline style under the CSP).
+   Where typed attr() is supported the attribute IS the minimum, any
+   length; elsewhere the whole-rem steps below cover 1rem–64rem, the
+   range the framework and its generators emit. */
+@supports (width: attr(data-min type(<length>))) {
+  [data-cui-comp="ui-layout"].fui-grid[data-min] { --ui-grid-min: attr(data-min type(<length>), 16rem); }
+}
+` + gridMinStepsCSS() + `
 
 :where([data-cui-comp="ui-layout"]).fui-center {
   display: flex;
@@ -117,37 +142,37 @@ func cardCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-card"] {
   display: flex;
   flex-direction: column;
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
-  border-radius: var(--radii-lg, 12px);
-  box-shadow: var(--shadows-sm, 0 1px 2px rgba(0,0,0,0.05));
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-xl);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
   text-decoration: none;
 }
 [data-cui-comp="ui-card"].fui-card--outlined {
   box-shadow: none;
-  border: 1px solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-card"].fui-card--flat {
   box-shadow: none;
+  border-color: transparent;
   background: transparent;
 }
 [data-cui-comp="ui-card"].fui-card--interactive {
-  transition: transform var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) ease,
               box-shadow var(--duration-fast, 150ms) ease;
   cursor: pointer;
 }
 [data-cui-comp="ui-card"].fui-card--interactive:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadows-md, 0 4px 6px -1px rgba(0,0,0,0.10));
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 [data-cui-comp="ui-card"].fui-card--interactive[aria-current="page"] {
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  outline: 1px solid var(--color-primary);
-  outline-offset: -1px;
+  background: var(--color-surface-soft);
+  border-color: var(--color-text);
 }
 [data-cui-comp="ui-card"].fui-card--interactive:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-card"] .fui-card__inner {
@@ -156,25 +181,32 @@ func cardCSS(t style.Theme) string {
   flex: 1 1 auto;
 }
 [data-cui-comp="ui-card"] .fui-card__header {
-  padding: var(--spacing-lg, 16px) var(--spacing-lg, 16px) var(--spacing-md, 8px);
+  padding: var(--spacing-xl, 24px) var(--spacing-xl, 24px) 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs, 2px);
+  gap: 6px;
 }
+/* The header pads its own bottom when no body follows it: it is the
+   last child, or the always-drawn body slot after it is empty (with or
+   without a footer below). */
+[data-cui-comp="ui-card"] .fui-card__header:last-child,
+[data-cui-comp="ui-card"] .fui-card__header:has(+ .fui-card__body:empty) { padding-block-end: var(--spacing-xl, 24px); }
 [data-cui-comp="ui-card"] .fui-card__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--color-text);
 }
 [data-cui-comp="ui-card"] .fui-card__description {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
+  color: var(--color-text-muted);
 }
 [data-cui-comp="ui-card"] .fui-card__body {
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  color: var(--color-text, #18181B);
+  padding: var(--spacing-xl, 24px);
+  color: var(--color-text);
   flex: 1 1 auto;
 }
 /* The primitive always draws the body node — it is where an island
@@ -182,19 +214,17 @@ func cardCSS(t style.Theme) string {
    body content gains no space. */
 [data-cui-comp="ui-card"] .fui-card__body:empty { display: none; }
 [data-cui-comp="ui-card"] .fui-card__header + .fui-card__body {
-  padding-top: 0;
+  padding-top: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-card"] .fui-card__footer {
   margin-top: auto;
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  padding: var(--spacing-lg, 16px) var(--spacing-xl, 24px);
+  border-top: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 4px);
-  background: var(--color-surface-soft, #F4F4F5);
+  gap: var(--spacing-md, 8px);
 }
-[data-cui-comp="ui-card"].fui-card--flat .fui-card__footer { background: transparent; }
-[data-cui-comp="ui-card"].fui-card--row { box-shadow: none; border-radius: var(--radii-sm); background: transparent; overflow: visible; }
+[data-cui-comp="ui-card"].fui-card--row { box-shadow: none; border-color: transparent; border-radius: var(--radii-sm); background: transparent; overflow: visible; }
 [data-cui-comp="ui-card"].fui-card--row.fui-card--interactive:hover { transform: none; box-shadow: none; background: var(--color-surface-soft); }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__header { display: contents; }
@@ -298,7 +328,7 @@ func toggleCSS(_ style.Theme) string {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-sm, 4px);
+  gap: var(--spacing-md, 8px);
   cursor: pointer;
   /* Token-scaled touch target; the label wrap is the accessible
      target (WCAG 2.5.8), the row keeps the comfortable height. */
@@ -313,15 +343,19 @@ func toggleCSS(_ style.Theme) string {
   inline-size: 1.25rem;
   block-size: 1.25rem;
   margin: 0;
-  border: 1.5px solid var(--color-border-strong, #A1A1AA);
-  background: var(--color-surface, #FFFFFF);
+  /* An unchecked box is drawn by its border alone, so the border is a
+     control boundary (WCAG 1.4.11, 3:1), not a hairline: text-subtle
+     clears it in both schemes, border-strong does not. */
+  border: 1px solid var(--color-text-subtle);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
   cursor: inherit;
   transition: background-color var(--duration-fast, 150ms) ease,
               border-color var(--duration-fast, 150ms) ease;
 }
 .fui-choice__text {
   flex: 1 1 auto;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm);
   color: var(--color-text, #18181B);
   line-height: 1.4;
   min-inline-size: 0;
@@ -347,7 +381,7 @@ func toggleCSS(_ style.Theme) string {
    the legs meet. Angle gradients (45deg, 135deg) only hit the corners
    of a square tile, which drew a broken, crossed mark. ─── */
 .fui-choice--checkbox .fui-choice__input {
-  border-radius: var(--radii-sm, 4px);
+  border-radius: calc(var(--radii-sm) - 2px);
 }
 .fui-choice--checkbox .fui-choice__input:checked {
   background-color: var(--color-primary, #4F46E5);
@@ -375,7 +409,7 @@ func toggleCSS(_ style.Theme) string {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-sm, 4px);
+  gap: var(--spacing-md, 8px);
   cursor: pointer;
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
@@ -406,7 +440,7 @@ func toggleCSS(_ style.Theme) string {
 }
 .fui-switch__text {
   flex: 1 1 auto;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm);
   color: var(--color-text, #18181B);
   line-height: 1.4;
 }
@@ -414,7 +448,7 @@ func toggleCSS(_ style.Theme) string {
 /* ─── Shared state styling, from the state attributes themselves. ─── */
 .fui-choice__input:focus-visible,
 .fui-switch__input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 .fui-choice__input[aria-invalid="true"],
@@ -497,18 +531,18 @@ func tooltipCSS(_ style.Theme) string {
   inset-block-end: calc(100% + 6px);
   inset-inline-start: 50%;
   transform: translateX(-50%) translateY(4px);
-  background: var(--color-text, #18181B);
-  color: var(--color-surface, #FFFFFF);
-  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
+  background: var(--color-text);
+  color: var(--color-surface);
+  padding: 6px 12px;
   font-size: var(--text-xs, 0.75rem);
   line-height: 1.2;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-md);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   white-space: nowrap;
   max-inline-size: 240px;
-  z-index: var(--zindex-popover, 400);
+  z-index: var(--z-popover);
   transition: opacity var(--duration-fast, 150ms) ease,
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);
@@ -560,49 +594,55 @@ func tooltipCSS(_ style.Theme) string {
 func tagCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-tag"] {
   display: inline-flex;
+  /* A chip keeps its own width in a flex column too (a Card header,
+     a Stack), where a flex item with an auto width stretches. */
+  inline-size: fit-content;
   align-items: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border: 1px solid transparent;
-  border-radius: var(--radii-full, 9999px);
+  border-radius: var(--radii-md);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
-  line-height: 1.3;
+  line-height: 1rem;
   text-decoration: none;
 }
+/* Same drawing as ui-badge: the tint is 15% of the status hue, the ink
+   mixes the hue toward --color-text so it holds AA on the tint in
+   either scheme. */
 [data-cui-comp="ui-tag"].fui-tag--neutral {
-  background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
-  border-color: var(--color-border, #E4E4E7);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  border-color: var(--color-border);
 }
 [data-cui-comp="ui-tag"].fui-tag--success {
-  background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-success, #16A34A);
-  border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-success) 15%, var(--color-surface) 85%);
+  color: color-mix(in oklab, var(--color-success) 55%, var(--color-text) 45%);
+  border-color: color-mix(in oklab, var(--color-success) 30%, var(--color-surface) 70%);
 }
 [data-cui-comp="ui-tag"].fui-tag--warning {
-  background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-warning, #CA8A04);
-  border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-warning) 15%, var(--color-surface) 85%);
+  color: color-mix(in oklab, var(--color-warning) 55%, var(--color-text) 45%);
+  border-color: color-mix(in oklab, var(--color-warning) 30%, var(--color-surface) 70%);
 }
 [data-cui-comp="ui-tag"].fui-tag--danger {
-  background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-danger, #DC2626);
-  border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-danger) 15%, var(--color-surface) 85%);
+  color: color-mix(in oklab, var(--color-danger) 55%, var(--color-text) 45%);
+  border-color: color-mix(in oklab, var(--color-danger) 30%, var(--color-surface) 70%);
 }
 [data-cui-comp="ui-tag"].fui-tag--info {
-  background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
-  color: var(--color-info, #2563EB);
-  border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-info) 15%, var(--color-surface) 85%);
+  color: color-mix(in oklab, var(--color-info) 55%, var(--color-text) 45%);
+  border-color: color-mix(in oklab, var(--color-info) 30%, var(--color-surface) 70%);
 }
 [data-cui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
-  transition: filter var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) ease;
 }
-[data-cui-comp="ui-tag"].fui-tag--interactive:hover { filter: brightness(0.96); }
+[data-cui-comp="ui-tag"].fui-tag--interactive:hover { border-color: var(--color-border-strong); }
 [data-cui-comp="ui-tag"]:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss {
   display: inline-flex;
@@ -614,16 +654,20 @@ func tagCSS(t style.Theme) string {
   border: 0;
   background: transparent;
   color: inherit;
+  opacity: 0.7;
   cursor: pointer;
   border-radius: 50%;
   font-size: var(--text-base, 1rem);
   line-height: 1;
   padding: 0;
+  /* A dismiss with a DismissPath renders as an <a>; the × is an icon,
+     not link text, so it carries no underline. */
+  text-decoration: none;
 }
-[data-cui-comp="ui-tag"] .fui-tag__dismiss:hover { background: rgba(0,0,0,0.08); }
+[data-cui-comp="ui-tag"] .fui-tag__dismiss:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }` + customStatusCSS("ui-tag", "fui-tag", t)
 }
 

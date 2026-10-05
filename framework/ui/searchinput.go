@@ -104,14 +104,14 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		html.Span(html.TextConfig{
 			Class:      "fui-search__icon",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, render.Text("⌕")),
+		}, Icon("search", IconConfig{Size: "16"})),
 		render.VoidTag("input", inputAttrs),
 		render.Tag("button", map[string]string{
 			"type":       "button",
 			"class":      "fui-search__clear",
 			"aria-label": i18nui.T(ctx, i18nui.KeySearchClear),
 			"hidden":     "",
-		}, render.Text("×")),
+		}, Icon("close", IconConfig{Size: "16"})),
 	}
 
 	// The wrapper is a <label> so the whole visual box (icon + padding, not just
@@ -161,15 +161,16 @@ func searchInputCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 .fui-search .fui-search__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 var(--spacing-sm, 4px) 0 var(--spacing-md, 8px);
-  color: var(--color-text-muted, #52525B);
-  font-size: var(--text-base, 1rem);
+  padding-block: 0;
+  padding-inline: 12px var(--spacing-sm, 4px);
+  color: var(--color-text-subtle, #71717A);
   user-select: none;
 }
 .fui-search .fui-search__input {
@@ -177,13 +178,20 @@ func searchInputCSS(_ style.Theme) string {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-xs, 2px);
   color: var(--color-text, #18181B);
   min-block-size: var(--spacing-touch-target, 44px);
   /* Remove native search clear button (we provide our own). */
   appearance: none;
   -webkit-appearance: none;
+}
+.fui-search .fui-search__input::placeholder {
+  color: var(--color-text-subtle, #71717A);
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) {
+  .fui-search .fui-search__input { font-size: var(--text-base, 1rem); }
 }
 .fui-search .fui-search__input::-webkit-search-cancel-button,
 .fui-search .fui-search__input::-webkit-search-decoration {
@@ -196,12 +204,12 @@ func searchInputCSS(_ style.Theme) string {
      single ring. The frame's old :focus-within outline showed nothing
      on the focused control itself, which a keyboard user scanning the
      control (and any element-local focus check) reads as no indicator. */
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: -2px;
 }
 .fui-search .fui-search__clear:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: -2px;
 }
 .fui-search .fui-search__clear {
   display: inline-flex;
@@ -211,8 +219,7 @@ func searchInputCSS(_ style.Theme) string {
   min-inline-size: 2rem;
   background: transparent;
   border: 0;
-  font-size: var(--text-lg, 1.125rem);
-  color: var(--color-text-muted, #52525B);
+  color: var(--color-text-subtle, #71717A);
   cursor: pointer;
   user-select: none;
   padding: 0 var(--spacing-sm, 4px);

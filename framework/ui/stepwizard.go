@@ -271,7 +271,7 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__back:focus-visible,
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__next:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 `

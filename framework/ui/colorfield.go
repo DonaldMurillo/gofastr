@@ -174,7 +174,7 @@ func colorFieldCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
 }
 .fui-color__text:focus-visible {
-  outline: 2px solid var(--color-primary, #4f46e5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 .fui-color__text[aria-invalid="true"],

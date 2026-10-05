@@ -80,9 +80,10 @@ func statusPillCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 2px 10px;
+  font-family: var(--ui-status-pill-font, inherit);
   font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);
@@ -103,9 +104,11 @@ func statusPillCSS(_ style.Theme) string {
   background: var(--color-text-subtle, currentColor);
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent {
-  color: var(--color-primary, currentColor);
-  border-color: var(--ui-status-pill-accent-border, var(--color-primary, currentColor));
-  background: var(--ui-status-pill-accent-bg, color-mix(in oklch, var(--color-primary, currentColor) 8%, var(--color-surface, transparent)));
+  /* Accent is carried by the dot and the full-strength text; the frame
+     stays a hairline so a near-black primary never draws a heavy ring. */
+  color: var(--color-text, currentColor);
+  border-color: var(--ui-status-pill-accent-border, var(--color-border, rgba(0,0,0,0.1)));
+  background: var(--ui-status-pill-accent-bg, var(--color-surface-soft, var(--color-surface, transparent)));
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {
   background: var(--color-primary, currentColor);

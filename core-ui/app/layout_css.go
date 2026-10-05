@@ -49,8 +49,8 @@ func InterceptOverlayCSS() string {
   width: 100%;
   max-height: var(--ui-intercept-sheet-h, 85vh);
   border-top: 1px solid var(--color-border, #e4e4e7);
-  border-start-start-radius: var(--radius-lg, 12px);
-  border-start-end-radius: var(--radius-lg, 12px);
+  border-start-start-radius: var(--radii-lg, 10px);
+  border-start-end-radius: var(--radii-lg, 10px);
 }
 /* Below the drawer breakpoint a side drawer is a poor fit; present it
    as a sheet instead. Matches the pane-host collapse at the same width. */
@@ -62,8 +62,8 @@ func InterceptOverlayCSS() string {
     max-height: var(--ui-intercept-sheet-h, 85vh);
     border-inline-start: none;
     border-top: 1px solid var(--color-border, #e4e4e7);
-    border-start-start-radius: var(--radius-lg, 12px);
-    border-start-end-radius: var(--radius-lg, 12px);
+    border-start-start-radius: var(--radii-lg, 10px);
+    border-start-end-radius: var(--radii-lg, 10px);
   }
 }
 @media (prefers-reduced-motion: no-preference) {

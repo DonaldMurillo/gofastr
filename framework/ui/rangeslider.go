@@ -152,16 +152,21 @@ func rangeSliderCSS(_ style.Theme) string {
   -webkit-appearance: none;
   width: 20px; height: 20px;
   border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  background: var(--color-surface, #FFFFFF);
+  border: 2px solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
+  /* Centre the 20px thumb on the 6px runnable track, as Slider does;
+     WebKit aligns the thumb's top edge to the track otherwise. */
+  margin-top: -7px;
   cursor: pointer;
   pointer-events: auto;
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-thumb {
   width: 18px; height: 18px;
   border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  background: var(--color-surface, #FFFFFF);
+  border: 2px solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -173,8 +178,14 @@ func rangeSliderCSS(_ style.Theme) string {
   background: transparent;
   height: 6px;
 }
+/* The thumb carries the ring; the input's own outline would box the
+   whole track. */
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus { outline: none; }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
+}
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
 }
 [data-cui-comp="ui-range-slider"].is-disabled .fui-range-slider__input {
   opacity: 0.6;
