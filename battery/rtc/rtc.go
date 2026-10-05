@@ -306,6 +306,13 @@ func New(cfg Config) *Signaler {
 // Name implements framework.Plugin.
 func (s *Signaler) Name() string { return "rtc" }
 
+// ReservedEmbedPrefixes reports the path this Signaler actually mounted.
+// Authorize reads the request's user, and an embed grant installs its
+// subject as that user, so a grant living in a stranger's page would join
+// rooms as the subject. No embed surface may reach it. See
+// framework.EmbedReserving.
+func (s *Signaler) ReservedEmbedPrefixes() []string { return []string{s.cfg.Path} }
+
 // Init is the lifecycle path: Mount on the App (which registers the
 // route and, when the app has WithFanout, wires SetFanout) and Close
 // into app shutdown. A nil Config.Authorize is returned as an error,
