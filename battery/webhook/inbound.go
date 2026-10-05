@@ -117,8 +117,15 @@ func TimestampedVerifier(secret string, tolerance time.Duration) InboundVerifier
 // NOTE: the body alone is signed, there is no timestamp binding, so this
 // offers no replay defense. Use TimestampedVerifier when the sender supports
 // it. A missing header also rejects (returns errVerifyFailed).
+//
+// An empty secret rejects every request, as VerifyTimestamped does: an HMAC
+// keyed with "" is a signature anyone can compute, so a receiver wired from
+// an unset environment variable fails closed instead of accepting forgeries.
 func HMACSHA256Verifier(header, prefix, secret string) InboundVerifier {
 	return func(r *http.Request, body []byte) error {
+		if secret == "" {
+			return errVerifyFailed
+		}
 		got := r.Header.Get(header)
 		if got == "" {
 			return errVerifyFailed

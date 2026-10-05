@@ -404,6 +404,10 @@ Two are bundled:
   for providers that don't send a timestamp; pair it with a short
   dedupe window if you can.
 
+Both verifiers reject every request when `secret` is empty. An HMAC keyed
+with `""` is a signature anyone can compute, so a receiver wired from an
+unset environment variable answers 401 instead of accepting forgeries.
+
 Provide your own `InboundVerifier` for other schemes (RSA signatures,
 mTLS-extracted identity, a multi-key rotation lookup). Implementations
 must be constant-time on the secret.
