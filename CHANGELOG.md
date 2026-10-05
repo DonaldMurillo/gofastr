@@ -338,8 +338,37 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   e2e waits on the dev child's own behaviour (the answer, process exit,
   a build-failure line, or output silence) instead of a fixed clock,
   and prewarms each example's build cache first (#413, #456).
+- **`evals/dev-loop`: does a coding agent develop under `gofastr dev`?**
+  Each trial scaffolds an app, gives Claude Code a three-step
+  edit-and-check task that names no command, and grades from `gofastr`
+  and `go` PATH shims plus the transcript. A trial passes when the agent
+  ran `gofastr dev`, never used `go run` or launched a built binary,
+  started the dev server at most twice, and let it rebuild at least
+  twice. Whether the finished app has the three changes is reported
+  beside that verdict, not folded into it, and so is how hard the agent
+  looked: tool calls before its first `gofastr dev` and the lookups on
+  the way (an `agents/` doc, `gofastr --help`, `gofastr docs`). Each
+  trial serves on its own free port, named in the task, so another
+  process on `:8080` cannot derail it. `-regrade` re-scores a run
+  without agent tokens. Run it
+  with `go run ./evals/dev-loop/cmd/devloop-eval -runs 3`.
 
 ### Changed
+- **Generated `CLAUDE.md`, `AGENTS.md` and the `gofastr-host` skill now
+  open with the dev loop**: start `gofastr dev` once and leave it
+  running, because `go run .` never sets `GOFASTR_DEV=1` and so never
+  reloads. Before, `CLAUDE.md` named `gofastr dev` only in its closing
+  command list and the warning against `go run .` lived in
+  `agents/framework.md`, where an agent found it only by searching. The
+  skill also triggers on "run the app", "dev server" and "hot reload".
+  In an existing project, `gofastr init . --reinit --force` refreshes
+  the skill and `CLAUDE.md` (replacing any edits to `CLAUDE.md`). The
+  text above the `AGENTS.md` markers belongs to the project, so copy the
+  "Run the app while you work" section in by hand.
+- **The `evals/ui-quality` builder prompt no longer says "make the
+  workspace runnable with go run ."**: it named the one command that
+  skips hot reload in an eval that records whether the builder found
+  `gofastr dev`.
 - **A blueprint `type: link` block renders `ui.Link`** instead of
   `html.Link`, so generated links pick up the design system's link
   style, and validation now refuses an unsafe `href` (`javascript:`,

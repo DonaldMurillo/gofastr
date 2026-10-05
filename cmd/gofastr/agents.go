@@ -369,6 +369,9 @@ const agentsPreamble = `# AGENTS.md
 > exists to keep you from reinventing primitives the framework
 > already provides.
 
+## Run the app while you work
+
+` + devLoopGuidance + `
 ## Two maps, then the detail
 
 Both are one page each, and both are cheaper than the topic docs they route
