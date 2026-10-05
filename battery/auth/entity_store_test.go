@@ -274,14 +274,14 @@ func TestEntitySessionStore_Cleanup(t *testing.T) {
 
 func TestUserEntityFields(t *testing.T) {
 	fields := UserEntityFields()
-	if len(fields) != 4 {
-		t.Fatalf("expected 4 fields (email, password_hash, roles, password_set), got %d", len(fields))
+	if len(fields) != 5 {
+		t.Fatalf("expected 5 fields (email, password_hash, roles, password_set, email_verified), got %d", len(fields))
 	}
 	names := make(map[string]bool)
 	for _, f := range fields {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"email", "password_hash", "roles", "password_set"} {
+	for _, want := range []string{"email", "password_hash", "roles", "password_set", "email_verified"} {
 		if !names[want] {
 			t.Fatalf("missing expected field %q", want)
 		}

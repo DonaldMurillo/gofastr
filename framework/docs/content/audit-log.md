@@ -193,6 +193,7 @@ deployments.
 | `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`), the account-takeover defence. |
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
+| `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, and it is now verified. |
 
 Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
 when unknown, since the column is NOT NULL), and a `diff` JSON of

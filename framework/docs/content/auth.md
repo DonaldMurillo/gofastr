@@ -94,12 +94,12 @@ configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 | Plugin | Routes | Notes |
 |---|---|---|
 | `CorePlugin` | `POST /auth/{login,register,logout}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. |
-| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
+| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
-| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). |
+| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
 Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
@@ -151,7 +151,9 @@ safe-but-reduced path.
 | `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
 | `AccountUnlinker` | `AccountsPlugin` | Power `DELETE /auth/unlink/{provider}`. Required. |
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
-| `EmailVerifier` | `EmailVerificationPlugin` | Set the `email_verified` flag. Required. |
+| `EmailVerifier` | `EmailVerificationPlugin`, `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Set the `email_verified` flag. Required by the verification plugin and by every account claim. |
+| `EmailVerifiedChecker` | `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Report whether the address was proven. Magic link refuses an existing account (500) on a store without it, because it cannot tell an owner from a squatter. OAuth treats its absence as unverified and never auto-links. Reset skips the claim. |
+| `PasswordClearer` | `MagicLinkPlugin` | Remove a squatter's password during a claim (placeholder hash, `password_set = false`). Without it the claim falls back to `PasswordSetter` with the placeholder hash. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
@@ -678,6 +680,26 @@ since its first release — `version` (optimistic concurrency) and
 `last_used_step` (the durable TOTP single-use counter: one code
 authenticates one session even across restarts and replicas).
 
+`EntityUserStore` adds `email_verified` (configurable through
+`UserFieldMap.EmailVerified`) to an existing users table with every row
+set to `FALSE`. Nothing the battery stored before said whether an
+address was proven, and registration never proved one, so marking old
+rows verified would bless every account an attacker registered under
+someone else's address. The cost lands once per legacy account:
+
+- The first magic link for a legacy account claims it. Its password is
+  cleared, its sessions, API tokens and OAuth links are removed, and the
+  owner signs in through the link. They set a password again through
+  forgot-password if they want one.
+- A completed password reset claims it the same way but keeps the new
+  password.
+- A passwordless OAuth account stops auto-linking a second provider
+  until one of its linked providers asserts `email_verified` for the
+  account's address on login, which marks it verified.
+- `EmailVerificationPlugin` marks an account verified without the claim,
+  so a host can backfill accounts it trusts by its own evidence with
+  `MarkEmailVerified`.
+
 `AuthManager.Init` also re-registers the right-to-be-forgotten erasers
 against the table names the CONFIGURED stores actually use (the
 `datexport` registry is last-writer-wins per name), so an app wired as
@@ -1147,6 +1169,42 @@ provider whose email matches a password account. A forged or altered
 `state` fails the HMAC; a mismatched session is rejected (`403`); no
 session is rejected (`401`).
 
+### Proving the mailbox claims an unverified account
+
+Anyone can register an address they do not own, or sign in through an
+IdP that does not verify email, before the address's owner shows up.
+Each account therefore carries `email_verified`, and only these flows
+set it:
+
+- a magic link redeemed for an account it creates;
+- a magic link or a completed password reset on an unverified account
+  (the claim below);
+- `GET /auth/verify-email` opened in the account's own session;
+- an OAuth callback whose IdP asserts `email_verified` for the account's
+  address (step 1 or step 3 of the [callback resolution
+  policy](#callback-resolution-policy)).
+
+When a magic link or a reset proves the mailbox of an account that is
+still unverified, the account is claimed before the owner gets a
+session. In order:
+
+1. every OAuth link is removed;
+2. the password is cleared (magic link only; a reset keeps the new
+   one);
+3. every API token issued through `TokensPlugin` is revoked;
+4. every session is deleted;
+5. the account is marked verified and `account.claimed` is emitted.
+
+The account is marked verified last, so a failure anywhere leaves it
+unverified, the request answers 500, and the next proof runs the whole
+claim again. A store missing an extension the claim needs is an error,
+never a skipped step. An enrolled second factor survives the claim: the
+mailbox is one factor, and stripping 2FA here would let a mailbox alone
+remove it from every account that predates `email_verified`.
+
+A verified account is never claimed: a magic link signs its owner in
+and leaves the password and other sessions alone.
+
 ### Following a magic link does not sign you in; confirming does
 
 `GET {basePath}/magic-link/verify?token=…` renders a confirmation
@@ -1275,7 +1333,9 @@ downgrading.
 
 1. **Existing link.** `FindByOAuth(provider, providerID)` hit → log in
    as the linked user. Profile refresh via `LinkOAuthEnriched` is
-   best-effort and does not block login.
+   best-effort and does not block login. When the IdP asserts
+   `email_verified` for exactly the account's address, the account is
+   marked verified (best-effort).
 2. **Verified-email match.** No link, but the IdP asserts the email is
    verified (`OAuth2UserInfo.EmailVerified == true`) and `FindByEmail`
    returns an existing account. The branch depends on whether the
@@ -1284,14 +1344,23 @@ downgrading.
      The user must log in with their password and link the provider
      from `/auth/accounts`: a verified email alone must not bind to a
      credential the IdP didn't issue.
-   - **Passwordless account** → AUTO-LINK and log in. Safe migration:
-     the account was created by a prior OAuth login, and the verified
-     email re-binds the same identity.
+   - **Passwordless account, address unproven** → refuse with `409
+     errOAuthEmailCollision`. The account may have been created through
+     an IdP that does not verify email, by someone who does not own the
+     address. The owner claims it with a magic link or a password reset
+     (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)),
+     which removes the other link, and then signs in here. A store
+     without `EmailVerifiedChecker` always lands here.
+   - **Passwordless account, address proven** → AUTO-LINK and log in.
+     The verified email re-binds the same identity.
 3. **Otherwise.** No link, no verified-email match (this includes an
    UNVERIFIED email matching an existing account), or no email match at
    all → create a new passwordless user and link the `(provider,
-   provider_id)`. A concurrent create that wins the link PK is
-   authoritative; the just-created user is left as an orphan
+   provider_id)`. The new user is marked verified only when the IdP
+   asserted `email_verified`. An unverified address is stored as given
+   but the account stays unproven, so it cannot absorb a verified login
+   and the mailbox owner can claim it. A concurrent create that wins the
+   link PK is authoritative; the just-created user is left as an orphan
    (best-effort ignore; the email-unique constraint means a future
    callback re-resolves cleanly).
 
@@ -1335,9 +1404,12 @@ After upgrade:
    before the upgrade already have a `(provider, provider_id)` row in the
    link table (or get one on their first post-upgrade callback, via the
    verified-email + passwordless auto-link branch).
-- **Passwordless accounts auto-relink on next login.** An account whose
-   only credential is a prior OAuth login has `password_set = false`; a
-   verified-email callback re-binds it without operator action.
+- **Passwordless accounts auto-relink once their address is proven.** An
+   account whose only credential is a prior OAuth login has
+   `password_set = false`. A verified-email callback re-binds it once the
+   account reads `email_verified`, which a login through an already
+   linked provider asserting that address records. Until then the
+   callback answers `409`.
 - **Password accounts must link a provider from settings.** The first
    OAuth login for an email that belongs to a password account is
    refused with `409` by design: the user must log in with their
