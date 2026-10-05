@@ -376,6 +376,10 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// identity; the claim evicts it (the password is already the owner's
 	// new one, so it stays) and marks the address verified. Stores without
 	// EmailVerifiedChecker do not track the state and are left as they are.
+	// The claim runs after the password write on purpose: run first, a
+	// failed write would leave the account verified under the old
+	// password. A failed claim leaves it unverified, so the next mailbox
+	// proof runs the claim again.
 	if checker, ok := p.mgr.UserStore().(EmailVerifiedChecker); ok {
 		verified, err := checker.IsEmailVerified(r.Context(), userID)
 		if err == nil && !verified {
@@ -384,7 +388,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Warn("password-reset account claim failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-			writeAuthError(w, http.StatusInternalServerError, "account claim failed")
+			writeAuthError(w, http.StatusInternalServerError, "password updated, but securing the account failed: request another reset link")
 			return
 		}
 	}
