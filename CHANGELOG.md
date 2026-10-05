@@ -359,6 +359,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   process on `:8080` cannot derail it. `-regrade` re-scores a run
   without agent tokens. Run it
   with `go run ./evals/dev-loop/cmd/devloop-eval -runs 3`.
+- **`ui.MountSidebarFunc`** mounts the mobile sidebar drawer from a
+  per-request `func(ctx) SidebarConfig`, so the drawer sees the
+  signed-in user the way the desktop sidebar slot does. The generated
+  app shell and Meridian use it.
+- **`interactive.Action.OnErrorToast(title)`** and the
+  `data-cui-rpc-error-toast` attribute it writes: a non-2xx answer to
+  the action shows a toast with that title. The resource detail page's
+  Delete and transition buttons use it, so a refused delete says so.
+- **`check.LintReplaceFill`** fires on a `String.prototype.replace` whose
+  replacement is a value rather than a function, since `$&`, `$1` and
+  `$$` in user text expand there.
+- **`gofastr migrate --db`** is an alias for `--driver`, as the help
+  text documented.
+- **`gofastr blueprint` warns on a single-column unique field in an
+  owner-scoped entity.** Under owner scoping one user's row blocks every
+  other user's create, and the 409 reveals that the value exists.
 
 ### Changed
 - **Generated `CLAUDE.md`, `AGENTS.md` and the `gofastr-host` skill now
@@ -561,6 +577,70 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr pack` without `-o` keeps stdout clean.** The secrets
   warning went to stdout ahead of the YAML, so redirected output did not
   parse; it goes to stderr.
+- **`gofastr gen styles` writes only inside the project** (since
+  v0.86.0). The generated Go files and `.gofastr/tokens.css` were
+  written through planted symlinks; reads and writes now go through
+  `os.Root`.
+- **`gofastr upgrade` scrubs what it prints** (since v0.86.0). A
+  `go.mod` version or a `gofastr.yml` key carrying escape sequences or
+  bidi controls reached the terminal raw; versions are validated and
+  notes are scrubbed. `go.mod` is read with `modfile`, so a gofastr
+  line in an `exclude (` block no longer overwrites the required
+  version.
+- **Headless label templates keep `$` literal** (since v0.86.0).
+  Template fills passed user text as a `replace` string, so `$&` or
+  `$'` in a value expanded.
+- **A bare `SidebarRegion` group toggle loads the sidebar module**
+  (since v0.86.0). The module registered only on a sidebar root, so a
+  page with group toggles and no root never opened its groups.
+- **Tag-input chips added at runtime are styled** (since v0.86.0). The
+  sheet keyed on classes only server-rendered chips carry; it keys on
+  the hooks now.
+- **Component sheets reference tokens the theme defines.** Shadows,
+  popover z-index, mono font, easing, duration and text-size references
+  named tokens nothing emits; a gate now resolves every token a sheet
+  reads.
+- **`data-cui-flash-on-update` flashes.** The runtime toggled
+  `.cui-flash` but no framework sheet defined it.
+- **The network retry banner shows it is checking** (since v0.86.0).
+  While the probe runs the banner carries `data-state="checking"` and
+  the link `aria-busy`, and a second click waits for the first probe.
+- **A static export's navigation skips the widget catalog.** Every
+  client-side navigation fetched `/__gofastr/widgets`, which a static
+  host answers 404.
+- **`gofastr init` gives agents advice that works on a fresh app.**
+  The generated `CLAUDE.md` named generate commands that refuse there.
+- **`gofastr generate` pins the framework version** before
+  `go mod tidy`, so tidy cannot pick a chromedp release whose API breaks
+  `testkit/axetest`. A dev build prints the `go get` step instead.
+- **The generated admin creates its audit table** at boot, so
+  `/admin/audit` and audit writes work on a fresh app.
+- **A partial `app.theme.dark` map overlays the default dark palette**
+  instead of replacing it, as the blueprint docs say.
+- **Generated dashboard chart cards use `h2`**, so the page passes
+  axe's heading-order rule.
+- **The generated `.gitignore` covers `bin/` and SQLite files**
+  (`*.db`, `*.db-shm`, `*.db-wal`).
+- **Deleting a row that others reference answers 409**, not 500, on
+  SQLite and Postgres.
+- **An empty list with hooks or includes answers `"data": []`**, not
+  `null`.
+- **The admin nav lists every exposed entity** when the config uses
+  `AllEntities`, and the entity pages link back to Overview and Audit.
+- **Admin labels singularize English plurals** ("New category", not
+  "New categorie"). The generator's seed rows share the rules, so a
+  `databases` entity seeds "Database 1", not "Databas 1".
+- **The sitemap leaves out screens a signed-out visitor cannot see**,
+  matching what a static export writes.
+- **Meridian's customer email and invoice number are unique per
+  owner.** An existing database keeps the old global index: the
+  migrator never drops one.
+- **The mobile sidebar drawer shows Sign out** (since v0.67.0) and
+  marks the current page; its title and footer get the inline inset.
+- **Theme-toggle and drawer close buttons inherit the page font.**
+- **CodeBlock copy keeps blank lines.**
+- **Markdown soft line breaks render as newlines**, not `<br>`. Hard
+  breaks (two trailing spaces or a backslash) still render `<br>`.
 - **`S3Storage.PresignedGetURL` and `PresignedPutURL` return an error
   with no presigner** (since v0.86.0). The method value
   `s.presigner.PresignGet` was evaluated on the nil interface before
