@@ -734,6 +734,9 @@ func windowClosed(w Window) (closed, known bool) {
 // windowMu.
 func (b *Battery) removeWindowLocked(id string) {
 	delete(b.windows, id)
+	if s := b.winStore.Load(); s != nil {
+		s.forget(id)
+	}
 	for p, pid := range b.winPaths {
 		if pid == id {
 			delete(b.winPaths, p)
