@@ -151,12 +151,12 @@ The hooks moved with the modules. A few that apps wrote by hand:
 
 | Old | New |
 | --- | --- |
-| `data-cui-menu-*`, `data-cui-tabs`, `data-cui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
-| `data-cui-disclosure`, `data-cui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
+| `data-fui-menu-*`, `data-fui-tabs`, `data-fui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
+| `data-fui-disclosure`, `data-fui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
 | `data-fui-pane-open`, `-close`, `-key`, `-swap` | `data-hui-pane-open-control`, `-close`, `-key`, `-swap` |
-| `data-fui-pane-deeplink`, `data-cui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
-| `data-cui-sidebar*`, `data-cui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
-| `data-cui-tree-toggle`, `data-cui-multiselect*`, `data-cui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
+| `data-fui-pane-deeplink`, `data-fui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
+| `data-fui-sidebar*`, `data-fui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
+| `data-fui-tree-toggle`, `data-fui-multiselect*`, `data-fui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
 | `data-when-name`, `data-when-value` | `data-hui-when`, `data-hui-when-value` |
 
 ### Components whose markup or config changed
