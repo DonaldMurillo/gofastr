@@ -180,9 +180,17 @@ func (h *tokenPurposeHarness) attemptReset(tok string) int {
 		map[string]string{"token": tok, "password": "attackerpw1"}, nil)
 }
 
+// attemptVerifyEmail opens the link from the victim's own signed-in browser,
+// which verify-email requires, so a refusal here is the purpose check and
+// not the session binding.
 func (h *tokenPurposeHarness) attemptVerifyEmail(tok string) int {
 	h.t.Helper()
+	sess, err := h.mgr.SessionStore().Create(context.Background(), h.victimID, time.Hour)
+	if err != nil {
+		h.t.Fatalf("create session: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/auth/verify-email?token="+tok, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
 	w := httptest.NewRecorder()
 	h.r.ServeHTTP(w, req)
 	return w.Code

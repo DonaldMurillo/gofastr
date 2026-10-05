@@ -37,6 +37,9 @@ type storeEntry struct {
 	// CreateUserNoPassword. Defaults to true (zero value of bool is false,
 	// but all pre-existing seed/CreateUser paths set it explicitly).
 	passwordSet bool
+	// emailVerified mirrors EntityUserStore's email_verified column:
+	// false until a flow proves the mailbox.
+	emailVerified bool
 }
 
 func newMemoryUserStore() *memoryUserStore {

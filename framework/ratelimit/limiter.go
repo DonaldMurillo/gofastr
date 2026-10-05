@@ -36,9 +36,10 @@ import (
 	"net"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // Config controls a per-key sliding-window limiter.
@@ -50,11 +51,20 @@ import (
 // Defaults (filled in by NewLimiter when zero): MaxAttempts=10, Window=15m,
 // BlockDuration=30m.
 //
-// TrustForwardedFor: when true, the leftmost X-Forwarded-For entry is used as
-// the client IP by the default (IP-keyed) middleware. ONLY enable this if the
-// server sits behind a trusted reverse proxy that strips client-supplied XFF
-// headers, otherwise an attacker rotates the header per request and bypasses
-// every per-IP limit. Default is false (use the connection's RemoteAddr).
+// TrustForwardedFor: when true, the default (IP-keyed) middleware reads the
+// client IP from X-Forwarded-For. ONLY enable this if the server sits behind
+// a reverse proxy you control, otherwise an attacker rotates the header per
+// request and bypasses every per-IP limit. Default is false (use the
+// connection's RemoteAddr). The header is read from the RIGHT: entries left
+// of the hop your proxy wrote are client-supplied when the proxy appends, so
+// the key is the rightmost hop that is not in TrustedProxies.
+//
+// TrustedProxies lists your own proxy tiers (IPs or CIDRs, CDN ranges
+// included). When set, only a request whose TCP peer is in the list may
+// speak for X-Forwarded-For, and listed hops are skipped on the walk. When
+// empty, the immediate peer is taken to be your one proxy and the rightmost
+// entry is the client; behind more than one tier that entry is your inner
+// proxy, so list the tiers.
 //
 // Store: when non-nil, attempts are recorded in the shared backend instead of
 // process memory, so the budget holds across replicas: MaxAttempts total, not
@@ -71,6 +81,7 @@ type Config struct {
 	Window            time.Duration
 	BlockDuration     time.Duration
 	TrustForwardedFor bool
+	TrustedProxies    []string
 	Store             Store
 	Scope             string
 
@@ -92,6 +103,12 @@ type Config struct {
 // satisfy this interface. The implementation must derive per-limiter state from
 // the namespaced key alone, it receives the full Config but should treat Scope
 // + key as the identity.
+//
+// AllowContext calls the store outside the limiter's mutex, so concurrent
+// callers on one or many replicas reach Allow together. The admission decision
+// must be atomic per key: a concurrent burst admits at most MaxAttempts.
+// Counting and then recording in separate operations breaks that, since every
+// caller reads the same pre-insert count.
 type Store interface {
 	Allow(ctx context.Context, key string, cfg Config) (allowed bool, retryAfter time.Duration, err error)
 }
@@ -116,6 +133,7 @@ const storeErrRetryAfter = 30 * time.Second
 // NewLimiter.
 type Limiter struct {
 	cfg       Config
+	proxies   clientip.Proxies
 	mu        sync.Mutex
 	states    map[string]*rlState
 	lastSweep time.Time
@@ -147,7 +165,7 @@ func NewLimiter(cfg Config) *Limiter {
 	if cfg.BlockDuration <= 0 {
 		cfg.BlockDuration = 30 * time.Minute
 	}
-	return &Limiter{cfg: cfg, states: make(map[string]*rlState)}
+	return &Limiter{cfg: cfg, proxies: clientip.ParseProxies(cfg.TrustedProxies), states: make(map[string]*rlState)}
 }
 
 // Allow records an attempt for key and returns whether it is allowed. If not
@@ -196,18 +214,29 @@ func foldKey(key string) string {
 // relaxation that stops local tooling being locked out; production never sets
 // it, so the fail-closed guarantee holds.
 func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, retryAfter time.Duration) {
+	allowed, retryAfter, err := rl.Admit(ctx, key)
+	if err != nil {
+		slog.Default().Warn("ratelimit: shared store error: failing closed",
+			"scope", rl.cfg.Scope, "err", err)
+	}
+	return allowed, retryAfter
+}
+
+// Admit is AllowContext that also returns the shared store's error. A
+// store failure still denies (allowed is false, retryAfter the short
+// outage hint). The error lets a caller that acts on a spent budget, such
+// as ending a session, tell an outage from a budget used up.
+func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAfter time.Duration, err error) {
 	if rl.cfg.DevMode {
-		return true, 0
+		return true, 0, nil
 	}
 	key = foldKey(key)
 	if rl.cfg.Store != nil {
 		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
 		if err != nil {
-			slog.Default().Warn("ratelimit: shared store error: failing closed",
-				"scope", rl.cfg.Scope, "err", err)
-			return false, storeErrRetryAfter
+			return false, storeErrRetryAfter, err
 		}
-		return ok, retry
+		return ok, retry, nil
 	}
 
 	rl.mu.Lock()
@@ -232,7 +261,7 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 	// Honour an active block.
 	if !state.blockedUntil.IsZero() {
 		if now.Before(state.blockedUntil) {
-			return false, state.blockedUntil.Sub(now)
+			return false, state.blockedUntil.Sub(now), nil
 		}
 		// Block has elapsed, clear and continue.
 		state.blockedUntil = time.Time{}
@@ -254,11 +283,11 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 		state.blockedUntil = now.Add(rl.cfg.BlockDuration)
 		rl.blockSeq++
 		state.blockOrder = rl.blockSeq
-		return false, rl.cfg.BlockDuration
+		return false, rl.cfg.BlockDuration, nil
 	}
 
 	state.attempts = append(state.attempts, now)
-	return true, 0
+	return true, 0, nil
 }
 
 // evictLocked reclaims map entries that no longer carry security-relevant
@@ -376,7 +405,7 @@ func (rl *Limiter) evictLocked(now time.Time) {
 // MiddlewareByKey.
 func (rl *Limiter) Middleware() func(http.Handler) http.Handler {
 	return rl.MiddlewareByKey(func(r *http.Request) string {
-		return ClientIP(r, rl.cfg.TrustForwardedFor)
+		return rl.ClientIP(r)
 	})
 }
 
@@ -386,7 +415,7 @@ func (rl *Limiter) Middleware() func(http.Handler) http.Handler {
 // budget headers are intentionally omitted.
 func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http.Handler) http.Handler {
 	if keyFunc == nil {
-		keyFunc = func(r *http.Request) string { return ClientIP(r, rl.cfg.TrustForwardedFor) }
+		keyFunc = rl.ClientIP
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -402,22 +431,39 @@ func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http
 }
 
 // ClientIP extracts the request IP. It honours X-Forwarded-For only when
-// trustXFF is true (typically behind a trusted reverse proxy that strips
-// client-supplied XFF). The default (trustXFF=false) ignores XFF, otherwise a
-// single curl with a rotating X-Forwarded-For header bypasses every per-IP
-// limit.
+// trustXFF is true (typically behind a trusted reverse proxy). The default
+// (trustXFF=false) ignores XFF, otherwise a single curl with a rotating
+// X-Forwarded-For header bypasses every per-IP limit.
+//
+// With trustXFF the immediate peer is taken to be the one proxy and the
+// rightmost X-Forwarded-For entry, the address that proxy observed, is the
+// client. Entries to its left are client-supplied behind an appending proxy
+// and are never used. A deployment with more than one proxy tier sets
+// Config.TrustedProxies and calls Limiter.ClientIP instead.
 func ClientIP(r *http.Request, trustXFF bool) string {
-	if trustXFF {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if before, _, ok := strings.Cut(xff, ","); ok {
-				return strings.TrimSpace(before)
-			}
-			return strings.TrimSpace(xff)
-		}
+	return clientIPFor(r, trustXFF, clientip.Proxies{})
+}
+
+// ClientIP is the package ClientIP under this limiter's TrustForwardedFor
+// and TrustedProxies: with a TrustedProxies list, only a listed peer may
+// speak for X-Forwarded-For and listed hops are skipped from the right.
+func (rl *Limiter) ClientIP(r *http.Request) string {
+	return clientIPFor(r, rl.cfg.TrustForwardedFor, rl.proxies)
+}
+
+func clientIPFor(r *http.Request, trustXFF bool, proxies clientip.Proxies) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		peer = host
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	if !trustXFF {
+		return peer
 	}
-	return host
+	if !proxies.Empty() && !proxies.ContainsAddr(peer) {
+		return peer
+	}
+	if ip, ok := clientip.Forwarded(r.Header, proxies); ok {
+		return ip.String()
+	}
+	return peer
 }

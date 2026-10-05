@@ -7710,6 +7710,10 @@ func renderBlueprintApp(bp Blueprint) string {
 		// JWT_SECRET + ADMIN_SEED_PASSWORD are read from the environment.
 		sb.WriteString("\t\"os\"\n")
 	}
+	if adminSeed {
+		// The seed checks an existing account's roles.
+		sb.WriteString("\t\"slices\"\n")
+	}
 	sb.WriteString("\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	if hasAccess || guestRedirect {
@@ -8175,8 +8179,23 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t// before the server accepts traffic and returns errors to Start,\n")
 			sb.WriteString("\t\t// so a fresh database can never fail silently.\n")
 			sb.WriteString("\t\tfwApp.WithSeed(func(ctx context.Context) error {\n")
-			sb.WriteString(fmt.Sprintf("\t\t\t_, _, err := authCfg.UserStore.FindByEmail(ctx, %q)\n", bp.App.Admin.SeedEmail))
-			sb.WriteString("\t\t\tif err == nil {\n\t\t\t\treturn nil\n\t\t\t}\n")
+			adminRole := bp.App.Admin.Role
+			if adminRole == "" {
+				adminRole = "admin"
+			}
+			sb.WriteString(fmt.Sprintf("\t\t\tu, _, err := authCfg.UserStore.FindByEmail(ctx, %q)\n", bp.App.Admin.SeedEmail))
+			sb.WriteString("\t\t\tif err == nil {\n")
+			sb.WriteString("\t\t\t\t// An admin seeded before email_verified existed reads as\n")
+			sb.WriteString("\t\t\t\t// unverified. Only an account holding the admin role came\n")
+			sb.WriteString("\t\t\t\t// from this seed; one without it was registered by someone\n")
+			sb.WriteString("\t\t\t\t// else and stays unproven.\n")
+			sb.WriteString(fmt.Sprintf("\t\t\t\tif v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && slices.Contains(u.GetRoles(), %q) {\n", adminRole))
+			sb.WriteString("\t\t\t\t\tif err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {\n")
+			sb.WriteString("\t\t\t\t\t\treturn fmt.Errorf(\"verify bootstrap admin email: %w\", err)\n")
+			sb.WriteString("\t\t\t\t\t}\n")
+			sb.WriteString("\t\t\t\t}\n")
+			sb.WriteString("\t\t\t\treturn nil\n")
+			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t\tif err != auth.ErrUserNotFound {\n\t\t\t\treturn fmt.Errorf(\"find bootstrap admin: %w\", err)\n\t\t\t}\n")
 			sb.WriteString("\t\t\t// Only a genuinely fresh database (admin absent) needs the seed\n")
 			sb.WriteString("\t\t\t// password; an already-seeded deployment boots without it.\n")
@@ -8184,12 +8203,17 @@ func renderBlueprintApp(bp Blueprint) string {
 			sb.WriteString("\t\t\tif seedPw == \"\" {\n\t\t\t\treturn fmt.Errorf(\"ADMIN_SEED_PASSWORD is not set: admin %q cannot be seeded on a fresh database\", " + fmt.Sprintf("%q", bp.App.Admin.SeedEmail) + ")\n\t\t\t}\n")
 			sb.WriteString("\t\t\th, err := auth.HashPassword(seedPw)\n")
 			sb.WriteString("\t\t\tif err != nil {\n\t\t\t\treturn fmt.Errorf(\"hash bootstrap admin password: %w\", err)\n\t\t\t}\n")
-			adminRole := bp.App.Admin.Role
-			if adminRole == "" {
-				adminRole = "admin"
-			}
-			sb.WriteString(fmt.Sprintf("\t\t\tif _, err := authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"}); err != nil && err != auth.ErrEmailTaken {\n", bp.App.Admin.SeedEmail, adminRole))
+			sb.WriteString(fmt.Sprintf("\t\t\tu, err = authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"})\n", bp.App.Admin.SeedEmail, adminRole))
+			sb.WriteString("\t\t\tif err != nil && err != auth.ErrEmailTaken {\n")
 			sb.WriteString("\t\t\t\treturn fmt.Errorf(\"create bootstrap admin: %w\", err)\n")
+			sb.WriteString("\t\t\t}\n")
+			sb.WriteString("\t\t\t// The operator chose this address, so it counts as proven.\n")
+			sb.WriteString("\t\t\t// Left unverified, the first magic link to it would claim\n")
+			sb.WriteString("\t\t\t// the account and clear the seeded password.\n")
+			sb.WriteString("\t\t\tif v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && u != nil {\n")
+			sb.WriteString("\t\t\t\tif err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {\n")
+			sb.WriteString("\t\t\t\t\treturn fmt.Errorf(\"verify bootstrap admin email: %w\", err)\n")
+			sb.WriteString("\t\t\t\t}\n")
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t\treturn nil\n")
 			sb.WriteString("\t\t})\n")

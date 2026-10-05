@@ -840,6 +840,49 @@ func TestEraseUserData_EmailIdentityErasesMagicLinkTokens(t *testing.T) {
 	}
 }
 
+// ValuePrefix is prepended to the bound value on both bind paths: the
+// resolved identity and the plain user id.
+func TestEraseValuePrefixBindsTaggedRows(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test'),('u2','u2@x.test')`,
+		`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES
+			('a','magiclink:u1@x.test',0),('b','pwreset:u1',0),('c','u1@x.test',0),
+			('d','magiclink:u2@x.test',0),('e','pwreset:u2',0)`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	datexport.Reset(t)
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "ml", Source: "auth", Table: "magic_link_tokens", Column: "email",
+		Mode: datexport.EraseDelete, Identity: datexport.IdentityEmail, ValuePrefix: "magiclink:",
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "reset", Source: "auth", Table: "magic_link_tokens", Column: "email",
+		Mode: datexport.EraseDelete, ValuePrefix: "pwreset:",
+	})
+	if _, err := app.EraseUserData(ctx, "u1"); err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+	for val, want := range map[string]int{
+		"magiclink:u1@x.test": 0, "pwreset:u1": 0,
+		"u1@x.test":           1, // untagged: no eraser declares it
+		"magiclink:u2@x.test": 1, "pwreset:u2": 1,
+	} {
+		if got := countWhere(t, db, "magic_link_tokens", "email", val); got != want {
+			t.Errorf("rows for %q = %d, want %d", val, got, want)
+		}
+	}
+}
+
 // A second erasure is idempotent. After the first erase the user row is gone,
 // so the email identity CANNOT be resolved, the magic-link eraser is SKIPPED
 // (not failed), the user-id erasers match zero rows, and the report carries

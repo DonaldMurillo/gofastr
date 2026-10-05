@@ -27,11 +27,21 @@ type fakeDeriver struct {
 	lastRef string
 }
 
-func (f *fakeDeriver) DeriveImage(_ context.Context, _ upload.Storage, _ []byte, primaryRef string) (*file.ImageDerivatives, error) {
+func (f *fakeDeriver) DeriveImage(ctx context.Context, st upload.Storage, _ []byte, primaryRef string) (*file.ImageDerivatives, error) {
 	f.calls++
 	f.lastRef = primaryRef
 	if f.err != nil {
 		return nil, f.err
+	}
+	// A real deriver saves each rendition through the storage it is
+	// handed; the write path accepts a variants storage_ref only when the
+	// request saved it (media_provenance.go).
+	if f.out != nil {
+		for _, v := range f.out.Variants {
+			if err := st.Save(ctx, v.StorageRef, bytes.NewReader([]byte("rendition"))); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return f.out, nil
 }

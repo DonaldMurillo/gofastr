@@ -11,8 +11,13 @@ type loggerKey struct{}
 
 // --- User ---
 
-// SetUser stores a user value in the context.
+// SetUser stores a user value in the context. It also drops any principal
+// re-check installed for the previous user (see WithPrincipalCheck): the
+// middleware that sets a user installs its own check after this call.
 func SetUser(ctx context.Context, user any) context.Context {
+	if cur, _ := ctx.Value(principalCheckKey{}).(*principalChecks); cur != nil {
+		ctx = context.WithValue(ctx, principalCheckKey{}, (*principalChecks)(nil))
+	}
 	return context.WithValue(ctx, userKey{}, user)
 }
 

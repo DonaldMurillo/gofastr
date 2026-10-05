@@ -920,6 +920,132 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   hiding. `crud.CrudHandler` gains `MCPRouteScoped`, which marks such an
   entity.
 
+Fixes from the 2026-10-04 security audit of the request path. Every fix
+has a `*_security_test.go` that failed before it, and `gofastr upgrade
+--to v0.87.0` lists the code each **BREAKING** change can touch.
+
+- **`_batch` update and delete ask the Decider per record.** The batch
+  routes asked about the collection only, so a record the Decider denied
+  to a single `PATCH`/`DELETE` could be overwritten or deleted through
+  `_batch`. A refused item now rolls the whole batch back.
+- **`UpsertOne` enforces scope in the write.** The ownership preflight
+  ran before `BeforeCreate` hooks, so a hook that derived or normalized
+  the primary key, or a row committed concurrently, let one owner take
+  over another's row. The preflight now runs after hooks, `DO UPDATE`
+  carries owner, tenant and soft-delete predicates, and `UpsertOne`
+  calls the `belongs_to` scope check that `CreateOne` and `UpdateOne`
+  already made.
+- **Write responses respect `ReadScope`.** Create, update, upsert and
+  their batch forms returned the full row even when the caller's read
+  scope hid it (GET answered 404), including column defaults and hook
+  stamps the caller never sent. A hidden row now answers with its id
+  only, over HTTP and in-process; a `WithServerWrites` caller still
+  reads back the whole row.
+- **`?include=` serves only declared columns.** The include loaders ran
+  `SELECT *` and stripped only Hidden fields, so a column another API
+  version declared, a removed field kept by additive migration, or an
+  external table's extra column reached any caller who could include the
+  relation. `EagerLoad` had the same gap.
+- **BREAKING: scoped API tokens and embed grants are held to their
+  scopes across relations.** `RequireAPIScopes` checked only the entity
+  in the path, so a `customers:read` token read invoices through
+  `?include=invoices` and filtered on them, and a `customers:write`
+  token created invoices through a cascade body. The held scopes now
+  travel on the context (`access.WithHeldScopes`), and the CRUD layer
+  requires `<table>:read` for each include and filter hop and
+  `<table>:write` for each cascade child. Sessions, JWTs and in-process
+  calls are unchanged.
+- **BREAKING: `CRUD: false` entities are unreachable through relations.**
+  An entity with its generated routes off, `auth.UserEntityConfig`
+  included, was still readable through another entity's `?include=` and
+  filterable through `?rel.field=`. Both now answer 403, and cascade
+  writes to it answer not found.
+- **Open streams re-check the principal.** An `_events` stream, or an
+  island SSE stream, kept delivering after its session was deleted, its
+  token revoked or its role dropped. `core/handler` gains a re-check
+  seam (`WithPrincipalCheck`, `AddPrincipalCheck`, `RecheckPrincipal`)
+  that the session, API-token and JWT middleware and
+  `access.Middleware` install, and the streams run it on every delivery
+  and tick.
+- **BREAKING: a JSON write cannot name another user's stored file.** An
+  `Image`/`File` field stored any relative key a client sent, and
+  `EraseUserData` deleted every key the erased user's rows named, so one
+  user could erase another's uploads. A JSON or in-process write now
+  accepts a key only when the same request uploaded it, host code passed
+  it through `crud.WithUploadedKeys`, or it is already on the row;
+  `<field>_variants` entries are checked too. Erasure deletes a key only
+  when no surviving row names it.
+- **BREAKING: unproven accounts are claimed on mailbox proof.**
+  `EntityUserStore` records `email_verified` (FALSE for existing rows).
+  A magic link or completed reset on an unverified account removes the
+  password (magic link only), sessions, API tokens and OAuth links
+  attached before the proof, so an attacker who registered the victim's
+  address first no longer keeps access after the victim signs in. OAuth
+  auto-links only into a verified account, so an IdP that releases
+  unverified emails can no longer pre-create an account the owner's
+  verified login merges into. `GET /auth/verify-email` now needs a full
+  session of the requesting account. Seeded users must be marked
+  verified; the meridian, ecommerce and blueprint admin seeds do this,
+  and on each boot they mark an existing account at the seed address
+  verified when it holds the admin role.
+- **BREAKING: `RequireTwoFA` judges the request principal.** It read the
+  first session cookie, so a second cookie or a JWT next to a stale
+  session skipped the step-up. It now requires a 2FA-verified session of
+  the acting user and refuses JWT and API-token principals. The 2FA and
+  account handlers act only on the principal's own sessions, and
+  disabling 2FA drops that user's pending sessions.
+- **2FA challenge guesses are capped per pending session**
+  (`TwoFAConfig.ChallengeAttemptsPerSession`, default 10), so spreading
+  guesses across client addresses no longer extends the budget.
+- **The SQL rate-limit store admits atomically.** Concurrent requests
+  read the same count before any insert landed, admitting two to three
+  times `MaxAttempts` per window.
+- **BREAKING: `X-Forwarded-For` is read from the right.** The proxy-aware
+  rate-limit key, `framework/ratelimit.ClientIP` (login and register
+  limiters) and battery/log's remote IP trusted the leftmost hop, which
+  a client sets when the proxy appends. They now key on the rightmost
+  hop that is not a trusted proxy. `framework/ratelimit.Config` gains
+  `TrustedProxies`; list every tier behind a CDN.
+- **`HMACSHA256Verifier` refuses every request when its secret is
+  empty**, as `VerifyTimestamped` already did. An unset environment
+  variable let anyone forge inbound webhooks. Both now also refuse a
+  whitespace-only secret.
+- **Revoking one capability survives a `GrantStore` reload** when the
+  role holds a literal wildcard grant. Reload subtracted revocations
+  before expanding the wildcard, which brought the revoked capability
+  back. At boot, `LoadInto` now expands a literal wildcard revocation
+  too, so a `reports:*` revoke recorded before `reports` was registered
+  removes the `reports` capabilities code seeds or rows grant.
+- **The dev MCP bind guard treats `Start("")` as exposed.** It called
+  the empty address loopback while the server bound every interface on
+  port 80.
+- **SSRF-guarded transports ignore `HTTP(S)_PROXY`.** With a proxy set
+  the dial guard checked only the proxy's address. The harness
+  `webfetch` tool gets the same guarded transport.
+- **BREAKING: embed grants reach only the runtime routes.** A grant
+  reached everything under `/__gofastr`, including the battery/rtc
+  signaling socket, where it joined rooms as its subject. It now reaches
+  the routes uihost mounts for the runtime, and never a prefix an
+  `EmbedReserving` battery reserves; battery/rtc and battery/desktop
+  reserve theirs.
+- **BREAKING: server actions run their screen's policy.** An action
+  compiled from a policy-gated screen ran for any session. The policy
+  now runs first, with the route params of the page the runtime names in
+  the action body; a policy that reads a param refuses an action that
+  names no page of its screen.
+- **BREAKING: `/.debug` endpoints require the admin role**
+  (`framework.WithDebugAuthorize` replaces the check). Any signed-in
+  user could read goroutine stacks and force a GC per request.
+- **BREAKING: `upload.Handler` caps bodies at 32 MiB** when
+  `Config.MaxSize` is unset (`upload.DefaultMaxSize`), instead of
+  accepting any size.
+- **API tokens are revoked on password reset**, and user erasure reaches
+  magic-link, reset and verification tokens, which it missed because
+  they are stored under a purpose prefix.
+- **uihost HTML-escapes `data-cui-fill` and extra-script `src`
+  attributes.** A route parameter containing `"` broke out of the fill
+  attribute.
+
 ## [0.86.0] - 2026-09-24
 
 **BREAKING.** v0.86.0 rebuilds the UI layer and deprecates nothing: a

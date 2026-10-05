@@ -178,12 +178,19 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 // to the tenant ID extracted from the request context.
 //
 // Authorization is re-validated for the life of the stream, not only at
-// connect: the entity's read permission is re-checked on every delivery and
-// on a ticker (EventStreamReauth, 30s by default), and the read-scope lift
-// is re-evaluated per event. A caller whose CURRENT authorization forbids
-// reads (session revoked, role dropped, a resource decider flipped to deny)
-// has the stream closed at the next check, so an established feed never
-// outlives the authority that opened it.
+// connect. On every delivery and on a ticker (EventStreamReauth, 30s by
+// default) the stream re-establishes its caller through
+// handler.RecheckPrincipal, which the auth middleware installs: the session,
+// API token or JWT is looked up again, its owner re-resolved, and the roles
+// re-derived by access.Middleware. The entity's read permission is then
+// re-checked on that refreshed principal, and the read-scope lift is
+// re-evaluated per event. A caller who would now be refused (session
+// revoked, token revoked or expired, user deleted, role dropped, a resource
+// decider flipped to deny) has the stream closed at the next check, whether
+// or not the entity declares a read permission, so an established feed
+// never outlives the authority that opened it. Middleware that sets a user
+// without installing a check (handler.WithPrincipalCheck) leaves the
+// identity as connected; only the permission re-check applies then.
 //
 // Each accepted event is written as:
 //
@@ -296,19 +303,40 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// lift is revoked mid-stream stops seeing hidden rows without
 		// reconnecting.
 
-		// authzHeld re-runs the connect-time permission gate. It is the
-		// live seam: access.CanResource consults the decider, which reads
-		// whatever store backs it NOW, so the frozen request context still
-		// answers "may this caller read, as of this call". The owner and
-		// tenant resolutions above read immutable context values and
-		// cannot flip on a held context; the decider-backed gates can, and
-		// this is the re-run of them.
+		// authzHeld re-establishes the caller and re-runs the connect-time
+		// permission gate. The request context was built once, at connect,
+		// so on its own it keeps answering for a session that has since
+		// been deleted, a token since revoked, a role since dropped.
+		// handler.RecheckPrincipal re-runs what the auth middleware did
+		// (session lookup, token lookup, JWT validation and owner lookup)
+		// and what access.Middleware did (role resolution), and fails when
+		// a fresh request with the same credentials would no longer carry
+		// this principal. It runs even when the entity declares no read
+		// permission: the baseline gate is "authenticated", and a revoked
+		// session is no longer that. The permission check then runs on the
+		// refreshed context, and the decider reads its live store as before.
+		// live holds that refreshed context for the per-event read-scope
+		// lift and the delivery-time redaction.
 		readPerm := ch.permissionForOp(opRead)
+		var liveMu sync.Mutex
+		live := r.Context()
+		liveCtx := func() context.Context {
+			liveMu.Lock()
+			defer liveMu.Unlock()
+			return live
+		}
 		authzHeld := func() bool {
+			fresh, ok := handler.RecheckPrincipal(r.Context())
+			if !ok {
+				return false
+			}
+			liveMu.Lock()
+			live = fresh
+			liveMu.Unlock()
 			if readPerm == "" {
 				return true
 			}
-			return access.CanResource(r.Context(), access.Permission(readPerm),
+			return access.CanResource(fresh, access.Permission(readPerm),
 				access.Ref{Type: ch.Entity.GetName(), ID: ""})
 		}
 
@@ -331,7 +359,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if ownerScope && ownerID != nil && fmt.Sprint(data[eventKeyOwnerID]) != fmt.Sprint(ownerID) {
 				return nil
 			}
-			if !readScopeUnrestricted(r.Context(), ch.Entity) && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
+			if !readScopeUnrestricted(liveCtx(), ch.Entity) && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
 				return nil
 			}
 			select {
@@ -388,7 +416,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				// run on a connection that cannot see the uncommitted row, and
 				// would block against a single-connection pool) and runs it
 				// once per delivery instead of twice per write.
-				ev = ch.redactEventRecord(r, ev)
+				ev = ch.redactEventRecord(r.WithContext(liveCtx()), ev)
 				payload, err := json.Marshal(ev)
 				if err != nil {
 					continue
