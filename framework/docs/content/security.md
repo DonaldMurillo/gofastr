@@ -263,7 +263,10 @@ middleware.RateLimit(middleware.RateLimitConfig{
 ```
 
 Token-bucket per key. `KeyFunc` defaults to `RemoteAddr` (X-Forwarded-For
-is ignored unless `TrustProxyHeaders` + `TrustedProxies` are set). Tune
+is ignored unless `TrustProxyHeaders` + `TrustedProxies` are set, and is
+then read from the right: the key is the first hop not in
+`TrustedProxies`, so client-supplied entries an appending proxy keeps on
+the left never pick the bucket). Tune
 `Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
 middlewares in different `middleware.Chain` calls.
 

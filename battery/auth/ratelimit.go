@@ -23,16 +23,12 @@ type RateLimiterConfig = ratelimit.Config
 // callers (e.g. guardAuthLimit, the per-account login limiter) are unchanged.
 type RateLimiter struct {
 	*ratelimit.Limiter
-	trustXFF bool
 }
 
 // NewRateLimiter constructs a RateLimiter with the given config. Zero fields
 // fall back to the documented defaults (delegated to ratelimit.NewLimiter).
 func NewRateLimiter(cfg RateLimiterConfig) *RateLimiter {
-	return &RateLimiter{
-		Limiter:  ratelimit.NewLimiter(cfg),
-		trustXFF: cfg.TrustForwardedFor,
-	}
+	return &RateLimiter{Limiter: ratelimit.NewLimiter(cfg)}
 }
 
 // newScopedRateLimiter is NewRateLimiter with a default Scope, used by the
@@ -76,8 +72,10 @@ func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // clientIP extracts the request IP, honouring X-Forwarded-For only when the
-// limiter was configured with TrustForwardedFor=true. Delegates to
-// ratelimit.ClientIP so the proxy-trust rule has exactly one implementation.
+// limiter was configured with TrustForwardedFor=true (and, when set, only
+// from a TrustedProxies peer, read from the right). Delegates to
+// ratelimit.Limiter.ClientIP so the proxy-trust rule has exactly one
+// implementation.
 func (rl *RateLimiter) clientIP(r *http.Request) string {
-	return ratelimit.ClientIP(r, rl.trustXFF)
+	return rl.Limiter.ClientIP(r)
 }
