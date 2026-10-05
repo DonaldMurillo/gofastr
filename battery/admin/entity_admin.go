@@ -123,11 +123,20 @@ func (b *Battery) navConfig(ents []*entity.Entity) interactive.SectionMenuConfig
 			Href:  b.entityBase(ent),
 		})
 	}
+	// The ops screens (navHTML's shell) link to the entity pages; this
+	// group links back, so neither shell is a dead end.
+	ops := []interactive.SectionItem{
+		{Label: "Overview", Href: b.cfg.PathPrefix},
+		{Label: "Audit log", Href: b.cfg.PathPrefix + "/audit"},
+	}
 	return interactive.SectionMenuConfig{
 		AriaLabel:    title + " navigation",
 		TriggerLabel: "Menu",
 		DrawerName:   "admin-nav",
-		Groups:       []interactive.SectionGroup{{Label: title, Items: items}},
+		Groups: []interactive.SectionGroup{
+			{Label: "Operations", Items: ops},
+			{Label: title, Items: items},
+		},
 	}
 }
 

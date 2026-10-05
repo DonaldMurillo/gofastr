@@ -56,3 +56,21 @@ func TestAllEntitiesNavListsEntities(t *testing.T) {
 		}
 	}
 }
+
+// The entity shell's nav must link back to the ops screens, or an entity
+// page is a dead end for reaching Overview and the audit log.
+func TestEntityNavLinksOpsScreens(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountEntityAdmin(t, app, Config{AllEntities: true}, testUser{"u1"})
+
+	rr := get(h, "/admin/e/posts")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /admin/e/posts = %d", rr.Code)
+	}
+	for _, href := range []string{`href="/admin"`, `href="/admin/audit"`} {
+		if !strings.Contains(rr.Body.String(), href) {
+			t.Errorf("entity nav has no %s link", href)
+		}
+	}
+}
