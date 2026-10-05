@@ -64,8 +64,14 @@ reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ### What a grant may reach
 
 A grant reaches its surface's own route subtree (the path of the screen it
-carries) and the runtime's `/__gofastr/*` endpoints. **Everything else
-answers 403** until the surface says otherwise:
+carries) and the browser-runtime endpoints uihost mounts under `/__gofastr`:
+the runtime scripts and stylesheets, `/__gofastr/action`, `/__gofastr/sse`,
+the widget routes (`/__gofastr/widgets`, `/__gofastr/widget/*`), the
+`comp`, `runtime`, `compute`, `pwa` and `icons` asset trees, and the embed
+endpoints themselves. That is a fixed list, not the whole `/__gofastr`
+subtree: batteries mount there too (`battery/rtc` at `/__gofastr/rtc`, the
+desktop bridge at `/__gofastr/desktop`), and a grant reaches none of them.
+**Everything else answers 403** until the surface says otherwise:
 
 ```go
 Surface{
@@ -91,6 +97,12 @@ for you, so the most dangerous routes are the ones the author never wrote.
 framework-mounted route: a configuration that cannot be right should not
 start. When a request is refused, the 403 names the surface, the path, and the
 `Reach` entry that would allow it.
+
+Reserved prefixes are enforced at request time as well. A battery that
+implements `framework.EmbedReserving` (`battery/admin`, `battery/print`, the
+auth token routes, `battery/rtc`, `battery/desktop`) registers the prefix it
+actually mounted, and a grant-carrying request under that prefix answers 403
+whatever the surface declares.
 
 ### Scopes narrow further, within reach
 

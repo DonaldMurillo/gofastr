@@ -107,6 +107,7 @@ type UIHost struct {
 	actionHash          map[string]string                    // componentID → content hash of the compiled JS (?v= addressing)
 	actionHandlers      map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
+	actionScreens       map[string]*app.Screen               // componentID → the screen whose Policy chain gates its actions (AutoCompileActions)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
 	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
@@ -1046,6 +1047,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		actionHash:     make(map[string]string),
 		actionHandlers: make(map[string]*component.ActionRegistry),
 		actionComps:    make(map[string]component.Component),
+		actionScreens:  make(map[string]*app.Screen),
 	}
 	for _, opt := range opts {
 		opt(ds)
@@ -1147,6 +1149,9 @@ func (ds *UIHost) AutoCompileActions() {
 			}
 			claimed[id] = route.Path
 			ds.CompileActions(id, screen.Component)
+			ds.mu.Lock()
+			ds.actionScreens[id] = screen
+			ds.mu.Unlock()
 		}
 	}
 }
@@ -2216,7 +2221,8 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		if s.scope != nil {
 			docAttr = " data-cui-doc"
 		}
-		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
+		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
+		fmt.Fprintf(bodyClose, `<script src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -2757,7 +2763,7 @@ func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path
 	if seed := partialSeedIslandDelta(ctx, string(fill.HTML), sent); seed != "" {
 		b.WriteString(seed)
 	}
-	fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, addr, fill.HTML)
+	fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(addr), fill.HTML)
 	fmt.Fprint(w, b.String())
 }
 
@@ -3035,9 +3041,12 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if seed := partialSeedIsland(ctx, scanned); seed != "" {
 			b.WriteString(seed)
 		}
-		fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
+		// HTML attribute escaping, not Go quoting (%q): a {param} group's
+		// layer key carries the resolved route value, and %q's `\"` ends an
+		// HTML attribute.
+		fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(res.SwapLayer), res.HTML)
 		for _, f := range res.Fills {
-			fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, f.Addr, f.HTML)
+			fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(f.Addr), f.HTML)
 		}
 		if status != 0 {
 			w.WriteHeader(status)
@@ -3419,13 +3428,36 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// Read the guarantee narrowly. A uihost session is SELF-MINTED: any
 	// same-origin caller can POST /__gofastr/session and get one with no
 	// credential, because island state needs an id before any user exists. So
-	// this check does not make server actions privileged, and a server action
-	// is NOT an authorization boundary: a handler that mutates anything must
-	// check authorization itself. What the check does buy is that a grant
-	// confers nothing here that an anonymous visitor did not already have,
-	// which is exactly what handleCreateSession's matching refusal preserves.
+	// this check does not make server actions privileged. The owning screen's
+	// Policy chain runs next, which keeps a caller the page refuses away from
+	// its actions; anything finer than that page-level gate (per record, per
+	// param) the handler must still check itself. What the session check
+	// does buy is that a grant confers nothing here that an anonymous
+	// visitor did not already have, which is exactly what
+	// handleCreateSession's matching refusal preserves.
 	if _, ok := ds.requireValidSession(w, r); !ok {
 		return
+	}
+
+	// The owning screen's Policy chain. The page render runs it before Load,
+	// and the actions are compiled from that same screen's component, so a
+	// caller the policy keeps off the page must not run them either. The
+	// action request carries no route params, so a policy that reads one
+	// sees it empty and, written to fail closed, refuses: such a screen's
+	// actions need their own check in the handler. A redirect decision is
+	// a refusal here, since an RPC cannot follow it.
+	ds.mu.RLock()
+	screen := ds.actionScreens[componentID]
+	ds.mu.RUnlock()
+	if screen != nil {
+		if d := app.ResolvePolicy(app.WithRequest(r.Context(), r), screen); d.Kind != app.DecisionAllow {
+			status := http.StatusForbidden
+			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
+				status = d.Status
+			}
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
 	}
 
 	// Invoke the Go handler if one exists

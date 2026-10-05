@@ -83,6 +83,12 @@ Every key is **camelCase**, like the rest of the framework:
 attacker-controlled multipart header), and `key` is the storage key the
 backend wrote the file under.
 
+`upload.Config.MaxSize` caps the request body before the multipart form is
+parsed, and a larger body gets `413`. Zero (the field's default) means
+`upload.DefaultMaxSize`, 32 MiB, the same cap `file.MaxProcessFileSize`
+sets on the auto-CRUD path. It does not mean "no limit". Set `MaxSize`
+to accept larger files.
+
 The key is not the client's filename. `upload.UniqueFilename` sanitizes
 the name and appends a nanosecond timestamp and 8 random bytes, so two
 users uploading `report.txt` get two objects instead of the second

@@ -151,6 +151,17 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				http.Error(w, "embed: request path is not canonical", http.StatusBadRequest)
 				return
 			}
+			// A reserved prefix is refused here as well as at boot. Boot
+			// only checks the declared Path and Reach against it; a reserved
+			// battery route that sits under a runtime prefix, or one the
+			// surface reaches some other way, must still never see a grant.
+			if res, reserved := reservedFor(h.reserved, path.Clean(routed)); reserved {
+				http.Error(w, fmt.Sprintf(
+					"embed surface %q may not reach %s: %s is mounted by the framework "+
+						"or a battery and no embed grant may reach it", g.Surface, routed, res),
+					http.StatusForbidden)
+				return
+			}
 			if !surface.MayReach(routed) {
 				http.Error(w, fmt.Sprintf(
 					"embed surface %q may not reach %s: add it to that surface's Reach "+

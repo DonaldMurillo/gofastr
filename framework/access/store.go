@@ -620,7 +620,12 @@ func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
 	if err != nil {
 		return err
 	}
-	return s.policy.ReplaceRole(role, s.mergeBaseline(role, dbPerms, tombstones)...)
+	merged, err := s.mergeBaseline(role, dbPerms, tombstones)
+	if err != nil {
+		return err
+	}
+	s.policy.replacePrepared(role, merged)
+	return nil
 }
 
 // reloadAll rebuilds every role that has a baseline or DB grant as
@@ -655,9 +660,11 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 		roles[r] = true
 	}
 	for r := range roles {
-		if err := s.policy.ReplaceRole(r, s.mergeBaseline(r, byRole[r], tombstones[r])...); err != nil {
+		merged, err := s.mergeBaseline(r, byRole[r], tombstones[r])
+		if err != nil {
 			return err
 		}
+		s.policy.replacePrepared(r, merged)
 	}
 	return nil
 }
@@ -703,11 +710,18 @@ func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, e
 	return out, rows.Err()
 }
 
-// mergeBaseline returns (baseline[role] ∪ dbPerms) − tombstones, de-duplicated,
-// baseline first. The result is what ReplaceRole installs for the role. If a
-// permission is somehow both granted and tombstoned (inconsistent write), the
-// tombstone wins, fail closed.
-func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) []Permission {
+// mergeBaseline returns expand(baseline[role] ∪ dbPerms) − expand(tombstones),
+// de-duplicated, baseline first, ready for replacePrepared. If a permission
+// is somehow both granted and tombstoned (inconsistent write), the tombstone
+// wins, fail closed.
+//
+// Expansion runs BEFORE the subtraction, the order LoadInto uses (Grant each
+// row, then Revoke the tombstones). A row persisted as a literal wildcard
+// ("reports:*", granted while the registry did not know the resource) expands
+// to every registered reports capability here; subtracting first and
+// expanding afterwards would hand back a capability that was revoked on its
+// own (reports:delete) the next time any replica reloaded the role.
+func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) ([]Permission, error) {
 	s.fanoutMu.Lock()
 	base := s.baseline[role]
 	s.fanoutMu.Unlock()
@@ -725,7 +739,11 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission
 			out = append(out, p)
 		}
 	}
-	return subtractPerms(out, tombstones)
+	expanded, err := s.policy.prepareGrants(out)
+	if err != nil {
+		return nil, err
+	}
+	return subtractPerms(expanded, s.policy.prepareRevokes(tombstones)), nil
 }
 
 // revokedTable is the revocation-tombstone table name, derived from the

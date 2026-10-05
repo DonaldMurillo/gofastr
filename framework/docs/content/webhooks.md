@@ -70,7 +70,10 @@ re-validates the actual resolved IP at connect time. This closes the
 DNS-rebinding / TOCTOU window where a host validates public at
 `Subscribe` and is then re-pointed at `127.0.0.1` /
 `169.254.169.254` / an RFC1918 address before the worker fires; the
-connection is refused before any bytes leave the process.
+connection is refused before any bytes leave the process. The default
+transport ignores `HTTP_PROXY`/`HTTPS_PROXY`: through a proxy the hook
+would see only the proxy's address. To deliver through an egress proxy,
+supply your own client (next paragraph).
 
 Supplying your own `Options.HTTPClient` (proxy, tracing, custom
 timeout) does **not** drop the guard: `New` wraps the client with a
@@ -403,6 +406,10 @@ Two are bundled:
   there is **no timestamp binding**; it offers no replay defense. Use it
   for providers that don't send a timestamp; pair it with a short
   dedupe window if you can.
+
+Both verifiers reject every request when `secret` is empty. An HMAC keyed
+with `""` is a signature anyone can compute, so a receiver wired from an
+unset environment variable answers 401 instead of accepting forgeries.
 
 Provide your own `InboundVerifier` for other schemes (RSA signatures,
 mTLS-extracted identity, a multi-key rotation lookup). Implementations

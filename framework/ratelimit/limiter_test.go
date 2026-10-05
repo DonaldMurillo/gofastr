@@ -181,7 +181,7 @@ func TestClientIP_XFFHandling(t *testing.T) {
 		t.Fatalf("default must ignore XFF, got %q", got)
 	}
 	if got := ClientIP(r, true); got != "9.9.9.9" {
-		t.Fatalf("trustXFF must use leftmost XFF entry, got %q", got)
+		t.Fatalf("trustXFF must use the XFF entry, got %q", got)
 	}
 }
 

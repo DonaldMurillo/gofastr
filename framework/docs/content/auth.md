@@ -976,10 +976,12 @@ runs a cleanup ticker from `OnStart` — no operator cron, no scheduled
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
-runs behind a reverse proxy that strips client-supplied XFF headers
-and rewrites it from the real source IP. Without that posture, an
-attacker rotates the header per request and bypasses every per-IP
-limit.
+runs behind a reverse proxy you control. Without one, an attacker
+rotates the header per request and bypasses every per-IP limit. The
+header is read from the right, so the client-supplied entries an
+appending proxy leaves on the left never pick the bucket; behind more
+than one proxy tier, list the tiers in `RateLimiterConfig.TrustedProxies`
+(see [rate-limit](rate-limit.md#x-forwarded-for-and-proxies)).
 
 **Limits are per-process by default.** At N replicas the brute-force
 budget multiplies by N and a block on one replica doesn't hold on the
@@ -1550,7 +1552,7 @@ path.
   watch for.
   Don't set `DevMode=true` as a workaround; that logs live tokens.
 - **Trusting X-Forwarded-For without a proxy.** Per the docs above:
-  default is off, and turning it on without a stripping proxy
+  default is off, and turning it on without a proxy you control
   defeats every per-IP rate limit.
 - **Treating `/auth/login` success as "fully authenticated".** A 2FA-
   enrolled user has a `PendingTwoFactor` session until they complete
