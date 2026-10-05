@@ -458,8 +458,12 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 // the same readScopeFilters every read path renders, so the answer is the
 // one GET would give for this row. Run it on the tx-bound handler so it sees
 // the uncommitted write. Unrestricted callers and entities without a
-// ReadScope cost nothing: no predicates, no query.
+// ReadScope cost nothing: no predicates, no query. A WithServerWrites
+// caller is trusted server Go and reads back the whole row.
 func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any) (bool, error) {
+	if serverWrites(ctx) {
+		return false, nil
+	}
 	preds := readScopeFilters(ctx, ch.Entity)
 	if len(preds) == 0 {
 		return false, nil

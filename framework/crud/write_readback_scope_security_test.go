@@ -154,3 +154,31 @@ func TestInProcessWritesHideReadScopedRow(t *testing.T) {
 		t.Fatalf("signed-in UpsertOne = %v, want the full row", row)
 	}
 }
+
+// WithServerWrites marks a trusted server-side caller, which reads back the
+// row it wrote whatever principal the context carries.
+func TestServerWritesReadBackFullRow(t *testing.T) {
+	ch := readBackNotes(t, nil)
+	ctx := WithServerWrites(context.Background())
+	row, err := ch.UpdateOne(ctx, "n2", map[string]any{"status": "draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row["body"] != "DRAFT-SECRET" {
+		t.Fatalf("UpdateOne under WithServerWrites = %v, want the full row", row)
+	}
+	rows, err := ch.BatchUpdateMany(ctx, []string{"n2"}, []map[string]any{{"status": "draft"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0]["body"] != "DRAFT-SECRET" {
+		t.Fatalf("BatchUpdateMany under WithServerWrites = %v, want the full row", rows[0])
+	}
+	row, err = ch.UpsertOne(ctx, map[string]any{"id": "n2", "status": "draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row["body"] != "DRAFT-SECRET" {
+		t.Fatalf("UpsertOne under WithServerWrites = %v, want the full row", row)
+	}
+}
