@@ -80,6 +80,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
+- **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.
 - **slider**: `framework/ui.Slider`, `<input type=range>` with optional live value mirror
 - **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp
 - **numberinput**: `framework/ui.NumberInput`, number field with explicit +/- buttons
@@ -174,7 +175,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **metricband**: `framework/ui.MetricBand`, flat semantic signal band (one row wide, two columns on phones) for related facts that should not become a wall of cards; `Hint` adds a trend or qualifier
 - **datatable**: `framework/ui.DataTable`, sortable / paginated / island-swappable rows; a sort header is an anchor in both postures — the URL is a list screen's state, and an embedded table's anchors carry the island contract beside their hrefs
 - **statcard**: `framework/ui.StatCard`, metric card with label/value/trend. A 4-card dashboard row lives in a `ui.Grid`; the Grid default `Min: "16rem"` wraps 3+1 inside a sidebar-narrowed content column (~900px). For a 4-up row that fits (and degrades to 2+2 on tablet), pass `Grid(GridConfig{Min: "13rem"}, …)`; the `Min` knob is the intended control, not a Grid default change (16rem stays right for general content cards).
-- **animatedcounter**: `framework/ui.AnimatedCounter`, IntersectionObserver-driven tick
+- **animatedcounter**: `framework/ui.AnimatedCounter`, IntersectionObserver-driven tick. It renders the figure alone, with no step buttons (`headless.CounterProps.Display`): a number that animates in is read, not operated
 - **timeline**: `framework/ui.Timeline`, vertical event rail
 - **sparkline**: `framework/ui.Sparkline`, pure-SVG inline trend chart
 - **piechart**: `framework/ui.PieChart`, SVG ratio chart (donut variant via InnerRadius)
@@ -220,7 +221,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 - **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media)
 - **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios
-- **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight
+- **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight; cards placed directly in a `ui.Grid` that holds only plans share their row lines, so prices and feature lists start level across a row; a card in a wrapper cell or a mixed grid keeps its own rows
 - **authcard**: `framework/ui.AuthCard`, centered card shell for login / register / reset forms (title + alert + body + footer)
 
 

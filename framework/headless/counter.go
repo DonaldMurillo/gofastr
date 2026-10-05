@@ -54,6 +54,11 @@ type CounterProps struct {
 	// DurationMS bounds the animation. Zero takes the module's
 	// default; negative is refused.
 	DurationMS int
+	// Display renders the value alone, without the two step buttons:
+	// a figure that animates in (ui.AnimatedCounter), not a control.
+	// The root then carries no group role and ignores Label, and the
+	// value is not a live region.
+	Display bool
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -95,6 +100,13 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		"aria-label": label,
 		"id":         p.ID,
 	}))
+	if p.Display {
+		// A figure is text in its sentence, not a group of controls: the
+		// page around it names it (a stat card's label), and a role here
+		// would announce "Counter, group" before the number.
+		delete(own, "role")
+		delete(own, "aria-label")
+	}
 	if p.AnimateFrom != nil {
 		// The animation is presentation: the module that binds these
 		// hooks writes the value from AnimateFrom toward Value and
@@ -131,12 +143,19 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"data-cui-signal-attr": "value",
 		}))
 	} else {
-		value = b.El("span", PartCounterValue, Internal(html.Attrs{
-			"aria-live":       "polite",
-			"data-cui-signal": p.Signal,
-		}), render.Text(strconv.Itoa(p.Value)))
+		live := html.Attrs{"aria-live": "polite", "data-cui-signal": p.Signal}
+		if p.Display {
+			// No step button changes a figure, so there is nothing to
+			// announce, and a live region would read out every frame of
+			// the tick-up animation.
+			delete(live, "aria-live")
+		}
+		value = b.El("span", PartCounterValue, Internal(live), render.Text(strconv.Itoa(p.Value)))
 	}
 
+	if p.Display {
+		return b.El("div", PartRoot, own, value)
+	}
 	return b.El("div", PartRoot, own,
 		b.El("button", PartCounterDecrement, Internal(Merge(dec, Attrs(map[string]string{
 			"type":       "button",
@@ -170,6 +189,11 @@ func init() {
 				Why:  "the final value is the SSR text, so a reader without script sees the true count while the animation is only presentation, and reduced motion keeps the number",
 				HTML: Counter(CounterProps{Signal: "deployed", Label: "Deployed", Value: 4820,
 					AnimateFrom: &zero, DurationMS: 600}, s),
+			}, {
+				Name: "display only",
+				Why:  "a figure that animates in is read, not operated: no step buttons, no group role, and no live region to read out each frame of the tick-up; the page around it names the number",
+				HTML: Counter(CounterProps{Signal: "signups", Value: 12483,
+					AnimateFrom: &zero, Display: true}, s),
 			}, {
 				Name: "the unlabelled group names itself",
 				Why:  "a counter with no label of its own still names its group — the default word is the one Strings carries, so a translated page says it in the reader's language",

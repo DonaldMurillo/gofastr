@@ -204,7 +204,6 @@ func ratingCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-rating"] {
   --ui-rating-glyph: 24px;
   --ui-rating-cell: var(--spacing-touch-target, 44px);
-  --ui-rating-color: var(--color-warning, #F59E0B);
   display: inline-flex;
   /* Flex-direction:row-reverse turns our reverse-DOM order back
      into 1..N visual order, while keeping the ~ sibling cascade. */
@@ -265,9 +264,9 @@ func ratingCSS(_ style.Theme) string {
   transform: scale(1.08);
 }
 [data-cui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 
 /* Highlight: the checked input + every later (in DOM = earlier-in-
@@ -277,16 +276,21 @@ func ratingCSS(_ style.Theme) string {
 [data-cui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
 [data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
 [data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
-  color: var(--ui-rating-color);
+  /* Amber-600 unset, not --color-warning: the warning token is tuned
+     dark for text on a chip and paints a star brown. The default lives
+     in the fallback, not on the root, so a page or theme that sets
+     --ui-rating-color on an ancestor reaches every rating under it; a
+     shape's own colour is the default beneath it. */
+  color: var(--ui-rating-color, var(--_rating-shape-color, #D97706));
 }
 
 /* Per-shape color overrides — heart / fire feel red, thumb feels
    primary, diamond feels info. Star (default) and circle / square
-   stay on the warning yellow. */
-.fui-rating--heart   { --ui-rating-color: var(--color-danger, #DC2626); }
-.fui-rating--fire    { --ui-rating-color: var(--color-danger, #DC2626); }
-.fui-rating--thumb   { --ui-rating-color: var(--color-primary, #4F46E5); }
-.fui-rating--diamond { --ui-rating-color: var(--color-info, #3B82F6); }
+   stay on the default amber. */
+.fui-rating--heart   { --_rating-shape-color: var(--color-danger, #DC2626); }
+.fui-rating--fire    { --_rating-shape-color: var(--color-danger, #DC2626); }
+.fui-rating--thumb   { --_rating-shape-color: var(--color-primary, #4F46E5); }
+.fui-rating--diamond { --_rating-shape-color: var(--color-info, #3B82F6); }
 
 [data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;

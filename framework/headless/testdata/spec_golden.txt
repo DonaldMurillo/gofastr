@@ -166,6 +166,10 @@ the value is on the page before any script runs and the buttons speak the kernel
 the final value is the SSR text, so a reader without script sees the true count while the animation is only presentation, and reduced motion keeps the number
 <div aria-label="Deployed" data-hui-counter-animate="" data-hui-counter-from="0" data-hui-counter-ms="600" role="group"><button aria-label="Decrement" data-cui-internal="" data-cui-signal-inc="deployed:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="deployed">4820</span><button aria-label="Increment" data-cui-internal="" data-cui-signal-inc="deployed" type="button">+</button></div>
 
+=== Counter / display only ===
+a figure that animates in is read, not operated: no step buttons, no group role, and no live region to read out each frame of the tick-up; the page around it names the number
+<div data-hui-counter-animate="" data-hui-counter-from="0"><span data-cui-internal="" data-cui-signal="signups">12483</span></div>
+
 === Counter / the unlabelled group names itself ===
 a counter with no label of its own still names its group — the default word is the one Strings carries, so a translated page says it in the reader's language
 <div aria-label="Counter" role="group"><button aria-label="Decrement" data-cui-internal="" data-cui-signal-inc="hits:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="hits">7</span><button aria-label="Increment" data-cui-internal="" data-cui-signal-inc="hits" type="button">+</button></div>

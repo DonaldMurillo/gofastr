@@ -66,7 +66,7 @@ func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 			html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 				html.Div(html.DivConfig{Class: "demo-stack"},
 					html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.caption)),
-					btn,
+					ui.Cluster(ui.ClusterConfig{}, btn),
 				),
 			),
 		),
@@ -159,7 +159,7 @@ var Catalog = []Entry{
 	}},
 	{"callout", "Callout", "Feedback", "Bordered prose call-out for tips or warnings.", func() render.HTML {
 		return ui.Callout(ui.CalloutConfig{Title: "Heads up", Variant: ui.StatusInfo},
-			render.Text("This component is a thin wrapper over <aside> with a left accent rule."),
+			render.Text("A thin wrapper over <aside>: an icon and a hairline frame carry the variant."),
 		)
 	}},
 	{"notification", "Notification", "Feedback", "Toast-style notification with icon + variant.", func() render.HTML {
@@ -390,12 +390,12 @@ var Catalog = []Entry{
 			Label: "Demo toolbar",
 			Groups: []ui.ToolbarGroup{
 				{Label: "Text", Children: []render.HTML{
-					ui.Button(ui.ButtonConfig{Label: "Bold"}),
-					ui.Button(ui.ButtonConfig{Label: "Italic"}),
-					ui.Button(ui.ButtonConfig{Label: "Underline"}),
+					ui.Button(ui.ButtonConfig{Label: "Bold", Variant: ui.ButtonGhost}),
+					ui.Button(ui.ButtonConfig{Label: "Italic", Variant: ui.ButtonGhost}),
+					ui.Button(ui.ButtonConfig{Label: "Underline", Variant: ui.ButtonGhost}),
 				}},
 				{Label: "Insert", Children: []render.HTML{
-					ui.Button(ui.ButtonConfig{Label: "Link"}),
+					ui.Button(ui.ButtonConfig{Label: "Link", Variant: ui.ButtonGhost}),
 				}},
 			},
 		})
@@ -838,8 +838,11 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"animatedcounter", "AnimatedCounter", "Data", "Number that animates on appearance.", func() render.HTML {
 		return ui.AnimatedCounter(ui.AnimatedCounterConfig{To: 12483})
 	}},
-	{"rating", "Rating", "Data", "Star rating input or display.", func() render.HTML {
+	{"rating", "RatingInput", "Data", "Star rating input bound to a radio group.", func() render.HTML {
 		return ui.RatingInput(ui.RatingConfig{Name: "rating", Label: "Rating", Max: 5, Value: 4})
+	}},
+	{"rating-display", "Rating", "Data", "Read-only score: a testimonial's stars, a product's average.", func() render.HTML {
+		return ui.Rating(ui.RatingDisplayConfig{Value: 4})
 	}},
 	{"counter", "Counter", "Data", "Numeric counter with +/− buttons, client-side only.", func() render.HTML {
 		return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
@@ -899,9 +902,9 @@ const page = await api.posts.list({ limit: 25 });`},
 		return ui.Carousel(ui.CarouselConfig{
 			Label: "Demo carousel",
 			Slides: []ui.CarouselSlide{
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 1"))},
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 2"))},
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 3"))},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 1", Description: "Snap-scrolls one slide at a time."})},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 2", Description: "Arrows, dots and swipe all move the track."})},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 3", Description: "No script? The track still scrolls."})},
 			},
 		})
 	}},
@@ -965,20 +968,24 @@ const page = await api.posts.list({ limit: 25 });`},
 		})
 	}},
 	{"optimisticaction", "OptimisticAction", "Feedback", "Action that commits + can rollback on error.", func() render.HTML {
-		return ui.OptimisticAction(ui.OptimisticActionConfig{
-			Endpoint:     "/__site/optimistic/edit/ok",
-			IdleLabel:    "Mark as read",
-			SuccessLabel: "Marked ✓",
-		})
+		return ui.Cluster(ui.ClusterConfig{},
+			ui.OptimisticAction(ui.OptimisticActionConfig{
+				Endpoint:     "/__site/optimistic/edit/ok",
+				IdleLabel:    "Mark as read",
+				SuccessLabel: "Marked ✓",
+			}),
+		)
 	}},
 	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle: commit, untoggle, mutex groups.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			ui.ToggleAction(ui.ToggleActionConfig{
-				Endpoint:         "/__site/toggle/noop",
-				UntoggleEndpoint: "/__site/toggle/noop",
-				IdleLabel:        "Follow",
-				CommittedLabel:   "Following ✓",
-			}),
+			ui.Cluster(ui.ClusterConfig{},
+				ui.ToggleAction(ui.ToggleActionConfig{
+					Endpoint:         "/__site/toggle/noop",
+					UntoggleEndpoint: "/__site/toggle/noop",
+					IdleLabel:        "Follow",
+					CommittedLabel:   "Following ✓",
+				}),
+			),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
 				ui.ToggleAction(ui.ToggleActionConfig{
 					Endpoint:       "/__site/toggle/noop",
@@ -1011,18 +1018,12 @@ const page = await api.posts.list({ limit: 25 });`},
     IdleLabel:    "Save",
     SuccessLabel: "Saved ✓",
 })`}),
-				html.Div(html.DivConfig{Class: "demo-row"},
-					html.Label(html.LabelConfig{
-						For:  "opt-edit-name",
-						Text: "Display name",
-					}),
-					html.Input(html.InputConfig{
-						Type:  "text",
-						Name:  "name",
-						ID:    "opt-edit-name",
-						Value: "Acme Corp",
-					}),
-				),
+				ui.TextField(ui.TextFieldConfig{
+					Name:  "name",
+					Label: "Display name",
+					ID:    "opt-edit-name",
+					Value: "Acme Corp",
+				}),
 				html.Div(html.DivConfig{Class: "demo-row"},
 					ui.OptimisticAction(ui.OptimisticActionConfig{
 						Endpoint:     "/__site/optimistic/edit/ok",
@@ -1197,12 +1198,18 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Submit a form and see the result inline: the page never reloads.",
 		func() render.HTML {
 			form := interactive.OnSubmit(
-				render.Tag("form", map[string]string{"class": "demo-form-inline"},
-					render.Tag("input", map[string]string{
-						"type": "text", "name": "message", "placeholder": "Type something…",
-						"required": "", "aria-label": "Message",
-					}),
-					ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
+				render.Tag("form", nil,
+					ui.Cluster(ui.ClusterConfig{Align: ui.AlignEnd},
+						ui.TextField(ui.TextFieldConfig{
+							Name:        "message",
+							Label:       "Message",
+							ID:          "demo-form-message",
+							Placeholder: "Type something…",
+							Required:    true,
+							ExtraAttrs:  html.Attrs{"aria-label": "Message"},
+						}),
+						ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
+					),
 				),
 				interactive.Post("/__site/interactive/submit").
 					OnSuccess(
@@ -1281,7 +1288,8 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			example := func(sig, cls, panelClass, label, copy string) render.HTML {
 				panel := render.Tag("div", map[string]string{"class": panelClass}, render.Text(copy))
 				return html.Div(html.DivConfig{Class: "demo-stack"},
-					interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig),
+					ui.Cluster(ui.ClusterConfig{},
+						interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig)),
 					interactive.AnimateOnSignal(panel, sig, cls),
 				)
 			}
@@ -1419,7 +1427,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Subtitle: "UI, REST, OpenAPI, and MCP: generated, then yours to own.",
 			Actions: []render.HTML{
 				ui.Button(ui.ButtonConfig{Label: "Get started", Variant: ui.ButtonPrimary}),
-				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/"}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonSecondary}),
 			},
 		})
 	}},
@@ -1428,13 +1436,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Copy: html.Div(html.DivConfig{Class: "demo-stack"},
 				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Typed Go, all the way down.")),
 				html.Paragraph(html.TextConfig{}, render.Text("Compose screens and APIs from the same declaration.")),
-				ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary}),
+				ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary})),
 			),
 			Media: ui.Card(ui.CardConfig{Heading: "app.go", Description: "RegisterGenerated(fwApp, site, db)"}),
 		})
 	}},
 	{"pricingcard", "PricingCard", "Marketing", "Plan tile with price, feature list, and CTA; optional featured highlight.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return ui.Cluster(ui.ClusterConfig{Align: ui.AlignStretch},
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Starter", Price: "$0", Period: "/mo", Description: "For side projects.",
 				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "#",
@@ -1487,7 +1495,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"terminalblock", "TerminalBlock", "Data", "Terminal transcript with a labelled header and OK/output lines.", func() render.HTML {
 		return ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ gofastr generate"},
-			ui.TerminalOut("Scaffolding owned Go…"),
+			ui.TerminalOut("Scaffolding owned Go…\n"),
 			ui.TerminalOK("Generated 10 file(s)"),
 		)
 	}},

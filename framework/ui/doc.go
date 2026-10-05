@@ -117,6 +117,7 @@
 //	Radio:                labelled radio with FieldErrors wiring
 //	RadioGroup:           <fieldset> of radios with shared label + errors
 //	RangeSlider:          dual-thumb range with cross-clamp
+//	Rating:               read-only score as a row of glyphs (role=img)
 //	RatingInput:          1-N star/heart rating input
 //	RecordSummary:        dominant record/event summary with bounded support rail
 //	Repeater:             dynamic add/remove item list with min/max limits

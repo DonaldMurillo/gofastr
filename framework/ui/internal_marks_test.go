@@ -680,6 +680,7 @@ var kitComponents = []kitComponent{
 	{name: "Radio", fn: Radio},
 	{name: "RadioGroup", fn: RadioGroup},
 	{name: "RangeSlider", fn: RangeSlider},
+	{name: "Rating", fn: Rating},
 	{name: "RatingInput", fn: RatingInput},
 	{name: "RecordSummary", fn: RecordSummary},
 	{name: "Repeater", fn: Repeater},

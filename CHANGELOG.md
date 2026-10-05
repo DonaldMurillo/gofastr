@@ -8,6 +8,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`headless.CounterProps.Display`** renders a counter's value alone,
+  with no step buttons, no group role and no live region, so the tick-up
+  animation is not read out frame by frame. `ui.AnimatedCounter` sets
+  it: a number that animates in is read, not operated.
+- **`ui.Rating`** draws a read-only score as a row of glyphs: a
+  testimonial's stars, a product's average. It is one `role="img"` with
+  a localized "4 out of 5" name, sized to its glyphs, and takes a
+  `ui.RatingDisplayConfig` (`ui.RatingConfig` stays RatingInput's). It
+  shares RatingInput's Shape, Size and `--ui-rating-color`. A disabled
+  RatingInput announced a form control and spaced its stars on 44px tap
+  targets.
 - **Component knobs** `--ui-form-max` (`ui.Form`'s maximum width,
   42rem), `--ui-copy-btn-*` (`ui.CopyButton`'s size and colours) and
   `--ui-status-pill-font`.
