@@ -255,6 +255,24 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 		t.Fatalf("after setSignal('unread','7') the bell says %q, want \"7 unread notifications\"",
 			evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`))
 	}
+	// A badge that is not a whole count ("12x") leaves the spoken
+	// number and the count hook alone: parseInt's leading-digits read
+	// would announce 12 for a badge that shows something else.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('unread', '12x')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.querySelector('#bell [data-hui-notification-count]').textContent === '12x'`) {
+		t.Fatal("the kernel never wrote 12x into the badge")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(150*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "7 unread notifications" {
+		t.Errorf("a badge of 12x changed the spoken count to %q, want the last whole count kept", got)
+	}
+	if got := evalString(ctx, `document.querySelector('#bell [data-hui-notification-count]').getAttribute('data-hui-notification-count')`); got != "7" {
+		t.Errorf("a badge of 12x set the count hook to %q, want 7 kept", got)
+	}
 }
 
 // innerTabsState reads the nested strip's aria-selected and tabindex

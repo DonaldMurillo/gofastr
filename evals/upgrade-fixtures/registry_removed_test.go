@@ -376,7 +376,7 @@ func loadExportedAPI(repo, ref string) (exportedAPI, error) {
 	fset := token.NewFileSet()
 	for dir, names := range byDir {
 		ix := newPkgSymbols()
-		main := false
+		indexed := false
 		for _, name := range names {
 			src, err := files.read(name)
 			if err != nil {
@@ -386,13 +386,17 @@ func loadExportedAPI(repo, ref string) (exportedAPI, error) {
 			if err != nil {
 				return nil, fmt.Errorf("parse %s at %s: %w", name, refLabel(ref), err)
 			}
+			// A package main file is skipped on its own: a
+			// build-constrained generator beside a library does not
+			// make the directory unimportable. A directory of nothing
+			// but main files indexes no package.
 			if file.Name.Name == "main" {
-				main = true
-				break
+				continue
 			}
+			indexed = true
 			ix.addFile(file)
 		}
-		if !main {
+		if indexed {
 			api[dir] = ix
 		}
 	}

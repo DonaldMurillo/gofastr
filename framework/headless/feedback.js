@@ -316,9 +316,11 @@
   function sayBellCount(bell, badge) {
     const text = (badge.textContent || '').trim();
     // An empty badge is the signal's "nothing unread" (the sheet hides
-    // it); anything else that is not a number leaves the name alone.
-    const n = text === '' ? 0 : parseInt(text, 10);
-    if (!Number.isFinite(n) || n < 0) return;
+    // it); anything else that is not a whole count leaves the name
+    // alone: parseInt would read "12x" as 12 and announce a number the
+    // badge does not show.
+    if (text !== '' && !/^\d{1,9}$/.test(text)) return;
+    const n = text === '' ? 0 : Number(text);
     const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
     if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(String(n)));
     // The badge's count attribute follows too, so the next reader of
