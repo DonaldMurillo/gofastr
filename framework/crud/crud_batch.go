@@ -347,6 +347,9 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
+		// hidden marks items whose written row the caller's ReadScope hides;
+		// they answer with the id only, as the single Update route does.
+		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
@@ -365,6 +368,9 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 					return errBatchAborted
 				}
 				res, err := ch.doUpdate(ctx, r, id, body)
+				if err == nil {
+					hidden[i], err = ch.readScopeHidesRow(ctx, res)
+				}
 				if err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}
@@ -402,6 +408,10 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		if txErr == nil {
 			for i, res := range results {
 				if res.Data == nil {
+					continue
+				}
+				if hidden[i] {
+					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)

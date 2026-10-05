@@ -69,7 +69,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		delete(body, ch.Entity.Config.TenantColumn())
 	}
 
-	var result map[string]any
+	var result, out map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		ch.InjectTenant(body, ctx)
 		ch.InjectOwner(body, ctx)
@@ -294,13 +294,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.StageEvent(ctx, event.EntityCreated, result); err != nil {
 			return fmt.Errorf("stage event: %w", err)
 		}
-		return nil
+		// The DO UPDATE RETURNING is a read handed to the caller: a row
+		// the caller's ReadScope hides comes back as its id only, as the
+		// DO NOTHING fallback's scoped SELECT already ensures for its arm.
+		out, err = ch.scopedReadBack(ctx, result)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	ch.EmitEvent(ctx, event.EntityCreated, result)
-	return result, nil
+	return out, nil
 }
 
 // upsertPreflight inspects the pre-existing row (if any) matching the body's

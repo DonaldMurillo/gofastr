@@ -436,6 +436,58 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 	return nil
 }
 
+// readScopeHidesRow reports whether the caller's read scope hides the row a
+// write just produced. A write's RETURNING is a read handed to the caller,
+// and the write gates (owner, tenant, Access) do not carry ReadScope, so a
+// caller allowed to write a row outside its scope would otherwise read every
+// column of a row GET answers 404 for. Callers answer with identityOnly when
+// this is true; the write itself stands.
+//
+// It asks the database rather than evaluating the predicates in Go, under
+// the same readScopeFilters every read path renders, so the answer is the
+// one GET would give for this row. Run it on the tx-bound handler so it sees
+// the uncommitted write. Unrestricted callers and entities without a
+// ReadScope cost nothing: no predicates, no query.
+func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any) (bool, error) {
+	preds := readScopeFilters(ctx, ch.Entity)
+	if len(preds) == 0 {
+		return false, nil
+	}
+	pk, ok := row[ch.convertKey(ch.PrimaryKey)]
+	if !ok {
+		pk, ok = row[ch.PrimaryKey]
+	}
+	if !ok || pk == nil {
+		return true, nil // cannot name the row: fail closed
+	}
+	qb := query.Select(ch.PrimaryKey).
+		From(ch.Entity.GetTable()).
+		Where(ch.PrimaryKey+" = $1", pk)
+	applyReadScopeWhere(func(sql string, args ...any) { qb.Where(sql, args...) }, preds)
+	sqlStr, args := qb.Build()
+	var hit any
+	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&hit); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return false, fmt.Errorf("read-scope check: %w", err)
+	}
+	return false, nil
+}
+
+// scopedReadBack returns row, or only its id when the caller's read scope
+// hides it. See readScopeHidesRow.
+func (ch *CrudHandler) scopedReadBack(ctx context.Context, row map[string]any) (map[string]any, error) {
+	hidden, err := ch.readScopeHidesRow(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	if hidden {
+		return ch.identityOnly(row), nil
+	}
+	return row, nil
+}
+
 // autoUpdatedAtColumn returns the name of the entity's auto-timestamp
 // "updated_at" column, or "" when the entity has no such field. Used to
 // restamp updated_at on every UPDATE / bulk update.

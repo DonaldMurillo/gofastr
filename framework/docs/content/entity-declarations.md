@@ -879,6 +879,15 @@ gates (owner, tenant, `Access`), not by the read posture. If callers can
 write but not read everything, they can still modify a row they cannot
 see.
 
+**Write responses are filtered.** The row a write hands back is a read, so
+it honours the scope. When the row an update, `_batch` update item,
+`UpdateOne`, `BatchUpdateMany` or `UpsertOne` produced is outside the
+caller's scope, the response carries only its id (`{"id": "n2"}`) instead of
+the stored columns; the write itself still happens. A caller who is
+unrestricted, or whose row stays inside the scope, gets the full row as
+before. Create responses are unchanged: they echo what the caller just
+sent.
+
 `Access` does not close that on its own. An `Access` block checks whether the
 caller holds a permission for the OPERATION, not whether they may touch a
 particular row, so a caller with `update` can still update a row `ReadScope`
