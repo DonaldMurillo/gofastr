@@ -77,7 +77,7 @@ func buttonCSS(t style.Theme) string {
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
-  line-height: 1.25;
+  line-height: var(--leading-tight, 1.2);
   /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
      wrapping action rows move whole controls to the next line first. The
      clamp below is container-driven, not viewport-driven: only a label wider
@@ -104,7 +104,7 @@ func buttonCSS(t style.Theme) string {
 .fui-button:disabled,
 .fui-button[aria-disabled="true"] {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
 }
 /* The action lifecycle marks an in-flight request with aria-busy; the
    click that started it must not still read as ready for another. */
@@ -161,15 +161,16 @@ func buttonCSS(t style.Theme) string {
    floor for compact row-action contexts (table rows, dense toolbars)
    where the parent row already provides the tap area. --large bumps
    padding + font-size for hero CTAs. Both set their own min-height,
-   so an explicit Size wins over whatever the theme's density set. */
+   so an explicit Size wins over whatever the theme's density set.
+   Knob: --ui-button-large-min-height (48px) is the large size's floor. */
 .fui-button--small {
   min-height: auto;
-  padding: 6px 10px;
-  gap: 6px;
+  padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5);
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
 }
 .fui-button--large {
-  min-height: 48px;
-  padding: 12px var(--spacing-xl, 24px);
+  min-height: var(--ui-button-large-min-height, 48px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-xl, 24px);
   font-size: var(--text-base);
 }
 ` +
@@ -183,6 +184,11 @@ func codeBlockCSS(_ style.Theme) string {
 	// page Text/Background pair. Light-mode fallback values keep the
 	// classic "dark inkwell" feel; dark-mode apps redefine the tokens
 	// in their app stylesheet under [data-color-scheme="dark"].
+	//
+	// Knobs: --ui-code-block-status-size (7px) sizes the head's status
+	// dot; --ui-code-block-gutter-width (28px) sizes the numbered line
+	// gutter, and the body's numbered padding, the band margins and the
+	// ::before anchor are calc()s over it.
 	return `[data-cui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
@@ -194,7 +200,7 @@ func codeBlockCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.6;
+  line-height: var(--leading-relaxed, 1.6);
   white-space: pre;
   -webkit-text-size-adjust: 100%;
 }
@@ -232,8 +238,8 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"] .fui-code-block__head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px var(--spacing-md, 8px) 6px 14px;
+  gap: calc(var(--spacing-sm, 4px) * 2.5);
+  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3.5);
   background: var(--ui-code-block-head-bg, var(--color-code-surface, #18181B));
   border-bottom: var(--stroke-thin, 1px) solid var(--color-code-border, #27272A);
   font-size: var(--text-xs, 12px);
@@ -247,8 +253,8 @@ func codeBlockCSS(_ style.Theme) string {
   --ui-copy-btn-hover-color: var(--color-code-text, #E4E4E7);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__status {
-  width: 7px;
-  height: 7px;
+  width: var(--ui-code-block-status-size, 7px);
+  height: var(--ui-code-block-status-size, 7px);
   border-radius: var(--radii-full, 9999px);
   background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
 }
@@ -257,7 +263,7 @@ func codeBlockCSS(_ style.Theme) string {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(var(--spacing-sm, 4px) * 2.5);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__body {
   display: block;
@@ -270,7 +276,7 @@ func codeBlockCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__body {
   counter-reset: ui-cb-ln;
-  padding-left: 52px;
+  padding-left: calc(var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px));
 }
 [data-cui-comp="ui-code-block"].fui-code-block--scroll .fui-code-block__body {
   /* Cap the body so a long file scrolls internally instead of dominating the
@@ -286,9 +292,9 @@ func codeBlockCSS(_ style.Theme) string {
   counter-increment: ui-cb-ln;
   content: counter(ui-cb-ln);
   position: absolute;
-  left: -36px;
+  left: calc((var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px)) * -1);
   top: 0;
-  width: 28px;
+  width: var(--ui-code-block-gutter-width, 28px);
   text-align: right;
   color: var(--color-text-subtle, #71717A);
   font-size: var(--text-xs, 0.75rem);
@@ -321,13 +327,13 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed {
-  margin-inline-start: -52px;
-  padding-inline-start: 52px;
+  margin-inline-start: calc(-1 * (var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px)));
+  padding-inline-start: calc(var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px));
 }
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight::before,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added::before,
 [data-cui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
-  left: 16px;
+  left: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
@@ -398,7 +404,7 @@ func sectionCSS(_ style.Theme) string {
 [data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) .fui-section__heading {
   font-size: var(--ui-section-heading-size, var(--text-3xl, 1.875rem));
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
-  line-height: 1.2;
+  line-height: var(--leading-tight, 1.2);
 }
 [data-cui-comp="ui-section"] .fui-section__description {
   margin: 0;
@@ -498,7 +504,7 @@ func formFieldCSS(_ style.Theme) string {
   /* Density owns the touch target: --fui-density-control-h is the
      theme's control height (44px comfortable, 36px compact). */
   min-height: var(--fui-density-control-h);
-  padding: var(--ui-control-padding-y, 10px) 12px;
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface);
@@ -574,6 +580,8 @@ func formSectionCSS(_ style.Theme) string {
 }
 
 func statusBadgeCSS(t style.Theme) string {
+	// Knobs: --ui-badge-line-height (1rem) pins the pill's line box so
+	// xs padding keeps it a pill at any body leading.
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -584,7 +592,7 @@ func statusBadgeCSS(t style.Theme) string {
   border-radius: var(--radii-md);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
-  line-height: 1rem;
+  line-height: var(--ui-badge-line-height, 1rem);
   border: var(--stroke-thin, 1px) solid transparent;
   /* A pill states one word; wrapping mid-label breaks the shape and
      the reading. Narrow columns must give the badge room, not fold
@@ -656,13 +664,17 @@ func calloutCSS(t style.Theme) string {
 	// admonitions are a recognizable AI-template tell; the framework
 	// avoids them. The full border stays neutral; the surface tint
 	// carries the variant cue at adequate contrast.
+	//
+	// Knob: --ui-callout-icon-size (18px) squares the ::before glyph
+	// disc; --ui-callout-icon / --ui-callout-accent below carry its
+	// content and colour.
 	return `[data-cui-comp="ui-callout"] {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
-  padding: 12px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg);
   background: var(--color-surface);
@@ -678,11 +690,11 @@ func calloutCSS(t style.Theme) string {
   grid-row: 1 / span 2;
   display: inline-grid;
   place-items: center;
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: var(--ui-callout-icon-size, 18px);
+  block-size: var(--ui-callout-icon-size, 18px);
   margin-block-start: 1px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(var(--text-xs, 0.75rem) * 0.917);
   font-weight: var(--font-weight-bold);
   font-style: normal;
   line-height: 1;
@@ -749,8 +761,8 @@ func statCardCSS(_ style.Theme) string {
   font-size: var(--text-3xl);
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: var(--tracking-tight, -0.02em);
+  line-height: var(--leading-tight, 1.2);
   color: var(--color-text);
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend {
@@ -767,6 +779,10 @@ func avatarCSS(_ style.Theme) string {
 	// The root is position:relative (not overflow:hidden) so the presence
 	// dot can sit in the corner without being clipped; the circular clip
 	// moves onto the image itself via border-radius.
+	//
+	// Knobs: --ui-avatar-size (2.5rem) and its -sm (1.5rem), -lg (3rem),
+	// -xl (4rem) variants square the circle; --ui-avatar-status-min-size
+	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot.
 	return `[data-cui-comp="ui-avatar"] {
   position: relative;
   display: inline-flex;
@@ -778,12 +794,12 @@ func avatarCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-xs, 0.75rem);
   flex-shrink: 0;
-  inline-size: 2.5rem;
-  block-size:  2.5rem;
+  inline-size: var(--ui-avatar-size, 2.5rem);
+  block-size:  var(--ui-avatar-size, 2.5rem);
 }
-:where([data-cui-comp="ui-avatar"]).fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
-:where([data-cui-comp="ui-avatar"]).fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
-:where([data-cui-comp="ui-avatar"]).fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--sm { inline-size: var(--ui-avatar-size-sm, 1.5rem); block-size: var(--ui-avatar-size-sm, 1.5rem); font-size: var(--text-xs, 0.75rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--lg { inline-size: var(--ui-avatar-size-lg, 3rem);   block-size: var(--ui-avatar-size-lg, 3rem);   font-size: var(--text-base, 1rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--xl { inline-size: var(--ui-avatar-size-xl, 4rem);   block-size: var(--ui-avatar-size-xl, 4rem);   font-size: var(--text-lg, 1.125rem); }
 [data-cui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;
   height: 100%;
@@ -791,7 +807,7 @@ func avatarCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-avatar"] .fui-avatar__initials {
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wide, 0.04em);
 }
 /* Presence dot: sized as a fraction of the avatar so it scales with
    every size variant, with a ring in the surface color so it reads as
@@ -802,10 +818,10 @@ func avatarCSS(_ style.Theme) string {
   inset-inline-end: 0.0625rem;
   inline-size: 25%;
   block-size: 25%;
-  min-inline-size: 6px;
-  min-block-size: 6px;
-  max-inline-size: 12px;
-  max-block-size: 12px;
+  min-inline-size: var(--ui-avatar-status-min-size, 6px);
+  min-block-size: var(--ui-avatar-status-min-size, 6px);
+  max-inline-size: var(--ui-avatar-status-max-size, 12px);
+  max-block-size: var(--ui-avatar-status-max-size, 12px);
   border-radius: var(--radii-full, 9999px);
   box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
 }
@@ -838,6 +854,10 @@ func formCSS(_ style.Theme) string {
 }
 
 func notificationCSS(t style.Theme) string {
+	// Knobs: --ui-notification-max-width (28rem) caps the card,
+	// --ui-notification-icon-size (1.25rem) squares the tone icon,
+	// --ui-notification-tone carries the variant accent; the floating
+	// corners sit --spacing-lg from the viewport edge.
 	return `[data-cui-comp="ui-notification"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
@@ -854,19 +874,19 @@ func notificationCSS(t style.Theme) string {
   align-items: start;
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
-  padding: 12px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   box-shadow: var(--shadow-md);
-  max-inline-size: 28rem;
+  max-inline-size: var(--ui-notification-max-width, 28rem);
 }
 [data-cui-comp="ui-notification"] .fui-notification__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
+  inline-size: var(--ui-notification-icon-size, 1.25rem);
+  block-size: var(--ui-notification-icon-size, 1.25rem);
   /* The tone rides on the glyph's color; a filled disc behind it
      outweighs the title. */
   color: var(--ui-notification-tone, var(--color-info, #2563EB));
@@ -922,10 +942,10 @@ func notificationCSS(t style.Theme) string {
   box-shadow: var(--shadow-lg);
   animation: ui-notification-slide-in var(--duration-toast-enter, 220ms) ease-out;
 }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: 1rem; left: 1rem; }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
-:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: var(--spacing-lg, 16px); right: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: var(--spacing-lg, 16px); left: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: var(--spacing-lg, 16px); right: var(--spacing-lg, 16px); }
+:where([data-cui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: var(--spacing-lg, 16px); left: var(--spacing-lg, 16px); }
 @keyframes ui-notification-slide-in {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -963,7 +983,7 @@ func toastStackCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-md, 8px);
   pointer-events: none;
-  max-width: min(360px, calc(100vw - 2rem));
+  max-width: min(var(--ui-toast-width, 360px), calc(100vw - var(--spacing-2xl, 32px)));
 }
 [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item {
   pointer-events: auto;
@@ -1013,7 +1033,7 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__caption {
   text-align: start;
-  padding: 10px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 2.5) var(--spacing-lg, 16px);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
@@ -1023,7 +1043,7 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th,
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
-  padding: 12px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
@@ -1148,7 +1168,7 @@ func dataTableCSS(_ style.Theme) string {
     border: var(--stroke-thin, 1px) solid var(--color-border);
     border-radius: var(--radii-lg);
     margin-block-end: var(--spacing-md, 8px);
-    padding: var(--spacing-sm, 4px) 12px;
+    padding: var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 3);
     background: var(--color-surface);
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody tr:hover {
@@ -1212,7 +1232,7 @@ func paginationCSS(_ style.Theme) string {
   /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
   min-inline-size: var(--spacing-touch-target);
   min-block-size: var(--spacing-touch-target);
-  padding: 0 12px;
+  padding: 0 calc(var(--spacing-sm, 4px) * 3);
   border-radius: var(--radii-md);
   border: var(--stroke-thin, 1px) solid transparent;
   background: transparent;
@@ -1241,7 +1261,7 @@ func paginationCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
   color: var(--color-text-muted, #6B7280);
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 [data-cui-comp="ui-pagination"] .pagination-gap {
@@ -1279,6 +1299,9 @@ func skipLinkCSS(_ style.Theme) string {
 }
 
 func themeToggleCSS(_ style.Theme) string {
+	// Knobs: --ui-theme-toggle-icon-size (18px) squares the sun/moon
+	// glyph; --ui-theme-toggle-option-min-height (36px) is the pill
+	// option's compact floor.
 	return `[data-cui-comp="ui-theme-toggle"] {
   display: inline-flex;
 }
@@ -1326,8 +1349,8 @@ button[data-cui-comp="ui-theme-toggle"]:focus-visible {
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-theme-toggle"] svg {
-  width: 18px;
-  height: 18px;
+  width: var(--ui-theme-toggle-icon-size, 18px);
+  height: var(--ui-theme-toggle-icon-size, 18px);
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: none; }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: block; }
@@ -1359,7 +1382,7 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   min-inline-size: auto;
-  min-block-size: 36px;
+  min-block-size: var(--ui-theme-toggle-option-min-height, 36px);
   background: transparent;
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
@@ -1369,6 +1392,10 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 }
 
 func backToTopCSS(_ style.Theme) string {
+	// Knobs: --ui-back-to-top-size (2.75rem) and its -sm (2rem) / -lg
+	// (3.5rem) variants square the button; --ui-back-to-top-icon-size-sm
+	// (14px) / -lg (24px) size their arrows. The offsets below are the
+	// --btt-offset presets over the spacing scale.
 	return `[data-cui-comp="ui-back-to-top"] {
   position: fixed;
   z-index: var(--z-sticky, 200);
@@ -1377,8 +1404,8 @@ func backToTopCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: var(--ui-back-to-top-size, 2.75rem);
+  height: var(--ui-back-to-top-size, 2.75rem);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #fff);
@@ -1439,20 +1466,20 @@ func backToTopCSS(_ style.Theme) string {
 
 /* ── Sizes ── */
 .fui-back-to-top--sm {
-  width: 2rem;
-  height: 2rem;
+  width: var(--ui-back-to-top-size-sm, 2rem);
+  height: var(--ui-back-to-top-size-sm, 2rem);
 }
 .fui-back-to-top--sm svg {
-  width: 14px;
-  height: 14px;
+  width: var(--ui-back-to-top-icon-size-sm, 14px);
+  height: var(--ui-back-to-top-icon-size-sm, 14px);
 }
 .fui-back-to-top--lg {
-  width: 3.5rem;
-  height: 3.5rem;
+  width: var(--ui-back-to-top-size-lg, 3.5rem);
+  height: var(--ui-back-to-top-size-lg, 3.5rem);
 }
 .fui-back-to-top--lg svg {
-  width: 24px;
-  height: 24px;
+  width: var(--ui-back-to-top-icon-size-lg, 24px);
+  height: var(--ui-back-to-top-icon-size-lg, 24px);
 }
 
 /* ── Variants ── */

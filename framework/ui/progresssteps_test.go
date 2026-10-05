@@ -140,7 +140,16 @@ func TestProgressStepsVerticalConnectorGeometry(t *testing.T) {
 	}
 	rule := css[i:]
 	rule = rule[:strings.Index(rule, "}")]
-	for _, want := range []string{"inset-inline-start: 13px", "inset-inline-end: auto", "top: -12px", "bottom: auto", "width: 2px", "height: 12px"} {
+	// 13px = half the 28px marker less half the 2px stroke; the bar
+	// reaches 12px up to the previous marker.
+	for _, want := range []string{
+		"inset-inline-start: calc(var(--ui-progress-steps-marker-size, 28px) / 2 - var(--stroke-thick, 2px) / 2)",
+		"inset-inline-end: auto",
+		"top: calc(var(--ui-progress-steps-connector-height, 12px) * -1)",
+		"bottom: auto",
+		"width: var(--stroke-thick, 2px)",
+		"height: var(--ui-progress-steps-connector-height, 12px)",
+	} {
 		if !strings.Contains(rule, want) {
 			t.Errorf("the vertical connector lost %q:\n%s", want, rule)
 		}

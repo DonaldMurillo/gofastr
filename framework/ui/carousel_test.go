@@ -41,7 +41,7 @@ func TestCarouselCSSRestoresTheOverlaidChrome(t *testing.T) {
 		"border-radius: var(--radii-full, 9999px);",
 		".fui-carousel__prev::before,",
 		".fui-carousel__dot::after {",
-		"inline-size: 10px;",
+		"inline-size: var(--ui-carousel-dot-size, 10px);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("carouselCSS lost %q — the overlaid chrome regressed:\n%s", want, css)

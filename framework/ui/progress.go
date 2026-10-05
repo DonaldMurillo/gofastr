@@ -68,6 +68,7 @@ func Progress(cfg ProgressConfig) render.HTML {
 var progressStyle = registry.RegisterStyle("ui-progress", progressCSS)
 
 func progressCSS(_ style.Theme) string {
+	// Knobs: --ui-progress-bar-height (0.5rem) is the track thickness.
 	return `[data-cui-comp="ui-progress"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -81,7 +82,7 @@ func progressCSS(_ style.Theme) string {
   appearance: none;
   -webkit-appearance: none;
   inline-size: 100%;
-  block-size: 0.5rem;
+  block-size: var(--ui-progress-bar-height, 0.5rem);
   border: 0;
   border-radius: var(--radii-full, 9999px);
   background: var(--color-border, #E5E7EB);

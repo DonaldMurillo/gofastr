@@ -58,6 +58,8 @@ func Glass(cfg GlassConfig, children ...render.HTML) render.HTML {
 
 var glassStyle = registry.RegisterStyle("desktopui-glass", glassCSS)
 
+// Knobs: --ui-glass-rim (rgba(255, 255, 255, 0.16)), --ui-glass-rim-thick
+// (rgba(255, 255, 255, 0.18)) — the inset rim highlight colour per variant.
 func glassCSS(_ style.Theme) string {
 	return `[data-cui-comp="desktopui-glass"] {
   border-radius: var(--radii-lg, 12px);
@@ -73,7 +75,7 @@ func glassCSS(_ style.Theme) string {
      the surface disappears into the page (the 2026-09-22 captures: a
      floating toolbar read as a bare button, an inspector as loose
      rows). measured, unverified. */
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) rgba(255, 255, 255, 0.16),
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim, rgba(255, 255, 255, 0.16)),
     0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
     var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.06));
 }
@@ -84,7 +86,7 @@ func glassCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-surface, #FFFFFF) 82%, transparent);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) rgba(255, 255, 255, 0.18),
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim-thick, rgba(255, 255, 255, 0.18)),
     0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
     var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
 }

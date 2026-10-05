@@ -99,9 +99,9 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 		bg, fg    string
 		border    string
 	}{
-		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", "transparent"},
+		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", buttonEdge},
 		{theme.Outline, "transparent", "var(--color-primary)", "var(--color-primary)"},
-		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", "transparent"},
+		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", buttonEdge},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
 		for _, variant := range []struct {
@@ -176,10 +176,10 @@ func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
 		"--fui-button-radius: var(--radii-md);",
 		"--fui-button-primary-bg: var(--color-primary);",
 		"--fui-button-primary-fg: var(--color-primary-fg);",
-		"--fui-button-primary-border: transparent;",
+		"--fui-button-primary-border: var(--ui-button-edge, transparent);",
 		"--fui-button-danger-bg: var(--color-danger);",
 		"--fui-button-danger-fg: var(--color-danger-fg);",
-		"--fui-button-danger-border: transparent;",
+		"--fui-button-danger-border: var(--ui-button-edge, transparent);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("optionless theme's :root floor missing %s\nroot options block:\n%s", want, css)

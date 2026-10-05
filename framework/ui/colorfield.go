@@ -184,7 +184,7 @@ func colorFieldCSS(_ style.Theme) string {
 }
 .fui-color__swatch:disabled,
 .fui-color__text:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

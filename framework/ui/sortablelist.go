@@ -116,6 +116,7 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 var sortablelistStyle = registry.RegisterStyle("ui-sortablelist", sortablelistCSS)
 
 func sortablelistCSS(_ style.Theme) string {
+	// Knobs: --ui-sortablelist-grip-size (28px) is the drag handle box.
 	return `[data-cui-comp="ui-sortablelist"] {
   list-style: none;
   margin: 0;
@@ -147,7 +148,7 @@ func sortablelistCSS(_ style.Theme) string {
   cursor: grabbing;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
   border-top: var(--stroke-thick, 2px) solid var(--color-primary, #4F46E5);
@@ -156,8 +157,8 @@ func sortablelistCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--ui-sortablelist-grip-size, 28px);
+  height: var(--ui-sortablelist-grip-size, 28px);
   padding: 0;
   background: transparent;
   border: 0;

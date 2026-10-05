@@ -141,6 +141,11 @@ func avatarGroupCSS(_ style.Theme) string {
 	// read as a row of loose circles rather than a stack. Stacking order (z-index via :nth-child reverse)
 	// keeps the first avatar on top, which matches the natural reading
 	// order ("Ada, then Grace, then …").
+	//
+	// Knobs: the group reads the avatar component's size knobs
+	// (--ui-avatar-size-sm/md/lg/xl, declared with the avatar sheet)
+	// so the overlap (25% of the size) and the "+N" overflow pill
+	// track the avatars they sit beside.
 	return `[data-cui-comp="ui-avatar-group"] {
   display: inline-flex;
   align-items: center;
@@ -148,16 +153,16 @@ func avatarGroupCSS(_ style.Theme) string {
   isolation: isolate;
 }
 [data-cui-comp="ui-avatar-group"] > *:not(:first-child) {
-  margin-inline-start: -0.625rem; /* default md: ~25% of a 2.5rem avatar and its ring */
+  margin-inline-start: calc(var(--ui-avatar-size, 2.5rem) * -0.25); /* default md: ~25% of a 2.5rem avatar and its ring */
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--sm > *:not(:first-child) {
-  margin-inline-start: -0.375rem;
+  margin-inline-start: calc(var(--ui-avatar-size-sm, 1.5rem) * -0.25);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--lg > *:not(:first-child) {
-  margin-inline-start: -0.75rem;
+  margin-inline-start: calc(var(--ui-avatar-size-lg, 3rem) * -0.25);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--xl > *:not(:first-child) {
-  margin-inline-start: -1rem;
+  margin-inline-start: calc(var(--ui-avatar-size-xl, 4rem) * -0.25);
 }
 /* Reverse z-index so earlier siblings sit on top of later ones — the
    first avatar is the most prominent. */
@@ -179,8 +184,8 @@ func avatarGroupCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: var(--ui-avatar-size, 2.5rem);
+  block-size: var(--ui-avatar-size, 2.5rem);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface-soft, #e5e5e5);
   color: var(--color-text, #111);
@@ -190,13 +195,13 @@ func avatarGroupCSS(_ style.Theme) string {
   border: var(--stroke-thick, 2px) solid var(--color-surface, #fff);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--sm .fui-avatar-group__overflow {
-  inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.65rem;
+  inline-size: var(--ui-avatar-size-sm, 1.5rem); block-size: var(--ui-avatar-size-sm, 1.5rem); font-size: calc(var(--text-xs, 0.75rem) * 0.867);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--lg .fui-avatar-group__overflow {
-  inline-size: 3rem; block-size: 3rem; font-size: var(--text-sm, 0.875rem);
+  inline-size: var(--ui-avatar-size-lg, 3rem); block-size: var(--ui-avatar-size-lg, 3rem); font-size: var(--text-sm, 0.875rem);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--xl .fui-avatar-group__overflow {
-  inline-size: 4rem; block-size: 4rem; font-size: var(--text-base, 1rem);
+  inline-size: var(--ui-avatar-size-xl, 4rem); block-size: var(--ui-avatar-size-xl, 4rem); font-size: var(--text-base, 1rem);
 }
 `
 }

@@ -206,9 +206,9 @@ var skeletonAvatarClasses = skeletonClasses("fui-skeleton-avatar")
 // SkeletonAvatar renders an avatar-with-text loading placeholder on
 // headless.Skeleton: a circle on the left with the text lines on the
 // right, the second line dropped when HideSubline is true. The
-// circle's diameter is the sheet's (2.5rem); a custom size is a
-// stylesheet override on the preset class, never an inline style a
-// strict CSP drops.
+// circle's diameter is the --ui-skeleton-avatar-size knob (2.5rem,
+// with a stylesheet override on the preset class as the other way a
+// custom size is set, never an inline style a strict CSP drops).
 func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
 	lines := 3 // circle + name + subline
 	if cfg.HideSubline {
@@ -262,6 +262,12 @@ var skeletonPresetsStyle = registry.RegisterStyle("ui-skeleton-presets", func(_ 
 	return skeletonPresetsCSS
 })
 
+// Knobs: --ui-skeleton-bar-height (0.85rem, every preset's bar),
+// --ui-skeleton-row-chevron-size (0.5rem), --ui-skeleton-avatar-size
+// (2.5rem, the circle; the preset's min-height and text padding are
+// calc() over it), --ui-skeleton-timeline-dot-size (12px) and
+// --ui-skeleton-line-max-width (12rem, the single-bar cap).
+
 const skeletonPresetsCSS = `
 /* The one bar style every preset draws: the shimmer the retired
    core-ui pattern owned, moved here unchanged. */
@@ -276,7 +282,7 @@ const skeletonPresetsCSS = `
   background-size: 200% 100%;
   animation: fui-skeleton-shimmer 1.4s ease-in-out infinite;
   border-radius: var(--radii-full, 9999px);
-  block-size: 0.85rem;
+  block-size: var(--ui-skeleton-bar-height, 0.85rem);
   inline-size: 100%;
 }
 @keyframes fui-skeleton-shimmer {
@@ -343,12 +349,12 @@ const skeletonPresetsCSS = `
 .fui-skeleton-row--chevron::after {
   content: "";
   display: inline-block;
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
+  inline-size: var(--ui-skeleton-row-chevron-size, 0.5rem);
+  block-size: var(--ui-skeleton-row-chevron-size, 0.5rem);
   border-block-start: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
   border-inline-end: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
   transform: rotate(45deg);
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }
 
 /* Avatar: the first line is the circle, the rest are the text
@@ -360,14 +366,14 @@ const skeletonPresetsCSS = `
   display: grid;
   row-gap: var(--spacing-xs, 2px);
   align-content: center;
-  min-block-size: 2.5rem;
-  padding-inline-start: calc(2.5rem + var(--spacing-md, 8px));
+  min-block-size: var(--ui-skeleton-avatar-size, 2.5rem);
+  padding-inline-start: calc(var(--ui-skeleton-avatar-size, 2.5rem) + var(--spacing-md, 8px));
 }
 .fui-skeleton-avatar > .fui-skeleton__line:first-child {
   position: absolute;
   inset-block-start: 0;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: var(--ui-skeleton-avatar-size, 2.5rem);
+  block-size: var(--ui-skeleton-avatar-size, 2.5rem);
   border-radius: var(--radii-full, 9999px);
 }
 .fui-skeleton-avatar > .fui-skeleton__line:nth-child(2) { inline-size: 60%; }
@@ -391,8 +397,8 @@ const skeletonPresetsCSS = `
   grid-row: span 3;
   justify-self: center;
   align-self: start;
-  inline-size: 12px;
-  block-size: 12px;
+  inline-size: var(--ui-skeleton-timeline-dot-size, 12px);
+  block-size: var(--ui-skeleton-timeline-dot-size, 12px);
   border-radius: var(--radii-full, 9999px);
   margin-block-start: var(--spacing-xs, 2px);
 }
@@ -406,5 +412,5 @@ const skeletonPresetsCSS = `
    shape that never arrives. Capped so it reads as a run of text, not
    a full-width block. */
 .fui-skeleton-line { display: block; }
-.fui-skeleton-line > .fui-skeleton__line { inline-size: min(100%, 12rem); }
+.fui-skeleton-line > .fui-skeleton__line { inline-size: min(100%, var(--ui-skeleton-line-max-width, 12rem)); }
 `

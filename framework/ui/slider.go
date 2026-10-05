@@ -89,6 +89,11 @@ func Slider(cfg SliderConfig) render.HTML {
 var sliderStyle = registry.RegisterStyle("ui-slider", sliderCSS)
 
 func sliderCSS(_ style.Theme) string {
+	// Knobs: --ui-slider-track-height (6px, the runnable track's bar),
+	// --ui-slider-thumb-size (20px, the WebKit thumb) and
+	// --ui-slider-thumb-size-moz (18px, the Firefox thumb, whose box
+	// swallows the border differently). The WebKit thumb's centring
+	// margin is calc() over the track and thumb knobs.
 	return `[data-cui-comp="ui-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -127,20 +132,20 @@ func sliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-slider"] .fui-slider__input:focus { outline: none; }
 /* WebKit + Blink */
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-runnable-track {
-  height: 6px;
+  height: var(--ui-slider-track-height, 6px);
   background: var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
+  width: var(--ui-slider-thumb-size, 20px);
+  height: var(--ui-slider-thumb-size, 20px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
   border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
   box-shadow: var(--shadow-sm);
-  margin-top: -7px;
+  margin-top: calc((var(--ui-slider-track-height, 6px) - var(--ui-slider-thumb-size, 20px)) / 2);
   cursor: pointer;
   transition: transform var(--duration-fast, 150ms) ease;
 }
@@ -152,13 +157,13 @@ func sliderCSS(_ style.Theme) string {
 }
 /* Firefox */
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-track {
-  height: 6px;
+  height: var(--ui-slider-track-height, 6px);
   background: var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: var(--ui-slider-thumb-size-moz, 18px);
+  height: var(--ui-slider-thumb-size-moz, 18px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
   border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
@@ -170,7 +175,7 @@ func sliderCSS(_ style.Theme) string {
 }
 
 [data-cui-comp="ui-slider"].is-disabled .fui-slider__input {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

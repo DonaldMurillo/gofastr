@@ -87,7 +87,7 @@ func pageHeaderCSS(t style.Theme) string {
 		Set("padding", "0", "border-bottom", "0").
 		End().
 		Rule("&.fui-page-header--compact h2.fui-page-header__title").
-		Set("font-size", "var(--text-lg)", "line-height", "1.3").
+		Set("font-size", "var(--text-lg)", "line-height", "calc(var(--leading-snug, 1.4) - 0.1)").
 		End().
 		MustBuild()
 }

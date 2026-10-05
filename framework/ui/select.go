@@ -114,7 +114,7 @@ func selectCSS(_ style.Theme) string {
 	return `.fui-select {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  padding: var(--ui-control-padding-y, 10px) 12px;
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   box-shadow: var(--shadow-xs);
   transition: border-color var(--duration-fast, 150ms);
@@ -129,7 +129,7 @@ func selectCSS(_ style.Theme) string {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%2371717A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  padding-right: 36px;
+  padding-right: calc(var(--spacing-sm, 4px) * 9);
   cursor: pointer;
   min-block-size: var(--fui-density-control-h);
   max-inline-size: 100%;
@@ -143,7 +143,7 @@ func selectCSS(_ style.Theme) string {
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-select:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 /* Phones keep text-base so iOS does not zoom into the focused control. */

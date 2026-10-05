@@ -72,6 +72,8 @@ func TerminalOK(s string) render.HTML {
 var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlockCSS)
 
 func terminalBlockCSS(_ style.Theme) string {
+	// Knobs: --ui-terminal-block-dot-size (7px) is the head's status
+	// dot (beside the head-border and ok-color knobs below).
 	return `[data-cui-comp="ui-terminal-block"] {
   border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
@@ -85,20 +87,20 @@ func terminalBlockCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
-  padding: 6px 12px;
+  padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3);
   border-bottom: var(--stroke-thin, 1px) solid var(--ui-terminal-block-head-border, var(--color-border, rgba(0,0,0,0.1)));
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
 [data-cui-comp="ui-terminal-block"] .fui-terminal-block__dot {
-  width: 7px;
-  height: 7px;
+  width: var(--ui-terminal-block-dot-size, 7px);
+  height: var(--ui-terminal-block-dot-size, 7px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, currentColor);
 }
 [data-cui-comp="ui-terminal-block"] .fui-terminal-block__body {
-  padding: 10px 12px;
-  line-height: 1.7;
+  padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
+  line-height: calc(var(--leading-relaxed, 1.6) + 0.1);
   color: var(--color-text, #18181B);
   white-space: pre-wrap;
 }

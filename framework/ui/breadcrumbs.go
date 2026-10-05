@@ -105,7 +105,7 @@ func breadcrumbsCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
   color: var(--color-text-muted, #6B7280);
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link {
   color: var(--color-text-muted, #6B7280);

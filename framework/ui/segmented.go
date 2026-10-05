@@ -179,6 +179,11 @@ func segmentedCSS(_ style.Theme) string {
 	// sliding indicator is sized to one column via the data-count
 	// attribute on the wrapper, then translated by translateX(100% *
 	// position). Math works because every column is the same width.
+	//
+	// Knobs: --ui-segmented-min-width-2…-6 (16/22/26/30/34rem, the
+	// per-count minimum widths), --ui-segmented-indicator-shadow (the
+	// sliding pill's two-layer shadow). The indicator's insets and
+	// width follow the wrapper's --spacing-sm padding.
 	return `[data-cui-comp="ui-segmented"] {
   position: relative;
   display: inline-grid;
@@ -199,11 +204,11 @@ func segmentedCSS(_ style.Theme) string {
   inline-size: fit-content;
   max-inline-size: 100%;
 }
-:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: min(16rem, 100%); }
-:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: min(22rem, 100%); }
-:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: min(26rem, 100%); }
-:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: min(30rem, 100%); }
-:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: min(34rem, 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: min(var(--ui-segmented-min-width-2, 16rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: min(var(--ui-segmented-min-width-3, 22rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: min(var(--ui-segmented-min-width-4, 26rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: min(var(--ui-segmented-min-width-5, 30rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: min(var(--ui-segmented-min-width-6, 34rem), 100%); }
 
 [data-cui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
@@ -243,7 +248,7 @@ func segmentedCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: var(--opacity-disabled, 0.5);
 }
 
 /* Sliding pill indicator. Sized to one column width via the data-count
@@ -252,22 +257,22 @@ func segmentedCSS(_ style.Theme) string {
 [data-cui-comp="ui-segmented"] .fui-segmented__indicator {
   position: absolute;
   z-index: 0;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  inline-size: calc((100% - 8px) / 2);
+  top: var(--spacing-sm, 4px);
+  bottom: var(--spacing-sm, 4px);
+  left: var(--spacing-sm, 4px);
+  inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   background: var(--color-surface, #fff);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08),
-              0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05);
+  box-shadow: var(--ui-segmented-indicator-shadow, 0 1px 2px rgba(0,0,0,0.08),
+              0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05));
   transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
-[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
-[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
-[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
-[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
-[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
+[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2); }
+[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 3); }
+[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 4); }
+[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 5); }
+[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 6); }
 
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }

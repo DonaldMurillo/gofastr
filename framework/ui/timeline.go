@@ -148,10 +148,13 @@ func timelineCSS(_ style.Theme) string {
 [data-cui-comp="ui-timeline"] .fui-timeline__item::before {
   content: "";
   position: absolute;
-  left: calc(var(--spacing-lg, 16px) / 2 - 1px);
+  /* Centre the rail on the dot column's midpoint: (column − rail)/2.
+     Knobs: --ui-timeline-rail-width (2px), --ui-timeline-dot-size
+     (12px). */
+  left: calc((var(--spacing-lg, 16px) - var(--ui-timeline-rail-width, 2px)) / 2);
   top: var(--spacing-md, 8px);
   bottom: 0;
-  width: 2px;
+  width: var(--ui-timeline-rail-width, 2px);
   background: var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__item:last-child::before {
@@ -159,14 +162,14 @@ func timelineCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__dot {
   display: inline-block;
-  width: 12px;
-  height: 12px;
+  width: var(--ui-timeline-dot-size, 12px);
+  height: var(--ui-timeline-dot-size, 12px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-text-muted, #52525B);
   border: var(--stroke-thick, 2px) solid var(--color-background, #FFFFFF);
-  /* Centre the 12px dot on the title's first line (text-sm at the
+  /* Centre the dot on the title's first line (text-sm at the
      body's 1.5 line height). */
-  margin-top: calc((var(--text-sm, 0.875rem) * 1.5 - 12px) / 2);
+  margin-top: calc((var(--text-sm, 0.875rem) * 1.5 - var(--ui-timeline-dot-size, 12px)) / 2);
   align-self: start;
   justify-self: center;
   position: relative;
@@ -201,12 +204,12 @@ func timelineCSS(_ style.Theme) string {
   margin: 0;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__body {
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 
 /* Variant dots — colored highlights for state changes. Scoped under

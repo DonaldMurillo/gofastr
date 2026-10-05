@@ -84,6 +84,7 @@ var pollingIndicatorStyle = registry.RegisterStyle("ui-polling-indicator", func(
 	return pollingIndicatorCSSText
 })
 
+// Knobs: --ui-polling-indicator-dot-size (0.5rem) sizes the dot.
 const pollingIndicatorCSSText = `
 .fui-polling-indicator {
   display: inline-flex;
@@ -94,8 +95,8 @@ const pollingIndicatorCSSText = `
   line-height: 1;
 }
 .fui-polling-indicator__dot {
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
+  inline-size: var(--ui-polling-indicator-dot-size, 0.5rem);
+  block-size: var(--ui-polling-indicator-dot-size, 0.5rem);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-success, #16A34A);
   animation: ui-polling-pulse 1.6s ease-in-out infinite;
@@ -103,11 +104,11 @@ const pollingIndicatorCSSText = `
 .fui-polling-indicator--paused .fui-polling-indicator__dot {
   background: var(--color-text-muted, #6B7280);
   animation: none;
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }
 @keyframes ui-polling-pulse {
   0%   { transform: scale(1);   opacity: 1; }
-  50%  { transform: scale(1.4); opacity: 0.5; }
+  50%  { transform: scale(1.4); opacity: var(--opacity-disabled, 0.5); }
   100% { transform: scale(1);   opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {

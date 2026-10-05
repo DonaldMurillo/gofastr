@@ -83,7 +83,7 @@ func treeCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 2px);
   min-height: var(--spacing-touch-target, 44px);
-  padding: var(--spacing-sm, 4px) 6px;
+  padding: var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 1.5);
   border-radius: var(--radii-sm, 6px);
 }
 /* Focus ring only while focus is actually inside the row — the roving

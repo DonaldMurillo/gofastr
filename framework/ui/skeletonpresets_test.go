@@ -195,7 +195,7 @@ func TestSkeletonPresets_CSSCarriesThePatternPins(t *testing.T) {
 	circle := ".fui-skeleton-avatar > .fui-skeleton__line:first-child"
 	at := strings.Index(skeletonPresetsCSS, circle)
 	block := skeletonPresetsCSS[at : at+220]
-	if !strings.Contains(block, "inline-size: 2.5rem") || !strings.Contains(block, "block-size: 2.5rem") {
+	if !strings.Contains(block, "inline-size: var(--ui-skeleton-avatar-size, 2.5rem)") || !strings.Contains(block, "block-size: var(--ui-skeleton-avatar-size, 2.5rem)") {
 		t.Errorf("the circle's sides are not equal in:\n%s", block)
 	}
 }

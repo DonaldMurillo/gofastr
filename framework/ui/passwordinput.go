@@ -138,7 +138,7 @@ func passwordInputCSS(_ style.Theme) string {
   background: transparent;
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  padding: var(--ui-control-padding-y, 10px) 12px;
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   min-block-size: var(--fui-density-control-h);
   min-inline-size: 0;
 }
@@ -177,7 +177,7 @@ func passwordInputCSS(_ style.Theme) string {
   outline-offset: 0;
 }
 .fui-password__reveal:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 /* The invalid state arrives as data-invalid on the shell (the input

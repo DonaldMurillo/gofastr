@@ -77,7 +77,7 @@ func jsonViewerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-json-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__node {

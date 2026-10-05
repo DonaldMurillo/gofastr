@@ -94,7 +94,7 @@ func inputGroupCSS(_ style.Theme) string {
   background: transparent;
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  padding: var(--ui-control-padding-y, 10px) 12px;
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   color: var(--color-text, #18181B);
   min-block-size: var(--fui-density-control-h);
   min-width: 0;
@@ -117,7 +117,7 @@ func inputGroupCSS(_ style.Theme) string {
   /* Addons sit inside the field in muted text, the way a unit or a
      currency symbol reads in print; no gray slab, no divider. */
   padding-block: 0;
-  padding-inline: 12px 0;
+  padding-inline: calc(var(--spacing-sm, 4px) * 3) 0;
   background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
@@ -126,7 +126,7 @@ func inputGroupCSS(_ style.Theme) string {
 }
 .fui-input-group .fui-input-group__prepend + input,
 .fui-input-group .fui-input-group__prepend + select { padding-inline-start: var(--spacing-md, 8px); }
-.fui-input-group .fui-input-group__append { padding-inline: 0 12px; }
+.fui-input-group .fui-input-group__append { padding-inline: 0 calc(var(--spacing-sm, 4px) * 3); }
 .fui-input-group input:has(+ .fui-input-group__append),
 .fui-input-group select:has(+ .fui-input-group__append) { padding-inline-end: var(--spacing-md, 8px); }`
 }

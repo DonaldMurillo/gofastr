@@ -183,6 +183,12 @@ func progressStepsCheckIcon() string {
 var progressStepsStyle = registry.RegisterStyle("ui-progress-steps", progressStepsCSS)
 
 func progressStepsCSS(_ style.Theme) string {
+	// Knobs: --ui-progress-steps-marker-size (28px, the round step
+	// marker) and --ui-progress-steps-connector-height (12px, the
+	// vertical connector's reach above its item). The connectors'
+	// centre-line offsets are calc() over the marker size; their
+	// thickness reads --stroke-thick, the marker ring's own weight.
+
 	return `[data-cui-comp="ui-progress-steps"] {
   display: block;
 }
@@ -209,8 +215,8 @@ func progressStepsCSS(_ style.Theme) string {
   position: absolute;
   inset-inline-start: calc(-50% - var(--spacing-sm, 4px));
   inset-inline-end: 50%;
-  top: 14px;
-  height: 2px;
+  top: calc(var(--ui-progress-steps-marker-size, 28px) / 2);
+  height: var(--stroke-thick, 2px);
   background: var(--color-border, #E4E4E7);
   z-index: 0;
 }
@@ -240,8 +246,8 @@ func progressStepsCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--ui-progress-steps-marker-size, 28px);
+  height: var(--ui-progress-steps-marker-size, 28px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
   border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
@@ -301,12 +307,12 @@ func progressStepsCSS(_ style.Theme) string {
   text-align: start;
 }
 .fui-progress-steps--vertical .fui-progress-steps__item + .fui-progress-steps__item::before {
-  inset-inline-start: 13px;
+  inset-inline-start: calc(var(--ui-progress-steps-marker-size, 28px) / 2 - var(--stroke-thick, 2px) / 2);
   inset-inline-end: auto;
-  top: -12px;
+  top: calc(var(--ui-progress-steps-connector-height, 12px) * -1);
   bottom: auto;
-  width: 2px;
-  height: 12px;
+  width: var(--stroke-thick, 2px);
+  height: var(--ui-progress-steps-connector-height, 12px);
 }
 `
 }

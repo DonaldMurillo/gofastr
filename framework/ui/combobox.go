@@ -120,11 +120,13 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 var comboboxStyle = registry.RegisterStyle("ui-combobox", comboboxCSS)
 
 func comboboxCSS(_ style.Theme) string {
+	// Knobs: --ui-combobox-max-width (24rem) caps the control;
+	// --ui-combobox-listbox-max-height (18rem) caps the open list.
 	return `:where([data-cui-comp="ui-combobox"]).fui-combobox {
   position: relative;
   display: block;
   inline-size: 100%;
-  max-inline-size: 24rem;
+  max-inline-size: var(--ui-combobox-max-width, 24rem);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__label {
   display: block;
@@ -140,7 +142,7 @@ func comboboxCSS(_ style.Theme) string {
 [data-cui-comp="ui-combobox"] .fui-combobox__input {
   inline-size: 100%;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 0 12px;
+  padding: 0 calc(var(--spacing-sm, 4px) * 3);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
@@ -170,7 +172,7 @@ func comboboxCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 10px);
   box-shadow: var(--shadow-md);
-  max-block-size: 18rem;
+  max-block-size: var(--ui-combobox-listbox-max-height, 18rem);
   overflow-y: auto;
   z-index: var(--z-dropdown, 100);
 }
@@ -186,7 +188,7 @@ func comboboxCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__option {
   display: block;
-  padding: 6px var(--spacing-md, 8px);
+  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 6px);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #09090B);

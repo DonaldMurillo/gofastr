@@ -222,7 +222,7 @@ func diffViewerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-diff-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   overflow: hidden;

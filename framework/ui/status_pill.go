@@ -76,11 +76,13 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)
 
 func statusPillCSS(_ style.Theme) string {
+	// Knob: --ui-status-pill-dot-size (6px) sizes the status dot (beside
+	// the frame knobs below).
 	return `[data-cui-comp="ui-status-pill"] {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 10px;
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
+  padding: var(--spacing-xs, 2px) calc(var(--spacing-sm, 4px) * 2.5);
   font-family: var(--ui-status-pill-font, inherit);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
@@ -98,8 +100,8 @@ func statusPillCSS(_ style.Theme) string {
   display: none;
 }
 [data-cui-comp="ui-status-pill"] .fui-status-pill__dot {
-  width: 6px;
-  height: 6px;
+  width: var(--ui-status-pill-dot-size, 6px);
+  height: var(--ui-status-pill-dot-size, 6px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-text-subtle, currentColor);
 }

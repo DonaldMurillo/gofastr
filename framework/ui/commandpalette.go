@@ -311,7 +311,11 @@ func commandPaletteCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-cmd-palette"] {
   display: flex;
   flex-direction: column;
-  inline-size: min(36rem, 92vw);
+  /* Knobs: --ui-cmd-palette-width (36rem) is the panel's inline size
+     (capped by the viewport); --ui-cmd-palette-listbox-max-height
+     (24rem) caps the scrolling command list (capped by half the
+     viewport). The elevation reads the theme's dialog-tier shadow. */
+  inline-size: min(var(--ui-cmd-palette-width, 36rem), 92vw);
   /* Bound the dialog to the viewport (#325). The modal chrome centers
      the panel in a fixed wrapper padded by --spacing-lg on all sides,
      so the cap is the viewport minus both paddings. Without it a list
@@ -321,7 +325,7 @@ func commandPaletteCSS(_ style.Theme) string {
   max-block-size: calc(100dvh - 2 * var(--spacing-lg, 16px));
   background: var(--color-surface, #fff);
   border-radius: var(--radii-md, 8px);
-  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-xl, 0 16px 48px rgba(0,0,0,0.18));
   overflow: hidden;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__combobox {
@@ -370,7 +374,7 @@ func commandPaletteCSS(_ style.Theme) string {
   border: none;
   border-radius: 0;
   box-shadow: none;
-  max-block-size: min(50vh, 24rem);
+  max-block-size: min(50vh, var(--ui-cmd-palette-listbox-max-height, 24rem));
   /* The only scrolling region: Takes whatever space the bounded dialog
      has left. overflow-y: auto does double duty — it scrolls AND, per
      flexbox §4.5, zeroes the item's automatic minimum size, so the
@@ -428,7 +432,7 @@ func commandPaletteCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
   font-family: var(--font-mono, ui-monospace, monospace);
-  padding: 1px 6px;
+  padding: 1px calc(var(--spacing-sm, 4px) * 1.5);
   border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
   border-bottom-width: var(--stroke-thick, 2px);
   border-radius: var(--radii-sm, 6px);

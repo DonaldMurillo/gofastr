@@ -152,7 +152,7 @@ func pricingCardCSS(_ style.Theme) string {
   /* Stretched to the row's tallest head, the spare height goes below
      the copy, not between the name and its description. */
   align-content: start;
-  gap: 0.35rem var(--spacing-md, 8px);
+  gap: calc(var(--spacing-sm, 4px) * 1.4) var(--spacing-md, 8px);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__head > * { grid-column: 1 / -1; }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__head > .fui-pricing-card__name { grid-column: 1; grid-row: 1; }
@@ -166,7 +166,7 @@ func pricingCardCSS(_ style.Theme) string {
      surface clears 4.5:1 in both schemes. The knob overrides the text. */
   color: var(--ui-pricing-card-badge-fg, var(--color-text, #09090B));
   background-color: var(--color-surface-soft, #F4F4F5);
-  padding: 2px var(--spacing-md, 8px);
+  padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__name {
@@ -175,23 +175,23 @@ func pricingCardCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   margin: 0;
 }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: var(--leading-normal, 1.5); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__price { grid-row: 2; display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
-  font-size: 2.25rem;
+  font-size: calc(var(--text-3xl, 1.875rem) * 1.2);
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tracking-tight, -0.02em);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { grid-row: 3; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { grid-row: 3; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--spacing-sm, 4px) * 2.4); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature {
   position: relative;
-  padding-inline-start: 1.6rem;
+  padding-inline-start: calc(var(--spacing-sm, 4px) * 6.4);
   color: var(--color-text, #1B1B2A);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.45;
+  line-height: var(--leading-normal, 1.5);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature::before {
   content: "✓";

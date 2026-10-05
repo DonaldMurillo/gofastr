@@ -79,7 +79,7 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	if end := strings.Index(block, "}"); end != -1 {
 		block = block[:end]
 	}
-	if !strings.Contains(block, "width: 220px") {
+	if !strings.Contains(block, "width: var(--ui-sidebar-width, 220px)") {
 		t.Fatalf("reveal rule must restore the 220px column:\n%s", block)
 	}
 }

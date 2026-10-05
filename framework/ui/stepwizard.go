@@ -190,6 +190,9 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 // stepWizardStyle is registered in styles_components.go
 
 func stepWizardCSS(_ style.Theme) string {
+	// Knobs: --ui-step-wizard-step-dot-height (4px) is the progress
+	// rail thickness; --ui-step-wizard-action-min-height (40px) is the
+	// back/next button floor.
 	return `[data-cui-comp="ui-step-wizard"] {
   display: grid;
   gap: var(--spacing-lg, 16px);
@@ -213,7 +216,7 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot {
   flex: 1;
-  height: 4px;
+  height: var(--ui-step-wizard-step-dot-height, 4px);
   border-radius: calc(var(--radii-sm, 6px) / 3);
   background: var(--color-border, #E4E4E7);
   transition: background var(--duration-fast, 150ms) ease;
@@ -246,7 +249,7 @@ func stepWizardCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: 40px;
+  min-block-size: var(--ui-step-wizard-action-min-height, 40px);
   padding: 0 var(--spacing-lg, 16px);
   border-radius: var(--radii-md, 8px);
   font: inherit;

@@ -323,9 +323,9 @@ func lineChartCSS(_ style.Theme) string {
 [data-cui-comp="ui-line-chart"] .fui-line-chart__grid {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
 }
-[data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: 0.18; stroke: none; }
+[data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: var(--opacity-faint, 0.2); stroke: none; }
 .fui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
 .fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
 .fui-line-chart__area--success { fill: var(--color-success, #16A34A); }

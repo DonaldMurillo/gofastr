@@ -804,7 +804,7 @@ body {
   background-color: var(--color-background, #fff);
   color: var(--color-text, #18181b);
   font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
@@ -862,9 +862,9 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 }
 .skip-link:focus {
   position: fixed !important;
-  top: 8px; left: 8px;
+  top: var(--spacing-md, 8px); left: var(--spacing-md, 8px);
   width: auto; height: auto;
-  padding: 8px 16px;
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
   overflow: visible;
   clip: auto;
@@ -881,10 +881,10 @@ main[tabindex="-1"]:focus:not(:focus-visible),
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
 .cui-nav-toast {
   position: fixed;
-  right: 16px; bottom: 16px;
+  right: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
   z-index: var(--z-toast, 500);
-  max-width: calc(100vw - 32px);
-  padding: 12px 16px;
+  max-width: calc(100vw - var(--spacing-2xl, 32px));
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* Reuses the theme's always-dark inkwell pair rather than hardcoding a
      palette or inventing an inverse-surface token. CodeSurface/CodeText are
      deliberately non-inverting and contrast-tuned in both schemes, which is
@@ -894,7 +894,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   color: var(--color-code-text, #FAFAFA);
   border-radius: var(--radii-md, 8px);
   font: 0.9rem system-ui, -apple-system, sans-serif;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-lg, 0 10px 25px rgba(0,0,0,0.25));
   opacity: 0;
   transform: translateY(8px);
   transition: opacity var(--duration-fast, 150ms), transform var(--duration-fast, 150ms);
@@ -932,11 +932,13 @@ html[aria-busy="true"] {
 // drops it in favor of frameworkPageLoadingCSS when the host sets a
 // page-wide loading component (WithPageLoading): two simultaneous
 // page-wide indicators is never what an author meant.
+//
+// Knobs: --ui-nav-progress-height (2px, the strip's thickness).
 const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   content: '';
   position: fixed;
   inset: 0 0 auto 0;
-  height: 2px;
+  height: var(--ui-nav-progress-height, 2px);
   background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
   animation: fui-nav-progress 1s linear infinite;
   z-index: calc(var(--z-toast, 500) + 1);
@@ -985,7 +987,7 @@ const frameworkDimCSS = `
 [data-cui-outlet][aria-busy="true"],
 [data-cui-area][aria-busy="true"],
 [data-cui-layout-slot][aria-busy="true"] {
-  opacity: .55;
+  opacity: var(--opacity-muted, 0.6);
   transition-delay: .12s;
 }
 [data-cui-outlet][data-cui-loadstate],

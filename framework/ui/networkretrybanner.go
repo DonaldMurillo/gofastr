@@ -123,6 +123,9 @@ var networkRetryClasses = headless.Classes{
 }
 
 var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", func(_ style.Theme) string {
+	// Knobs: --ui-network-retry-banner-desc-opacity (0.9) dims the
+	// description; --ui-network-retry-banner-retry-checking-opacity
+	// (0.7) dims the retry link while a check is in flight.
 	return `[data-cui-comp="ui-network-retry-banner"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
@@ -161,7 +164,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   grid-row: 2;
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  opacity: 0.9;
+  opacity: var(--ui-network-retry-banner-desc-opacity, 0.9);
 }
 [data-cui-comp="ui-network-retry-banner"] .fui-network-retry-banner__actions {
   grid-column: 2;
@@ -177,7 +180,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   align-items: center;
   justify-content: center;
   min-height: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
-  padding: 10px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 2.5) var(--spacing-lg, 16px);
   border: var(--stroke-thin, 1px) solid var(--color-border-strong, var(--color-border, #d0d0d8));
   border-radius: var(--fui-button-radius, var(--radii-md, 8px));
   background: var(--color-surface, #fff);
@@ -190,7 +193,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
 }
 [data-cui-comp="ui-network-retry-banner"][data-state="checking"] .fui-network-retry-banner__retry {
   cursor: progress;
-  opacity: 0.7;
+  opacity: var(--ui-network-retry-banner-retry-checking-opacity, 0.7);
 }
 `
 })

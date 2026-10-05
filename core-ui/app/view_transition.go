@@ -297,9 +297,9 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 :root:active-view-transition-type(back) ::view-transition-old(root) { animation-name: cui-vt-slide-out-b; }
 :root:active-view-transition-type(back) ::view-transition-new(root) { animation-name: cui-vt-slide-in-b; }
 @keyframes cui-vt-slide-in { from { transform: translateX(100%); } }
-@keyframes cui-vt-slide-out { to { transform: translateX(-24%); opacity: .6; } }
+@keyframes cui-vt-slide-out { to { transform: translateX(-24%); opacity: var(--opacity-muted, 0.6); } }
 @keyframes cui-vt-slide-in-b { from { transform: translateX(-100%); } }
-@keyframes cui-vt-slide-out-b { to { transform: translateX(24%); opacity: .6; } }
+@keyframes cui-vt-slide-out-b { to { transform: translateX(24%); opacity: var(--opacity-muted, 0.6); } }
 `, nil
 	case "none":
 		return `/* gofastr view-transition preset "none" (root) */

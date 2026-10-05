@@ -194,7 +194,7 @@ func fileUploadCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 .fui-upload-field:has(.fui-upload__input:disabled) {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }
 .fui-upload {
   display: grid;

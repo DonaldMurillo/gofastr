@@ -388,10 +388,12 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 var validationSummaryStyle = registry.RegisterStyle("ui-validation-summary", validationSummaryCSS)
 
 func validationSummaryCSS(_ style.Theme) string {
+	// Knobs: --ui-validation-summary-link-min-height (24px) is the
+	// error link's row floor.
 	return `.fui-validation-summary {
   display: grid;
   gap: var(--spacing-sm, 4px);
-  padding: 12px var(--spacing-lg, 16px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* The destructive-alert shape Banner uses: the danger hue tints the
      hairline and the title, with no side stripe. */
   border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #DC2626) 35%, var(--color-border, #E4E4E7));
@@ -418,7 +420,7 @@ func validationSummaryCSS(_ style.Theme) string {
 .fui-validation-summary__list a {
   display: inline-flex;
   align-items: center;
-  min-block-size: 24px;
+  min-block-size: var(--ui-validation-summary-link-min-height, 24px);
   color: var(--color-danger, #DC2626);
   text-decoration: underline;
 }

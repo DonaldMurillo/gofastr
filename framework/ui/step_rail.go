@@ -210,7 +210,7 @@ func stepRailCSS(_ style.Theme) string {
 [data-cui-comp="ui-step-rail"] .fui-step-rail__meta {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   /* Long URLs in the meta line must wrap rather than overrun the
      rail's narrow column. The arbitrary break is acceptable because
      the meta line is supplemental copy, not a navigation target. */

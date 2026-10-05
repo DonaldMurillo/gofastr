@@ -223,7 +223,7 @@ func globalSearchCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-sm, 6px);
-  padding: 1px 6px;
+  padding: 1px calc(var(--spacing-sm, 4px) * 1.5);
   background: var(--color-surface-soft, #F4F4F5);
 }`
 }

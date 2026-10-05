@@ -259,7 +259,7 @@ func ratingCSS(_ style.Theme) string {
   gap: 0;
 }
 [data-cui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
-[data-cui-comp="ui-rating"].fui-rating--gap-wide { gap: 20px; }
+[data-cui-comp="ui-rating"].fui-rating--gap-wide { gap: calc(var(--spacing-sm, 4px) * 5); }
 [data-cui-comp="ui-rating"] .fui-rating__choice:hover {
   transform: scale(1.08);
 }
@@ -294,6 +294,6 @@ func ratingCSS(_ style.Theme) string {
 
 [data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }`
 }

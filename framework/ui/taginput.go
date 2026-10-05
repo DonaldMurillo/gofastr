@@ -142,14 +142,18 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
 }
+/* Knobs: --ui-tag-input-remove-size (20px) is the chip remove
+   button's square; --ui-tag-input-field-min-height (28px) holds the
+   inline text field open; --ui-tag-input-add-size (28px) is the Add
+   button's square. */
 [data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove] > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radii-full, 9999px);
+  width: var(--ui-tag-input-remove-size, 20px);
+  height: var(--ui-tag-input-remove-size, 20px);
   background: transparent;
+  border-radius: var(--radii-full, 9999px);
   border: 0;
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
@@ -169,7 +173,7 @@ func tagInputCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
-  min-block-size: 28px;
+  min-block-size: var(--ui-tag-input-field-min-height, 28px);
   padding: 0;
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__field::placeholder { color: var(--color-text-subtle); }
@@ -181,8 +185,8 @@ func tagInputCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-inline-size: 28px;
-  min-block-size: 28px;
+  min-inline-size: var(--ui-tag-input-add-size, 28px);
+  min-block-size: var(--ui-tag-input-add-size, 28px);
   border: 0;
   border-radius: var(--radii-sm, 6px);
   background: transparent;
@@ -205,7 +209,7 @@ func tagInputCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-tag-input"].is-disabled .fui-tag-input__zone {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the status live region

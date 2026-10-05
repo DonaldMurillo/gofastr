@@ -191,11 +191,12 @@ const lightboxDownloadIcon render.HTML = `<svg width="22" height="22" viewBox="0
 var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 
 func lightboxCSS(_ style.Theme) string {
+	// Knobs: --ui-lightbox-max-width (1200px) caps the viewer column.
 	return `[data-cui-comp="ui-lightbox"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   place-items: center;
-  inline-size: min(90vw, 1200px);
+  inline-size: min(90vw, var(--ui-lightbox-max-width, 1200px));
 }
 [data-cui-comp="ui-lightbox"] .fui-lightbox__figure {
   margin: 0;

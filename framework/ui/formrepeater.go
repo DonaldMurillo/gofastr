@@ -117,6 +117,8 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 }
 
 func formRepeaterCSS(_ style.Theme) string {
+	// Knobs: --ui-form-repeater-action-min-height (36px) is the row
+	// floor of both action buttons, remove and add.
 	return `[data-cui-comp="ui-form-repeater"] {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -145,7 +147,7 @@ func formRepeaterCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: 36px;
+  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
   padding: 0 var(--spacing-md, 8px);
   border: var(--stroke-thin, 1px) solid var(--color-danger, #DC2626);
   border-radius: var(--radii-md, 8px);
@@ -164,7 +166,7 @@ func formRepeaterCSS(_ style.Theme) string {
   outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add {
@@ -172,7 +174,7 @@ func formRepeaterCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   justify-self: start;
-  min-block-size: 36px;
+  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
   padding: 0 var(--spacing-md, 8px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -191,7 +193,7 @@ func formRepeaterCSS(_ style.Theme) string {
   outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the group label and the

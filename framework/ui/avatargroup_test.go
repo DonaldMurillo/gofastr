@@ -111,10 +111,12 @@ func TestAvatarGroupOverflowUsesAdaptiveSurfaceToken(t *testing.T) {
 	css := avatarGroupCSS(style.Theme{})
 	for _, want := range []string{
 		`background: var(--color-surface-soft, #e5e5e5)`,
-		`margin-inline-start: -0.625rem`,
-		`margin-inline-start: -0.375rem`,
-		`margin-inline-start: -0.75rem`,
-		`margin-inline-start: -1rem`,
+		// A quarter of each avatar size, read through the avatar's own
+		// knobs so a resized avatar keeps its overlap.
+		`margin-inline-start: calc(var(--ui-avatar-size, 2.5rem) * -0.25)`,
+		`margin-inline-start: calc(var(--ui-avatar-size-sm, 1.5rem) * -0.25)`,
+		`margin-inline-start: calc(var(--ui-avatar-size-lg, 3rem) * -0.25)`,
+		`margin-inline-start: calc(var(--ui-avatar-size-xl, 4rem) * -0.25)`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("AvatarGroup CSS missing %q:\n%s", want, css)
@@ -131,8 +133,8 @@ func TestAvatarPresenceDotIsInsetInsideCorner(t *testing.T) {
 		`inset-block-end: 0.0625rem`,
 		`inset-inline-end: 0.0625rem`,
 		`inline-size: 25%`,
-		`min-inline-size: 6px`,
-		`max-inline-size: 12px`,
+		`min-inline-size: var(--ui-avatar-status-min-size, 6px)`,
+		`max-inline-size: var(--ui-avatar-status-max-size, 12px)`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("avatar presence dot CSS missing %q:\n%s", want, css)

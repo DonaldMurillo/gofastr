@@ -940,11 +940,15 @@ func sidebarCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
   display: none;
 }
+/* Knobs: --ui-sidebar-width (220px) is the expanded inline column's
+   width (min-width and width); --ui-sidebar-rail-width (64px) is the
+   collapsed icon rail's width (the collapsible collapsed state and the
+   auto-hide rest state). */
 [data-cui-comp="ui-sidebar"] .fui-sidebar__inline {
   display: grid;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
-  min-width: 220px;
+  min-width: var(--ui-sidebar-width, 220px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__title {
   font-size: var(--text-xs, 0.75rem);
@@ -1049,8 +1053,8 @@ func sidebarCSS(_ style.Theme) string {
   padding-inline: calc(var(--spacing-sm) + 1px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
-  min-width: 64px;
-  width: 64px;
+  min-width: var(--ui-sidebar-rail-width, 64px);
+  width: var(--ui-sidebar-rail-width, 64px);
   padding-inline: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__collapse {
@@ -1109,8 +1113,8 @@ func sidebarCSS(_ style.Theme) string {
    the reveal restores the persistent column's sizing. The framework
    ships this styling (one styling surface — hosts write no CSS). */
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline {
-  min-width: 64px;
-  width: 64px;
+  min-width: var(--ui-sidebar-rail-width, 64px);
+  width: var(--ui-sidebar-rail-width, 64px);
   padding-inline: var(--spacing-sm, 4px);
   transition: width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     min-width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
@@ -1118,8 +1122,8 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:hover .fui-sidebar__inline,
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:focus-within .fui-sidebar__inline {
-  min-width: 220px;
-  width: 220px;
+  min-width: var(--ui-sidebar-width, 220px);
+  width: var(--ui-sidebar-width, 220px);
   padding-inline: var(--spacing-lg, 16px);
 }
 /* Rest-state chrome rules apply only while NOT revealed: on hover

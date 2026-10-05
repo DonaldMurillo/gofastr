@@ -120,7 +120,7 @@ func textAreaCSS(_ style.Theme) string {
 	return `.fui-textarea {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  padding: var(--ui-control-padding-y, 10px) 12px;
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
@@ -128,7 +128,7 @@ func textAreaCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   resize: vertical;
   min-block-size: var(--fui-density-control-h);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 .fui-textarea[data-cui-autogrow] {
   /* Autogrow rules the height; user resize would fight the JS. */
@@ -145,7 +145,7 @@ func textAreaCSS(_ style.Theme) string {
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-textarea:disabled {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 /* Phones keep text-base so iOS does not zoom into the focused control. */

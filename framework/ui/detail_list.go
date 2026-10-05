@@ -88,11 +88,13 @@ func DetailList(cfg DetailListConfig) render.HTML {
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)
 
 func detailListCSS(_ style.Theme) string {
+	// Knobs: --ui-detail-list-max-width (44rem) caps the list's
+	// measure (the label-column knob sits on the row rule below).
 	return `[data-cui-comp="ui-detail-list"] {
   display: flex;
   flex-direction: column;
   container-type: inline-size;
-  max-width: 44rem;
+  max-width: var(--ui-detail-list-max-width, 44rem);
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
 }

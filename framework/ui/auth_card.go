@@ -75,14 +75,15 @@ func AuthCard(cfg AuthCardConfig) render.HTML {
 var authCardStyle = registry.RegisterStyle("ui-auth-card", authCardCSS)
 
 func authCardCSS(_ style.Theme) string {
+	// Knobs: --ui-auth-card-panel-max-width (24rem) caps the card.
 	return `[data-cui-comp="ui-auth-card"] {
   display: flex;
   justify-content: center;
-  padding-block: clamp(24px, 6vw, 64px);
+  padding-block: clamp(var(--spacing-xl, 24px), 6vw, calc(var(--spacing-sm, 4px) * 16));
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__panel {
   inline-size: 100%;
-  max-inline-size: 24rem;
+  max-inline-size: var(--ui-auth-card-panel-max-width, 24rem);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl, 24px);
@@ -97,8 +98,8 @@ func authCardCSS(_ style.Theme) string {
   font-family: var(--font-heading, inherit);
   font-size: var(--text-xl, 1.25rem);
   font-weight: var(--font-weight-semibold);
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  line-height: calc(var(--leading-snug, 1.4) - 0.1);
+  letter-spacing: var(--tracking-tight, -0.02em);
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__alert {
   font-size: var(--text-sm, 0.875rem);
@@ -106,7 +107,7 @@ func authCardCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 8%, transparent);
   border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
-  padding: 0.625rem 0.75rem;
+  padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__footer {
   font-size: var(--text-sm, 0.875rem);

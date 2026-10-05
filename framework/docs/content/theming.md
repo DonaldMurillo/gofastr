@@ -90,14 +90,19 @@ parts reads as one system:
   outline-offset: var(--stroke-focus-offset)` on `:focus-visible`, in
   neutral grey rather than the brand colour. Re-skin it by changing
   `TextSubtle` and the two focus strokes, not per component.
-- **One line weight.** Borders, dividers and inset rings read
-  `--stroke-thin` and emphasised borders `--stroke-thick`; pill shapes
-  read `--radii-full`, transitions `--duration-*` and stacking layers
-  `--z-*`. A theme that sets `Strokes.Thin` to 3px, every radius to 0
-  and the shadows to hard offsets restyles the whole kit with no
-  component CSS. `gofastr verify` holds the kit to this: a bare width,
-  radius, short duration or layer in kit CSS is GOFASTR1823
-  ([contracts](contracts.md)).
+- **Every look value is a variable.** Borders, dividers and inset
+  rings read `--stroke-thin` and emphasised borders `--stroke-thick`;
+  pill shapes read `--radii-full`, transitions `--duration-*`, stacking
+  layers `--z-*`, gaps and padding `--spacing-*`, type `--text-*`,
+  `--leading-*` and `--tracking-*`, fades `--opacity-*`, elevation
+  `--shadow-*`. What no global token covers (a checkbox's box, a
+  slider's thumb, a filled button's edge) reads a `--ui-*` knob whose
+  fallback is the default. A theme that sets `Strokes.Thin` to 3px,
+  every radius to 0, the shadows to hard offsets and
+  `Knobs["ui-button-edge"]` to a solid colour restyles the whole kit
+  from its one `:root` block, with no component CSS. `gofastr verify`
+  holds the kit to this: a look value written as a literal in kit CSS
+  is GOFASTR1823 ([contracts](contracts.md)).
 - **Soft tones for status.** Badges, tags, chips and the pricing
   badge are soft fills: the tone tints the background and colours the
   text, never a solid saturated block.
@@ -650,9 +655,9 @@ where one declaration covers every rule beneath it.
 |---|---|
 | `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
 | `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `var(--radii-full)` |
-| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
+| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
-| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
+| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the `-danger` trio likewise |
 | `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
 | `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
 | `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |
@@ -835,6 +840,7 @@ Some of the knobs:
 
 | Knob | Default | What it sets |
 |---|---|---|
+| `--ui-button-edge` | `transparent` | the border colour of a filled or soft button (primary and danger); an outline button keeps its own border. A hard-edged theme sets it to `var(--color-border-strong)` or `var(--color-text)` |
 | `--ui-rating-color` | `#D97706` (amber) | the filled glyph colour of `ui.Rating` and `ui.RatingInput`; heart and fire shapes default to `--color-danger`, thumb to `--color-primary`, diamond to `--color-info`; a value set on the rating or any ancestor overrides every shape |
 | `--ui-form-max` | `42rem` | `ui.Form`'s maximum width, so a wide pane does not stretch every input across it; set `none` to fill |
 | `--ui-copy-btn-size`, `--ui-copy-btn-bg`, `--ui-copy-btn-border`, `--ui-copy-btn-color`, `--ui-copy-btn-shadow`, `--ui-copy-btn-hover-bg`, `--ui-copy-btn-hover-color` | the outline button look | `ui.CopyButton`'s size and colours; the framed `ui.CodeBlock` head sets them for a quiet button on its dark chrome |

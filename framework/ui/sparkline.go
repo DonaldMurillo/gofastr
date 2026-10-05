@@ -234,7 +234,7 @@ func sparklineCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sparkline"] .fui-sparkline__area {
   fill: currentColor;
-  opacity: 0.18;
+  opacity: var(--opacity-faint, 0.2);
   stroke: none;
 }
 

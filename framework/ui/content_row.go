@@ -184,7 +184,7 @@ func contentRowCSS(_ style.Theme) string {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl, 24px);
-  padding: clamp(24px, 3vw, 40px);
+  padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
 }
 ` + md.viewportCSS() + md.stackCSS() + lg.viewportCSS() + lg.stackCSS()
 }
@@ -226,7 +226,7 @@ func (b rowBreakpointCSS) stackCSS() string {
   /* The stacked nav band holds the menu trigger. It takes main's inline
      gutter, so the trigger lines up with the page content instead of
      sitting flush in the viewport corner. */
-  .fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) clamp(24px, 3vw, 40px); }
+  .fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10)); }
   .fui-content-row--viewport.fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) var(--spacing-md, 8px); }
   .fui-content-row:SCOPE: .fui-content-row__aside { border-inline-start: none; border-block-start: var(--stroke-thin, 1px) solid var(--color-border); }
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > main,

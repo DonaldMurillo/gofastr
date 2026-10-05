@@ -360,22 +360,26 @@ func menuCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
+/* Knobs: --ui-menu-caret-size (12px) is the trigger caret's square;
+   --ui-menu-min-width (12rem) and --ui-menu-max-width (20rem) bound
+   the panel; --ui-menu-submenu-caret-opacity (0.7) fades the submenu
+   arrow pseudo-glyph. */
 /* The caret glyph stays in the markup for no-CSS readers; the sheet
    draws the stroked chevron the Select uses in its place. */
 [data-cui-comp="ui-menu"] .fui-menu__caret {
-  inline-size: 12px;
-  block-size: 12px;
+  inline-size: var(--ui-menu-caret-size, 12px);
+  block-size: var(--ui-menu-caret-size, 12px);
   font-size: 0;
   background: currentColor;
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-cui-comp="ui-menu"] .fui-menu__panel {
   position: absolute;
   z-index: var(--z-dropdown, 100);
-  min-width: 12rem;
-  max-width: min(20rem, calc(100vw - 2rem));
+  min-width: var(--ui-menu-min-width, 12rem);
+  max-width: min(var(--ui-menu-max-width, 20rem), calc(100vw - var(--spacing-2xl, 32px)));
   padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFF);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
@@ -406,10 +410,10 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
    keeps it out of the accessibility tree. */
 [data-cui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }
 [data-cui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }
-[data-cui-comp="ui-menu"].fui-menu--bottom-start .fui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
-[data-cui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
-[data-cui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
-[data-cui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + 4px); }
+[data-cui-comp="ui-menu"].fui-menu--bottom-start .fui-menu__panel { inset-inline-start: 0; top: calc(100% + var(--spacing-sm, 4px)); }
+[data-cui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + var(--spacing-sm, 4px)); }
+[data-cui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + var(--spacing-sm, 4px)); }
+[data-cui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + var(--spacing-sm, 4px)); }
 @keyframes fui-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
@@ -442,7 +446,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
 [data-cui-comp="ui-menu"] .fui-menu__item--disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
   pointer-events: none;
 }
@@ -476,7 +480,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 [data-cui-comp="ui-menu"] .fui-menu__item--hassub::after {
   content: "▸";
   font-size: 0.75em;
-  opacity: 0.7;
+  opacity: var(--ui-menu-submenu-caret-opacity, 0.7);
 }
 :dir(rtl) [data-cui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
 /* Radio rows: the check indicator is likewise a pseudo-element —

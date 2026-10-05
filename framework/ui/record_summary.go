@@ -208,6 +208,8 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 var recordSummaryStyle = registry.RegisterStyle("ui-record-summary", recordSummaryCSS)
 var metricBandStyle = registry.RegisterStyle("ui-metric-band", metricBandCSS)
 
+// Knobs (beside the accent and title-size knobs set on the rules):
+// --ui-record-summary-copy-max-width (54rem) caps the copy column.
 func recordSummaryCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-record-summary", t).
 		Rule("&").Set(
@@ -228,12 +230,12 @@ func recordSummaryCSS(t style.Theme) string {
 		Rule(".fui-record-summary__status").Set("display", "flex", "align-items", "center", "min-inline-size", "0").End().
 		Rule(".fui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 16px)", "min-inline-size", "0").End().
 		Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr) minmax(15rem, 0.55fr)", "align-items", "start").End().
-		Rule(".fui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "54rem").End().
+		Rule(".fui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "var(--ui-record-summary-copy-max-width, 54rem)").End().
 		Rule(".fui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
 		Rule(".fui-record-summary__aside").Set("min-inline-size", "0", "max-inline-size", "100%", "color", "var(--color-text-muted, currentColor)").End().
 		Rule(".fui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "font-weight", "{font-weight.medium}", "color", "var(--color-text-muted, currentColor)").End().
-		Rule(".fui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-3xl, 1.875rem))", "font-weight", "{font-weight.semibold}", "line-height", "1.15", "letter-spacing", "-0.025em", "color", "var(--color-text, currentColor)").End().
-		Rule(".fui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "1.6").End().
+		Rule(".fui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-3xl, 1.875rem))", "font-weight", "{font-weight.semibold}", "line-height", "var(--leading-tight, 1.2)", "letter-spacing", "var(--tracking-tighter, -0.03em)", "color", "var(--color-text, currentColor)").End().
+		Rule(".fui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "var(--leading-relaxed, 1.6)").End().
 		Rule(".fui-record-summary__highlight").Set("min-inline-size", "0").End().
 		Rule(".fui-record-summary__metrics").Set("min-inline-size", "0").End().
 		Rule(".fui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End().

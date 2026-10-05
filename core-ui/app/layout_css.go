@@ -33,7 +33,7 @@ func InterceptOverlayCSS() string {
   color: var(--color-text, #18181b);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(20px, 3vw, 32px);
+  padding: clamp(calc(var(--spacing-sm, 4px) * 5), 3vw, var(--spacing-2xl, 32px));
   box-shadow: var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
 }
 /* Drawer: docked to the inline end, full height. */
@@ -69,7 +69,7 @@ func InterceptOverlayCSS() string {
 @media (prefers-reduced-motion: no-preference) {
   [data-cui-intercept-overlay] > * { animation: cui-intercept-in var(--duration-overlay-enter, 200ms) ease-out; }
   @keyframes cui-intercept-in {
-    from { transform: translateY(8px); opacity: 0.6; }
+    from { transform: translateY(8px); opacity: var(--opacity-muted, 0.6); }
     to   { transform: none; opacity: 1; }
   }
 }

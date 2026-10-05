@@ -48,10 +48,10 @@ func anchoredRailCSS(t style.Theme) string {
 			"display", "grid",
 			"grid-template-columns", "28px 1fr 28px",
 			"gap", "var(--spacing-md, 8px)",
-			"padding", "6px 0",
+			"padding", "calc(var(--spacing-sm, 4px) * 1.5) 0",
 			"color", "{colors.text-muted}",
 			"text-decoration", "none",
-			"line-height", "1.4",
+			"line-height", "var(--leading-snug, 1.4)",
 		).End().
 		Rule(".fui-anchored-rail__list a:hover").
 		Set("color", "{colors.text}").End().
@@ -64,7 +64,7 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule(".fui-anchored-rail__count").
 		Set(
 			"font-family", "{fonts.mono}",
-			"font-size", "0.625rem",
+			"font-size", "calc(var(--text-xs, 0.75rem) * 0.833)",
 			"color", "{colors.text-subtle}",
 			"text-align", "right",
 		).End().

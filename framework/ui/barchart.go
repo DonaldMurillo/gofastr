@@ -504,6 +504,7 @@ func wrapChartLabel(label string, maxChars int) []string {
 var barChartStyle = registry.RegisterStyle("ui-bar-chart", barChartCSS)
 
 func barChartCSS(_ style.Theme) string {
+	// Knobs: --ui-bar-chart-bar-hover-opacity (0.85) is the hover dim.
 	return `[data-cui-comp="ui-bar-chart"] {
   display: block;
   max-inline-size: 100%;
@@ -512,7 +513,7 @@ func barChartCSS(_ style.Theme) string {
   transition: opacity var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
-  opacity: 0.85;
+  opacity: var(--ui-bar-chart-bar-hover-opacity, 0.85);
 }
 .fui-bar-chart__bar--primary { fill: var(--color-primary, #4F46E5); }
 .fui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
@@ -527,7 +528,7 @@ func barChartCSS(_ style.Theme) string {
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__grid {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__value {
   font-size: var(--text-xs, 0.75rem);

@@ -106,6 +106,7 @@ func Hero(cfg HeroConfig) render.HTML {
 var heroStyle = registry.RegisterStyle("ui-hero", heroCSS)
 
 func heroCSS(_ style.Theme) string {
+	// Knobs: --ui-hero-copy-max-width (42rem) caps the copy column.
 	return `[data-cui-comp="ui-hero"] { display: flex; }
 :where([data-cui-comp="ui-hero"]).fui-hero--split {
   display: grid;
@@ -118,21 +119,21 @@ func heroCSS(_ style.Theme) string {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-lg, 16px);
-  max-width: 42rem;
+  max-width: var(--ui-hero-copy-max-width, 42rem);
 }
 [data-cui-comp="ui-hero"] .fui-hero__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
-  font-size: clamp(2.5rem, 6vw, 4rem);
-  line-height: 1.04;
-  letter-spacing: -0.03em;
+  font-size: clamp(calc(var(--text-3xl, 1.875rem) * 1.333), 6vw, calc(var(--text-3xl, 1.875rem) * 2.133));
+  line-height: calc(var(--leading-tight, 1.2) - 0.16);
+  letter-spacing: var(--tracking-tighter, -0.03em);
   font-weight: var(--font-weight-bold);
   color: var(--color-text, inherit);
 }
 [data-cui-comp="ui-hero"] .fui-hero__lede {
   margin: 0;
-  font-size: clamp(1.125rem, 2.2vw, 1.375rem);
-  line-height: 1.5;
+  font-size: clamp(var(--text-lg, 1.125rem), 2.2vw, calc(var(--text-2xl, 1.5rem) * 0.917));
+  line-height: var(--leading-normal, 1.5);
   color: var(--color-text-muted, inherit);
   max-width: 46ch;
 }

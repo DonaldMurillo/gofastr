@@ -215,6 +215,8 @@ func mapWith(m map[string]string, k, v string) map[string]string {
 
 var sectionMenuStyle = registry.RegisterStyle("cui-section-menu", sectionMenuCSS)
 
+// Knobs: --ui-section-menu-chevron-opacity (0.7),
+// --ui-section-menu-close-size (40px, both axes of the drawer close button).
 func sectionMenuCSS(_ style.Theme) string {
 	return `[data-cui-comp="cui-section-menu"] {
   display: block;
@@ -225,7 +227,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__body { display: block; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__lead {
   display: block;
-  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
+  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 3);
   margin-bottom: var(--spacing-md, 8px);
   color: var(--color-text, currentColor);
   font-weight: var(--font-weight-medium);
@@ -242,13 +244,13 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
   cursor: pointer;
   list-style: none;
   /* The label starts where the lead does (12px), so on a rail with no
      padding of its own it does not touch the edge; the links indent
      under it at 22px. */
-  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) 12px;
+  padding: var(--spacing-sm, 4px) 0 var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 3);
   margin-bottom: var(--spacing-sm, 4px);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
@@ -261,7 +263,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-label { flex: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__chevron {
   transition: transform var(--duration-fast, 150ms) ease;
-  opacity: 0.7;
+  opacity: var(--ui-section-menu-chevron-opacity, 0.7);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group[open] > .cui-section-menu__group-summary .cui-section-menu__chevron {
   transform: rotate(180deg);
@@ -276,14 +278,14 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__list {
   list-style: none;
   margin: 0;
-  margin-inline-start: 12px;
+  margin-inline-start: calc(var(--spacing-sm, 4px) * 3);
   padding: 0;
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link {
   display: block;
-  padding-block: 3px;
-  padding-inline: 9px 0;
+  padding-block: calc(var(--spacing-sm, 4px) * 0.75);
+  padding-inline: calc(var(--spacing-sm, 4px) * 2.25) 0;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
   border-inline-start: var(--stroke-thin, 1px) solid transparent;
@@ -303,7 +305,7 @@ func sectionMenuCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-md, 8px);
   cursor: pointer;
-  padding: var(--spacing-md, 8px) 14px;
+  padding: var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 3.5);
   border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.12));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);
@@ -323,8 +325,8 @@ func sectionMenuCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: var(--ui-section-menu-close-size, 40px);
+  height: var(--ui-section-menu-close-size, 40px);
   border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.12));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);

@@ -10,8 +10,14 @@ package admin
 // appears, every admin screen is wrapped via adminStyle.WrapHTML.
 //
 // Layout knobs an app can override on its theme without touching this file:
-//   --admin-rail   width of the desktop nav rail (default 15rem)
+//   --admin-rail   width of the desktop nav rail (default 16rem)
 //   --admin-gutter content padding (default clamp(...))
+//
+// Knobs: --ui-admin-entity-max-width (72rem), --ui-admin-toolbar-search-max-width (26rem),
+//   --ui-admin-sort-menu-min-width (13rem), --ui-admin-sort-menu-max-width (20rem),
+//   --ui-admin-filter-clear-size (1.4rem), --ui-admin-bool-dot-size (0.5rem),
+//   --ui-admin-thumb-size (2.5rem), --ui-admin-thumb-size-lg (7.5rem),
+//   --ui-admin-json-max-height (20rem), --ui-admin-input-min-width (8rem).
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -52,9 +58,9 @@ func adminCSS(_ style.Theme) string {
 .layout-admin .layout-content,
 .layout-admin > .layout-body > main {
   min-inline-size: 0;
-  padding: clamp(1.25rem, 1rem + 2vw, 2.5rem) var(--admin-gutter, clamp(1rem, 0.5rem + 3vw, 3rem));
+  padding: clamp(calc(var(--spacing-sm, 4px) * 5), var(--spacing-lg, 16px) + 2vw, calc(var(--spacing-sm, 4px) * 10)) var(--admin-gutter, clamp(1rem, 0.5rem + 3vw, 3rem));
 }
-.layout-admin .admin-entity { max-inline-size: 72rem; }
+.layout-admin .admin-entity { max-inline-size: var(--ui-admin-entity-max-width, 72rem); }
 
 @media (min-width: 900px) {
   .layout-admin .layout-body { grid-template-columns: var(--admin-rail, 16rem) minmax(0, 1fr); }
@@ -62,12 +68,12 @@ func adminCSS(_ style.Theme) string {
     background: var(--color-surface, #17181a);
     border-block-end: 0;
     border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
-    padding: clamp(1.25rem, 1rem + 1vw, 1.75rem) var(--spacing-lg, 16px);
+    padding: clamp(calc(var(--spacing-sm, 4px) * 5), var(--spacing-lg, 16px) + 1vw, calc(var(--spacing-sm, 4px) * 7)) var(--spacing-lg, 16px);
   }
 }
 
 /* ── page header rhythm ────────────────────────────────────────────────── */
-.layout-admin .admin-entity > .fui-page-header { margin-block-end: clamp(1rem, 0.5rem + 2vw, 1.75rem); }
+.layout-admin .admin-entity > .fui-page-header { margin-block-end: clamp(var(--spacing-lg, 16px), var(--spacing-md, 8px) + 2vw, calc(var(--spacing-sm, 4px) * 7)); }
 
 /* ── toolbar: search + result summary ──────────────────────────────────── */
 .admin-toolbar {
@@ -77,7 +83,7 @@ func adminCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   margin-block-end: var(--spacing-lg, 16px);
 }
-.admin-toolbar [data-cui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: 26rem; }
+.admin-toolbar [data-cui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: var(--ui-admin-toolbar-search-max-width, 26rem); }
 .admin-toolbar .fui-search,
 .admin-toolbar .fui-search__form { inline-size: 100%; }
 
@@ -87,14 +93,14 @@ func adminCSS(_ style.Theme) string {
 .admin-sort__summary {
   list-style: none;
   cursor: pointer;
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  padding-inline: 0.9rem;
+  display: inline-flex; align-items: center; gap: calc(var(--spacing-sm, 4px) * 1.6);
+  padding-inline: calc(var(--spacing-sm, 4px) * 3.6);
   min-block-size: var(--spacing-touch-target, 44px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
-  font-size: 0.9rem; font-weight: var(--font-weight-medium);
+  font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 .admin-sort__summary::-webkit-details-marker { display: none; }
@@ -102,18 +108,18 @@ func adminCSS(_ style.Theme) string {
 .admin-sort__summary:hover { border-color: var(--color-border-strong, #3d3e42); }
 .admin-sort__menu {
   position: absolute; z-index: var(--z-dropdown, 100);
-  inset-block-start: calc(100% + 0.35rem); inset-inline-start: 0;
-  min-inline-size: 13rem; max-inline-size: min(20rem, calc(100vw - 2rem));
+  inset-block-start: calc(100% + var(--spacing-sm, 4px) * 1.4); inset-inline-start: 0;
+  min-inline-size: var(--ui-admin-sort-menu-min-width, 13rem); max-inline-size: min(var(--ui-admin-sort-menu-max-width, 20rem), calc(100vw - var(--spacing-2xl, 32px)));
   max-block-size: 60vh; overflow-y: auto;
-  display: grid; gap: 1px; padding: 0.35rem;
+  display: grid; gap: 1px; padding: calc(var(--spacing-sm, 4px) * 1.4);
   background: var(--color-surface, #17181a);
   border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-md, 0 12px 32px rgba(0,0,0,0.4));
 }
 .admin-sort__opt {
-  padding: 0.5rem 0.65rem; border-radius: var(--radii-md, 8px);
-  color: var(--color-text, #f2f2f3); text-decoration: none; font-size: 0.9rem;
+  padding: var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 2.6); border-radius: var(--radii-md, 8px);
+  color: var(--color-text, #f2f2f3); text-decoration: none; font-size: var(--text-sm, 0.875rem);
   white-space: nowrap;
 }
 .admin-sort__opt:hover { background: var(--color-surface-soft, #202123); }
@@ -125,7 +131,7 @@ func adminCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
-  padding: 0.35rem 0.35rem 0.35rem 0.75rem;
+  padding: calc(var(--spacing-sm, 4px) * 1.4) calc(var(--spacing-sm, 4px) * 1.4) calc(var(--spacing-sm, 4px) * 1.4) calc(var(--spacing-sm, 4px) * 3);
   border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #17181a);
@@ -135,7 +141,7 @@ func adminCSS(_ style.Theme) string {
 .admin-filter strong { color: var(--color-text, #f2f2f3); font-weight: var(--font-weight-semibold); }
 .admin-filter__clear {
   display: inline-flex; align-items: center; justify-content: center;
-  inline-size: 1.4rem; block-size: 1.4rem; border-radius: var(--radii-full, 9999px);
+  inline-size: var(--ui-admin-filter-clear-size, 1.4rem); block-size: var(--ui-admin-filter-clear-size, 1.4rem); border-radius: var(--radii-full, 9999px);
   color: var(--color-text-muted, #a8a8ad); text-decoration: none; line-height: 1;
   transition: background var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
 }
@@ -146,7 +152,7 @@ func adminCSS(_ style.Theme) string {
    and clipped so they never dominate the row. */
 .admin-id {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, "JetBrains Mono", monospace);
-  font-size: 0.8125rem;
+  font-size: calc(var(--text-sm, 0.875rem) * 0.929);
   color: var(--color-text-subtle, #818187);
   max-inline-size: 12ch;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -154,14 +160,14 @@ func adminCSS(_ style.Theme) string {
 }
 /* Booleans read as a glanceable pill, not the word "false". */
 .admin-bool {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: 0.8125rem; font-weight: var(--font-weight-medium);
-  padding: 0.15rem 0.55rem; border-radius: var(--radii-full, 9999px);
+  display: inline-flex; align-items: center; gap: calc(var(--spacing-sm, 4px) * 1.4);
+  font-size: calc(var(--text-sm, 0.875rem) * 0.929); font-weight: var(--font-weight-medium);
+  padding: calc(var(--spacing-sm, 4px) * 0.6) calc(var(--spacing-sm, 4px) * 2.2); border-radius: var(--radii-full, 9999px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   color: var(--color-text-muted, #a8a8ad);
 }
 .admin-bool::before {
-  content: ""; inline-size: 0.5rem; block-size: 0.5rem; border-radius: var(--radii-full, 9999px);
+  content: ""; inline-size: var(--ui-admin-bool-dot-size, 0.5rem); block-size: var(--ui-admin-bool-dot-size, 0.5rem); border-radius: var(--radii-full, 9999px);
   background: var(--color-border-strong, #3d3e42);
 }
 .admin-bool[data-on="true"] { color: var(--color-text, #f2f2f3); }
@@ -201,14 +207,14 @@ func adminCSS(_ style.Theme) string {
   background: var(--color-surface, #17181a);
 }
 .admin-detail__label {
-  padding: 0.85rem 1rem;
-  font-size: var(--text-xs, 0.75rem); text-transform: uppercase; letter-spacing: 0.05em;
+  padding: calc(var(--spacing-sm, 4px) * 3.4) var(--spacing-lg, 16px);
+  font-size: var(--text-xs, 0.75rem); text-transform: uppercase; letter-spacing: calc(var(--tracking-wide, 0.04em) + 0.01em);
   color: var(--color-text-subtle, #818187);
   background: color-mix(in oklab, var(--color-surface, #17181a) 60%, var(--color-background, #0c0c0d));
   border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
 }
 .admin-detail__value {
-  padding: 0.85rem 1rem;
+  padding: calc(var(--spacing-sm, 4px) * 3.4) var(--spacing-lg, 16px);
   color: var(--color-text, #f2f2f3);
   border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   word-break: break-word;
@@ -219,8 +225,8 @@ func adminCSS(_ style.Theme) string {
 
 @media (max-width: 33rem) {
   .admin-detail { grid-template-columns: 1fr; }
-  .admin-detail__label { padding-block-end: 0.15rem; border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e); }
-  .admin-detail__value { padding-block-start: 0.15rem; border-block-start: 0; }
+  .admin-detail__label { padding-block-end: calc(var(--spacing-sm, 4px) * 0.6); border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e); }
+  .admin-detail__value { padding-block-start: calc(var(--spacing-sm, 4px) * 0.6); border-block-start: 0; }
 }
 
 /* ── header action clusters (detail Edit/Back, etc.) ────────────────────── */
@@ -228,30 +234,30 @@ func adminCSS(_ style.Theme) string {
 
 /* ── result count footer ────────────────────────────────────────────────── */
 .admin-listfoot { margin-block-start: var(--spacing-md, 8px); display: flex; justify-content: flex-end; }
-.admin-count { color: var(--color-text-subtle, #818187); font-size: 0.8125rem; }
+.admin-count { color: var(--color-text-subtle, #818187); font-size: calc(var(--text-sm, 0.875rem) * 0.929); }
 
 /* ── typed cell renderers (image / file / json / prose / mono) ──────────── */
 .admin-thumb {
-  inline-size: 2.5rem; block-size: 2.5rem; object-fit: cover;
+  inline-size: var(--ui-admin-thumb-size, 2.5rem); block-size: var(--ui-admin-thumb-size, 2.5rem); object-fit: cover;
   border-radius: var(--radii-md, 8px); border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   background: var(--color-surface-soft, #202123); vertical-align: middle;
 }
-.admin-thumb--lg { inline-size: 7.5rem; block-size: 7.5rem; }
+.admin-thumb--lg { inline-size: var(--ui-admin-thumb-size-lg, 7.5rem); block-size: var(--ui-admin-thumb-size-lg, 7.5rem); }
 .admin-file { color: var(--color-primary, #f0b429); text-decoration: none; }
 .admin-file:hover { text-decoration: underline; }
 .admin-mono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, "JetBrains Mono", monospace);
-  font-size: 0.8125rem; color: var(--color-text-muted, #a8a8ad);
+  font-size: calc(var(--text-sm, 0.875rem) * 0.929); color: var(--color-text-muted, #a8a8ad);
 }
 .admin-json {
-  margin: 0; padding: 0.75rem 1rem;
+  margin: 0; padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   background: color-mix(in oklab, var(--color-surface, #17181a) 50%, var(--color-background, #0c0c0d));
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, "JetBrains Mono", monospace);
-  font-size: 0.8125rem; line-height: 1.5;
-  overflow: auto; max-block-size: 20rem;
+  font-size: calc(var(--text-sm, 0.875rem) * 0.929); line-height: var(--leading-normal, 1.5);
+  overflow: auto; max-block-size: var(--ui-admin-json-max-height, 20rem);
 }
-.admin-prose { white-space: pre-wrap; line-height: 1.6; }
+.admin-prose { white-space: pre-wrap; line-height: var(--leading-relaxed, 1.6); }
 /* ── standalone ops pages (queue / audit / rbac / modules) ───────────────
    These pages skip the host UI host, so the registered ui-admin sheet also
    owns the body reset the host would otherwise supply, plus the small set
@@ -265,7 +271,7 @@ body.admin-standalone {
   font-family: var(--font-body, -apple-system, system-ui, sans-serif);
   background: var(--color-background, #0c0c0d);
   color: var(--color-text, #f2f2f3);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 /* Nav active link — the standalone nav is a row of ui.Link action targets;
    the current page's link carries aria-current="page". */
@@ -276,12 +282,12 @@ body.admin-standalone {
 /* Compact text input for inline cell forms (grant / revoke / assign-roles). */
 .admin-input {
   font: inherit;
-  padding: 0.4rem 0.6rem;
+  padding: calc(var(--spacing-sm, 4px) * 1.6) calc(var(--spacing-sm, 4px) * 2.4);
   border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
-  min-inline-size: 8rem;
+  min-inline-size: var(--ui-admin-input-min-width, 8rem);
 }
 .admin-input::placeholder { color: var(--color-text-muted, #a8a8ad); }
 .admin-input:focus-visible {

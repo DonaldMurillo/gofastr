@@ -83,16 +83,21 @@ func MultiSelect(cfg MultiSelectConfig) render.HTML {
 var multiselectStyle = registry.RegisterStyle("ui-multiselect", multiselectCSS)
 
 func multiselectCSS(_ style.Theme) string {
-	return `[data-cui-comp="ui-multiselect"] {
+	return `/* Knobs: --ui-multiselect-max-width (32rem) caps the root;
+   --ui-multiselect-chips-min-height (28px) holds the chips row open
+   when empty; --ui-multiselect-remove-size (22px) is the chip remove
+   button's square; --ui-multiselect-chevron-size (16px) is the
+   summary's chevron glyph. */
+[data-cui-comp="ui-multiselect"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
-  max-inline-size: 32rem;
+  max-inline-size: var(--ui-multiselect-max-width, 32rem);
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__chips {
   display: flex;
   gap: var(--spacing-xs, 2px);
   flex-wrap: wrap;
-  min-block-size: 28px;
+  min-block-size: var(--ui-multiselect-chips-min-height, 28px);
   align-items: center;
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__chips:empty::before {
@@ -118,8 +123,8 @@ func multiselectCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--ui-multiselect-remove-size, 22px);
+  height: var(--ui-multiselect-remove-size, 22px);
   border-radius: var(--radii-full, 9999px);
   background: transparent;
   border: 0;
@@ -145,7 +150,7 @@ func multiselectCSS(_ style.Theme) string {
   justify-content: space-between;
   gap: var(--spacing-md, 8px);
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 0 12px;
+  padding: 0 calc(var(--spacing-sm, 4px) * 3);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
@@ -160,8 +165,8 @@ func multiselectCSS(_ style.Theme) string {
 [data-cui-comp="ui-multiselect"] .fui-multiselect__summary::after {
   content: "";
   flex: none;
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--ui-multiselect-chevron-size, 16px);
+  block-size: var(--ui-multiselect-chevron-size, 16px);
   background: var(--color-text-muted, #52525B);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -186,7 +191,7 @@ func multiselectCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
-  padding: var(--spacing-sm, 4px) 12px;
+  padding: var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 3);
   min-block-size: var(--spacing-touch-target, 44px);
   font-size: var(--text-sm, 0.875rem);
   cursor: pointer;

@@ -309,12 +309,12 @@ func notificationBellCSS(_ style.Theme) string {
   /* Outward from the glyph's top-end corner: a single digit covers
      ~15% of the 20px glyph, a two-digit count ~24% (≤ a quarter),
      and the overshoot stays inside the 44px button's 12px margins. */
-  inset-block-start: -12px;
-  inset-inline-end: -10px;
+  inset-block-start: var(--ui-notification-bell-badge-inset-block, -12px);
+  inset-inline-end: var(--ui-notification-bell-badge-inset-inline, -10px);
   box-sizing: border-box;
-  min-inline-size: 18px;
-  block-size: 18px;
-  padding: 0 5px;
+  min-inline-size: var(--ui-notification-bell-badge-size, 18px);
+  block-size: var(--ui-notification-bell-badge-size, 18px);
+  padding: 0 calc(var(--spacing-sm, 4px) * 1.25);
   border-radius: var(--radii-full, 9999px);
   /* Status token pair — the default --color-danger is the same
      #B91C1C (red-700, ≥6.4:1 vs white), so the themed value and the
@@ -334,12 +334,17 @@ func notificationBellCSS(_ style.Theme) string {
   display: none;
 }
 
-/* Popover panel — wraps the dropped notification list. */
+/* Popover panel — wraps the dropped notification list.
+   Knobs: --ui-notification-bell-badge-inset-block (-12px) and
+   -inset-inline (-10px) offset the badge off the glyph's corner;
+   --ui-notification-bell-badge-size (18px) is its round body;
+   --ui-notification-bell-panel-min-width (18rem) and
+   --ui-notification-bell-panel-max-width (24rem) bound the panel. */
 .fui-notification-bell__panel {
   display: grid;
   gap: var(--spacing-sm, 4px);
-  min-inline-size: 18rem;
-  max-inline-size: 24rem;
+  min-inline-size: var(--ui-notification-bell-panel-min-width, 18rem);
+  max-inline-size: var(--ui-notification-bell-panel-max-width, 24rem);
   padding: var(--spacing-md, 8px);
 }
 .fui-notification-bell__title {
@@ -399,7 +404,7 @@ a.fui-notification-bell__row-link:hover {
   margin: var(--spacing-xs, 2px) 0 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }`
 }
 

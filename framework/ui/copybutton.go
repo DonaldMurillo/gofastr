@@ -251,7 +251,7 @@ func copyButtonCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
   min-height: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
   min-width: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
-  padding: 6px var(--spacing-md, 8px);
+  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
   border: var(--stroke-thin, 1px) solid var(--ui-copy-btn-border, var(--color-border, #E4E4E7));
   border-radius: var(--radii-md, 8px);
   background: var(--ui-copy-btn-bg, var(--color-surface, #fff));
@@ -282,7 +282,7 @@ func copyButtonCSS(_ style.Theme) string {
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
-[data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: 6px 10px; }
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5); }
 /* The icon glyph: one line-box tall so the aria-hidden ⧉ never stretches
    the icon-only button past the touch target the base rule sets. */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn__icon {

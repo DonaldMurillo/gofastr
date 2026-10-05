@@ -154,6 +154,8 @@ var searchInputStyle = registry.RegisterStyle("ui-search-input", searchInputCSS)
 // Action variant. Attribute-ancestor selectors therefore stop matching
 // the label the moment Action is set (#239) — the class is the one
 // thing the label carries in both shapes.
+// Knobs: --ui-search-clear-min-width (2rem) is the clear button's
+// inline floor.
 func searchInputCSS(_ style.Theme) string {
 	return `.fui-search {
   display: inline-flex;
@@ -169,7 +171,7 @@ func searchInputCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   padding-block: 0;
-  padding-inline: 12px var(--spacing-sm, 4px);
+  padding-inline: calc(var(--spacing-sm, 4px) * 3) var(--spacing-sm, 4px);
   color: var(--color-text-subtle, #71717A);
   user-select: none;
 }
@@ -216,7 +218,7 @@ func searchInputCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  min-inline-size: 2rem;
+  min-inline-size: var(--ui-search-clear-min-width, 2rem);
   background: transparent;
   border: 0;
   color: var(--color-text-subtle, #71717A);

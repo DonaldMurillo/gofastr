@@ -104,7 +104,7 @@ func tocCSS(_ style.Theme) string {
   position: sticky;
   inset-block-start: var(--spacing-lg, 16px);
   align-self: start;
-  max-block-size: calc(100vh - 4rem);
+  max-block-size: calc(100vh - var(--spacing-sm, 4px) * 16);
   overflow-y: auto;
 }
 [data-cui-comp="ui-toc"]::before {
@@ -140,7 +140,7 @@ func tocCSS(_ style.Theme) string {
   border-inline-start: var(--stroke-thick, 2px) solid transparent;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link:hover {
   color: var(--color-text, #18181B);

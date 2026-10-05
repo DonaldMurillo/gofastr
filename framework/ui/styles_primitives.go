@@ -184,7 +184,7 @@ func cardCSS(t style.Theme) string {
   padding: var(--spacing-xl, 24px) var(--spacing-xl, 24px) 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
 }
 /* The header pads its own bottom when no body follows it: it is the
    last child, or the always-drawn body slot after it is empty (with or
@@ -195,8 +195,8 @@ func cardCSS(t style.Theme) string {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.01em;
-  line-height: 1.3;
+  letter-spacing: var(--tracking-snug, -0.01em);
+  line-height: calc(var(--leading-snug, 1.4) - 0.1);
   color: var(--color-text);
 }
 [data-cui-comp="ui-card"] .fui-card__description {
@@ -229,7 +229,7 @@ func cardCSS(t style.Theme) string {
 [data-cui-comp="ui-card"].fui-card--row .fui-card__inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__header { display: contents; }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__heading { grid-column: 1; grid-row: 1; font-size: var(--text-xs); font-weight: var(--font-weight-normal); color: var(--color-text-muted); }
-[data-cui-comp="ui-card"].fui-card--row .fui-card__description { grid-column: 1 / -1; grid-row: 2; color: var(--color-text); line-height: 1.3; }
+[data-cui-comp="ui-card"].fui-card--row .fui-card__description { grid-column: 1 / -1; grid-row: 2; color: var(--color-text); line-height: calc(var(--leading-snug, 1.4) - 0.1); }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__body { grid-column: 2; grid-row: 1; padding: 0; }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__footer { grid-column: 1 / -1; }` +
 		customModsCSS(cardMods, "ui-card", "fui-card", t)
@@ -317,6 +317,11 @@ func imageCSS(_ style.Theme) string {
 // ─── Toggle (Checkbox / Radio / Switch) ─────────────────────────────
 
 func toggleCSS(_ style.Theme) string {
+	// Knobs: --ui-choice-box-size (1.25rem) squares the checkbox/radio
+	// box (the hint indent below is calc() over it);
+	// --ui-switch-track-width (2.25rem) / --ui-switch-track-height
+	// (1.25rem) size the switch track; --ui-switch-thumb-rim
+	// (rgba(0, 0, 0, 0.18)) is the thumb's drawn rim in the gradient.
 	return `/* Choice rows are drawn from the native input itself
    (appearance: none): headless.Choice's anatomy has no indicator
    span, and an input cannot host a pseudo-element — so the box, the
@@ -340,8 +345,8 @@ func toggleCSS(_ style.Theme) string {
   -webkit-appearance: none;
   flex-shrink: 0;
   box-sizing: border-box;
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
+  inline-size: var(--ui-choice-box-size, 1.25rem);
+  block-size: var(--ui-choice-box-size, 1.25rem);
   margin: 0;
   /* An unchecked box is drawn by its border alone, so the border is a
      control boundary (WCAG 1.4.11, 3:1), not a hairline: text-subtle
@@ -357,7 +362,7 @@ func toggleCSS(_ style.Theme) string {
   flex: 1 1 auto;
   font-size: var(--text-sm);
   color: var(--color-text, #18181B);
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
   min-inline-size: 0;
 }
 .fui-choice__hint {
@@ -367,7 +372,7 @@ func toggleCSS(_ style.Theme) string {
   /* Logical inline-start, like the rest of this sheet: the indent
      follows the control in RTL, staying under the label, instead of
      detaching to the physical left of the row. */
-  margin-inline-start: calc(1.25rem + var(--spacing-sm, 4px));
+  margin-inline-start: calc(var(--ui-choice-box-size, 1.25rem) + var(--spacing-sm, 4px));
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
@@ -419,13 +424,13 @@ func toggleCSS(_ style.Theme) string {
   -webkit-appearance: none;
   flex-shrink: 0;
   box-sizing: border-box;
-  inline-size: 2.25rem;
-  block-size: 1.25rem;
+  inline-size: var(--ui-switch-track-width, 2.25rem);
+  block-size: var(--ui-switch-track-height, 1.25rem);
   margin: 0;
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
   background-color: var(--color-surface-soft, #F4F4F5);
-  background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, rgba(0, 0, 0, 0.18) 7.5px 8.5px, transparent 9px);
+  background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, var(--ui-switch-thumb-rim, rgba(0, 0, 0, 0.18)) 7.5px 8.5px, transparent 9px);
   background-repeat: no-repeat;
   background-size: 1.125rem 1.125rem;
   background-position: left 0.0625rem center;
@@ -442,7 +447,7 @@ func toggleCSS(_ style.Theme) string {
   flex: 1 1 auto;
   font-size: var(--text-sm);
   color: var(--color-text, #18181B);
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }
 
 /* ─── Shared state styling, from the state attributes themselves. ─── */
@@ -457,12 +462,12 @@ func toggleCSS(_ style.Theme) string {
 }
 .fui-choice__input:disabled,
 .fui-switch__input:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 .fui-choice:has(.fui-choice__input:disabled),
 .fui-switch:has(.fui-switch__input:disabled) {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 
@@ -519,6 +524,8 @@ func toggleCSS(_ style.Theme) string {
 // ─── Tooltip ────────────────────────────────────────────────────────
 
 func tooltipCSS(_ style.Theme) string {
+	// Knob: --ui-tooltip-pop-max-width (240px) keeps a one-line pop
+	// from crossing a narrow viewport.
 	return `[data-cui-comp="ui-tooltip"] {
   position: relative;
   display: inline-block;
@@ -528,20 +535,20 @@ func tooltipCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-tooltip"] .fui-tooltip__pop {
   position: absolute;
-  inset-block-end: calc(100% + 6px);
+  inset-block-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   inset-inline-start: 50%;
   transform: translateX(-50%) translateY(4px);
   background: var(--color-text);
   color: var(--color-surface);
-  padding: 6px 12px;
+  padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3);
   font-size: var(--text-xs, 0.75rem);
-  line-height: 1.2;
+  line-height: var(--leading-tight, 1.2);
   border-radius: var(--radii-md);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   white-space: nowrap;
-  max-inline-size: 240px;
+  max-inline-size: var(--ui-tooltip-pop-max-width, 240px);
   z-index: var(--z-popover);
   transition: opacity var(--duration-fast, 150ms) ease,
               transform var(--duration-fast, 150ms) ease,
@@ -557,7 +564,7 @@ func tooltipCSS(_ style.Theme) string {
 
 [data-cui-comp="ui-tooltip"].fui-tooltip--bottom .fui-tooltip__pop {
   inset-block-end: auto;
-  inset-block-start: calc(100% + 6px);
+  inset-block-start: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   transform: translateX(-50%) translateY(-4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--bottom:hover .fui-tooltip__pop,
@@ -567,7 +574,7 @@ func tooltipCSS(_ style.Theme) string {
 [data-cui-comp="ui-tooltip"].fui-tooltip--left .fui-tooltip__pop {
   inset-block-end: 50%;
   inset-inline-start: auto;
-  inset-inline-end: calc(100% + 6px);
+  inset-inline-end: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   transform: translateY(50%) translateX(4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--left:hover .fui-tooltip__pop,
@@ -576,7 +583,7 @@ func tooltipCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--right .fui-tooltip__pop {
   inset-block-end: 50%;
-  inset-inline-start: calc(100% + 6px);
+  inset-inline-start: calc(100% + calc(var(--spacing-sm, 4px) * 1.5));
   transform: translateY(50%) translateX(-4px);
 }
 [data-cui-comp="ui-tooltip"].fui-tooltip--right:hover .fui-tooltip__pop,
@@ -592,6 +599,9 @@ func tooltipCSS(_ style.Theme) string {
 // ─── Tag / Chip ─────────────────────────────────────────────────────
 
 func tagCSS(t style.Theme) string {
+	// Knobs: --ui-tag-line-height (1rem) pins the chip's line box;
+	// --ui-tag-dismiss-size (1.1rem) squares the × hit area and
+	// --ui-tag-dismiss-opacity (0.7) rests it until hover.
 	return `[data-cui-comp="ui-tag"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -604,7 +614,7 @@ func tagCSS(t style.Theme) string {
   border-radius: var(--radii-md);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
-  line-height: 1rem;
+  line-height: var(--ui-tag-line-height, 1rem);
   text-decoration: none;
 }
 /* Same drawing as ui-badge: the tint is 15% of the status hue, the ink
@@ -648,13 +658,13 @@ func tagCSS(t style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 1.1rem;
-  block-size:  1.1rem;
-  margin-inline-end: -4px;
+  inline-size: var(--ui-tag-dismiss-size, 1.1rem);
+  block-size:  var(--ui-tag-dismiss-size, 1.1rem);
+  margin-inline-end: calc(var(--spacing-sm, 4px) * -1);
   border: 0;
   background: transparent;
   color: inherit;
-  opacity: 0.7;
+  opacity: var(--ui-tag-dismiss-opacity, 0.7);
   cursor: pointer;
   border-radius: 50%;
   font-size: var(--text-base, 1rem);
@@ -737,11 +747,11 @@ func spinnerCSS(_ style.Theme) string {
   to { transform: rotate(360deg); }
 }
 @keyframes fui-spinner-pulse {
-  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  0%, 80%, 100% { opacity: var(--opacity-faint, 0.2); transform: scale(0.8); }
   40%           { opacity: 1;   transform: scale(1); }
 }
 @keyframes fui-spinner-grid {
-  0%, 70%, 100% { opacity: 0.2; transform: scale(0.7); }
+  0%, 70%, 100% { opacity: var(--opacity-faint, 0.2); transform: scale(0.7); }
   35%           { opacity: 1;   transform: scale(1); }
 }
 

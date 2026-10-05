@@ -44,12 +44,14 @@ func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) rend
 }
 
 var chartEmptyStyle = registry.RegisterStyle("ui-chart-empty", func(_ style.Theme) string {
+	// Knobs: --ui-chart-empty-min-height (10rem) is the placeholder's
+	// height floor.
 	return `[data-cui-comp="ui-chart-empty"] {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 100%;
-	min-height: 10rem;
+	min-height: var(--ui-chart-empty-min-height, 10rem);
 	color: var(--color-text-muted, #6b7280);
 	font-size: var(--text-sm, 0.875rem);
 	background: var(--color-surface-soft, transparent);

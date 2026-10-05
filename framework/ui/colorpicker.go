@@ -143,7 +143,7 @@ func colorPickerCSS(_ style.Theme) string {
   outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

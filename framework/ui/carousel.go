@@ -239,11 +239,14 @@ func carouselCSS(_ style.Theme) string {
      word collapses and the ::before glyph draws the arrow. */
   font-size: 0;
 }
+/* Knobs (beside --ui-carousel-cols): --ui-carousel-arrow-size (9px)
+   is the prev/next chevron glyph's square; --ui-carousel-dot-size
+   (10px) is the visible dot pip inside its 24px hit area. */
 [data-cui-comp="ui-carousel"] .fui-carousel__prev::before,
 [data-cui-comp="ui-carousel"] .fui-carousel__next::before {
   content: "";
-  inline-size: 9px;
-  block-size: 9px;
+  inline-size: var(--ui-carousel-arrow-size, 9px);
+  block-size: var(--ui-carousel-arrow-size, 9px);
   border-inline-start: var(--stroke-thick, 2px) solid currentColor;
   border-block-start: var(--stroke-thick, 2px) solid currentColor;
 }
@@ -260,7 +263,7 @@ func carouselCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dots {
   display: flex;
-  gap: 6px;
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
   justify-content: center;
   margin-block-start: var(--spacing-xs, 2px);
 }
@@ -293,8 +296,8 @@ func carouselCSS(_ style.Theme) string {
   position: absolute;
   inset-block-start: 50%;
   inset-inline-start: 50%;
-  inline-size: 10px;
-  block-size: 10px;
+  inline-size: var(--ui-carousel-dot-size, 10px);
+  block-size: var(--ui-carousel-dot-size, 10px);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-border, #E4E4E7);
   transform: translate(-50%, -50%);

@@ -175,7 +175,7 @@ func TestValidationSummaryRendersErrors(t *testing.T) {
 
 func TestValidationSummaryLinksMeetTouchTargetFloor(t *testing.T) {
 	css := validationSummaryCSS(style.Theme{})
-	for _, want := range []string{"display: inline-flex", "min-block-size: 24px"} {
+	for _, want := range []string{"display: inline-flex", "min-block-size: var(--ui-validation-summary-link-min-height, 24px)"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("ValidationSummary CSS missing %q", want)
 		}

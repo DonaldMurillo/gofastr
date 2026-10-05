@@ -324,7 +324,7 @@ func galleryCSS(_ style.Theme) string {
 }
 .fui-gallery--strip > .fui-gallery__row {
   flex: 0 0 auto;
-  inline-size: 240px;
+  inline-size: var(--ui-gallery-strip-item-width, 240px);
   scroll-snap-align: start;
 }
 
@@ -353,8 +353,11 @@ func galleryCSS(_ style.Theme) string {
   inset-block-end: 0;
   margin: 0;
   padding: var(--spacing-md, 8px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
-  color: white;
-  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  /* Knobs: --ui-gallery-strip-item-width (240px) is one strip cell;
+     --ui-gallery-caption-fg (white) colours the overlay caption over
+     the shared scrim gradient (--ui-scrim, this site's own 0.7 black). */
+  color: var(--ui-gallery-caption-fg, white);
+  background: linear-gradient(to top, var(--ui-scrim, rgba(0,0,0,0.7)), transparent);
   font-size: var(--text-sm, 0.875rem);
   opacity: 0;
   transition: opacity var(--duration-fast, 150ms) ease;

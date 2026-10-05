@@ -42,9 +42,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`map[string]string`, keys `ui-…`) sets per-component knobs in the
   theme's own `:root` block and in a scoped theme's block, and reaches
   `ThemeHash`, `ApplyTokens` and `ThemeToTokens` (under `knob.`) and
-  `theme edit`'s write-back. The new groups reach `.tokens.css`
-  (`--leading-*`, `--tracking-*`, `--opacity-*`) and the plugin host's
-  token bridge.
+  `theme edit`'s write-back. Every kit padding, margin, gap, font size,
+  line height, letter spacing, opacity, shadow, colour and component
+  dimension now reads a token or a `--ui-<component>-<part>` knob with
+  its old value as the fallback, and a theme reaches all of it. A value
+  that sat between steps snaps to the nearest token: opacities 0.55,
+  0.45 and 0.18 draw at 0.6, 0.5 and 0.2, line heights 1.15, 1.25, 1.45
+  and 1.65 move by 0.05, and two letter spacings move by under 0.01em.
+  Filled and soft buttons draw their border in the new
+  `--ui-button-edge` knob (default `transparent`). The new groups reach
+  `.tokens.css` (`--leading-*`, `--tracking-*`, `--opacity-*`) and the
+  plugin host's token bridge.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

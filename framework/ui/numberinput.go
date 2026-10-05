@@ -212,7 +212,7 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:disabled,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__help {

@@ -265,6 +265,8 @@ func dropzoneIcon() string {
 var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
 
 func dropzoneCSS(_ style.Theme) string {
+	// Knobs: --ui-drop-preview-size (72px) is the thumbnail box in the
+	// preview strip (width and height).
 	return `.fui-drop {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -348,8 +350,8 @@ func dropzoneCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 .fui-drop__preview {
-  width: 72px;
-  height: 72px;
+  width: var(--ui-drop-preview-size, 72px);
+  height: var(--ui-drop-preview-size, 72px);
   border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #F4F4F5);
   object-fit: cover;
@@ -369,7 +371,7 @@ func dropzoneCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
 }
 .fui-drop.is-disabled .fui-drop__zone {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }
