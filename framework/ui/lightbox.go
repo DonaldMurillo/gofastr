@@ -245,7 +245,7 @@ func lightboxCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   border: 0;
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
@@ -258,7 +258,7 @@ func lightboxCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-lightbox"] .fui-lightbox__nav:focus-visible,
 [data-cui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }`
 }

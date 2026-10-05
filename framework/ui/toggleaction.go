@@ -185,7 +185,7 @@ var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.
 	return `[data-cui-comp="ui-toggle-action"] {
   /* Inherits .fui-button base; override only what the toggle flip needs. */
   position: relative;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
 }
 /* Committed state — the soft secondary surface marks "on" without a
    status color: success is for outcomes, not for a pressed toggle. */

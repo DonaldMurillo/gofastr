@@ -242,9 +242,9 @@ func progressStepsCSS(_ style.Theme) string {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
-  border: 2px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);

@@ -140,13 +140,13 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border: 1px solid var(--color-warning, #B45309);
+  border: var(--stroke-thin, 1px) solid var(--color-warning, #B45309);
   border-radius: var(--radii-md, 8px);
   background: color-mix(in srgb, var(--color-warning) 15%, transparent);
   color: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
   position: sticky;
   inset-block-start: 0;
-  z-index: 50;
+  z-index: var(--z-sticky, 200);
 }
 /* SystemBanner's parts are the banner's own children: title over
    description in the first column, the retry link beside both. */
@@ -178,7 +178,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   justify-content: center;
   min-height: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
   padding: 10px var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border-strong, var(--color-border, #d0d0d8));
+  border: var(--stroke-thin, 1px) solid var(--color-border-strong, var(--color-border, #d0d0d8));
   border-radius: var(--fui-button-radius, var(--radii-md, 8px));
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);

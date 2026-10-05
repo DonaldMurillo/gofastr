@@ -292,8 +292,8 @@ func notificationBellCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
 }
 [data-cui-comp="ui-notification-bell"]:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-notification-bell"] .fui-notification-bell__icon {
   /* The badge's containing block: anchoring it to the GLYPH's
@@ -315,7 +315,7 @@ func notificationBellCSS(_ style.Theme) string {
   min-inline-size: 18px;
   block-size: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   /* Status token pair — the default --color-danger is the same
      #B91C1C (red-700, ≥6.4:1 vs white), so the themed value and the
      axe-safe fallback agree; themed apps recolor the badge via their
@@ -327,7 +327,7 @@ func notificationBellCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-surface, #FFFFFF);
 }
 /* Hide the badge when its bound signal value is empty. */
 [data-cui-comp="ui-notification-bell"] .fui-notification-bell__badge:empty {

@@ -94,7 +94,7 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	case theme.Square:
 		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "0"})
 	case theme.Pill:
-		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "9999px"})
+		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "var(--radii-full)"})
 	case theme.RadiusUnset:
 	}
 	// Field: the columns variable is the layout (stacked is one full

@@ -107,7 +107,7 @@ func toolbarCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   flex-wrap: wrap;
 }

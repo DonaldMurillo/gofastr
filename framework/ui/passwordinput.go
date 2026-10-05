@@ -121,7 +121,7 @@ func passwordInputCSS(_ style.Theme) string {
 	return `.fui-password {
   display: flex;
   align-items: stretch;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -129,8 +129,8 @@ func passwordInputCSS(_ style.Theme) string {
 }
 /* The shell is the control: typing in the input rings the whole field. */
 .fui-password:has(.fui-password__input:focus-visible) {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-password__input {
   flex: 1;
@@ -173,7 +173,7 @@ func passwordInputCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 .fui-password__reveal:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: 0;
 }
 .fui-password__reveal:disabled {
@@ -184,6 +184,6 @@ func passwordInputCSS(_ style.Theme) string {
    inside has no border of its own to colour). */
 .fui-password[data-invalid] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }`
 }

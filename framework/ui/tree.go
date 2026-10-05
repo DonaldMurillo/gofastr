@@ -91,8 +91,8 @@ func treeCSS(_ style.Theme) string {
    outline on the bare attribute painted a permanent ring on it. */
 [data-cui-comp="ui-tree"] .fui-tree__item:focus-visible > .fui-tree__row,
 [data-cui-comp="ui-tree"] .fui-tree__item:focus-within > .fui-tree__row {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 [data-cui-comp="ui-tree"] .fui-tree__item[aria-selected="true"] > .fui-tree__row {
   background: var(--color-surface-soft, #f1f1f3);

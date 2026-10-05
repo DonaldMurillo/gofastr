@@ -158,7 +158,7 @@ func searchInputCSS(_ style.Theme) string {
 	return `.fui-search {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -204,12 +204,12 @@ func searchInputCSS(_ style.Theme) string {
      single ring. The frame's old :focus-within outline showed nothing
      on the focused control itself, which a keyboard user scanning the
      control (and any element-local focus check) reads as no indicator. */
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 .fui-search .fui-search__clear:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 .fui-search .fui-search__clear {
   display: inline-flex;

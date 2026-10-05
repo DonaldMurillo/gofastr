@@ -323,7 +323,7 @@ func markdownCSS(_ style.Theme) string {
   padding: var(--spacing-lg, 1rem) 1.1rem;
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #E4E4E7);
-  border: 1px solid var(--color-code-border, var(--color-border, #E4E4E7));
+  border: var(--stroke-thin, 1px) solid var(--color-code-border, var(--color-border, #E4E4E7));
   border-radius: var(--radii-md, 8px);
   overflow-x: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -343,7 +343,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] blockquote {
   padding: 0.85em 1.1em;
   background: var(--color-surface-soft, #F4F4F5);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   color: var(--color-text-muted, #52525B);
 }
@@ -351,7 +351,7 @@ func markdownCSS(_ style.Theme) string {
 
 [data-cui-comp="ui-markdown"] hr {
   border: 0;
-  border-block-start: 1px solid var(--color-border, #E4E4E7);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   margin-block: 2.75em;
 }
 
@@ -365,14 +365,14 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] th,
 [data-cui-comp="ui-markdown"] td {
   padding: 0.5em 0.85em;
-  border-block-end: 1px solid var(--color-border, #E4E4E7);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   text-align: start;
   vertical-align: top;
 }
 [data-cui-comp="ui-markdown"] thead th {
   font-weight: 650;
   color: var(--color-text, #18181B);
-  border-block-end-width: 2px;
+  border-block-end-width: var(--stroke-thick, 2px);
 }
 [data-cui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }
 

@@ -87,7 +87,7 @@ func statusPillCSS(_ style.Theme) string {
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);
-  border: 1px solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
+  border: var(--stroke-thin, 1px) solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
   border-radius: var(--radii-full, 9999px);
 }
 /* Author-origin display beats the UA's [hidden]{display:none}, so a
@@ -100,7 +100,7 @@ func statusPillCSS(_ style.Theme) string {
 [data-cui-comp="ui-status-pill"] .fui-status-pill__dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-text-subtle, currentColor);
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent {

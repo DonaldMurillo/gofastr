@@ -72,7 +72,7 @@ func buttonCSS(t style.Theme) string {
      tightens every control at once. */
   min-height: var(--fui-density-control-h);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-lg);
-  border: 1px solid transparent;
+  border: var(--stroke-thin, 1px) solid transparent;
   border-radius: var(--fui-button-radius);
   font: inherit;
   font-size: var(--text-sm);
@@ -91,15 +91,15 @@ func buttonCSS(t style.Theme) string {
   overflow-wrap: break-word;
   cursor: pointer;
   text-decoration: none;
-  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
+  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, opacity var(--duration-fast, 150ms) ease;
 }
 /* The shared focus ring: a 2px outline in the subtle ink, offset off
    the control. An outline (never a box-shadow) so it survives forced
    colours and never fights the control's own shadow; text-subtle so it
    clears 3:1 on the page in both schemes. */
 .fui-button:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-button:disabled,
 .fui-button[aria-disabled="true"] {
@@ -190,7 +190,7 @@ func codeBlockCSS(_ style.Theme) string {
   padding: var(--spacing-lg, 16px);
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #E4E4E7);
-  border: 1px solid var(--color-code-border, #27272A);
+  border: var(--stroke-thin, 1px) solid var(--color-code-border, #27272A);
   border-radius: var(--radii-md, 8px);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
@@ -235,7 +235,7 @@ func codeBlockCSS(_ style.Theme) string {
   gap: 10px;
   padding: 6px var(--spacing-md, 8px) 6px 14px;
   background: var(--ui-code-block-head-bg, var(--color-code-surface, #18181B));
-  border-bottom: 1px solid var(--color-code-border, #27272A);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-code-border, #27272A);
   font-size: var(--text-xs, 12px);
   color: color-mix(in oklab, var(--color-code-text, #E4E4E7) 62%, var(--color-code-surface, #18181B));
   --ui-copy-btn-size: 32px;
@@ -249,7 +249,7 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"] .fui-code-block__status {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-code-text, #E4E4E7); }
@@ -499,22 +499,22 @@ func formFieldCSS(_ style.Theme) string {
      theme's control height (44px comfortable, 36px compact). */
   min-height: var(--fui-density-control-h);
   padding: var(--ui-control-padding-y, 10px) 12px;
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: var(--shadow-xs);
   font: inherit;
   font-size: var(--text-sm);
-  transition: border-color 150ms ease;
+  transition: border-color var(--duration-fast, 150ms) ease;
 }
 .fui-input::placeholder { color: var(--color-text-subtle); }
 /* iOS Safari zooms the page into a focused control whose text is under
    16px, so phones keep text-base; wider screens take the denser sm. */
 @media (max-width: 767.98px) { .fui-input { font-size: var(--text-base, 1rem); } }
 .fui-input:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-input[aria-invalid="true"] {
   /* Non-color affordance: stack an inset 1px ring so the error state
@@ -522,7 +522,7 @@ func formFieldCSS(_ style.Theme) string {
      shifting the input's internal text by 1px on every validation
      toggle (WCAG 1.4.1 — info conveyed by more than color alone). */
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 /* A control an InputGroup wraps fills the field's control track, and
    a whole Field inside a group keeps the group from overflowing: the
@@ -541,7 +541,7 @@ func formSectionCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-lg, 16px);
   padding: var(--spacing-xl, 24px);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
@@ -585,7 +585,7 @@ func statusBadgeCSS(t style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
   line-height: 1rem;
-  border: 1px solid transparent;
+  border: var(--stroke-thin, 1px) solid transparent;
   /* A pill states one word; wrapping mid-label breaks the shape and
      the reading. Narrow columns must give the badge room, not fold
      it (a detail-list value column, a table cell). */
@@ -632,7 +632,7 @@ func emptyStateCSS(_ style.Theme) string {
   /* The dashed frame alone marks the slot; a fill would read as a
      disabled panel. */
   background: transparent;
-  border: 1px dashed var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) dashed var(--color-border, #E4E4E7);
   border-radius: var(--radii-xl);
 }
 [data-cui-comp="ui-empty-state"] .fui-empty-state__title {
@@ -663,7 +663,7 @@ func calloutCSS(t style.Theme) string {
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
   padding: 12px var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg);
   background: var(--color-surface);
 }
@@ -689,8 +689,8 @@ func calloutCSS(t style.Theme) string {
   color: var(--ui-callout-accent, var(--color-text-muted, #52525B));
   /* A stroked ring, the same weight as the line icons Banner and
      Notification draw, so the three notices read as one family. */
-  border: 1.5px solid currentColor;
-  border-radius: 999px;
+  border: calc(1.5 * var(--stroke-thin, 1px)) solid currentColor;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-callout"] .fui-callout__head {
   grid-column: 2;
@@ -734,7 +734,7 @@ func statCardCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-xl, 24px);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-xl);
   box-shadow: var(--shadow-xs);
 }
@@ -857,7 +857,7 @@ func notificationCSS(t style.Theme) string {
   padding: 12px var(--spacing-lg, 16px);
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   box-shadow: var(--shadow-md);
   max-inline-size: 28rem;
 }
@@ -918,9 +918,9 @@ func notificationCSS(t style.Theme) string {
 [data-cui-comp="ui-notification"].fui-notification--neutral { --ui-notification-tone: var(--color-text-muted, #52525B); }
 :where([data-cui-comp="ui-notification"]).fui-notification--floating {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-toast, 500);
   box-shadow: var(--shadow-lg);
-  animation: ui-notification-slide-in 220ms ease-out;
+  animation: ui-notification-slide-in var(--duration-toast-enter, 220ms) ease-out;
 }
 :where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
 :where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: 1rem; left: 1rem; }
@@ -995,7 +995,7 @@ func dataTableCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll {
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-lg);
   background: var(--color-surface);
 }
@@ -1003,8 +1003,8 @@ func dataTableCSS(_ style.Theme) string {
    scrolled by keyboard whenever it overflows), so its focus state
    must be visible. */
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table {
   width: 100%;
@@ -1018,7 +1018,7 @@ func dataTableCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
   background: var(--color-surface-soft);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
   caption-side: top;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th,
@@ -1026,7 +1026,7 @@ func dataTableCSS(_ style.Theme) string {
   padding: 12px var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
 }
 /* Body rows are a fixed 52px rhythm: a 44px row action (View, Edit)
    fits inside the 4px inset instead of stretching its row to 68px, and
@@ -1054,7 +1054,7 @@ func dataTableCSS(_ style.Theme) string {
   white-space: nowrap;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr {
-  transition: background-color 150ms ease;
+  transition: background-color var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
   background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
@@ -1085,8 +1085,8 @@ func dataTableCSS(_ style.Theme) string {
   text-decoration: none;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
@@ -1145,7 +1145,7 @@ func dataTableCSS(_ style.Theme) string {
     white-space: nowrap;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
-    border: 1px solid var(--color-border);
+    border: var(--stroke-thin, 1px) solid var(--color-border);
     border-radius: var(--radii-lg);
     margin-block-end: var(--spacing-md, 8px);
     padding: var(--spacing-sm, 4px) 12px;
@@ -1161,7 +1161,7 @@ func dataTableCSS(_ style.Theme) string {
     gap: var(--spacing-md, 8px);
     padding-block: var(--spacing-sm, 4px);
     padding-inline: 0;
-    border-block-end: 1px solid var(--color-border, #F4F4F5);
+    border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #F4F4F5);
     text-align: end;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
@@ -1214,7 +1214,7 @@ func paginationCSS(_ style.Theme) string {
   min-block-size: var(--spacing-touch-target);
   padding: 0 12px;
   border-radius: var(--radii-md);
-  border: 1px solid transparent;
+  border: var(--stroke-thin, 1px) solid transparent;
   background: transparent;
   text-decoration: none;
   color: var(--color-text);
@@ -1222,15 +1222,15 @@ func paginationCSS(_ style.Theme) string {
   font-size: inherit;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color 150ms ease;
+  transition: background-color var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-pagination"] .pagination span { cursor: default; }
 [data-cui-comp="ui-pagination"] .pagination a:hover {
   background: var(--color-surface-soft);
 }
 [data-cui-comp="ui-pagination"] .pagination a:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* The current page is drawn the way an outline button is: a surface
    with the hairline border and the control shadow. */
@@ -1259,7 +1259,7 @@ func skipLinkCSS(_ style.Theme) string {
   width: 1px;
   height: 1px;
   overflow: hidden;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
 }
 :where([data-cui-comp="ui-skip-link"]):focus {
   position: fixed;
@@ -1274,7 +1274,7 @@ func skipLinkCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
 }`
 }
 
@@ -1290,7 +1290,7 @@ func themeToggleCSS(_ style.Theme) string {
   cursor: pointer;
   /* A button takes the UA font (Arial) unless told otherwise. */
   font: inherit;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
@@ -1300,7 +1300,7 @@ func themeToggleCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-theme-toggle"] button:hover,
 button[data-cui-comp="ui-theme-toggle"]:hover {
@@ -1308,8 +1308,8 @@ button[data-cui-comp="ui-theme-toggle"]:hover {
 }
 [data-cui-comp="ui-theme-toggle"] button:focus-visible,
 button[data-cui-comp="ui-theme-toggle"]:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 
 /* Icon variant: a ghost button — transparent, borderless, just the sun/moon
@@ -1347,14 +1347,14 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 /* Pill variant */
 :where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
   display: inline-flex;
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-full, 9999px);
   overflow: hidden;
   background: var(--color-surface, #fff);
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
@@ -1386,7 +1386,7 @@ func backToTopCSS(_ style.Theme) string {
   opacity: 0;
   visibility: hidden;
   transform: translateY(0.5rem);
-  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
   pointer-events: none;
 }
 
@@ -1404,8 +1404,8 @@ func backToTopCSS(_ style.Theme) string {
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
 }
 [data-cui-comp="ui-back-to-top"]:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-back-to-top"] svg {
   pointer-events: none;
@@ -1459,7 +1459,7 @@ func backToTopCSS(_ style.Theme) string {
 .fui-back-to-top--secondary {
   background: var(--color-surface, #fff);
   color: var(--color-text, #1a1a1a);
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
 }
 .fui-back-to-top--secondary:hover {
   background: var(--color-surface-soft, #f3f4f6);

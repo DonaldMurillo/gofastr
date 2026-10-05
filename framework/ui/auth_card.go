@@ -88,7 +88,7 @@ func authCardCSS(_ style.Theme) string {
   gap: var(--spacing-xl, 24px);
   padding: var(--spacing-xl, 24px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-xl, 14px);
   box-shadow: var(--shadow-sm);
 }
@@ -104,7 +104,7 @@ func authCardCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
   background: color-mix(in srgb, var(--color-danger, #DC2626) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: 0.625rem 0.75rem;
 }

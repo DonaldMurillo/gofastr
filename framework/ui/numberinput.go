@@ -142,7 +142,7 @@ func numberInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-number-input"] .fui-number-input__row {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -151,8 +151,8 @@ func numberInputCSS(_ style.Theme) string {
 }
 /* The row is the control: typing in the value rings the whole group. */
 [data-cui-comp="ui-number-input"] .fui-number-input__row:has(.fui-number-input__input:focus-visible) {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__input {
   appearance: textfield;
@@ -198,8 +198,8 @@ func numberInputCSS(_ style.Theme) string {
   cursor: pointer;
   user-select: none;
 }
-[data-cui-comp="ui-number-input"] .fui-number-input__decrement { border-inline-end: 1px solid var(--color-border, #E4E4E7); }
-[data-cui-comp="ui-number-input"] .fui-number-input__increment { border-inline-start: 1px solid var(--color-border, #E4E4E7); }
+[data-cui-comp="ui-number-input"] .fui-number-input__decrement { border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7); }
+[data-cui-comp="ui-number-input"] .fui-number-input__increment { border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7); }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:hover,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:hover {
   background: var(--color-surface-soft, #F4F4F5);
@@ -207,8 +207,8 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:disabled,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:disabled {
@@ -227,6 +227,6 @@ func numberInputCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-number-input"].is-error .fui-number-input__row {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }`
 }

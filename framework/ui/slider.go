@@ -129,23 +129,23 @@ func sliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-runnable-track {
   height: 6px;
   background: var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
-  border: 2px solid var(--color-primary, #18181B);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
   box-shadow: var(--shadow-sm);
   margin-top: -7px;
   cursor: pointer;
-  transition: transform 100ms ease;
+  transition: transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:active::-webkit-slider-thumb {
   transform: scale(1.15);
@@ -154,19 +154,19 @@ func sliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-track {
   height: 6px;
   background: var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
-  border: 2px solid var(--color-primary, #18181B);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-moz-range-thumb {
-  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-subtle);
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
 }
 
 [data-cui-comp="ui-slider"].is-disabled .fui-slider__input {

@@ -188,7 +188,7 @@ func segmentedCSS(_ style.Theme) string {
   gap: 0;
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, #f1f1f3);
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
   font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;
   isolation: isolate;
@@ -238,8 +238,8 @@ func segmentedCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
   cursor: not-allowed;
@@ -259,7 +259,7 @@ func segmentedCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 4px);
   background: var(--color-surface, #fff);
   box-shadow: 0 1px 2px rgba(0,0,0,0.08),
-              0 0 0 1px rgba(0,0,0,0.05);
+              0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05);
   transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }

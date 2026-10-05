@@ -94,7 +94,7 @@ func progressCSS(_ style.Theme) string {
 [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value {
   background: var(--color-primary, #4F46E5);
   border-radius: var(--radii-full, 9999px);
-  transition: inline-size 200ms ease;
+  transition: inline-size var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar::-moz-progress-bar {
   background: var(--color-primary, #4F46E5);

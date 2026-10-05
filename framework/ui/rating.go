@@ -237,7 +237,7 @@ func ratingCSS(_ style.Theme) string {
   min-inline-size: var(--ui-rating-cell);
   color: var(--color-border, #E4E4E7);
   cursor: pointer;
-  transition: color 120ms ease, transform 120ms ease;
+  transition: color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
 }
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */
@@ -264,8 +264,8 @@ func ratingCSS(_ style.Theme) string {
   transform: scale(1.08);
 }
 [data-cui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
   border-radius: var(--radii-sm, 6px);
 }
 

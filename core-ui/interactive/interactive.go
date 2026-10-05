@@ -422,10 +422,10 @@ func dropdownCSS(_ style.Theme) string {
 	// renders as a flat, full-width, unstyled strip (functional but not a
 	// dropdown).
 	return `[data-cui-comp="cui-dropdown"]{position:relative;display:inline-block}` +
-		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:var(--stroke-thin, 1px) solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:var(--z-dropdown, 100)}` +
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:hover,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9))}` +
-		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:2px solid var(--color-text-subtle);outline-offset:-2px}`
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:calc(-1 * var(--stroke-focus-offset, 2px))}`
 }
 
 // AnimateOnSignal wraps an element so it gets a CSS class when a signal

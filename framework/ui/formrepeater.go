@@ -129,7 +129,7 @@ func formRepeaterCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
@@ -147,7 +147,7 @@ func formRepeaterCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: 36px;
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-danger, #DC2626);
+  border: var(--stroke-thin, 1px) solid var(--color-danger, #DC2626);
   border-radius: var(--radii-md, 8px);
   background: transparent;
   color: var(--color-danger, #DC2626);
@@ -160,8 +160,8 @@ func formRepeaterCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
   opacity: 0.5;
@@ -174,7 +174,7 @@ func formRepeaterCSS(_ style.Theme) string {
   justify-self: start;
   min-block-size: 36px;
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
@@ -187,8 +187,8 @@ func formRepeaterCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
   opacity: 0.5;

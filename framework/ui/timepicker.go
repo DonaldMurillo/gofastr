@@ -139,7 +139,7 @@ func timePickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-time-picker"] .fui-time-picker__input {
   min-block-size: var(--spacing-touch-target, 44px);
   padding: 0 12px;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -148,8 +148,8 @@ func timePickerCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-time-picker"] .fui-time-picker__input:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* Phones keep text-base so iOS does not zoom into the focused control. */
 @media (max-width: 767.98px) {

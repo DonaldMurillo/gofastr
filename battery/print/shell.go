@@ -196,7 +196,7 @@ body.print-doc table { width: 100%; border-collapse: collapse; }
 body.print-doc th, body.print-doc td {
   text-align: left;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
 }
 body.print-doc img { max-width: 100%; }
 .page-break { break-after: page; page-break-after: always; }

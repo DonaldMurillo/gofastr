@@ -210,8 +210,8 @@ func filterChipBarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 `
 }

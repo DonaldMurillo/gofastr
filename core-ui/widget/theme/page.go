@@ -152,7 +152,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-card").
 		Set(
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 			"box-shadow", "{shadow.sm}",
@@ -161,7 +161,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-card-soft").
 		Set(
 			"background", "{colors.surface-soft}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 		).
@@ -175,7 +175,7 @@ func PageCSS(t style.Theme) string {
 			"gap", "{spacing.sm}",
 			"background", "{colors.primary}",
 			"color", "{colors.primary-fg}",
-			"border", "1px solid {colors.primary}",
+			"border", "{strokes.thin} solid {colors.primary}",
 			"padding", "10px 18px",
 			"border-radius", "{radii.md}",
 			"font-weight", "{font-weight.semibold}",
@@ -199,7 +199,7 @@ func PageCSS(t style.Theme) string {
 			"justify-content", "space-between",
 			"gap", "{spacing.lg}",
 			"padding", "{spacing.md} {spacing.lg}",
-			"border-bottom", "1px solid {colors.border}",
+			"border-bottom", "{strokes.thin} solid {colors.border}",
 		).
 		End()
 	ss.Rule(".kiln-nav-links").
@@ -208,7 +208,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-nav-links a").Set("color", "{colors.text-muted}").End()
 	ss.Rule(".kiln-footer").
 		Set(
-			"border-top", "1px solid {colors.border}",
+			"border-top", "{strokes.thin} solid {colors.border}",
 			"background", "{colors.surface-soft}",
 			"padding", "{spacing.3xl} {spacing.lg} {spacing.lg}",
 		).
@@ -221,8 +221,8 @@ func PageCSS(t style.Theme) string {
 			"align-items", "center",
 			"gap", "6px",
 			"background", "{colors.surface-soft}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "999px",
+			"border", "{strokes.thin} solid {colors.border}",
+			"border-radius", "{radii.full}",
 			"padding", "4px 10px",
 			"font-size", "{text.xs}",
 			"font-weight", "{font-weight.semibold}",
@@ -258,7 +258,7 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"width", "100%",
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.md}",
 			"padding", "8px 12px",
 			"color", "{colors.text}",
@@ -272,7 +272,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule("body.kiln-app th, body.kiln-app td").
 		Set(
 			"padding", "{spacing.sm} {spacing.md}",
-			"border-bottom", "1px solid {colors.border}",
+			"border-bottom", "{strokes.thin} solid {colors.border}",
 			"text-align", "left",
 		).
 		End()

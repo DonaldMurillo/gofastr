@@ -186,7 +186,7 @@ func bannerCSS(_ style.Theme) string {
   align-items: start;
   padding: 12px var(--spacing-lg, 16px);
   /* The variant tints the hairline; a full-strength ring shouts. */
-  border: 1px solid color-mix(in oklab, var(--ui-banner-accent, var(--color-info, #3B82F6)) 35%, var(--color-border, #E4E4E7));
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-banner-accent, var(--color-info, #3B82F6)) 35%, var(--color-border, #E4E4E7));
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
@@ -256,8 +256,8 @@ func bannerCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* A phone has no room for four columns: the copy ends up the
    narrowest of them. Below 30rem the action drops under the body and

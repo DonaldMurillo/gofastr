@@ -160,7 +160,7 @@ func stepRailCSS(_ style.Theme) string {
   flex-direction: column;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }

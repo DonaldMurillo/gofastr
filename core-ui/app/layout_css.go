@@ -41,14 +41,14 @@ func InterceptOverlayCSS() string {
 [data-cui-intercept-as="drawer"] > * {
   width: min(var(--ui-intercept-drawer-w, 480px), 100%);
   height: 100%;
-  border-inline-start: 1px solid var(--color-border, #e4e4e7);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
 }
 /* Sheet: docked to the bottom, capped so the page stays visible above. */
 [data-cui-intercept-as="sheet"] { align-items: flex-end; }
 [data-cui-intercept-as="sheet"] > * {
   width: 100%;
   max-height: var(--ui-intercept-sheet-h, 85vh);
-  border-top: 1px solid var(--color-border, #e4e4e7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   border-start-start-radius: var(--radii-lg, 10px);
   border-start-end-radius: var(--radii-lg, 10px);
 }
@@ -61,13 +61,13 @@ func InterceptOverlayCSS() string {
     height: auto;
     max-height: var(--ui-intercept-sheet-h, 85vh);
     border-inline-start: none;
-    border-top: 1px solid var(--color-border, #e4e4e7);
+    border-top: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
     border-start-start-radius: var(--radii-lg, 10px);
     border-start-end-radius: var(--radii-lg, 10px);
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  [data-cui-intercept-overlay] > * { animation: cui-intercept-in 160ms ease-out; }
+  [data-cui-intercept-overlay] > * { animation: cui-intercept-in var(--duration-overlay-enter, 200ms) ease-out; }
   @keyframes cui-intercept-in {
     from { transform: translateY(8px); opacity: 0.6; }
     to   { transform: none; opacity: 1; }

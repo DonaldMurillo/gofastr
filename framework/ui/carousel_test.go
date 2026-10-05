@@ -38,7 +38,7 @@ func TestCarouselCSSRestoresTheOverlaidChrome(t *testing.T) {
 		// empty rule with the right selector positions the arrows
 		// against an ancestor and the chrome quietly drifts.
 		"[data-cui-comp=\"ui-carousel\"] .fui-carousel__stage {\n  /* Positioning context for the overlaid prev/next arrows, so they\n     centre on the track and cannot overlap the dot row below\n     (WCAG 2.2 target-size). The stage is also at least as tall as\n     its overlaid controls: a short track would otherwise let the\n     44px arrows poke into the dots row and clip the outer dots'\n     target envelopes. */\n  position: relative;\n  min-block-size: var(--spacing-touch-target, 44px);\n}",
-		"border-radius: 999px;",
+		"border-radius: var(--radii-full, 9999px);",
 		".fui-carousel__prev::before,",
 		".fui-carousel__dot::after {",
 		"inline-size: 10px;",

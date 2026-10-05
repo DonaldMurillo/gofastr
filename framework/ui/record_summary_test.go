@@ -61,10 +61,10 @@ func TestRecordSummaryCSSControlsMobileScaleAndActionWidth(t *testing.T) {
 	css := recordSummaryCSS(style.Theme{})
 	for _, want := range []string{
 		`[data-cui-comp="ui-record-summary"]`,
-		`border: 1px solid color-mix(in oklab, var(--ui-record-summary-accent,`,
+		`border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-record-summary-accent,`,
 		`inline-size: fit-content`,
 		`grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.55fr)`,
-		`border-inline-start: 1px solid var(--color-border, #e4e4e7)`,
+		`border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)`,
 		`@media (max-width: 720px)`,
 		`font-size: var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))`,
 		`order: -1`,

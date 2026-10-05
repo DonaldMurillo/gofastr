@@ -137,7 +137,7 @@ func tocCSS(_ style.Theme) string {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   border-radius: var(--radii-sm, 6px);
-  border-inline-start: 2px solid transparent;
+  border-inline-start: var(--stroke-thick, 2px) solid transparent;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
   line-height: 1.4;
@@ -153,7 +153,7 @@ func tocCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }`
 }

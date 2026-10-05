@@ -105,7 +105,7 @@ func detailListCSS(_ style.Theme) string {
   gap: var(--spacing-lg, 16px);
   align-items: baseline;
   padding: var(--spacing-md, 8px) 0;
-  border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
 }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__label {

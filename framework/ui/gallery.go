@@ -250,19 +250,19 @@ func galleryCSS(_ style.Theme) string {
   display: block;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFFFFF);
   text-decoration: none;
   color: inherit;
   cursor: zoom-in;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition: border-color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
   border-color: var(--color-primary, #4F46E5);
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__figure {
   margin: 0;
@@ -357,7 +357,7 @@ func galleryCSS(_ style.Theme) string {
   background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
   font-size: var(--text-sm, 0.875rem);
   opacity: 0;
-  transition: opacity 150ms ease;
+  transition: opacity var(--duration-fast, 150ms) ease;
 }
 /* The caption is the anchor's sibling in the primitive's markup, so
    the row (the li) carries the hover/focus-within surface. */

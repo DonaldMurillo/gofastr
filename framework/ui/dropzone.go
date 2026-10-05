@@ -278,11 +278,11 @@ func dropzoneCSS(_ style.Theme) string {
   justify-items: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
-  border: 2px dashed var(--color-border, #E4E4E7);
+  border: var(--stroke-thick, 2px) dashed var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   text-align: center;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--duration-fast, 150ms) ease, background var(--duration-fast, 150ms) ease;
 }
 .fui-drop[data-hui-drop-over] .fui-drop__zone,
 .fui-drop__label-wrap:hover .fui-drop__zone {
@@ -293,7 +293,7 @@ func dropzoneCSS(_ style.Theme) string {
 /* Slight lift for tactile feedback while a drag is over. */
 .fui-drop[data-hui-drop-over] .fui-drop__icon {
   transform: translateY(-2px);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast, 150ms) ease;
 }
 .fui-drop__input {
   position: absolute;
@@ -307,8 +307,8 @@ func dropzoneCSS(_ style.Theme) string {
   border: 0;
 }
 .fui-drop__input:focus-visible + .fui-drop__icon {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 4px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(2 * var(--stroke-focus-offset, 2px));
   border-radius: var(--radii-sm, 6px);
 }
 .fui-drop__icon {
@@ -353,7 +353,7 @@ func dropzoneCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #F4F4F5);
   object-fit: cover;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-drop__help {
   margin: 0;

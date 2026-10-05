@@ -106,7 +106,7 @@ func layoutCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-layout"].fui-box--outlined {
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-layout"].fui-box--pad-sm { padding: var(--spacing-sm, 4px); }
@@ -144,7 +144,7 @@ func cardCSS(t style.Theme) string {
   flex-direction: column;
   background: var(--color-surface);
   color: var(--color-text);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-xl);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
@@ -172,8 +172,8 @@ func cardCSS(t style.Theme) string {
   border-color: var(--color-text);
 }
 [data-cui-comp="ui-card"].fui-card--interactive:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-card"] .fui-card__inner {
   display: flex;
@@ -219,7 +219,7 @@ func cardCSS(t style.Theme) string {
 [data-cui-comp="ui-card"] .fui-card__footer {
   margin-top: auto;
   padding: var(--spacing-lg, 16px) var(--spacing-xl, 24px);
-  border-top: 1px solid var(--color-border);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border);
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
@@ -346,7 +346,7 @@ func toggleCSS(_ style.Theme) string {
   /* An unchecked box is drawn by its border alone, so the border is a
      control boundary (WCAG 1.4.11, 3:1), not a hairline: text-subtle
      clears it in both schemes, border-strong does not. */
-  border: 1px solid var(--color-text-subtle);
+  border: var(--stroke-thin, 1px) solid var(--color-text-subtle);
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   cursor: inherit;
@@ -422,7 +422,7 @@ func toggleCSS(_ style.Theme) string {
   inline-size: 2.25rem;
   block-size: 1.25rem;
   margin: 0;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
   background-color: var(--color-surface-soft, #F4F4F5);
   background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, rgba(0, 0, 0, 0.18) 7.5px 8.5px, transparent 9px);
@@ -448,8 +448,8 @@ func toggleCSS(_ style.Theme) string {
 /* ─── Shared state styling, from the state attributes themselves. ─── */
 .fui-choice__input:focus-visible,
 .fui-switch__input:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-choice__input[aria-invalid="true"],
 .fui-switch__input[aria-invalid="true"] {
@@ -600,7 +600,7 @@ func tagCSS(t style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
-  border: 1px solid transparent;
+  border: var(--stroke-thin, 1px) solid transparent;
   border-radius: var(--radii-md);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
@@ -641,8 +641,8 @@ func tagCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-tag"].fui-tag--interactive:hover { border-color: var(--color-border-strong); }
 [data-cui-comp="ui-tag"]:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss {
   display: inline-flex;
@@ -666,8 +666,8 @@ func tagCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }` + customStatusCSS("ui-tag", "fui-tag", t)
 }
 
@@ -689,7 +689,7 @@ func spinnerCSS(_ style.Theme) string {
   inline-size: var(--ui-spinner-size);
   block-size:  var(--ui-spinner-size);
   border-radius: 50%;
-  border: 2px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
   border-top-color: var(--color-primary, #4F46E5);
   animation: fui-spinner-rotate var(--duration-slow, 400ms) linear infinite;
 }
@@ -720,7 +720,7 @@ func spinnerCSS(_ style.Theme) string {
 [data-cui-comp="ui-spinner"] .fui-spinner__cell {
   display: block;
   background: var(--color-primary, #4F46E5);
-  border-radius: 2px;
+  border-radius: calc(var(--radii-sm, 6px) / 3);
   animation: fui-spinner-grid 1.3s ease-in-out infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell:nth-child(1) { animation-delay: 0.0s; }
@@ -826,7 +826,7 @@ func stickyCSS(_ style.Theme) string {
   height: 1px;
   background: var(--color-border, #E4E4E7);
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--duration-fast, 150ms);
 }
 /* Edge offsets */
 :where([data-cui-comp="ui-sticky"]).fui-sticky--top { top: 0; }

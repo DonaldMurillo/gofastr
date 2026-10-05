@@ -47,7 +47,7 @@ func adminCSS(_ style.Theme) string {
 }
 .layout-admin .layout-body > nav {
   padding: var(--spacing-md, 8px) var(--admin-gutter, clamp(1rem, 0.5rem + 3vw, 3rem));
-  border-block-end: 1px solid var(--color-border, #2a2b2e);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
 }
 .layout-admin .layout-content,
 .layout-admin > .layout-body > main {
@@ -61,7 +61,7 @@ func adminCSS(_ style.Theme) string {
   .layout-admin .layout-body > nav {
     background: var(--color-surface, #17181a);
     border-block-end: 0;
-    border-inline-end: 1px solid var(--color-border, #2a2b2e);
+    border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
     padding: clamp(1.25rem, 1rem + 1vw, 1.75rem) var(--spacing-lg, 16px);
   }
 }
@@ -90,7 +90,7 @@ func adminCSS(_ style.Theme) string {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding-inline: 0.9rem;
   min-block-size: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #2a2b2e);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
@@ -101,13 +101,13 @@ func adminCSS(_ style.Theme) string {
 .admin-sort__summary::after { content: "▾"; color: var(--color-text-muted, #a8a8ad); font-size: 0.8em; }
 .admin-sort__summary:hover { border-color: var(--color-border-strong, #3d3e42); }
 .admin-sort__menu {
-  position: absolute; z-index: 30;
+  position: absolute; z-index: var(--z-dropdown, 100);
   inset-block-start: calc(100% + 0.35rem); inset-inline-start: 0;
   min-inline-size: 13rem; max-inline-size: min(20rem, calc(100vw - 2rem));
   max-block-size: 60vh; overflow-y: auto;
   display: grid; gap: 1px; padding: 0.35rem;
   background: var(--color-surface, #17181a);
-  border: 1px solid var(--color-border, #2a2b2e);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-md, 0 12px 32px rgba(0,0,0,0.4));
 }
@@ -126,8 +126,8 @@ func adminCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
   padding: 0.35rem 0.35rem 0.35rem 0.75rem;
-  border: 1px solid var(--color-border, #2a2b2e);
-  border-radius: 999px;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #17181a);
   color: var(--color-text-muted, #a8a8ad);
   font-size: var(--text-sm, 0.875rem);
@@ -135,9 +135,9 @@ func adminCSS(_ style.Theme) string {
 .admin-filter strong { color: var(--color-text, #f2f2f3); font-weight: var(--font-weight-semibold); }
 .admin-filter__clear {
   display: inline-flex; align-items: center; justify-content: center;
-  inline-size: 1.4rem; block-size: 1.4rem; border-radius: 999px;
+  inline-size: 1.4rem; block-size: 1.4rem; border-radius: var(--radii-full, 9999px);
   color: var(--color-text-muted, #a8a8ad); text-decoration: none; line-height: 1;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
 }
 .admin-filter__clear:hover { background: var(--color-border, #2a2b2e); color: var(--color-text, #f2f2f3); }
 
@@ -156,12 +156,12 @@ func adminCSS(_ style.Theme) string {
 .admin-bool {
   display: inline-flex; align-items: center; gap: 0.35rem;
   font-size: 0.8125rem; font-weight: var(--font-weight-medium);
-  padding: 0.15rem 0.55rem; border-radius: 999px;
-  border: 1px solid var(--color-border, #2a2b2e);
+  padding: 0.15rem 0.55rem; border-radius: var(--radii-full, 9999px);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   color: var(--color-text-muted, #a8a8ad);
 }
 .admin-bool::before {
-  content: ""; inline-size: 0.5rem; block-size: 0.5rem; border-radius: 999px;
+  content: ""; inline-size: 0.5rem; block-size: 0.5rem; border-radius: var(--radii-full, 9999px);
   background: var(--color-border-strong, #3d3e42);
 }
 .admin-bool[data-on="true"] { color: var(--color-text, #f2f2f3); }
@@ -181,7 +181,7 @@ func adminCSS(_ style.Theme) string {
 .admin-row-actions .fui-button--danger {
   background: transparent;
   color: var(--color-danger, #e5645f);
-  border: 1px solid color-mix(in oklab, var(--color-danger, #e5645f) 40%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #e5645f) 40%, transparent);
 }
 .admin-row-actions .fui-button--danger:hover {
   background: color-mix(in oklab, var(--color-danger, #e5645f) 14%, transparent);
@@ -195,7 +195,7 @@ func adminCSS(_ style.Theme) string {
   grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
   gap: 0;
   margin: 0;
-  border: 1px solid var(--color-border, #2a2b2e);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-lg, 10px);
   overflow: hidden;
   background: var(--color-surface, #17181a);
@@ -205,12 +205,12 @@ func adminCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem); text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--color-text-subtle, #818187);
   background: color-mix(in oklab, var(--color-surface, #17181a) 60%, var(--color-background, #0c0c0d));
-  border-block-start: 1px solid var(--color-border, #2a2b2e);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
 }
 .admin-detail__value {
   padding: 0.85rem 1rem;
   color: var(--color-text, #f2f2f3);
-  border-block-start: 1px solid var(--color-border, #2a2b2e);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   word-break: break-word;
 }
 .admin-detail__label:first-of-type,
@@ -219,7 +219,7 @@ func adminCSS(_ style.Theme) string {
 
 @media (max-width: 33rem) {
   .admin-detail { grid-template-columns: 1fr; }
-  .admin-detail__label { padding-block-end: 0.15rem; border-block-start: 1px solid var(--color-border, #2a2b2e); }
+  .admin-detail__label { padding-block-end: 0.15rem; border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e); }
   .admin-detail__value { padding-block-start: 0.15rem; border-block-start: 0; }
 }
 
@@ -233,7 +233,7 @@ func adminCSS(_ style.Theme) string {
 /* ── typed cell renderers (image / file / json / prose / mono) ──────────── */
 .admin-thumb {
   inline-size: 2.5rem; block-size: 2.5rem; object-fit: cover;
-  border-radius: var(--radii-md, 8px); border: 1px solid var(--color-border, #2a2b2e);
+  border-radius: var(--radii-md, 8px); border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   background: var(--color-surface-soft, #202123); vertical-align: middle;
 }
 .admin-thumb--lg { inline-size: 7.5rem; block-size: 7.5rem; }
@@ -277,7 +277,7 @@ body.admin-standalone {
 .admin-input {
   font: inherit;
   padding: 0.4rem 0.6rem;
-  border: 1px solid var(--color-border, #2a2b2e);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
@@ -285,7 +285,7 @@ body.admin-standalone {
 }
 .admin-input::placeholder { color: var(--color-text-muted, #a8a8ad); }
 .admin-input:focus-visible {
-  outline: 2px solid var(--color-primary, #f0b429);
+  outline: var(--stroke-focus, 2px) solid var(--color-primary, #f0b429);
   outline-offset: 0;
 }
 /* Inline POST form cluster: lays its hidden inputs + input + ui.Button out

@@ -129,7 +129,7 @@ func sortablelistCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-xs);
   font-size: var(--text-sm, 0.875rem);
@@ -138,8 +138,8 @@ func sortablelistCSS(_ style.Theme) string {
   min-block-size: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
   background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
@@ -150,7 +150,7 @@ func sortablelistCSS(_ style.Theme) string {
   opacity: 0.5;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
-  border-top: 2px solid var(--color-primary, #4F46E5);
+  border-top: var(--stroke-thick, 2px) solid var(--color-primary, #4F46E5);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__grip {
   display: inline-flex;

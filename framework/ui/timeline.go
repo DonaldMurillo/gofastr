@@ -161,9 +161,9 @@ func timelineCSS(_ style.Theme) string {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-text-muted, #52525B);
-  border: 2px solid var(--color-background, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-background, #FFFFFF);
   /* Centre the 12px dot on the title's first line (text-sm at the
      body's 1.5 line height). */
   margin-top: calc((var(--text-sm, 0.875rem) * 1.5 - 12px) / 2);

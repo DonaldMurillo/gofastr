@@ -121,7 +121,7 @@ func textAreaCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) 12px;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
@@ -137,12 +137,12 @@ func textAreaCSS(_ style.Theme) string {
 }
 .fui-textarea::placeholder { color: var(--color-text-subtle); }
 .fui-textarea:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-textarea[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-textarea:disabled {
   opacity: 0.6;

@@ -124,7 +124,7 @@ func pricingCardCSS(_ style.Theme) string {
   row-gap: var(--spacing-lg, 1rem);
   padding: var(--spacing-xl, 24px);
   background-color: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-xl, 14px);
   box-shadow: var(--shadow-sm);
   /* A minimum, not a height: a flex row only stretches an item whose
@@ -140,7 +140,7 @@ func pricingCardCSS(_ style.Theme) string {
    same as its neighbours', as a tinted fill read as a disabled tile. */
 [data-cui-comp="ui-pricing-card"].fui-pricing-card--featured {
   border-color: var(--color-primary, #18181B);
-  box-shadow: 0 0 0 1px var(--color-primary, #18181B), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--stroke-thin, 1px) var(--color-primary, #18181B), var(--shadow-sm);
 }
 /* The badge rides the name's line, at its end: on a line of its own it
    pushed the featured card's price below its neighbours'. */

@@ -188,7 +188,7 @@ func carouselCSS(_ style.Theme) string {
 /* A child that fills the slide would have its focus ring clipped by
    the slide's overflow, so the ring draws inside its edge. The extra
    track step outweighs a component's own :focus-visible rule. */
-[data-cui-comp="ui-carousel"] .fui-carousel__track > .fui-carousel__slide > :focus-visible { outline-offset: -4px; }
+[data-cui-comp="ui-carousel"] .fui-carousel__track > .fui-carousel__slide > :focus-visible { outline-offset: calc(-2 * var(--stroke-focus-offset, 2px)); }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-1 { --ui-carousel-cols: 1; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-2 { --ui-carousel-cols: 2; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-3 { --ui-carousel-cols: 3; }
@@ -212,8 +212,8 @@ func carouselCSS(_ style.Theme) string {
   [data-cui-comp="ui-carousel"]:has(> .fui-carousel__dots) > .fui-carousel__stage > :is(.fui-carousel__prev, .fui-carousel__next) { display: none; }
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__track:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev,
 [data-cui-comp="ui-carousel"] .fui-carousel__next {
@@ -226,8 +226,8 @@ func carouselCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
   color: var(--color-text, #18181B);
@@ -244,8 +244,8 @@ func carouselCSS(_ style.Theme) string {
   content: "";
   inline-size: 9px;
   block-size: 9px;
-  border-inline-start: 2px solid currentColor;
-  border-block-start: 2px solid currentColor;
+  border-inline-start: var(--stroke-thick, 2px) solid currentColor;
+  border-block-start: var(--stroke-thick, 2px) solid currentColor;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev::before { transform: rotate(-45deg); }
 [data-cui-comp="ui-carousel"] .fui-carousel__next::before { transform: rotate(135deg); }
@@ -255,8 +255,8 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__next:hover { background: var(--color-surface-soft, #F4F4F5); }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:focus-visible,
 [data-cui-comp="ui-carousel"] .fui-carousel__next:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dots {
   display: flex;
@@ -277,7 +277,7 @@ func carouselCSS(_ style.Theme) string {
   block-size: var(--spacing-xl, 24px);
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: transparent;
   cursor: pointer;
   text-decoration: none;
@@ -295,18 +295,18 @@ func carouselCSS(_ style.Theme) string {
   inset-inline-start: 50%;
   inline-size: 10px;
   block-size: 10px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-border, #E4E4E7);
   transform: translate(-50%, -50%);
-  transition: background 120ms ease, transform 120ms ease;
+  transition: background var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot[aria-current="true"]::after {
   background: var(--color-primary, #4F46E5);
   transform: translate(-50%, -50%) scale(1.2);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-carousel"] .fui-carousel__track { scroll-behavior: auto; }

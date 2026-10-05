@@ -108,8 +108,8 @@ func linkCSS(_ style.Theme) string {
   text-underline-offset: 0.2em;
 }
 [data-cui-comp="ui-link"]:focus-visible, .fui-link:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
   border-radius: var(--radii-sm, 6px);
 }
 

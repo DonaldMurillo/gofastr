@@ -76,7 +76,7 @@ func inputGroupCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: stretch;
   max-inline-size: 100%;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -84,8 +84,8 @@ func inputGroupCSS(_ style.Theme) string {
 }
 /* The group is the control: it takes the focus ring its input would. */
 .fui-input-group:focus-within {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-input-group > input,
 .fui-input-group > select {

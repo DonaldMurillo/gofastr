@@ -122,7 +122,7 @@ func colorPickerCSS(_ style.Theme) string {
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
   padding: 0;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: transparent;
   cursor: pointer;
@@ -139,8 +139,8 @@ func colorPickerCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
 [data-cui-comp="ui-color-picker"] .fui-color-picker__input:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {
   opacity: 0.6;

@@ -19,12 +19,14 @@ func TestFocusRingIsNeutral(t *testing.T) {
 	// The bridge spelling var(--fui-primary, var(--color-primary…)) and a
 	// thumb's focus halo hid three more from the first pattern, and a
 	// danger ring on the repeater's remove button one more.
-	colorRing := regexp.MustCompile(`outline:\s*[0-9.]+px solid var\((--fui-primary,\s*var\()?--color-(primary|danger|accent|info|success|warning)` +
+	// The width is a stroke token since the stroke sweep; the literal
+	// spelling stays matched for a sheet that regresses to it.
+	colorRing := regexp.MustCompile(`outline:\s*(?:[0-9.]+px|var\(--stroke-focus(?:,\s*[0-9.]+px)?\)) solid var\((--fui-primary,\s*var\()?--color-(primary|danger|accent|info|success|warning)` +
 		`|focus-visible[^{]*\{[^}]*box-shadow:[^;}]*var\(--color-(primary|danger|accent|info|success|warning)`)
 	thm := style.DefaultTheme()
 	for _, e := range registry.All() {
 		for _, m := range colorRing.FindAllString(e.CSSFor(thm), -1) {
-			t.Errorf("%s: %q; spell the ring outline: 2px solid var(--color-text-subtle)", e.Name, m)
+			t.Errorf("%s: %q; spell the ring outline: var(--stroke-focus, 2px) solid var(--color-text-subtle)", e.Name, m)
 		}
 	}
 }

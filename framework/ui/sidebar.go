@@ -881,7 +881,7 @@ func sidebarCSS(_ style.Theme) string {
 	return `.fui-sidebar-native { min-inline-size: 0; }
 .fui-sidebar-native__mobile { display: none; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
-[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: var(--stroke-thin, 1px) solid transparent; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-text); font-weight: var(--font-weight-medium); border-inline-start-color: var(--color-text); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
@@ -909,7 +909,7 @@ func sidebarCSS(_ style.Theme) string {
   justify-content: center;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -926,7 +926,7 @@ func sidebarCSS(_ style.Theme) string {
   justify-self: end;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -934,8 +934,8 @@ func sidebarCSS(_ style.Theme) string {
   font-size: var(--text-xl, 1.25rem);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
   display: none;
@@ -1007,8 +1007,8 @@ func sidebarCSS(_ style.Theme) string {
      (equal specificity, later source) overrode the focus background, and
      outline:none removed the ring — so a keyboard user could not see
      focus land on the current page's nav item. */
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link[aria-current="page"] {
   /* The neutral surface-soft + text pair: contrast holds in every
@@ -1028,11 +1028,11 @@ func sidebarCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar"] .fui-sidebar__footer {
   margin-top: auto;
   padding-top: var(--spacing-md, 8px);
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__prepend {
   padding-bottom: var(--spacing-md, 8px);
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 /* The drawer body has no column padding (each nav row pads itself), so
    the title, Prepend and footer take the rows' inline inset: their text
@@ -1167,7 +1167,7 @@ func sidebarCSS(_ style.Theme) string {
      row's padding IS the inset): the brand lines up with the first
      row's icon instead of starting 8px deeper. */
   padding: var(--spacing-md, 8px) var(--spacing-md, 8px);
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-sidebar__drawer-brand {
   font-weight: var(--font-weight-bold);
@@ -1185,7 +1185,7 @@ func sidebarCSS(_ style.Theme) string {
   flex: 0 0 auto;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -1198,8 +1198,8 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 .fui-sidebar__drawer-close:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline { transition: none; }

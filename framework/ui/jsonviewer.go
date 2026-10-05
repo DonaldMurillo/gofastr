@@ -97,7 +97,7 @@ func jsonViewerCSS(_ style.Theme) string {
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__summary::before {
   content: "▸";
   color: var(--color-text-muted, #52525B);
-  transition: transform 100ms ease;
+  transition: transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__node[open] > .fui-json-viewer__summary::before {
   transform: rotate(90deg);
@@ -114,7 +114,7 @@ func jsonViewerCSS(_ style.Theme) string {
   margin: 0;
   padding-inline-start: var(--spacing-lg, 16px);
   list-style: none;
-  border-inline-start: 1px dashed var(--color-border, #E4E4E7);
+  border-inline-start: var(--stroke-thin, 1px) dashed var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__item {
   padding-block: var(--spacing-xs, 2px);

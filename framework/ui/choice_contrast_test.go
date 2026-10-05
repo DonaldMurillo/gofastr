@@ -22,7 +22,7 @@ func TestChoiceBorderMeetsNonTextContrast(t *testing.T) {
 		t.Fatalf("no .fui-choice__input rule:\n%s", css)
 	}
 	rule := css[i : i+strings.Index(css[i:], "}")]
-	m := regexp.MustCompile(`\n\s*border: 1px solid var\(--color-([a-z-]+)`).FindStringSubmatch(rule)
+	m := regexp.MustCompile(`\n\s*border: var\(--stroke-thin, 1px\) solid var\(--color-([a-z-]+)`).FindStringSubmatch(rule)
 	if m == nil {
 		t.Fatalf("the choice border is not a colour token:\n%s", rule)
 	}

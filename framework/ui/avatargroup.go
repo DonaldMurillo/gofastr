@@ -172,7 +172,7 @@ func avatarGroupCSS(_ style.Theme) string {
   z-index: 10; /* surface the focused/hovered chip above siblings */
 }
 [data-cui-comp="ui-avatar-group"] .fui-avatar {
-  border: 2px solid var(--color-surface, #fff);
+  border: var(--stroke-thick, 2px) solid var(--color-surface, #fff);
   box-sizing: content-box;
 }
 [data-cui-comp="ui-avatar-group"] .fui-avatar-group__overflow {
@@ -187,7 +187,7 @@ func avatarGroupCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
-  border: 2px solid var(--color-surface, #fff);
+  border: var(--stroke-thick, 2px) solid var(--color-surface, #fff);
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--sm .fui-avatar-group__overflow {
   inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.65rem;

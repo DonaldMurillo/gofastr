@@ -348,7 +348,7 @@ func commandPaletteCSS(_ style.Theme) string {
      no-script FORM also wears the combobox class, so :has() picks
      the row): the search field's padding and seam. */
   padding: var(--spacing-md, 8px);
-  border-bottom: 1px solid var(--color-border, #d0d0d8);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
   flex: 0 0 auto;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__input {
@@ -386,7 +386,7 @@ func commandPaletteCSS(_ style.Theme) string {
   justify-content: space-between;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-top: 1px solid var(--color-border, #d0d0d8);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
   background: var(--color-surface-soft, #f7f7f8);
   flex: 0 0 auto;
 }
@@ -412,8 +412,8 @@ func commandPaletteCSS(_ style.Theme) string {
   color: var(--color-text, #18181b);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hints {
   display: inline-flex;
@@ -429,8 +429,8 @@ func commandPaletteCSS(_ style.Theme) string {
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
   font-family: var(--font-mono, ui-monospace, monospace);
   padding: 1px 6px;
-  border: 1px solid var(--color-border, #d0d0d8);
-  border-bottom-width: 2px;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-bottom-width: var(--stroke-thick, 2px);
   border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #fff);
   font-size: var(--text-xs, 0.75rem);

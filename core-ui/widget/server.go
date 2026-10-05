@@ -778,7 +778,7 @@ func widgetCSS(def Definition) string {
 	ss.Rule(`.cui-pos-center > .cui-panel:not(:has(> .cui-slot > .cui-slot-bare))`).
 		Set(
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 			"box-shadow", "{shadows.xl}",
@@ -799,7 +799,7 @@ func widgetCSS(def Definition) string {
 			"width", "40px",
 			"height", "4px",
 			"margin", "8px auto 4px",
-			"border-radius", "2px",
+			"border-radius", "calc({radii.sm} / 3)",
 			"background", "{colors.border}",
 			"touch-action", "none",
 			"cursor", "grab",
@@ -843,7 +843,7 @@ func widgetCSS(def Definition) string {
 		Set("border-radius", "{radii.md}",
 			"box-shadow", "{shadows.lg}",
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"max-inline-size", "min(360px, calc(100vw - 32px))",
 			"max-block-size", "calc(100vh - 32px)",
 			"display", "flex",
@@ -865,8 +865,8 @@ func widgetCSS(def Definition) string {
 			"inline-size", "12px",
 			"block-size", "12px",
 			"background", "{colors.surface}",
-			"border-inline-start", "1px solid {colors.border}",
-			"border-block-start", "1px solid {colors.border}").
+			"border-inline-start", "{strokes.thin} solid {colors.border}",
+			"border-block-start", "{strokes.thin} solid {colors.border}").
 		End()
 	// side="top" → popover sits ABOVE trigger → arrow at its
 	// bottom edge, pointing DOWN.
@@ -906,7 +906,7 @@ func widgetCSS(def Definition) string {
 		Set("background", "{colors.primary}",
 			"color", "{colors.primary-fg}",
 			"border-color", "{colors.primary}",
-			"box-shadow", "0 0 0 3px color-mix(in oklab, {colors.primary} 25%, transparent)").
+			"box-shadow", "0 0 0 calc(1.5 * {strokes.focus}) color-mix(in oklab, {colors.primary} 25%, transparent)").
 		End()
 
 	// Keyframes + reduced-motion suppression. Emitted as raw CSS

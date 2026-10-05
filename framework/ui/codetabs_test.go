@@ -74,7 +74,7 @@ func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
 	// the per-index pair all panels stack (review item 19).
 	for _, want := range []string{
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {`,
-		`border-bottom: 1px solid var(--color-border`,
+		`border-bottom: var(--stroke-thin, 1px) solid var(--color-border`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none;`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="0"] .fui-code-tabs__panel[data-cui-tab-index="0"]{display:block}`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="1"] .fui-code-tabs__tab[data-cui-tab-index="1"]{color:var(--color-primary`,

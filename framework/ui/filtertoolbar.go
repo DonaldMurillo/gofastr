@@ -526,8 +526,8 @@ func filterToolbarCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 
 /* Single-column stack when the toolbar itself (not the viewport) is

@@ -44,7 +44,7 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 	}{
 		{theme.Round, "var(--radii-md)"},
 		{theme.Square, "0"},
-		{theme.Pill, "9999px"},
+		{theme.Pill, "var(--radii-full)"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Radius: tc.radius}})
 		if !strings.Contains(css, "--fui-button-radius: "+tc.value+";") {

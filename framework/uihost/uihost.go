@@ -869,7 +869,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   overflow: visible;
   clip: auto;
   white-space: normal;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
   border-radius: var(--radii-sm, 6px);
@@ -882,7 +882,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 .cui-nav-toast {
   position: fixed;
   right: 16px; bottom: 16px;
-  z-index: 9999;
+  z-index: var(--z-toast, 500);
   max-width: calc(100vw - 32px);
   padding: 12px 16px;
   /* Reuses the theme's always-dark inkwell pair rather than hardcoding a
@@ -897,7 +897,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   box-shadow: 0 10px 25px rgba(0,0,0,0.25);
   opacity: 0;
   transform: translateY(8px);
-  transition: opacity 0.18s, transform 0.18s;
+  transition: opacity var(--duration-fast, 150ms), transform var(--duration-fast, 150ms);
   pointer-events: none;
 }
 .cui-nav-toast.is-visible {
@@ -939,7 +939,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   height: 2px;
   background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
   animation: fui-nav-progress 1s linear infinite;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   pointer-events: none;
   color: var(--color-primary, #4F46E5);
 }
@@ -958,7 +958,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
 const frameworkPageLoadingCSS = `[data-fui-page-loading] {
   visibility: hidden;
   opacity: 0;
-  transition: opacity .18s ease, visibility .18s;
+  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms);
   pointer-events: none;
 }
 html[aria-busy="true"] [data-fui-page-loading] {
@@ -980,7 +980,7 @@ const frameworkDimCSS = `
    NOT dimmed — the loading content replaces the old content, dimming
    it would double the signal. */
 [data-cui-outlet], [data-cui-area], [data-cui-layout-slot] {
-  transition: opacity .12s ease;
+  transition: opacity var(--duration-fast, 150ms) ease;
 }
 [data-cui-outlet][aria-busy="true"],
 [data-cui-area][aria-busy="true"],
@@ -1003,12 +1003,12 @@ const frameworkDimCSS = `
 [data-cui-outlet][data-cui-loadstate="shown"],
 [data-cui-area][data-cui-loadstate="shown"],
 [data-cui-layout-slot][data-cui-loadstate="shown"] {
-  animation: fui-load-in .18s ease both;
+  animation: fui-load-in var(--duration-fast, 150ms) ease both;
 }
 [data-cui-outlet][data-cui-loadstate="exit"],
 [data-cui-area][data-cui-loadstate="exit"],
 [data-cui-layout-slot][data-cui-loadstate="exit"] {
-  animation: fui-load-out .18s ease both;
+  animation: fui-load-out var(--duration-fast, 150ms) ease both;
 }
 @keyframes fui-load-in { from { opacity: 0; } }
 @keyframes fui-load-out { to { opacity: 0; } }

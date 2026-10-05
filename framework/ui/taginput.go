@@ -117,14 +117,14 @@ func tagInputCSS(_ style.Theme) string {
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__zone:focus-within {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__list {
   display: contents;
@@ -148,7 +148,7 @@ func tagInputCSS(_ style.Theme) string {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: transparent;
   border: 0;
   color: var(--color-text-muted, #52525B);
@@ -196,8 +196,8 @@ func tagInputCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__add:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__help {
   margin: 0;

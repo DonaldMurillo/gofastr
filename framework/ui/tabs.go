@@ -110,9 +110,9 @@ func tabsCSS(_ style.Theme) string {
 	// SegmentedControl and the FilterToolbar pills, so every "pick one of
 	// these" control on a page reads as one family.
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:inline-flex;flex-wrap:wrap;gap:0;padding:var(--spacing-sm, 4px);background:var(--fui-muted-bg, var(--color-surface-soft, #F4F4F5));border-radius:var(--radii-lg, 10px);margin-bottom:0}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{display:inline-flex;align-items:center;justify-content:center;min-block-size:calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));padding:0 12px;background:transparent;border:1px solid transparent;border-radius:var(--radii-md, 8px);cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #52525B));transition:color .15s,background-color .15s,box-shadow .15s;text-decoration:none;white-space:nowrap}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{display:inline-flex;align-items:center;justify-content:center;min-block-size:calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));padding:0 12px;background:transparent;border:var(--stroke-thin, 1px) solid transparent;border-radius:var(--radii-md, 8px);cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #52525B));transition:color var(--duration-fast, 150ms),background-color var(--duration-fast, 150ms),box-shadow var(--duration-fast, 150ms);text-decoration:none;white-space:nowrap}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #09090B))}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--color-text-subtle);outline-offset:2px}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:var(--spacing-lg, 16px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
 	for i := range tabsMaxPanels {

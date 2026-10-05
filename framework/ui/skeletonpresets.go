@@ -314,7 +314,7 @@ const skeletonPresetsCSS = `
   inline-size: 35%;
   margin-block-start: var(--spacing-md, 8px);
   padding-block-start: var(--spacing-md, 8px);
-  border-block-start: 1px solid var(--color-border, #E5E7EB);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E5E7EB);
 }
 /* A footed card's body keeps its own short last line: the footer is
    a separate rhythm below it, and the mark names the footer, not the
@@ -335,7 +335,7 @@ const skeletonPresetsCSS = `
   align-items: center;
   padding-block: var(--spacing-sm, 4px);
   padding-inline: var(--spacing-md, 8px);
-  border-block-end: 1px solid var(--color-border, #E5E7EB);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E5E7EB);
 }
 .fui-skeleton-row--chevron { grid-template-columns: 1fr auto auto; }
 .fui-skeleton-row > .fui-skeleton__line:first-child { inline-size: 40%; }
@@ -345,8 +345,8 @@ const skeletonPresetsCSS = `
   display: inline-block;
   inline-size: 0.5rem;
   block-size: 0.5rem;
-  border-block-start: 2px solid var(--color-border, #E5E7EB);
-  border-inline-end: 2px solid var(--color-border, #E5E7EB);
+  border-block-start: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
+  border-inline-end: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
   transform: rotate(45deg);
   opacity: 0.6;
 }

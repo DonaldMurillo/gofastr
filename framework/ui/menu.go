@@ -344,7 +344,7 @@ func menuCSS(_ style.Theme) string {
   list-style: none;
   user-select: none;
   padding: 0 var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -357,8 +357,8 @@ func menuCSS(_ style.Theme) string {
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* The caret glyph stays in the markup for no-CSS readers; the sheet
    draws the stroked chevron the Select uses in its place. */
@@ -378,7 +378,7 @@ func menuCSS(_ style.Theme) string {
   max-width: min(20rem, calc(100vw - 2rem));
   padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 10px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
@@ -450,7 +450,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 [data-cui-comp="ui-menu"] .fui-menu__label { flex: 1; }
 [data-cui-comp="ui-menu"] .fui-menu__sep {
   border: 0;
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   margin: var(--spacing-xs, 2px) 0;
 }
 [data-cui-comp="ui-menu"] .fui-menu__form { display: grid; gap: inherit; }

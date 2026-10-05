@@ -73,7 +73,7 @@ var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlo
 
 func terminalBlockCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-terminal-block"] {
-  border: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-background, #fff);
   overflow: hidden;
@@ -86,14 +86,14 @@ func terminalBlockCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-md, 8px);
   padding: 6px 12px;
-  border-bottom: 1px solid var(--ui-terminal-block-head-border, var(--color-border, rgba(0,0,0,0.1)));
+  border-bottom: var(--stroke-thin, 1px) solid var(--ui-terminal-block-head-border, var(--color-border, rgba(0,0,0,0.1)));
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
 [data-cui-comp="ui-terminal-block"] .fui-terminal-block__dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, currentColor);
 }
 [data-cui-comp="ui-terminal-block"] .fui-terminal-block__body {

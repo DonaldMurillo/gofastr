@@ -52,7 +52,7 @@ func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
 // row, no per-section box, and a masked chevron instead of a glyph.
 func TestCollapsibleIsAccordionRow(t *testing.T) {
 	css := collapsibleStyle.Entry().CSSFor(style.DefaultTheme())
-	if !strings.Contains(css, `[data-cui-comp="fui-collapsible"]{border-bottom:1px solid`) {
+	if !strings.Contains(css, `[data-cui-comp="fui-collapsible"]{border-bottom:var(--stroke-thin, 1px) solid`) {
 		t.Errorf("collapsible root should draw only a bottom hairline:\n%s", css)
 	}
 	for _, banned := range []string{`fui-collapsible"]{border:1px`, `content:"\25B8"`, "--easing-standard"} {

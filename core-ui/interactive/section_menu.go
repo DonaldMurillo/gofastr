@@ -260,7 +260,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__eyebrow { color: var(--fui-section-menu-eyebrow-color, var(--color-text-subtle, #A1A1AA)); }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-label { flex: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__chevron {
-  transition: transform 160ms ease;
+  transition: transform var(--duration-fast, 150ms) ease;
   opacity: 0.7;
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group[open] > .cui-section-menu__group-summary .cui-section-menu__chevron {
@@ -278,7 +278,7 @@ func sectionMenuCSS(_ style.Theme) string {
   margin: 0;
   margin-inline-start: 12px;
   padding: 0;
-  border-inline-start: 1px solid var(--color-border, #E4E4E7);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link {
   display: block;
@@ -286,7 +286,7 @@ func sectionMenuCSS(_ style.Theme) string {
   padding-inline: 9px 0;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
-  border-inline-start: 1px solid transparent;
+  border-inline-start: var(--stroke-thin, 1px) solid transparent;
   margin-inline-start: -1px;
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link:hover { color: var(--color-text, currentColor); }
@@ -304,7 +304,7 @@ func sectionMenuCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   cursor: pointer;
   padding: var(--spacing-md, 8px) 14px;
-  border: 1px solid var(--color-border, rgba(0,0,0,0.12));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.12));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);
@@ -325,7 +325,7 @@ func sectionMenuCSS(_ style.Theme) string {
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--color-border, rgba(0,0,0,0.12));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.12));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, transparent);
   color: var(--color-text, currentColor);

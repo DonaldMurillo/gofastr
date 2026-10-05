@@ -284,16 +284,16 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 	switch preset {
 	case "fade":
 		return `/* gofastr view-transition preset "fade" (root) */
-::view-transition-old(root) { animation: cui-vt-fade-out .18s ease both; }
-::view-transition-new(root) { animation: cui-vt-fade-in .18s ease both; }
+::view-transition-old(root) { animation: cui-vt-fade-out var(--duration-fast, 150ms) ease both; }
+::view-transition-new(root) { animation: cui-vt-fade-in var(--duration-fast, 150ms) ease both; }
 @keyframes cui-vt-fade-out { to { opacity: 0; } }
 @keyframes cui-vt-fade-in { from { opacity: 0; } }
 `, nil
 	case "slide":
 		return `/* gofastr view-transition preset "slide" (root); forward = new page
    from the right, back = new page from the left. */
-::view-transition-old(root) { animation: cui-vt-slide-out .22s ease both; }
-::view-transition-new(root) { animation: cui-vt-slide-in .22s ease both; }
+::view-transition-old(root) { animation: cui-vt-slide-out var(--duration-normal, 250ms) ease both; }
+::view-transition-new(root) { animation: cui-vt-slide-in var(--duration-normal, 250ms) ease both; }
 :root:active-view-transition-type(back) ::view-transition-old(root) { animation-name: cui-vt-slide-out-b; }
 :root:active-view-transition-type(back) ::view-transition-new(root) { animation-name: cui-vt-slide-in-b; }
 @keyframes cui-vt-slide-in { from { transform: translateX(100%); } }

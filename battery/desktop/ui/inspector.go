@@ -129,7 +129,7 @@ func inspectorCSS(_ style.Theme) string {
 [data-cui-comp="desktopui-inspector"] .desktopui-inspector__footer {
   margin-block-start: auto;
   padding-top: var(--spacing-md, 8px);
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 `
 }

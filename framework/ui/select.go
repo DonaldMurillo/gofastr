@@ -115,7 +115,7 @@ func selectCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) 12px;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   box-shadow: var(--shadow-xs);
   transition: border-color var(--duration-fast, 150ms);
   /* Same field surface as the text inputs (.fui-input): without an
@@ -135,12 +135,12 @@ func selectCSS(_ style.Theme) string {
   max-inline-size: 100%;
 }
 .fui-select:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-select[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-select:disabled {
   opacity: 0.5;

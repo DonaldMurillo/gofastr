@@ -120,7 +120,7 @@ func multiselectCSS(_ style.Theme) string {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   background: transparent;
   border: 0;
   color: var(--color-text-muted, #52525B);
@@ -134,7 +134,7 @@ func multiselectCSS(_ style.Theme) string {
   background: color-mix(in oklab, var(--color-text, #09090B) 8%, transparent);
 }
 [data-cui-comp="ui-multiselect"] details {
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -171,8 +171,8 @@ func multiselectCSS(_ style.Theme) string {
   transform: rotate(180deg);
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__summary:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
   border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__group {
@@ -180,7 +180,7 @@ func multiselectCSS(_ style.Theme) string {
   gap: 0;
   border: 0;
   padding: 0;
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__row {
   display: flex;
@@ -195,7 +195,7 @@ func multiselectCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-multiselect"] .fui-multiselect__check:focus-visible {
-  outline: 2px solid var(--color-text-subtle);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }`
 }
