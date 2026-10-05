@@ -97,7 +97,8 @@ notes:
         - gofastr/framework/crud.CrudHandler.CreateOne
         - gofastr/framework/crud.CrudHandler.UpdateOne
         - gofastr/framework/crud.CrudHandler.UpsertOne
-    guidance: "Upload through the entity's multipart route instead of PATCHing a key from upload.Handler, or wrap the write's context in crud.WithUploadedKeys(ctx, keys...) with the keys your own code just saved. Never pass keys read from request data."
+        - gofastr/framework/crud.TypedQuery.UpdateAll
+    guidance: "Upload through the entity's multipart route instead of PATCHing a key from upload.Handler, or wrap the write's context in crud.WithUploadedKeys(ctx, keys...) with the keys your own code just saved. Never pass keys read from request data. TypedQuery.UpdateAll has no single current row, so it refuses even a key the matched rows already hold: leave the field out of the update, or pass the key through WithUploadedKeys."
   - change: "upload.Handler caps a body at upload.DefaultMaxSize (32 MiB) when Config.MaxSize is zero or negative, instead of accepting any size"
     breaking: true
     hits: review

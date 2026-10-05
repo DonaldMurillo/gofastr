@@ -1086,6 +1086,12 @@ func New(application *app.App, opts ...Option) *UIHost {
 
 // CompileActions compiles a component's action methods to JS and caches them.
 // It also stores the action registry so handleServerAction can invoke Go handlers.
+//
+// The boot walk over registered screens calls this and records each id's
+// screen, whose Policy chain handleServerAction then runs before the
+// handler. An action a host compiles by calling this directly has no screen
+// recorded, so no Policy runs for it: its Go handler must check the caller
+// itself.
 func (ds *UIHost) CompileActions(componentID string, comp component.Component) string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
