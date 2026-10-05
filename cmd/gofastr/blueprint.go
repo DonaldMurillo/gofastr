@@ -6674,6 +6674,30 @@ func blueprintJustifyExpr(value string) string {
 // a card/stat_card, the only kinds that belong in the responsive card grid.
 // Mixed or non-card children flow in a left-aligned stack instead so a single
 // CTA button doesn't stretch the full column width.
+// blueprintCardHeadingLevel returns the CardConfig field that sets a
+// generated card's heading level. ui.Card defaults to h3, which is right
+// under a titled section's h2 but skips a level directly under the page h1
+// (axe heading-order on every dashboard). A card with no titled ancestor
+// (a section or card carrying a heading) says HeadingLevel: 2; a nested one
+// keeps the default.
+func blueprintCardHeadingLevel(screen BlueprintScreen, path []int) string {
+	blocks := screen.Body
+	for depth, i := range path {
+		if depth == len(path)-1 || i < 0 || i >= len(blocks) {
+			break
+		}
+		ancestor := blocks[i]
+		switch strings.ToLower(strings.TrimSpace(ancestor.Kind)) {
+		case "section", "card":
+			if blueprintProp(ancestor, "heading") != "" {
+				return ""
+			}
+		}
+		blocks = ancestor.Children
+	}
+	return ", HeadingLevel: 2"
+}
+
 func blueprintSectionChildrenAreCards(children []BlueprintBlock) bool {
 	if len(children) == 0 {
 		return false
@@ -6778,7 +6802,7 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 		}
 		return "ui.Section(" + cfg + ")", true
 	case "card":
-		cfg := fmt.Sprintf("ui.CardConfig{Heading: %q, Description: %q}", blueprintProp(block, "heading"), blueprintProp(block, "text"))
+		cfg := fmt.Sprintf("ui.CardConfig{Heading: %q, Description: %q%s}", blueprintProp(block, "heading"), blueprintProp(block, "text"), blueprintCardHeadingLevel(screen, path))
 		if len(block.Children) > 0 {
 			return "ui.Card(" + cfg + ", " + childExprs() + ")", true
 		}
@@ -6813,7 +6837,7 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).
 			if title != "" {
-				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %q}, %s)", title, chart), true
+				return fmt.Sprintf("ui.Card(ui.CardConfig{Heading: %q%s}, %s)", title, blueprintCardHeadingLevel(screen, path), chart), true
 			}
 			return chart, true
 		}
