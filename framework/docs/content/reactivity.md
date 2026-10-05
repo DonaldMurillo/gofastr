@@ -45,6 +45,13 @@ region or writes the value into a signal.
 - JSON POST bodies are decoded under strict top-level key rules: the
   compiled server-action endpoint (`/__gofastr/action`) refuses a body
   with duplicate or case-folded keys rather than decoding it last-wins.
+- A compiled server action runs its screen's Policy chain first (the same
+  chain that gates the page render) and answers 403 when it does not
+  Allow, so a caller the page refuses cannot run the page's actions. The
+  action request carries no route params, so a policy that reads one
+  sees it empty there; write it to refuse on an empty param, and give
+  that screen's handlers their own check. Anything
+  finer than the page gate (per record, per field) is the handler's job.
 
 A mutation can also stale screens the user is *not* on: a create stales
 every cached page of the list, an admin action stales `/pricing`. Name
