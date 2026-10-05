@@ -78,12 +78,12 @@
         }
       });
     });
-    for (const entry of Array.from(NS._toastTimers)) {
-      if (!present.has(entry[0])) {
-        clearTimeout(entry[1].timer);
-        NS._toastTimers.delete(entry[0]);
+    NS._toastTimers.forEach(function (rec, id) {
+      if (!present.has(id)) {
+        clearTimeout(rec.timer);
+        NS._toastTimers.delete(id);
       }
-    }
+    });
   };
 
   NS._dismissToast = function (item, id) {
@@ -93,8 +93,7 @@
     item.setAttribute('data-hui-toast-leaving', '');
     const rec = NS._toastTimers.get(id);
     if (rec) { clearTimeout(rec.timer); NS._toastTimers.delete(id); }
-    const cs = getComputedStyle(item);
-    const ms = parseFloat(cs.animationDuration) * 1000 || 200;
+    const ms = parseFloat(getComputedStyle(item).animationDuration) * 1000 || 200;
     setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
   };
 
@@ -348,26 +347,23 @@
     if (!retry) return;
     e.preventDefault();
     const href = retry.getAttribute('href') || '';
-    if (!href) return;
     // One probe at a time: a click while one is in flight is a no-op.
-    if (retry.getAttribute('aria-busy') === 'true') return;
+    if (!href || retry.getAttribute('aria-busy')) return;
     // While the probe runs, the link is aria-busy and the banner root
     // says data-state="checking" (the busy state a styled banner
-    // dresses); both clear when the probe settles, either way.
-    const banner = retry.closest('[data-hui-system]');
+    // dresses); both clear when the probe settles, either way. Nothing
+    // else in the module writes the banner's data-state.
+    const banner = retry.closest('[data-hui-system]') || retry;
     retry.setAttribute('aria-busy', 'true');
-    if (banner) banner.setAttribute('data-state', 'checking');
-    const settle = function () {
-      retry.removeAttribute('aria-busy');
-      if (banner && banner.getAttribute('data-state') === 'checking') banner.removeAttribute('data-state');
-    };
+    banner.setAttribute('data-state', 'checking');
     // A 2xx from the health endpoint is the reconnect: hide the
     // banner (reportRecovery drives every mounted offline one). A
     // failed probe leaves it shown — the connection is still down
     // and hiding it would lie.
     fetch(href, { credentials: 'same-origin' })
-      .then(function (r) { settle(); if (r.ok) NS.networkStatus.reportRecovery(); })
-      .catch(settle);
+      .then(function (r) { if (r.ok) NS.networkStatus.reportRecovery(); })
+      .catch(function () {})
+      .finally(function () { retry.removeAttribute('aria-busy'); banner.removeAttribute('data-state'); });
   });
 
   // The public status API app code called on the retired module,
