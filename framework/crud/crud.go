@@ -1429,7 +1429,8 @@ func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) strin
 
 func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields []schema.Field) ([]map[string]any, error) {
 	boolCols := databaseBoolColumnsForEntity(rows, len(cols), fields, cols)
-	var results []map[string]any
+	// Empty, not nil: an empty page must encode as "data":[], never null.
+	results := []map[string]any{}
 	for rows.Next() {
 		values := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
