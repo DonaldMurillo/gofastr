@@ -392,3 +392,54 @@ func merge2(a, b map[string]string) map[string]string {
 	}
 	return out
 }
+
+// gen styles writes and reads under the working directory only: a
+// planted symlink (a generated leaf, the .gofastr dir, a source
+// sheet) pointing outside it is refused, never followed.
+func TestGenStylesRefusesSymlinkEscape(t *testing.T) {
+	base := t.TempDir()
+	proj := filepath.Join(base, "proj")
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, "victim.txt")
+	if err := os.WriteFile(victim, []byte("untouched\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "secret.style.css")
+	if err := os.WriteFile(secret, []byte(":scope { display: grid; } /* SECRET */\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	styleGenSeed(t, proj, map[string]string{
+		"card/card.style.css": ":scope { display: grid; }\n",
+		"card/card.go":        "package card\n",
+		"leak/leak.go":        "package leak\n",
+	})
+	for link, target := range map[string]string{
+		"card/card_style.gen.go": victim,
+		".gofastr":               outside,
+		"leak/leak.style.css":    secret,
+	} {
+		if err := os.Symlink(target, filepath.Join(proj, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	covT_chdir(t, proj)
+	var code int
+	printed := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() { runGenerateStyles(nil) })
+	})
+	if code != 1 {
+		t.Errorf("exit %d, want 1:\n%s", code, printed)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "untouched\n" {
+		t.Errorf("the symlinked leaf was followed outside the project:\n%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "tokens.css")); err == nil {
+		t.Error("the symlinked .gofastr dir was followed outside the project")
+	}
+	if b, err := os.ReadFile(filepath.Join(proj, "leak", "leak_style.gen.go")); err == nil && strings.Contains(string(b), "SECRET") {
+		t.Error("a symlinked source sheet pulled an outside file into generated Go")
+	}
+}
