@@ -514,13 +514,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names the actual remedy (#456).
 ### Fixed
 - **`battery/rtc`: a socket never hears a join for a peer its snapshot
-  already lists** (since v0.83.0). A socket joining while an older
-  peer's join was between hydration and publish queued its snapshot
-  ahead of that join, hydrated with the peer in its roster, then heard
-  the join too; the browser module read it as a reconnect and rebuilt
-  the connection it had just made against a peer that kept the old one.
-  A per-room announce lock orders the next socket's snapshot behind the
-  join.
+  already lists** (since v0.83.0). The room channel delivers at least
+  once, so a join published before a socket's snapshot could still
+  reach that socket after it: a socket hydrating inside another peer's
+  join window, a peer registering while another socket's snapshot was
+  pending, or a join mirrored from another replica. The browser module
+  read the join as a reconnect and rebuilt the connection it had just
+  made against a peer that kept the old one. The room now drops one
+  join per peer a socket's snapshot listed, and that peer's leave clears
+  the mark so a real rejoin still arrives.
 - **`S3Storage.PresignedGetURL` and `PresignedPutURL` return an error
   with no presigner** (since v0.86.0). The method value
   `s.presigner.PresignGet` was evaluated on the nil interface before
