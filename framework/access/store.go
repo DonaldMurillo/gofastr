@@ -197,6 +197,13 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	if err != nil {
 		return err
 	}
+	// Expand wildcard tombstones against today's registry, as mergeBaseline
+	// does on reload: a "reports:*" revoke recorded before reports was
+	// registered persisted only the literal, and every exact match below
+	// would miss the reports:read that code seeded or a row granted.
+	for role, ts := range tombstones {
+		tombstones[role] = s.policy.prepareRevokes(ts)
+	}
 	// Capture the code-defined baseline BEFORE overlaying DB grants, then
 	// subtract tombstones, a code-seeded grant revoked on another replica
 	// must stay revoked on this one too.

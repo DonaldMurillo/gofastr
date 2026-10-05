@@ -1010,7 +1010,9 @@ has a `*_security_test.go` that failed before it, and `gofastr upgrade
 - **Revoking one capability survives a `GrantStore` reload** when the
   role holds a literal wildcard grant. Reload subtracted revocations
   before expanding the wildcard, which brought the revoked capability
-  back.
+  back. At boot, `LoadInto` now expands a literal wildcard revocation
+  too, so a `reports:*` revoke recorded before `reports` was registered
+  removes the `reports` capabilities code seeds or rows grant.
 - **The dev MCP bind guard treats `Start("")` as exposed.** It called
   the empty address loopback while the server bound every interface on
   port 80.

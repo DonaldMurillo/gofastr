@@ -66,3 +66,55 @@ func TestReloadKeepsWildcardRevoke(t *testing.T) {
 		}
 	}
 }
+
+// The boot path has the same shape. A revoke of "reports:*" issued while the
+// registry did not know reports persists the literal tombstone only. A later
+// boot that registers and code-seeds reports:read and reports:delete, with a
+// literal reports:read grant row left in the table, must hold neither.
+func TestLoadIntoExpandsWildcardTombstone(t *testing.T) {
+	ctx := context.Background()
+	db := openAccessDB(t)
+
+	p0 := NewRolePolicy()
+	p0.Register("posts:read")
+	s0 := NewGrantStore(db, p0)
+	if err := s0.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s0.LoadInto(ctx, p0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s0.Grant(ctx, "analyst", "reports:read", "posts:read"); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+	if err := s0.Revoke(ctx, "analyst", "reports:*"); err != nil {
+		t.Fatalf("Revoke: %v", err)
+	}
+
+	p := NewRolePolicy()
+	p.Register("posts:read", "reports:read", "reports:delete")
+	if err := p.Grant("analyst", "reports:read", "reports:delete"); err != nil {
+		t.Fatal(err)
+	}
+	s := NewGrantStore(db, p)
+	if err := s.LoadInto(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	check := func(when string) {
+		t.Helper()
+		held := p.PermissionsOf("analyst")
+		for _, perm := range []Permission{"reports:read", "reports:delete"} {
+			if permIn(held, perm) {
+				t.Errorf("%s: analyst holds %s under a reports:* revoke: %v", when, perm, held)
+			}
+		}
+		if !permIn(held, "posts:read") {
+			t.Errorf("%s: analyst lost posts:read, which was never revoked: %v", when, held)
+		}
+	}
+	check("after boot")
+	if err := s.reloadAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("after reloadAll")
+}
