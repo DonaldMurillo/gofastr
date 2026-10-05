@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"hash/fnv"
 	"image"
@@ -5193,16 +5194,19 @@ func renderBlueprintScreens(bp Blueprint) string {
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	var bodies strings.Builder
+	for _, screen := range bp.Screens {
+		bodies.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
+	}
 	needs := blueprintScreenImports(bp)
+	needs.html = emitsHTMLRef(bodies.String())
 	anyCtx := screensNeedCtx(bp.Screens)
 	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
 	if needs.node {
 		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
 		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
-	for _, screen := range bp.Screens {
-		sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
-	}
+	sb.WriteString(bodies.String())
 	return sb.String()
 }
 
@@ -5215,6 +5219,44 @@ func screensNeedCtx(screens []BlueprintScreen) bool {
 		}
 	}
 	return false
+}
+
+// blueprintScreenStackOpen opens the ui.Stack a screen's blocks sit in.
+// pack recognises this exact call (config included) as the screen
+// stack, so the two must stay one spelling.
+const blueprintScreenStackOpen = "ui.Stack(ui.StackConfig{Gap: ui.GapXL},"
+
+// emitsHTMLRef reports whether emitted screen code calls the core-ui/html
+// package (an `html` identifier selecting an exported name). The import is
+// read off the code itself because each block emitter decides on its own
+// whether it reaches for html.*: a hand-kept predicate per block kind
+// missed the auth form's hidden html.Input and the node screens once the
+// screen root stopped being an html.Div that pulled the import in for
+// everyone. The code is tokenized, so a string literal or comment that
+// mentions html.Div (a callout's copy) does not count as a call.
+func emitsHTMLRef(code string) bool {
+	type tokLit struct {
+		tok token.Token
+		lit string
+	}
+	fset := token.NewFileSet()
+	var sc scanner.Scanner
+	sc.Init(fset.AddFile("", fset.Base(), len(code)), []byte(code), nil, 0)
+	// The last three tokens before the current one: `html` must open its
+	// selector (not follow a dot, as in x.html.Div) and select an
+	// exported name.
+	var last [3]tokLit
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			return false
+		}
+		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == "html" &&
+			last[2].tok == token.PERIOD && tok == token.IDENT && lit[0] >= 'A' && lit[0] <= 'Z' {
+			return true
+		}
+		last = [3]tokLit{last[1], last[2], {tok, lit}}
+	}
 }
 
 // writeScreenImportBlock writes the shared import block for a set of screens.
@@ -5326,17 +5368,27 @@ func blueprintScreenBody(bp Blueprint, screen BlueprintScreen, entityMap map[str
 		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
 	}
 	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
-	// Screen root goes through core-ui/html, the design system's 1:1 tag
-	// primitive, rather than raw render.Tag, CLAUDE.md's rule for markup
-	// that maps directly to an element. Output is byte-identical.
-	rootCfg := "html.DivConfig{}"
+	// A screen with blocks stacks them in a ui.Stack at the xl gap, so a
+	// page header, a stat grid, a chart card and a table get the design
+	// system's vertical rhythm instead of touching (a bare div gave them
+	// none). The action marker is runtime wiring that headless refuses
+	// from ExtraAttrs, so a screen with actions carries it on an html.Div
+	// (core-ui/html, the 1:1 tag primitive) around the stack; an empty
+	// screen's root is that div too.
+	divCfg := "html.DivConfig{}"
 	if hasActions {
-		rootCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
+		divCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootCfg, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", divCfg, screen.TitleOrName()))
 	} else {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s,\n", rootCfg))
+		closer := "\t)\n"
+		if hasActions {
+			sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, %s\n", divCfg, blueprintScreenStackOpen))
+			closer = "\t))\n"
+		} else {
+			sb.WriteString(fmt.Sprintf("\treturn %s\n", blueprintScreenStackOpen))
+		}
 		for i, block := range screen.Body {
 			var expr string
 			switch {
@@ -5353,7 +5405,7 @@ func blueprintScreenBody(bp Blueprint, screen BlueprintScreen, entityMap map[str
 			}
 			sb.WriteString("\t\t" + expr + ",\n")
 		}
-		sb.WriteString("\t)\n")
+		sb.WriteString(closer)
 	}
 	sb.WriteString("}\n\n")
 	return sb.String()
@@ -5615,9 +5667,11 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	body := blueprintScreenBody(bp, screen, entityMap, apiBase)
 	needs := blueprintScreensImportNeeds(bp, []BlueprintScreen{screen}, entityMap, apiBase)
+	needs.html = emitsHTMLRef(body)
 	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
-	sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
+	sb.WriteString(body)
 	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
 	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, blueprintScreenMountStmt(screen, bp)))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
@@ -5653,14 +5707,17 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 		}
 	}
 	screens = kept
+	var bodies strings.Builder
+	for _, s := range screens {
+		bodies.WriteString(blueprintScreenBody(bp, s, entityMap, apiBase))
+	}
 	needs := blueprintScreensImportNeeds(bp, screens, entityMap, apiBase)
+	needs.html = emitsHTMLRef(bodies.String())
 	needs.resource = true // every CRUD file emits a resource.Config assignment
 	// Island endpoints are mounted with an http.HandlerFunc closure.
 	needs.nethttp = len(entityListPlacements(bp, entity)) > 0
 	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
-	for _, s := range screens {
-		sb.WriteString(blueprintScreenBody(bp, s, entityMap, apiBase))
-	}
+	sb.WriteString(bodies.String())
 	resourceStmt := blueprintResourceRegistryOne(bp, entity, entityMap, base, editable)
 	// Mount funcs in authored (declaration) order; the resource wiring lands
 	// in the primary (first) mount func so it runs before any screen renders.
@@ -6264,6 +6321,13 @@ func blueprintEntityListConfigExpr(bp Blueprint, screen BlueprintScreen, block B
 	if block.Text != "" {
 		expr += fmt.Sprintf(".WithHeading(%q)", block.Text)
 	}
+	// A list under an earlier <h1> (a dashboard's page header) is a
+	// section of that page, so its title drops to level 2. No layout
+	// renders an <h1> of its own, so otherwise the list's title is it.
+	// (Screen + entity is the list's identity, as for the island path.)
+	if h1, _ := blueprintH1Before(screen.Body, entity); h1 {
+		expr += ".WithHeadingLevel(2)"
+	}
 	if block.EmptyText != "" {
 		expr += fmt.Sprintf(".WithEmpty(%q)", block.EmptyText)
 	}
@@ -6367,16 +6431,6 @@ func blueprintCatalogKind(kind string) bool {
 	return blueprintControlKind(kind)
 }
 
-// blueprintCatalogUsesHTML reports whether a catalog block's emitted code
-// references html.*. Only a hero WITH media (image/media prop) emits an
-// html.Image call; a media-less hero composes ui.* only.
-func blueprintCatalogUsesHTML(block BlueprintBlock) bool {
-	if strings.ToLower(strings.TrimSpace(block.Kind)) != "hero" {
-		return false
-	}
-	return blueprintProp(block, "image") != "" || blueprintProp(block, "media") != ""
-}
-
 func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, decl := range bp.Entities {
@@ -6390,16 +6444,12 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 // whole project). It is the per-file analogue of blueprintScreenImports.
 func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
-	// Every screen root is an html.Div now, so the package is always
-	// needed when there is a screen to render at all.
-	if len(screens) > 0 {
-		needs.html = true
-	}
 	for _, screen := range screens {
-		// Empty-body screens emit html.Heading directly (see
-		// renderBlueprintStubs / the screen Render() empty path).
-		if len(screen.Body) == 0 {
-			needs.html = true
+		// A screen with blocks stacks them in ui.Stack. (The html import
+		// is not decided here: the callers read it off the emitted code,
+		// see emitsHTMLRef.)
+		if len(screen.Body) > 0 {
+			needs.ui = true
 		}
 		if screen.Description == "" {
 			needs.uihost = true
@@ -6431,7 +6481,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 					// interactive.*.Attrs(); a field none of them names
 					// builds ui.Control inside a FormField builder.
 					needs.ui = true
-					needs.html = true
 					needs.interactive = true
 					needs.headless = true
 					continue
@@ -6456,9 +6505,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 				}
 				if blueprintCatalogKind(kind) {
 					needs.ui = true
-					if blueprintCatalogUsesHTML(block) {
-						needs.html = true
-					}
 					scan(block.Children, false)
 					continue
 				}
@@ -6472,9 +6518,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 					}
 					continue
 				}
-				if blueprintTopLevelBlockEmitsHTML(block) {
-					needs.html = true
-				}
 				if strings.EqualFold(strings.TrimSpace(block.Type), "link") {
 					needs.ui = true
 				}
@@ -6483,19 +6526,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 		scan(screen.Body, true)
 	}
 	return needs
-}
-
-// blueprintTopLevelBlockEmitsHTML reports whether a non-node top-level
-// block is rendered via an html.* call by renderBlueprintBlockForScreen
-// (heading/link types). All other plain types use render.Tag/render.Text
-// and do not need the html import.
-func blueprintTopLevelBlockEmitsHTML(block BlueprintBlock) bool {
-	switch strings.ToLower(strings.TrimSpace(block.Type)) {
-	case "heading", "h1", "h2", "h3", "h4", "h5", "h6", "link":
-		return true
-	default:
-		return false
-	}
 }
 
 func blueprintBlockUsesNodeRenderer(block BlueprintBlock) bool {
@@ -6623,6 +6653,21 @@ func blueprintGapExpr(value string) string {
 	}
 }
 
+// blueprintAxisFields emits a stack's or cluster's Align and Justify
+// only when the block sets them. An unset prop leaves the component's
+// own default: an explicit AlignStart on every stack shrank each child
+// to its content, so a pricing grid inside one held a single column.
+func blueprintAxisFields(block BlueprintBlock) string {
+	out := ""
+	if v := blueprintProp(block, "align"); strings.TrimSpace(v) != "" {
+		out += ", Align: " + blueprintAlignExpr(v)
+	}
+	if v := blueprintProp(block, "justify"); strings.TrimSpace(v) != "" {
+		out += ", Justify: " + blueprintJustifyExpr(v)
+	}
+	return out
+}
+
 func blueprintAlignExpr(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "center":
@@ -6694,14 +6739,14 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 	}
 	switch kind {
 	case "stack":
-		cfg := fmt.Sprintf("ui.StackConfig{Gap: %s, Align: %s, Justify: %s}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")))
+		cfg := fmt.Sprintf("ui.StackConfig{Gap: %s%s}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAxisFields(block))
 		children := childExprs()
 		if children == "" {
 			return "ui.Stack(" + cfg + ")", true
 		}
 		return "ui.Stack(" + cfg + ", " + children + ")", true
 	case "cluster":
-		cfg := fmt.Sprintf("ui.ClusterConfig{Gap: %s, Align: %s, Justify: %s, NoWrap: %t}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")), blueprintBoolProp(block, "no_wrap"))
+		cfg := fmt.Sprintf("ui.ClusterConfig{Gap: %s%s, NoWrap: %t}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAxisFields(block), blueprintBoolProp(block, "no_wrap"))
 		children := childExprs()
 		if children == "" {
 			return "ui.Cluster(" + cfg + ")", true
@@ -7007,6 +7052,41 @@ func renderBlueprintNodeExpressionForScreen(screen BlueprintScreen, block Bluepr
 	return sb.String()
 }
 
+// blueprintH1Before walks blocks in document order and reports whether
+// one renders an <h1> before the list of entity; done is true once the
+// walk reached that list or an <h1>. A page header, a hero, an auth
+// card, a form or detail page header and a level-1 heading render one,
+// as does an earlier list of another entity, which by the same rule
+// kept its title at level 1.
+func blueprintH1Before(blocks []BlueprintBlock, entity string) (h1, done bool) {
+	for _, b := range blocks {
+		if isEntityListBlock(b) {
+			return strings.Trim(b.Entity, "/") != entity, true
+		}
+		if blueprintBlockRendersH1(b) {
+			return true, true
+		}
+		if h1, done := blueprintH1Before(b.Children, entity); done {
+			return h1, true
+		}
+	}
+	return false, false
+}
+
+func blueprintBlockRendersH1(b BlueprintBlock) bool {
+	kind := strings.ToLower(strings.TrimSpace(b.Kind))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(b.Type))
+	}
+	switch kind {
+	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail", "h1":
+		return true
+	case "heading":
+		return b.Level == 0 || b.Level == 1
+	}
+	return false
+}
+
 func isEntityListBlock(block BlueprintBlock) bool {
 	return blueprintBlockKindIs(block, "entity_list")
 }
@@ -7063,7 +7143,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete st
 	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, %s, %s, %s)",
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, SubmitFullWidth: true}, %s, %s, %s)",
 		action, submitLabel, hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
@@ -7694,6 +7774,14 @@ func renderBlueprintApp(bp Blueprint) string {
 	// style.FontFaceCSS rather than carrying a baked CSS string, so the
 	// import is needed whether or not a theme is declared.
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
+	// A theme-less marketing app starts from framework/ui/theme.Default,
+	// the adaptive theme with a dark palette; style.DefaultTheme is the
+	// light-only core-ui baseline. A declared app.theme keeps the light
+	// baseline: its palette is the author's, and a stock dark palette
+	// would replace the brand whenever the OS is dark.
+	if len(bp.App.Theme) == 0 && hasMarketing {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui/theme\"\n")
+	}
 	if needWidget {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
 	}
@@ -7930,7 +8018,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		// plain Items slice.
 		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})"
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
 		}
 		switch {
 		case bp.App.Auth.Enabled:
@@ -7949,7 +8037,9 @@ func renderBlueprintApp(bp Blueprint) string {
 			}
 			sb.WriteString("\t}\n")
 			if themeToggle != "" {
-				sb.WriteString("\tcfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, " + themeToggle + ", authAction)\n")
+				// One row, the marketing header's pairing: the account action
+				// leads, the appearance glyph closes the row.
+				sb.WriteString("\tcfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, " + themeToggle + ")\n")
 			} else {
 				sb.WriteString("\tcfg.Footer = authAction\n")
 			}
@@ -8001,7 +8091,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		// No declared palette, but the marketing chrome's sheets read their
 		// own tokens (siteheader's menu stagger): even the default theme
 		// must carry them, or every var() in the owned sheets is unset.
-		sb.WriteString("\tsite.WithTheme(style.DefaultTheme().Extend(siteheader.Tokens))\n")
+		sb.WriteString("\tsite.WithTheme(theme.Default().Extend(siteheader.Tokens))\n")
 	}
 	if len(bp.Nav) > 0 {
 		if bp.App.Auth.Enabled {

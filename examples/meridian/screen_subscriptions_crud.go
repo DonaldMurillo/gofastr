@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"database/sql"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type SubscriptionsScreen struct{ component.ContextOnly }
@@ -18,7 +19,7 @@ func (s *SubscriptionsScreen) ScreenDescription() string  { return "" }
 func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["subscriptions"].WithColumns("customer_id", "plan_id", "status", "mrr", "renews_on").WithLimit(25).WithCreate().WithHeading("Subscriptions").WithEmpty("No subscriptions yet.").List(ctx),
 	)
 }
@@ -34,7 +35,7 @@ func (s *SubscriptionDetailScreen) ScreenDescription() string     { return "" }
 func (s *SubscriptionDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *SubscriptionDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["subscriptions"].WithTransitions(Transition{Label: "Activate", Status: "active", Variant: "primary", Stamp: ""}, Transition{Label: "Cancel", Status: "canceled", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
 	)
 }
@@ -46,7 +47,7 @@ func (s *SubscriptionsNewScreen) ScreenDescription() string  { return "" }
 func (s *SubscriptionsNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *SubscriptionsNewScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["subscriptions"].Form(ctx, ""),
 	)
 }
@@ -62,7 +63,7 @@ func (s *SubscriptionsEditScreen) ScreenDescription() string     { return "" }
 func (s *SubscriptionsEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *SubscriptionsEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["subscriptions"].Form(ctx, s.id),
 	)
 }

@@ -12,6 +12,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets
   it: a number that animates in is read, not operated.
+- **`resource.Config.HeadingLevel` and `WithHeadingLevel`** set the list
+  title's heading level, 2 to 5 (any other value renders 1). The
+  blueprint generator sets 2 on an entity list that a block ahead of it
+  on the screen already gives an `<h1>` (a dashboard's page header), so
+  the page keeps exactly one.
 - **`ui.Rating`** draws a read-only score as a row of glyphs: a
   testimonial's stars, a product's average. It is one `role="img"` with
   a localized "4 out of 5" name, sized to its glyphs, and takes a
@@ -369,6 +374,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.SignalToggle` thumb takes `--color-primary-fg`, since a white
   thumb vanished on the near-white dark primary. Tags and badges keep their own
   width inside a flex column.
+- **Resource screens** draw Back and Cancel as ghost buttons beside the
+  other page actions, and a related list's title is an `<h2>` under the
+  detail page's `<h1>`.
+- **Generated blueprint screens** stack their blocks in
+  `ui.Stack{Gap: GapXL}`, so a page header, stat grid and table get
+  vertical rhythm. Generated auth forms use a full-width submit button
+  and the generated theme toggle is the icon variant.
 - **`ui.ContentRow`**'s stacked phone nav band takes main's inline
   gutter, so the menu trigger lines up with the page content instead of
   sitting in the viewport corner.
@@ -492,6 +504,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the band to 1812px inside a 1056px page, and a code block's longest
   line pushed a phone section past the screen. Both now use one
   `minmax(0, 1fr)` column.
+- **A theme-less generated marketing app has a dark mode.** The
+  blueprint emitted `style.DefaultTheme()`, the light-only core-ui
+  baseline, so under a dark OS preference the page declared
+  `color-scheme: dark` and painted white. It now emits
+  `theme.Default()`. An app with a declared `app.theme` keeps the light
+  baseline, so a stock dark palette never replaces its brand colours.
 - **A DataTable header row has no hairline seams** between cells at
   fractional widths in Chromium.
 - **A carousel's dots follow a manual scroll and count positions.** A
@@ -538,6 +556,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   lone child now fills it, drawing its focus ring inside its edge
   where the slide does not clip it; a slide with several (an image and
   its caption) stacks them from the top.
+- **A blueprint `stack` with no `align` stretches its children.** The
+  generator emitted `Align: ui.AlignStart` (and `Justify:
+  ui.JustifyStart`) for an unset prop, so every child shrank to its
+  content: a `pricing` block in a stack held one card per row down a
+  wide page. Unset `align`/`justify` on a `stack` or `cluster` now
+  keeps the component's default (stretch for a stack, centre for a
+  cluster); an explicit `align: start` is still emitted and packs back
+  to the blueprint.
 - **A catalog block under a node block is refused at validation.** A
   `type: div` (or any node-tree block) holding a `card`, `stack`, form
   control or other catalog kind passed validation and rendered as an
