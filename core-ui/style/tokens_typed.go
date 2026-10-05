@@ -66,6 +66,39 @@ type Stroke struct {
 func (s Stroke) CSS() string    { return varRef("stroke", s.Name) }
 func (s Stroke) String() string { return s.CSS() }
 
+// LineHeight is a line-height token, emitted as --leading-<name>. Value
+// is a unitless multiplier ("1.5") or a px/rem/em length. Optional like
+// Stroke: a token left fully zero is not emitted and the kit's var()
+// fallback draws the default.
+type LineHeight struct {
+	Name  string
+	Value string
+}
+
+func (l LineHeight) CSS() string    { return varRef("leading", l.Name) }
+func (l LineHeight) String() string { return l.CSS() }
+
+// LetterSpacing is a letter-spacing token, emitted as --tracking-<name>.
+// Value is "0" or a signed px/rem/em length ("-0.02em"). Optional like
+// Stroke.
+type LetterSpacing struct {
+	Name  string
+	Value string
+}
+
+func (l LetterSpacing) CSS() string    { return varRef("tracking", l.Name) }
+func (l LetterSpacing) String() string { return l.CSS() }
+
+// Opacity is an opacity token, emitted as --opacity-<name>. Value is a
+// number from 0 to 1. Optional like Stroke.
+type Opacity struct {
+	Name  string
+	Value string
+}
+
+func (o Opacity) CSS() string    { return varRef("opacity", o.Name) }
+func (o Opacity) String() string { return o.CSS() }
+
 // Font holds a font-family stack.
 type Font struct {
 	Name  string

@@ -1515,3 +1515,38 @@ func TestWritebackEmitsEveryTokenSet(t *testing.T) {
 		}
 	}
 }
+
+// The type-scale groups and the knob map survive the write-back: a
+// theme edited to a tighter leading, a wider tracking, a stronger muted
+// opacity and a button edge saves them into theme.go, so the next boot
+// draws what the editor showed.
+func TestWritebackKeepsTypeScaleAndKnobs(t *testing.T) {
+	th := uitheme.Default()
+	th.Leading.Tight.Value = "1.05"
+	th.Tracking.Wider.Value = "0.14em"
+	th.Opacities.Muted.Value = "0.8"
+	th.Knobs = map[string]string{
+		"ui-checkbox-box-size": "20px",
+		"ui-button-edge":       "var(--color-border-strong)",
+	}
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "theme.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n%s", err, src)
+	}
+	// gofmt aligns the composite literals, so compare with every run of
+	// whitespace collapsed to one space.
+	flat := strings.Join(strings.Fields(string(src)), " ")
+	for _, want := range []string{
+		`Tight: style.LineHeight{Value: "1.05"},`,
+		`Wider: style.LetterSpacing{Value: "0.14em"},`,
+		`Muted: style.Opacity{Value: "0.8"},`,
+		`Knobs: map[string]string{ "ui-button-edge": "var(--color-border-strong)", "ui-checkbox-box-size": "20px", },`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("emitted theme.go lacks %q:\n%s", want, src)
+		}
+	}
+}

@@ -71,6 +71,9 @@ var tokenSyntax = map[string][]string{
 	"spacing":     {"<length>"},
 	"radii":       {"<length>"},
 	"stroke":      {"<length>"},
+	"leading":     {"<number>", "<length>"},
+	"tracking":    {"<length>"},
+	"opacity":     {"<number>"},
 	"font-weight": {"<number>", "<integer>"},
 	"z":           {"<integer>"},
 	"duration":    {"<time>"},
@@ -255,6 +258,9 @@ var tokenGroups = []tokenGroup{
 	{"spacing", "Spacing", "Spacing"},
 	{"radii", "Radii", "Radius"},
 	{"stroke", "Strokes", "Stroke"},
+	{"leading", "Leading", "LineHeight"},
+	{"tracking", "Tracking", "LetterSpacing"},
+	{"opacity", "Opacities", "Opacity"},
 	{"shadow", "Shadows", "Shadow"},
 	{"z", "ZIndex", "ZIndexValue"},
 	{"duration", "Durations", "Duration"},
@@ -444,6 +450,12 @@ func tokenLiteral(v any) string {
 		return fmt.Sprintf("style.Radius{Name: %q, Value: %d}", t.Name, t.Value)
 	case style.Stroke:
 		return fmt.Sprintf("style.Stroke{Name: %q, Value: %q}", t.Name, t.Value)
+	case style.LineHeight:
+		return fmt.Sprintf("style.LineHeight{Name: %q, Value: %q}", t.Name, t.Value)
+	case style.LetterSpacing:
+		return fmt.Sprintf("style.LetterSpacing{Name: %q, Value: %q}", t.Name, t.Value)
+	case style.Opacity:
+		return fmt.Sprintf("style.Opacity{Name: %q, Value: %q}", t.Name, t.Value)
 	case style.FontWeight:
 		return fmt.Sprintf("style.FontWeight{Name: %q, Value: %d}", t.Name, t.Value)
 	case style.ZIndexValue:

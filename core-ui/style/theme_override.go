@@ -89,7 +89,7 @@ var (
 //
 // The theme is deep-cloned BEFORE it is stored, and the hash is
 // computed from that clone on first use, never here. Theme travels by
-// value, but its maps (DarkColors, DarkCode, Components) are
+// value, but its maps (DarkColors, DarkCode, Components, Knobs) are
 // references: without the clone a caller-side write after registration
 // would change what every page serves while the hash — computed once,
 // from the bytes as they were — kept naming the old content, and the
@@ -102,6 +102,7 @@ func RegisterThemeOverride(t Theme) ThemeRef {
 	t.DarkColors = copyStringMap(t.DarkColors)
 	t.DarkCode = copyStringMap(t.DarkCode)
 	t.Components = copyStringMap(t.Components)
+	t.Knobs = copyStringMap(t.Knobs)
 	rec := &themeOverrideRecord{theme: t}
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
@@ -132,6 +133,7 @@ func AllThemeOverrides() map[string]Theme {
 		t.DarkColors = copyStringMap(t.DarkColors)
 		t.DarkCode = copyStringMap(t.DarkCode)
 		t.Components = copyStringMap(t.Components)
+		t.Knobs = copyStringMap(t.Knobs)
 		out[h] = t
 	}
 	return out
@@ -200,6 +202,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
+	lines = append(lines, knobDecls(t.Knobs)...)
 	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ".cui-theme-%s {\n", hash)

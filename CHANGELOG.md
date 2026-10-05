@@ -33,6 +33,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   design-system CSS is an error, with a literal inside a `var()`
   fallback or a token-reading `calc()` allowed. The contract catalog
   holds 78 rules.
+- **The whole kit is themeable from one `:root` block.** Three optional
+  token groups join `Strokes`: `Theme.Leading` (`--leading-tight` 1.2,
+  `--leading-snug` 1.4, `--leading-normal` 1.5, `--leading-relaxed`
+  1.6), `Theme.Tracking` (`--tracking-tighter` -0.03em through
+  `--tracking-wider` 0.08em) and `Theme.Opacities` (`--opacity-faint`
+  0.2, `--opacity-disabled` 0.5, `--opacity-muted` 0.6). `Theme.Knobs`
+  (`map[string]string`, keys `ui-…`) sets per-component knobs in the
+  theme's own `:root` block and in a scoped theme's block, and reaches
+  `ThemeHash`, `ApplyTokens` and `ThemeToTokens` (under `knob.`) and
+  `theme edit`'s write-back. The new groups reach `.tokens.css`
+  (`--leading-*`, `--tracking-*`, `--opacity-*`) and the plugin host's
+  token bridge.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

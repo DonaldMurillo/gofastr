@@ -135,6 +135,12 @@ func ParseToken(key, value string) (any, error) {
 		slot = &Radius{Name: name}
 	case "stroke":
 		slot = &Stroke{Name: name}
+	case "leading":
+		slot = &LineHeight{Name: name}
+	case "tracking":
+		slot = &LetterSpacing{Name: name}
+	case "opacity":
+		slot = &Opacity{Name: name}
 	case "font":
 		slot = &Font{Name: name}
 	case "font-weight":
@@ -166,7 +172,7 @@ func ParseToken(key, value string) (any, error) {
 // AppTokenPrefixes lists the type prefixes an app token may carry, the
 // keys ParseToken accepts, each with its trailing dash.
 func AppTokenPrefixes() []string {
-	return []string{"color-", "size-", "spacing-", "radii-", "font-", "font-weight-", "shadow-", "z-", "duration-", "easing-", "text-"}
+	return []string{"color-", "size-", "spacing-", "radii-", "stroke-", "leading-", "tracking-", "opacity-", "font-", "font-weight-", "shadow-", "z-", "duration-", "easing-", "text-"}
 }
 
 // copyTokenStruct copies a token struct (or the struct a pointer holds)

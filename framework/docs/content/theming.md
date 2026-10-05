@@ -18,7 +18,8 @@ warning when one arrives too late.
 ## The token catalog
 
 `style.Theme` is a struct made of typed token groups. Every field is
-required except `Strokes` and `Code`; `WithTheme` panics at startup and
+required except `Strokes`, `Leading`, `Tracking`, `Opacities`, `Code` and
+`Knobs`; `WithTheme` panics at startup and
 names any token you left out. Each group writes CSS variables with a
 fixed prefix:
 
@@ -34,10 +35,14 @@ fixed prefix:
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
+| `Leading` | `--leading-<name>` | `--leading-tight` (1.2: headings), `--leading-snug` (1.4: labels, captions, compact rows), `--leading-normal` (1.5: controls and body text), `--leading-relaxed` (1.6: reading text). A value is a unitless number or a px/rem/em length. Optional like `Strokes`: an unset step is not emitted and the kit draws its default |
+| `Tracking` | `--tracking-<name>` | `--tracking-tighter` (-0.03em), `--tracking-tight` (-0.02em: display headings), `--tracking-snug` (-0.01em: titles, brand marks), `--tracking-wide` (0.04em), `--tracking-wider` (0.08em: eyebrows and small caps). A value is `0` or a px/rem/em length. Optional like `Strokes` |
+| `Opacities` | `--opacity-<name>` | `--opacity-faint` (0.2), `--opacity-disabled` (0.5: a disabled control), `--opacity-muted` (0.6: secondary glyphs and labels). A value is a number from 0 to 1. Optional like `Strokes` |
 | `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
 | `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
 | `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. Optional like `Strokes`: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Knobs` | `--ui-<name>` | a map of per-component knob values (`"ui-button-edge": "var(--color-border-strong)"`, `"ui-checkbox-box-size": "20px"`), emitted in the theme's own `:root` block. Keys are `ui-` plus lower-case words joined by single dashes; values pass the same check as any free-form CSS value. See [Per-component knobs](#per-component-knobs-the---ui--variables) |
 
 Token names come from the Go field path, converted to kebab-case
 (`Colors.PrimaryFg` → `--color-primary-fg`). Set an explicit `Name` on
@@ -214,7 +219,8 @@ non-colour token is an error. Each `@property`:
 
 - is named `--<type>-<name>`, where the prefix is a token type
   (`color`, `font`, `spacing`, `radii`, `stroke`, `shadow`, `z`,
-  `duration`, `easing`, `text`, `font-weight`, `size`) and the name is
+  `duration`, `easing`, `text`, `leading`, `tracking`, `opacity`,
+  `font-weight`, `size`) and the name is
   lowercase
   kebab-case,
 - declares the syntax that matches its type,
@@ -228,6 +234,9 @@ non-colour token is an error. Each `@property`:
 | `--size-` | `style.Size` | `"<length>"` or `"<length-percentage>"` |
 | `--text-` | `style.FontSize` | `"<length>"` or `"<length-percentage>"` |
 | `--spacing-`, `--radii-`, `--stroke-` | `style.Spacing`, `style.Radius`, `style.Stroke` | `"<length>"` |
+| `--leading-` | `style.LineHeight` | `"<number>"` or `"<length>"` |
+| `--tracking-` | `style.LetterSpacing` | `"<length>"` |
+| `--opacity-` | `style.Opacity` | `"<number>"` |
 | `--font-weight-` | `style.FontWeight` | `"<number>"` or `"<integer>"` |
 | `--z-` | `style.ZIndexValue` | `"<integer>"` |
 | `--duration-` | `style.Duration` | `"<time>"` |
@@ -720,6 +729,10 @@ with the light token but live in a different selector scope, so they are
 flattened under a `dark.` prefix to stay distinct:
 `DarkColors["primary"]` → `"dark.color-primary"`, `DarkCode["kw"]` →
 `"dark.tk-kw"`.
+`Knobs` entries are flattened under a `knob.` prefix:
+`Knobs["ui-button-edge"]` → `"knob.ui-button-edge"`. A `knob.` key
+whose name is not `ui-` plus lower-case words, or whose value fails the
+free-form check below, is refused like any other bad token.
 
 `style.ApplyTokens(base, tokens)` returns a copy of `base` with the
 supplied tokens applied. It **fails closed on every axis**:
@@ -731,7 +744,7 @@ supplied tokens applied. It **fails closed on every axis**:
   `color-mix()`, `var(--…)`, and the CSS named colors) and reject
   everything else. Integer/duration tokens must match their numeric
   format. Every free-form string (Font, Shadow, Easing, FontSize,
-  CodeColor) is rejected if it contains a declaration-breaking sequence
+  CodeColor, knob values) is rejected if it contains a declaration-breaking sequence
   (`;`, `}`, `{`, `/*`, `*/`, `<`, `>`, `\`, a newline, or `url(`).
 
 A value like `red; --x:}body{display:none}` escapes its CSS declaration;
@@ -801,6 +814,22 @@ stylesheet without forking the component:
 A dimension every page shares is a theme token instead: the page
 column, its gutter, the header height and `ui.Container`'s caps live
 in `Theme.Layout` (`t.Layout.WideWidth.Value = "1240px"`).
+
+A theme sets them for the whole app through `Theme.Knobs`, which
+emits them in the same `:root` block as the tokens (and in a scoped
+theme's block, so a `ui.Themed` section can carry its own):
+
+```go
+t := theme.Default(theme.Overrides{})
+t.Knobs = map[string]string{
+    "ui-button-edge":       "var(--color-border-strong)",
+    "ui-checkbox-box-size": "20px",
+}
+```
+
+Knob values reach `ThemeToTokens` and `ApplyTokens` under a `knob.`
+prefix (`"knob.ui-button-edge"`), so a theme editor round-trips them,
+and `gofastr theme edit` writes them back to `theme.go`.
 
 Some of the knobs:
 

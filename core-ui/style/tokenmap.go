@@ -67,6 +67,11 @@ func ThemeToTokens(t Theme) map[string]string {
 	for _, k := range slices.Sorted(maps.Keys(t.Components)) {
 		out["component."+k] = t.Components[k]
 	}
+	// Knobs ride under "knob.", the same way: the key after it is the
+	// --ui-* name without its dashes ("knob.ui-sidebar-width").
+	for _, k := range slices.Sorted(maps.Keys(t.Knobs)) {
+		out["knob."+k] = t.Knobs[k]
+	}
 	return out
 }
 
@@ -107,6 +112,7 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 	result.DarkColors = copyStringMap(base.DarkColors)
 	result.DarkCode = copyStringMap(base.DarkCode)
 	result.Components = copyStringMap(base.Components)
+	result.Knobs = copyStringMap(base.Knobs)
 	// Extensions are pointers: the setters below write through them, so
 	// each one is copied first or an override would reach base too.
 	result.Extensions = cloneExtensions(base.Extensions)
@@ -159,6 +165,17 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 			result.Components[rest] = value
 			continue
 		}
+		// knob.<ui-name>: one --ui-* knob. The key grammar and the
+		// free-form value check are the whole gate, as for Theme.Knobs
+		// under Validate.
+		if rest, ok := strings.CutPrefix(k, "knob."); ok {
+			if err := validateKnobs(map[string]string{rest: value}); err != nil {
+				return Theme{}, fmt.Errorf("theme: token %q: %w", k, err)
+			}
+			result.Knobs = ensureMap(&result.Knobs)
+			result.Knobs[rest] = value
+			continue
+		}
 		return Theme{}, fmt.Errorf("theme: unknown token %q, not a key this theme exposes (see ThemeToTokens)", k)
 	}
 	return result, nil
@@ -203,6 +220,15 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 		return
 	case Stroke:
 		registerValidatedSetter(v, "stroke-", map[string]bool{}, validateStrokeValue, setters)
+		return
+	case LineHeight:
+		registerValidatedSetter(v, "leading-", map[string]bool{}, validateLineHeightValue, setters)
+		return
+	case LetterSpacing:
+		registerValidatedSetter(v, "tracking-", map[string]bool{}, validateLetterSpacingValue, setters)
+		return
+	case Opacity:
+		registerValidatedSetter(v, "opacity-", map[string]bool{}, validateOpacityValue, setters)
 		return
 	case Breakpoint:
 		name, ok := nonEmptyStringField(v, "Name")
@@ -520,6 +546,44 @@ var reStrokeLength = regexp.MustCompile(`^(?:0|\d*\.?\d+(?:px|rem|em))$`)
 func validateStrokeValue(v string) error {
 	if !reStrokeLength.MatchString(v) {
 		return fmt.Errorf("a stroke is 0 or a non-negative px/rem/em length (got %q)", v)
+	}
+	return nil
+}
+
+// reLineHeight is a unitless multiplier or a non-negative px/rem/em
+// length: the forms a line-height token is written in.
+var reLineHeight = regexp.MustCompile(`^(?:\d*\.?\d+)(?:px|rem|em)?$`)
+
+// validateLineHeightValue accepts a unitless multiplier ("1.5") or a
+// non-negative px/rem/em length. A percentage is refused: it computes
+// against the element's own font size and does not inherit the way a
+// multiplier does.
+func validateLineHeightValue(v string) error {
+	if !reLineHeight.MatchString(v) {
+		return fmt.Errorf("a line height is a unitless number or a non-negative px/rem/em length (got %q)", v)
+	}
+	return nil
+}
+
+// reLetterSpacing is "0" or a signed px/rem/em length.
+var reLetterSpacing = regexp.MustCompile(`^(?:0|-?\d*\.?\d+(?:px|rem|em))$`)
+
+// validateLetterSpacingValue accepts "0" or a signed px/rem/em length:
+// negative tracking is how headings tighten.
+func validateLetterSpacingValue(v string) error {
+	if !reLetterSpacing.MatchString(v) {
+		return fmt.Errorf("a letter spacing is 0 or a px/rem/em length (got %q)", v)
+	}
+	return nil
+}
+
+// reOpacity is a number from 0 to 1 written without a sign.
+var reOpacity = regexp.MustCompile(`^(?:0(?:\.\d+)?|\.\d+|1(?:\.0+)?)$`)
+
+// validateOpacityValue accepts a number from 0 to 1.
+func validateOpacityValue(v string) error {
+	if !reOpacity.MatchString(v) {
+		return fmt.Errorf("an opacity is a number from 0 to 1 (got %q)", v)
 	}
 	return nil
 }

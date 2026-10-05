@@ -3,6 +3,7 @@ package style
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -62,10 +63,27 @@ type Theme struct {
 	// block and every theme-override scope block. Empty by default.
 	Components map[string]string
 
+	// Knobs sets the per-component --ui-* variables from the theme,
+	// keyed without the leading dashes ("ui-sidebar-width": "16rem").
+	// Every component dimension the scale tokens do not cover reads
+	// one of these with its default as the var() fallback, so a theme
+	// reaches every value in the kit from one place. A knob is
+	// declared at :root and in every scope block the theme emits; a
+	// value that reads a token (var(--color-border-strong)) resolves
+	// against the palette where it is declared, so a ui.Themed scope
+	// with its own palette sets the knob on its own theme too. Keys
+	// must start with "ui-"; values pass the free-form token check.
+	// Empty by default. A map (not a typed struct) so the reflection
+	// token-walk ignores it, like DarkColors.
+	Knobs map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
 	Strokes     StrokeSet
+	Leading     LeadingSet
+	Tracking    TrackingSet
+	Opacities   OpacitySet
 	Fonts       FontSet
 	Breakpoints BreakpointSet
 	Shadows     ShadowSet
@@ -127,6 +145,27 @@ type RadiusSet struct {
 // gap from the element.
 type StrokeSet struct {
 	Thin, Thick, Focus, FocusOffset Stroke
+}
+
+// LeadingSet: line heights. Tight sets headings and display type, Snug
+// labels, captions and dense rows, Normal body copy and controls,
+// Relaxed long-form reading text.
+type LeadingSet struct {
+	Tight, Snug, Normal, Relaxed LineHeight
+}
+
+// TrackingSet: letter spacing. The negative steps tighten headings and
+// display type (Tighter the largest), Wide and Wider space out small
+// upper-case labels.
+type TrackingSet struct {
+	Tighter, Tight, Snug, Wide, Wider LetterSpacing
+}
+
+// OpacitySet: the opacities a state or a decoration fades to. Disabled
+// dims a control that cannot be used, Muted a secondary glyph or an
+// inactive item, Faint a decorative fill such as a chart's area.
+type OpacitySet struct {
+	Faint, Disabled, Muted Opacity
 }
 
 // FontSet: font-family stacks.
@@ -277,9 +316,10 @@ func autofillTokens(v reflect.Value, path []string) {
 		}
 		return
 	}
-	// Stroke is optional the same way: a fully-unset stroke stays zero
-	// so it is skipped and the kit's fallback width applies.
-	if v.Type() == reflect.TypeFor[Stroke]() {
+	// Stroke, LineHeight, LetterSpacing and Opacity are optional the
+	// same way: a fully-unset token stays zero so it is skipped and
+	// the kit's fallback value applies.
+	if isOptionalStringToken(v.Type()) {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
 			len(path) > 0 && nameField.CanSet() {
@@ -389,7 +429,56 @@ func (t Theme) Validate() error {
 	if err := validateComponents(t.Components); err != nil {
 		return err
 	}
+	if err := validateKnobs(t.Knobs); err != nil {
+		return err
+	}
 	return t.validatePairContrast()
+}
+
+// knobKeyPattern is a --ui-* variable name without its dashes.
+var knobKeyPattern = regexp.MustCompile(`^ui-[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// validateKnobs refuses a knob whose key is not a ui-* name or whose
+// value could break out of its declaration. Keys are judged before
+// values so the error names the first bad key in sorted order.
+func validateKnobs(knobs map[string]string) error {
+	for _, k := range sortedMapKeys(knobs) {
+		if !knobKeyPattern.MatchString(k) {
+			return fmt.Errorf("Theme.Knobs[%q]: a knob key is ui- followed by lower-case words joined by single dashes", k)
+		}
+		if err := validateFreeFormCSS(knobs[k]); err != nil {
+			return fmt.Errorf("Theme.Knobs[%q]: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// isOptionalStringToken reports whether t is one of the optional
+// string-valued token types: left fully zero, it is neither named,
+// validated nor emitted, and the kit's var() fallback applies.
+func isOptionalStringToken(t reflect.Type) bool {
+	switch t {
+	case reflect.TypeFor[Stroke](), reflect.TypeFor[LineHeight](),
+		reflect.TypeFor[LetterSpacing](), reflect.TypeFor[Opacity]():
+		return true
+	}
+	return false
+}
+
+// validateOptionalToken is the shared check for an optional string
+// token: fully unset passes, a value with no name is an autofill miss,
+// and a set value must pass its type's grammar.
+func validateOptionalToken(path, typ, name, value string, check func(string) error) error {
+	if value == "" && name == "" {
+		return nil
+	}
+	if name == "" {
+		return fmt.Errorf("%s: %s.Name is empty (Value=%q). Run AutoFillNames or set the Name", path, typ, value)
+	}
+	if err := check(value); err != nil {
+		return fmt.Errorf("%s: %s.Value (Name=%q): %w", path, typ, name, err)
+	}
+	return nil
 }
 
 // validatePairContrast refuses a theme whose filled-control ink pairs —
@@ -514,17 +603,13 @@ func validateTokens(v reflect.Value, path string) error {
 		}
 		return nil
 	case Stroke:
-		// Optional: fully unset falls back to the kit's width.
-		if tk.Value == "" && tk.Name == "" {
-			return nil
-		}
-		if tk.Name == "" {
-			return fmt.Errorf("%s: Stroke.Name is empty (Value=%q). Run AutoFillNames or set the Name", path, tk.Value)
-		}
-		if err := validateStrokeValue(tk.Value); err != nil {
-			return fmt.Errorf("%s: Stroke.Value (Name=%q): %w", path, tk.Name, err)
-		}
-		return nil
+		return validateOptionalToken(path, "Stroke", tk.Name, tk.Value, validateStrokeValue)
+	case LineHeight:
+		return validateOptionalToken(path, "LineHeight", tk.Name, tk.Value, validateLineHeightValue)
+	case LetterSpacing:
+		return validateOptionalToken(path, "LetterSpacing", tk.Name, tk.Value, validateLetterSpacingValue)
+	case Opacity:
+		return validateOptionalToken(path, "Opacity", tk.Name, tk.Value, validateOpacityValue)
 	case Font:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Font.Name is empty", path)
@@ -704,6 +789,24 @@ func DefaultTheme() Theme {
 			Thick:       Stroke{Name: "thick", Value: "2px"},
 			Focus:       Stroke{Name: "focus", Value: "2px"},
 			FocusOffset: Stroke{Name: "focus-offset", Value: "2px"},
+		},
+		Leading: LeadingSet{
+			Tight:   LineHeight{Name: "tight", Value: "1.2"},
+			Snug:    LineHeight{Name: "snug", Value: "1.4"},
+			Normal:  LineHeight{Name: "normal", Value: "1.5"},
+			Relaxed: LineHeight{Name: "relaxed", Value: "1.6"},
+		},
+		Tracking: TrackingSet{
+			Tighter: LetterSpacing{Name: "tighter", Value: "-0.03em"},
+			Tight:   LetterSpacing{Name: "tight", Value: "-0.02em"},
+			Snug:    LetterSpacing{Name: "snug", Value: "-0.01em"},
+			Wide:    LetterSpacing{Name: "wide", Value: "0.04em"},
+			Wider:   LetterSpacing{Name: "wider", Value: "0.08em"},
+		},
+		Opacities: OpacitySet{
+			Faint:    Opacity{Name: "faint", Value: "0.2"},
+			Disabled: Opacity{Name: "disabled", Value: "0.5"},
+			Muted:    Opacity{Name: "muted", Value: "0.6"},
 		},
 		Fonts: FontSet{
 			Body:    Font{Name: "body", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},

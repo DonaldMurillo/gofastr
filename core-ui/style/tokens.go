@@ -100,6 +100,12 @@ func categoryPrefix(category string) string {
 		return "radii"
 	case "strokes", "stroke":
 		return "stroke"
+	case "leading":
+		return "leading"
+	case "tracking":
+		return "tracking"
+	case "opacities", "opacity":
+		return "opacity"
 	case "fonts", "font":
 		return "font"
 	case "breakpoints", "breakpoint":
@@ -127,7 +133,8 @@ func categoryPrefix(category string) string {
 // tokenCategories is every custom-property prefix a typed token emits,
 // one per token type. TokenCategory matches against it longest first.
 var tokenCategories = []string{
-	"color", "spacing", "radii", "stroke", "font", "breakpoint", "shadow", "z",
+	"color", "spacing", "radii", "stroke", "leading", "tracking", "opacity",
+	"font", "breakpoint", "shadow", "z",
 	"duration", "easing", "text", "tk", "size", "font-weight",
 }
 
@@ -180,6 +187,9 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t)
+	if knobs := knobsCSS(t.Knobs); knobs != "" {
+		css += "\n" + knobs
+	}
 	if compiled := t.compiledOptionsCSS(); compiled != "" {
 		css += "\n" + compiled
 	}
@@ -197,6 +207,9 @@ func (t Theme) CSSCustomProperties() string {
 // the options and the linked layer, not part of what the theme is.
 func (t Theme) tokenCSS() string {
 	css := CSSCustomPropertiesOf(t)
+	if knobs := knobsCSS(t.Knobs); knobs != "" {
+		css += "\n" + knobs
+	}
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
@@ -245,6 +258,34 @@ func (t Theme) compiledOptionsCSS() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// knobsCSS is the :root block of the theme's --ui-* knobs, sorted by
+// name for byte-stable output; "" when the theme sets none.
+func knobsCSS(knobs map[string]string) string {
+	lines := knobDecls(knobs)
+	if len(lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range lines {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// knobDecls renders each knob as a `--ui-<name>: <value>;` line in
+// key order.
+func knobDecls(knobs map[string]string) []string {
+	lines := make([]string, 0, len(knobs))
+	for _, k := range sortedMapKeys(knobs) {
+		lines = append(lines, "--"+k+": "+knobs[k]+";")
+	}
+	return lines
 }
 
 // componentCompilerDefaults snapshots the registered default option
@@ -404,6 +445,21 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 			return "", "", false
 		}
 		return "stroke-" + t.Name, t.Value, true
+	case LineHeight:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "leading-" + t.Name, t.Value, true
+	case LetterSpacing:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "tracking-" + t.Name, t.Value, true
+	case Opacity:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "opacity-" + t.Name, t.Value, true
 	case Font:
 		if t.Name == "" {
 			return "", "", false
