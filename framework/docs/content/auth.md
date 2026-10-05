@@ -1016,7 +1016,8 @@ attempts: sign in again", and emits `2fa.challenge_locked`. The account
 is not locked: a fresh login starts a fresh budget, and the login
 limiters meter how often that can happen. The counter uses
 `TwoFAConfig.RateLimit.Store` when one is set, so the budget holds
-across replicas.
+across replicas. If that store errors, the challenge answers 503 with
+`Retry-After` and the pending session is kept.
 
 **Minted tokens are reaped automatically.** Rate limits bound the rate
 of anonymous mints, not the total; unredeemed magic-link, password-reset,

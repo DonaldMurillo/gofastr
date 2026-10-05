@@ -3,24 +3,29 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// The 2FA challenge was throttled per client address only. A password
-// holder spreading guesses over many addresses (one IPv6 /64 is enough)
-// guessed codes against one pending session without limit: the audit sent
-// 200 wrong codes from 20 addresses, saw 200x401 and no 429, and the
-// correct code still verified afterwards. Each session now gets a fixed
-// number of code checks; the next attempt revokes it and the user has to
-// sign in again, whatever address the guesses come from.
-func TestChallengeGuessesCappedPerSession(t *testing.T) {
+// challengeFixture is one 2FA-enrolled account behind a router.
+type challengeFixture struct {
+	mgr         *AuthManager
+	post        func(path, body, cookie, remote string) *httptest.ResponseRecorder
+	login       func() string
+	secret      string
+	backupCodes []string
+}
+
+func newChallengeFixture(t *testing.T, cfg TwoFAConfig) *challengeFixture {
+	t.Helper()
 	ctx := context.Background()
 	store := newMemoryUserStore()
 	hash, err := HashPassword("guess-target-pw-1")
@@ -38,14 +43,15 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		AllowInMemoryStores: true,
 	})
 	mgr.Use(NewCorePlugin())
-	mgr.Use(NewTwoFAPlugin(TwoFAConfig{})) // default per-address throttle
+	mgr.Use(NewTwoFAPlugin(cfg))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	r := router.New()
 	mgr.RegisterRoutes(r)
 
-	post := func(path, body, cookie, remote string) *httptest.ResponseRecorder {
+	f := &challengeFixture{mgr: mgr}
+	f.post = func(path, body, cookie, remote string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
@@ -58,8 +64,8 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		r.ServeHTTP(w, req)
 		return w
 	}
-	login := func() string {
-		w := post("/auth/login", `{"email":"guess@example.com","password":"guess-target-pw-1"}`, "", "")
+	f.login = func() string {
+		w := f.post("/auth/login", `{"email":"guess@example.com","password":"guess-target-pw-1"}`, "", "")
 		if w.Code != http.StatusOK {
 			t.Fatalf("login: %d %s", w.Code, w.Body.String())
 		}
@@ -72,8 +78,8 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		return ""
 	}
 
-	S0 := login()
-	w := post("/auth/2fa/enroll", "", S0, "")
+	S0 := f.login()
+	w := f.post("/auth/2fa/enroll", "", S0, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("enroll: %d %s", w.Code, w.Body.String())
 	}
@@ -81,7 +87,7 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		Secret string `json:"secret"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &er)
-	w = post("/auth/2fa/verify", fmt.Sprintf(`{"code":%q}`, totpNow(er.Secret)), S0, "")
+	w = f.post("/auth/2fa/verify", fmt.Sprintf(`{"code":%q}`, totpNow(er.Secret)), S0, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("verify: %d %s", w.Code, w.Body.String())
 	}
@@ -89,12 +95,25 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 		BackupCodes []string `json:"backup_codes"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &vr)
+	f.secret, f.backupCodes = er.Secret, vr.BackupCodes
+	return f
+}
 
-	P := login()
+// The 2FA challenge was throttled per client address only. A password
+// holder spreading guesses over many addresses (one IPv6 /64 is enough)
+// guessed codes against one pending session without limit: the audit sent
+// 200 wrong codes from 20 addresses, saw 200x401 and no 429, and the
+// correct code still verified afterwards. Each session now gets a fixed
+// number of code checks; the next attempt revokes it and the user has to
+// sign in again, whatever address the guesses come from.
+func TestChallengeGuessesCappedPerSession(t *testing.T) {
+	f := newChallengeFixture(t, TwoFAConfig{}) // default per-address throttle
+
+	P := f.login()
 	valid := map[string]bool{}
 	step := uint64(time.Now().Unix() / 30)
 	for _, s := range []uint64{step - 1, step, step + 1} {
-		valid[GenerateTOTP(er.Secret, s)] = true
+		valid[GenerateTOTP(f.secret, s)] = true
 	}
 	wrong := func(i int) string {
 		for {
@@ -111,7 +130,7 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 	for h := 1; h <= 20; h++ {
 		remote := fmt.Sprintf("[2001:db8:1:2::%x]:1111", h)
 		for j := range 10 {
-			w := post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, wrong(h*1000+j)), P, remote)
+			w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, wrong(h*1000+j)), P, remote)
 			if strings.Contains(w.Body.String(), "invalid code") {
 				checked++
 			}
@@ -120,19 +139,53 @@ func TestChallengeGuessesCappedPerSession(t *testing.T) {
 			}
 		}
 	}
-	if _, err := mgr.SessionStore().Get(ctx, P); err == nil {
+	if _, err := f.mgr.SessionStore().Get(context.Background(), P); err == nil {
 		t.Fatal("pending session survived the guessing run")
 	}
 	// The correct code no longer completes the revoked session.
-	w = post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, vr.BackupCodes[0]), P, "[2001:db8:1:2:ffff::1]:1111")
+	w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[0]), P, "[2001:db8:1:2:ffff::1]:1111")
 	if w.Code == http.StatusOK {
 		t.Fatalf("revoked session stepped up: %d %s", w.Code, w.Body.String())
 	}
 
 	// The account is not locked: a fresh login steps up normally.
-	P2 := login()
-	w = post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, vr.BackupCodes[1]), P2, "198.51.100.77:1")
+	P2 := f.login()
+	w = f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[1]), P2, "198.51.100.77:1")
 	if w.Code != http.StatusOK {
 		t.Fatalf("fresh session refused: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// sessionScopeFailingStore admits every per-address key and fails the
+// per-session counter while down is set: a flaky shared backend.
+type sessionScopeFailingStore struct{ down atomic.Bool }
+
+func (s *sessionScopeFailingStore) Allow(_ context.Context, key string, _ RateLimiterConfig) (bool, time.Duration, error) {
+	if s.down.Load() && strings.HasPrefix(key, "twofa_session|") {
+		return false, 0, errors.New("store unavailable")
+	}
+	return true, 0, nil
+}
+
+// A store error on the per-session counter is an outage, not a spent
+// budget: the challenge is refused, and the pending session survives to
+// finish once the store is back.
+func TestChallengeStoreErrorKeepsSession(t *testing.T) {
+	store := &sessionScopeFailingStore{}
+	f := newChallengeFixture(t, TwoFAConfig{RateLimit: &RateLimiterConfig{Store: store}})
+
+	P := f.login()
+	store.down.Store(true)
+	w := f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[0]), P, "")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("challenge during a store outage = %d %s, want 503", w.Code, w.Body.String())
+	}
+	if _, err := f.mgr.SessionStore().Get(context.Background(), P); err != nil {
+		t.Fatalf("store outage ended the pending session: %v", err)
+	}
+	store.down.Store(false)
+	w = f.post("/auth/2fa/challenge", fmt.Sprintf(`{"code":%q}`, f.backupCodes[0]), P, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("challenge after the outage = %d %s, want 200", w.Code, w.Body.String())
 	}
 }

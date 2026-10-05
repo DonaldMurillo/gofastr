@@ -676,9 +676,17 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// per-address limiter above is no bound for a password holder with
 	// many addresses; this one is keyed by the session itself. Once it is
 	// spent, the session is deleted: the next guesses need a fresh login,
-	// which the login limiters meter.
+	// which the login limiters meter. A store error refuses this attempt
+	// and keeps the session: an outage is not a spent budget.
 	if p.sessionGuesses != nil {
-		if allowed, _ := p.sessionGuesses.AllowContext(r.Context(), sha256hex(sess.Token)); !allowed {
+		allowed, retry, err := p.sessionGuesses.Admit(r.Context(), sha256hex(sess.Token))
+		if err != nil {
+			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
+			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+			writeAuthError(w, http.StatusServiceUnavailable, "try again shortly")
+			return
+		}
+		if !allowed {
 			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
 				writeAuthError(w, http.StatusInternalServerError, "could not end the sign-in")
 				return

@@ -214,18 +214,29 @@ func foldKey(key string) string {
 // relaxation that stops local tooling being locked out; production never sets
 // it, so the fail-closed guarantee holds.
 func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, retryAfter time.Duration) {
+	allowed, retryAfter, err := rl.Admit(ctx, key)
+	if err != nil {
+		slog.Default().Warn("ratelimit: shared store error: failing closed",
+			"scope", rl.cfg.Scope, "err", err)
+	}
+	return allowed, retryAfter
+}
+
+// Admit is AllowContext that also returns the shared store's error. A
+// store failure still denies (allowed is false, retryAfter the short
+// outage hint). The error lets a caller that acts on a spent budget, such
+// as ending a session, tell an outage from a budget used up.
+func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAfter time.Duration, err error) {
 	if rl.cfg.DevMode {
-		return true, 0
+		return true, 0, nil
 	}
 	key = foldKey(key)
 	if rl.cfg.Store != nil {
 		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
 		if err != nil {
-			slog.Default().Warn("ratelimit: shared store error: failing closed",
-				"scope", rl.cfg.Scope, "err", err)
-			return false, storeErrRetryAfter
+			return false, storeErrRetryAfter, err
 		}
-		return ok, retry
+		return ok, retry, nil
 	}
 
 	rl.mu.Lock()
@@ -250,7 +261,7 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 	// Honour an active block.
 	if !state.blockedUntil.IsZero() {
 		if now.Before(state.blockedUntil) {
-			return false, state.blockedUntil.Sub(now)
+			return false, state.blockedUntil.Sub(now), nil
 		}
 		// Block has elapsed, clear and continue.
 		state.blockedUntil = time.Time{}
@@ -272,11 +283,11 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 		state.blockedUntil = now.Add(rl.cfg.BlockDuration)
 		rl.blockSeq++
 		state.blockOrder = rl.blockSeq
-		return false, rl.cfg.BlockDuration
+		return false, rl.cfg.BlockDuration, nil
 	}
 
 	state.attempts = append(state.attempts, now)
-	return true, 0
+	return true, 0, nil
 }
 
 // evictLocked reclaims map entries that no longer carry security-relevant

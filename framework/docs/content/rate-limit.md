@@ -69,6 +69,7 @@ budget instead of sharing its egress address's.
 | `ratelimit.NewLimiter(cfg Config) *Limiter` | Construct a limiter; zero fields default to MaxAttempts=10, Window=15m, BlockDuration=30m. |
 | `(*Limiter).Allow(key string) (bool, time.Duration)` | Record one attempt for `key`; returns allowed + retry-after. Use the context form on HTTP paths. |
 | `(*Limiter).AllowContext(ctx, key)` | Same, observing request cancellation when a shared `Store` is set. |
+| `(*Limiter).Admit(ctx, key) (bool, time.Duration, error)` | `AllowContext` plus the shared store's error. A store error still denies; use it when a spent budget triggers an action (ending a session) that an outage must not. |
 | `(*Limiter).Middleware()` | `func(http.Handler) http.Handler`, keyed by client IP. |
 | `(*Limiter).MiddlewareByKey(keyFunc)` | Same, keyed by a custom extractor. |
 | `ratelimit.ClientIP(r, trustXFF)` | IP extractor for a single proxy tier; honours `X-Forwarded-For` (its rightmost entry) only when `trustXFF` is true. |
