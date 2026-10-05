@@ -907,11 +907,13 @@ func jobsTable(jobs []queue.Job, prefix, csrfToken string, showReplay bool) rend
 	return ui.DataTable(ui.DataTableConfig{
 		Columns: cols,
 		Rows:    rows,
-		Empty:   ui.EmptyStateConfig{Title: "No jobs", Description: "No jobs match this filter.", HeadingLevel: 3},
+		Empty:   ui.EmptyStateConfig{Title: "No jobs", Description: "No jobs match this filter.", HeadingLevel: 2},
 	})
 }
 
-// auditTable renders the audit log as a ui.DataTable.
+// auditTable renders the audit log as a ui.DataTable. It sits straight
+// under the page header, so its empty state opens at h2, as the queue
+// table's does.
 func auditTable(rows []auditRow) render.HTML {
 	cols := []ui.Column{
 		{Key: "time", Header: "Time"},
@@ -937,7 +939,7 @@ func auditTable(rows []auditRow) render.HTML {
 	return ui.DataTable(ui.DataTableConfig{
 		Columns: cols,
 		Rows:    data,
-		Empty:   ui.EmptyStateConfig{Title: "No audit entries", Description: "Audit events will appear here.", HeadingLevel: 3},
+		Empty:   ui.EmptyStateConfig{Title: "No audit entries", Description: "Audit events will appear here.", HeadingLevel: 2},
 	})
 }
 
