@@ -57,6 +57,15 @@ contracts:
         # construction, an inline style attribute.
         - framework/contracts/**
 
+    GOFASTR1808: # rendering/fallback-drift
+      exempt:
+        # The desktop shell renders under its own theme
+        # (battery/desktop/ui/theme.go, radii 4/8/12/16), so its
+        # fallbacks restate that scale. The rule judges every fallback
+        # against style.DefaultTheme and would push these to the web
+        # default's 6/8/10/14.
+        - battery/desktop/ui/**
+
     GOFASTR1803: # rendering/bespoke-event-source
       exempt:
         - framework/contracts/**
