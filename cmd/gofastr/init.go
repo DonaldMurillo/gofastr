@@ -80,11 +80,12 @@ func runInit(args []string) {
 			// honors, and map them to the real driver name. Anything else used
 			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
 			// left as a SQLite file): a broken app that looked configured.
-			switch strings.ToLower(strings.TrimSpace(strings.TrimPrefix(args[i], "--db="))) {
-			case "sqlite", "sqlite3":
+			// canonicalDBDriver is the alias table migrate --db= shares.
+			switch canonicalDBDriver(strings.TrimPrefix(args[i], "--db=")) {
+			case "sqlite3":
 				dbDriver = "sqlite3"
 				dbURL = "file:" + name + ".db"
-			case "postgres", "postgresql":
+			case "postgres":
 				dbDriver = "postgres"
 				dbURL = "postgres://user:password@localhost:5432/" + name + "?sslmode=disable"
 			default:
