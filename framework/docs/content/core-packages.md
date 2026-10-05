@@ -180,6 +180,12 @@ through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
 Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
 `Render`.
 
+Line breaks follow CommonMark. A plain newline inside a paragraph, list
+item or blockquote is a soft break: it renders as a newline, which the
+browser shows as a space, so source hard-wrapped at 72 columns reads as
+one flowing paragraph. A line that ends in two or more spaces, or in a
+backslash, is a hard break and renders as `<br>`.
+
 Fenced blocks follow CommonMark on two points that matter for
 documentation. A fence is three **or more** of the same character and
 closes only on a run at least as long, so a ` ```` ` block can hold a
