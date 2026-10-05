@@ -2221,7 +2221,8 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		if s.scope != nil {
 			docAttr = " data-cui-doc"
 		}
-		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
+		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
+		fmt.Fprintf(bodyClose, `<script src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -2762,7 +2763,7 @@ func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path
 	if seed := partialSeedIslandDelta(ctx, string(fill.HTML), sent); seed != "" {
 		b.WriteString(seed)
 	}
-	fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, addr, fill.HTML)
+	fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(addr), fill.HTML)
 	fmt.Fprint(w, b.String())
 }
 
@@ -3040,9 +3041,12 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if seed := partialSeedIsland(ctx, scanned); seed != "" {
 			b.WriteString(seed)
 		}
-		fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
+		// HTML attribute escaping, not Go quoting (%q): a {param} group's
+		// layer key carries the resolved route value, and %q's `\"` ends an
+		// HTML attribute.
+		fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(res.SwapLayer), res.HTML)
 		for _, f := range res.Fills {
-			fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, f.Addr, f.HTML)
+			fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(f.Addr), f.HTML)
 		}
 		if status != 0 {
 			w.WriteHeader(status)
