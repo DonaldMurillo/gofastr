@@ -728,7 +728,10 @@ var kitComponents = []kitComponent{
 	{name: "TerminalOut", fn: TerminalOut},
 	{name: "TextArea", fn: TextArea},
 	{name: "TextField", fn: TextField},
-	{name: "ThemeToggle", fn: ThemeToggle},
+	// The pill: it renders the kit's own option buttons, which the
+	// default icon variant never reaches (its two glyphs are constants
+	// that carry the mark themselves).
+	{name: "ThemeToggle", fn: ThemeToggle, prep: prepSet("Variant", ThemeTogglePill)},
 	{name: "Themed", fn: Themed, prep: func(args []reflect.Value) { args[0].Set(reflect.ValueOf(style.RegisterThemeOverride(theme.Default()))) }},
 	{name: "TimePicker", fn: TimePicker},
 	{name: "Timeline", fn: Timeline},

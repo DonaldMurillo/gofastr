@@ -1413,9 +1413,13 @@ html[data-color-scheme="light"] [data-cui-comp="ui-theme-toggle"] .fui-theme-tog
 html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__light { display: none; }
 html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
-/* Pill variant */
+/* Pill variant. It keeps its labels'
+   width in a crowded row: shrinking it clipped the last option under
+   the rounded overflow. */
 :where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
   display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
   overflow: hidden;

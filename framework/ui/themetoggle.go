@@ -179,6 +179,7 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		return render.Tag("button", map[string]string{
 			"type":                  "button",
 			"class":                 "fui-theme-toggle__option",
+			"data-cui-internal":     "",
 			"data-hui-theme-option": opt,
 			"aria-checked":          "false",
 			"role":                  "radio",

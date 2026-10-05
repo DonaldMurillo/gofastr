@@ -712,6 +712,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   as the widest label, so a pricing toggle grew and shrank between
   "Monthly" and a longer "Annual" label. Each label now reserves its
   semibold width.
+- **A theme-toggle pill keeps its labels in a crowded row.** In a
+  375px site header the pill shrank with the row and its rounded
+  overflow cut off the last label. It now holds its labels' width. Its
+  option buttons also carry `data-cui-internal`, so an owned style
+  sheet's scope stops at them as it does at every other piece of kit
+  markup.
 - **A theme can set any radius step to 0.** `Theme.Validate` refused
   `Radii.SM`, `MD`, `LG` or `XL` at 0 (only the `none` step could be
   0), so a square theme could not flatten `--radii-sm` and the rest.

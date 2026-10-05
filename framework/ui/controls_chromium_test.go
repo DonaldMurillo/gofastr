@@ -71,6 +71,23 @@ func TestSegmentedWidthHoldsOnSelect(t *testing.T) {
 	}
 }
 
+// Hard rule 9: a ThemePicker in a 375px site header shrank with the
+// row, and the pill's rounded overflow clipped its last label
+// ("Bruta"). The pill keeps its labels' width.
+func TestThemePillKeepsLabelsInNarrowRow(t *testing.T) {
+	th := theme.Default()
+	page := render.HTML(`<div style="display:flex;width:90px">`) +
+		ThemeToggle(ThemeToggleConfig{Variant: ThemeTogglePill}) + render.HTML(`</div>`)
+	m := geometryOf(t, themeToggleStyle.Entry().CSSFor(th), page, `(() => {
+		const opts = [...document.querySelectorAll('.fui-theme-toggle__option')];
+		const pill = document.querySelector('.fui-theme-toggle--pill').getBoundingClientRect();
+		return {clipped: opts.filter(o => o.getBoundingClientRect().right > pill.right + 0.5 || o.scrollWidth > o.clientWidth).length};
+	})()`)
+	if m["clipped"] != 0 {
+		t.Errorf("%v pill option(s) clipped in a 90px flex row; the pill must keep its labels' width", m["clipped"])
+	}
+}
+
 // Hard rule 9: the range slider drew its neutral halo on the thumb but
 // never cleared the input's own focus outline, so a keyboard user saw
 // the browser's blue box around the whole track beside it (caught in
