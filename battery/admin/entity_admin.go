@@ -40,6 +40,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
 // registerEntityAdmin wires the entity CRUD screens + RPC/form routes. Screens
@@ -794,7 +795,7 @@ func crudFieldErrors(raw []byte) map[string]string {
 	return out
 }
 
-func singular(name string) string { return strings.TrimSuffix(name, "s") }
+func singular(name string) string { return inflect.Singular(name) }
 
 // titleCase upper-cases the first rune (for nav labels). ASCII-simple; entity
 // names are identifiers, not prose.
