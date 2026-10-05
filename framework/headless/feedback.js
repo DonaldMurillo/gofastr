@@ -349,13 +349,25 @@
     e.preventDefault();
     const href = retry.getAttribute('href') || '';
     if (!href) return;
+    // One probe at a time: a click while one is in flight is a no-op.
+    if (retry.getAttribute('aria-busy') === 'true') return;
+    // While the probe runs, the link is aria-busy and the banner root
+    // says data-state="checking" (the busy state a styled banner
+    // dresses); both clear when the probe settles, either way.
+    const banner = retry.closest('[data-hui-system]');
+    retry.setAttribute('aria-busy', 'true');
+    if (banner) banner.setAttribute('data-state', 'checking');
+    const settle = function () {
+      retry.removeAttribute('aria-busy');
+      if (banner && banner.getAttribute('data-state') === 'checking') banner.removeAttribute('data-state');
+    };
     // A 2xx from the health endpoint is the reconnect: hide the
     // banner (reportRecovery drives every mounted offline one). A
     // failed probe leaves it shown — the connection is still down
     // and hiding it would lie.
     fetch(href, { credentials: 'same-origin' })
-      .then(function (r) { if (r.ok) NS.networkStatus.reportRecovery(); })
-      .catch(function () {});
+      .then(function (r) { settle(); if (r.ok) NS.networkStatus.reportRecovery(); })
+      .catch(settle);
   });
 
   // The public status API app code called on the retired module,
