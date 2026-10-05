@@ -955,6 +955,17 @@ default per-IP floor when its `RateLimit` is left nil:
 Loosening any of them is explicit: pass the plugin's `RateLimit` (or
 `VerifyRateLimit`) with a large `MaxAttempts`.
 
+`/auth/2fa/challenge` also counts attempts per pending session, whatever
+address they come from: a password holder can spread guesses over many
+addresses (one IPv6 /64 is plenty), so the per-IP floor alone does not
+bound them. After `TwoFAConfig.ChallengeAttemptsPerSession` codes
+(default 10) the next attempt deletes the session, answers 401 "too many
+attempts: sign in again", and emits `2fa.challenge_locked`. The account
+is not locked: a fresh login starts a fresh budget, and the login
+limiters meter how often that can happen. The counter uses
+`TwoFAConfig.RateLimit.Store` when one is set, so the budget holds
+across replicas.
+
 **Minted tokens are reaped automatically.** Rate limits bound the rate
 of anonymous mints, not the total; unredeemed magic-link, password-reset,
 and email-verification rows would otherwise accumulate forever. The

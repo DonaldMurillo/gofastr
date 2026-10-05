@@ -25,7 +25,8 @@ type SecurityEvent struct {
 	// reset_tokens.purged, magiclink.requested, magiclink.consumed,
 	// oauth.linked, oauth.login, oauth.refused, oauth.unlinked,
 	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
-	// 2fa.challenge_failed, 2fa.disabled, 2fa.backup_codes_regenerated,
+	// 2fa.challenge_failed, 2fa.challenge_locked, 2fa.disabled,
+	// 2fa.backup_codes_regenerated,
 	// session.revoked, roles.updated, token.created, token.revoked,
 	// token.auth_failed. Callers MUST use one of the documented kinds so
 	// downstream consumers can match on a closed vocabulary.

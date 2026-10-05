@@ -53,6 +53,15 @@ type TwoFAConfig struct {
 	// session can brute-force the 6-digit TOTP (~333k expected attempts
 	// at skew=1). Loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// ChallengeAttemptsPerSession caps how many codes one pending login
+	// may submit to /2fa/challenge, whatever address they come from. The
+	// next attempt deletes the session and the user signs in again. The
+	// per-address RateLimit alone let a password holder spread guesses
+	// over many addresses (one IPv6 /64 is plenty) without limit.
+	// Defaults to 10. The counter shares RateLimit.Store, so it holds
+	// across replicas when that store is shared.
+	ChallengeAttemptsPerSession int
 }
 
 func (c *TwoFAConfig) defaults() {
@@ -82,6 +91,9 @@ func (c *TwoFAConfig) defaults() {
 			Window:        time.Minute,
 			BlockDuration: 15 * time.Minute,
 		}
+	}
+	if c.ChallengeAttemptsPerSession <= 0 {
+		c.ChallengeAttemptsPerSession = 10
 	}
 }
 
@@ -275,6 +287,9 @@ type TwoFAPlugin struct {
 	mgr            *AuthManager
 	store          TwoFAStore
 	challengeLimit *RateLimiter
+	// sessionGuesses counts /2fa/challenge attempts per session token
+	// (hashed), across addresses. Built in Init, where SessionTTL is known.
+	sessionGuesses *RateLimiter
 }
 
 // NewTwoFAPlugin creates a new 2FA plugin with the given (optional) config.
@@ -334,6 +349,24 @@ func (p *TwoFAPlugin) Name() string { return "twofa" }
 // AuthConfig.AllowInMemoryStores.
 func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
+	// The window spans the session's whole life, so waiting gains no
+	// fresh guesses: a pending session gets ChallengeAttemptsPerSession
+	// codes in total. DevMode is deliberately not inherited from
+	// RateLimit; ten wrong codes on one login is not tooling traffic.
+	ttl := mgr.Config().SessionTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	guessCfg := RateLimiterConfig{
+		MaxAttempts:   p.config.ChallengeAttemptsPerSession,
+		Window:        ttl,
+		BlockDuration: ttl,
+		Scope:         "twofa_session",
+	}
+	if p.config.RateLimit != nil {
+		guessCfg.Store = p.config.RateLimit.Store
+	}
+	p.sessionGuesses = NewRateLimiter(guessCfg)
 	if p.config.Store != nil {
 		p.store = p.config.Store
 	} else {
@@ -637,6 +670,27 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil || state == nil || !state.Enabled {
 		writeAuthError(w, http.StatusBadRequest, "2FA not enabled")
 		return
+	}
+
+	// Per-session budget, counted before the code is checked. The
+	// per-address limiter above is no bound for a password holder with
+	// many addresses; this one is keyed by the session itself. Once it is
+	// spent, the session is deleted: the next guesses need a fresh login,
+	// which the login limiters meter.
+	if p.sessionGuesses != nil {
+		if allowed, _ := p.sessionGuesses.AllowContext(r.Context(), sha256hex(sess.Token)); !allowed {
+			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
+				writeAuthError(w, http.StatusInternalServerError, "could not end the sign-in")
+				return
+			}
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "2fa.challenge_locked",
+				UserID: userID,
+				Remote: remoteHost(r),
+			})
+			writeAuthError(w, http.StatusUnauthorized, "too many attempts: sign in again")
+			return
+		}
 	}
 
 	// Try TOTP code first. A code is valid across the whole ±skew window,
