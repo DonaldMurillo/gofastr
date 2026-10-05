@@ -59,7 +59,7 @@ type EmailVerificationConfig struct {
 //   - POST /auth/send-verification (authenticated; sends a token to the
 //     current user's email).
 //   - GET  /auth/verify-email?token=... (consumes a token, marks the
-//     user verified).
+//     user verified; the request must carry that user's own session).
 type EmailVerificationPlugin struct {
 	cfg   EmailVerificationConfig
 	mgr   *AuthManager
@@ -123,15 +123,11 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	if p.limit != nil && !p.limit.guard(w, r) {
 		return
 	}
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
+	// Bound to the context principal when there is one (see
+	// AuthManager.requestSession).
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "no session")
-		return
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil || sess == nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid session")
 		return
 	}
 	// A pending-2FA session has proven the password and nothing else.
@@ -198,17 +194,38 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		writeAuthError(w, http.StatusBadRequest, "token required")
 		return
 	}
-	userID, err := redeemPurposeToken(r.Context(), p.store, purposeVerify, tok)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
-		return
-	}
 	verifier, ok := p.mgr.UserStore().(EmailVerifier)
 	if !ok {
 		// The store doesn't expose MarkEmailVerified, refuse rather
 		// than silently no-op; the operator wired the wrong store.
 		writeAuthError(w, http.StatusInternalServerError,
 			"user store does not implement EmailVerifier")
+		return
+	}
+	// The link proves the mailbox only to the account that asked for it.
+	// Whoever registered an address can send this mail to its real owner;
+	// a click from the owner's browser, or a mail scanner's prefetch,
+	// must not mark the registrant's account verified, or a magic link
+	// would no longer claim it and a verified IdP login would link into
+	// it. So the request must carry a full session of the token's user.
+	// The session check runs before the redeem, so a sessionless prefetch
+	// leaves the token for the real click.
+	sess, err := p.mgr.requestSession(r, false)
+	if err != nil {
+		writeAuthError(w, http.StatusUnauthorized, "sign in, then open the verification link again")
+		return
+	}
+	if sess.PendingTwoFactor {
+		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		return
+	}
+	userID, err := redeemPurposeToken(r.Context(), p.store, purposeVerify, tok)
+	if err != nil {
+		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+		return
+	}
+	if userID != sess.UserID {
+		writeAuthError(w, http.StatusForbidden, "this verification link belongs to another account")
 		return
 	}
 	if err := verifier.MarkEmailVerified(r.Context(), userID); err != nil {

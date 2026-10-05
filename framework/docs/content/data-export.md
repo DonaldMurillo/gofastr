@@ -229,7 +229,8 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    declares each table it owns and how to erase it: hard-delete, or anonymize
    (overwrite named columns with a tombstone and keep the row). `battery/auth`
    registers `auth_sessions` (delete by `user_id`), `auth_users` (delete by
-   `id`), and `magic_link_tokens` (delete by `email` via the `IdentityEmail`
+   `id`), and `magic_link_tokens` (every magic-link, reset and verification
+   token minted for the user; the magic-link one matches by email via the `IdentityEmail`
    resolver, see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
    `battery/queue` registers `queue_jobs` (delete by `user_id`), which reaches
    a job only when the producer set `Job.UserID` — see
@@ -377,8 +378,17 @@ datexport.RegisterEraser(datexport.DataEraser{
     Name: "magic_link_tokens", Source: "auth", Table: "magic_link_tokens",
     Column: "email", Mode: datexport.EraseDelete,
     Identity: datexport.IdentityEmail, // default IdentityUserID matches by user id
+    ValuePrefix: "magiclink:",         // rows store "magiclink:<email>"
 })
 ```
+
+`ValuePrefix` is prepended to the bound value, on either identity. The auth
+token table is shared by magic-link login, password reset and email
+verification and stores each payload tagged with its flow
+(`magiclink:<email>`, `pwreset:<user id>`, `verify:<user id>`), so
+`battery/auth` registers one eraser per tag; the reset and verification
+erasers match by user id with their tag as the prefix. Matching the bare
+email, as the first registration did, reached no row the battery writes.
 
 Resolution stays **declarative**: the framework remains the single place raw
 SQL is built (`SafeIdent`-guarded identifiers, `$n`-bound values); a battery

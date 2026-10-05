@@ -103,6 +103,12 @@ type Config struct {
 // satisfy this interface. The implementation must derive per-limiter state from
 // the namespaced key alone, it receives the full Config but should treat Scope
 // + key as the identity.
+//
+// AllowContext calls the store outside the limiter's mutex, so concurrent
+// callers on one or many replicas reach Allow together. The admission decision
+// must be atomic per key: a concurrent burst admits at most MaxAttempts.
+// Counting and then recording in separate operations breaks that, since every
+// caller reads the same pre-insert count.
 type Store interface {
 	Allow(ctx context.Context, key string, cfg Config) (allowed bool, retryAfter time.Duration, err error)
 }

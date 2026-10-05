@@ -110,6 +110,10 @@ const (
 //     original behavior. A non-default Identity (e.g. IdentityEmail) is
 //     resolved once at erase time through the matching DataIdentityResolver,
 //     and the resolved value is bound for Column instead of the user id.
+//   - ValuePrefix is prepended to the bound value. A table that stores the
+//     identity tagged, such as battery/auth's token table ("magiclink:<email>",
+//     "pwreset:<user id>"), matches only with the tag; the bare value matches
+//     nothing and the rows survive the erasure. Empty binds the value as is.
 type DataEraser struct {
 	Name         string
 	Source       string
@@ -119,6 +123,7 @@ type DataEraser struct {
 	ScrubColumns []string
 	Tombstone    string
 	Identity     IdentityKind
+	ValuePrefix  string
 }
 
 // DataIdentityResolver declares how the framework resolves a non-user-id
@@ -259,7 +264,7 @@ func cloneEraser(e DataEraser) *DataEraser {
 	return &DataEraser{
 		Name: e.Name, Source: e.Source, Table: e.Table, Column: e.Column,
 		Mode: e.Mode, ScrubColumns: scrub, Tombstone: e.Tombstone,
-		Identity: e.Identity,
+		Identity: e.Identity, ValuePrefix: e.ValuePrefix,
 	}
 }
 
@@ -283,11 +288,9 @@ func AllErasers() []DataEraser {
 	defer mu.RUnlock()
 	out := make([]DataEraser, 0, len(erasers))
 	for _, ex := range erasers {
-		out = append(out, DataEraser{
-			Name: ex.Name, Source: ex.Source, Table: ex.Table, Column: ex.Column,
-			Mode: ex.Mode, ScrubColumns: append([]string(nil), ex.ScrubColumns...),
-			Tombstone: ex.Tombstone, Identity: ex.Identity,
-		})
+		// One copy path: a second field-by-field literal here dropped
+		// fields cloneEraser carried.
+		out = append(out, *cloneEraser(*ex))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

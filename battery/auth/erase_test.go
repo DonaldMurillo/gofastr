@@ -105,6 +105,10 @@ func TestAuthErasersCoverMagicLinkTokens(t *testing.T) {
 	if ml.Identity != datexport.IdentityEmail {
 		t.Errorf("magic_link_tokens Identity = %v, want IdentityEmail", ml.Identity)
 	}
+	// Rows hold "magiclink:<email>"; the bare email matches none of them.
+	if ml.ValuePrefix != "magiclink:" {
+		t.Errorf("magic_link_tokens ValuePrefix = %q, want %q", ml.ValuePrefix, "magiclink:")
+	}
 }
 
 // ─── end-to-end: the registrations actually erase every linked row ─────────
@@ -193,10 +197,10 @@ func newEraseE2EDB(t *testing.T) (*sql.DB, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ml.CreateToken(ctx, "victim@erased.example", time.Hour); err != nil {
+	if _, err := createPurposeToken(ctx, ml, purposeMagicLink, "victim@erased.example", time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ml.CreateToken(ctx, "keeper@keep.example", time.Hour); err != nil {
+	if _, err := createPurposeToken(ctx, ml, purposeMagicLink, "keeper@keep.example", time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	return db, victim, keeper
@@ -234,7 +238,7 @@ func TestAuthEraseEndToEndDeletesLinkedRows(t *testing.T) {
 		{"auth_sessions", "auth_sessions WHERE user_id = $1", []any{victim}},
 		{"auth_twofa", "auth_twofa WHERE user_id = $1", []any{victim}},
 		{"users_oauth_links", "users_oauth_links WHERE user_id = $1", []any{victim}},
-		{"magic_link_tokens", "magic_link_tokens WHERE email = $1", []any{"victim@erased.example"}},
+		{"magic_link_tokens", "magic_link_tokens WHERE email = $1", []any{"magiclink:victim@erased.example"}},
 	}
 	for _, c := range checks {
 		if n := countRows(t, db, c.where, c.args...); n != 0 {
@@ -250,7 +254,7 @@ func TestAuthEraseEndToEndDeletesLinkedRows(t *testing.T) {
 		{"auth_sessions WHERE user_id = $1", []any{keeper}},
 		{"auth_twofa WHERE user_id = $1", []any{keeper}},
 		{"users_oauth_links WHERE user_id = $1", []any{keeper}},
-		{"magic_link_tokens WHERE email = $1", []any{"keeper@keep.example"}},
+		{"magic_link_tokens WHERE email = $1", []any{"magiclink:keeper@keep.example"}},
 	}
 	for _, c := range keep {
 		if n := countRows(t, db, c.where, c.args...); n != 1 {
@@ -277,7 +281,7 @@ func TestAuthEraseIdempotentSecondRun(t *testing.T) {
 	if n := countRows(t, db, "auth_users WHERE id = $1", keeper); n != 1 {
 		t.Errorf("second erasure disturbed the keeper: %d rows, want 1", n)
 	}
-	if n := countRows(t, db, "magic_link_tokens WHERE email = $1", "keeper@keep.example"); n != 1 {
+	if n := countRows(t, db, "magic_link_tokens WHERE email = $1", "magiclink:keeper@keep.example"); n != 1 {
 		t.Errorf("second erasure disturbed the keeper's magic links: %d, want 1", n)
 	}
 }
@@ -354,7 +358,7 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	if err := twofaRows.SetTwoFA(ctx, userID, &TwoFAState{Enabled: true, Secret: GenerateSecret(), Verified: true}); err != nil {
 		t.Fatalf("SetTwoFA: %v", err)
 	}
-	if _, err := magicLinks.CreateToken(ctx, email, time.Hour); err != nil {
+	if _, err := createPurposeToken(ctx, magicLinks, purposeMagicLink, email, time.Hour); err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
@@ -371,7 +375,7 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 		"sessions":          {"user_id", userID},
 		"auth_twofa":        {"user_id", userID},
 		"users_oauth_links": {"user_id", userID},
-		"magic_link_tokens": {"email", email},
+		"magic_link_tokens": {"email", "magiclink:" + email},
 	}
 	for table, m := range tables {
 		if n := rowsFor(table, m.col, m.val); n == 0 {

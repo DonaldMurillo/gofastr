@@ -212,7 +212,7 @@ type resolvedEraser struct {
 func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string, err error) {
 	for _, e := range erasers {
 		if e.Identity == datexport.IdentityUserID {
-			resolved = append(resolved, resolvedEraser{eraser: e, value: userID})
+			resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + userID})
 			continue
 		}
 		r, ok := datexport.ResolveIdentity(e.Identity)
@@ -227,7 +227,7 @@ func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Diale
 			skipped = append(skipped, e.Name)
 			continue
 		}
-		resolved = append(resolved, resolvedEraser{eraser: e, value: val})
+		resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + val})
 	}
 	return resolved, skipped, nil
 }

@@ -358,6 +358,36 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		slog.Warn("password-reset could not revoke existing sessions: session store does not implement SessionUserPurger",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID))
 	}
+	// API tokens are credentials too: one minted by whoever held the
+	// account before the reset kept working after it.
+	if n, supported, err := p.mgr.revokeUserAPITokens(r.Context(), userID); err != nil {
+		slog.Warn("password-reset API token revocation failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+	} else if supported && n > 0 {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "token.revoked",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
+		})
+	}
+	// The reset link reached the mailbox, so it is the owner's proof. On an
+	// account nobody had proven, someone else may have attached an IdP
+	// identity; the claim evicts it (the password is already the owner's
+	// new one, so it stays) and marks the address verified. Stores without
+	// EmailVerifiedChecker do not track the state and are left as they are.
+	if checker, ok := p.mgr.UserStore().(EmailVerifiedChecker); ok {
+		verified, err := checker.IsEmailVerified(r.Context(), userID)
+		if err == nil && !verified {
+			err = p.mgr.claimAccount(r.Context(), userID, "password_reset", remoteHost(r), false)
+		}
+		if err != nil {
+			slog.Warn("password-reset account claim failed",
+				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+			writeAuthError(w, http.StatusInternalServerError, "account claim failed")
+			return
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
