@@ -619,7 +619,7 @@ role policy on resource-aware checks, so it can tighten *or* loosen the coarse
 // access.Ref identifies the resource a check is about.
 type Ref struct {
     Type string // entity name: "projects"
-    ID   string // record id; "" for collection-level checks (List/Create/batch/feed)
+    ID   string // record id; "" for collection-level checks (List/Create/batch gate/feed)
 }
 
 type Decision int
@@ -698,9 +698,14 @@ func decideProjectAccess(ctx context.Context, roles []string, cap access.Permiss
 Auto-CRUD consults this automatically: `Exposure.Access` gates route through
 `CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
 ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
-collection-level ops (list/create/batch/the `_events` feed). No handler change
-is needed: declaring the `Access` block and mounting `DeciderMiddleware` is the
-whole wiring.
+collection-level ops (list/create/batch/the `_events` feed). The `_batch`
+update and delete routes then ask again for every item, with
+`Ref{Type: <entity name>, ID: <item id>}`, inside the batch transaction: a Deny
+on any one item fails the batch (`committed: false`, that item's error is
+`access denied`) and nothing is written. A per-record Deny therefore covers
+`PATCH /<entity>/_batch` and `DELETE /<entity>/_batch` as well as the single
+routes. No handler change is needed: declaring the `Access` block and mounting
+`DeciderMiddleware` is the whole wiring.
 
 ### When to Deny vs Abstain
 

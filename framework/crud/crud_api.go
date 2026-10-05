@@ -93,20 +93,23 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 		return nil, err
 	}
 	req := syntheticRequest(ctx, http.MethodPut, "/")
-	var result map[string]any
+	var result, out map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		res, err := ch.doUpdate(ctx, req, id, body)
 		if err != nil {
 			return err
 		}
 		result = res
-		return nil
+		// A row the caller's ReadScope hides comes back as its id only,
+		// the same answer as the HTTP route. See readScopeHidesRow.
+		out, err = ch.scopedReadBack(ctx, res)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	ch.EmitEvent(ctx, event.EntityUpdated, result)
-	return result, nil
+	return out, nil
 }
 
 // DeleteOne deletes (or soft-deletes) a record by id.
@@ -311,6 +314,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 		return nil, fmt.Errorf("BatchUpdateMany: ids and bodies length mismatch (%d vs %d)", len(ids), len(bodies))
 	}
 	results := make([]map[string]any, len(ids))
+	out := make([]map[string]any, len(ids))
 	req := syntheticRequest(ctx, "PATCH", "/")
 	txErr := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		for i, id := range ids {
@@ -319,6 +323,9 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 				return err
 			}
 			results[i] = res
+			if out[i], err = ch.scopedReadBack(ctx, res); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -328,7 +335,7 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 	for _, res := range results {
 		ch.EmitEvent(ctx, event.EntityUpdated, res)
 	}
-	return results, nil
+	return out, nil
 }
 
 // BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the

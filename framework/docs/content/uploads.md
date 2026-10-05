@@ -89,6 +89,48 @@ users uploading `report.txt` get two objects instead of the second
 silently overwriting the first. Read `key` from the response; do not
 reconstruct it from `originalName`.
 
+A client cannot send that `key` back in a JSON write to an entity's
+`Image`/`File` field: the CRUD write path accepts only keys the same request
+uploaded (next section). Upload through the entity's own multipart route
+instead, or save the object in host code and write the row there with
+`crud.WithUploadedKeys`.
+
+## Storage keys on JSON and in-process writes
+
+A relative value in an `Image`/`File` field is a storage key, and
+`App.EraseUserData` deletes the keys the erased user's rows name. So the CRUD
+write path (create, update, upsert, batch, nested writes, and the in-process
+`CreateOne` / `UpdateOne` / `UpsertOne` / `TypedQuery.UpdateAll`) accepts a
+relative value, in the field or in a `<field>_variants` `storage_ref`, only
+when:
+
+- this request's multipart parse saved it (the multipart routes do this for
+  you, renditions included);
+- host code saved it and says so with `crud.WithUploadedKeys(ctx, keys...)`;
+- it is already on the row being written, read under the caller's owner,
+  tenant and soft-delete scope (sending an unchanged value back on update is
+  fine); or
+- the context carries `crud.WithServerWrites` (trusted host code).
+
+Anything else answers `400` with `{"fields": {"<field>": ["storage key was
+not uploaded by this request"]}}`. An absolute `http(s)` URL is always
+accepted: it is an external link, and erasure never deletes it.
+
+```go
+ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
+if err != nil { return err }
+_, err = profiles.CreateOne(crud.WithUploadedKeys(ctx, ff.StorageRef),
+    map[string]any{"avatar": ff.URL})
+```
+
+Pass `WithUploadedKeys` only keys your own code just saved. A key taken from
+request data is what the check exists to refuse: without it, a user could
+copy another user's key (published in their `/uploads/<key>` URLs) into their
+own row, erase their account, and delete the other user's file.
+
+`TypedQuery.UpdateAll` writes one value onto many rows, so "already on the
+row" cannot apply there; it needs `WithUploadedKeys` or `WithServerWrites`.
+
 ## Field-name casing
 
 Multipart field names are **taken literally** as column names; there
@@ -576,12 +618,16 @@ characters.
   `File` entity will error. JSON requests still work; they just can't
   set those fields.
 - **Sending a JSON body with a base64 file.** Not supported. Use
-  multipart, or store the file out-of-band and PATCH the URL in.
+  multipart, or host the file elsewhere and PATCH its absolute `https`
+  URL in.
+- **PATCHing a storage key from a separate upload.** A JSON write refuses
+  a relative key the same request did not upload, including one
+  `upload.Handler` returned. See
+  [Storage keys on JSON and in-process writes](#storage-keys-on-json-and-in-process-writes).
 - **Trusting client-supplied URLs.** Multipart writes the URL the
   server gets back from `Storage.Save`, not anything the client sent.
-  Don't try to set a file URL via a JSON request expecting the server
-  to honour it as-is; that path uses the column verbatim and won't
-  validate or upload anything.
+  A JSON request can set an absolute `http(s)` URL, which the server
+  stores as an external link without fetching or uploading anything.
 - **Camelcasing multipart names.** They are literal column names. Use
   snake_case if your DB columns are snake_case.
 - **Expecting sibling columns to appear on their own.** `WithImagePipeline`

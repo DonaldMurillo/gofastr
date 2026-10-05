@@ -69,6 +69,11 @@ func RegisterEntityMCPTools(server *mcp.Server, crud1 *crud.CrudHandler, router 
 // WithServerWrites wraps crud.WithServerWrites.
 func WithServerWrites(ctx context.Context) context.Context { return crud.WithServerWrites(ctx) }
 
+// WithUploadedKeys wraps crud.WithUploadedKeys.
+func WithUploadedKeys(ctx context.Context, keys ...string) context.Context {
+	return crud.WithUploadedKeys(ctx, keys...)
+}
+
 // WithReadHooks wraps crud.WithReadHooks.
 func WithReadHooks(ctx context.Context) context.Context { return crud.WithReadHooks(ctx) }
 

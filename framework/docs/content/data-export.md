@@ -241,6 +241,27 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    anonymized: every row where `actor_id = userID` is set to `[erased]`. See
    [Audit retention](#audit-retention) below.
 
+### Stored files
+
+When the app has `WithFileStorage`, the entity plane also deletes the stored
+objects the erased rows name: every `schema.Image` / `schema.File` value and
+every `storage_ref` in a `<field>_variants` column. The keys are read before
+the rows go and deleted after the transaction commits.
+
+Erasure deletes only objects it can attribute to the erased user:
+
+- An absolute `http(s)` URL is an external link, not a storage key, and is
+  never deleted.
+- A key that a surviving row still names, in any entity's file or variants
+  column (another user's row, or a row of an entity without an
+  `OwnerField`), is kept. The CRUD write path refuses a key the caller did
+  not upload (see [uploads](uploads.md#storage-keys-on-json-and-in-process-writes)),
+  so this only matters for rows written before that check or by host code
+  under `WithServerWrites`.
+
+If the check for other references fails, the rows stay erased, no object is
+deleted, and `EraseUserData` returns an error.
+
 ### Audit retention
 
 Audit rows are **not deleted**. This is deliberate and is the industry-standard

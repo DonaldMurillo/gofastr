@@ -1011,7 +1011,9 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 
 		var result map[string]any
-		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
+		// The keys this request's multipart parse saved are the only
+		// storage keys it may write (media_provenance.go).
+		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
 				return err
@@ -1092,13 +1094,15 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		var result map[string]any
-		err = ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
+		var hidden bool
+		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
 				return err
 			}
 			result = res
-			return nil
+			hidden, err = ch.readScopeHidesRow(ctx, res)
+			return err
 		})
 		if err != nil {
 			// The same compensation as Create, plus the 404 shape
@@ -1118,14 +1122,22 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		// caller did not send.
 		// A hook error degrades to the id, not a 500, the update is already
 		// committed. See identityOnly.
-		body, hookErr := ch.runResponseHooks(r, result)
-		if hookErr != nil {
-			log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
-			body = ch.identityOnly(result)
+		// A row the caller's ReadScope hides (GET answers 404) comes back as
+		// its id only: the write stands, the read-back does not leak it.
+		var resp map[string]any
+		if hidden {
+			resp = ch.identityOnly(result)
+		} else {
+			var hookErr error
+			resp, hookErr = ch.runResponseHooks(r, result)
+			if hookErr != nil {
+				log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
+				resp = ch.identityOnly(result)
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(singleResponse{Data: body})
+		json.NewEncoder(w).Encode(singleResponse{Data: resp})
 	}
 }
 
