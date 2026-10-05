@@ -61,6 +61,21 @@ func TestRBAC_GrantAuditFailureLogged(t *testing.T) {
 	}
 }
 
+// The audit page tells the operator to "check the server logs" when the
+// read fails (a missing audit table, say); the error must be there.
+func TestAuditLoadFailureIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	b := New(Config{DB: newDB(t), AuditTable: "no_such_audit_table", Logger: capturingLogger(&buf)})
+	rr := httptest.NewRecorder()
+	b.handleAudit(rr, httptest.NewRequest(http.MethodGet, "/admin/audit", nil))
+	if !strings.Contains(rr.Body.String(), "Could not load audit rows") {
+		t.Fatalf("expected the load-failure page, got %q", rr.Body.String())
+	}
+	if got := buf.String(); !strings.Contains(got, "audit") || !strings.Contains(got, "no_such_audit_table") {
+		t.Fatalf("the audit read failure was not logged; got=%q", got)
+	}
+}
+
 // TestModules_EnableAuditFailureLogged applies the same policy to the
 // process-module lifecycle handlers: a controller action that succeeded must
 // not have its audit record vanish silently when the DB blips.

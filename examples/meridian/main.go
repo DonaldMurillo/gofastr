@@ -126,6 +126,13 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
+	// The admin audit page reads audit_log and the admin's own RBAC and
+	// module changes append to it: create it if it does not exist.
+	if db != nil {
+		if err := framework.EnsureAuditTable(db, "audit_log"); err != nil {
+			log.Fatalf("audit table: %v", err)
+		}
+	}
 	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: appTheme(), FontFaceCSS: fontFaceCSS}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {

@@ -5018,6 +5018,12 @@ func renderBlueprintMain(bp Blueprint) string {
 			// with the rest of the app. Same colors, same fonts.
 			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
 		}
+		// The admin battery reads audit_log for its audit page and appends
+		// to it on RBAC and module changes, but nothing else creates the
+		// table: ensure it here (idempotent, dialect-aware).
+		sb.WriteString("\t// The admin audit page reads audit_log and the admin's own RBAC and\n")
+		sb.WriteString("\t// module changes append to it: create it if it does not exist.\n")
+		sb.WriteString("\tif db != nil {\n\t\tif err := framework.EnsureAuditTable(db, \"audit_log\"); err != nil {\n\t\t\tlog.Fatalf(\"audit table: %v\", err)\n\t\t}\n\t}\n")
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
 		// can wire Policy/GrantStore/Auth additively, no edits here.

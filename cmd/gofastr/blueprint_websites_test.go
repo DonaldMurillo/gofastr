@@ -238,6 +238,25 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 	}
 }
 
+// The admin battery reads and appends to audit_log; nothing else in a
+// generated app creates it, so /admin/audit always failed to load and
+// the admin's own audit writes failed. main.go ensures the table before
+// the battery registers.
+func TestAdminMainEnsuresAuditTable(t *testing.T) {
+	bp := websitesBlueprint()
+	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
+	bp.App.Admin = BlueprintAdmin{Enabled: true, Role: "admin", LoginPath: "/login"}
+	main := renderBlueprintMain(bp)
+	ensure := strings.Index(main, `framework.EnsureAuditTable(db, "audit_log")`)
+	register := strings.Index(main, "fwApp.RegisterBattery(admin.New(adminCfg))")
+	if ensure < 0 || register < 0 || ensure > register {
+		t.Fatalf("main.go must ensure audit_log before registering the admin battery:\n%s", main)
+	}
+	if strings.Count(main, `AuditTable: "audit_log"`) != 1 {
+		t.Errorf("admin.Config must name the table the ensure call creates")
+	}
+}
+
 func TestBlueprint_AdminSeedAfterMigrate(t *testing.T) {
 	bp := websitesBlueprint()
 	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}

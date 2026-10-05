@@ -618,6 +618,9 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	rows, err := b.queryAudit(r.Context(), limit)
 	if err != nil {
 		// Don't echo err.Error(), driver text leaks DSNs, schema, secrets.
+		// The page points the operator at the server logs, so the error
+		// goes there (a missing audit table is the usual cause).
+		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		b.writePage(w, b.cfg.Title, "Audit log",
 			adminError("Could not load audit rows. Check the server logs for details."))
 		return
