@@ -3004,7 +3004,7 @@ func (a *App) Start(addr string) error {
 	a.ensureLifecycleContext()
 
 	a.warnUnresolvableRelations()
-	a.guardDevMCPBind(addr)
+	a.guardDevMCPBind(listenAddrFor(addr))
 
 	abort := func(err error) error {
 		// Read the shutdown state BEFORE draining: the drain below calls
@@ -3439,11 +3439,7 @@ func (a *App) Start(addr string) error {
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
-	listenAddr := addr
-	if listenAddr == "" {
-		listenAddr = ":http"
-	}
-	ln, err := net.Listen("tcp", listenAddr)
+	ln, err := net.Listen("tcp", listenAddrFor(addr))
 	if err != nil {
 		// Bind failure (port in use is the common case), drain like every
 		// earlier start phase does, otherwise the batteries/cron/queue and

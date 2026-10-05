@@ -39,18 +39,18 @@ func TestDevMCPRefusesNonLoopbackBind(t *testing.T) {
 	loopback := []string{
 		"localhost:8080", "127.0.0.1:8080", "[::1]:8080",
 		"127.0.0.1:0",
-		// No address chosen at all, the server-side default is
-		// localhost:8080.
-		"",
 	}
 	// ":8080" and a bare "8080" bind EVERY interface in Go, so they
 	// belong here, not with the loopback forms they superficially
 	// resemble. That confusion is the whole reason this classifier is
-	// worth a test.
+	// worth a test. "" belongs here too: Start("") binds ":http", every
+	// interface on port 80 (listenAddrFor), and this list once carried
+	// it as loopback on the premise of a localhost default no code
+	// applied.
 	exposed := []string{
 		"0.0.0.0:8080", "192.168.1.20:8080", "[::]:8080",
 		"10.0.0.5:8080", "example.internal:8080",
-		":8080", "8080",
+		":8080", "8080", "", ":http",
 	}
 	for _, addr := range loopback {
 		if !bindIsLoopback(addr) {
@@ -298,6 +298,51 @@ func TestDevMCPRefusesExposedStartLive(t *testing.T) {
 
 	t.Run("standard start order", func(t *testing.T) { run(t, false) })
 	t.Run("InitPlugins before Start", func(t *testing.T) { run(t, true) })
+}
+
+// Start("") binds ":http", every interface. The guard has to judge that
+// bind, not the empty string it was handed. Port 80 may be free, taken, or
+// privileged on the machine running this, so the test accepts either a
+// served start or a refused bind; the guard runs before the listener in
+// both, and the control tools registered by a pre-Start InitPlugins must be
+// gone either way.
+func TestDevMCPStartEmptyAddrIsExposed(t *testing.T) {
+	t.Setenv("GOFASTR_DOTENV", "off")
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "")
+	t.Setenv("GOFASTR_DEV_MCP", "")
+	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
+	t.Setenv("GOFASTR_ISOLATION", "off")
+
+	app := NewApp()
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("pre-Start InitPlugins: %v", err)
+	}
+	if !app.MCP.HasTool("app_module_disable") {
+		t.Fatal("premise: dev mode did not register app_module_disable before Start")
+	}
+	ready := make(chan struct{}, 1)
+	app.OnReady(func(string) { ready <- struct{}{} })
+	started := make(chan error, 1)
+	go func() { started <- app.Start("") }()
+
+	select {
+	case <-ready:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := app.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+		<-started
+	case <-started:
+		// The bind was refused (port 80 taken or privileged); the guard
+		// already ran.
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start(\"\") neither served nor failed")
+	}
+	if app.MCP.HasTool("app_module_disable") {
+		t.Error("SECURITY: [exposure] Start(\"\") binds every interface but kept the dev MCP control tools")
+	}
 }
 
 // TestMCPRequireUserRefusesEmbedGrant pins requireMCPUser's second
