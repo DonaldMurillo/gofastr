@@ -183,6 +183,8 @@ PORT=localhost:8080
 	gitignoreContent := `gen/
 .gofastr/
 *.db
+*.db-shm
+*.db-wal
 .env
 bin/
 `

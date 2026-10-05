@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -123,5 +124,23 @@ func TestBuildAgentsMDTeachesPublicEscapeHatch(t *testing.T) {
 	// dead-end on the same 401 a human newcomer does.
 	for _, want := range []string{"Public: true", "battery/auth", "gofastr docs auth"} {
 		mustContain(t, string(buildAgentsMD()), want)
+	}
+}
+
+// init ignored *.db but not the -shm/-wal files SQLite writes beside it in WAL
+// mode, so a first commit of the whole tree picked up a live database sidecar.
+func TestInitIgnoresSQLiteSidecars(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
+	b, err := os.ReadFile(filepath.Join(dir, "myapp", ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(b), "\n")
+	for _, want := range []string{"bin/", "*.db", "*.db-shm", "*.db-wal"} {
+		if !slices.Contains(lines, want) {
+			t.Errorf("init .gitignore does not ignore %s; got:\n%s", want, b)
+		}
 	}
 }

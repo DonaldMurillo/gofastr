@@ -1040,8 +1040,10 @@ generated app commits no credentials:
   no admin is seeded)
 
 When the blueprint holds any of these values, the generator also emits a
-`.env` carrying them (so the app runs without extra setup) plus a
-`.gitignore` that excludes it. The generated `main.go` loads
+`.env` carrying them (so the app runs without extra setup). The
+`.gitignore` it always emits excludes `.env` and `.env.local`, `.gofastr/`,
+`bin/` (the `gofastr build` output) and the SQLite database files
+(`*.db`, `*.db-shm`, `*.db-wal`). The generated `main.go` loads
 `.env.local`/`.env` before opening the DB; a real process env var
 always wins over the files. `generate` is one-shot and refuses to
 overwrite an existing `.env` (or any other file) unless you pass `--force`.
