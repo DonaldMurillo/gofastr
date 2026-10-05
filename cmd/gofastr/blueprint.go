@@ -407,13 +407,20 @@ func decodeJSONValue(dec *json.Decoder) (any, error) {
 	}
 }
 
+// blueprintHasTheme reports whether app.theme declared anything: light
+// tokens, a dark: map, or both. A theme with only a dark: map decodes to an
+// empty light map, so testing the light map alone dropped the dark palette.
+func blueprintHasTheme(app BlueprintApp) bool {
+	return len(app.Theme) > 0 || len(app.ThemeDark) > 0
+}
+
 func isBlueprintFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".yml" || ext == ".yaml" || ext == ".json"
 }
 
 func mergeBlueprints(a, b Blueprint) Blueprint {
-	if b.App.Name != "" || b.App.Module != "" || b.App.DBDriver != "" || b.App.DBURL != "" || b.App.StaticDir != "" || b.App.OutputDir != "" || len(b.App.Theme) > 0 {
+	if b.App.Name != "" || b.App.Module != "" || b.App.DBDriver != "" || b.App.DBURL != "" || b.App.StaticDir != "" || b.App.OutputDir != "" || blueprintHasTheme(b.App) {
 		a.App = b.App
 	}
 	a.Entities = append(a.Entities, b.Entities...)
@@ -3682,7 +3689,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 		// no edit to any owned file.
 		files = append(files, generatedFile{name: filepath.Join("entities", "register.go"), content: renderRegisterSeam()})
 	}
-	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || len(bp.App.Theme) > 0 || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
+	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || blueprintHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
 	// Per-screen layout: the fixed screens_register.go seam + one file per
 	// authored screen + one per-entity crud file (screens + appResources).
 	files = append(files, blueprintScreenFiles(bp, screenOrderOffset)...)
@@ -5012,7 +5019,7 @@ func renderBlueprintMain(bp Blueprint) string {
 			adminRole = "admin"
 		}
 		themeArg := ""
-		if len(bp.App.Theme) > 0 {
+		if blueprintHasTheme(bp.App) {
 			// Hand the admin back-office the same theme tokens AND @font-face
 			// rules the UI host uses, so the back-office renders coherently
 			// with the rest of the app. Same colors, same fonts.
@@ -7719,6 +7726,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	if needUI {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
 	}
+	if len(bp.App.ThemeDark) > 0 {
+		// appTheme seeds the dark palette from the framework theme.
+		sb.WriteString("\tuitheme \"github.com/DonaldMurillo/gofastr/framework/ui/theme\"\n")
+	}
 	if rbac {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/access\"\n")
 	}
@@ -7868,7 +7879,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("\t\tNote: %q,\n", fmt.Sprintf("© %d %s.", time.Now().Year(), name)))
 		sb.WriteString("\t})\n}\n\n")
 	}
-	if len(bp.App.Theme) > 0 {
+	if blueprintHasTheme(bp.App) {
 		sb.WriteString("func appTheme() style.Theme {\n")
 		sb.WriteString("\ttheme := style.DefaultTheme()\n")
 		for _, key := range slices.Sorted(maps.Keys(bp.App.Theme)) {
@@ -7891,15 +7902,33 @@ func renderBlueprintApp(bp Blueprint) string {
 		if len(bp.App.ThemeDark) > 0 {
 			// Dark-scheme palette, emitted as a [data-color-scheme="dark"] token
 			// block so the header's ui.ThemeToggle recolors the whole app.
-			sb.WriteString("\ttheme.DarkColors = map[string]string{\n")
+			// app.theme.dark is an overlay: the palette starts from the
+			// framework's complete dark palette and the blueprint's keys win.
+			// Emitted as the whole map, every token the blueprint did not name
+			// kept its light value under the dark scheme.
+			sb.WriteString("\ttheme.DarkColors = uitheme.Default().DarkColors\n")
 			for _, key := range slices.Sorted(maps.Keys(bp.App.ThemeDark)) {
 				if reason := blueprintUnsafeColorNote("dark."+key, bp.App.ThemeDark[key]); reason != "" {
-					sb.WriteString("\t" + reason)
+					sb.WriteString(reason)
 					continue
 				}
-				sb.WriteString(fmt.Sprintf("\t\t%q: %q,\n", key, bp.App.ThemeDark[key]))
+				sb.WriteString(fmt.Sprintf("\ttheme.DarkColors[%q] = %q\n", key, bp.App.ThemeDark[key]))
 			}
-			sb.WriteString("\t}\n")
+			// The seeded inks were chosen for the framework's own dark fills.
+			// A fill the blueprint overrides without its ink keeps the light
+			// ink it was paired with before seeding, so a mid-tone dark
+			// primary that clears AA on white does not meet the framework's
+			// near-black ink and fail the boot contrast check.
+			for _, pair := range [][2]string{{"primary", "PrimaryFg"}, {"secondary", "SecondaryFg"}, {"danger", "DangerFg"}} {
+				fill, ink := pair[0], pair[0]+"-fg"
+				if _, ok := bp.App.ThemeDark[fill]; !ok {
+					continue
+				}
+				if _, ok := bp.App.ThemeDark[ink]; ok {
+					continue
+				}
+				sb.WriteString(fmt.Sprintf("\ttheme.DarkColors[%q] = theme.Colors.%s.Value\n", ink, pair[1]))
+			}
 		}
 		if hasMarketing {
 			// siteheader's own tokens (the phone menu's stagger) join the
@@ -8005,7 +8034,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	sb.WriteString("\tif site == nil {\n")
 	sb.WriteString(fmt.Sprintf("\t\tsite = app.NewApp(%q)\n", name))
 	sb.WriteString("\t}\n")
-	if len(bp.App.Theme) > 0 {
+	if blueprintHasTheme(bp.App) {
 		sb.WriteString("\tsite.WithTheme(appTheme())\n")
 	} else if hasMarketing {
 		// No declared palette, but the marketing chrome's sheets read their

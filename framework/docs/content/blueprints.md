@@ -83,6 +83,12 @@ It also accepts the font tokens `font_heading`, `font_body`, and
 `font_display`: named Google Fonts families that drive the `--font-*`
 tokens. An `app.theme.dark` sub-map overrides any of the same color
 tokens for the dark scheme (the header's theme toggle flips to it).
+The map is an overlay on the framework's complete dark palette
+(`framework/ui/theme`), so a token it leaves out takes the framework's
+dark value, not the light one. A fill it overrides without its ink
+(`primary` without `primary-fg`, likewise `danger`) keeps the light
+ink, so set the `-fg` token when the dark fill needs a different one.
+A theme with only a `dark:` map is still emitted.
 Generated apps call `site.WithTheme(...)`, so the values are emitted
 through `/__gofastr/app.css` as computed CSS custom properties.
 
