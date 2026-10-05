@@ -982,7 +982,9 @@ has a `*_security_test.go` that failed before it, and `gofastr upgrade
   unverified emails can no longer pre-create an account the owner's
   verified login merges into. `GET /auth/verify-email` now needs a full
   session of the requesting account. Seeded users must be marked
-  verified; the meridian, ecommerce and blueprint admin seeds do this.
+  verified; the meridian, ecommerce and blueprint admin seeds do this,
+  and on each boot they mark an existing account at the seed address
+  verified when it holds the admin role.
 - **BREAKING: `RequireTwoFA` judges the request principal.** It read the
   first session cookie, so a second cookie or a JWT next to a stale
   session skipped the step-up. It now requires a 2FA-verified session of

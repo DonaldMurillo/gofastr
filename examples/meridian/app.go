@@ -371,17 +371,24 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// itself), never from committed source; without it no admin
 		// is seeded and the skip is logged loudly.
 		if seedPw := os.Getenv("ADMIN_SEED_PASSWORD"); seedPw != "" {
-			if _, _, err := authCfg.UserStore.FindByEmail(context.Background(), "admin@meridian.dev"); err != nil {
+			u, _, err := authCfg.UserStore.FindByEmail(context.Background(), "admin@meridian.dev")
+			if err != nil {
+				u = nil
 				if h, herr := auth.HashPassword(seedPw); herr == nil {
-					u, cerr := authCfg.UserStore.CreateUser(context.Background(), "admin@meridian.dev", h, []string{"admin", "user"})
-					// The operator chose this address, so it counts as
-					// proven. Left unverified, the first magic link to it
-					// would claim the account and clear the seeded password.
-					if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && cerr == nil && u != nil {
-						if verr := v.MarkEmailVerified(context.Background(), u.GetID()); verr != nil {
-							log.Printf("WARN: admin %q seeded but its email was not marked verified: %v", "admin@meridian.dev", verr)
-						}
+					if created, cerr := authCfg.UserStore.CreateUser(context.Background(), "admin@meridian.dev", h, []string{"admin", "user"}); cerr == nil {
+						u = created
 					}
+				}
+			}
+			// The operator chose this address, so it counts as proven.
+			// Left unverified, the first magic link to it would claim the
+			// account and clear the seeded password. This also covers an
+			// admin seeded before email_verified existed. An account at
+			// the address without the admin role did not come from this
+			// seed and stays unproven.
+			if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && u != nil && slices.Contains(u.GetRoles(), "admin") {
+				if verr := v.MarkEmailVerified(context.Background(), u.GetID()); verr != nil {
+					log.Printf("WARN: admin %q seeded but its email was not marked verified: %v", "admin@meridian.dev", verr)
 				}
 			}
 		} else {
