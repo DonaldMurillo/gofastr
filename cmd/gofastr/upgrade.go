@@ -85,7 +85,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 	result, err := scanRun(root, notes, sinks)
 	if err != nil {
 		var b strings.Builder
-		fmt.Fprintf(&b, "NOTE: could not scan this project (%v); no lines are\n", err)
+		fmt.Fprintf(&b, "NOTE: could not scan this project (%s); no lines are\n", scrubTerminalOutput(err.Error()))
 		b.WriteString("      pointed at below, but every note still carries its guidance.\n\n")
 		b.WriteString(formatUpgradeNotes(nil, inRange))
 		return b.String()
@@ -108,7 +108,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unscanned)-maxNoteHits)
 				break
 			}
-			b.WriteString("  " + f + "\n")
+			b.WriteString("  " + scrubTerminalOutput(f) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -120,7 +120,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unexplained)-maxNoteHits)
 				break
 			}
-			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(h.Why, "\n", "\n      "))
+			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(scrubTerminalOutput(h.Why), "\n", "\n      "))
 		}
 	}
 	return b.String()
@@ -137,7 +137,7 @@ func brokenList(broken []string) string {
 	if len(broken) > max {
 		shown, extra = broken[:max], len(broken)-max
 	}
-	s := strings.Join(shown, ", ")
+	s := scrubTerminalOutput(strings.Join(shown, ", "))
 	if extra > 0 {
 		s += fmt.Sprintf(", and %d more", extra)
 	}
@@ -224,9 +224,9 @@ func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hi
 					fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
 					break
 				}
-				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), h.Why)
+				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), scrubTerminalOutput(h.Why))
 				if h.Err != "" {
-					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(h.Err, "\n", "\n          "))
+					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(scrubTerminalOutput(h.Err), "\n", "\n          "))
 				}
 			}
 		}
@@ -258,15 +258,17 @@ func sortedHits(result *scan.Result, note *upgrade.Note) []scan.Hit {
 
 // hitPos renders a hit's position; the column is dropped for matchers
 // that have none (gomod, config), and an error the go command reported
-// without a position reads "(no position)".
+// without a position reads "(no position)". The file name is project
+// data, scrubbed like every other hit field.
 func hitPos(h scan.Hit) string {
 	if h.File == "" {
 		return "(no position)"
 	}
+	file := scrubTerminalOutput(h.File)
 	if h.Col > 0 {
-		return fmt.Sprintf("%s:%d:%d", h.File, h.Line, h.Col)
+		return fmt.Sprintf("%s:%d:%d", file, h.Line, h.Col)
 	}
-	return fmt.Sprintf("%s:%d", h.File, h.Line)
+	return fmt.Sprintf("%s:%d", file, h.Line)
 }
 
 // resolveLatestVersion asks the module proxy for the newest tagged
@@ -366,6 +368,12 @@ func runUpgrade(args []string) {
 			osExit(1)
 		}
 		current, currentFrom = opts.from, "--from"
+	} else if err := upgrade.ValidateSemver(current); err != nil {
+		// The version is project data headed for the terminal: one that
+		// is not vX.Y.Z (escape bytes included) is refused, and the
+		// error quotes it.
+		fmt.Fprintf(os.Stderr, "upgrade: go.mod: %v\n", err)
+		osExit(1)
 	}
 
 	target := opts.to

@@ -424,3 +424,45 @@ func TestUpgradeReportEmptyRangeSkipsScan(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", report, want)
 	}
 }
+
+// A go.mod version is project data: one carrying terminal escapes is
+// refused, never printed raw.
+func TestUpgradeRefusesEscapeInGoModVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "go.mod", "module app\n\ngo 1.27\n\nrequire "+gofastrModule+" v0.80.0\x1b]0;PWNED\a\x1b[2J\n")
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() { runUpgrade([]string{dir, "--to", "v0.86.0"}) })
+	})
+	if strings.ContainsRune(out, 0x1b) || strings.ContainsRune(out, '\a') {
+		t.Errorf("the go.mod version reached the terminal raw:\n%q", out)
+	}
+	if code != 1 {
+		t.Errorf("exit = %d, want 1 for a go.mod version that is not vX.Y.Z", code)
+	}
+}
+
+// Hit text comes from the project (gofastr.yml keys, file names,
+// compile errors): control and bidi runes never reach the terminal.
+func TestUpgradeReportScrubsHitText(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{
+			Hits: map[*upgrade.Note][]scan.Hit{note: {
+				{File: "gofastr.yml", Line: 2, Why: "config auth\u202Eevil\u009B2J", Err: "bad\x1b[2Jthing"},
+			}},
+			Unexplained: []scan.Hit{{File: "x\u009B.go", Line: 1, Why: "err\x1b]0;T\a"}},
+			Unscanned:   []string{"y\u202E.go"},
+			Broken:      []string{"pkg\x1b[2J"},
+		}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	for _, r := range []rune{0x1b, '\a', 0x202E, 0x9B} {
+		if strings.ContainsRune(report, r) {
+			t.Errorf("report carries raw %U:\n%q", r, report)
+		}
+	}
+	if !strings.Contains(report, "gofastr.yml:2  config authevil2J") {
+		t.Errorf("scrubbed hit text missing, got:\n%s", report)
+	}
+}
