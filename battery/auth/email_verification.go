@@ -219,6 +219,20 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 		return
 	}
+	// A link opened from another account's session stays redeemable for
+	// its owner. Stores without a peek fall back to the check after the
+	// redeem below.
+	if peeker, ok := p.store.(MagicLinkTokenPeeker); ok {
+		raw, err := peeker.PeekToken(r.Context(), tok)
+		if err != nil {
+			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+		if owner, ok := peekPurposePayload(raw, purposeVerify); ok && owner != sess.UserID {
+			writeAuthError(w, http.StatusForbidden, "this verification link belongs to another account")
+			return
+		}
+	}
 	userID, err := redeemPurposeToken(r.Context(), p.store, purposeVerify, tok)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")

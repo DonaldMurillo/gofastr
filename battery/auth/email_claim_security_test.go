@@ -386,10 +386,10 @@ func TestVerifyEmailNeedsOwnSession(t *testing.T) {
 		return c.do(http.MethodGet, "/auth/verify-email?token="+url.QueryEscape(tok), "", "", cookie).Code // not-a-secret: test-minted token
 	}
 
-	if code := open(sendLink(), other); code != http.StatusForbidden {
+	tok := sendLink()
+	if code := open(tok, other); code != http.StatusForbidden {
 		t.Fatalf("link opened by another account: got %d, want 403", code)
 	}
-	tok := sendLink()
 	if code := open(tok, ""); code != http.StatusUnauthorized {
 		t.Fatalf("sessionless open: got %d, want 401", code)
 	}
