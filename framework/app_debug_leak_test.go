@@ -28,7 +28,7 @@ func TestLeakEndpointServesProfile(t *testing.T) {
 	app.registerDebugEndpoints()
 
 	req := httptest.NewRequest(http.MethodGet, "/.debug/goroutineleak", nil)
-	req = req.WithContext(handler.SetUser(req.Context(), "tester"))
+	req = req.WithContext(handler.SetUser(req.Context(), debugRoleUser{roles: []string{"admin"}}))
 	rec := httptest.NewRecorder()
 	app.router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
