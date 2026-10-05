@@ -1122,7 +1122,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			if len(cfg.HighlightWords) > 0 {
 				content = markWords(content, cfg.HighlightWords)
 			}
-			wrapped[i] = html.Span(html.TextConfig{Class: codeBlockLineClass(cfg, i+1, content)}, render.HTML(content))
+			wrapped[i] = codeBlockLine(cfg, i, len(cfg.Lines), content)
 		}
 		body = render.Join(wrapped...)
 	case perLine:
@@ -1138,7 +1138,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			if len(cfg.HighlightWords) > 0 {
 				content = markWords(content, cfg.HighlightWords)
 			}
-			wrapped[i] = html.Span(html.TextConfig{Class: codeBlockLineClass(cfg, i+1, content)}, render.HTML(content))
+			wrapped[i] = codeBlockLine(cfg, i, len(src), content)
 		}
 		body = render.Join(wrapped...)
 	default:
@@ -1270,6 +1270,20 @@ func firstTextByte(s string) byte {
 		}
 	}
 	return 0
+}
+
+// codeBlockLine wraps line i of n (0-based) in its display:block span.
+// Every line but the last ends in its own newline, inside the span: an
+// empty block adds nothing to a selection's text or to innerText, so
+// without it a blank source line vanished from a reader's copy. A
+// trailing newline at the end of a block draws no extra line box, so
+// the layout is unchanged; a newline BETWEEN the spans would draw one.
+func codeBlockLine(cfg CodeBlockConfig, i, n int, content string) render.HTML {
+	class := codeBlockLineClass(cfg, i+1, content)
+	if i < n-1 {
+		content += "\n"
+	}
+	return html.Span(html.TextConfig{Class: class}, render.HTML(content))
 }
 
 // codeBlockLineClass builds the per-line class: the base wrapper plus

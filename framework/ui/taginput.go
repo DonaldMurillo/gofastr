@@ -52,7 +52,11 @@ type TagInputConfig struct {
 
 // tagInputClasses dresses headless.TagInput's parts in this package's
 // own vocabulary — the names the registered ui-tag-input sheet
-// matches.
+// matches. The chip and its remove button are the exception: the
+// headless-collections module builds chips at runtime with no class,
+// so the sheet keys them on the hook both renders carry
+// ([data-hui-tag-input-remove] and its button), the way ui-multiselect
+// keys its runtime-built chips.
 var tagInputClasses = headless.Classes{
 	headless.PartRoot:          "fui-tag-input",
 	headless.PartLabel:         "fui-tag-input__label",
@@ -125,7 +129,7 @@ func tagInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-tag-input"] .fui-tag-input__list {
   display: contents;
 }
-[data-cui-comp="ui-tag-input"] .fui-tag-input__chip {
+[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove] {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
@@ -138,7 +142,7 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
 }
-[data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
+[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove] > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -153,7 +157,7 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   line-height: 1;
 }
-[data-cui-comp="ui-tag-input"] .fui-tag-input__chip-remove:hover {
+[data-cui-comp="ui-tag-input"] [data-hui-tag-input-remove] > button:hover {
   color: var(--color-text, #09090B);
   background: color-mix(in oklab, var(--color-text, #09090B) 8%, transparent);
 }

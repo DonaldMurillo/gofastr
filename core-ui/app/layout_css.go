@@ -26,7 +26,7 @@ func InterceptOverlayCSS() string {
      top of the overlay gets clipped. */
   z-index: var(--z-modal, 300);
   display: flex;
-  background: var(--color-overlay, rgba(0, 0, 0, 0.45));
+  background: var(--ui-intercept-overlay-bg, rgba(0, 0, 0, 0.45));
 }
 [data-cui-intercept-overlay] > * {
   background-color: var(--color-surface, #fff);

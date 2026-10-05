@@ -24,7 +24,7 @@ runtime JS. Each region maps to one product job:
 | Activity feed | `ui.Timeline` in a `data-island` slot with `role="status"` | The polite announcement lane. The server trims to the N most recent entries before each push. The client never buffers. |
 | Jobs table | `ui.DataTable` (rows keyed by `Row.ID`) in a `data-island` slot | A keyed changing collection. Successive pushes produce HTML that differs only on rows that actually changed. |
 | Operational status pill | `store.Computed` bound via `Slice.Bind` | A derived client-side value. The operator's +/- buttons mutate two signals with `data-cui-signal-inc`; the reducer runs in the browser and the pill updates live. No RPC. |
-| Connection-health banner | `ui.NetworkRetryBanner` | Watches the SSE lane. `SSESilenceMs` trips the banner if the ticker goes quiet; the Retry button probes a health endpoint. |
+| Connection-health banner | `ui.NetworkRetryBanner` | Follows the connection the runtime reports: it ships hidden and shows when the SSE lane is lost with a retry scheduled; the Retry button probes `HealthEndpoint` and hides it on a 2xx. |
 | Reconnect refresh | `GET /__site/livedash/refresh?island=…` | The islands are reconstructable. SSE is lossy; on reconnect an app fetches the current island HTML to reconcile. The runtime does not do this for you. |
 | Topic-scoped delivery | `host.Islands.PresenceSessions(topic)` | Only sessions that joined the topic receive pushes. The demo uses ONE fixed topic because it has no identity; a multi-tenant app derives a tenant-qualified topic per authenticated user (see [Tenant isolation](#tenant-isolation)). |
 

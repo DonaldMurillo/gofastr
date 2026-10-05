@@ -207,9 +207,9 @@ func TestV087ShadowXSNoteHitsShadowLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upgrade.Load: %v", err)
 	}
-	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 4), "fields")
+	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 5), "fields")
 	if !n.Review || !n.Breaking {
-		t.Fatalf("v0.87.0/4 must be breaking and review-tier: review=%v breaking=%v", n.Review, n.Breaking)
+		t.Fatalf("v0.87.0/5 must be breaking and review-tier: review=%v breaking=%v", n.Review, n.Breaking)
 	}
 	kit := map[string]string{"core-ui/style/style.go": `package style
 

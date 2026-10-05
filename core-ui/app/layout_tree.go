@@ -619,6 +619,11 @@ func checkBuildInventory(l *Layout, key string, i int, body, primary render.HTML
 	count := func(needle string) int {
 		return strings.Count(string(body), needle) - strings.Count(string(primary), needle)
 	}
+	// The markers are attribute VALUES, written through the attribute
+	// escaper: a {param} group key holding ' & " or < lands in the
+	// output as entities, so the needles must carry the same spelling
+	// or a valid /projects/o'neil page fails its own inventory.
+	key = render.Escape(key)
 	wantMain := 0
 	if i == 0 {
 		wantMain = 1 // Primary's <main id="main-content">
@@ -632,12 +637,12 @@ func checkBuildInventory(l *Layout, key string, i int, body, primary render.HTML
 		}
 	}
 	for _, o := range l.spec.Outlets {
-		if n := count(`data-cui-outlet="` + key + "#" + o.Name() + `"`); n != 1 {
+		if n := count(`data-cui-outlet="` + key + "#" + render.Escape(o.Name()) + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed outlet %q %d times, want exactly 1 — a duplicated outlet marker makes the region's fill address ambiguous", l.Name, key, o.Name(), n)
 		}
 	}
 	for _, a := range l.spec.Areas {
-		if n := count(`data-cui-area="` + key + "~" + a.Name + `"`); n != 1 {
+		if n := count(`data-cui-area="` + key + "~" + render.Escape(a.Name) + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed route area %q %d times, want exactly 1", l.Name, key, a.Name, n)
 		}
 	}

@@ -84,3 +84,20 @@ func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
 		}
 	}
 }
+
+func TestCodeTabsLabelNamesTablist(t *testing.T) {
+	out := string(CodeTabs(CodeTabsConfig{Name: "install", Label: "Install snippets"},
+		CodeSample{Label: "Go", Code: "go get x"}))
+	i := strings.Index(out, `role="tablist"`)
+	if i < 0 {
+		t.Fatalf("no tablist:\n%s", out)
+	}
+	start := strings.LastIndex(out[:i], "<")
+	tablist := out[start : i+strings.Index(out[i:], ">")+1]
+	if !strings.Contains(tablist, `aria-label="Install snippets"`) {
+		t.Errorf("tablist is not named by Label: %s", tablist)
+	}
+	if n := strings.Count(out, `aria-label="Install snippets"`); n != 1 {
+		t.Errorf("Label rendered %d times, want once", n)
+	}
+}

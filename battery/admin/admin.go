@@ -618,6 +618,9 @@ func (b *Battery) handleAudit(w http.ResponseWriter, r *http.Request) {
 	rows, err := b.queryAudit(r.Context(), limit)
 	if err != nil {
 		// Don't echo err.Error(), driver text leaks DSNs, schema, secrets.
+		// The page points the operator at the server logs, so the error
+		// goes there (a missing audit table is the usual cause).
+		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		b.writePage(w, b.cfg.Title, "Audit log",
 			adminError("Could not load audit rows. Check the server logs for details."))
 		return
@@ -740,7 +743,7 @@ func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
 // navHTML builds the admin nav as ui.Link action targets inside a <nav>. The
 // current page's link carries aria-current="page"; the active styling comes
 // from a scoped rule in the registered ui-admin sheet. Queue appears only
-// with real backing; Overview/Audit and configured entities remain fixed.
+// with real backing; Overview/Audit and the exposed entities remain fixed.
 func (b *Battery) navHTML(current string) render.HTML {
 	type link struct{ label, href string }
 	links := []link{{"Overview", b.cfg.PathPrefix}}
@@ -749,13 +752,10 @@ func (b *Battery) navHTML(current string) render.HTML {
 	}
 	links = append(links, link{"Audit log", b.cfg.PathPrefix + "/audit"})
 	if b.registry != nil {
-		byName := b.registry.All()
-		for _, name := range b.cfg.Entities {
-			ent, ok := byName[name]
-			if !ok {
-				continue
-			}
-			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
+		// The same resolver the entity pages mount from, so AllEntities
+		// (Config.Entities empty) lists every exposed entity too.
+		for _, ent := range b.entitiesToExpose() {
+			links = append(links, link{titleCase(ent.GetName()), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
 		}
 	}
 	if b.cfg.Policy != nil {
@@ -907,11 +907,13 @@ func jobsTable(jobs []queue.Job, prefix, csrfToken string, showReplay bool) rend
 	return ui.DataTable(ui.DataTableConfig{
 		Columns: cols,
 		Rows:    rows,
-		Empty:   ui.EmptyStateConfig{Title: "No jobs", Description: "No jobs match this filter.", HeadingLevel: 3},
+		Empty:   ui.EmptyStateConfig{Title: "No jobs", Description: "No jobs match this filter.", HeadingLevel: 2},
 	})
 }
 
-// auditTable renders the audit log as a ui.DataTable.
+// auditTable renders the audit log as a ui.DataTable. It sits straight
+// under the page header, so its empty state opens at h2, as the queue
+// table's does.
 func auditTable(rows []auditRow) render.HTML {
 	cols := []ui.Column{
 		{Key: "time", Header: "Time"},
@@ -937,7 +939,7 @@ func auditTable(rows []auditRow) render.HTML {
 	return ui.DataTable(ui.DataTableConfig{
 		Columns: cols,
 		Rows:    data,
-		Empty:   ui.EmptyStateConfig{Title: "No audit entries", Description: "Audit events will appear here.", HeadingLevel: 3},
+		Empty:   ui.EmptyStateConfig{Title: "No audit entries", Description: "Audit events will appear here.", HeadingLevel: 2},
 	})
 }
 

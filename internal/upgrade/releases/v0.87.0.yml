@@ -58,6 +58,13 @@ notes:
         - glob: "**/*.html"
           match: '(?:^|[^-a-zA-Z0-9_])fui-toast-stack-auto(?:[^a-z0-9_-]|$)'
     guidance: "Mount a stack (ui.ToastSlot, or let framework/uihost mount uihost.DefaultToastStack) instead of styling or querying .fui-toast-stack-auto, and key leaving-row CSS on [data-hui-toast-leaving]."
+  - change: "ui.CopyButtonConfig.Target is an element id (a leading # is accepted); a value holding selector characters is refused at render"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework/ui.CopyButtonConfig.Target
+    guidance: "Give Target the id of the element to copy (the headless copy module has resolved it with getElementById since v0.86.0, where a selector silently copied nothing); a Target such as \".snippet pre\" now panics at render, so put an id on that element."
   - change: "style.ShadowSet gains an XS token (--shadow-xs) and Validate requires it like the other shadow steps: a theme that builds its ShadowSet field by field instead of starting from style.DefaultTheme() is refused at boot with \"Theme.Shadows.XS: Shadow.Value is empty (Name=\\\"xs\\\")\" (the theme.go that gofastr theme init and theme edit write names it through style.AutoFillNames), or \"Theme.Shadows.XS: Shadow.Name is empty\" when nothing names it"
     breaking: true
     hits: review

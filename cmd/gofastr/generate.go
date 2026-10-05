@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"golang.org/x/mod/modfile"
 )
 
 func runGenerate(args []string) {
@@ -579,6 +581,9 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		for _, f := range lintPublicEntities(bp) {
 			warn("%s", f.Message())
 		}
+		for _, f := range lintOwnerScopedUnique(bp) {
+			warn("%s", f.Message())
+		}
 		// Surfaced before the "Next steps" block below, which would otherwise
 		// print `go mod init <colliding path>` as the remedy for a build that
 		// the collision makes impossible.
@@ -635,6 +640,12 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// that doesn't exist, so the project stops compiling. Refuse.
 		if packHasAggregatedScreens(writeRoot) {
 			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend. Recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
+			if !fileExistsUnder(writeRoot, "app.go") {
+				// No blueprint seam file: this is the `gofastr init`
+				// layout, which pack cannot read either. Point at the
+				// hand-edit seams its CLAUDE.md names instead.
+				serr = fmt.Errorf("this project uses the `gofastr init` layout (screens.go, main.go, entities/entities.go), which --add and `generate entity|screen` cannot extend; they extend apps made by `gofastr generate --from=<blueprint>`. Add an entity with another app.Entity call in entities/entities.go's RegisterAll, and a screen with a type in screens.go plus a site.Register call in main.go")
+			}
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(serr)
 				osExit(1)
@@ -918,11 +929,24 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			osExit(1)
 		}
 	}
+	// Pin the framework before the user's first `go mod tidy`: with no
+	// gofastr requirement, tidy resolves every missing import at @latest,
+	// so the generated axe_test.go's direct chromedp import landed on a
+	// chromedp whose API framework/testkit/axetest does not compile
+	// against. A required gofastr puts its own chromedp pin in the build
+	// list first.
+	pin, pinErr := pinFrameworkRequire(".")
 	if options.json {
 		printGeneratedFilesJSON(files)
 		return
 	}
 	success("Generated %d file(s) in %s", len(files), displayDir)
+	if pinErr != nil {
+		warn("%v", pinErr)
+	}
+	if pin.version != "" {
+		info("Pinned %s %s in go.mod, matching this CLI.", gofastrModule, pin.version)
+	}
 	devCmd := "gofastr dev"
 	if outDir != "" && outDir != "." {
 		// output_dir blueprints put the app in a subpackage: plain
@@ -955,13 +979,73 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		} else {
 			fmt.Printf("    go mod init %s\n", bp.App.Module)
 		}
+		printFrameworkGetStep(installedFrameworkVersion())
 		fmt.Println("    go mod tidy          : the generated code pulls new imports")
 		fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
 		return
 	}
 	fmt.Println("  Next steps:")
+	if pin.needsGet {
+		printFrameworkGetStep("")
+	}
 	fmt.Println("    go mod tidy          : the generated code pulls new imports")
 	fmt.Printf("    %-20s : dev server with hot-reload\n", devCmd)
+}
+
+// printFrameworkGetStep prints the `go get` that must precede `go mod
+// tidy` when go.mod does not yet require the framework: the CLI's own
+// release when it has one, vX.Y.Z (the release to build against) for a
+// development build.
+func printFrameworkGetStep(release string) {
+	if release == "" {
+		release = "vX.Y.Z"
+	}
+	fmt.Printf("    go get %s@%s : pin the framework before tidy\n", gofastrModule, release)
+}
+
+// frameworkPin reports what pinFrameworkRequire did to the enclosing
+// go.mod: version is the release it required, needsGet is set when
+// go.mod requires no gofastr and this CLI has no release to pin (a
+// development build), so the user must `go get` one before tidy.
+type frameworkPin struct {
+	version  string
+	needsGet bool
+}
+
+// pinFrameworkRequire requires the gofastr release matching this CLI in
+// the go.mod enclosing dir, the way `gofastr init` does, when that
+// go.mod does not require gofastr yet. A go.mod that already requires
+// it (an existing app, --add) and the framework's own module are left
+// alone; so is a missing or unparsable go.mod, which the next steps and
+// `go mod tidy` report.
+func pinFrameworkRequire(dir string) (frameworkPin, error) {
+	modulePath, moduleRoot := findEnclosingGoMod(absOrDot(dir))
+	if modulePath == "" || modulePath == gofastrModule {
+		return frameworkPin{}, nil
+	}
+	body, err := readFileUnder(moduleRoot, "go.mod")
+	if err != nil {
+		return frameworkPin{}, nil
+	}
+	f, err := modfile.Parse("go.mod", body, nil)
+	if err != nil {
+		return frameworkPin{}, nil
+	}
+	for _, r := range f.Require {
+		if r.Mod.Path == gofastrModule {
+			return frameworkPin{}, nil
+		}
+	}
+	release := installedFrameworkVersion()
+	if release == "" {
+		return frameworkPin{needsGet: true}, nil
+	}
+	edit := exec.Command("go", "mod", "edit", "-require="+gofastrModule+"@"+release)
+	edit.Dir = moduleRoot
+	if out, err := edit.CombinedOutput(); err != nil {
+		return frameworkPin{needsGet: true}, fmt.Errorf("could not pin %s %s in go.mod: %v %s", gofastrModule, release, err, scrubTerminalOutput(strings.TrimSpace(string(out))))
+	}
+	return frameworkPin{version: release}, nil
 }
 
 // absOrDot resolves dir to an absolute path, falling back to the input when

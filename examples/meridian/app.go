@@ -298,9 +298,8 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("Meridian")
 	}
 	site.WithTheme(appTheme().Extend(siteheader.Tokens))
-	// MountSidebar only reads Items (drawer + active-route wiring), so it
-	// takes a session-free config; the layout slot gets the ctx-aware one.
-	sbCfg := sidebarConfig(context.Background())
+	// The layout slot and the phone drawer both build the sidebar per
+	// request from sidebarConfig, so the footer's Sign out follows the session.
 	sb := app.NewContextComponent(func(ctx context.Context) render.HTML {
 		// SafeRenderCtx, never Render(): the ctx-aware path is what filters
 		// the role-gated "Admin" item, and it renders an error boundary on
@@ -314,7 +313,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
 	})
 	site.SetDefaultLayout(appLayout)
-	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
+	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)
 	marketingLayout = app.NewLayout("marketing", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		header, _ := component.SafeRenderCtx(ctx, app.NewContextComponent(marketingHeader))
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},

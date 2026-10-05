@@ -163,6 +163,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
+	// Security headers for hosts that read a `_headers` file (Netlify,
+	// Cloudflare Pages). Pages also carry the policy as an in-document
+	// meta: that enforces the fetch directives on a host that ignores
+	// this file, but CSP Level 3 §3.1 ignores `frame-ancestors` in a
+	// meta (alongside `sandbox`/`report-uri`), so the clickjacking guard
+	// only lands where the header is read.
+	if err := writeHeadersFile(b.OutDir); err != nil {
+		return res, fmt.Errorf("static: write _headers: %w", err)
+	}
+
 	// 404.html at the export root (, GitHub
 	// Pages, Netlify, Cloudflare Pages and S3 website hosting all serve
 	// it for a miss, rendered from the same not-found page the live

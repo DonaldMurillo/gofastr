@@ -340,9 +340,9 @@ func (f *sentinelFiller) value(t reflect.Type, depth int) reflect.Value {
 }
 
 // stringFor fills a plain string field by its name: a URL-shaped field
-// gets a same-origin path, an enum-shaped one stays zero (its default),
-// and every other field gets distinct text, so optional text parts
-// render and ids stay unique.
+// gets a same-origin path, an enum-shaped one or a JSON body stays
+// zero (its default), and every other field gets distinct text, so
+// optional text parts render and ids stay unique.
 func (f *sentinelFiller) stringFor(field string) string {
 	for _, suf := range []string{"Endpoint", "Action", "Href", "URL", "Src", "Path"} {
 		if strings.HasSuffix(field, suf) {
@@ -351,7 +351,8 @@ func (f *sentinelFiller) stringFor(field string) string {
 	}
 	switch field {
 	case "Tone", "Direction", "State", "Type", "Align", "Method", "TitleTag", "ZIndexTier",
-		"GroupMarkup", "Machine", "Variant", "Radio", "Mode", "Collapse", "Attr":
+		"GroupMarkup", "Machine", "Variant", "Radio", "Mode", "Collapse", "Attr",
+		"DismissMethod", "DismissBody":
 		return ""
 	}
 	f.texts++

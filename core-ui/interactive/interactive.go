@@ -39,6 +39,8 @@ type Action struct {
 	confirm string // pre-flight window.confirm message (empty = none)
 	body    string // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
 	effects []Effect
+	// errorToast is the data-cui-rpc-error-toast title; nil = no error toast.
+	errorToast *string
 }
 
 // Post creates a POST action. Panics if path does not start with "/".
@@ -99,6 +101,22 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 // Maps to data-cui-confirm="message".
 func (a Action) WithConfirm(message string) Action {
 	a.confirm = message
+	return a
+}
+
+// OnErrorToast makes a refused or failed RPC visible: on a non-2xx answer
+// (or a network error) the runtime shows an error toast titled title, with
+// the server's JSON "error" message as its body. Without it a non-form
+// RPC that fails ends in silence (a form already reports its refusals
+// beside the fields). An empty title falls back to "Request failed".
+//
+//	interactive.Delete("/api/orders/42").
+//	    OnSuccess(interactive.Navigate("/orders")).
+//	    OnErrorToast("Could not delete this order.")
+//
+// Maps to data-cui-rpc-error-toast="title".
+func (a Action) OnErrorToast(title string) Action {
+	a.errorToast = &title
 	return a
 }
 
@@ -599,6 +617,9 @@ func (a Action) attrs() map[string]string {
 	}
 	if a.body != "" {
 		m["data-cui-rpc-body"] = a.body
+	}
+	if a.errorToast != nil {
+		m["data-cui-rpc-error-toast"] = *a.errorToast
 	}
 	for _, e := range a.effects {
 		maps.Copy(m, e.rpcAttrs())

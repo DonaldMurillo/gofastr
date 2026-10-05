@@ -3111,7 +3111,14 @@ func runPack(args []string) {
 	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
 	// loudly and write 0600 rather than 0644.
 	if secretsInBlueprint(bp) {
-		warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
+		// With no -o the YAML is stdout and `pack > gofastr.yml` is the
+		// documented pipe, so the warning goes to stderr: a warning
+		// line ahead of the document is not valid YAML.
+		if out == "" {
+			fmt.Fprintf(os.Stderr, "  %s %s\n", yellow("⚠"), "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
+		} else {
+			warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
+		}
 	}
 	if out == "" {
 		fmt.Print(yml)

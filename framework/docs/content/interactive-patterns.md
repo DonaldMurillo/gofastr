@@ -34,7 +34,8 @@ provides three mutation primitives triggered by click:
 
 Any element carrying a `data-cui-signal` attribute renders the current
 value of that signal as its text content. The runtime updates it on
-mutation and flashes a brief `.cui-flash` highlight (skipped when
+mutation. Add `data-cui-flash-on-update` and it also flashes a brief
+`.cui-flash` highlight, styled by the built-in app.css (skipped when
 `prefers-reduced-motion: reduce` is active).
 
 Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
@@ -111,6 +112,12 @@ clipboard via `navigator.clipboard.writeText()`. The feedback module
 (`headless-feedback`, through the `data-hui-copy*` hooks) shows a
 brief "Copied!" state and announces it to screen readers. Without
 script the page promises nothing about the clipboard.
+
+`CopyButtonConfig.Target` is the source element's id, with or without
+a leading `#` (`"code-1"` and `"#code-1"` are the same). It is not a
+CSS selector: the module looks the element up with `getElementById`,
+and render panics on a value with selector syntax such as
+`".code"` or `"pre > code"`.
 
 ### Password visibility toggle
 
@@ -292,6 +299,26 @@ design-system-styled confirmation that matches the rest of your app and is
 drivable by tests, use [`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction)
 instead. Native confirm remains the lightweight default; the themed dialog is
 the opt-in upgrade.
+
+### OnErrorToast (say why a request was refused)
+
+A button RPC that gets a non-2xx answer does nothing visible by default
+(a form reports its refusals beside the fields instead).
+`Action.OnErrorToast(title)` makes the failure visible: the runtime shows
+an error toast titled `title`, with the server's JSON `error` message as
+its body. A network failure shows the same title with a network-error body.
+
+```go
+interactive.Delete("/api/orders/42").
+    WithConfirm("Delete this order?").
+    OnSuccess(interactive.Navigate("/orders")).
+    OnErrorToast("Could not delete this order.")
+```
+
+Attribute injected: `data-cui-rpc-error-toast="title"`. An empty title
+falls back to `Request failed (<status>)`. The resource detail page's
+Delete and state-transition buttons carry it, so a `409` from a record
+that other records still reference reaches the user.
 
 ### AfterText (one-shot button label swap on success)
 

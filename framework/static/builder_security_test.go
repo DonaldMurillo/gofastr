@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // TestSSGParamNoTraversal asserts that StaticPaths param values containing
@@ -99,10 +102,13 @@ func TestStaticExportShipsCSP(t *testing.T) {
 	}
 
 	// Netlify / Cloudflare Pages read _headers; writing it turns the
-	// meta into a real header on those hosts.
+	// meta into a real header on those hosts. Go through Build: the
+	// helper alone passing proves nothing if Build stops calling it.
+	a := coreapp.NewApp("CSPExport")
+	a.Register("/", &homeScreen{}, nil)
 	dir := t.TempDir()
-	if err := writeHeadersFile(dir); err != nil {
-		t.Fatalf("writeHeadersFile: %v", err)
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: dir}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
 	}
 	buf, err := os.ReadFile(filepath.Join(dir, "_headers"))
 	if err != nil {
@@ -110,5 +116,10 @@ func TestStaticExportShipsCSP(t *testing.T) {
 	}
 	if !strings.Contains(string(buf), "Content-Security-Policy") || !strings.Contains(string(buf), "/*") {
 		t.Errorf("_headers does not apply a CSP to every path:\n%s", buf)
+	}
+	for _, want := range []string{"X-Content-Type-Options: nosniff", "Referrer-Policy: strict-origin-when-cross-origin"} {
+		if !strings.Contains(string(buf), want) {
+			t.Errorf("_headers omits %q:\n%s", want, buf)
+		}
 	}
 }

@@ -94,18 +94,21 @@ type evalResult struct {
 type winShell struct {
 	mu sync.RWMutex
 
-	hwnd          uintptr
-	uiThreadID    uint32
-	title         string
-	environment   uintptr
-	loader        uintptr
-	started       bool
-	running       bool
-	quitBeforeRun atomic.Bool
-	closeHides    bool
-	trayTitle     string
-	tray          *trayState
-	appearance    desktop.Appearance
+	className       string
+	deepLinkScheme  string
+	activationMutex uintptr
+	hwnd            uintptr
+	uiThreadID      uint32
+	title           string
+	environment     uintptr
+	loader          uintptr
+	started         bool
+	running         bool
+	quitBeforeRun   atomic.Bool
+	closeHides      bool
+	trayTitle       string
+	tray            *trayState
+	appearance      desktop.Appearance
 
 	windowsByID map[string]*winWindow
 	windowsHWND map[uintptr]*winWindow
@@ -167,9 +170,16 @@ type menuAction struct {
 func New() desktop.Shell { return &winShell{} }
 
 func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func(desktop.Window)) error {
+	defer s.releaseActivationMutex()
 	if s.quitBeforeRun.Swap(false) {
 		return nil
 	}
+	s.mu.Lock()
+	if s.className == "" {
+		s.className = windowClassName
+	}
+	className := s.className
+	s.mu.Unlock()
 	_ = win32.EnablePerMonitorV2DPI()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -202,7 +212,13 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.work = make(map[uintptr]mainWork)
 	s.mu.Unlock()
 
-	if err := win32.RegisterWindowClass(win32.WindowClass{WndProc: windowProc, ClassName: windowClassName, Cursor: win32.LoadCursor(32512)}); err != nil {
+	if err := win32.RegisterWindowClass(win32.WindowClass{
+		WndProc:   windowProc,
+		ClassName: className,
+		Icon:      win32.LoadIconResource(1, 0, 0),
+		IconSmall: win32.LoadIconResource(1, win32.SystemMetric(49), win32.SystemMetric(50)),
+		Cursor:    win32.LoadCursor(32512),
+	}); err != nil {
 		return err
 	}
 	width, height := cfg.Width, cfg.Height
@@ -479,6 +495,18 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	if msg == wmRunOnMain {
 		if x, ok := activeShells.Load(hwnd); ok {
 			x.(*winShell).dispatch(wparam)
+		}
+		return 0
+	}
+	if msg == wmActivateExisting {
+		if x, ok := activeShells.Load(hwnd); ok {
+			x.(*winShell).activateExistingWindow(hwnd)
+		}
+		return 0
+	}
+	if msg == win32.WM_COPYDATA {
+		if x, ok := activeShells.Load(hwnd); ok {
+			return x.(*winShell).receiveDeepLink(hwnd, lparam)
 		}
 		return 0
 	}
@@ -835,7 +863,7 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 	if style.Panel {
 		exStyle |= win32.WS_EX_NOACTIVATE
 	}
-	hwnd, err := win32.CreateWindowEx(exStyle, windowClassName, title, styleBits, x, y, widthPixels, heightPixels, 0)
+	hwnd, err := win32.CreateWindowEx(exStyle, s.className, title, styleBits, x, y, widthPixels, heightPixels, 0)
 	if err != nil {
 		return nil, err
 	}

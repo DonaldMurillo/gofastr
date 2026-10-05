@@ -1277,6 +1277,12 @@ Lists keep `{"data":[...]}` plus pagination metadata.
 Errors are JSON everywhere in the API namespace, whatever missed. A handled
 record miss (e.g. `GET /api/posts/404-nope`) answers
 `application/json` with `{"error":"not found","success":false,"code":404}`.
+A write the database refuses on a constraint answers `409 Conflict`, not
+`500`: a UNIQUE violation (a duplicate key) and a FOREIGN KEY violation
+(a create or update that points at a missing row, or a delete of a row that
+other rows still reference) on SQLite, Postgres and MySQL. The body names
+neither the constraint nor the table; the driver's message goes to the
+server log only.
 A path no route ever owned — `/api/anything/else`, including on apps with
 no DB and therefore no CRUD routes — answers `404` with an RFC 9457
 `application/problem+json` document (`type`/`title`/`status`/`detail`)

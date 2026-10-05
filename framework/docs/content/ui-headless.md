@@ -262,7 +262,10 @@ client-side and needs no Island; a `Repeater` whose add/remove
 re-renders the region needs `Action` plus a complete `Island`, and
 the same buttons stay named submit controls so the surrounding form
 is the no-script path; a `Toast` with a `DismissHref` needs a
-complete `Island` exactly as an `Alert`'s dismiss does; a
+complete `Island` exactly as an `Alert`'s dismiss does; a `Tag`
+dismiss is a GET that writes its href to the URL unless
+`DismissMethod` names a mutation (POST, PUT, PATCH, DELETE), which
+sends `DismissBody` as its JSON body and writes no URL; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
 the error summary after the swap. A `ToastStack` is mounted once by
@@ -502,7 +505,9 @@ families:
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast), the bell's spoken count re-said when a signal changes it,
+  toast), the bell's spoken count re-said when a signal changes it
+  (the module watches the badge's text, which the `UnreadBind` signal
+  writes, and re-formats the anchor's `aria-label` from it),
   and the offline banner's retry link. It replaced the retired `copy`,
   `toasts` and `networkretrybanner` runtime modules.
 - **headless-navigation** (`[data-hui-back-to-top]`,
@@ -545,11 +550,14 @@ registered the same way:
   query deep link; a crafted slot value is refused before any
   selector, so the click is a no-op. It replaced the retired
   `panehost` runtime module.
-- **headless-sidebar** (`[data-hui-sidebar]`): the collapse state —
-  persisted only under a namespaced, component-encoded storage key the
-  root names; a root with no key is the server's and the module never
+- **headless-sidebar** (`[data-hui-sidebar]`, `[data-hui-sidebar-group-toggle]`):
+  the collapse state — persisted only under a namespaced,
+  component-encoded storage key the root names; a root with no key is the server's and the module never
   writes — the custom collapse/expand labels, and the button-dialect
-  group toggle. It replaced the retired `sidebar` runtime module.
+  group toggle. The group toggle loads the module on its own, so a
+  `SidebarRegion` slotted into a host's chrome with no sidebar root
+  still opens its groups. It replaced the retired `sidebar` runtime
+  module.
 
 Two of this package's members ship no module at all: `JSONTree` (the
 browser's own `<details>` is the whole behaviour, and its object keys

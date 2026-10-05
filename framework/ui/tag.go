@@ -45,6 +45,15 @@ type TagConfig struct {
 	// Required when Dismiss is set.
 	Island headless.Island
 
+	// DismissMethod is the method the dismissal is sent with. Empty is
+	// GET, a read whose Dismiss href the island writes to the URL after
+	// the swap; a mutation (POST, PUT, PATCH, DELETE) writes no URL.
+	DismissMethod string
+
+	// DismissBody is a static JSON body the dismissal sends
+	// (data-cui-rpc-body). Needs a DismissMethod other than GET.
+	DismissBody string
+
 	// Icon renders before the label, aria-hidden.
 	Icon render.HTML
 
@@ -52,8 +61,11 @@ type TagConfig struct {
 	// Defaults to "Remove <Label>".
 	DismissLabel string
 
-	// DismissAttrs lets callers attach extra data-cui-* attributes to
-	// the × button (e.g. data-cui-rpc-signal).
+	// DismissAttrs forwards extra attributes (data-* test hooks,
+	// analytics markers) to the × link. Keys the component owns are
+	// dropped: class, id, href, aria-label and data-cui-*. The
+	// dismissal's RPC wiring comes from Island, DismissMethod and
+	// DismissBody, never from here.
 	DismissAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve the
@@ -102,9 +114,12 @@ func Tag(cfg TagConfig) render.HTML {
 	if cfg.Class != "" {
 		mods = append(mods, cfg.Class)
 	}
-	parts := headless.Parts{}
+	parts := headless.Parts{Attrs: headless.PartAttrs{}}
 	if len(mods) > 0 {
-		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
+		parts.Attrs[headless.PartRoot] = html.Attrs{"class": strings.Join(mods, " ")}
+	}
+	if dismissAttrs := headless.Safe(cfg.DismissAttrs, "href", "aria-label"); len(dismissAttrs) > 0 {
+		parts.Attrs[headless.PartBadgeDismiss] = dismissAttrs
 	}
 	dismissLabel := cfg.DismissLabel
 	if dismissLabel == "" && cfg.Dismiss != "" {
@@ -127,6 +142,8 @@ func Tag(cfg TagConfig) render.HTML {
 		DismissAriaLabel: dismissLabel,
 		Href:             href,
 		Island:           cfg.Island,
+		DismissMethod:    cfg.DismissMethod,
+		DismissBody:      cfg.DismissBody,
 		ID:               cfg.ID,
 		ExtraAttrs:       headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
 		Parts:            parts,

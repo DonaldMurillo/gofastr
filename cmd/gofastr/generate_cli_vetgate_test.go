@@ -124,6 +124,23 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 		t.Fatalf("building the repo vettool failed: %v\n%s", err, out)
 	}
 
+	vet := exec.Command("go", "vet", "-vettool="+vettool, "./...")
+	vet.Dir = dir
+	vet.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
+	if out, err := vet.CombinedOutput(); err != nil {
+		text := string(out)
+		// Offline skip: the temp module resolves the repo through the
+		// replace above, so this only triggers when the environment
+		// cannot build Go code at all.
+		for _, marker := range []string{"cannot find module", "finding module for package", "dial tcp", "module lookup disabled"} {
+			if strings.Contains(text, marker) {
+				t.Skipf("generated module could not be built in this environment: %s", text)
+			}
+		}
+		t.Errorf("GATE: generated CLI does not pass the repo vettool — every diagnostic is a finding in the emitted templates (generate_cli*.go), not in the customer's code:\n%s", text)
+	}
+
+	// ── leg 3: the entity-path module ──────────────────────────────────
 	vetEntityPathGeneratedCLI(t, vettool)
 }
 

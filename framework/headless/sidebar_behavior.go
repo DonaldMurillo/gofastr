@@ -17,7 +17,11 @@ var sidebarJS string
 const SidebarBehaviorName = "headless-sidebar"
 
 var _ = uiregistry.RegisterBehavior(SidebarBehaviorName, sidebarJS,
-	uiregistry.Markers("[data-hui-sidebar]"),
+	// The group toggle is a marker of its own: SidebarRegion (and
+	// ui.SidebarBody on it) renders button-dialect groups with no
+	// data-hui-sidebar shell, and its groups open only through this
+	// module's document-level click handler.
+	uiregistry.Markers("[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"),
 	// The mobile drawer's trap and return-focus are the widget
 	// runtime's; this module never reimplements them.
 	uiregistry.Requires("widgets"))

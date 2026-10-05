@@ -69,8 +69,10 @@ type ThemeToggleConfig struct {
 
 // ThemeToggle renders a dark/light color scheme toggle button.
 //
-// On click, the button cycles through dark → light → auto and writes
-// the choice to localStorage. The colorscheme.js bootstrap script
+// On click, the button cycles through dark → light → auto, skipping a
+// step that would not change what the page shows (on a dark OS, auto
+// goes straight to light), and writes the choice to localStorage. The
+// colorscheme.js bootstrap script
 // picks up the change and swaps data-color-scheme on <html> so all
 // theme tokens update immediately.
 func ThemeToggle(cfg ThemeToggleConfig) render.HTML {

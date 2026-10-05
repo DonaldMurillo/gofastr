@@ -1,6 +1,8 @@
 package docpage_test
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -53,7 +55,7 @@ func TestRenderTocRegionCollapse(t *testing.T) {
 		t.Fatalf("the filled TOC should render its content")
 	}
 	// An empty region element (an outlet with no fill) is the shape the
-	// sheet's :has(.toc > :empty) collapse keys on: the rail stays in
+	// sheet's :has(.toc > :only-child:empty) collapse keys on: the rail stays in
 	// the markup, holding an empty child.
 	cfg := full()
 	cfg.Toc = html.Div(html.DivConfig{}, render.HTML(""))
@@ -73,6 +75,23 @@ func TestRenderNavRegionEmpty(t *testing.T) {
 	want := `<div class="nav"></div>`
 	if !strings.Contains(got, want) {
 		t.Errorf("an unset nav should render the empty element %q:\n%s", want, got)
+	}
+}
+
+func TestEmptyRailSelectorsUseOnlyChild(t *testing.T) {
+	// A rail is empty when it has no child or its sole child is empty.
+	// A bare `> :empty` also matches a rail holding content beside an
+	// empty outlet, so a media rule spelled that way collapses a filled
+	// rail at that width only.
+	src, err := os.ReadFile("docpage.style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := regexp.MustCompile(`>\s*:empty`)
+	for i, line := range strings.Split(string(src), "\n") {
+		if bare.MatchString(line) {
+			t.Errorf("docpage.style.css:%d uses a bare > :empty, want > :only-child:empty: %s", i+1, strings.TrimSpace(line))
+		}
 	}
 }
 
