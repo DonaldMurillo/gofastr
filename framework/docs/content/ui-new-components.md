@@ -301,6 +301,15 @@ Three more knobs round out the contract surface:
   can mark the current section. Wrap static markup in
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state; `Footer` stays below the nav.
+- `ui.MountSidebarFunc(r, build)` mounts the drawer from a builder
+  instead of a value: the drawer body calls `build(ctx)` on every
+  chrome request, so a sidebar the layout already builds per request
+  (`ui.Sidebar(build(ctx))`, a footer with the signed-in user's
+  `ui.SignOut`) shows the same footer and items in the phone drawer.
+  `MountSidebar(r, cfg)` renders `cfg` as given, so a config built once
+  at boot with `context.Background()` gives every phone user the
+  anonymous footer. The drawer's name, variant and header brand come
+  from `build(context.Background())` at mount time.
 - `MatchPath` rides the rendered link as `data-cui-match-prefix` (the
   value, not the href, is the prefix): the server marks the item
   current on first paint, and the runtime's active-link sweep keeps it

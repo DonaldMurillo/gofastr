@@ -8011,10 +8011,10 @@ func renderBlueprintApp(bp Blueprint) string {
 		if bp.App.Auth.Enabled {
 			// Per-request sidebar: the footer's auth action depends on the live
 			// session, so the shell resolves it the same way the marketing
-			// header does. MountSidebar only reads Items (drawer + active-route
-			// wiring), so it takes a session-free config.
-			sb.WriteString("\tsbCfg := sidebarConfig(context.Background())\n")
-			sb.WriteString("\tsbComponent := app.NewContextComponent(func(ctx context.Context) render.HTML {\n")
+			// header does. The phone drawer renders the same footer, so it is
+			// mounted with the builder (MountSidebarFunc) below, never with a
+			// config built once at startup.
+			sb.WriteString("\tsbComponent :=app.NewContextComponent(func(ctx context.Context) render.HTML {\n")
 			// SafeRenderCtx, never Render(): the sidebar component's
 			// ctx-aware path is what filters role-gated nav items, and the
 			// layout used to invoke it for us. Calling Render() here rendered
@@ -8042,7 +8042,11 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString("\t\t\tui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))\n")
 		sb.WriteString("\t})\n")
 		sb.WriteString("\tsite.SetDefaultLayout(appLayout)\n")
-		sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
+		if bp.App.Auth.Enabled {
+			sb.WriteString("\tui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)\n")
+		} else {
+			sb.WriteString("\tui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)\n")
+		}
 	}
 	if hasMarketing {
 		headerExpr := "app.NewStaticComponent(marketingHeader())"
