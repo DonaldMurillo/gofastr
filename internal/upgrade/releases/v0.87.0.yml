@@ -1,5 +1,5 @@
 version: v0.87.0
-title: Layer prefixes, headless form and toast hooks, docs tools opt-in, XS shadow token
+title: Layer prefixes, headless form and toast hooks, docs tools opt-in, XS shadow and stroke tokens
 notes:
   - change: "the framework_docs_list / framework_docs_get / framework_docs_search MCP tools moved out of framework.WithMCPIntrospection into framework/docs/mcptools, registered through the new framework.WithMCPTools option; package framework no longer imports the docs corpus"
     breaking: true
@@ -72,3 +72,10 @@ notes:
       fields:
         - field: gofastr/core-ui/style.ShadowSet.SM
     guidance: "Where a ShadowSet is built field by field (every theme.go an earlier gofastr theme init or theme edit wrote is), add XS: style.Shadow{Name: \"xs\", Value: \"0 1px 2px 0 rgba(0,0,0,0.05)\"} (or copy style.DefaultTheme().Shadows.XS). A ShadowSet literal that already sets XS, and a theme that starts from style.DefaultTheme() and overrides single steps, need nothing."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads border-width, outline-width, outline-offset and column-rule-width against the new --stroke-* tokens: a .style.css declaration such as outline-offset: 2px or border-width: 1px, which every siteheader, sitefooter and docpage sheet the blueprint wrote carries, is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        match: '(?:^|[^-a-z])(?:outline-offset|outline-width|column-rule-width|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-width)\s*:\s*[12]px\s*(?:;|\}|!|$)'
+    guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
