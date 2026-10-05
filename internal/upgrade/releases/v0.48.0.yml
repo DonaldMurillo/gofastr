@@ -73,8 +73,4 @@ notes:
   - change: In-process reads opt in to read hooks with crud.WithReadHooks
     breaking: false
     guidance: "ListAll/CountAll/GetOne still return stored values by default — right for read-modify-write, seed lookups and aggregates. Wrap the context with crud.WithReadHooks(ctx) where rows are rendered to an end user; generated blueprint screens already do. Do not set it on a context handed to a hook."
-    find:
-      uses:
-        - gofastr/framework/crud.CrudHandler.ListAll
-        - gofastr/framework/crud.CrudHandler.GetOne
-        - gofastr/framework/crud.CrudHandler.CountAll
+    nodetect: "additive opt-in: whether a ListAll/GetOne/CountAll result is rendered to an end user (wrap the ctx) or fed back into a write (leave it) is a decision no spelling shows, and every in-process read is an ordinary call; generated blueprint screens already wrap theirs"

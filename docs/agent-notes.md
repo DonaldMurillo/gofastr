@@ -1,5 +1,14 @@
 # Agent notes
 
+## 2026-10-04 - Dev-loop eval: do agents develop under `gofastr dev`?
+- Scope: `evals/dev-loop` (new), generated `CLAUDE.md`/`AGENTS.md`/`gofastr-host` skill, `evals/ui-quality` builder prompt
+- Trigger: Make sure agents working in a GoFastr app use hot reload instead of `go run .` and manual restarts.
+- Approach: Grade behavior, not prose. PATH shims for `gofastr` and `go` log each call and who made it (the gofastr shim exports the caller so `gofastr dev`'s own rebuilds are not charged to the agent); the stream-json transcript catches binaries launched by path. "Worked under the watcher" is counted from `gofastr dev` rebuilds in the shim log, because agents edit through `sed -i` and heredocs as often as through an edit tool.
+- Evidence: Final grader, one trial at a time, `origin/main` against this branch. Sonnet, 5 per side: 5/5 dev loop and 5/5 task on both, median 3 tool calls before the first `gofastr dev` on both. On main, 4 of 5 read `agents/framework.md` before launching; on the branch, 0 of 5, and the mean cost per trial fell from $0.34 to $0.22. Haiku, 10 per side: 6/10 dev loop on main, 7/10 on the branch; task 9/10 and 8/10; 0 lookups on either side (Haiku reads `CLAUDE.md` and `AGENTS.md` and acts). Pass/fail saturates; the guidance shows up in where the agent finds the command, not in whether it does.
+- Gotcha: The first live run exposed three grader bugs no unit test had: `exec.Command` with a custom `Cancel` refuses to start, `gofastr dev --help` counted as a launch, and an `Edit`-tool count read a shell-editing agent as never editing. Run one real trial before trusting a grader. Trials cannot run in parallel: agents stop their server with `pkill -f "gofastr dev"`, which kills every trial's. A full disk at 18:29 on 2026-10-04 (another process, not the eval) emptied the Go build cache mid-run and spoiled three sets; check `grep -rlI "no space left"` over a run before trusting it.
+- Next time: Haiku's dev-loop misses are the same on both sides. (1) It relaunches when the port refuses connections: `gofastr dev` listens on nothing while the first build runs or after a failed build (`cmd/gofastr/dev.go`), so a curl in that window reads as a dead server. 4 of the 7 Haiku dev-loop failures. Serving a building/compile-error page on the dev address would remove the reason to relaunch. (2) It edits without ever launching or checking, as if the teammate's server named in the task were already running. The other 3.
+- Status: active
+
 ## 2026-08-07 - Maturity audit → closed the 2026-07-26 eval's open items
 - Scope: `cmd/gofastr` blueprint generator, `framework/openapi`, Postgres test infrastructure (`internal/pgtest`, `framework/internal/testdb`, CI, docker-compose), `framework/docs`, `framework/processmodule_migrate.go`
 - Trigger: "Where is GoFastr, what are we missing, make the developer experience better." Audited first, then implemented all seven prioritised findings TDD-style.

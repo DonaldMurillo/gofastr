@@ -27,6 +27,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Component knobs** `--ui-form-max` (`ui.Form`'s maximum width,
   42rem), `--ui-copy-btn-*` (`ui.CopyButton`'s size and colours) and
   `--ui-status-pill-font`.
+- **`gofastr docs serve`**: browse the docs website offline. The first
+  run downloads the static export of the docs site for the binary's
+  release, verifies its SHA-256, and caches it in the user cache
+  directory; the CLI serves it from a GoFastr app on `127.0.0.1:8083`.
+  `--full` builds and runs the live site with `go install` so the
+  server-backed demos work too; `--dir` serves a local export;
+  `--release`, `--refresh`, `--port` and `--open` do what they say.
+  Releases now attach `gofastr-site-<tag>.tar.gz` and its `.sha256`;
+  releases before this one carry no archive, so use `--full` with them
+  (v0.82.0 and later).
+- **`core/static.Config.NotFoundFile`**: answer a miss with a file from
+  the served `FS` (a static export's `404.html`) under status 404. A
+  conditional request cannot turn it into a 304, and SPA mode ignores it.
+- **`static.Builder.Handler` and `UIHost.ExtraScriptSrcs(routes)`**: the
+  export fetches each extra-script rail entry the exported pages load and
+  the build has not already written (a script the app serves from its
+  own router, the plugin broker, a document-scoped script whose scope
+  accepts a rendered route) through `Handler`, query included, and writes
+  it into the tree, replacing a stale copy in a reused output directory;
+  `App.ExportStatic` passes the app's router. A same-origin rail script
+  that does not answer 200, or whose path is an exported page, fails the
+  build; a CDN or relative src is left to the browser.
 - **`gofastr generate screen <name> --from-a11y=<file>`** builds an
   owned screen from a Playwright aria snapshot (#434). The YAML that
   `locator.ariaSnapshot()` returns (a file, or `-` for stdin) is
@@ -57,6 +79,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   action that fails the anchor URL check, a `custom_form` inside
   another, an unlabelled `nav_links`, and a table row wider than its
   columns.
+- **`framework.WithMCPTools(register)`**: runs a `func(*mcp.Server) error`
+  against the app's MCP server during init, after plugins and before the
+  introspection set, so a package below the framework root can add tools
+  without importing it. A registrar error, a name collision included,
+  fails the boot.
+- **`framework/docs/mcptools`**: `Register`, the registrar that installs
+  `framework_docs_list`, `framework_docs_get` and `framework_docs_search`.
+  The blueprint and the examples pass it to `WithMCPTools` beside
+  `framework.WithMCPIntrospection()`.
 - **Affected-only test scope.** `go run ./cmd/affected` prints the
   packages whose tests could change outcome given what differs between
   the working tree and `origin/main`: the changed packages, their
@@ -318,6 +349,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   e2e waits on the dev child's own behaviour (the answer, process exit,
   a build-failure line, or output silence) instead of a fixed clock,
   and prewarms each example's build cache first (#413, #456).
+- **`evals/dev-loop`: does a coding agent develop under `gofastr dev`?**
+  Each trial scaffolds an app, gives Claude Code a three-step
+  edit-and-check task that names no command, and grades from `gofastr`
+  and `go` PATH shims plus the transcript. A trial passes when the agent
+  ran `gofastr dev`, never used `go run` or launched a built binary,
+  started the dev server at most twice, and let it rebuild at least
+  twice. Whether the finished app has the three changes is reported
+  beside that verdict, not folded into it, and so is how hard the agent
+  looked: tool calls before its first `gofastr dev` and the lookups on
+  the way (an `agents/` doc, `gofastr --help`, `gofastr docs`). Each
+  trial serves on its own free port, named in the task, so another
+  process on `:8080` cannot derail it. `-regrade` re-scores a run
+  without agent tokens. Run it
+  with `go run ./evals/dev-loop/cmd/devloop-eval -runs 3`.
 
 ### Changed
 - **BREAKING: the default theme is reskinned to a neutral zinc look.**
@@ -384,11 +429,46 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ContentRow`**'s stacked phone nav band takes main's inline
   gutter, so the menu trigger lines up with the page content instead of
   sitting in the viewport corner.
+- **Generated `CLAUDE.md`, `AGENTS.md` and the `gofastr-host` skill now
+  open with the dev loop**: start `gofastr dev` once and leave it
+  running, because `go run .` never sets `GOFASTR_DEV=1` and so never
+  reloads. Before, `CLAUDE.md` named `gofastr dev` only in its closing
+  command list and the warning against `go run .` lived in
+  `agents/framework.md`, where an agent found it only by searching. The
+  skill also triggers on "run the app", "dev server" and "hot reload".
+  In an existing project, `gofastr init . --reinit --force` refreshes
+  the skill and `CLAUDE.md` (replacing any edits to `CLAUDE.md`). The
+  text above the `AGENTS.md` markers belongs to the project, so copy the
+  "Run the app while you work" section in by hand.
+- **The `evals/ui-quality` builder prompt no longer says "make the
+  workspace runnable with go run ."**: it named the one command that
+  skips hot reload in an eval that records whether the builder found
+  `gofastr dev`.
 - **A blueprint `type: link` block renders `ui.Link`** instead of
   `html.Link`, so generated links pick up the design system's link
   style, and validation now refuses an unsafe `href` (`javascript:`,
   `data:`, `//host`). Before, the generator accepted one and the page
   rendered the link with no `href`.
+- **BREAKING: the `framework_docs_*` MCP tools are opt-in** (#470).
+  `framework.WithMCPIntrospection()` no longer registers
+  `framework_docs_list` / `framework_docs_get` / `framework_docs_search`,
+  and neither does the `gofastr dev` loop: an app whose agents read the
+  framework docs over `/mcp` adds
+  `framework.WithMCPTools(mcptools.Register)` from
+  `framework/docs/mcptools` (the blueprint, `gofastr init` and the
+  examples do). Package framework no longer imports the docs corpus.
+  `gofastr upgrade` flags every `WithMCPIntrospection` call for review
+  with that guidance.
+- **`gofastr upgrade` reports fewer review-tier hits.** Five registry
+  notes whose matcher was a bare symbol every app uses (`App.Entity`,
+  the v0.48 `CrudHandler.ListAll` / `GetOne` / `CountAll` read-hook
+  note, the field `Default`, the v0.65 owner-column and the v0.68
+  `migrate repair` notes) now carry a `nodetect` reason instead of a
+  `find`, and the text matcher skips minified scripts, by name
+  (`.min.js`, `.min.mjs`, `.min.cjs`) and by line (a script line over
+  1000 bytes), so a vendored maplibre or monaco build no longer
+  produces hits. Long lines in data files (a `.jsonl` journal) still
+  count.
 - **BREAKING: every class and attribute carries the prefix of the
   tree that defines it** (#467). The kernel's attribute vocabulary is
   `data-cui-*`: every `data-fui-*` the runtime read is renamed
@@ -579,8 +659,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `handshake:` as an integrity fault, so a child that crashed while the
   host was still writing the handshake (broken pipe, EOF, peer closed)
   went to terminal `Failed` with no restart and no circuit-breaker
-  charge. Transport errors are crashes now; a handshake mismatch, a
-  failed negotiation or an executable SHA mismatch is still terminal.
+  charge. Transport errors are crashes now, as is a handshake call the
+  child never answered, which carries the new
+  `moduleproto.ErrHandshakeUnanswered`; a handshake mismatch, a failed
+  negotiation, an RPC error reply or an executable SHA mismatch is
+  still terminal.
+- **Static export shipped pages that load a missing script.** The docs
+  site loads `/__site/livedash-reducers.js` on every page from an app
+  route; the export skipped it, so every exported page (GitHub Pages
+  included) logged a 404 and a refused script. It is now exported.
+- **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
+  when `PORT` held a host:port. A wildcard bind (`0.0.0.0`, `[::]`) now
+  prints localhost.
+- **`battery/rtc`: a late join mirror no longer kicks a peer that already
+  moved** (#474). With two replicas, a peer that joined R1 and
+  reconnected to R2 before R1's join mirror reached R2 had its live R2
+  socket closed when the mirror landed, and the room heard a second
+  leave. Lane messages carry the sender's clock now; a mirror older than
+  the local socket it would displace is dropped, and a socket that closes
+  while a live remote seat holds the same id publishes no leave.
+- **`textsafe.SanitizeControlBytes` dropped the continuation bytes of
+  non-ASCII text** (since v0.86.0): once a control byte had to be
+  removed, a rune-indexed loop copied only the first byte of each
+  multi-byte character, so `hé\tllo` came back as `h\xc3llo`. Input with
+  no control byte was returned unchanged and never showed it. The loop
+  walks bytes again, and the package is under a coverage floor.
 - **A sidebar's first-paint mark no longer survives a navigation that
   lands before the active-link module loads.** `headless.Sidebar` marks
   every leaf link `data-cui-activelink`, the handover by which the

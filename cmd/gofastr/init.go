@@ -383,6 +383,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -400,6 +401,11 @@ func main() {
 		// added below this line takes effect; above it, WithConfig would
 		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
+		// The framework's own docs as MCP tools (framework_docs_list /
+		// _get / _search), so the coding agent on /mcp reads them from the
+		// running app under `+"`gofastr dev`"+`. Drop this line to keep the docs
+		// corpus (about 2 MB) out of the binary.
+		framework.WithMCPTools(mcptools.Register),
 	)
 
 	// Wire the UI layer: site app + home screen + host.
@@ -464,6 +470,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -519,6 +526,11 @@ func main() {
 		// Turn this off before exposing the app to untrusted callers if you
 		// have not reviewed which entities set Exposure.MCP.
 		framework.WithMCP(),
+		// The framework's own docs as MCP tools (framework_docs_list /
+		// _get / _search), so the coding agent on /mcp reads them from the
+		// running app. Drop this line to keep the docs corpus (about 2 MB)
+		// out of the binary.
+		framework.WithMCPTools(mcptools.Register),
 	)
 
 	// Register entities from the entities package.
@@ -766,6 +778,16 @@ func writeCLAUDEmd(dir string) error {
 	return os.WriteFile(filepath.Join(dir, "CLAUDE.md"), claudeMDContent(), 0o644)
 }
 
+// devLoopGuidance is the dev-loop paragraph the generated CLAUDE.md and
+// AGENTS.md both carry near the top. Agents that miss it reach for
+// `go run .`, which never sets GOFASTR_DEV=1 and so never reloads;
+// evals/dev-loop measures whether they find it.
+const devLoopGuidance = "Start `gofastr dev` once, in the background, and leave it running. It\n" +
+	"rebuilds the app on every save and reloads the open browser tab, so you\n" +
+	"never restart the server between edits. `go run .` and a binary you build\n" +
+	"and launch yourself never reload: `gofastr dev` is the only command that\n" +
+	"sets `GOFASTR_DEV=1`. Stop it when you finish.\n"
+
 // claudeMDContent returns the generated CLAUDE.md bytes for comparison.
 func claudeMDContent() []byte {
 	const content = `# CLAUDE.md: GoFastr host project
@@ -784,6 +806,9 @@ This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framew
   : Auto-loaded skill that encodes the "reach for the battery first" rule and
   the import paths you need.
 
+## Run the app while you work
+
+` + devLoopGuidance + `
 ## Framework docs (embedded in the CLI)
 
 The ` + "`" + `gofastr` + "`" + ` binary ships with the full framework reference docs

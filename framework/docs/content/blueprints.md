@@ -334,10 +334,13 @@ The generated app mounts MCP by default: `framework.WithMCP()` mounts
 (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
 `/.well-known/mcp/catalog.json`, `/.well-known/mcp.json`), serving the per-entity CRUD tools
 (`mcp: true`) alongside the `framework.WithMCPIntrospection()` set
-(`app_routes`, `app_readiness`, `framework_docs_search`, …). Those tools
+(`app_routes`, `app_readiness`, `app_config`, …) and the
+`framework.WithMCPTools(mcptools.Register)` set (`framework_docs_list`, `framework_docs_get`,
+`framework_docs_search` over the embedded framework docs). Those tools
 are read-only but let a caller read the app's routes and config. Remove
 `WithMCPIntrospection()` from `main.go` if `/mcp` is reachable by
-untrusted callers in production.
+untrusted callers in production; drop `framework.WithMCPTools(mcptools.Register)` and its
+import to leave the docs corpus out of the binary.
 
 The generated `main.go` also registers battery/log with its canonical
 zero config: per-app file sink, access log, panic recovery. Under

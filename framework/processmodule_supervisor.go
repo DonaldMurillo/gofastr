@@ -1579,12 +1579,14 @@ func isIntegrityFault(err error) bool {
 	if _, ok := errors.AsType[*ExecutableSHAMismatchError](err); ok {
 		return true
 	}
-	// A child that exits mid-handshake crashed; it did not lie about
-	// itself. Its transport error restarts under the circuit breaker
-	// like any other crash.
-	if errors.Is(err, moduleproto.ErrClosed) || errors.Is(err, io.EOF) ||
-		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, os.ErrClosed) {
+	// A child that dies while the handshake is in flight surfaces as a
+	// transport failure wrapped in "handshake:" (the pipe closed, EOF,
+	// EPIPE, the spawn deadline). That is a crash, the same crash the
+	// exit watcher would have reported a few milliseconds later, and it
+	// restarts under backoff like one; a terminal verdict here let a
+	// crash-looping module escape its circuit depending on which side of
+	// the handshake write it died. Checked before the stage rule below.
+	if isTransportFailure(err) {
 		return false
 	}
 	// A handshake-stage error (round-trip mismatch surfaced as a wrapped
@@ -1593,6 +1595,19 @@ func isIntegrityFault(err error) bool {
 		return true
 	}
 	return false
+}
+
+// isTransportFailure reports whether err is the peer going away, the
+// spawn budget running out, or a handshake call the child never answered
+// (moduleproto marks those, deadline included), as opposed to a verdict
+// the child answered.
+func isTransportFailure(err error) bool {
+	return errors.Is(err, moduleproto.ErrHandshakeUnanswered) ||
+		errors.Is(err, moduleproto.ErrClosed) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, os.ErrClosed) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 // teardownChild performs the §4.6 lift on a failed-spawn child: close

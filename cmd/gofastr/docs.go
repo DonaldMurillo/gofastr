@@ -10,16 +10,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 )
 
-// runDocs implements `gofastr docs`. Three modes:
+// runDocs implements `gofastr docs`. Four modes:
 //
 //	gofastr docs                    list every topic with one-line summaries
 //	gofastr docs <topic>            print the topic's full markdown
 //	gofastr docs --grep <term>      search across every topic
+//	gofastr docs serve              browse the docs site on localhost
 //
 // The docs are embedded into the binary at build time, so this command
 // always speaks for the version of the framework you have installed.
 // No GitHub / module-cache fetch needed.
 func runDocs(args []string) {
+	if len(args) > 0 && args[0] == "serve" {
+		runDocsServe(args[1:])
+		return
+	}
 	// --grep / -g
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -130,9 +135,11 @@ Usage:
   gofastr docs <topic>          Print the topic's markdown body
   gofastr docs --grep <term>    Search across every topic
   gofastr docs --list           List every topic (same as no args)
+  gofastr docs serve            Browse the docs site on localhost (see --help)
 
 The docs are embedded at build time: they always describe the framework
-version this binary was built against.
+version this binary was built against. docs serve downloads that
+release's site once and caches it.
 `)
 }
 

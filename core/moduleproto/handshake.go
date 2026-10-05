@@ -3,6 +3,7 @@ package moduleproto
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -88,7 +89,10 @@ func Handshake(ctx context.Context, p *Peer, cfg HandshakeConfig) (*HandshakeOut
 	}
 	raw, err := p.Call(ctx, MethodHandshake, params)
 	if err != nil {
-		return nil, fmt.Errorf("moduleproto: handshake call: %w", err)
+		if _, answered := errors.AsType[*Error](err); answered {
+			return nil, fmt.Errorf("moduleproto: handshake call: %w", err)
+		}
+		return nil, fmt.Errorf("moduleproto: handshake call: %w: %w", ErrHandshakeUnanswered, err)
 	}
 	var result HandshakeResult
 	if err := json.Unmarshal(raw, &result); err != nil {

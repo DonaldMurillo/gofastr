@@ -77,7 +77,7 @@ func TestDevLoopImpliesMCPSurface(t *testing.T) {
 	for _, tool := range app.MCP.ListTools() {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"app_routes", "framework_docs_search", "app_module_enable", "app_module_disable"} {
+	for _, want := range []string{"app_routes", "app_module_enable", "app_module_disable"} {
 		if !got[want] {
 			t.Errorf("dev loop did not imply tool %q", want)
 		}

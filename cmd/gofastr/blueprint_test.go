@@ -748,6 +748,8 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, byName["main.go"], `RegisterGenerated(fwApp, site, db)`)
 	assertContains(t, byName["main.go"], `framework.WithMCP(),`)
 	assertContains(t, byName["main.go"], `framework.WithMCPIntrospection(),`)
+	assertContains(t, byName["main.go"], `framework.WithMCPTools(mcptools.Register),`)
+	assertContains(t, byName["main.go"], `"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"`)
 	assertContains(t, byName["main.go"], `fwApp.RegisterPlugin(gflog.New(gflog.Config{}))`)
 	assertContains(t, byName["main.go"], `uihost.WithStaticDir("public")`)
 	assertContains(t, byName["main.go"], `"github.com/DonaldMurillo/gofastr/framework/isolation"`)

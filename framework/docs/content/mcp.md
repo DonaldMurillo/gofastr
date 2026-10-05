@@ -7,7 +7,8 @@ A `framework.App` creates one at `app.MCP`, and `framework.WithMCP()` mounts it
 at `/mcp` over Streamable HTTP (POST JSON-RPC + GET Server-Sent Events).
 Entities declared with `mcp: true` get CRUD tools on it automatically; see
 [entity declarations](entity-declarations.md). The framework-level options
-(`WithMCPIntrospection`, `WithMCPControl`, `WithMCPApp`, discovery endpoints)
+(`WithMCPIntrospection`, `WithMCPControl`, `WithMCPApp`, discovery endpoints,
+`framework.WithMCPTools(mcptools.Register)` for the embedded docs)
 and the auth model per tool kind are covered in
 [agent-readiness](agent-ready.md). This page is the `core/mcp` reference.
 
