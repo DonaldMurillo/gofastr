@@ -635,6 +635,12 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// that doesn't exist, so the project stops compiling. Refuse.
 		if packHasAggregatedScreens(writeRoot) {
 			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend. Recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
+			if !fileExistsUnder(writeRoot, "app.go") {
+				// No blueprint seam file: this is the `gofastr init`
+				// layout, which pack cannot read either. Point at the
+				// hand-edit seams its CLAUDE.md names instead.
+				serr = fmt.Errorf("this project uses the `gofastr init` layout (screens.go, main.go, entities/entities.go), which --add and `generate entity|screen` cannot extend; they extend apps made by `gofastr generate --from=<blueprint>`. Add an entity with another app.Entity call in entities/entities.go's RegisterAll, and a screen with a type in screens.go plus a site.Register call in main.go")
+			}
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(serr)
 				osExit(1)

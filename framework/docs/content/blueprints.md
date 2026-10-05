@@ -474,6 +474,12 @@ immediately edit:
 * `generate screen <name>` emits one screen at `/<kebab-name>` with a heading
   and a stub paragraph; replace its `Render`.
 
+The scaffolds and `--add` extend an app generated from a blueprint (it has
+`app.go` and per-screen `screen_<name>.go` files). A `gofastr init` project
+(`screens.go`, `main.go`, `entities/entities.go`) is refused with the
+hand-edit seams named: another `app.Entity` call in `RegisterAll`, and a
+screen type registered with `site.Register` in `main.go`.
+
 #### Screens from an accessibility tree (`--from-a11y`)
 
 `generate screen <name> --from-a11y=<file>` builds the screen body from a
