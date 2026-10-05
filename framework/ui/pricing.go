@@ -38,7 +38,11 @@ type PricingCardConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// PricingCard renders a single plan card.
+// PricingCard renders a single plan card. Placed directly in a ui.Grid
+// that holds only plans, the cards of one row share their row lines: a description that wraps
+// moves every plan's price down together, so prices, feature lists and
+// buttons start level across the row. Anywhere else the card lays out
+// on its own.
 func PricingCard(cfg PricingCardConfig) render.HTML {
 	cls := "fui-pricing-card"
 	if cfg.Featured {
@@ -107,45 +111,72 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 var pricingCardStyle = registry.RegisterStyle("ui-pricing-card", pricingCardCSS)
 
 func pricingCardCSS(_ style.Theme) string {
+	// The card's four parts (head, price, features, button) sit on four
+	// rows. In a ui.Grid that holds only plans, the card borrows those
+	// rows from the grid: cards in one row share the tracks, so a
+	// description that wraps moves every plan's price down together
+	// instead of only its own. Anywhere else (a wrapper cell, a grid that
+	// mixes in other cards) its own rows give the features the slack,
+	// which keeps the button at the bottom of a stretched card.
 	return `[data-cui-comp="ui-pricing-card"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg, 1rem);
-  padding: 1.75rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  row-gap: var(--spacing-lg, 1rem);
+  padding: var(--spacing-xl, 24px);
   background-color: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e4e4e7);
-  border-radius: 14px;
-  height: 100%;
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-xl, 14px);
+  box-shadow: var(--shadow-sm);
+  /* A minimum, not a height: a flex row only stretches an item whose
+     height is auto, so height: 100% left a short card short beside a
+     featured one; a definite grid cell still fills either way. */
+  min-block-size: 100%;
 }
+:where(.fui-grid:not(:has(> :not([data-cui-comp~="ui-pricing-card"])))) > [data-cui-comp="ui-pricing-card"] {
+  grid-template-rows: subgrid;
+  grid-row: span 4;
+}
+/* The recommended plan is marked by a ring alone; its surface stays the
+   same as its neighbours', as a tinted fill read as a disabled tile. */
 [data-cui-comp="ui-pricing-card"].fui-pricing-card--featured {
-  border-color: var(--color-primary, #4338CA);
-  box-shadow: 0 0 0 1px var(--color-primary, #4338CA);
-  background-color: color-mix(in srgb, var(--color-primary, #4338CA) 4%, var(--color-surface, #fff));
+  border-color: var(--color-primary, #18181B);
+  box-shadow: 0 0 0 1px var(--color-primary, #18181B), var(--shadow-sm);
 }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
+/* The badge rides the name's line, at its end: on a line of its own it
+   pushed the featured card's price below its neighbours'. */
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__head {
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  /* Stretched to the row's tallest head, the spare height goes below
+     the copy, not between the name and its description. */
+  align-content: start;
+  gap: 0.35rem var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__head > * { grid-column: 1 / -1; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__head > .fui-pricing-card__name { grid-column: 1; grid-row: 1; }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__badge {
-  align-self: flex-start;
+  grid-column: 2;
+  grid-row: 1;
+  white-space: nowrap;
   font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  /* Mix the primary 70% toward the text token so the badge text adapts to
-     BOTH schemes: in light mode text is dark → the mix darkens the primary
-     for contrast on the light tint; in dark mode text is light → the mix
-     lightens a bright primary (e.g. #8B80F2) so it clears 4.5:1 on the
-     semi-transparent tint over a dark featured card. The knob overrides. */
-  color: var(--ui-pricing-card-badge-fg, color-mix(in oklab, var(--color-primary, #4338CA) 70%, var(--color-text, #18181B)));
-  background-color: color-mix(in srgb, var(--color-primary, #4338CA) 12%, transparent);
-  padding: 0.15rem var(--spacing-md, 0.5rem);
-  border-radius: 999px;
+  font-weight: var(--font-weight-medium);
+  /* A soft secondary chip, the same as Tag and Badge: text on the soft
+     surface clears 4.5:1 in both schemes. The knob overrides the text. */
+  color: var(--ui-pricing-card-badge-fg, var(--color-text, #09090B));
+  background-color: var(--color-surface-soft, #F4F4F5);
+  padding: 2px var(--spacing-md, 8px);
+  border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__name {
   font-family: var(--font-heading, inherit);
-  font-size: var(--text-xl, 1.25rem);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: var(--font-weight-semibold);
   margin: 0;
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__price { grid-row: 2; display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
@@ -154,7 +185,7 @@ func pricingCardCSS(_ style.Theme) string {
   letter-spacing: -0.02em;
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { grid-row: 3; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
@@ -167,8 +198,7 @@ func pricingCardCSS(_ style.Theme) string {
   position: absolute;
   inset-inline-start: 0;
   color: var(--color-success, #15803D);
-  font-weight: var(--font-weight-bold);
 }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__cta { grid-row: 4; align-self: end; width: 100%; text-align: center; }
 `
 }

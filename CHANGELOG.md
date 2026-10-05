@@ -369,6 +369,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.SignalToggle` thumb takes `--color-primary-fg`, since a white
   thumb vanished on the near-white dark primary. Tags and badges keep their own
   width inside a flex column.
+- **`ui.ContentRow`**'s stacked phone nav band takes main's inline
+  gutter, so the menu trigger lines up with the page content instead of
+  sitting in the viewport corner.
 - **A blueprint `type: link` block renders `ui.Link`** instead of
   `html.Link`, so generated links pick up the design system's link
   style, and validation now refuses an unsafe `href` (`javascript:`,
@@ -483,6 +486,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.InputGroup` and `ui.SearchInput` addons pad on the correct side
   in a right-to-left page.** Their padding was physical, so "$" and
   "USD" sat against the border under `dir="rtl"`.
+- **`ui.Section` holds its column's width around wide content.** Its
+  grid and its body's used auto columns, which size to their content: a
+  Carousel track reports its whole strip, so a three-up carousel pushed
+  the band to 1812px inside a 1056px page, and a code block's longest
+  line pushed a phone section past the screen. Both now use one
+  `minmax(0, 1fr)` column.
 - **A DataTable header row has no hairline seams** between cells at
   fractional widths in Chromium.
 - **A carousel's dots follow a manual scroll and count positions.** A
@@ -501,6 +510,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   its slides and dots to itself (the outer Next marked an inner slide),
   and a carousel under a scaled or zoomed ancestor counts its
   positions right.
+- **`ui.ProgressSteps` connectors join the markers.** Each line ran
+  from its own step's edge, a column short of the previous marker, so
+  the rail read as loose dashes. It now runs marker to marker, in a
+  right-to-left page too, and the line leading on from the current step
+  stays untinted.
+- **`ui.AvatarGroup` overlaps like a stack.** The overlap was about 10%
+  of an avatar's width; it is now about a quarter at every size.
+- **A row of `ui.PricingCard`s lines up.** A plan whose description
+  wrapped painted its price, features and button a line below its
+  neighbours'. Cards placed directly in a `ui.Grid` that holds only
+  plans now share their row lines (CSS subgrid), so each part starts
+  level across the row; a card anywhere else keeps its own rows.
+- **`ui.BackToTop` anchors bottom-right by default.** The zero
+  `Position` was documented as bottom-right but added no corner class,
+  so the fixed button stayed where it fell in the page, over content.
+- **A `FullWidth` `ui.Sparkline` keeps a thin line.** Stretching the
+  chart across a column stretched its stroke too, about four times its
+  width in a 470px card.
+- **`ui.SegmentedControl` keeps its own width** in a stack or section
+  body instead of stretching across the column, and gives way to a
+  column narrower than its per-count minimum: three options were 352px
+  wide in a 300px phone column and scrolled the page sideways.
 - **Cards in a `ui.Carousel` row share a height.** The track stretched
   every slide to the tallest, but a card inside a slide kept its own
   height, so a short quote's card ended above its neighbours'. A slide's

@@ -190,9 +190,10 @@ type GridConfig struct {
 // under this package's class map. The default replacement for
 // hand-rolled `grid-template-columns` declarations.
 //
-// Min is passed through `--ui-grid-min` (a CSS custom property the
-// component declares on the root), so no inline `style="…"` is
-// emitted, strict-CSP clean.
+// Min rides on the root's data-min attribute and the stylesheet maps it
+// onto `--ui-grid-min` (typed attr() where supported, whole-rem steps
+// from 1rem to 64rem elsewhere), so no inline `style="…"` is emitted,
+// strict-CSP clean.
 func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	min := cfg.Min
 	if min == "" {

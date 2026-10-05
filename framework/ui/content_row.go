@@ -223,6 +223,11 @@ func (b rowBreakpointCSS) stackCSS() string {
 	css := fmt.Sprintf(`@media (max-width: %s) {
   :where(.fui-content-row):SCOPE: { display: block; }
   .fui-content-row:SCOPE: .fui-content-row__nav { border-right: none; border-bottom: 1px solid var(--color-border, #e4e4e7); }
+  /* The stacked nav band holds the menu trigger. It takes main's inline
+     gutter, so the trigger lines up with the page content instead of
+     sitting flush in the viewport corner. */
+  .fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) clamp(24px, 3vw, 40px); }
+  .fui-content-row--viewport.fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) var(--spacing-md, 8px); }
   .fui-content-row:SCOPE: .fui-content-row__aside { border-inline-start: none; border-block-start: 1px solid var(--color-border); }
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > main,
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > .layout-content { padding: var(--spacing-md); }
@@ -231,7 +236,7 @@ func (b rowBreakpointCSS) stackCSS() string {
      outside the column (a NativeMobile sidebar whose trigger the page
      header hosts), so the stacked band renders empty and must not draw
      its separator. */
-  .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; }
+  .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; padding: 0; }
 }
 `, b.maxw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)

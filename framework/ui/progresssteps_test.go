@@ -140,7 +140,7 @@ func TestProgressStepsVerticalConnectorGeometry(t *testing.T) {
 	}
 	rule := css[i:]
 	rule = rule[:strings.Index(rule, "}")]
-	for _, want := range []string{"left: 13px", "right: auto", "top: -12px", "bottom: auto", "width: 2px", "height: 12px"} {
+	for _, want := range []string{"inset-inline-start: 13px", "inset-inline-end: auto", "top: -12px", "bottom: auto", "width: 2px", "height: 12px"} {
 		if !strings.Contains(rule, want) {
 			t.Errorf("the vertical connector lost %q:\n%s", want, rule)
 		}

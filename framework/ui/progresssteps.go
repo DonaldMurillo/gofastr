@@ -199,22 +199,21 @@ func progressStepsCSS(_ style.Theme) string {
   position: relative;
   min-width: 0;
 }
-/* Connector line between steps. Drawn from the right edge of every
-   item except the last, behind the marker so the marker punches
-   through. Tinted by the NEXT step's status — green if both complete,
+/* Connector line between steps: every item but the first draws one
+   from the previous item's centre (half an item back, plus the list
+   gap) to its own, behind both markers so they punch through. Tinted
+   by the step it leads into: primary once that step is reached,
    border-color otherwise. */
 [data-cui-comp="ui-progress-steps"] .fui-progress-steps__item + .fui-progress-steps__item::before {
   content: "";
   position: absolute;
-  left: 0;
-  right: 50%;
+  inset-inline-start: calc(-50% - var(--spacing-sm, 4px));
+  inset-inline-end: 50%;
   top: 14px;
   height: 2px;
   background: var(--color-border, #E4E4E7);
   z-index: 0;
 }
-.fui-progress-steps__item[data-state="current"] + .fui-progress-steps__item::before,
-.fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item[data-state="done"]::before,
 .fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item::before {
   background: var(--color-primary, #4F46E5);
 }
@@ -302,8 +301,8 @@ func progressStepsCSS(_ style.Theme) string {
   text-align: start;
 }
 .fui-progress-steps--vertical .fui-progress-steps__item + .fui-progress-steps__item::before {
-  left: 13px;
-  right: auto;
+  inset-inline-start: 13px;
+  inset-inline-end: auto;
   top: -12px;
   bottom: auto;
   width: 2px;

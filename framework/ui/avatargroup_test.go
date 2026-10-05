@@ -111,10 +111,10 @@ func TestAvatarGroupOverflowUsesAdaptiveSurfaceToken(t *testing.T) {
 	css := avatarGroupCSS(style.Theme{})
 	for _, want := range []string{
 		`background: var(--color-surface-soft, #e5e5e5)`,
-		`margin-inline-start: -0.25rem`,
-		`margin-inline-start: -0.15rem`,
-		`margin-inline-start: -0.3rem`,
-		`margin-inline-start: -0.4rem`,
+		`margin-inline-start: -0.625rem`,
+		`margin-inline-start: -0.375rem`,
+		`margin-inline-start: -0.75rem`,
+		`margin-inline-start: -1rem`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("AvatarGroup CSS missing %q:\n%s", want, css)

@@ -75,8 +75,9 @@ func buttonCSS(t style.Theme) string {
   border: 1px solid transparent;
   border-radius: var(--fui-button-radius);
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
   /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
      wrapping action rows move whole controls to the next line first. The
      clamp below is container-driven, not viewport-driven: only a label wider
@@ -90,22 +91,20 @@ func buttonCSS(t style.Theme) string {
   overflow-wrap: break-word;
   cursor: pointer;
   text-decoration: none;
-  transition: filter 150ms ease, opacity 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
 }
-.fui-button:hover { filter: brightness(0.95); }
-/* Layered focus ring: inner halo in the surface color creates a
-   visible gap between the button and the outer primary ring, so
-   keyboard focus stays visible regardless of the button's own
-   background color. */
+/* The shared focus ring: a 2px outline in the subtle ink, offset off
+   the control. An outline (never a box-shadow) so it survives forced
+   colours and never fights the control's own shadow; text-subtle so it
+   clears 3:1 on the page in both schemes. */
 .fui-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 .fui-button:disabled,
 .fui-button[aria-disabled="true"] {
   cursor: not-allowed;
-  opacity: 0.6;
-  filter: none;
+  opacity: 0.5;
 }
 /* The action lifecycle marks an in-flight request with aria-busy; the
    click that started it must not still read as ready for another. */
@@ -117,49 +116,41 @@ func buttonCSS(t style.Theme) string {
    component-options compiler declares per variant at every theme
    boundary (filled, outline or soft); their contrast is the theme's
    to keep — the trio resolves the same --color-primary /
-   --color-primary-fg pair the tokens guarantee. Secondary is the
-   neutral outline and ghost is transparent with primary ink; neither
-   reads a treatment. */
+   --color-primary-fg pair the tokens guarantee. Hover lays a tint of
+   the label's own ink over whatever the treatment fills: white over a
+   near-black filled primary, the brand colour over an outline's
+   transparent face or a soft wash, so every treatment answers the
+   pointer. Secondary is the neutral outline and ghost is transparent
+   with text ink; neither reads a treatment. */
 .fui-button--primary {
   background: var(--fui-button-primary-bg);
   color: var(--fui-button-primary-fg);
   border-color: var(--fui-button-primary-border);
+  box-shadow: var(--shadow-xs);
 }
 .fui-button--danger {
   background: var(--fui-button-danger-bg);
   color: var(--fui-button-danger-fg);
   border-color: var(--fui-button-danger-border);
+  box-shadow: var(--shadow-xs);
 }
-.fui-button--danger:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-danger);
+.fui-button--primary:hover:not(:disabled, [aria-disabled="true"]),
+.fui-button--danger:hover:not(:disabled, [aria-disabled="true"]) {
+  background-image: linear-gradient(color-mix(in srgb, currentColor 12%, transparent), color-mix(in srgb, currentColor 12%, transparent));
 }
 .fui-button--secondary {
   background: var(--color-surface);
   color: var(--color-text);
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-xs);
 }
-.fui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
-/* secondary's bg IS --color-surface, so the layered-shadow inner halo
-   would be invisible. Use a plain outline with offset instead — it
-   contrasts against any page background. */
-.fui-button--secondary:focus-visible {
-  box-shadow: none;
-  outline: 2px solid var(--color-text);
-  outline-offset: 2px;
-}
+.fui-button--secondary:hover { background: var(--color-surface-soft); }
 .fui-button--ghost {
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-text);
   border-color: transparent;
 }
-.fui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
-/* ghost sits on --color-background; a halo of --color-surface collapses
-   to near-invisible. Plain outline + offset is reliable on any bg. */
-.fui-button--ghost:focus-visible {
-  box-shadow: none;
-  outline: 2px solid var(--color-text);
-  outline-offset: 2px;
-}
+.fui-button--ghost:hover { background: var(--color-surface-soft); }
 
 /* The icon part: sized by the glyph it carries, never squeezed by the
    label's own line box. */
@@ -173,15 +164,13 @@ func buttonCSS(t style.Theme) string {
    so an explicit Size wins over whatever the theme's density set. */
 .fui-button--small {
   min-height: auto;
-  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  font-size: var(--text-xs, 0.75rem);
+  padding: 6px 10px;
+  gap: 6px;
 }
 .fui-button--large {
   min-height: 48px;
-  padding: 14px var(--spacing-xl, 24px);
-  /* --text-lg, NOT --text-base: :root always emits --text-base (1rem),
-     so reading it here would collapse --large into the default size. */
-  font-size: var(--text-lg, 1.125rem);
+  padding: 12px var(--spacing-xl, 24px);
+  font-size: var(--text-base);
 }
 ` +
 		// Registered custom variants and sizes, as plain class rules.
@@ -237,15 +226,25 @@ func codeBlockCSS(_ style.Theme) string {
   overflow: hidden;
   white-space: normal;
 }
+/* The head is chrome on the same dark surface as the body, so the
+   block reads as one object; a light head over a dark body read as two.
+   Its copy button goes quiet through the CopyButton knobs. */
 [data-cui-comp="ui-code-block"] .fui-code-block__head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: var(--spacing-md, 8px) 14px;
-  background: var(--ui-code-block-head-bg, var(--color-surface, #fff));
+  padding: 6px var(--spacing-md, 8px) 6px 14px;
+  background: var(--ui-code-block-head-bg, var(--color-code-surface, #18181B));
   border-bottom: 1px solid var(--color-code-border, #27272A);
   font-size: var(--text-xs, 12px);
-  color: var(--color-text-subtle, #71717A);
+  color: color-mix(in oklab, var(--color-code-text, #E4E4E7) 62%, var(--color-code-surface, #18181B));
+  --ui-copy-btn-size: 32px;
+  --ui-copy-btn-bg: transparent;
+  --ui-copy-btn-border: transparent;
+  --ui-copy-btn-shadow: none;
+  --ui-copy-btn-color: color-mix(in oklab, var(--color-code-text, #E4E4E7) 62%, var(--color-code-surface, #18181B));
+  --ui-copy-btn-hover-bg: color-mix(in oklab, var(--color-code-text, #E4E4E7) 12%, transparent);
+  --ui-copy-btn-hover-color: var(--color-code-text, #E4E4E7);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__status {
   width: 7px;
@@ -253,7 +252,7 @@ func codeBlockCSS(_ style.Theme) string {
   border-radius: 999px;
   background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
 }
-[data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-text, #18181B); }
+[data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-code-text, #E4E4E7); }
 [data-cui-comp="ui-code-block"] .fui-code-block__meta {
   margin-left: auto;
   display: flex;
@@ -333,7 +332,7 @@ func codeBlockCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
   color: inherit;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 /* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
    The bare <pre> IS the root; the framed variant's body is the <pre>. */
@@ -350,7 +349,15 @@ func sectionCSS(_ style.Theme) string {
   /* A section a parent grid stretches keeps its head on its body: the
      spare height goes below the body, not between the rows. */
   align-content: start;
-  gap: var(--spacing-md, 8px);
+  /* A section is a band of its column: in a stack aligned to start it
+     still spans the column, or an auto-fit grid inside it would size
+     against its own content and wrap three cards as two plus one. */
+  align-self: stretch;
+  /* One column that never grows past the section: an auto track sizes
+     to its content, and a scroller (a Carousel track) reports its whole
+     strip, which pushed the band off the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-lg, 16px);
   margin: var(--spacing-xl, 24px) 0;
   border: 0;
   /* Anchored sections clear a sticky header when scrolled into view. Apps
@@ -360,17 +367,18 @@ func sectionCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
 [data-cui-comp="ui-section"] .fui-section__head {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-section"] .fui-section__eyebrow {
+  margin: 0;
   /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color let a
      host retune the kicker (e.g. body face instead of mono) without
      restyling the component's internals. */
-  font-family: var(--ui-section-eyebrow-font, var(--font-mono, ui-monospace, monospace));
-  font-size: var(--ui-section-eyebrow-size, 11px);
-  font-weight: var(--ui-section-eyebrow-weight, inherit);
-  letter-spacing: var(--ui-section-eyebrow-tracking, 0.04em);
-  color: var(--ui-section-eyebrow-color, var(--color-text-subtle, #71717A));
+  font-family: var(--ui-section-eyebrow-font, inherit);
+  font-size: var(--ui-section-eyebrow-size, var(--text-sm));
+  font-weight: var(--ui-section-eyebrow-weight, var(--font-weight-medium));
+  letter-spacing: var(--ui-section-eyebrow-tracking, normal);
+  color: var(--ui-section-eyebrow-color, var(--color-text-muted));
 }
 [data-cui-comp="ui-section"] .fui-section__heading {
   /* Knobs: --ui-section-heading-size/-weight/-tracking scale the heading
@@ -378,8 +386,19 @@ func sectionCSS(_ style.Theme) string {
   margin: 0;
   font-size: var(--ui-section-heading-size, var(--text-lg, 1.125rem));
   font-weight: var(--ui-section-heading-weight, 600);
-  letter-spacing: var(--ui-section-heading-tracking, normal);
+  letter-spacing: var(--ui-section-heading-tracking, -0.01em);
   color: var(--color-text, #18181B);
+}
+/* An eyebrow marks a page band (marketing, landing), not an in-app
+   group, so its heading steps up to display size and the band opens
+   more air under its head. The knobs still win. */
+[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) {
+  gap: var(--spacing-xl, 24px);
+}
+[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) .fui-section__heading {
+  font-size: var(--ui-section-heading-size, var(--text-3xl, 1.875rem));
+  letter-spacing: var(--ui-section-heading-tracking, -0.025em);
+  line-height: 1.2;
 }
 [data-cui-comp="ui-section"] .fui-section__description {
   margin: 0;
@@ -387,7 +406,10 @@ func sectionCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-section"] .fui-section__body {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  /* The body is a grid of its own: an auto column would size to its
+     widest content (a code block's longest line) past the section. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-lg, 16px);
 }`
 }
 
@@ -476,17 +498,23 @@ func formFieldCSS(_ style.Theme) string {
   /* Density owns the touch target: --fui-density-control-h is the
      theme's control height (44px comfortable, 36px compact). */
   min-height: var(--fui-density-control-h);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  padding: var(--ui-control-padding-y, 10px) 12px;
+  border: 1px solid var(--color-border);
   border-radius: var(--fui-field-radius);
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-xs);
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm);
+  transition: border-color 150ms ease;
 }
+.fui-input::placeholder { color: var(--color-text-subtle); }
+/* iOS Safari zooms the page into a focused control whose text is under
+   16px, so phones keep text-base; wider screens take the denser sm. */
+@media (max-width: 767.98px) { .fui-input { font-size: var(--text-base, 1rem); } }
 .fui-input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 .fui-input[aria-invalid="true"] {
   /* Non-color affordance: stack an inset 1px ring so the error state
@@ -506,15 +534,26 @@ func formFieldCSS(_ style.Theme) string {
 
 func formSectionCSS(_ style.Theme) string {
 	return `.fui-form-section {
+  /* Reset the fieldset UA box: a 2px side margin and a min-content
+     floor that let long fields push the card past its column. */
+  margin: 0;
+  min-inline-size: 0;
   display: grid;
   gap: var(--spacing-lg, 16px);
-  padding: var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
+  padding: var(--spacing-xl, 24px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
 }
+/* A floated legend leaves the fieldset border and becomes the first
+   grid item, so the heading sits inside the card like a card title
+   instead of notching the top border. */
 .fui-form-section__heading {
+  float: left;
+  inline-size: 100%;
   margin: 0;
+  padding: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
@@ -527,18 +566,25 @@ func formSectionCSS(_ style.Theme) string {
 .fui-form-section__fields {
   display: grid;
   gap: var(--spacing-md, 8px);
+}
+/* Title and description read as one header block. */
+.fui-form-section__heading + .fui-form-section__description {
+  margin-block-start: calc(var(--spacing-sm, 4px) - var(--spacing-lg, 16px));
 }`
 }
 
 func statusBadgeCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
+  /* A chip keeps its own width in a flex column too (a Card header,
+     a Stack), where a flex item with an auto width stretches. */
+  inline-size: fit-content;
   align-items: center;
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
-  border-radius: var(--radii-full, 9999px);
+  border-radius: var(--radii-md);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
+  font-weight: var(--font-weight-medium);
+  line-height: 1rem;
   border: 1px solid transparent;
   /* A pill states one word; wrapping mid-label breaks the shape and
      the reading. Narrow columns must give the badge room, not fold
@@ -579,13 +625,15 @@ func statusBadgeCSS(t style.Theme) string {
 func emptyStateCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-empty-state"] {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-sm, 4px);
   justify-items: center;
   text-align: center;
   padding: var(--spacing-3xl, 48px) var(--spacing-lg, 16px);
-  background: var(--color-surface-soft, #F4F4F5);
+  /* The dashed frame alone marks the slot; a fill would read as a
+     disabled panel. */
+  background: transparent;
   border: 1px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border-radius: var(--radii-xl);
 }
 [data-cui-comp="ui-empty-state"] .fui-empty-state__title {
   margin: 0;
@@ -595,10 +643,11 @@ func emptyStateCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-empty-state"] .fui-empty-state__description {
   margin: 0;
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   max-inline-size: 36ch;
 }
-[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
+[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-md, 8px); }`
 }
 
 func calloutCSS(t style.Theme) string {
@@ -613,10 +662,10 @@ func calloutCSS(t style.Theme) string {
   align-items: start;
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
+  padding: 12px var(--spacing-lg, 16px);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface-soft, var(--color-surface, #FFFFFF));
+  border-radius: var(--radii-lg);
+  background: var(--color-surface);
 }
 /* display:grid above outranks the UA's [hidden] { display: none }, so
    a server-rendered notice that starts hidden showed as an empty bar;
@@ -629,17 +678,18 @@ func calloutCSS(t style.Theme) string {
   grid-row: 1 / span 2;
   display: inline-grid;
   place-items: center;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 18px;
+  block-size: 18px;
   margin-block-start: 1px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
+  font-size: 11px;
   font-weight: var(--font-weight-bold);
   font-style: normal;
   line-height: 1;
   color: var(--ui-callout-accent, var(--color-text-muted, #52525B));
-  background: color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 14%, transparent);
-  border: 1px solid color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 28%, transparent);
+  /* A stroked ring, the same weight as the line icons Banner and
+     Notification draw, so the three notices read as one family. */
+  border: 1.5px solid currentColor;
   border-radius: 999px;
 }
 [data-cui-comp="ui-callout"] .fui-callout__head {
@@ -656,7 +706,7 @@ func calloutCSS(t style.Theme) string {
      must not retune its metrics — the rhythm is the family's. */
   line-height: inherit;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-callout"] .fui-callout__body {
@@ -680,31 +730,33 @@ func calloutCSS(t style.Theme) string {
 func statCardCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-stat-card"] {
   display: grid;
-  gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-lg, 16px);
-  background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
+  align-content: start;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-xl, 24px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-xl);
+  box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #52525B);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: var(--font-weight-bold);
-  line-height: 1;
-  color: var(--color-text, #18181B);
+  font-size: var(--text-3xl);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--color-text);
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
@@ -764,12 +816,16 @@ func avatarCSS(_ style.Theme) string {
 }
 
 func formCSS(_ style.Theme) string {
-	return `.fui-form { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
-.fui-form__body { display: grid; gap: var(--spacing-md, 8px); grid-template-columns: 1fr; }
+	// Knob: --ui-form-max caps the form at a readable measure (a 60rem
+	// pane does not stretch every input across it); set none to fill.
+	return `.fui-form { display: grid; gap: var(--spacing-xl, 24px); grid-template-columns: 1fr; max-inline-size: var(--ui-form-max, 42rem); }
+/* Fields sit a step further apart than a field's own label and control,
+   so each label reads as belonging to the control under it. */
+.fui-form__body { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
 .fui-form__actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-sm, 4px);
+  gap: var(--spacing-md, 8px);
 }
 .fui-form--block-actions .fui-form__actions {
   display: grid;
@@ -798,25 +854,24 @@ func notificationCSS(t style.Theme) string {
   align-items: start;
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border-radius: var(--radii-md, 8px);
+  padding: 12px var(--spacing-lg, 16px);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-inline-start: 4px solid var(--color-info, #2563EB);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-md);
   max-inline-size: 28rem;
 }
 [data-cui-comp="ui-notification"] .fui-notification__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
-  border-radius: var(--radii-full, 9999px);
-  color: var(--color-primary-fg, #FFFFFF);
-  background: var(--color-info, #2563EB);
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  /* The tone rides on the glyph's color; a filled disc behind it
+     outweighs the title. */
+  color: var(--ui-notification-tone, var(--color-info, #2563EB));
   font-weight: var(--font-weight-bold);
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-base, 1rem);
   line-height: 1;
 }
 /* The toast's parts are the row's own children — no text wrapper —
@@ -827,8 +882,8 @@ func notificationCSS(t style.Theme) string {
 [data-cui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
 [data-cui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
 [data-cui-comp="ui-notification"] .fui-notification__title {
-  font-size: var(--text-base, 1rem);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-notification"] .fui-notification__body {
@@ -856,23 +911,15 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-cui-comp="ui-notification"].fui-notification--success { border-inline-start-color: var(--color-success, #16A34A); }
-[data-cui-comp="ui-notification"].fui-notification--success .fui-notification__icon { background: var(--color-success, #16A34A); }
-[data-cui-comp="ui-notification"].fui-notification--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
-[data-cui-comp="ui-notification"].fui-notification--warning .fui-notification__icon { background: var(--color-warning, #CA8A04); }
-[data-cui-comp="ui-notification"].fui-notification--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-notification"].fui-notification--danger  .fui-notification__icon { background: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-notification"].fui-notification--info    { border-inline-start-color: var(--color-info, #2563EB); }
-[data-cui-comp="ui-notification"].fui-notification--info    .fui-notification__icon { background: var(--color-info, #2563EB); }
-[data-cui-comp="ui-notification"].fui-notification--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }
-[data-cui-comp="ui-notification"].fui-notification--neutral .fui-notification__icon {
-  background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text-muted, #52525B);
-}
+[data-cui-comp="ui-notification"].fui-notification--success { --ui-notification-tone: var(--color-success, #16A34A); }
+[data-cui-comp="ui-notification"].fui-notification--warning { --ui-notification-tone: var(--color-warning, #CA8A04); }
+[data-cui-comp="ui-notification"].fui-notification--danger  { --ui-notification-tone: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-notification"].fui-notification--info    { --ui-notification-tone: var(--color-info, #2563EB); }
+[data-cui-comp="ui-notification"].fui-notification--neutral { --ui-notification-tone: var(--color-text-muted, #52525B); }
 :where([data-cui-comp="ui-notification"]).fui-notification--floating {
   position: fixed;
   z-index: 1000;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-lg);
   animation: ui-notification-slide-in 220ms ease-out;
 }
 :where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
@@ -948,54 +995,69 @@ func dataTableCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll {
   overflow-x: auto;
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-lg);
+  background: var(--color-surface);
 }
 /* The scroll region is a keyboard tab stop (tabindex=0, so it can be
    scrolled by keyboard whenever it overflows), so its focus state
    must be visible. */
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: -2px;
+  outline: 2px solid var(--color-text-subtle);
+  outline-offset: 2px;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__caption {
   text-align: start;
-  padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #52525B);
-  background: var(--color-surface-soft, #F4F4F5);
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  padding: 10px var(--spacing-lg, 16px);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  background: var(--color-surface-soft);
+  border-bottom: 1px solid var(--color-border);
   caption-side: top;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th,
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
-  padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
+  padding: 12px var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  border-bottom: 1px solid var(--color-border);
+}
+/* Body rows are a fixed 52px rhythm: a 44px row action (View, Edit)
+   fits inside the 4px inset instead of stretching its row to 68px, and
+   a text-only row lands on the same height. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table td {
+  padding-block: var(--spacing-sm, 4px);
+  block-size: calc(var(--spacing-touch-target) + 2 * var(--spacing-sm, 4px));
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }
+/* A table cell's height is a minimum: the header row holds the 44px
+   tap row whether or not a column sorts. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-muted, #52525B);
-  background: var(--color-surface-soft, #F4F4F5);
-  font-size: var(--text-xs, 0.75rem);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  block-size: var(--spacing-touch-target);
+  padding-block: 0;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  background: var(--color-surface-soft);
+  /* Each cell's fill bleeds 1px over its right edge: at a fractional
+     column edge on a 1x display the two anti-aliased fills otherwise
+     leave a light hairline seam. (A row fill is still painted per cell.)
+     The scroll wrapper clips the last cell's bleed. */
+  box-shadow: 1px 0 0 var(--color-surface-soft);
+  white-space: nowrap;
+}
+[data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr {
+  transition: background-color 150ms ease;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
-  background: var(--color-surface-soft, #F4F4F5);
+  background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
@@ -1023,7 +1085,7 @@ func dataTableCSS(_ style.Theme) string {
   text-decoration: none;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 /* The direction indicator is drawn from aria-sort, the same
@@ -1031,8 +1093,8 @@ func dataTableCSS(_ style.Theme) string {
    one source and cannot disagree. The markup carries no glyph. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
-  font-size: 0.7em;
-  color: var(--color-primary, #4F46E5);
+  font-size: 0.85em;
+  color: var(--color-text-muted);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   content: "↑";
@@ -1042,7 +1104,7 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-text);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__footer {
   display: flex;
@@ -1083,11 +1145,11 @@ func dataTableCSS(_ style.Theme) string {
     white-space: nowrap;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
-    border: 1px solid var(--color-border, #E4E4E7);
-    border-radius: var(--radii-md, 8px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radii-lg);
     margin-block-end: var(--spacing-md, 8px);
-    padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-    background: var(--color-surface, #FFFFFF);
+    padding: var(--spacing-sm, 4px) 12px;
+    background: var(--color-surface);
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody tr:hover {
     background: var(--color-surface, #FFFFFF);
@@ -1107,11 +1169,8 @@ func dataTableCSS(_ style.Theme) string {
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td::before {
     content: attr(data-label);
-    font-weight: var(--font-weight-semibold);
-    font-size: var(--text-xs, 0.75rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-text-muted, #52525B);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
     text-align: start;
     flex: 0 0 auto;
   }
@@ -1153,33 +1212,32 @@ func paginationCSS(_ style.Theme) string {
   /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
   min-inline-size: var(--spacing-touch-target);
   min-block-size: var(--spacing-touch-target);
-  padding: 0 var(--spacing-sm, 4px);
-  border-radius: var(--radii-md, 8px);
+  padding: 0 12px;
+  border-radius: var(--radii-md);
   border: 1px solid transparent;
   background: transparent;
   text-decoration: none;
-  color: var(--color-text, #1F2937);
+  color: var(--color-text);
   font: inherit;
   font-size: inherit;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 [data-cui-comp="ui-pagination"] .pagination span { cursor: default; }
 [data-cui-comp="ui-pagination"] .pagination a:hover {
-  background: var(--color-surface, #FFFFFF);
-  border-color: var(--color-border, #E5E7EB);
+  background: var(--color-surface-soft);
 }
-/* :focus-visible is critical — without an explicit rule the focus
-   indicator on the active page (white-on-primary) is invisible because
-   the UA default outline blends with the primary background. */
 [data-cui-comp="ui-pagination"] .pagination a:focus-visible {
-  outline: 2px solid var(--color-text, #1F2937);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
+/* The current page is drawn the way an outline button is: a surface
+   with the hairline border and the control shadow. */
 [data-cui-comp="ui-pagination"] .pagination [aria-current="page"] {
-  background: var(--color-primary, #4F46E5);
-  color: white;
-  font-weight: var(--font-weight-semibold);
-  border-color: var(--color-primary, #4F46E5);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
   color: var(--color-text-muted, #6B7280);
@@ -1248,7 +1306,7 @@ button[data-cui-comp="ui-theme-toggle"]:hover {
 }
 [data-cui-comp="ui-theme-toggle"] button:focus-visible,
 button[data-cui-comp="ui-theme-toggle"]:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 1px;
 }
 
@@ -1344,7 +1402,7 @@ func backToTopCSS(_ style.Theme) string {
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
 }
 [data-cui-comp="ui-back-to-top"]:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-back-to-top"] svg {

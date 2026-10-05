@@ -192,12 +192,18 @@ func segmentedCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;
   isolation: isolate;
+  /* Inline-grid alone does not hold: a stack or section body stretches
+     its items, and a billing toggle spanned the column. A definite
+     width is never stretched; each count's minimum gives way to a
+     narrower column, since a minimum beats the 100% cap. */
+  inline-size: fit-content;
+  max-inline-size: 100%;
 }
-:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: 16rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: 22rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: 26rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: 30rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: 34rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: min(16rem, 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: min(22rem, 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: min(26rem, 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: min(30rem, 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: min(34rem, 100%); }
 
 [data-cui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
@@ -210,7 +216,7 @@ func segmentedCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 4px);
   cursor: pointer;
   color: var(--color-text-muted, #6b7280);
-  transition: color var(--duration-fast, 150ms) var(--easing-standard, ease);
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-out, ease);
   user-select: none;
   text-align: center;
   white-space: nowrap;
@@ -232,7 +238,7 @@ func segmentedCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
@@ -254,7 +260,7 @@ func segmentedCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   box-shadow: 0 1px 2px rgba(0,0,0,0.08),
               0 0 0 1px rgba(0,0,0,0.05);
-  transition: transform var(--duration-medium, 200ms) var(--easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
 [data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }

@@ -136,9 +136,9 @@ var avatarGroupStyle = registry.RegisterStyle("ui-avatar-group", avatarGroupCSS)
 
 func avatarGroupCSS(_ style.Theme) string {
 	// Overlap is sized per-variant so the stack looks tight regardless
-	// of Avatar size: roughly 10% of each avatar's width tucks under
-	// the previous one. This preserves identity initials while still
-	// reading as one group. Stacking order (z-index via :nth-child reverse)
+	// of Avatar size: about a quarter of each avatar's width (ring
+	// included) tucks under the previous one, the shadcn spacing. Less
+	// read as a row of loose circles rather than a stack. Stacking order (z-index via :nth-child reverse)
 	// keeps the first avatar on top, which matches the natural reading
 	// order ("Ada, then Grace, then …").
 	return `[data-cui-comp="ui-avatar-group"] {
@@ -148,16 +148,16 @@ func avatarGroupCSS(_ style.Theme) string {
   isolation: isolate;
 }
 [data-cui-comp="ui-avatar-group"] > *:not(:first-child) {
-  margin-inline-start: -0.25rem; /* default md: ~10% overlap on 2.5rem avatars */
+  margin-inline-start: -0.625rem; /* default md: ~25% of a 2.5rem avatar and its ring */
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--sm > *:not(:first-child) {
-  margin-inline-start: -0.15rem;
+  margin-inline-start: -0.375rem;
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--lg > *:not(:first-child) {
-  margin-inline-start: -0.3rem;
+  margin-inline-start: -0.75rem;
 }
 [data-cui-comp="ui-avatar-group"].fui-avatar-group--xl > *:not(:first-child) {
-  margin-inline-start: -0.4rem;
+  margin-inline-start: -1rem;
 }
 /* Reverse z-index so earlier siblings sit on top of later ones — the
    first avatar is the most prominent. */

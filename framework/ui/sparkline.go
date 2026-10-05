@@ -228,6 +228,9 @@ func sparklineCSS(_ style.Theme) string {
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
+  /* FullWidth stretches the viewBox with preserveAspectRatio none; the
+     stroke stays 1.5px instead of stretching with it. */
+  vector-effect: non-scaling-stroke;
 }
 [data-cui-comp="ui-sparkline"] .fui-sparkline__area {
   fill: currentColor;
