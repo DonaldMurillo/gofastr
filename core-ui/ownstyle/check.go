@@ -460,14 +460,13 @@ func (c *checker) checkSelector(r *Rule) {
 		t := prel[i]
 		switch {
 		case t.Type == TokenDelim && t.Text == "." && i+1 < len(prel) && prel[i+1].Type == TokenIdent:
-			//gofastr:allow(layerprefix) the owned-style checker names kit classes to bar an app sheet from them
-			if strings.HasPrefix(prel[i+1].Text, "fui-") {
+			if isKitClass(prel[i+1].Text) {
 				c.report(Diagnostic{
 					Rule:     RuleKitClassSelector,
 					Severity: SeverityError,
 					Line:     t.Line,
 					Col:      t.Col,
-					Message: fmt.Sprintf(".%s is a kit class (.fui-*); style the content you pass into the slot instead",
+					Message: fmt.Sprintf(".%s is a kit class (.cui-*, .hui-*, .fui-*); style the content you pass into the slot instead",
 						prel[i+1].Text),
 				})
 			}
@@ -907,4 +906,14 @@ func isScopeCompound(comp []Token) bool {
 	sig := significantTokens(comp)
 	return len(sig) >= 2 && sig[0].Type == TokenColon &&
 		sig[1].Type == TokenIdent && sig[1].Text == "scope"
+}
+
+// isKitClass reports whether a class name belongs to the kit: the
+// kernel's cui-* classes, headless's hui-*, and the ui kit's fui-*. An
+// owned sheet styles the content it passes into a slot, never the
+// kit's own markup, so all three prefixes are barred from its
+// selectors and kept out of its vocabulary.
+func isKitClass(name string) bool {
+	//gofastr:allow(layerprefix) the owned-style checker names kit classes to bar an app sheet from them
+	return strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-") || strings.HasPrefix(name, "fui-")
 }

@@ -1230,6 +1230,8 @@ func themeToggleCSS(_ style.Theme) string {
 [data-cui-comp="ui-theme-toggle"] button,
 :where(button)[data-cui-comp="ui-theme-toggle"] {
   cursor: pointer;
+  /* A button takes the UA font (Arial) unless told otherwise. */
+  font: inherit;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
@@ -1344,7 +1346,7 @@ func backToTopCSS(_ style.Theme) string {
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
 }
 [data-cui-comp="ui-back-to-top"]:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-back-to-top"] svg {

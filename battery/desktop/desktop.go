@@ -741,6 +741,9 @@ func windowClosed(w Window) (closed, known bool) {
 // windowMu.
 func (b *Battery) removeWindowLocked(id string) {
 	delete(b.windows, id)
+	if s := b.winStore.Load(); s != nil {
+		s.forget(id)
+	}
 	for p, pid := range b.winPaths {
 		if pid == id {
 			delete(b.winPaths, p)
@@ -1031,7 +1034,7 @@ func (b *Battery) Run(app *framework.App) error {
 		if err := w.Navigate(enterURL); err != nil {
 			b.logger.Error("desktop: initial navigation failed", "error", err)
 		}
-		b.flushDeepLinks()
+		b.flushDeepLinks(w)
 		// Config.Widgets open after the boot navigation, in order,
 		// through the same OpenWindow everything else uses (path
 		// validation, id assignment, per-path dedupe included).

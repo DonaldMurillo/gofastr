@@ -228,7 +228,17 @@ func (s *Store) Flush() error {
 	}
 	entries := s.snapshotLocked()
 	s.mu.Unlock()
-	return s.persist(entries)
+	if err := s.persist(entries); err != nil {
+		// The snapshot never reached disk: mark the store dirty again
+		// so the next debounced write or the quit flush retries it and
+		// reports the error. A Set during the write already set dirty;
+		// setting it again is the same answer.
+		s.mu.Lock()
+		s.dirty = true
+		s.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // Path is the file the store persists to.

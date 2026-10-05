@@ -129,3 +129,26 @@ func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
 		}
 	}
 }
+
+// A <button> takes the UA's font (Arial) rather than the page's unless
+// its rule sets font: inherit, as ui-button's does. The drawer's close
+// button and the theme toggle's buttons rendered in Arial beside text
+// set in the app's font.
+func TestDrawerCloseAndToggleInheritFont(t *testing.T) {
+	for name, tc := range map[string]struct{ css, selector string }{
+		"drawer close": {sidebarCSS(style.Theme{}), ".fui-sidebar__drawer-close {"},
+		"theme toggle": {themeToggleCSS(style.Theme{}), `:where(button)[data-cui-comp="ui-theme-toggle"] {`},
+	} {
+		start := strings.Index(tc.css, tc.selector)
+		if start == -1 {
+			t.Fatalf("%s: no %s rule found", name, tc.selector)
+		}
+		block := tc.css[start:]
+		if end := strings.Index(block, "}"); end != -1 {
+			block = block[:end]
+		}
+		if !strings.Contains(block, "font: inherit;") {
+			t.Errorf("%s button rule must set font: inherit:\n%s", name, block)
+		}
+	}
+}

@@ -54,6 +54,13 @@
         const poll = () => { if (done) return; if (link.sheet || performance.now() - t0 > 2000) settle(); else setTimeout(poll, 50); };
         poll();
       });
+      // Closed while we waited (Escape, closeWidget, a navigation):
+      // the widget is gone from the registry, so there is nothing to
+      // anchor. Marking the trigger and attaching window listeners
+      // now would leave the trigger in its open state for good and
+      // the listeners running on every scroll.
+      if (!Object.prototype.hasOwnProperty.call(NS._widgets, name)
+        || NS._widgets[name] !== widget || !root.isConnected) return;
     }
 
 

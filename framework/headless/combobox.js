@@ -47,24 +47,30 @@
     }
   }
 
-  function say(lb, what) {
+  function statusOf(lb) {
     const input = inputOf(lb);
     const root = input && input.closest('[data-hui-combobox]');
-    const status = root && root.querySelector('[data-hui-combobox-status]');
+    return root && root.querySelector('[data-hui-combobox-status]');
+  }
+
+  function say(lb, what) {
+    const status = statusOf(lb);
     if (status) status.textContent = what || '';
   }
 
   function announce(lb) {
     // The count sentence travels on the listbox; {n} is written in
-    // when the count is known. No sentence, no announcement.
+    // when the count is known. No sentence, no announcement. The
+    // no-results word travels on the status region it is said in.
     const fmt = lb.getAttribute('data-hui-combobox-count');
     if (!fmt) return;
     const n = lb.querySelectorAll('[role="option"]:not([hidden])').length;
     if (n === 0) {
-      say(lb, lb.getAttribute('data-hui-combobox-no-results') || '');
+      const status = statusOf(lb);
+      say(lb, (status && status.getAttribute('data-hui-combobox-no-results')) || '');
       return;
     }
-    say(lb, fmt.replace('{n}', String(n)));
+    say(lb, fmt.replace('{n}', () => String(n)));
   }
 
   function closeListbox(input, lb) {
@@ -246,12 +252,26 @@
     announce(lb);
   });
 
-  // The arrival pass: announce the static list's count, and close any
-  // listbox whose island region was swapped empty.
+  // An island listbox's rows arrive by the kernel's html signal swap,
+  // which replaces the listbox's children: the arrival pass sees the
+  // new rows (or nothing at all, for an empty swap), never the listbox.
+  // An observer on the listbox's own children hears every swap and
+  // replaces the "Loading…" the input wrote with the count, or the
+  // no-results word.
+  const watched = new WeakSet();
+  function watchIsland(lb) {
+    if (watched.has(lb) || typeof MutationObserver !== 'function') return;
+    watched.add(lb);
+    new MutationObserver(function () { announce(lb); }).observe(lb, { childList: true });
+  }
+
+  // The arrival pass: announce the static list's count, and watch each
+  // island listbox for its swaps.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const lb of within(scope, '[data-hui-combobox-listbox]')) {
       if (lb.hasAttribute('data-hui-combobox-static')) announce(lb);
+      else watchIsland(lb);
     }
   }
 

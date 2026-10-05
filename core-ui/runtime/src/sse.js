@@ -70,16 +70,22 @@
       .then((j) => {
         if (!j || !j.sessionId) return;
         const m = document.querySelector('meta[name="gofastr-sse"]');
-        if (m) m.setAttribute('content', m.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + j.sessionId));
+        if (m) m.setAttribute('content', m.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + j.sessionId));
       })
       .catch(() => {});
   }
 
   function connect() {
+    // One stream at a time: a connect while one is open (a rescan
+    // racing the retry timer) must not orphan the open one.
+    if (source) return;
+    clearTimeout(retryTimer);
+    retryTimer = 0;
     const sseUrl = document.querySelector('meta[name="gofastr-sse"]')?.getAttribute('content');
     if (!sseUrl) return;
 
-    source = new EventSource(sseUrl);
+    const es = new EventSource(sseUrl);
+    source = es;
 
     source.onopen = () => {
       status.connected = true;
@@ -115,10 +121,13 @@
     });
 
     source.onerror = () => {
+      // The error belongs to THIS stream: close it, and only forget
+      // the module's source when it is still this one.
+      es.close();
+      if (source !== es) return;
       status.connected = false;
       status.retryCount++;
       emit();
-      source.close();
       source = null;
       // After repeated failures the cause is more likely a dead token
       // than a flapping network, attempt a re-mint (throttled to every

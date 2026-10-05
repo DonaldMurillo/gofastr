@@ -233,7 +233,7 @@ var adapterHooks = map[string]string{
 	"data-hui-copy":            "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
 	"data-hui-copy-target":     "the copied element's id, rendered by ui.CopyButton",
 	"data-hui-copy-name":       "the copied thing's name for the status sentence, rendered by ui.CopyButton",
-	"data-hui-copy-label":      "the button's idle label span, rendered by ui.CopyButton",
+	"data-hui-copy-label":      "an optional label span a host renders inside its own copy button for the module to swap the copied text into; ui.CopyButton does not render it (its two label spans swap by CSS on data-hui-copy-state)",
 	"data-hui-copy-copied":     "the button's copied label, rendered by ui.CopyButton",
 	"data-hui-copy-back":       "the label restored after the copied flash, rendered by ui.CopyButton",
 	"data-hui-copy-sentence":   "the status sentence shape with {name}, rendered by ui.CopyButton",
@@ -476,7 +476,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
 		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
 		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
 	} {
 		e, ok := uiregistry.LookupBehavior(tc.name)
 		if !ok {
@@ -514,7 +514,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
 		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
 		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
 	} {
 		for _, m := range tc.markers {
 			hook := strings.Trim(m, "[]")

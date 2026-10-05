@@ -126,9 +126,12 @@ entities:
     owner_field: user_id    # per-user: each signed-in account owns its own customers
     properties:
       label: Customers
+    # Unique per owner, never across owners: a global UNIQUE on email
+    # would let one account's row block another account's create and turn
+    # the 409 into an "this email exists somewhere" oracle.
     indices:
-      - name: idx_customers_email
-        columns: [email]
+      - name: idx_customers_owner_email
+        columns: [user_id, email]
         unique: true
     fields:
       - name: name
@@ -138,7 +141,6 @@ entities:
       - name: email
         type: string
         required: true
-        unique: true
       - name: company
         type: string
         max: 120
@@ -194,6 +196,10 @@ entities:
     owner_field: user_id
     properties:
       label: Invoices
+    indices:
+      - name: idx_invoices_owner_number   # unique per owner, as customers.email
+        columns: [user_id, number]
+        unique: true
     fields:
       - name: customer_id
         type: relation
@@ -202,7 +208,6 @@ entities:
       - name: number
         type: string
         required: true
-        unique: true
       - name: amount
         type: decimal
         required: true

@@ -22,7 +22,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func themeToggleTestPage(t *testing.T, body string) *httptest.Server {
+func themeToggleTestPage(t *testing.T, body string, extra ...func(mux *http.ServeMux)) *httptest.Server {
 	t.Helper()
 	js, err := runtime.RuntimeJS()
 	if err != nil {
@@ -46,6 +46,10 @@ func themeToggleTestPage(t *testing.T, body string) *httptest.Server {
 		}
 		http.NotFound(w, r)
 	})
+	// An endpoint a test's island posts to.
+	for _, add := range extra {
+		add(mux)
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html><head>`+
@@ -61,8 +65,10 @@ func themeToggleTestPage(t *testing.T, body string) *httptest.Server {
 // Clicking the icon variant cycles the colour scheme exactly as the
 // pill variant's options do: the html data-color-scheme attribute the
 // headless-navigation module writes flips. A fresh profile starts at
-// auto; the cycle order is dark → light → auto, so the first click
-// lands on dark.
+// auto; the cycle order is dark → light → auto, so on a light OS (the
+// emulated preference: the cycle skips a step that would not change
+// what the page shows, so the host's own appearance would decide the
+// answer) the first click lands on dark.
 func TestThemeToggleIconVariantCyclesScheme(t *testing.T) {
 	srv := themeToggleTestPage(t, string(ui.ThemeToggle(ui.ThemeToggleConfig{
 		Variant: ui.ThemeToggleIcon,
@@ -72,6 +78,7 @@ func TestThemeToggleIconVariantCyclesScheme(t *testing.T) {
 
 	var before, after string
 	if err := chromedp.Run(ctx,
+		prefersScheme("light"),
 		chromedp.Navigate(srv.URL),
 		chromedp.WaitVisible(`#tt-icon`, chromedp.ByID),
 		chromedp.Evaluate(`String(document.documentElement.getAttribute('data-color-scheme'))`, &before),

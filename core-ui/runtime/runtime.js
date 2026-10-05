@@ -207,6 +207,15 @@
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
+    /** The markup generation this kernel reads (2 = the data-cui-*
+        spelling). Every navigation fetch names it in X-Gofastr-Markup;
+        a server whose markup differs answers with a body that reloads
+        the document instead of a partial this kernel cannot read (see
+        core-ui/runtime.MarkupVersion). Modules read it from here, so a
+        module loaded into an older kernel sends none; nav.js spells the
+        same value as a literal. */
+    _markup: '2',
+
     /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
@@ -1477,8 +1486,11 @@
 
       // Partial fetch. X-Gofastr-From names the origin route so the
       // server renders only the layers the two routes do NOT share and
-      // echoes the swap boundary in X-Gofastr-Swap.
-      const hdrs = { 'X-Gofastr-Navigate': '1' };
+      // echoes the swap boundary in X-Gofastr-Swap. X-Gofastr-Markup is
+      // the kernel's _markup, spelled as a literal here (it costs fewer
+      // gzip bytes than the property read; TestKernelMarkupMatchesGo
+      // holds both spellings to runtime.MarkupVersion).
+      const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2' };
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       const resp = await fetch(path, { headers: hdrs });
@@ -1489,7 +1501,7 @@
       // threw first, the meta would keep the dead id and never recover
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
-      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
+      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 
@@ -1990,12 +2002,14 @@
       const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
       if (toastBtn) {
         e.preventDefault();
-        window.__gofastr.loadModule('headless-feedback').then(() => {
-          try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
-            window.__gofastr.toast(cfg);
-          } catch (_) {}
-        }).catch(() => {});
+        // The header path's dispatcher: it loads the module, and a
+        // page with no stack (NS.toast answers null) or a module that
+        // fails to load still shows the toast in the kernel's
+        // fallback region instead of nothing.
+        try {
+          const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
+          window.__gofastr._toastOrFallback(cfg);
+        } catch (_) {}
         return;
       }
       const btn = e.target.closest && e.target.closest('[data-cui-open]');
@@ -2041,6 +2055,52 @@
     });
   }
   _installEagerWidgetDelegators();
+
+  // Re-fetch the widget catalog after SPA-nav so page-scoped widgets
+  // registered with .Pages("/route") become available when the user
+  // arrives via partial-fetch (instead of a full page load).
+  //
+  // Without this, the boot-time catalog only contains widgets visible
+  // on the initial path; clicking a data-cui-open trigger for a
+  // page-scoped widget elsewhere silently bails because the entry is
+  // missing from _widgetCatalog.
+  //
+  // Owned here, not by boot: boot is in every composition, and the
+  // static one has no live endpoint to ask (widgets-boot-static keeps
+  // its own navigate pass against the dumped catalog).
+  //
+  // The fetch is idempotent, entries are MERGED into the catalog
+  // (existing entries from boot don't get overwritten unless the
+  // server returns a changed version). Non-hidden widgets that
+  // aren't already mounted are mounted now. Then _syncDeepLinks runs
+  // so the URL's modal/drawer query params open the right surface.
+  window.addEventListener('gofastr:navigate', (e) => {
+    const path = (e && e.detail && e.detail.path) || location.pathname;
+    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
+          { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (list) => {
+        if (!Array.isArray(list) || list.length === 0) return;
+        const G = window.__gofastr;
+        if (!G) return;
+        // Make sure the widgets module is loaded, the initial page
+        // may have had no widgets, so loadModule('widgets') was never
+        // triggered and mountWidget isn't on the namespace yet.
+        try { await G.loadModule('widgets'); } catch (_) { return; }
+        G._widgetCatalog = G._widgetCatalog || {};
+        for (const item of list) {
+          const cfg = item.cfg;
+          G._widgetCatalog[cfg.name] = item;
+          // Auto-mount non-hidden widgets that aren't already on the
+          // page. Hidden widgets (Modal / Drawer / Popover) stay
+          // hidden until openWidget is called from a trigger.
+          if (item.hidden) continue;
+          if (G._mountByName) G._mountByName(cfg.name);
+        }
+        if (G._syncDeepLinks) G._syncDeepLinks();
+      })
+      .catch(() => { /* navigation succeeded; missing catalog is non-fatal */ });
+  });
 
 // boot.js: kernel boot tail (always composed LAST, after every other fragment).
 // These declarations run AFTER nav/signals/widgets-boot have loaded because
@@ -2658,10 +2718,14 @@
   //     without it, `_initToasts` would have run only once at module
   //     load before that DOM existed.
   window.addEventListener('gofastr:navigate', () => {
+    const G = window.__gofastr;
+    // The idle-loaded activelink module reads this at load: only a
+    // document that already navigated client-side has a server mark
+    // for it to clear (src/activelink.js).
+    if (G) G._navigated = true;
     _scanForModules(document);
     // Task A: re-inject aria-live onto any new signal nodes from the swapped page.
     _injectSignalAria();
-    const G = window.__gofastr;
     if (G && G._moduleScanners) {
       for (const name in G._moduleScanners) {
         if (G.loadedModules && G.loadedModules[name]) {
@@ -2678,48 +2742,6 @@
     const G = window.__gofastr;
     if (!G || !G._modalStack) return;
     for (const name of [...G._modalStack]) G.closeWidget(name);
-  });
-
-  // Re-fetch the widget catalog after SPA-nav so page-scoped widgets
-  // registered with .Pages("/route") become available when the user
-  // arrives via partial-fetch (instead of a full page load).
-  //
-  // Without this, the boot-time catalog only contains widgets visible
-  // on the initial path; clicking a data-cui-open trigger for a
-  // page-scoped widget elsewhere silently bails because the entry is
-  // missing from _widgetCatalog.
-  //
-  // The fetch is idempotent, entries are MERGED into the catalog
-  // (existing entries from boot don't get overwritten unless the
-  // server returns a changed version). Non-hidden widgets that
-  // aren't already mounted are mounted now. Then _syncDeepLinks runs
-  // so the URL's modal/drawer query params open the right surface.
-  window.addEventListener('gofastr:navigate', (e) => {
-    const path = (e && e.detail && e.detail.path) || location.pathname;
-    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
-          { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then(async (list) => {
-        if (!Array.isArray(list) || list.length === 0) return;
-        const G = window.__gofastr;
-        if (!G) return;
-        // Make sure the widgets module is loaded, the initial page
-        // may have had no widgets, so loadModule('widgets') was never
-        // triggered and mountWidget isn't on the namespace yet.
-        try { await G.loadModule('widgets'); } catch (_) { return; }
-        G._widgetCatalog = G._widgetCatalog || {};
-        for (const item of list) {
-          const cfg = item.cfg;
-          G._widgetCatalog[cfg.name] = item;
-          // Auto-mount non-hidden widgets that aren't already on the
-          // page. Hidden widgets (Modal / Drawer / Popover) stay
-          // hidden until openWidget is called from a trigger.
-          if (item.hidden) continue;
-          if (G._mountByName) G._mountByName(cfg.name);
-        }
-        if (G._syncDeepLinks) G._syncDeepLinks();
-      })
-      .catch(() => { /* navigation succeeded; missing catalog is non-fatal */ });
   });
 
   const _bootstrapComponentCSS = () => {

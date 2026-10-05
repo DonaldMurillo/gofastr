@@ -23,8 +23,13 @@
   // context) and links carrying data-cui-activelink-skip (an
   // author-side escape hatch for a highlight owned by app code or a
   // hand-set attribute).
-  const update = (path) => {
-    for (const link of document.querySelectorAll('nav a')) {
+  // navigated is false only for the load-time sweep of a document that
+  // has not navigated client-side: the server's first-paint mark on a
+  // data-cui-activelink link is then still the truth, even where the
+  // href is not exactly the URL (Active on /orders served at
+  // /orders?page=2, or on a detail page), so the sweep leaves it.
+  const update = (path, navigated, scope) => {
+    for (const link of (scope || document).querySelectorAll('nav a')) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-cui-activelink-skip')) continue;
@@ -68,7 +73,7 @@
           if (grp.tagName === 'DETAILS') grp.open = true;
           else grp.setAttribute('open', '');
         }
-      } else if (link.classList.contains('active') || link.hasAttribute('data-cui-activelink') || link.hasAttribute('data-cui-match-prefix')) {
+      } else if (link.classList.contains('active') || (navigated && link.hasAttribute('data-cui-activelink')) || link.hasAttribute('data-cui-match-prefix')) {
         // Clear what this module stamped (the class is our marker) and
         // what was HANDED to it: a data-cui-activelink link (the
         // sidebar marks every leaf so its first-paint aria-current is
@@ -80,7 +85,8 @@
         // navigation can land before it ever stamped .active on the
         // old link. Host-rendered navs with neither (pagination, server
         // breadcrumbs) keep owning their attributes; a runtime sweep
-        // must not strip them.
+        // must not strip them. The data-cui-activelink handover only
+        // covers navigations: with none, the server's mark stays.
         link.removeAttribute('aria-current');
         link.classList.remove('active');
       }
@@ -89,11 +95,21 @@
 
   G._updateActiveLink = update;
   window.addEventListener('gofastr:navigate', (e) => {
-    update((e.detail && e.detail.path) || location.pathname + location.search);
+    update((e.detail && e.detail.path) || location.pathname + location.search, true);
+  });
+  // Widget chrome (the sidebar's phone drawer) mounts after load and is
+  // served without the page's current path, and no navigation follows
+  // its mount: sweep the announced root so its nav marks the page the
+  // drawer opened over. Scoped to the root, so the page is not swept.
+  document.addEventListener('fui:widget-open', (e) => {
+    const root = e.detail && e.detail.root;
+    if (root && root.querySelectorAll) update(location.pathname + location.search, !!G._navigated, root);
   });
   // Correct the highlight for wherever the page is NOW, SSR covered the
   // initial URL, but a navigation may have happened before idle load.
-  update(location.pathname + location.search);
+  // Boot's navigate listener records one in G._navigated; without it
+  // the sweep only stamps matches and leaves the handed-over marks.
+  update(location.pathname + location.search, !!G._navigated);
 
   (G.loadedModules ||= {}).activelink = true;
 })();

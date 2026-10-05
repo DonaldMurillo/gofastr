@@ -71,6 +71,19 @@ func runGenerateStyles(args []string) {
 		return
 	}
 
+	// Every read of a source sheet and every write of a generated file
+	// goes through an *os.Root at the working directory: a planted
+	// symlink (a generated leaf, the .gofastr dir, a source sheet)
+	// that points outside the project is refused by the kernel, never
+	// followed. The patterns already stay under the working directory.
+	wd, err := os.OpenRoot(".")
+	if err != nil {
+		fail("open the working directory: %v", err)
+		osExit(1)
+		return
+	}
+	defer wd.Close()
+
 	// The program grouping `gofastr verify`'s owned-style rules judge:
 	// one implementation, so the layout the docs promise (two binaries
 	// in one module, each with its own copy of a siteheader package)
@@ -79,7 +92,7 @@ func runGenerateStyles(args []string) {
 	readAll := func(fs []styleFile) []analyzers.SheetInput {
 		inputs := make([]analyzers.SheetInput, 0, len(fs))
 		for _, f := range fs {
-			body, rerr := os.ReadFile(f.path)
+			body, rerr := wd.ReadFile(f.path)
 			if rerr != nil {
 				fail("%s: read: %v", f.rel, rerr)
 				failed = true
@@ -100,7 +113,7 @@ func runGenerateStyles(args []string) {
 	}
 	checks := analyzers.CheckStylePrograms(pass, sheetInputs, tokenInputs)
 
-	appTokens, tokensFailed := generateTokenFiles(tokenFiles, srcOf, checks)
+	appTokens, tokensFailed := generateTokenFiles(wd, tokenFiles, srcOf, checks)
 	failed = failed || tokensFailed
 
 	// Names are unique within one program (GOFASTR1816's generator
@@ -130,7 +143,7 @@ func runGenerateStyles(args []string) {
 		if dup[f.rel] {
 			continue
 		}
-		if err := generateStyleFile(f, srcOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
+		if err := generateStyleFile(wd, f, srcOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
 			failed = true
 			if err != errSilent { // diagnostics were already printed
 				fail("%s: %v", f.rel, err)
@@ -146,7 +159,7 @@ func runGenerateStyles(args []string) {
 		info("Checked %d tokens file(s).", len(tokenFiles))
 	}
 
-	if err := writeStyleTokensCSS(".", appTokens); err != nil {
+	if err := writeStyleTokensCSS(wd, appTokens); err != nil {
 		fail("write .gofastr/tokens.css: %v", err)
 		failed = true
 	}
@@ -223,7 +236,7 @@ var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // grouping already computed (deduplicated across the file's programs);
 // only the model diagnostics are added here. It returns errSilent
 // when the failure was already reported as printed diagnostics.
-func generateStyleFile(f styleFile, src string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
+func generateStyleFile(wd *os.Root, f styleFile, src string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
 	css := src
 	kind := ownstyle.KindScoped
 	if f.name == "app" {
@@ -252,7 +265,7 @@ func generateStyleFile(f styleFile, src string, checkDiags []ownstyle.Diagnostic
 	}
 	dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedFileName(f.name))
 	//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
-	if err := os.WriteFile(dst, []byte(out), 0o644); err != nil {
+	if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	success("wrote %s", filepath.ToSlash(dst))
@@ -352,12 +365,12 @@ func stylePackageName(dir string) (string, error) {
 	return "", fmt.Errorf("directory %s holds a style sheet but no non-test Go files; a generated file must join an existing package", filepath.ToSlash(dir))
 }
 
-// writeStyleTokensCSS writes <root>/.gofastr/tokens.css: every theme
+// writeStyleTokensCSS writes .gofastr/tokens.css under wd: every theme
 // token with its light value (and dark value, when the theme carries
 // one, in a trailing comment) under :root, for editor completion in
 // .style.css files, the app's own tokens included. It is a public
 // build artifact, never served.
-func writeStyleTokensCSS(root string, app []ownstyle.AppTokenAt) error {
+func writeStyleTokensCSS(wd *os.Root, app []ownstyle.AppTokenAt) error {
 	tokens := ownstyle.CheckTokens(style.ThemeToTokens(uitheme.Default()), app)
 	var b strings.Builder
 	b.WriteString("/* Theme tokens for editor completion. Written by `gofastr gen styles`;\n")
@@ -410,12 +423,12 @@ func writeStyleTokensCSS(root string, app []ownstyle.AppTokenAt) error {
 	}
 	b.WriteString("}\n")
 
-	dir := filepath.Join(root, ".gofastr")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	const dir = ".gofastr"
+	if err := wd.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 	dst := filepath.Join(dir, "tokens.css")
-	if err := os.WriteFile(dst, []byte(b.String()), 0o644); err != nil {
+	if err := wd.WriteFile(dst, []byte(b.String()), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil
@@ -513,7 +526,7 @@ func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool
 // nothing else reads it — and whether any file failed. A file whose
 // tokens parsed is in that union even when its Go was not written, so
 // one typo does not cascade into GOFASTR1806 across the program.
-func generateTokenFiles(files []styleFile, srcOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
+func generateTokenFiles(wd *os.Root, files []styleFile, srcOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
 	failed := false
 	diagsOf := map[string][]ownstyle.Diagnostic{}
 	seen := map[ownstyle.FileDiagnostic]bool{}
@@ -566,7 +579,7 @@ func generateTokenFiles(files []styleFile, srcOf map[string]string, checks analy
 		}
 		dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedTokensFileName(f.name))
 		//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedTokensFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
-		if err := os.WriteFile(dst, []byte(out), 0o644); err != nil {
+		if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 			fail("write %s: %v", dst, err)
 			failed = true
 			continue

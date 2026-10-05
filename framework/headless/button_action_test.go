@@ -106,6 +106,10 @@ func TestButtonActionAdmitsTheWiringKeys(t *testing.T) {
 	has(t, got, `data-cui-rpc-after-text="Saved"`, "after-text did not land")
 	has(t, got, "data-cui-rpc-after-disable", "after-disable did not land")
 	has(t, got, `data-cui-rpc-scroll-to="#item"`, "scroll-to did not land")
+	got = Button(ButtonProps{Label: "Delete", Action: html.Attrs{
+		"data-cui-rpc": "/x", "data-cui-rpc-error-toast": "Could not delete.",
+	}}, nil)
+	has(t, got, `data-cui-rpc-error-toast="Could not delete."`, "error-toast did not land")
 }
 
 // A wiring key that would fire something — none of them do — or a

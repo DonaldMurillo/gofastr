@@ -173,6 +173,16 @@ func AllThemeOverrides() map[string]Theme {
 // lines (componentOptionDecls) after its own tokens, rebound to the
 // scope's palette.
 //
+// The lines compile the registered default set with the override's own
+// Components merged over it (withDefaultOptions), exactly as the :root
+// block does. A palette-only override — no Components, the common
+// ui.Themed band built from style.DefaultTheme — would otherwise emit
+// no option lines, and its primary button would draw the root's
+// resolved --color-primary instead of the scope's. The cost is that a
+// scope always declares the complete option set: a key it leaves out
+// takes the framework default, not an enclosing scope's value. That is
+// the same contract theme.Default already gives every theme it builds.
+//
 // # Dark mode follows the document, not the wrapper
 //
 // `data-color-scheme` is written on <html> (the color-scheme
@@ -190,7 +200,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
-	lines = append(lines, componentOptionDecls(t.Components)...)
+	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ".cui-theme-%s {\n", hash)
 	writeScopeLines(&b, "  ", lines)
@@ -230,7 +240,7 @@ func darkScopeLines(t Theme) []string {
 	for _, name := range sortedMapKeys(t.DarkCode) {
 		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
 	}
-	lines = append(lines, componentOptionDecls(t.Components)...)
+	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	return lines
 }
 

@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -95,6 +96,17 @@ type TagProps struct {
 	// with it, and the URL written after the swap. Required when
 	// DismissHref is set; ignored otherwise.
 	Island Island
+	// DismissMethod is the method the dismiss request is sent with.
+	// Empty is GET: a read, whose href the island writes to the URL
+	// after the swap. A mutation (POST, PUT, PATCH, DELETE) writes no
+	// URL of its own; the server answers with X-Gofastr-Push-State
+	// when it has one. The href stays the no-script destination either
+	// way.
+	DismissMethod string
+	// DismissBody is a static JSON body the dismiss request sends
+	// (data-cui-rpc-body). It must be JSON, and needs a DismissMethod
+	// other than GET.
+	DismissBody string
 	// DismissAriaLabel names the × for screen readers. Defaults to
 	// "Remove <Label>".
 	DismissAriaLabel string
@@ -148,7 +160,24 @@ func Tag(p TagProps, s Classes) render.HTML {
 		// The same element is both destinations: the href is the page
 		// without script, the island contract is the region update
 		// with it.
-		dismiss = Merge(dismiss, p.Island.attrs(p.DismissHref, "GET"))
+		method := strings.ToUpper(p.DismissMethod)
+		switch method {
+		case "":
+			method = "GET"
+		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			panic("headless: Tag DismissMethod " + strconv.Quote(p.DismissMethod) + " is not a method the runtime sends")
+		}
+		dismiss = Merge(dismiss, p.Island.attrs(p.DismissHref, method))
+		if p.DismissBody != "" {
+			if method == "GET" {
+				panic("headless: Tag DismissBody needs a DismissMethod other than GET — a GET sends no body")
+			}
+			if !json.Valid([]byte(p.DismissBody)) {
+				panic("headless: Tag DismissBody is not JSON — the runtime sends it verbatim and the server refuses it")
+			}
+			dismiss["data-cui-rpc-body"] = p.DismissBody
+		}
 		kids = append(kids, b.El("a", PartBadgeDismiss, Internal(dismiss), render.Text("×")))
 	}
 

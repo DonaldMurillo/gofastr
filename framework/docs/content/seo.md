@@ -151,7 +151,12 @@ declarations get no front-matter. See [Agent-readiness](/docs/agent-ready).
 
 `WithSitemap` lists every registered route. Dynamic routes
 (`/posts/:slug`) are expanded through the same `StaticPathsProvider`
-interface static export uses; routes without it are skipped. Exclude
+interface static export uses; routes without it are skipped. A screen
+whose policy chain answers an anonymous visitor with a redirect or a block
+(a `/app/*` screen behind sign-in) is left out too: the sitemap evaluates
+each page's policy as a signed-out GET, whoever fetches it, which is the
+same rule static export uses to skip gated screens. A screen whose policy
+renders an alternative (a login prompt) stays listed. Exclude other
 admin/internal prefixes with `ExcludePaths`.
 
 `WithRobots` serves `/robots.txt` and derives the `Sitemap:` line from

@@ -864,7 +864,17 @@ const (
 	// itself, which every sheet load goes through, so no carve exists;
 	// nine spellings of the same scan were measured and none fit the
 	// old line (level-1 gzip moves by single digits on spelling alone).
-	coreCongestionWindowGZ = 14*1024 + 1185
+	//
+	// 2026-10-04, the deploy-skew header (X-Gofastr-Markup on the click's
+	// partial fetch plus the kernel's _markup generation that demand
+	// modules read) took the real bundle 15520 -> 15532. 15533, the
+	// smallest step that fits. The header is the click path itself, so
+	// no demand-module carve exists: an old tab's first click after a
+	// deploy is exactly the request the server has to recognise. Six
+	// placements and spellings were measured (15532 to 15537); the
+	// header alone, with no kernel property, measures 15527. Bracket
+	// re-verified by TestCoreBudgetRejectsCliffOverflow.
+	coreCongestionWindowGZ = 14*1024 + 1197
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1037,7 +1047,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// toast, the retry, the epoch bump — and the scroll anchors went
 		// path-keyed with the _pushURL wrap and the popstate listener.
 		// Before that: 6041 (before the supersede rule moved in).
-		"envelope": 7621,
+		// 7662 measured after the leave capture started stripping
+		// in-flight rpc state (cui-loading, aria-busy, disabled,
+		// data-state=pending) from the cached markup, so a cached
+		// screen never restores a control stuck busy.
+		// 7664 measured after the session-id rewrite took a replacer
+		// function, so a `$&` or `$1` in the header is never read as a
+		// replacement pattern.
+		"envelope": 7664,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

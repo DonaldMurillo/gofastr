@@ -60,11 +60,11 @@
     const li = doc.createElement('li');
     li.setAttribute('data-hui-tag-input-remove', '');
     const labelFmt = root.getAttribute('data-hui-tag-input-remove-label') || '';
-    li.setAttribute('aria-label', labelFmt.replace('%s', v));
+    li.setAttribute('aria-label', labelFmt.replace('%s', () => v));
     li.appendChild(doc.createTextNode(v));
     const rm = doc.createElement('button');
     rm.type = 'button';
-    rm.setAttribute('aria-label', labelFmt.replace('%s', v));
+    rm.setAttribute('aria-label', labelFmt.replace('%s', () => v));
     rm.textContent = '×';
     li.appendChild(rm);
     const hidden = doc.createElement('input');
@@ -92,7 +92,7 @@
     list.appendChild(makeChip(root, val));
     input.value = '';
     const status = statusOf(root);
-    if (status) say(status, (status.getAttribute('data-hui-tag-input-added') || '').replace('{name}', val));
+    if (status) say(status, (status.getAttribute('data-hui-tag-input-added') || '').replace('{name}', () => val));
     return true;
   }
 
@@ -102,7 +102,7 @@
     // The hidden input this chip rode with is inside it; removing the
     // list item removes the value from the form.
     const status = statusOf(root);
-    if (status) say(status, (status.getAttribute('data-hui-tag-input-removed') || '').replace('{name}', v));
+    if (status) say(status, (status.getAttribute('data-hui-tag-input-removed') || '').replace('{name}', () => v));
     chip.remove();
     const field = fieldOf(root);
     if (field) field.focus();

@@ -564,12 +564,21 @@ Registration carries the framework's complete default set, and that
 set is the **:root floor**: a theme with no `Components` of its own (a
 bare `style.DefaultTheme()`, the `gofastr theme init` scaffold, a host
 with no `App.Theme`) emits the defaults at `:root`, so the component
-rules consuming `--fui-*` variables resolve on every host. The floor
-is root-only — a scoped theme with no options inherits its parent's
-variables, which is the nesting contract — and it does not touch a
-theme's identity: an optionless theme hashes as optionless in every
-binary. There are still no in-CSS fallbacks (`var(--x, fallback)`):
-the floor lives at `:root`, where one declaration covers every rule.
+rules consuming `--fui-*` variables resolve on every host. A theme
+that sets only some options gets them merged over the floor key by
+key: `Components{"density": "compact"}` emits the compact density and
+keeps the default filled, round buttons and stacked fields, so declare
+only the options you change. Scoped themes get the same floor: a
+`ui.Themed` override with no `Components` (a palette-only band built
+from `style.DefaultTheme()`) still declares the full option set inside
+its `.cui-theme-<hash>` blocks, so its primary button draws the
+scope's `--color-primary`, not the page's. A key a scope leaves out
+takes the framework default, not the enclosing scope's value; to
+carry an option into a nested scope, set it on that scope too. The
+floor does not touch a theme's identity: an optionless theme hashes
+as optionless in every binary. There are still no in-CSS fallbacks
+(`var(--x, fallback)`): the floor lives at the theme boundaries,
+where one declaration covers every rule beneath it.
 
 | Option | Emits |
 |---|---|

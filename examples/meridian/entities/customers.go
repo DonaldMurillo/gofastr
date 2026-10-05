@@ -229,7 +229,7 @@ func registerCustomers(app *framework.App) {
 	app.Entity("customers", framework.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: floatPtr(120)},
-			{Name: "email", Type: schema.String, Required: true, Unique: true},
+			{Name: "email", Type: schema.String, Required: true},
 			{Name: "company", Type: schema.String, Max: floatPtr(120)},
 			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
 			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
@@ -243,7 +243,7 @@ func registerCustomers(app *framework.App) {
 			MCP:  true,
 		},
 		Indices: []framework.Index{
-			{Name: "idx_customers_email", Columns: []string{"email"}, Unique: true},
+			{Name: "idx_customers_owner_email", Columns: []string{"user_id", "email"}, Unique: true},
 		},
 		Properties: map[string]any{"label": "Customers"},
 	})

@@ -58,11 +58,12 @@ func TestCodeBlockHighlightLineClasses(t *testing.T) {
 		t.Fatalf("ParseLineRanges: %v", err)
 	}
 	h := string(CodeBlock(CodeBlockConfig{Code: "one\ntwo\nthree", HighlightLines: ranges}))
-	if want := `<span class="fui-code-block__line fui-code-block__line--highlight">two</span>`; !strings.Contains(h, want) {
+	// Every line but the last carries its own newline (see codeBlockLine).
+	if want := `<span class="fui-code-block__line fui-code-block__line--highlight">two` + "\n</span>"; !strings.Contains(h, want) {
 		t.Errorf("highlighted line missing its class:\n%s", h)
 	}
 	for _, plain := range []string{
-		`<span class="fui-code-block__line">one</span>`,
+		`<span class="fui-code-block__line">one` + "\n</span>",
 		`<span class="fui-code-block__line">three</span>`,
 	} {
 		if !strings.Contains(h, plain) {
@@ -176,7 +177,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 	// The head (built from Filename, ShowCopy's copy button, and the
 	// line count — none of it a caller's markup) and the body (Code
 	// only here, no Lines) are both this component's own.
-	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-cui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" data-cui-internal="" id="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-cui-internal="" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" data-cui-internal="" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
+	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-cui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" data-cui-internal="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-cui-internal="" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" data-cui-internal="" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
 	if framed != wantFramed {
 		t.Errorf("framed zero-config output changed:\n got: %s\nwant: %s", framed, wantFramed)
 	}
@@ -186,7 +187,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 	}))
 	// The head is still this component's own; the body now holds
 	// Lines, the caller's slot, so it is left unmarked.
-	wantLines := `<div class="fui-code-block fui-code-block--framed" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1</span><span class="fui-code-block__line">b := 2</span></pre></div>`
+	wantLines := `<div class="fui-code-block fui-code-block--framed" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1` + "\n" + `</span><span class="fui-code-block__line">b := 2</span></pre></div>`
 	if lines != wantLines {
 		t.Errorf("Lines zero-config output changed:\n got: %s\nwant: %s", lines, wantLines)
 	}

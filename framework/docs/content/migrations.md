@@ -151,8 +151,12 @@ Flags & inputs:
 
 - `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
   a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--driver=<name>`: defaults to `sqlite3`. Postgres or MySQL require
-  building a `gofastr` binary that blank-imports the matching driver.
+- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` (the
+  default), `postgres` or `mysql`; `sqlite3` and `postgresql` are
+  accepted as aliases, the same table `gofastr init --db=` uses.
+  Postgres or MySQL require building a `gofastr` binary that
+  blank-imports the matching driver; an unregistered driver is refused,
+  never replaced by SQLite.
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created

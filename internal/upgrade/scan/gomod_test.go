@@ -50,3 +50,42 @@ func TestGoModToolchainIgnored(t *testing.T) {
 	// The go directive, not the toolchain line, decides.
 	wantHits(t, res, n, "go.mod:"+strconv.Itoa(lineOf("module example.com/app\n\n"+gomod+"\n", "go 1.26.3"))+":0 gomod go 1.26.3 < 1.27")
 }
+
+func TestGoVersionPrereleaseBelowRelease(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		less bool
+	}{
+		{"1.26rc1", "1.27", true},
+		// Go's own order: a bare language version sits below every
+		// release of its minor, prereleases included (1.26 < 1.26rc1
+		// < 1.26.0), so a go 1.27rc1 directive is not below 1.27.
+		{"1.26", "1.26rc1", true},
+		{"1.26rc1", "1.26", false},
+		{"1.26beta1", "1.26rc1", true},
+		{"1.26rc1", "1.26rc2", true},
+		{"1.27rc1", "1.27", false},
+		{"1.27rc1", "1.27.0", true},
+		{"1.27beta2", "1.27", false},
+		{"1.26", "1.27", true},
+		{"1.26.3", "1.27", true},
+		{"1.27", "1.27", false},
+		{"1.27.0", "1.27", false},
+		{"1.27", "1.27.0", true},
+		{"1.27", "1.27rc1", true},
+		{"1.28rc1", "1.27", false},
+		{"1.26rc", "1.27", false},
+		{"1.26gamma1", "1.27", false},
+	} {
+		if got := goVersionLess(c.a, c.b); got != c.less {
+			t.Errorf("goVersionLess(%q, %q) = %v, want %v", c.a, c.b, got, c.less)
+		}
+	}
+}
+
+func TestGoModPrereleaseBelow(t *testing.T) {
+	gomod := "go 1.26rc1"
+	n := gomodNote("1.27")
+	res := mustRun(t, goModApp(t, gomod), n)
+	wantHits(t, res, n, "go.mod:"+strconv.Itoa(lineOf("module example.com/app\n\n"+gomod+"\n", gomod))+":0 gomod go 1.26rc1 < 1.27")
+}

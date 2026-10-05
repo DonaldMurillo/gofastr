@@ -249,6 +249,7 @@ func runNativePhase(h *desktoptest.NativeHarness) bool {
 		{"TwoWindowsTalkThroughBridge", phaseTwoWindows},
 		{"WidgetSpecOpensAPanel", phaseWidgetSpec},
 		{"DeepLinkNavigatesRealPage", phaseDeepLink},
+		{"DeepLinkDuringDocumentLoad", phaseDeepLinkDuringLoad},
 		{"PageStateRoundTrips", phasePageState},
 		{"RemembersWindowFrames", phaseWindowState},
 		{"ChromeContractOnTheOS", phaseWindowChrome},
@@ -594,6 +595,41 @@ func phaseDeepLink(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	if err := ev.Unmarshal(&p); err != nil || p.URL != e2eScheme+"://two" || p.Path != "/two" {
 		t.Fatalf("deep_link payload = %s (err %v)", ev.Payload, err)
 	}
+}
+
+// phaseDeepLinkDuringLoad: a link that arrives while the main window
+// is loading a document, the cold-launch shape (the queued link is
+// flushed right after the boot navigation, before /enter has
+// answered). The window is parked on about:blank, a document load of
+// the app's root starts, and the link is posted at once: the runtime
+// is not there yet, so an eval of window.__gofastr.navigate throws
+// and the window used to land on "/" with the link lost. Delivery
+// waits for the page's runtime and the window lands on /two.
+func phaseDeepLinkDuringLoad(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	w, ok := h.Battery.Window()
+	if !ok {
+		t.Fatalf("no main window")
+	}
+	raw, err := h.EvalQuiet("return location.origin")
+	if err != nil {
+		t.Fatalf("origin: %v", err)
+	}
+	var origin string
+	if err := json.Unmarshal(raw, &origin); err != nil || origin == "" {
+		t.Fatalf("origin = %s (%v)", raw, err)
+	}
+	if err := w.Navigate("about:blank"); err != nil {
+		t.Fatalf("navigate about:blank: %v", err)
+	}
+	h.Wait("the blank page", func() bool {
+		r, err := h.EvalQuiet("return typeof window.__gofastr")
+		return err == nil && string(r) == `"undefined"`
+	})
+	if err := w.Navigate(origin + "/"); err != nil {
+		t.Fatalf("navigate root: %v", err)
+	}
+	h.OpenURL(e2eScheme + "://two")
+	h.WaitLocation("/two")
 }
 
 // phasePageState: the real page's bridge round-trips a state key

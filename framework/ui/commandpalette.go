@@ -427,7 +427,7 @@ func commandPaletteCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
-  font-family: var(--fonts-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, monospace);
   padding: 1px 6px;
   border: 1px solid var(--color-border, #d0d0d8);
   border-bottom-width: 2px;

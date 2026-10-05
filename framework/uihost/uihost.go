@@ -904,6 +904,19 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   opacity: 1;
   transform: translateY(0);
 }
+/* data-cui-flash-on-update: the runtime adds .cui-flash to a
+   signal-bound element after each update and removes it after
+   data-cui-flash-duration-ms. The highlight fades from a primary tint
+   back to the element's own background. Motion-averse users get no
+   animation (the runtime also skips the class for them). */
+@media (prefers-reduced-motion: no-preference) {
+  .cui-flash {
+    animation: cui-flash var(--duration-slow, 400ms) var(--easing-ease-out, ease-out);
+  }
+}
+@keyframes cui-flash {
+  from { background-color: color-mix(in srgb, var(--color-primary, #4F46E5) 25%, transparent); }
+}
 /* Progress indicator on slow SPA navigation. The bar tracks the theme's
    primary color via the token — a literal hex here would keep the bar
    indigo in a teal app, and would ignore a per-request theme variant
@@ -2922,6 +2935,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 // http.StatusNotFound so a missed navigation answers partial-shaped
 // with the error status.
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
+	// Deploy skew: a runtime that reads another markup generation must
+	// not receive this body (markupskew.go).
+	if staleMarkupClient(r) {
+		writeStaleMarkupReload(w, r, path, res.SwapLayer)
+		return
+	}
 	// The status is decided ONCE, here, before any body byte (DESIGN
 	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
 	// the component's own ScreenStatusCode (the same contract the

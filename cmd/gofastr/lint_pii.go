@@ -31,6 +31,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -173,6 +174,66 @@ func lastPathSegment(module string) string {
 		return module[i+1:]
 	}
 	return module
+}
+
+// ownerUniqueFinding is one uniqueness rule on an owner-scoped entity that
+// leaves the owner column out: a unique field, or a unique index whose
+// columns do not include owner_field.
+type ownerUniqueFinding struct {
+	Entity     string
+	OwnerField string
+	Field      string // set for a field-level unique
+	Index      string // set for a unique index
+	Columns    []string
+}
+
+func (f ownerUniqueFinding) Message() string {
+	what := fmt.Sprintf("field %q is unique: true", f.Field)
+	cols := append([]string{f.OwnerField}, f.Field)
+	if f.Index != "" {
+		what = fmt.Sprintf("unique index %q on (%s) leaves out %s", f.Index, strings.Join(f.Columns, ", "), f.OwnerField)
+		cols = append([]string{f.OwnerField}, f.Columns...)
+	}
+	return fmt.Sprintf(
+		"entity %q is owner-scoped (owner_field: %s) but %s, so uniqueness spans every account: one user's row blocks another user's create, and the 409 tells them the value exists in someone else's rows. To scope it per owner, drop it and declare a unique index under indices: with columns [%s]. Keep it only if the value is meant to be unique across all accounts",
+		f.Entity, f.OwnerField, what, strings.Join(cols, ", "))
+}
+
+// lintOwnerScopedUnique flags uniqueness that spans owners on an
+// owner-scoped entity: a unique field other than owner_field itself, or a
+// unique index whose columns do not include owner_field. Only values a
+// caller can write count: a read_only field is server-assigned (an
+// auto_generate: uuid order number), so no caller can collide with it or
+// probe it, and an index whose columns are all read_only or undeclared
+// (created_at) stays quiet too. A warning from `gofastr validate` and
+// `gofastr generate`, never an error: a value unique across all accounts
+// (a public handle) can be deliberate.
+func lintOwnerScopedUnique(bp Blueprint) []ownerUniqueFinding {
+	var out []ownerUniqueFinding
+	for _, decl := range bp.Entities {
+		owner := entityDeclarationScope(decl).OwnerField
+		if owner == "" {
+			continue
+		}
+		writable := map[string]bool{}
+		for _, f := range decl.Fields {
+			if !f.ReadOnly && f.Name != owner {
+				writable[f.Name] = true
+			}
+		}
+		for _, f := range decl.Fields {
+			if f.Unique && writable[f.Name] {
+				out = append(out, ownerUniqueFinding{Entity: decl.Name, OwnerField: owner, Field: f.Name})
+			}
+		}
+		for _, idx := range decl.Indices {
+			if idx.Unique && !slices.Contains(idx.Columns, owner) &&
+				slices.ContainsFunc(idx.Columns, func(c string) bool { return writable[c] }) {
+				out = append(out, ownerUniqueFinding{Entity: decl.Name, OwnerField: owner, Index: idx.Name, Columns: idx.Columns})
+			}
+		}
+	}
+	return out
 }
 
 // lintPublicEntities returns one finding per blueprint entity declaring

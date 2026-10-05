@@ -103,6 +103,17 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	// minting — the partial page path's re-mint would attach a fresh
 	// Set-Cookie to an auth-failure response.
 	if r.Header.Get("X-Gofastr-Navigate") == "1" {
+		// The same navigation contract as handlePartialPage: a runtime
+		// from before the deploy reads a different markup generation
+		// and gets the reload body instead of a screen it cannot
+		// place; a current one gets the partial marked as such, so
+		// nav.js never reads a bare screen body as a full document.
+		if staleMarkupClient(r) {
+			w.Header().Del("Cache-Control")
+			writeStaleMarkupReload(w, r, r.URL.Path, "")
+			return
+		}
+		w.Header().Set("X-Gofastr-Partial", "true")
 		w.WriteHeader(status)
 		fmt.Fprint(w, string(body))
 		return

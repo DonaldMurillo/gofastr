@@ -487,7 +487,7 @@ func (s *scanner) consumeBadURLRemnants() {
 // consume algorithms. It never fails: malformed input yields bad-string
 // / bad-url tokens and unterminated comments that the parser reports.
 func Tokenize(src string) []Token {
-	s := newScanner(src)
+	s := newScanner(stripBOM(src))
 	out := make([]Token, 0, 64)
 	emit := func(t TokenType, start, line, col int) {
 		out = append(out, Token{t, s.src[start:s.pos], line, col, start, s.pos})
@@ -672,4 +672,13 @@ func tokenRunText(toks []Token) string {
 		sb.WriteString(t.Text)
 	}
 	return sb.String()
+}
+
+// stripBOM drops a leading UTF-8 byte order mark. CSS decoding removes
+// it before the tokenizer ever sees the stream; a sheet an editor saved
+// with one is the same sheet, and keeping it would glue U+FEFF onto the
+// first selector (matching nothing) and put it into the emitted Go,
+// which gofmt refuses.
+func stripBOM(src string) string {
+	return strings.TrimPrefix(src, "\xEF\xBB\xBF")
 }

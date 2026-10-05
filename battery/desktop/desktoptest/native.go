@@ -601,12 +601,20 @@ func (h *NativeHarness) RecordEvents(t TB, names ...string) {
 		return
 	}
 	namesJSON, _ := json.Marshal(names)
-	body := fmt.Sprintf(`window.__gofastrTestEvents = window.__gofastrTestEvents || {all: []};`+
+	body := fmt.Sprintf(`const fresh = !window.__gofastrTestEvents;`+
+		` window.__gofastrTestEvents = window.__gofastrTestEvents || {all: []};`+
 		` const rec = window.__gofastrTestEvents;`+
 		` for (const n of %s) { if (rec["on_" + n]) continue; rec["on_" + n] = true;`+
 		` window.__gofastr.desktop.on(n, p => rec.all.push({name: n, payload: p})); }`+
-		` return true;`, namesJSON)
-	h.mainEval(t, body)
+		` return fresh;`, namesJSON)
+	// The recorder lives on the page: a document reload between phases
+	// (a deep link arriving mid-load, a hard navigation) wipes it, and
+	// the next install starts a new list at index 0. WaitEvent's cursor
+	// must restart with it, or every later event lands below the cursor
+	// and the wait times out.
+	if string(h.mainEval(t, body)) == "true" {
+		h.eventsSeen = 0
+	}
 }
 
 // Events reads the recorder back, in delivery order; nil when no

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -124,6 +125,40 @@ func TestSitemapExcludePaths(t *testing.T) {
 	}
 	if !strings.Contains(body, "/about") {
 		t.Errorf("expected /about to remain, got: %s", body)
+	}
+}
+
+// A screen whose policy refuses an anonymous visitor (the screens the
+// static export skips) is not a page a crawler can read: the sitemap
+// leaves it out, even when the sitemap request itself is signed in.
+func TestSitemapOmitsPolicyGatedScreens(t *testing.T) {
+	signedIn := app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if r := app.RequestFromContext(ctx); r != nil && r.Header.Get("X-Test-User") != "" {
+			return decide.Allow()
+		}
+		return decide.Redirect("/login")
+	})
+	a := app.NewApp("x")
+	a.Register("/", &plainComp{}, nil)
+	a.RegisterScreen(app.NewScreen("/app/dash", &plainComp{}).WithPolicy(signedIn), nil)
+	a.RegisterScreen(app.NewScreen("/app/blocked", &plainComp{}).
+		WithPolicy(app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403, "no") })), nil)
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}))
+
+	for _, user := range []string{"", "u1"} {
+		req := httptest.NewRequest("GET", "/sitemap.xml", nil)
+		if user != "" {
+			req.Header.Set("X-Test-User", user)
+		}
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		body := w.Body.String()
+		if !strings.Contains(body, `<loc>https://example.com/</loc>`) {
+			t.Errorf("user %q: public root missing:\n%s", user, body)
+		}
+		if strings.Contains(body, "/app/") {
+			t.Errorf("user %q: sitemap lists a gated screen:\n%s", user, body)
+		}
 	}
 }
 

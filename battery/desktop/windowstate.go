@@ -117,6 +117,27 @@ func (s *windowStore) setFrame(id string, f Frame) {
 	s.save(w)
 }
 
+// forget drops a window's remembered frame. Secondary window ids are
+// minted fresh for every open (w2, w3, ...) and never reused, so a
+// frame kept past its window's close is a leak that grows the entry
+// by one frame per open until it passes the appstate value cap, after
+// which every later write, the main window's frame and path included,
+// fails for good. The main and settings windows keep their frames:
+// their ids are stable and the frame is what restores them next run.
+func (s *windowStore) forget(id string) {
+	if id == "" || id == MainWindowID || id == "settings" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w := s.windows()
+	if _, ok := w[id]; !ok {
+		return
+	}
+	delete(w, id)
+	s.save(w)
+}
+
 // setMainPath remembers the main window's path; the store schedules
 // the debounced write.
 func (s *windowStore) setMainPath(p string) {
