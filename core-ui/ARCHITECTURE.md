@@ -454,7 +454,10 @@ load) the idle-loaded `activelink` module walks every `nav a` with an
 `href` and tags the one matching the current path with
 `aria-current="page"` and the `active` class — the value is `page`, the
 ARIA-correct value for a page link, NOT `true`, so
-`[aria-current="true"]` selectors do not match it. Clearing is
+`[aria-current="true"]` selectors do not match it. A widget root
+announced by `fui:widget-open` gets the same sweep, scoped to that
+root: the sidebar's phone drawer is fetched after load and rendered
+with no current path, and no navigation follows its mount. Clearing is
 ownership-based: a link loses both when it carries the module's own
 `.active` class, the `data-cui-activelink` handover (`headless.Sidebar`
 marks every leaf with it) or the `data-cui-match-prefix` handover. The

@@ -66,3 +66,20 @@ func TestE2E_PhoneDrawerOffersSignOut(t *testing.T) {
 		t.Errorf("signed-in phone drawer offers no Sign out; drawer text:\n%s", text)
 	}
 }
+
+// The drawer chrome is fetched after load and rendered without a
+// current path, so only the runtime's active-link sweep can mark the
+// entry for the page the drawer opened over, as the desktop column is.
+func TestE2E_PhoneDrawerMarksCurrent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds + boots the binary")
+	}
+	var current string
+	openPhoneDrawer(t, "/app/customers", chromedp.Evaluate(`(() => {
+		const a = document.querySelector('`+drawerSel+` a[aria-current="page"]');
+		return a ? a.getAttribute('href') : '';
+	})()`, &current))
+	if current != "/app/customers" {
+		t.Errorf("phone drawer marks %q as the current entry on /app/customers, want /app/customers", current)
+	}
+}
