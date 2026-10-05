@@ -184,6 +184,15 @@ type Signaler struct {
 	cfg    Config
 	logger *slog.Logger
 
+	// testAtAnnounce / testAnnounceGate, when set, are a test seam on
+	// a joining socket's goroutine between its snapshot being queued
+	// and its join being announced: Serve sends the peer id on the
+	// first and waits on the second, so the join-ordering test can
+	// place a second socket inside the hydrate-then-announce window.
+	// Both nil outside tests.
+	testAtAnnounce   chan string
+	testAnnounceGate chan struct{}
+
 	// mu serializes every room mutation and every channel Publish, so
 	// event order on a room's channel equals mutation order (the
 	// sequence discipline StateChannel snapshots reconcile against).

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -104,6 +105,14 @@ type room struct {
 	// RoomIdleTTL after this.
 	emptySince time.Time
 	channel    *stream.StateChannel[string, roomSnapshot, roomEvent]
+	// announce serializes hydrate-then-announce per joining socket:
+	// held from Connect (the snapshot job is queued and run) through
+	// the join publish, so a socket that joins next queues its snapshot
+	// behind this join and never hears a join for a peer its snapshot
+	// already lists (the browser module reads such a join as a
+	// reconnect and rebuilds a connection it just made). Never taken
+	// under s.mu; s.mu is taken under it.
+	announce sync.Mutex
 }
 
 // roomPeer is one locally connected socket and its identity.
@@ -340,7 +349,12 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	// returns once the snapshot is queued; the join that follows
 	// carries a greater sequence and is filtered out for its subject.
 	defer s.peerGone(join.Room, p)
+	rm.announce.Lock()
 	rm.channel.Connect(peerID, conn)
+	if s.testAtAnnounce != nil {
+		s.testAtAnnounce <- peerID
+		<-s.testAnnounceGate
+	}
 
 	s.mu.Lock()
 	if rm.peers[peerID] == p {
@@ -351,6 +365,7 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	}
 	roomLog, peerLog, roleLog := scrubLogField(join.Room), scrubLogField(peerID), scrubLogField(join.Role)
 	s.mu.Unlock()
+	rm.announce.Unlock()
 	s.logger.Debug("rtc: join", "room", roomLog, "peer", peerLog, "role", roleLog)
 
 	for {
