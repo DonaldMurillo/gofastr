@@ -271,6 +271,34 @@ func TestDetailTransitionUnknownVariantSecondary(t *testing.T) {
 	}
 }
 
+// A refused Delete or transition (a 409 for a referenced record) must
+// reach the user: each detail action carries the runtime's error-toast
+// hook, not only an OnSuccess navigate.
+func TestDetailActionsCarryErrorToast(t *testing.T) {
+	cfg := Config{
+		Entity:   "orders",
+		Title:    "Orders",
+		Singular: "order",
+		BasePath: "/orders",
+		APIPath:  "/api/orders",
+		CanEdit:  true,
+		Crud:     &stubSource{rows: []map[string]any{{"id": "o-1", "status": "open"}}},
+		Transitions: []Transition{
+			{Label: "Ship", Status: "shipped"},
+		},
+		Fields: []Field{{Key: "status", Label: "State", Type: "enum"}},
+	}
+	html := string(cfg.Detail(context.Background(), "o-1"))
+	for _, want := range []string{
+		`data-cui-rpc-error-toast="Could not delete this order."`,
+		`data-cui-rpc-error-toast="Could not ship."`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("detail actions missing %s:\n%s", want, html)
+		}
+	}
+}
+
 // betweenAttr pulls attr="…" out of an <option …-shaped segment.
 func betweenAttr(seg, attr string) string {
 	needle := attr + `="`

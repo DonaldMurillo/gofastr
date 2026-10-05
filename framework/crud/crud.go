@@ -1237,6 +1237,14 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusConflict, "conflict")
 		return
 	}
+	if isForeignKeyViolation(err) {
+		// A dangling reference on create/update, or a delete of a row
+		// other rows still point at, is a state conflict the caller can
+		// resolve, not a server fault. Same no-leak posture as above:
+		// the constraint and table names stay in the server log.
+		writeJSONError(w, http.StatusConflict, "conflict: the record is referenced by, or references, another record")
+		return
+	}
 	// Unrecognised error → 500 with a generic message. Returning
 	// err.Error() here leaks driver-specific details (`pq: relation
 	// "users" does not exist`, `dial tcp 10.0.0.1:5432: ...`,
@@ -1263,6 +1271,30 @@ func isUniqueViolation(err error) bool {
 		"UNIQUE constraint failed",
 		"duplicate key value",
 		"Error 1062",
+	} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+// isForeignKeyViolation reports whether err looks like a FOREIGN KEY
+// violation: SQLite (modernc and mattn) "FOREIGN KEY constraint failed"
+// (extended code 787), Postgres SQLSTATE 23503 "violates foreign key
+// constraint" (pgx and lib/pq), MySQL errors 1451/1452. Message sniffing
+// for the same reason as isUniqueViolation.
+func isForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, sig := range []string{
+		"FOREIGN KEY constraint failed",
+		"violates foreign key constraint",
+		"SQLSTATE 23503",
+		"Error 1451",
+		"Error 1452",
 	} {
 		if strings.Contains(msg, sig) {
 			return true
@@ -1397,7 +1429,8 @@ func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) strin
 
 func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields []schema.Field) ([]map[string]any, error) {
 	boolCols := databaseBoolColumnsForEntity(rows, len(cols), fields, cols)
-	var results []map[string]any
+	// Empty, not nil: an empty page must encode as "data":[], never null.
+	results := []map[string]any{}
 	for rows.Next() {
 		values := make([]any, len(cols))
 		ptrs := make([]any, len(cols))

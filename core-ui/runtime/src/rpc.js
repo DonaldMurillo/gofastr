@@ -130,6 +130,7 @@
     const responseSignal = node.getAttribute('data-cui-rpc-signal');
     const closeOnSuccess = node.hasAttribute('data-cui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-cui-rpc-reset') && node.tagName === 'FORM';
+    const errToast = node.getAttribute('data-cui-rpc-error-toast');
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
@@ -241,6 +242,15 @@
           NS.loadModule('formerrors')
             .then(() => NS._formErrors.report(formSource, r.status, txt))
             .catch(() => {});
+        } else if (errToast !== null) {
+          // An opted-in button: the attribute is the title, the server's
+          // JSON "error" (textContent in the toast, never markup) the body.
+          let msg = '';
+          try {
+            const d = JSON.parse(txt);
+            if (d && typeof d.error === 'string') msg = d.error.slice(0, 300);
+          } catch (_) {}
+          NS._toastOrFallback?.({ variant: 'error', title: errToast || ('Request failed (' + r.status + ')'), body: msg, ttl: 6000 });
         }
         return;
       }
@@ -322,6 +332,9 @@
       }
     } catch (err) {
       if (err && err.name === 'AbortError') return;
+      if (errToast !== null) {
+        NS._toastOrFallback?.({ variant: 'error', title: errToast || 'Request failed', body: 'Network error — please try again', ttl: 6000 });
+      }
       if (responseSignal) {
         NS.setSignal(responseSignal, {
           ok: false,

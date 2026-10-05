@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
 type Blueprint struct {
@@ -6064,18 +6065,9 @@ func blueprintDisplayField(decl framework.EntityDeclaration) string {
 	return "id"
 }
 
-// singularize is a naive English singularizer for entity display names.
-func singularize(s string) string {
-	switch {
-	case strings.HasSuffix(s, "ies"):
-		return s[:len(s)-3] + "y"
-	case strings.HasSuffix(s, "ses"), strings.HasSuffix(s, "xes"):
-		return s[:len(s)-2]
-	case strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "ss"):
-		return s[:len(s)-1]
-	}
-	return s
-}
+// singularize is the naive English singularizer for entity display names,
+// shared with the admin battery so both spell "Category" the same way.
+func singularize(s string) string { return inflect.Singular(s) }
 
 // screenNeedsCtx reports whether a screen renders any request-time, server-side
 // data block (top-level entity_list/entity_detail, or any data-bound widget with

@@ -40,6 +40,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
 // registerEntityAdmin wires the entity CRUD screens + RPC/form routes. Screens
@@ -123,11 +124,20 @@ func (b *Battery) navConfig(ents []*entity.Entity) interactive.SectionMenuConfig
 			Href:  b.entityBase(ent),
 		})
 	}
+	// The ops screens (navHTML's shell) link to the entity pages; this
+	// group links back, so neither shell is a dead end.
+	ops := []interactive.SectionItem{
+		{Label: "Overview", Href: b.cfg.PathPrefix},
+		{Label: "Audit log", Href: b.cfg.PathPrefix + "/audit"},
+	}
 	return interactive.SectionMenuConfig{
 		AriaLabel:    title + " navigation",
 		TriggerLabel: "Menu",
 		DrawerName:   "admin-nav",
-		Groups:       []interactive.SectionGroup{{Label: title, Items: items}},
+		Groups: []interactive.SectionGroup{
+			{Label: "Operations", Items: ops},
+			{Label: title, Items: items},
+		},
 	}
 }
 
@@ -785,7 +795,7 @@ func crudFieldErrors(raw []byte) map[string]string {
 	return out
 }
 
-func singular(name string) string { return strings.TrimSuffix(name, "s") }
+func singular(name string) string { return inflect.Singular(name) }
 
 // titleCase upper-cases the first rune (for nav labels). ASCII-simple; entity
 // names are identifiers, not prose.

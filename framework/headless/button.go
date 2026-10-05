@@ -150,6 +150,11 @@ func actionAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Action carries an empty " + k + " — it names or says something, and empty names nothing")
 			}
 			out[k] = v
+		case "data-cui-rpc-error-toast":
+			// The title of the toast a refused request shows (rpc.js,
+			// read as textContent). Empty is allowed: the runtime
+			// titles it with the status instead.
+			out[k] = v
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
 			"data-cui-intercept-close":
 			// Presence is the value. intercept-close closes the

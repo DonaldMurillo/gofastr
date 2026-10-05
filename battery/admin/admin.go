@@ -740,7 +740,7 @@ func (b *Battery) handleCSS(w http.ResponseWriter, _ *http.Request) {
 // navHTML builds the admin nav as ui.Link action targets inside a <nav>. The
 // current page's link carries aria-current="page"; the active styling comes
 // from a scoped rule in the registered ui-admin sheet. Queue appears only
-// with real backing; Overview/Audit and configured entities remain fixed.
+// with real backing; Overview/Audit and the exposed entities remain fixed.
 func (b *Battery) navHTML(current string) render.HTML {
 	type link struct{ label, href string }
 	links := []link{{"Overview", b.cfg.PathPrefix}}
@@ -749,12 +749,9 @@ func (b *Battery) navHTML(current string) render.HTML {
 	}
 	links = append(links, link{"Audit log", b.cfg.PathPrefix + "/audit"})
 	if b.registry != nil {
-		byName := b.registry.All()
-		for _, name := range b.cfg.Entities {
-			ent, ok := byName[name]
-			if !ok {
-				continue
-			}
+		// The same resolver the entity pages mount from, so AllEntities
+		// (Config.Entities empty) lists every exposed entity too.
+		for _, ent := range b.entitiesToExpose() {
 			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
 		}
 	}

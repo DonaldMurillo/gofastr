@@ -668,6 +668,16 @@ func TestWithConfirmEmitsAttr(t *testing.T) {
 	}
 }
 
+func TestOnErrorToastEmitsAttr(t *testing.T) {
+	attrs := Delete("/api/item/1").OnErrorToast("Could not delete.").Attrs()
+	if got := attrs["data-cui-rpc-error-toast"]; got != "Could not delete." {
+		t.Fatalf("OnErrorToast attr = %q, want the title: %v", got, attrs)
+	}
+	if _, ok := Delete("/api/item/1").Attrs()["data-cui-rpc-error-toast"]; ok {
+		t.Fatal("an action without OnErrorToast must not carry the hook")
+	}
+}
+
 func TestAfterTextEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Save"))
 	result := OnClick(btn, Post("/api/save").OnSuccess(AfterText("Saved ✓")))
