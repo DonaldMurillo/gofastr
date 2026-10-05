@@ -146,6 +146,13 @@ On a store error the limiter **fails closed** (denies); degrading the backend
 must never lift the limit. A custom Redis/etcd backend only needs to satisfy the
 `ratelimit.Store` interface.
 
+The budget holds under concurrency. `SQLRateLimitStore` records each attempt
+before it counts, so a burst on one key admits at most `MaxAttempts` callers
+across every replica; when the whole burst lands at once it can admit fewer,
+and the key blocks either way. A custom `Store` must keep the same property: a
+count followed by a separate insert lets every caller in a burst read the same
+pre-insert count. Record first and count second, or use an atomic counter.
+
 ## X-Forwarded-For and proxies
 
 `ClientIP` (and therefore the default `Middleware()`) ignores
