@@ -266,7 +266,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-fill-input="<selector>"` / `data-cui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
 | `data-cui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
 | `data-cui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage`, stored namespaced as `gofastr.persist.` + `encodeURIComponent(<key>)` so an attribute-borne key can only ever touch that namespace. A value stored under the pre-namespace raw `<key>` is not read. |
-| `data-cui-flash-on-update` / `data-cui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `cui-flash`) for `<ms>` after each update. |
+| `data-cui-flash-on-update` / `data-cui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `cui-flash`) for `<ms>` after each update (default 600). The built-in app.css styles the class: a `--color-primary` tint fading to the element's own background over `--duration-slow`, only under `prefers-reduced-motion: no-preference` (the runtime skips the class under `reduce`). |
 | `data-cui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |
 | `data-cui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
 | `data-cui-rpc-body="<json>"` | Static JSON body for `data-cui-rpc` requests that don't come from a `<form>`. |

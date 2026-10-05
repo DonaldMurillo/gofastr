@@ -34,7 +34,8 @@ provides three mutation primitives triggered by click:
 
 Any element carrying a `data-cui-signal` attribute renders the current
 value of that signal as its text content. The runtime updates it on
-mutation and flashes a brief `.cui-flash` highlight (skipped when
+mutation. Add `data-cui-flash-on-update` and it also flashes a brief
+`.cui-flash` highlight, styled by the built-in app.css (skipped when
 `prefers-reduced-motion: reduce` is active).
 
 Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
