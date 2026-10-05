@@ -693,6 +693,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   set the knob on its own root, which shadowed any value a theme wrote
   on `:root`. It now reads the knob, falling back to
   `--ui-layout-gap-md`, and each `Gap` preset reads its layout step.
+- **`ui.SegmentedControl` holds one width as the selection moves.** The
+  checked option sets its label semibold, and every column is as wide
+  as the widest label, so a pricing toggle grew and shrank between
+  "Monthly" and a longer "Annual" label. Each label now reserves its
+  semibold width.
 - **A theme can set any radius step to 0.** `Theme.Validate` refused
   `Radii.SM`, `MD`, `LG` or `XL` at 0 (only the `none` step could be
   0), so a square theme could not flatten `--radii-sm` and the rest.

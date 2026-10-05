@@ -51,6 +51,26 @@ func TestSegmentedFitsPhoneColumn(t *testing.T) {
 	}
 }
 
+// Hard rule 9: the checked option sets its label semibold and every
+// column is as wide as the widest label, so a pricing toggle grew and
+// shrank as the selection moved between Monthly and its long Annual
+// label (caught on a neo-brutalist theme, semibold 800 over 500). The
+// control holds one width in every state.
+func TestSegmentedWidthHoldsOnSelect(t *testing.T) {
+	heavy := `*{transition:none!important}:root{--font-weight-semibold:800}body{font-weight:400;font-size:16px}`
+	page := SegmentedControl(SegmentedControlConfig{Name: "billing", Selected: "m", Options: []SegmentedOption{
+		{Label: "Monthly", Value: "m"}, {Label: "Annual billing (save 20 percent)", Value: "y"}}})
+	m := geometryOf(t, heavy+segmentedStyle.Entry().CSSFor(theme.Default()), page, `(() => {
+		const c = document.querySelector('[data-cui-comp="ui-segmented"]');
+		const monthly = c.getBoundingClientRect().width;
+		c.querySelectorAll('input')[1].checked = true;
+		return {monthly, annual: c.getBoundingClientRect().width};
+	})()`)
+	if m["monthly"] == 0 || m["monthly"] != m["annual"] {
+		t.Errorf("control is %.1fpx with Monthly checked and %.1fpx with Annual checked; want one width", m["monthly"], m["annual"])
+	}
+}
+
 // Hard rule 9: the range slider drew its neutral halo on the thumb but
 // never cleared the input's own focus outline, so a keyboard user saw
 // the browser's blue box around the whole track beside it (caught in

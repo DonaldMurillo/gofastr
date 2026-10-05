@@ -147,7 +147,9 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			}
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
-		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label"}, render.Text(o.Label))
+		// data-label feeds the hidden bold copy that reserves the
+		// checked weight's width (see segmentedCSS).
+		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label", ExtraAttrs: html.Attrs{"data-label": o.Label}}, render.Text(o.Label))
 		// Position index for sliding indicator CSS. Every option comes
 		// from SegmentedControlConfig's Options (label/value strings),
 		// never from caller markup, so each label is a topmost internal
@@ -241,6 +243,26 @@ func segmentedCSS(_ style.Theme) string {
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
   color: var(--color-text, #111);
   font-weight: var(--font-weight-semibold);
+}
+/* The checked option sets its label in the semibold weight, and every
+   column is as wide as the widest label, so without a reservation the
+   control grows and shrinks as the selection moves (a heavy theme
+   weight makes it plain). A hidden, zero-height semibold copy of the
+   label shares the label's one grid column and holds it at the checked
+   width in every state. visibility: hidden keeps the copy out of the
+   accessibility tree. */
+[data-cui-comp="ui-segmented"] .fui-segmented__label {
+  display: inline-grid;
+  justify-items: center;
+}
+[data-cui-comp="ui-segmented"] .fui-segmented__label::after {
+  content: attr(data-label);
+  font-weight: var(--font-weight-semibold);
+  visibility: hidden;
+  block-size: 0;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
