@@ -118,12 +118,14 @@
       const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
       if (toastBtn) {
         e.preventDefault();
-        window.__gofastr.loadModule('headless-feedback').then(() => {
-          try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
-            window.__gofastr.toast(cfg);
-          } catch (_) {}
-        }).catch(() => {});
+        // The header path's dispatcher: it loads the module, and a
+        // page with no stack (NS.toast answers null) or a module that
+        // fails to load still shows the toast in the kernel's
+        // fallback region instead of nothing.
+        try {
+          const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
+          window.__gofastr._toastOrFallback(cfg);
+        } catch (_) {}
         return;
       }
       const btn = e.target.closest && e.target.closest('[data-cui-open]');
