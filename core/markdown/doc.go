@@ -22,6 +22,9 @@
 //   - Italic (*…* or _…_)
 //   - Inline code (`…`)
 //   - Links ([text](url)) and images (![alt](url))
+//   - Line breaks: a plain newline is a soft break and stays a newline;
+//     two or more trailing spaces or a trailing backslash is a hard break
+//     and renders as <br>
 //
 // HTML in source is escaped, never passed through. Code blocks and inline
 // code are rendered without syntax highlighting; callers can post-process if
