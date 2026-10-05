@@ -1043,6 +1043,24 @@ any route that needs step-up authentication. The middleware is a
 no-op for users who haven't enrolled in 2FA; only enrolled users are
 gated.
 
+Install it behind `SessionMiddleware` or `RequireAuth`. It judges the
+request principal, the user `GetCurrentUser(ctx)` returns, and needs a
+live session cookie of that same user: 401 without a principal or
+without such a cookie, 403 when the user is enrolled and none of their
+session cookies on the request has cleared the challenge. A session of
+any other user proves nothing, so two cookies, or a JWT next to someone
+else's cookie, cannot borrow another session's step-up. A JWT or API
+token carries no step-up state of its own and passes only next to a
+stepped-up session cookie of the same user.
+
+The 2FA endpoints apply the same binding: when an outer middleware put
+a principal in the context, `verify`, `challenge`, `disable` and
+`backup-codes` act only on a session cookie of that user. Every same-name
+cookie is considered, not only the first. `disable` also deletes the
+user's sessions still waiting on a challenge (`SessionPendingPurger`,
+implemented by both built-in session stores), so a pending login cannot
+complete later against a newly enrolled factor.
+
 ### Every login path mints through `MintSession`
 
 `AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**

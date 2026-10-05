@@ -360,7 +360,7 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	userID := "user-x"
+	userID := seedUserID(t, mgr, "x@example.com")
 	secret := GenerateSecret()
 	if err := twofa.store.SetTwoFA(context.Background(), userID, &TwoFAState{
 		Enabled: true, Secret: secret, Verified: true,
@@ -375,9 +375,9 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 
 	r := router.New()
 	mgr.RegisterRoutes(r)
-	r.Get("/protected", twofa.RequireTwoFA()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/protected", SessionMiddleware(mgr)(twofa.RequireTwoFA()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})).(http.HandlerFunc))
+	}))).(http.HandlerFunc))
 
 	// Submit valid TOTP via /2fa/challenge
 	step := uint64(time.Now().Unix()) / 30

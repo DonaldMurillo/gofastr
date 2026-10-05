@@ -332,15 +332,12 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 // (after writing the error) when there is no valid, fully-authenticated
 // session, a pending-2FA session cannot initiate a provider link.
 func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
+	// Bound to the context principal when there is one (see
+	// AuthManager.requestSession): a link started under one user must not
+	// land on the account behind another cookie.
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "no session")
-		return "", false
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid session")
 		return "", false
 	}
 	if sess.PendingTwoFactor {

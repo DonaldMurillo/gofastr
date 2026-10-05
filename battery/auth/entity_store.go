@@ -600,6 +600,17 @@ func (s *EntitySessionStore) DeleteByUser(ctx context.Context, userID string) (i
 	return int(n), nil
 }
 
+// DeletePendingByUser removes userID's sessions that are still waiting on
+// a 2FA challenge. Implements SessionPendingPurger.
+func (s *EntitySessionStore) DeletePendingByUser(ctx context.Context, userID string) (int, error) {
+	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1 AND pending_two_factor = TRUE"), userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
 // Cleanup removes all expired sessions and returns the count purged.
 func (s *EntitySessionStore) Cleanup(ctx context.Context) (int, error) {
 	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), time.Now().UTC())

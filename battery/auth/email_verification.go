@@ -123,15 +123,11 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	if p.limit != nil && !p.limit.guard(w, r) {
 		return
 	}
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
+	// Bound to the context principal when there is one (see
+	// AuthManager.requestSession).
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "no session")
-		return
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil || sess == nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid session")
 		return
 	}
 	// A pending-2FA session has proven the password and nothing else.
