@@ -80,11 +80,12 @@ func runInit(args []string) {
 			// honors, and map them to the real driver name. Anything else used
 			// to fall through and silently scaffold SQLite (dbDriver set, dbURL
 			// left as a SQLite file): a broken app that looked configured.
-			switch strings.ToLower(strings.TrimSpace(strings.TrimPrefix(args[i], "--db="))) {
-			case "sqlite", "sqlite3":
+			// canonicalDBDriver is the alias table migrate --db= shares.
+			switch canonicalDBDriver(strings.TrimPrefix(args[i], "--db=")) {
+			case "sqlite3":
 				dbDriver = "sqlite3"
 				dbURL = "file:" + name + ".db"
-			case "postgres", "postgresql":
+			case "postgres":
 				dbDriver = "postgres"
 				dbURL = "postgres://user:password@localhost:5432/" + name + "?sslmode=disable"
 			default:
@@ -182,6 +183,8 @@ PORT=localhost:8080
 	gitignoreContent := `gen/
 .gofastr/
 *.db
+*.db-shm
+*.db-wal
 .env
 bin/
 `
@@ -825,12 +828,17 @@ built in: no internet needed, always matches your installed version.
 
 ## Adding to this project
 
-- **Add an entity or screen**: write a partial ` + "`" + `gofastr.yml` + "`" + ` fragment
-  and run ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + `. Additive
-  generation never overwrites your owned files: it writes the new file(s)
-  and self-registers them via the existing seams. The quick-stub variants
-  ` + "`" + `gofastr generate entity <name>` + "`" + ` and ` + "`" + `gofastr generate screen <name>` + "`" + `
-  do the same with no yml.
+- **Add an entity**: add another ` + "`" + `app.Entity("<table>", entity.EntityConfig{...})` + "`" + `
+  call to ` + "`" + `RegisterAll` + "`" + ` in ` + "`" + `entities/entities.go` + "`" + ` (a project made
+  with ` + "`" + `--no-entity` + "`" + ` calls ` + "`" + `fwApp.Entity` + "`" + ` from ` + "`" + `main.go` + "`" + `). Auto-migrate
+  creates the table at boot; add a versioned migration to
+  ` + "`" + `RegisterMigrations` + "`" + ` before a deploy. See
+  ` + "`" + `gofastr docs entity-declarations` + "`" + `.
+- **Add a screen**: add a type with a ` + "`" + `Render() render.HTML` + "`" + ` method
+  next to ` + "`" + `HomeScreen` + "`" + ` in ` + "`" + `screens.go` + "`" + ` (or its own file) and register it
+  in ` + "`" + `main.go` + "`" + ` with ` + "`" + `site.Register("/about", &AboutScreen{}, nil)` + "`" + `.
+- The blueprint scaffolds (` + "`" + `gofastr docs blueprints` + "`" + `) extend apps made by
+  ` + "`" + `gofastr generate --from=<blueprint>` + "`" + `, not this layout.
 - **UI: prefer the typed ` + "`" + `core-ui/html` + "`" + ` config structs**
   (` + "`" + `html.Div(html.DivConfig{...})` + "`" + `, ` + "`" + `html.Heading(...)` + "`" + `, …) over raw
   ` + "`" + `render.Tag(...)` + "`" + ` calls. ` + "`" + `render.Tag` + "`" + ` is the escape hatch for
@@ -844,7 +852,7 @@ built in: no internet needed, always matches your installed version.
 - ` + "`" + `gofastr docs` + "`" + `         : browse/search framework docs
 - ` + "`" + `gofastr agents sync` + "`" + ` : refresh AI-agent onboarding files
 - ` + "`" + `gofastr theme init` + "`" + `  : scaffold a typed theme.go
-- ` + "`" + `gofastr generate --add --from=<fragment.yml>` + "`" + `: add entity/screen(s) to this project
+- ` + "`" + `gofastr docs entity-declarations` + "`" + `: every entity option
 `
 	return []byte(content)
 }

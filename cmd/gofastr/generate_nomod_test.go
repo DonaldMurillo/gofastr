@@ -95,3 +95,61 @@ func blueprintModuleFromYAML(t *testing.T, yaml string) string {
 	t.Fatalf("testBlueprintYAML declares no module: line — update this helper")
 	return ""
 }
+
+// The documented fresh-app flow is go mod init, gofastr generate, go mod
+// tidy. With no gofastr requirement in go.mod, tidy resolved the
+// generated axe_test.go's direct chromedp import at @latest (v0.19.1,
+// a breaking generic API) instead of the framework's own pin, and
+// framework/testkit/axetest stopped compiling. The generator pins the
+// framework release matching this CLI, so MVS keeps chromedp at the
+// framework's version.
+func TestGeneratePinsFrameworkVersion(t *testing.T) {
+	oldVersion := version
+	version = "0.39.1"
+	t.Cleanup(func() { version = oldVersion })
+
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bp := filepath.Join(dir, "bp.yml")
+	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mod), "github.com/DonaldMurillo/gofastr v0.39.1") {
+		t.Fatalf("generate did not pin the CLI's framework release:\n%s\n%s", mod, out)
+	}
+}
+
+// A development CLI has no release to pin: the next steps name the
+// go get that must run before tidy, and a go.mod that already requires
+// the framework is left alone.
+func TestGenerateDevBuildNamesGoGet(t *testing.T) {
+	oldVersion := version
+	version = "dev"
+	t.Cleanup(func() { version = oldVersion })
+
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bp := filepath.Join(dir, "bp.yml")
+	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	getAt := strings.Index(out, "go get github.com/DonaldMurillo/gofastr@")
+	tidyAt := strings.Index(out, "go mod tidy")
+	if getAt < 0 || tidyAt < 0 || getAt > tidyAt {
+		t.Errorf("a dev CLI must name `go get github.com/DonaldMurillo/gofastr@…` before go mod tidy:\n%s", out)
+	}
+}

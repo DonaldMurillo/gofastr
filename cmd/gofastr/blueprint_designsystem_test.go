@@ -48,7 +48,7 @@ func TestGeneratorEmitsNoBespokeClasses(t *testing.T) {
 		}
 	}
 	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
-	if !strings.Contains(screens, `ui.Card(ui.CardConfig{Heading: "Orders by status"}`) {
+	if !strings.Contains(screens, `ui.Card(ui.CardConfig{Heading: "Orders by status", HeadingLevel: 2}`) {
 		t.Errorf("titled chart should compose ui.Card, got:\n%s", screens)
 	}
 }

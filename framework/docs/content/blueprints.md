@@ -83,6 +83,12 @@ It also accepts the font tokens `font_heading`, `font_body`, and
 `font_display`: named Google Fonts families that drive the `--font-*`
 tokens. An `app.theme.dark` sub-map overrides any of the same color
 tokens for the dark scheme (the header's theme toggle flips to it).
+The map is an overlay on the framework's complete dark palette
+(`framework/ui/theme`), so a token it leaves out takes the framework's
+dark value, not the light one. A fill it overrides without its ink
+(`primary` without `primary-fg`, likewise `danger`) keeps the light
+ink, so set the `-fg` token when the dark fill needs a different one.
+A theme with only a `dark:` map is still emitted.
 Generated apps call `site.WithTheme(...)`, so the values are emitted
 through `/__gofastr/app.css` as computed CSS custom properties.
 
@@ -474,6 +480,12 @@ immediately edit:
 * `generate screen <name>` emits one screen at `/<kebab-name>` with a heading
   and a stub paragraph; replace its `Render`.
 
+The scaffolds and `--add` extend an app generated from a blueprint (it has
+`app.go` and per-screen `screen_<name>.go` files). A `gofastr init` project
+(`screens.go`, `main.go`, `entities/entities.go`) is refused with the
+hand-edit seams named: another `app.Entity` call in `RegisterAll`, and a
+screen type registered with `site.Register` in `main.go`.
+
 #### Screens from an accessibility tree (`--from-a11y`)
 
 `generate screen <name> --from-a11y=<file>` builds the screen body from a
@@ -853,7 +865,10 @@ optional `filter: status=active`) for a `stat_card`, and
 kinds `source` (with both `entity` and `group_by`, targeting a declared
 entity) is **required**: validation rejects a chart without one rather
 than letting the block silently vanish from the page. A chart with a
-`title` renders inside a `ui.Card` with that heading.
+`title` renders inside a `ui.Card` with that heading. A chart or `card`
+block with no titled `section` or `card` above it emits
+`HeadingLevel: 2`, so its title follows the page's h1 without skipping a
+level; one inside a titled section keeps the default h3.
 
 ### Layouts (`screen.layout`)
 
@@ -1025,8 +1040,10 @@ generated app commits no credentials:
   no admin is seeded)
 
 When the blueprint holds any of these values, the generator also emits a
-`.env` carrying them (so the app runs without extra setup) plus a
-`.gitignore` that excludes it. The generated `main.go` loads
+`.env` carrying them (so the app runs without extra setup). The
+`.gitignore` it always emits excludes `.env` and `.env.local`, `.gofastr/`,
+`bin/` (the `gofastr build` output) and the SQLite database files
+(`*.db`, `*.db-shm`, `*.db-wal`). The generated `main.go` loads
 `.env.local`/`.env` before opening the DB; a real process env var
 always wins over the files. `generate` is one-shot and refuses to
 overwrite an existing `.env` (or any other file) unless you pass `--force`.
@@ -1120,7 +1137,10 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent: created only when absent),
-so the back-office is reachable on first boot. Requires `app.auth.enabled`.
+so the back-office is reachable on first boot. The generated `main.go` creates
+the `audit_log` table the audit page reads (`framework.EnsureAuditTable`), so
+the page and the admin's own RBAC and module audit writes work on a fresh
+database. Requires `app.auth.enabled`.
 The Queue navigation item appears only when the host explicitly supplies a
 `queue.Browsable` backend to the admin battery; generated apps do not imply a
 queue they have not configured.
