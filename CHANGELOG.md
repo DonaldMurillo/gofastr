@@ -523,6 +523,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **`battery/rtc`: a socket never hears a join for a peer its snapshot
+  already lists** (since v0.83.0). A socket joining while an older
+  peer's join was between hydration and publish queued its snapshot
+  ahead of that join, hydrated with the peer in its roster, then heard
+  the join too; the browser module read it as a reconnect and rebuilt
+  the connection it had just made against a peer that kept the old one.
+  A per-room announce lock orders the next socket's snapshot behind the
+  join.
 - **A `{param}` group page whose value holds `'`, `&`, `"` or `<`
   renders** (since v0.86.0). The layout inventory check counted the raw
   layer key while the attribute carried it HTML-escaped, so
