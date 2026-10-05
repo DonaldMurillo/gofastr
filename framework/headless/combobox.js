@@ -70,7 +70,7 @@
       say(lb, (status && status.getAttribute('data-hui-combobox-no-results')) || '');
       return;
     }
-    say(lb, fmt.replace('{n}', String(n)));
+    say(lb, fmt.replace('{n}', () => String(n)));
   }
 
   function closeListbox(input, lb) {

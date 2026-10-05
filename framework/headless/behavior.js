@@ -223,11 +223,11 @@
     }
     if (!status) return;
     if (files.length === 1) {
-      status.textContent = (root.dataset.huiDropOne || '').replace('{name}', files[0].name);
+      status.textContent = (root.dataset.huiDropOne || '').replace('{name}', () => files[0].name);
     } else if (files.length > 1) {
       status.textContent = (root.dataset.huiDropMany || '')
-        .replace('{n}', String(files.length))
-        .replace('{names}', names.join(', '));
+        .replace('{n}', () => String(files.length))
+        .replace('{names}', () => names.join(', '));
     } else {
       status.textContent = '';
     }
