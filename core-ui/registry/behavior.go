@@ -61,6 +61,12 @@ type BehaviorEntry struct {
 	// what it retains. Empty for the behaviours that need no
 	// retention, which is the default and costs no listener.
 	Interactions []Interaction
+	// OnRequest marks an API module: no marker loads it. It loads only
+	// when page code calls __gofastr.loadModule(Name) or a behaviour
+	// lists it in Requires. It is served and versioned like every
+	// module (the module manifest carries it), but the marker block
+	// leaves it out, so the kernel's scan never sees it.
+	OnRequest bool
 
 	sourceHash string
 }
@@ -93,12 +99,24 @@ func (e *BehaviorEntry) SourceHash() string { return e.sourceHash }
 type BehaviorOption func(*BehaviorEntry)
 
 // Markers declares the attribute selectors whose presence loads the
-// module. At least one is required. Each is "[data-x]" or
+// module. At least one is required, unless the module is OnRequest
+// (which takes none). Each is "[data-x]" or
 // "[data-x=\"v\"]": an attribute selector on a data- attribute, nothing
 // else, so the host can also match it in rendered HTML for preload.
 func Markers(selectors ...string) BehaviorOption {
 	return func(e *BehaviorEntry) { e.Markers = append(e.Markers, selectors...) }
 }
+
+// OnRequest registers an API module instead of a marker-loaded one:
+// it is never scanned for, and loads only through
+// __gofastr.loadModule(name) or another behaviour's Requires. A page
+// that never asks for it never downloads it, and a binary that never
+// imports the registering package never contains it — which is why an
+// optional API belongs here rather than in core-ui/runtime/src. It
+// takes no Markers, LoadIdle, Interactions or Requires: each of those
+// is a reason to load that an on-request module does not have (its
+// own dependencies it loads itself).
+func OnRequest() BehaviorOption { return func(e *BehaviorEntry) { e.OnRequest = true } }
 
 // LoadIdle defers the load to idle time after first paint. The
 // default loads as soon as the marker is seen.
@@ -241,8 +259,12 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 	for _, o := range opts {
 		o(e)
 	}
-	if len(e.Markers) == 0 {
-		panic("registry.RegisterBehavior(" + name + "): no Markers — the kernel loads a behaviour when a marker appears, and this one would never load")
+	if e.OnRequest {
+		if len(e.Markers) > 0 || e.Idle || len(e.Interactions) > 0 || len(e.Requires) > 0 {
+			panic("registry.RegisterBehavior(" + name + "): OnRequest takes no Markers, LoadIdle, Interactions or Requires — an on-request module loads only when page code asks for it")
+		}
+	} else if len(e.Markers) == 0 {
+		panic("registry.RegisterBehavior(" + name + "): no Markers — the kernel loads a behaviour when a marker appears, and this one would never load (an API module loaded by page code is OnRequest)")
 	}
 	for _, m := range e.Markers {
 		if !behaviorMarker.MatchString(m) {
@@ -375,7 +397,7 @@ func MarkerSubstring(selector string) string {
 }
 
 func sameBehavior(a, b *BehaviorEntry) bool {
-	return a.Name == b.Name && a.sourceHash == b.sourceHash && a.Idle == b.Idle && slices.Equal(a.Markers, b.Markers) && slices.Equal(a.Requires, b.Requires) && sameInteractions(a.Interactions, b.Interactions)
+	return a.Name == b.Name && a.sourceHash == b.sourceHash && a.Idle == b.Idle && a.OnRequest == b.OnRequest && slices.Equal(a.Markers, b.Markers) && slices.Equal(a.Requires, b.Requires) && sameInteractions(a.Interactions, b.Interactions)
 }
 
 func sameInteractions(a, b []Interaction) bool {

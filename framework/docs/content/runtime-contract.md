@@ -539,6 +539,24 @@ not clear the core gzip budget (measured: +17 bytes at the shortest
 useful wording, against 8 bytes of clearance), and unlike a failed
 fetch the console reports nothing on its own.
 
+An API module that page code calls, rather than one that binds
+markup, registers with `registry.OnRequest()` and no markers. It is
+served and listed in the module manifest like any module but left out
+of the marker block, and it loads only through
+`__gofastr.loadModule(<name>)` or another behaviour's
+`registry.Requires(<name>)`. Because it lives in its own package, a
+binary that never imports that package never contains it, and a page
+that never asks for it never downloads it. `core-ui/localdb` is one.
+
+Data such a module needs from the server rides a registered data
+block: `registry.RegisterDataBlock("gofastr-<name>", fn)` makes the host
+emit `<script type="application/json" id="gofastr-<name>">` holding
+`fn()`'s JSON in every page head, live and exported, without importing
+the package. Every `<` in the JSON is written as `\u003c`, so no value
+can end or comment out the script. Ids the kernel or host already use
+(`gofastr-signals`, `gofastr-routes`, `gofastr-behaviors`, and the
+rest) are refused.
+
 Registered markers use the package's own `data-` prefix; a
 `data-cui-*` marker is admitted only when the attribute is in the table
 above — and a `data-cui-*` attribute named by an interaction selector

@@ -287,6 +287,8 @@ func IsolateForTest(t testCleanup) {
 	savedReserved := reservedBehaviorNames
 	savedFrozen := frozen
 	savedTemplates := templates
+	savedDataBlocks := dataBlocks
+	dataBlocks = map[string]dataBlock{}
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
 	templates = newTemplates()
@@ -304,6 +306,7 @@ func IsolateForTest(t testCleanup) {
 		behaviors = savedBehaviors
 		reservedBehaviorNames = savedReserved
 		templates = savedTemplates
+		dataBlocks = savedDataBlocks
 		frozen = savedFrozen
 		mu.Unlock()
 	})

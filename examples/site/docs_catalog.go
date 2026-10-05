@@ -138,6 +138,8 @@ var docIntents = []docIntent{
 			{"runtime-contract", "Runtime contract", "The SSR/hydration/island/SSE model and the full data-cui-* attribute reference."},
 			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
 			{"compute", "Background compute", "Registered Web Workers + WASM modules, content-addressed and CSP-safe, off the main thread."},
+			{"localdb", "Browser-local databases", "IndexedDB databases declared in Go: records in the visitor's browser, ordered lists, transactions, and change events across tabs."},
+			{"local-entities", "Local entities", "Forms and lists over records saved in the visitor's browser, from Go and design-system components; no server table, no app JavaScript."},
 		},
 	},
 	{

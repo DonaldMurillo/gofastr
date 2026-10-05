@@ -37,6 +37,12 @@ type CardConfig struct {
 	// 3; a card does not know how deep in the outline it sits, so a
 	// page that nests cards under an h2 says HeadingLevel: 2.
 	Heading string
+	// HeadingContent is the heading as markup instead of text, for a
+	// heading whose words are filled in the browser: a local entity's
+	// Row.Text slot or a signal binding. It renders inside the card's
+	// own heading element with the heading's styles. It wins over
+	// Heading when both are set.
+	HeadingContent render.HTML
 
 	// HeadingLevel overrides the heading element level (default 3).
 	HeadingLevel int
@@ -114,13 +120,14 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	}
 
 	return cardStyle.WrapHTML(headless.Card(headless.CardProps{
-		Title:      cfg.Heading,
-		TitleTag:   titleTag,
-		Desc:       cfg.Description,
-		Footer:     cfg.Footer,
-		Href:       cfg.Href,
-		ID:         cfg.ID,
-		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
-		Parts:      parts,
+		Title:        cfg.Heading,
+		TitleContent: cfg.HeadingContent,
+		TitleTag:     titleTag,
+		Desc:         cfg.Description,
+		Footer:       cfg.Footer,
+		Href:         cfg.Href,
+		ID:           cfg.ID,
+		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
+		Parts:        parts,
 	}, cardClasses, body...))
 }

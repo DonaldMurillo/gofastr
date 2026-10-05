@@ -194,7 +194,7 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
 lightbox module), `data-fui-dropzone-preview*` (its dropzone module),
-`data-fui-pane*` (its pane host), `data-fui-z-tier` (`ui.Sticky`'s
+`data-fui-pane*` (its pane host), `data-fui-local-*` (`framework/localentity`'s `localentity` and `localentity-form` behaviours: the list, form and count carriers, their row/empty templates, the `-text`/`-delete`/`-edit` hooks inside a row, and the `-item`/`-key`/`-editing`/`-state` marks the module writes), `data-fui-z-tier` (`ui.Sticky`'s
 sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 (`framework/pluginhost`) and `data-fui-page-loading`
 (`framework/uihost`). Every other attribute the runtime reads is
@@ -860,6 +860,57 @@ A new generation invalidates only generation-bound work; which state
 survives a reconnect is the application's decision. WebSocket recovery
 proves nothing about media protocols layered on top (WebRTC and
 friends); those resynchronize through these hooks.
+
+### Browser-local databases (`__gofastr.localdb`)
+
+The `localdb` module (`core-ui/localdb/localdb.js`) is the browser half
+of `core-ui/localdb`: IndexedDB databases declared in Go, stored in the
+visitor's browser, never on the server. It is not part of
+`core-ui/runtime`: the package registers it as an on-request behaviour
+(`registry.OnRequest()`), so only a binary that imports
+`core-ui/localdb` carries it, and only a page that loads it with
+`__gofastr.loadModule('localdb')` downloads it
+(`framework/localentity`'s two behaviours declare `Requires("localdb")`).
+
+The schema rides an inert `<script type="application/json"
+id="gofastr-localdb">` data block (`registry.RegisterDataBlock`) that
+the host puts in every page head (live and export mode) when any
+database is declared. Only
+declared databases, stores and indexes are reachable; anything else
+rejects with a coded error. The browser-side IndexedDB name is
+`gofastr.<name>`.
+
+| Call | Does |
+| --- | --- |
+| `localdb.open(name)` | Resolves the database handle. The first open reconciles the stored schema with the declaration (below). |
+| `db.get/put/add/delete/clear/count/list(store, …)` | One transaction each, resolved when it COMMITS. `put` on an `AutoKey` store mints a UUIDv7 key when the record has none. |
+| `db.list(store, {index, only \| lower/upper, direction, offset, limit, keys})` | Reads in key or index order through a cursor. Ordering is IndexedDB's, never page script sorting an array. |
+| `db.tx(stores, mode, fn)` | One transaction over several stores, all-or-nothing: a throw inside `fn` aborts it and nothing lands. |
+| `db.watch(store, fn)` | `fn({db, store, origin, changes})` after every committed write, from this tab (`origin: "local"`) or another tab of the origin (`"remote"`). Returns the unsubscribe. |
+| `localdb.persist()` / `persisted()` / `estimate()` | The `navigator.storage` eviction request and usage figures. `false` and `null` are answers, not errors. |
+| `localdb.newID()` | The UUIDv7 minter `AutoKey` uses: monotonic within a tab. |
+
+Schema changes are **additive and automatic**. A page whose declaration
+names a store or index the stored database lacks bumps the IndexedDB
+version itself and creates it. Nothing is ever deleted or rebuilt: a
+tab still running the previous deploy may need what the new one
+dropped, and an older page opening a newer database finds a superset
+and works. A store whose primary key path changed, or an index whose
+definition changed, rejects `schema`: rebuilding it in place would undo
+the other deploy's version whenever tabs on two deploys meet, so the
+new shape takes a new name. When another tab upgrades, this
+tab's connection closes on `versionchange` and the next operation
+reopens it; `document` sees a `gofastr:localdb` event
+(`detail: {type, db}`, type `versionchange`, `close` or `blocked`).
+
+Cross-tab notification rides one `BroadcastChannel` per database
+carrying store names, ops and keys, never record values; the receiver
+re-reads what it needs. Any same-origin script can post on that
+channel, so a message naming an undeclared store or an unknown op is
+dropped whole. Errors carry a stable `code` (`unsupported`,
+`unknown-db`, `unknown-store`, `unknown-index`, `invalid`,
+`constraint`, `quota`, `schema`, `version`, `closed`, `aborted`,
+`failed`) and drop the browser's message; the module never logs.
 
 ### WebRTC rooms (`__gofastr.connectRoom`)
 
@@ -1748,10 +1799,32 @@ The marker is the one trigger; when it appears, at boot, on DOM
 insertion or after a client navigation, the module loads once and
 attaches. `registry.LoadIdle()` defers the load to idle time.
 
+An optional API module that page code calls, rather than one that
+binds markup, registers with `registry.OnRequest()` instead of
+markers. It is served, versioned and listed in the module manifest like
+any module, but it is left out of the marker block (the kernel's scan
+never sees it), and it loads only through
+`__gofastr.loadModule(<name>)` or another behaviour's `Requires`. It
+takes no markers, `LoadIdle`, interactions or requirements. This is
+where an optional API belongs instead of `runtime/src/`: a binary that
+never imports the registering package never contains it, and a page
+that never asks for it never downloads it. `core-ui/localdb` is the
+first one.
+
+Server-declared data such a module reads rides a registered data block:
+`registry.RegisterDataBlock("gofastr-<name>", fn)` makes the host emit
+`<script type="application/json" id="gofastr-<name>">` with `fn()`'s
+JSON in every page head (live and export mode, sorted by id, `</`
+escaped, nothing when `fn` returns nil). The host emits it without
+importing the package that registered it. Ids are `gofastr-` plus
+lowercase letters, digits and `-`, and the kernel's own block ids are
+refused.
+
 The rules, each a panic at registration: the name is a URL segment
 (`^[a-z][a-z0-9-]{0,63}$`) and not an embedded module's; every marker
 is an attribute selector on a `data-` attribute (`[data-x]` or
-`[data-x="v"]`); at least one marker; an identical re-registration is
+`[data-x="v"]`); at least one marker unless `OnRequest`, and none
+with it; an identical re-registration is
 a no-op and a different one panics. A `data-cui-*` marker is admitted
 only when the attribute is already in the table above (hard rule 5
 through the seam, `TestRegisteredBehaviorDataFuiMarkersAreDocumented`).

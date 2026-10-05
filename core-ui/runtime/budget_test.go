@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1105,6 +1106,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	}
 
 	for _, name := range ModuleNames() {
+		// Registered behaviours linked into this test binary are held
+		// below, by source file, with their own override rows.
+		if _, registered := registry.LookupBehavior(name); registered {
+			continue
+		}
 		src, ok := Module(name)
 		if !ok {
 			t.Errorf("module %q not embedded", name)
@@ -1135,6 +1141,31 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// TestRegisteredBehaviorSources_FindsTheTreesModules pins the
 	// tree's registrations by path, so a new module cannot land without
 	// the walk seeing it.
+	// A registered behaviour over the goal carries its own row, keyed
+	// by its repo path, with the reason it is one unit. Only a module
+	// outside core qualifies: it ships in a binary only when its
+	// package is imported, and on a page only when asked for.
+	behaviorOverrides := map[string]int{
+		// core-ui/localdb's on-request API module, 3609 measured (2
+		// clearance). 3420 at landing; the second review round added
+		// the late-body rejection in tx, closing a connection a failed
+		// re-check would leak, broadcasting bulk transactions in
+		// slices, and hearing a newer deploy's mixed messages (3577);
+		// PR #479's review added coding synchronous request refusals
+		// and retrying a failed manifest read. Not in core-ui/runtime and never
+		// marker-loaded: only an app that imports core-ui/localdb
+		// carries it, and only a page that calls
+		// __gofastr.loadModule('localdb') (an app script, or
+		// framework/localentity's behaviours through Requires)
+		// downloads it. It is one unit because every caller needs all
+		// of it on first open: the additive schema reconciler (drift +
+		// upgrade + the version race), the transaction wrapper that
+		// resolves on COMMIT, the cursor reader, the cross-tab channel
+		// with its forged-message guard, and the monotonic UUIDv7
+		// minter. Shrunk from 4211 by folding the single-op methods
+		// into one loop and dropping the error class.
+		"core-ui/localdb/localdb.js": 3611,
+	}
 	sources, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("registered behaviours: %v", err)
@@ -1151,8 +1182,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		if !nominify() {
 			src = minify.Minify(src)
 		}
-		if got := gzipSize(t, src); got > moduleGoalGZ {
-			t.Errorf("registered behaviour %s gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", filepath.Base(f), got, moduleGoalGZ, moduleGoalGZ)
+		budget := moduleGoalGZ
+		rel, _ := filepath.Rel(filepath.Join("..", ".."), f)
+		if o, ok := behaviorOverrides[filepath.ToSlash(rel)]; ok {
+			budget = o
+		}
+		if got := gzipSize(t, src); got > budget {
+			t.Errorf("registered behaviour %s gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", filepath.Base(f), got, budget, moduleGoalGZ)
 		}
 	}
 }
