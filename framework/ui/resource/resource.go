@@ -706,14 +706,18 @@ func (c Config) Detail(ctx context.Context, id string) render.HTML {
 		}
 		actions = append(actions, ui.Button(ui.ButtonConfig{Label: t.Label, Variant: variant, ExtraAttrs: interactive.Put(c.APIPath + "/" + id).
 			WithBody(body).
-			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).Attrs()}))
+			OnSuccess(interactive.Navigate(c.BasePath + "/" + id)).
+			OnErrorToast("Could not " + strings.ToLower(t.Label) + ".").Attrs()}))
 	}
 	if c.CanEdit {
 		actions = append(actions,
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: c.BasePath + "/" + id + "/edit", Variant: ui.ButtonSecondary}),
 			ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger, ExtraAttrs: interactive.Delete(c.APIPath + "/" + id).
 				WithConfirm("Delete this " + c.Singular + "? This cannot be undone.").
-				OnSuccess(interactive.Navigate(c.BasePath)).Attrs()}),
+				OnSuccess(interactive.Navigate(c.BasePath)).
+				// A refusal (409: other records still reference this one)
+				// toasts the server's message instead of ending in silence.
+				OnErrorToast("Could not delete this " + c.Singular + ".").Attrs()}),
 		)
 	}
 	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))

@@ -299,6 +299,26 @@ drivable by tests, use [`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction
 instead. Native confirm remains the lightweight default; the themed dialog is
 the opt-in upgrade.
 
+### OnErrorToast (say why a request was refused)
+
+A button RPC that gets a non-2xx answer does nothing visible by default
+(a form reports its refusals beside the fields instead).
+`Action.OnErrorToast(title)` makes the failure visible: the runtime shows
+an error toast titled `title`, with the server's JSON `error` message as
+its body. A network failure shows the same title with a network-error body.
+
+```go
+interactive.Delete("/api/orders/42").
+    WithConfirm("Delete this order?").
+    OnSuccess(interactive.Navigate("/orders")).
+    OnErrorToast("Could not delete this order.")
+```
+
+Attribute injected: `data-cui-rpc-error-toast="title"`. An empty title
+falls back to `Request failed (<status>)`. The resource detail page's
+Delete and state-transition buttons carry it, so a `409` from a record
+that other records still reference reaches the user.
+
 ### AfterText (one-shot button label swap on success)
 
 `interactive.AfterText(text)` replaces the trigger element's text content

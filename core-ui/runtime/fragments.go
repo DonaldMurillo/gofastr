@@ -356,6 +356,7 @@ var moduleAttrs = map[string][]string{
 		"data-cui-rpc-after-disable",
 		"data-cui-rpc-debounce-ms",
 		"data-cui-rpc-scroll-to",
+		"data-cui-rpc-error-toast",
 		"data-cui-confirm",
 		"data-cui-push-state",
 	},
