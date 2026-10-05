@@ -1186,6 +1186,7 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
+  font: inherit;
   font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }

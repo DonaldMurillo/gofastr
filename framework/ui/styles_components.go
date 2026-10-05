@@ -1230,6 +1230,8 @@ func themeToggleCSS(_ style.Theme) string {
 [data-cui-comp="ui-theme-toggle"] button,
 :where(button)[data-cui-comp="ui-theme-toggle"] {
   cursor: pointer;
+  /* A button takes the UA font (Arial) unless told otherwise. */
+  font: inherit;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);

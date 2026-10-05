@@ -83,3 +83,22 @@ func TestE2E_PhoneDrawerMarksCurrent(t *testing.T) {
 		t.Errorf("phone drawer marks %q as the current entry on /app/customers, want /app/customers", current)
 	}
 }
+
+// A <button> takes the UA's font, not the page's, unless its rule says
+// font: inherit; the drawer's close button and the footer's theme
+// toggle rendered in Arial beside rows set in the app's font.
+func TestE2E_PhoneDrawerButtonsUseAppFont(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds + boots the binary")
+	}
+	var fonts map[string]string
+	openPhoneDrawer(t, "/app/customers", chromedp.Evaluate(`(() => {
+		const f = (s) => { const el = document.querySelector('`+drawerSel+` ' + s); return el ? getComputedStyle(el).fontFamily : 'missing'; };
+		return {row: f('.fui-sidebar__link'), close: f('.fui-sidebar__drawer-close'), toggle: f('.fui-theme-toggle')};
+	})()`, &fonts))
+	for _, part := range []string{"close", "toggle"} {
+		if fonts[part] != fonts["row"] {
+			t.Errorf("drawer %s button font is %q, the rows' %q", part, fonts[part], fonts["row"])
+		}
+	}
+}
