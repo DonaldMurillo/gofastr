@@ -476,7 +476,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
 		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
 		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
 	} {
 		e, ok := uiregistry.LookupBehavior(tc.name)
 		if !ok {
@@ -514,7 +514,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
 		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
 		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
 	} {
 		for _, m := range tc.markers {
 			hook := strings.Trim(m, "[]")
