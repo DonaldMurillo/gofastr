@@ -1390,6 +1390,37 @@ skipped (the target entity is checked on its own), and matching is
 per-token (`creditCard` and `credit_card` both match `card`;
 `cardinality` does not).
 
+### Owner-scoped uniqueness (`gofastr validate` and `gofastr generate` warning)
+
+On an entity with `owner_field`, a field-level `unique: true` or a
+unique index that leaves out the owner column makes the value unique
+across every account. One user's row then blocks every other user's
+create with the same value, and the `409` tells that user the value
+exists in someone else's rows (an existence oracle on private data).
+Both commands warn, naming the entity, the field or index, and the
+composite to declare instead; neither fails. To scope uniqueness per
+owner, drop the field's `unique` and add a composite index that leads
+with the owner column:
+
+```yaml
+entities:
+  - name: customers
+    owner_field: user_id
+    indices:
+      - name: idx_customers_owner_email
+        columns: [user_id, email]   # unique within one account only
+        unique: true
+    fields:
+      - name: email
+        type: string
+        required: true             # no field-level unique
+```
+
+Keep the global form only when the value is meant to be unique across
+all accounts, such as a public handle. A `read_only` field is
+server-assigned (an `auto_generate: uuid` order number), so no caller
+can collide with it or probe it, and the warning skips it.
+
 ## Testing contract
 
 Blueprint changes should be proven with a generated-app E2E test: run the real

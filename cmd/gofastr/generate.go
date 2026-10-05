@@ -579,6 +579,9 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		for _, f := range lintPublicEntities(bp) {
 			warn("%s", f.Message())
 		}
+		for _, f := range lintOwnerScopedUnique(bp) {
+			warn("%s", f.Message())
+		}
 		// Surfaced before the "Next steps" block below, which would otherwise
 		// print `go mod init <colliding path>` as the remedy for a build that
 		// the collision makes impossible.
