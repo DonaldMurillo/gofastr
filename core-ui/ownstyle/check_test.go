@@ -35,7 +35,7 @@ func TestCheckInboxExample(t *testing.T) {
 		"3:25 error GOFASTR1811 !important: owned sheets load in the design system's order; specificity never needs it",
 		"4:20 error GOFASTR1812 900px is not a theme breakpoint; use (--above-md) 768px or (--above-lg) 1024px",
 		"5:10 warn GOFASTR1813 animation with no @media (--reduced-motion) block",
-		"8:7 error GOFASTR1810 .fui-card__body is a kit class (.fui-*); style the content you pass into the slot instead",
+		"8:7 error GOFASTR1810 .fui-card__body is a kit class (.cui-*, .hui-*, .fui-*); style the content you pass into the slot instead",
 	}
 	got := make([]string, len(diags))
 	for i, d := range diags {

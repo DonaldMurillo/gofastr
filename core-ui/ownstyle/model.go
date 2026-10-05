@@ -205,8 +205,7 @@ func (b *modelBuilder) compound(comp []Token, doc string) {
 			continue
 		}
 		if rest[i].Type == TokenDelim && rest[i].Text == "." && rest[i+1].Type == TokenIdent {
-			//gofastr:allow(layerprefix) the owned-style model names kit classes to bar an app sheet from them
-			if strings.HasPrefix(rest[i+1].Text, "fui-") {
+			if isKitClass(rest[i+1].Text) {
 				continue // kit class: not this sheet's vocabulary
 			}
 			classIdx = append(classIdx, i)
