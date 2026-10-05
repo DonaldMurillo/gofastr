@@ -58,11 +58,12 @@ func TestCodeBlockHighlightLineClasses(t *testing.T) {
 		t.Fatalf("ParseLineRanges: %v", err)
 	}
 	h := string(CodeBlock(CodeBlockConfig{Code: "one\ntwo\nthree", HighlightLines: ranges}))
-	if want := `<span class="fui-code-block__line fui-code-block__line--highlight">two</span>`; !strings.Contains(h, want) {
+	// Every line but the last carries its own newline (see codeBlockLine).
+	if want := `<span class="fui-code-block__line fui-code-block__line--highlight">two` + "\n</span>"; !strings.Contains(h, want) {
 		t.Errorf("highlighted line missing its class:\n%s", h)
 	}
 	for _, plain := range []string{
-		`<span class="fui-code-block__line">one</span>`,
+		`<span class="fui-code-block__line">one` + "\n</span>",
 		`<span class="fui-code-block__line">three</span>`,
 	} {
 		if !strings.Contains(h, plain) {
@@ -186,7 +187,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 	}))
 	// The head is still this component's own; the body now holds
 	// Lines, the caller's slot, so it is left unmarked.
-	wantLines := `<div class="fui-code-block fui-code-block--framed" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1</span><span class="fui-code-block__line">b := 2</span></pre></div>`
+	wantLines := `<div class="fui-code-block fui-code-block--framed" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1` + "\n" + `</span><span class="fui-code-block__line">b := 2</span></pre></div>`
 	if lines != wantLines {
 		t.Errorf("Lines zero-config output changed:\n got: %s\nwant: %s", lines, wantLines)
 	}

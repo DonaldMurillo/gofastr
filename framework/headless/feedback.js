@@ -273,7 +273,12 @@
     const id = wrap.getAttribute('data-hui-copy-target');
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
-    const text = (target.innerText || target.textContent || '').trim();
+    // A <pre> holds its source text verbatim, newlines included, so its
+    // textContent is the copy. innerText re-derives line breaks from the
+    // layout: a block per line doubles every break, and an empty block
+    // (a blank source line) adds none.
+    const text = (target.tagName === 'PRE' ? target.textContent
+      : (target.innerText || target.textContent) || '').trim();
     if (!text) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).catch(function () {});
