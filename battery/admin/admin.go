@@ -755,7 +755,7 @@ func (b *Battery) navHTML(current string) render.HTML {
 		// The same resolver the entity pages mount from, so AllEntities
 		// (Config.Entities empty) lists every exposed entity too.
 		for _, ent := range b.entitiesToExpose() {
-			links = append(links, link{ent.GetName(), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
+			links = append(links, link{titleCase(ent.GetName()), b.cfg.PathPrefix + "/e/" + ent.GetTable()})
 		}
 	}
 	if b.cfg.Policy != nil {

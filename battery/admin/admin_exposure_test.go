@@ -54,6 +54,10 @@ func TestAllEntitiesNavListsEntities(t *testing.T) {
 		if !strings.Contains(rr.Body.String(), `href="/admin/e/posts"`) {
 			t.Errorf("GET %s nav has no link to /admin/e/posts", path)
 		}
+		// Same label the entity pages' nav gives it (navConfig).
+		if !strings.Contains(rr.Body.String(), `>Posts</a>`) {
+			t.Errorf("GET %s nav labels posts differently from the entity pages' nav (want Posts)", path)
+		}
 	}
 }
 

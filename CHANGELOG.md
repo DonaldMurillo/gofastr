@@ -629,6 +629,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `null`.
 - **The admin nav lists every exposed entity** when the config uses
   `AllEntities`, and the entity pages link back to Overview and Audit.
+  Both navs label an entity the same way ("Customers", not
+  "customers").
 - **Admin labels singularize English plurals** ("New category", not
   "New categorie"). The generator's seed rows share the rules, so a
   `databases` entity seeds "Database 1", not "Databas 1".
