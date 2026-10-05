@@ -162,6 +162,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the window opens are queued (16) and flushed after the boot
   navigation, and `OnDeepLink` runs once per link, queued or not (a
   queued link is mapped when it arrives and delivered as-is at flush).
+  Links are delivered in arrival order, each once the page reports the
+  runtime's `navigate` (bounded at 15 s, logged when it gives up), so a
+  link that lands while a document loads, the cold-launch flush
+  included, is not lost to an eval against a page with no runtime yet.
   macOS arm64 only; experimental, like the rest of
   `battery/desktop`.
 - `gofastr desktop build --notarize` (with `--notary-profile`, default
@@ -204,7 +208,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   broadcasts `state_changed` with `{key}` to every open window. A write
   that fails (a read-only data dir, a scanner holding `state.json`)
   leaves the store dirty, so the next write or the quit `Flush` retries
-  it and reports the error instead of dropping the change.
+  it and reports the error instead of dropping the change. A closed
+  secondary window's remembered frame is dropped, so the `windows`
+  entry cannot grow past the 64 KiB cap and take the main window's
+  frame and path down with it.
 - `battery/desktop`: declared preferences. `Config.Preferences` takes
   a `desktop.Preference` list (kinds bool, int, string, choice;
   validated at `New` with a defensive copy), stores the values typed
@@ -468,8 +475,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   fetch that carries a missing or different generation with a 409
   whose body is a partial the old runtime swaps in: a meta refresh to
   the destination and a reload link, so the browser loads the page
-  whole with the new runtime. Requests with no Fetch Metadata (curl,
-  Go tests) keep the ordinary partial. The v0.86.0 runtime is pinned
+  whole with the new runtime; `UIHost.RenderScreen`'s partial arm (a
+  recovery or status screen) answers the same way, and its ordinary
+  partial carries `X-Gofastr-Partial` like every other. Requests with
+  no Fetch Metadata (curl, Go tests) keep the ordinary partial. The
+  v0.86.0 runtime is pinned
   as a fixture again and drives the old-client test against today's
   host, beside a new-client control.
 
@@ -513,6 +523,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A `{param}` group page whose value holds `'`, `&`, `"` or `<`
+  renders** (since v0.86.0). The layout inventory check counted the raw
+  layer key while the attribute carried it HTML-escaped, so
+  `/projects/o'neil` answered 404 with "primary slot 0 times".
+- **Leaving a page mid-action no longer caches a dead control** (since
+  v0.86.0). The envelope's leave capture stored the live markup, in-flight
+  rpc state included (`disabled`, `cui-loading`, `aria-busy`,
+  `data-state="pending"`), so going back restored a button stuck busy
+  forever. The capture now strips the transient markers.
+- **One SSE stream per page** (since v0.86.0). A demand `connect` while
+  an error retry timer was pending let the timer open a second
+  `EventSource`, so every frame applied twice; the retry timer is
+  cleared on connect, a live source is never reopened, and an error
+  closes the source it belongs to.
+- **A popover that closes while its stylesheet loads stays closed**:
+  the anchoring resumed after the await, left the trigger active and
+  leaked the resize and scroll listeners.
+- **`data-cui-toast` triggers fall back to a plain toast** on a page
+  with no toast stack, the way programmatic toasts already did.
+- **GOFASTR1810 bars every kit class prefix** (since v0.86.0). The owned
+  style check refused only `.fui-*`, so a sheet could select `.cui-*`
+  and `.hui-*` kit markup and `gofastr gen styles` generated methods for
+  them.
+- **A `.style.css` with a UTF-8 byte-order mark generates** (since
+  v0.86.0). The check passed it and `gofastr gen styles` then failed with
+  "illegal byte order mark" blaming its own output; the mark is
+  stripped before tokenizing and before the embedded CSS string.
+- **`gofastr pack` without `-o` keeps stdout clean.** The secrets
+  warning went to stdout ahead of the YAML, so redirected output did not
+  parse; it goes to stderr.
 - **`S3Storage.PresignedGetURL` and `PresignedPutURL` return an error
   with no presigner** (since v0.86.0). The method value
   `s.presigner.PresignGet` was evaluated on the nil interface before
