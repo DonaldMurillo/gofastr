@@ -197,3 +197,68 @@ func TestV087ExamplesStaySilent(t *testing.T) {
 		}
 	}
 }
+
+// The XS shadow note, through the shipped YAML: the ShadowSet literal an
+// earlier `gofastr theme init` wrote (no XS, so Validate now refuses it)
+// is a review hit, and a theme that starts from style.DefaultTheme() and
+// sets no ShadowSet step is silent.
+func TestV087ShadowXSNoteHitsShadowLiteral(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 4), "fields")
+	if !n.Review || !n.Breaking {
+		t.Fatalf("v0.87.0/4 must be breaking and review-tier: review=%v breaking=%v", n.Review, n.Breaking)
+	}
+	kit := map[string]string{"core-ui/style/style.go": `package style
+
+type Shadow struct{ Name, Value string }
+type ShadowSet struct{ None, XS, SM, MD, LG, XL Shadow }
+type Theme struct {
+	Name    string
+	Shadows ShadowSet
+}
+
+func DefaultTheme() Theme   { return Theme{} }
+func AutoFillNames(t *Theme) {}
+`}
+	old := scantest.App(t, map[string]string{"theme/theme.go": `package theme
+
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+var App = style.Theme{
+	Name: "acme",
+	Shadows: style.ShadowSet{
+		None: style.Shadow{Value: "none"},
+		SM:   style.Shadow{Value: "0 1px 2px rgba(0,0,0,.05)"},
+		MD:   style.Shadow{Value: "0 4px 6px rgba(0,0,0,.1)"},
+		LG:   style.Shadow{Value: "0 10px 15px rgba(0,0,0,.1)"},
+		XL:   style.Shadow{Value: "0 20px 25px rgba(0,0,0,.1)"},
+	},
+}
+
+func init() { style.AutoFillNames(&App) }
+`}, scantest.Options{Kit: kit})
+	res := scantest.Run(t, old, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if !res.TypeChecked {
+		t.Fatalf("app did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
+	}
+	if got := scantest.Hits(res, n); len(got) != 1 {
+		t.Fatalf("hits = %v, want the one ShadowSet literal", got)
+	}
+
+	quiet := scantest.App(t, map[string]string{"theme/theme.go": `package theme
+
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+func App() style.Theme {
+	t := style.DefaultTheme()
+	t.Name = "acme"
+	return t
+}
+`}, scantest.Options{Kit: kit})
+	if got := scantest.Hits(scantest.Run(t, quiet, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 0 {
+		t.Fatalf("fires on a DefaultTheme-based theme: %v", got)
+	}
+}

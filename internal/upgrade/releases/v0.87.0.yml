@@ -1,5 +1,5 @@
 version: v0.87.0
-title: Layer prefixes, headless form and toast hooks, docs tools opt-in
+title: Layer prefixes, headless form and toast hooks, docs tools opt-in, XS shadow token
 notes:
   - change: "the framework_docs_list / framework_docs_get / framework_docs_search MCP tools moved out of framework.WithMCPIntrospection into framework/docs/mcptools, registered through the new framework.WithMCPTools option; package framework no longer imports the docs corpus"
     breaking: true
@@ -58,3 +58,10 @@ notes:
         - glob: "**/*.html"
           match: '(?:^|[^-a-zA-Z0-9_])fui-toast-stack-auto(?:[^a-z0-9_-]|$)'
     guidance: "Mount a stack (ui.ToastSlot, or let framework/uihost mount uihost.DefaultToastStack) instead of styling or querying .fui-toast-stack-auto, and key leaving-row CSS on [data-hui-toast-leaving]."
+  - change: "style.ShadowSet gains an XS token (--shadow-xs) and Validate requires it like the other shadow steps: a theme that builds its ShadowSet field by field instead of starting from style.DefaultTheme() is refused at boot with \"Theme.Shadows.XS: Shadow.Value is empty (Name=\\\"xs\\\")\" (the theme.go that gofastr theme init and theme edit write names it through style.AutoFillNames), or \"Theme.Shadows.XS: Shadow.Name is empty\" when nothing names it"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/core-ui/style.ShadowSet.SM
+    guidance: "Where a ShadowSet is built field by field (every theme.go an earlier gofastr theme init or theme edit wrote is), add XS: style.Shadow{Name: \"xs\", Value: \"0 1px 2px 0 rgba(0,0,0,0.05)\"} (or copy style.DefaultTheme().Shadows.XS). A ShadowSet literal that already sets XS, and a theme that starts from style.DefaultTheme() and overrides single steps, need nothing."
