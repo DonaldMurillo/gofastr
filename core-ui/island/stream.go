@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
@@ -162,6 +163,15 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 			// live stream; a dead peer's socket is simply released.
 			return
 		case update := <-ch:
+			// The updates pushed to this stream are rendered for its viewer.
+			// Re-establish that viewer before each one (and on the heartbeat
+			// below): a session revoked mid-stream closes the stream at the
+			// next push rather than at the stream bound. See
+			// handler.RecheckPrincipal; with no check installed this is a
+			// no-op.
+			if _, ok := handler.RecheckPrincipal(reqCtx); !ok {
+				return
+			}
 			payload := ssePayload{
 				Island: update.IslandID,
 				HTML:   update.HTML,
@@ -175,6 +185,9 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 				return
 			}
 		case <-heartbeat.C:
+			if _, ok := handler.RecheckPrincipal(reqCtx); !ok {
+				return
+			}
 			// Keepalive comment: keeps intermediaries from idle-killing the
 			// connection and keeps the stream writing so a dead peer is heard
 			// from as a write error rather than silence.

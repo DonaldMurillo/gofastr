@@ -505,6 +505,12 @@ func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) fu
 			ctx := WithPolicy(r.Context(), policy)
 			if roles != nil {
 				ctx = WithRoles(ctx, roles(ctx))
+				// A request that stays open re-resolves its roles for the
+				// refreshed principal (handler.RecheckPrincipal), so a role
+				// dropped mid-stream is seen at the next check.
+				ctx = handler.AddPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
+					return WithRoles(c, roles(c)), true
+				})
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
