@@ -14,7 +14,7 @@
   inset-block-start: 0;
   z-index: var(--z-sticky);
   background: var(--color-background);
-  border-block-end: 1px solid var(--color-line-faint);
+  border-block-end: var(--stroke-thin) solid var(--color-line-faint);
 }
 
 .bar {
@@ -62,7 +62,7 @@
   gap: 6px;
   padding: 2px var(--spacing-sm) 2px 6px;
   margin-inline-start: var(--spacing-xs);
-  border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent);
+  border: var(--stroke-thin) solid color-mix(in oklch, var(--color-primary) 30%, transparent);
   border-radius: var(--radii-full);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
@@ -151,7 +151,7 @@
   gap: 10px;
   min-inline-size: 200px;
   padding: 6px var(--spacing-sm) 6px var(--spacing-md);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
@@ -179,7 +179,7 @@
   font-size: var(--text-micro);
   line-height: 1;
   padding: 3px 6px;
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-sm);
   background: var(--color-background);
   color: var(--color-text-muted);
@@ -208,7 +208,7 @@
   place-items: center;
   inline-size: var(--spacing-touch-target);
   block-size: var(--spacing-touch-target);
-  border: 1px solid transparent;
+  border: var(--stroke-thin) solid transparent;
   border-radius: var(--radii-md);
   color: var(--color-text-muted);
   cursor: pointer;
@@ -241,7 +241,7 @@
   gap: var(--spacing-xs);
   padding: var(--spacing-sm);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   z-index: calc(var(--z-sticky) - 1);
@@ -268,7 +268,7 @@
   gap: var(--spacing-sm);
   margin-block-start: var(--spacing-md);
   padding-block-start: var(--spacing-md);
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
 }
 /* The drawer's search control is the icon shape: a 44px square button
    with the glyph only, the same treatment the GitHub mark gets. */
@@ -277,7 +277,7 @@
   place-items: center;
   inline-size: var(--spacing-touch-target);
   block-size: var(--spacing-touch-target);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
   color: var(--color-text-subtle);
 }

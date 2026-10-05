@@ -3,7 +3,7 @@
    with --spacing-2xl inside it), the measure the header's padding and
    the page sections align to, so the three line up at every width. */
 :scope {
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
   padding-block-end: var(--spacing-2xl);
 }
 
@@ -84,7 +84,7 @@
   margin: var(--spacing-section) auto 0;
   padding-block-start: var(--spacing-lg);
   padding-inline: var(--spacing-2xl);
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
   font-family: var(--font-mono);

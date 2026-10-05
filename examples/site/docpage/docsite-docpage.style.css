@@ -52,7 +52,7 @@
 .pager-foot {
   margin-block-start: var(--spacing-2xl);
   padding-block-start: var(--spacing-xl);
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
 }
 .pager {
   display: grid;
@@ -65,7 +65,7 @@
   gap: var(--spacing-sm);
   padding: var(--spacing-lg);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
   text-decoration: none;
   transition: border-color var(--duration-fast) var(--easing-ease-out);
@@ -75,7 +75,7 @@
   text-align: end;
 }
 .page:hover { border-color: var(--color-border-strong); }
-.page:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.page:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
 .dir {
   font-family: var(--font-mono);
   font-size: var(--text-xs);

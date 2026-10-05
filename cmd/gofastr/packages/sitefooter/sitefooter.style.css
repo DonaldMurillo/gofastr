@@ -3,7 +3,7 @@
    measure (--size-page-width, with --size-page-gutter outside it), the
    column the header and main use. */
 :scope {
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
 }
 
 .inner {
@@ -59,12 +59,12 @@
 }
 .links a:hover { color: var(--color-text); }
 .links a:focus-visible,
-.brand:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.brand:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
 
 .note {
   margin: var(--spacing-2xl) 0 0;
   padding-block-start: var(--spacing-lg);
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
 }

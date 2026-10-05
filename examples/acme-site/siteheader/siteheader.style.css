@@ -11,7 +11,7 @@
   position: sticky;
   inset-block-start: 0;
   z-index: var(--z-sticky);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--stroke-thin) solid var(--color-border);
 }
 /* The glass sits on a layer behind the bar, not on the bar itself:
    backdrop-filter on the bar would make it the containing block of
@@ -84,7 +84,7 @@
 }
 .toggle::-webkit-details-marker { display: none; }
 .toggle:hover { background: var(--color-surface-soft); }
-.toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
 /* The three bars turn into the cross: both icons share one cell and
    swap with a quarter turn. */
 .icon-open,
@@ -120,7 +120,7 @@
   display: flex;
   align-items: center;
   min-block-size: var(--spacing-touch-target);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--stroke-thin) solid var(--color-border);
   color: var(--color-text-muted);
   font-size: var(--text-lg);
   font-weight: var(--font-weight-medium);
