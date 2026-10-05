@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -66,16 +64,6 @@ func WithUploadedKeys(ctx context.Context, keys ...string) context.Context {
 func uploadedKeys(ctx context.Context) map[string]bool {
 	m, _ := ctx.Value(uploadedKeysCtx{}).(map[string]bool)
 	return m
-}
-
-// isExternalMediaURL reports whether s is an absolute http(s) URL with a
-// host: a link to somewhere else, never a key in the app's storage.
-func isExternalMediaURL(s string) bool {
-	u, err := url.Parse(s)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
 // mediaRef is one storage reference a write body sets, with the body field
@@ -152,7 +140,7 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 	var cur map[string]bool
 	loaded := false
 	for _, m := range ch.bodyMediaRefs(body) {
-		if isExternalMediaURL(m.ref) || saved[m.ref] {
+		if file.IsExternalURL(m.ref) || saved[m.ref] {
 			continue
 		}
 		if !loaded && current != nil {

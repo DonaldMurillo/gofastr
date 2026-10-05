@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -123,23 +122,13 @@ func appendUnique(s []string, v string) []string {
 	return append(s, v)
 }
 
-// isExternalObjectURL reports whether a file-column value is an absolute
-// http(s) URL: a link to elsewhere, never a key in App.Storage.
-func isExternalObjectURL(s string) bool {
-	u, err := url.Parse(s)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
-}
-
 // unsharedObjectKeys returns the keys erasure may delete: keys that are not
 // external URLs and that no row left in the database names. It runs after
 // the erasure commits, so the erased user's own rows no longer count.
 func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, keys []string) ([]string, error) {
 	var candidates []string
 	for _, k := range keys {
-		if !isExternalObjectURL(k) {
+		if !file.IsExternalURL(k) {
 			candidates = append(candidates, k)
 		}
 	}
@@ -159,16 +148,17 @@ func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, k
 			}
 		}
 		for _, col := range t.variants {
-			qc := query.QuoteIdent(query.MustIdent(col))
+			var open []string
 			for _, k := range candidates {
-				if named[k] {
-					continue
+				if !named[k] {
+					open = append(open, k)
 				}
-				ok, err := a.variantColumnNames(ctx, qt, qc, k)
-				if err != nil {
-					return nil, fmt.Errorf("check %s.%s: %w", t.table, col, err)
-				}
-				named[k] = ok
+			}
+			if len(open) == 0 {
+				break
+			}
+			if err := a.markNamedInVariants(ctx, qt, query.QuoteIdent(query.MustIdent(col)), open, named); err != nil {
+				return nil, fmt.Errorf("check %s.%s: %w", t.table, col, err)
 			}
 		}
 	}
@@ -217,37 +207,63 @@ func (a *App) markNamedInColumn(ctx context.Context, qt, qc string, keys []strin
 	return nil
 }
 
-// variantColumnNames reports whether any row's variants column lists key as
-// a storage_ref. A LIKE on a literal run of the key narrows the rows (it may
-// over-match: case folding, other keys sharing the run), and each candidate
-// is then parsed with file.VariantStorageRefs, the same parser the erase read
-// and the CRUD write path use, so JSON spacing or escaping cannot hide a
-// reference. A key with no usable literal run scans every non-null row.
-func (a *App) variantColumnNames(ctx context.Context, qt, qc, key string) (bool, error) {
-	stmt := fmt.Sprintf("SELECT CAST(%s AS TEXT) FROM %s WHERE %s IS NOT NULL", qc, qt, qc)
-	var args []any
-	if run := likeRun(key); run != "" {
-		stmt += fmt.Sprintf(` AND CAST(%s AS TEXT) LIKE $1 ESCAPE '\'`, qc)
-		args = append(args, "%"+run+"%")
+// markNamedInVariants sets named[k] for every candidate key some row's
+// variants column lists as a storage_ref. One query per chunk of keys: a
+// LIKE on a literal run of each key narrows the rows (it may over-match:
+// case folding, other keys sharing the run), and each row is then parsed
+// with file.VariantStorageRefs, the same parser the erase read and the CRUD
+// write path use, so JSON spacing or escaping cannot hide a reference. A
+// chunk holding a key with no usable literal run scans every non-null row.
+func (a *App) markNamedInVariants(ctx context.Context, qt, qc string, keys []string, named map[string]bool) error {
+	const chunk = 100
+	for start := 0; start < len(keys); start += chunk {
+		part := keys[start:min(start+chunk, len(keys))]
+		want := make(map[string]bool, len(part))
+		var likes []string
+		var args []any
+		scanAll := false
+		for _, k := range part {
+			want[k] = true
+			run := likeRun(k)
+			if run == "" {
+				scanAll = true
+				continue
+			}
+			args = append(args, "%"+run+"%")
+			likes = append(likes, fmt.Sprintf(`CAST(%s AS TEXT) LIKE $%d ESCAPE '\'`, qc, len(args)))
+		}
+		stmt := fmt.Sprintf("SELECT CAST(%s AS TEXT) FROM %s WHERE %s IS NOT NULL", qc, qt, qc)
+		if scanAll {
+			args = nil
+		} else {
+			stmt += " AND (" + strings.Join(likes, " OR ") + ")"
+		}
+		if err := a.scanVariantRefs(ctx, stmt, args, want, named); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func (a *App) scanVariantRefs(ctx context.Context, stmt string, args []any, want, named map[string]bool) error {
 	rows, err := a.DB.QueryContext(ctx, stmt, args...)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var v sql.NullString
 		if err := rows.Scan(&v); err != nil {
-			return false, err
+			return err
 		}
 		refs, _ := file.VariantStorageRefs([]byte(v.String))
 		for _, r := range refs {
-			if r == key {
-				return true, nil
+			if want[r] {
+				named[r] = true
 			}
 		}
 	}
-	return false, rows.Err()
+	return rows.Err()
 }
 
 // likeRun returns the longest run of the key's characters that JSON writes

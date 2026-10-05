@@ -121,6 +121,9 @@ when:
 Anything else answers `400` with `{"fields": {"<field>": ["storage key was
 not uploaded by this request"]}}`. An absolute `http(s)` URL is always
 accepted: it is an external link, and erasure never deletes it.
+`file.IsExternalURL(s)` is the check both sides use, and
+`file.VariantStorageRefs(raw)` reads the keys a `<field>_variants` value
+names.
 
 ```go
 ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")

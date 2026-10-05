@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
@@ -51,6 +53,18 @@ func VariantStorageRefs(raw []byte) (refs []string, ok bool) {
 		}
 	}
 	return refs, true
+}
+
+// IsExternalURL reports whether a file-column value is an absolute http(s)
+// URL with a host: a link to somewhere else, never a key in the app's
+// storage. The CRUD write path and EraseUserData share it for the same
+// reason they share VariantStorageRefs.
+func IsExternalURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
 // ImageDerivatives holds everything derived from an uploaded image beyond
