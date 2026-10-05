@@ -120,13 +120,13 @@ notes:
       uses:
         - gofastr/framework.AppConfig.DebugEndpoints
     guidance: "Give the operators who read /.debug/stats the admin role, or install framework.WithDebugAuthorize(fn) with your own check."
-  - change: "a server action compiled from a screen runs that screen's Policy chain first and answers 403 (or a Block decision's status) when the policy refuses. The action request carries no route params, so a policy that reads one sees it empty"
+  - change: "a server action compiled from a screen runs that screen's Policy chain first and answers 403 (or a Block decision's status) when the policy refuses. The policy sees the route params of the page the runtime names in the action body, and none when that page is not one of the screen's"
     breaking: true
     hits: review
     find:
       uses:
         - gofastr/core-ui/app.Screen.WithPolicy
-    guidance: "A screen whose policy reads a route param and that has server actions needs the param check moved into the action handler, with the policy made to allow an empty param on action requests."
+    guidance: "A policy that reads a route param works unchanged for actions sent by the shipped runtime. Hand-written calls to /__gofastr/action must send the page path as page, or the policy sees an empty param and refuses. Per-record checks stay in the action handler: the client chooses the page."
   - change: "an embed grant reaches only the runtime endpoints uihost mounts under /__gofastr (not the whole namespace), and never a prefix an EmbedReserving battery reserves; a grant's scopes also bind ?include=, ?rel.field= filters and cascade writes, so a grant with no scopes cannot include or filter across relations over HTTP"
     breaking: true
     hits: review

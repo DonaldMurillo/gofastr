@@ -1024,8 +1024,9 @@ has a `*_security_test.go` that failed before it, and `gofastr upgrade
   reserve theirs.
 - **BREAKING: server actions run their screen's policy.** An action
   compiled from a policy-gated screen ran for any session. The policy
-  now runs first; the action request has no route params, so a policy
-  that reads one refuses.
+  now runs first, with the route params of the page the runtime names in
+  the action body; a policy that reads a param refuses an action that
+  names no page of its screen.
 - **BREAKING: `/.debug` endpoints require the admin role**
   (`framework.WithDebugAuthorize` replaces the check). Any signed-in
   user could read goroutine stacks and force a GC per request.

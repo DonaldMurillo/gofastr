@@ -48,10 +48,14 @@ region or writes the value into a signal.
 - A compiled server action runs its screen's Policy chain first (the same
   chain that gates the page render) and answers 403 when it does not
   Allow, so a caller the page refuses cannot run the page's actions. The
-  action request carries no route params, so a policy that reads one
-  sees it empty there; write it to refuse on an empty param, and give
-  that screen's handlers their own check. Anything
-  finer than the page gate (per record, per field) is the handler's job.
+  runtime sends the page path with each action (`page` in the body); when
+  it resolves to the action's own screen, the policy reads that page's
+  route params through `app.MatchFromContext`, as it does on a render.
+  Any other path leaves the params empty, so write the policy to refuse
+  on an empty param. The client picks the path, so the gate answers "may
+  this caller see some page of this screen", never "may it act on this
+  record": anything finer than the page gate (per record, per field) is
+  the handler's job.
 
 A mutation can also stale screens the user is *not* on: a create stales
 every cached page of the list, an admin action stales `/pricing`. Name

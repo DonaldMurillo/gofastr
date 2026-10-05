@@ -3381,6 +3381,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		Params      map[string]string `json:"params"`
 		Session     string            `json:"session"`
 		ComponentID string            `json:"componentId"`
+		Page        string            `json:"page"`
 	}
 	if !decodeBounded(w, r, &body) {
 		return
@@ -3442,15 +3443,24 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// The owning screen's Policy chain. The page render runs it before Load,
 	// and the actions are compiled from that same screen's component, so a
 	// caller the policy keeps off the page must not run them either. The
-	// action request carries no route params, so a policy that reads one
-	// sees it empty and, written to fail closed, refuses: such a screen's
-	// actions need their own check in the handler. A redirect decision is
-	// a refusal here, since an RPC cannot follow it.
+	// runtime sends the page path the action came from; when it resolves to
+	// this screen, the policy sees that page's route params, and so decides
+	// what a render of that URL would. A path the client picks gains nothing
+	// a page load would not: it names a page the policy then judges. Any
+	// other path leaves the params empty, and a policy that reads one
+	// refuses. A redirect decision is a refusal here, since an RPC cannot
+	// follow it.
 	ds.mu.RLock()
 	screen := ds.actionScreens[componentID]
 	ds.mu.RUnlock()
 	if screen != nil {
-		if d := app.ResolvePolicy(app.WithRequest(r.Context(), r), screen); d.Kind != app.DecisionAllow {
+		ctx := app.WithRequest(r.Context(), r)
+		if body.Page != "" {
+			if m, ok := ds.App.Router.MatchFor(body.Page); ok && m.ScreenID() == screen.Path {
+				ctx = app.WithMatch(ctx, m)
+			}
+		}
+		if d := app.ResolvePolicy(ctx, screen); d.Kind != app.DecisionAllow {
 			status := http.StatusForbidden
 			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
 				status = d.Status
