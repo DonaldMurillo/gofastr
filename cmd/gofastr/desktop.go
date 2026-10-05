@@ -237,8 +237,9 @@ type desktopBuildFlags struct {
 	// default: ad-hoc when codesign exists).
 	sign   string
 	noSign bool
-	// scheme is the custom URL scheme the bundle claims
-	// (CFBundleURLTypes); empty claims nothing.
+	// scheme is the custom URL scheme the build claims. macOS writes it
+	// to CFBundleURLTypes; Windows embeds it for per-user registration
+	// whenever the app starts. Empty claims nothing.
 	scheme string
 	// notarize signs with --sign's identity under the hardened
 	// runtime, submits to Apple's notary service, staples, re-zips;
@@ -308,6 +309,7 @@ func parseDesktopBuildFlags(args []string) desktopBuildFlags {
 
 var desktopIDRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
 var desktopVersionRe = regexp.MustCompile(`^[0-9]+(\.[0-9A-Za-z]+)*$`)
+var desktopSchemeRe = regexp.MustCompile(`^[a-z][a-z0-9+.-]{0,31}$`)
 
 // validateDesktopID enforces the reverse-DNS grammar (same as
 // battery/desktop's Config.ID validation).
@@ -394,6 +396,11 @@ func runDesktopBuild(args []string) {
 		osExit(1)
 		return
 	}
+	if f.scheme != "" && !desktopSchemeRe.MatchString(f.scheme) {
+		fail("--scheme %q must match %s", f.scheme, desktopSchemeRe.String())
+		osExit(1)
+		return
+	}
 	if f.noSign && f.sign != "" {
 		fail("--no-sign and --sign are mutually exclusive")
 		osExit(1)
@@ -405,8 +412,8 @@ func runDesktopBuild(args []string) {
 		return
 	}
 	if runtime.GOOS == "windows" {
-		if f.sign != "" || f.notarize || f.scheme != "" || f.icon != "" {
-			fail("Windows desktop builds support --id, --name, --pkg, --version, and -o. Signing, icons, URL schemes, and notarization are macOS-only.")
+		if f.sign != "" || f.noSign || f.notarize {
+			fail("Windows desktop builds support --id, --name, --pkg, --version, --icon, --scheme, and -o. Signing and notarization are macOS-only.")
 			osExit(1)
 			return
 		}
@@ -607,6 +614,41 @@ func buildICNS(png []byte) ([]byte, error) {
 	out.Write(total[:])
 	out.Write(body)
 	return out.Bytes(), nil
+}
+
+// buildWindowsICO converts the same PNG icon source used by macOS into
+// a multi-resolution ICO container. Its frames carry PNG payloads, which
+// Windows supports for desktop icons on current versions.
+func buildWindowsICO(pngBytes []byte) ([]byte, error) {
+	src, err := fwimage.DecodeBytes(pngBytes)
+	if err != nil {
+		return nil, fmt.Errorf("decode icon: %w", err)
+	}
+	square := squareCropStd(src.GoImage())
+	const count = 4
+	const headerBytes = 6 + count*16
+	out := make([]byte, headerBytes)
+	binary.LittleEndian.PutUint16(out[2:4], 1) // ICONDIR type
+	binary.LittleEndian.PutUint16(out[4:6], count)
+	offset := uint32(headerBytes)
+	for i, size := range []int{16, 32, 48, 256} {
+		resized := fwimage.FromImage(square, fwimage.FormatPNG).Resize(size, size)
+		payload, err := resized.PNG().Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("encode Windows icon (%dpx): %w", size, err)
+		}
+		entry := 6 + i*16
+		if size < 256 {
+			out[entry], out[entry+1] = byte(size), byte(size)
+		}
+		binary.LittleEndian.PutUint16(out[entry+4:entry+6], 1)  // planes
+		binary.LittleEndian.PutUint16(out[entry+6:entry+8], 32) // bits per pixel
+		binary.LittleEndian.PutUint32(out[entry+8:entry+12], uint32(len(payload)))
+		binary.LittleEndian.PutUint32(out[entry+12:entry+16], offset)
+		out = append(out, payload...)
+		offset += uint32(len(payload))
+	}
+	return out, nil
 }
 
 // squareCropStd center-crops img to a square via the stdlib (NRGBA

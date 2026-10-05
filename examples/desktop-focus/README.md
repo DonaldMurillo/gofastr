@@ -39,8 +39,9 @@ or over plain HTTP.
   page's listener navigates to the task with `__gofastr.navigate`.
 - Deep links: `gofastr-focus://start?task=<id>` starts that task and
   lands on the dashboard; anything else maps through the default rule
-  (`gofastr-focus://history` opens the history screen). Register the
-  scheme at bundle-build time with `--scheme gofastr-focus`.
+  (`gofastr-focus://history` opens the history screen). Pass
+  `--scheme gofastr-focus` when building. macOS stores it in the bundle;
+  Windows registers it for the current user when the app starts.
 - A tray menu (Show, Start / Pause, Timer widget, Settings, quit) and
   a native menu bar (File, View) sharing the same item model; the
   settings window has four entry points (app menu, File menu, tray,
@@ -73,7 +74,7 @@ go run ./examples/desktop-focus                    # native window (darwin/arm64
 go run ./examples/desktop-focus --serve :8080      # same app in a browser
 gofastr desktop run  --pkg ./examples/desktop-focus         # build + run, dev tools on
 gofastr desktop build --id dev.gofastr.desktop-focus \
-  --name Focus --scheme gofastr-focus --pkg ./examples/desktop-focus  # dist/Focus.app
+  --name Focus --scheme gofastr-focus --pkg ./examples/desktop-focus  # Focus.app on macOS; Focus.exe on Windows
 ```
 
 `--serve` mode is also what `gofastr dev` drives (it sets `$PORT`), so
@@ -96,19 +97,16 @@ The tests come in three shapes. `engine_test.go` drives the engine
 with an injected clock through the real entities. `harness_test.go`
 drives the window shape through `desktoptest.Run`: the bridge, the
 tray, the menus, the deep links, the notifications, and the settings
-window the way a user reaches them. `native_e2e_test.go` (tag
-`desktop_e2e`, a Mac with a display) runs the app inside the real
-WKWebView through `desktoptest.NativeMain`: the dashboard's Start
-button, the ticked countdown, the widget's post into the main window,
-and the settings window's checkboxes, with `FOCUS_SHOTS=<dir>` writing
-the windows' real pixels as PNGs. `main_test.go` covers the `--serve`
-shape.
+window the way a user reaches them. `native_e2e_test.go` runs the app
+inside WKWebView on a Mac with a display. The Windows shell e2e runs on
+a Windows host with WebView2. `main_test.go` covers the `--serve` shape.
 
 ## What needs a bundle
 
-Notifications require a signed `.app`: macOS refuses
-`UNUserNotificationCenter` from `go run`. An ad-hoc signature is
+On macOS, notifications require a signed `.app`; an ad-hoc signature is
 enough, and `gofastr desktop build` applies one by default when
-`codesign` is on PATH. Everything else works unbundled. On hosts
-without a native shell, `Run` reports the named `unsupported` error,
-and a configured tray logs a Warn.
+`codesign` is on PATH. Windows notifications use tray balloons. Windows
+deep links need a build made with `--scheme`; the app registers the
+scheme for the current user when it starts. On hosts without a native shell, `Run`
+reports the named `unsupported` error, and a configured tray logs a
+Warn.

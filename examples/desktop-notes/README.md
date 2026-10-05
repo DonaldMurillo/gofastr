@@ -44,7 +44,7 @@ go run ./examples/desktop-notes                    # native window (darwin/arm64
 go run ./examples/desktop-notes --serve :8080      # same app in a browser
 gofastr desktop run  --pkg ./examples/desktop-notes        # build + run, dev tools on
 gofastr desktop build --id dev.gofastr.desktop-notes \
-  --name Notes --scheme gofastr-notes --pkg ./examples/desktop-notes  # dist/Notes.app; gofastr-notes:// links open it
+  --name Notes --scheme gofastr-notes --pkg ./examples/desktop-notes  # Notes.app on macOS; Notes.exe on Windows
 ```
 
 `--serve` mode is also what `gofastr dev` drives (it sets `$PORT`), so
@@ -67,11 +67,10 @@ user reaches them.
 
 ## What needs a bundle
 
-Notifications require a signed `.app`: macOS refuses
-`UNUserNotificationCenter` from `go run`. An ad-hoc signature is
-enough, and `gofastr desktop build` applies one by default when
-`codesign` is on PATH, so the built bundle notifies (the first save
-triggers the system's Allow prompt). Everything else, including the
-clipboard, dialogs, and the export, works unbundled. On hosts without
-a native shell, `Run` reports the named `unsupported` error, and a
-configured tray logs a Warn.
+On macOS, notifications need a signed `.app` because the system refuses
+`UNUserNotificationCenter` from `go run`. An ad-hoc signature is enough,
+and the build command applies one by default when `codesign` is on PATH.
+Windows notifications use tray balloons. Windows deep links need a
+build made with `--scheme`; the app registers the scheme for the current
+user when it starts. On hosts without a native shell, `Run` reports the named
+`unsupported` error, and a configured tray logs a Warn.
