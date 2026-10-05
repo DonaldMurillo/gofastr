@@ -122,6 +122,11 @@ var Catalog = []Entry{
 			ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill}),
 		)
 	}},
+	{"themepicker", "ThemePicker", "Buttons & links", "Switches the whole page to a registered theme override and remembers the choice.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: "Square", Theme: squareTheme}}}),
+		)
+	}},
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {

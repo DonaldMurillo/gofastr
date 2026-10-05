@@ -1,6 +1,7 @@
 // headless-navigation: the behaviour module for the page-level
-// controls — the back-to-top link and the theme (colour-scheme)
-// control group. Loaded by the kernel on one of its markers.
+// controls — the back-to-top link, the theme (colour-scheme) control
+// group and the page-theme picker. Loaded by the kernel on one of its
+// markers.
 //
 // The back-to-top link is a real anchor whose href is the no-script
 // destination; the module adds the threshold, the scroll, and the
@@ -142,8 +143,64 @@
     }
   }
 
+  // ─── page theme ──────────────────────────────────────────────────
+  //
+  // A ThemePicker option names one registered override class (or ''
+  // for the app's own theme). The bootstrap's window.__gofastr_theme
+  // owns the <html> class and the storage key it re-applies before
+  // first paint; a page without the bootstrap gets the same writes
+  // here.
+
+  const PAGE_THEME_KEY = 'gofastr.theme';
+  const PAGE_THEME_RE = /^cui-theme-[0-9a-f]{1,64}$/;
+
+  function currentPageTheme() {
+    const api = window.__gofastr_theme;
+    if (api && typeof api.get === 'function') {
+      try { return api.get(); } catch (_) { return ''; }
+    }
+    let v = '';
+    try { v = localStorage.getItem(PAGE_THEME_KEY) || ''; } catch (_) { return ''; }
+    return PAGE_THEME_RE.test(v) ? v : '';
+  }
+
+  function markPageTheme(scope, cls) {
+    for (const group of within(scope, '[data-hui-theme-picker]')) {
+      for (const opt of group.querySelectorAll('[data-hui-theme-pick]')) {
+        opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-pick') === cls ? 'true' : 'false');
+      }
+    }
+  }
+
+  function applyPageTheme(cls) {
+    if (cls !== '' && !PAGE_THEME_RE.test(cls)) return;
+    const api = window.__gofastr_theme;
+    let done = false;
+    if (api && typeof api.set === 'function') {
+      try { api.set(cls); done = true; } catch (_) {}
+    }
+    if (!done) {
+      const root = document.documentElement;
+      for (const c of Array.prototype.slice.call(root.classList)) {
+        if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
+      }
+      if (cls) root.classList.add(cls);
+      try {
+        if (cls) localStorage.setItem(PAGE_THEME_KEY, cls);
+        else localStorage.removeItem(PAGE_THEME_KEY);
+      } catch (_) {}
+    }
+    // Every picker on the page shows the same choice.
+    markPageTheme(document, cls);
+  }
+
   document.addEventListener('click', function (e) {
     const t = e.target;
+    const pick = t && t.closest && t.closest('[data-hui-theme-pick]');
+    if (pick && pick.closest('[data-hui-theme-picker]')) {
+      applyPageTheme(pick.getAttribute('data-hui-theme-pick') || '');
+      return;
+    }
     const opt = t && t.closest && t.closest('[data-hui-theme-option]');
     if (opt) {
       const scheme = opt.getAttribute('data-hui-theme-option');
@@ -264,6 +321,7 @@
         opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-option') === scheme ? 'true' : 'false');
       }
     }
+    markPageTheme(scope, currentPageTheme());
   }
 
   scan(document);

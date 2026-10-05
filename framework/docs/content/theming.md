@@ -560,6 +560,85 @@ light page is a theme with a dark palette, not an accident of
 inheritance. If you want a section to follow the page's scheme, give
 its override the dark values too.
 
+## Page themes: `ui.ThemePicker`
+
+To let a visitor switch the whole page between themes, register each
+extra theme as an override and render a picker:
+
+```go
+var Brutal = style.RegisterThemeOverride(brutalTheme())
+
+ui.ThemePicker(ui.ThemePickerConfig{
+    Ctx:    ctx,
+    Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: Brutal}},
+})
+```
+
+The picker draws as `ui.ThemeToggle`'s pill: a **Default** option for
+the app's own theme, then one option per choice. Picking one puts the
+override's `cui-theme-<hash>` class on `<html>`, so everything on the
+page draws in it: the body background, every component, the
+component options, and the theme's `Knobs`. **Default** removes the
+class. The `headless-navigation` module does the switch in place, with
+no request. The choice is stored in `localStorage["gofastr.theme"]`,
+and the color-scheme bootstrap at the top of `<head>` puts the class
+back before first paint on the next load, so a themed page never
+flashes the default. Client-side navigation keeps the class, since it
+never replaces `<html>`. Two pickers on one page show the same choice.
+
+The override CSS names `:root.cui-theme-<hash>` beside the descendant
+selector in each block, so the class works on `<html>` as well as on a
+`ui.Themed` wrapper. On `<html>` the override's light tokens outrank
+the root theme's dark block, and its dark tokens outrank both.
+
+It composes with `ui.ThemeToggle`: the page theme decides the palette
+and the toggle decides light or dark within it. Put both in the
+header.
+
+### Caveats
+
+- **Give every offered theme a full dark palette.** An override with
+  no `DarkColors` stays light when the visitor picks dark, the same
+  as a `ui.Themed` scope. Next to a dark/light toggle that reads as a
+  broken toggle.
+- **A theme names its fonts but does not load them.** Self-host every
+  family any offered theme uses ([Self-hosting web
+  fonts](#self-hosting-web-fonts)). Without that, the browser falls
+  back silently. A `@font-face` rule costs nothing until a page uses
+  the family, so declaring all of them up front is cheap.
+- **An override is a whole theme, not a patch on the app theme.** Its
+  block declares every typed token and the complete component option
+  set, so a spacing step, font or option the app theme customised and
+  the override did not reverts to the override's own value. Build each
+  override from the app theme's value (`t := appTheme()`, then change
+  what differs) rather than from `theme.Default(...)`, unless a
+  different base is the point.
+- **Unset knobs keep the app theme's value.** The class and the root
+  theme sit on the same element, so a knob the app theme sets in
+  `Knobs` stays in force under an override that does not set it. Set
+  it in the override's `Knobs` to change it.
+- **Editing a theme resets the visitors who picked it.** The stored
+  choice is the class, and the class is the theme's content hash. Any
+  change to the theme's values gives it a new class, and visitors who
+  had picked it see Default until they pick again. A stored value that
+  is not a `cui-theme-<hex>` class is ignored.
+- **The server never sees the choice.** It lives in one browser's
+  storage, not in a cookie or the account: the server renders the app
+  theme, and a private window or another device starts on Default.
+  Anything drawn from the Go `style.Theme` value rather than from
+  `app.css`, such as emails, draws the app theme. The picker ships
+  every option unchecked, and the module checks the stored one when it
+  loads.
+- **A theme reaches what the kit draws, nothing else.** Images and
+  screenshots keep their baked colors. Owned style sheets
+  (`<name>.style.css`) follow the theme only through the tokens they
+  read. A `ui.Themed` section inside a themed page keeps its own theme.
+- **Clipping containers clip offset shadows.** A theme with hard
+  offset shadows (`4px 4px 0 0 …`) draws them outside the element's
+  box, so a container that clips its overflow crops them. A
+  `ui.Carousel` slide is one: it cuts a card's shadow off at its right
+  and bottom edges.
+
 ## Component options
 
 Tokens retune the palette and the scales; **component options** decide

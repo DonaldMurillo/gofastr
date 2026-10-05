@@ -160,6 +160,7 @@
 //	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
+//	ThemePicker:          whole-page switch between registered theme overrides
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
 //	Timeline:             vertical event rail
 //	TimePicker:           styled native <input type=time>

@@ -24,6 +24,14 @@ import (
 
 func themeToggleTestPage(t *testing.T, body string, extra ...func(mux *http.ServeMux)) *httptest.Server {
 	t.Helper()
+	return themeTestPageWithHead(t, "", body, extra...)
+}
+
+// themeTestPageWithHead is themeToggleTestPage with markup at the top
+// of <head>, where uihost ships the stylesheet and the colour-scheme
+// bootstrap.
+func themeTestPageWithHead(t *testing.T, head, body string, extra ...func(mux *http.ServeMux)) *httptest.Server {
+	t.Helper()
 	js, err := runtime.RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -52,10 +60,10 @@ func themeToggleTestPage(t *testing.T, body string, extra ...func(mux *http.Serv
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!doctype html><html><head>`+
+		fmt.Fprintf(w, `<!doctype html><html><head>%s`+
 			`<script type="application/json" id="gofastr-behaviors">%s</script></head><body>`+
 			`<main role="main"><span id="ready">ready</span>%s</main>`+
-			`<script src="/__gofastr/runtime.js"></script></body></html>`, block, body)
+			`<script src="/__gofastr/runtime.js"></script></body></html>`, head, block, body)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

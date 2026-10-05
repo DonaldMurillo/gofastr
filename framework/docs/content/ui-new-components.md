@@ -207,6 +207,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 ### Status & banners
 
 - **themetoggle**: `framework/ui.ThemeToggle`, dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete
+- **themepicker**: `framework/ui.ThemePicker`, switches the whole page between the app theme and registered overrides (`style.RegisterThemeOverride`) by putting the override class on `<html>`; the choice persists per browser (see theming → "Page themes")
 - **backtotop**: `framework/ui.BackToTop`, fixed scroll affordance that appears after a threshold
 - **banner**: `framework/ui.Banner`, page-level persistent status strip
 - **callout**: `framework/ui.Callout`, persistent inline info / warning / danger / neutral block

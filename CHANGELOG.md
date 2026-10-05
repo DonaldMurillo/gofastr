@@ -75,6 +75,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   only. The new groups reach `.tokens.css` (`--leading-*`,
   `--tracking-*`, `--opacity-*`), the plugin host's token bridge and the
   GOFASTR1807/1808 checks.
+- **`ui.ThemePicker` switches the whole page between themes.** Register
+  each extra theme with `style.RegisterThemeOverride` and list it in
+  `ThemePickerConfig.Themes`; the picker draws as `ui.ThemeToggle`'s
+  pill, with a Default option for the app's own theme. Picking a theme
+  puts its `cui-theme-<hash>` class on `<html>` in place, stores it in
+  `localStorage["gofastr.theme"]`, and the color-scheme bootstrap puts
+  it back before first paint on the next load
+  (`window.__gofastr_theme.set(class)` is the script API). Override
+  CSS now also names `:root.cui-theme-<hash>` in each block, so the
+  class works on `<html>` and its dark palette follows
+  `ui.ThemeToggle`. The theming guide lists what a page theme does not
+  reach: fonts it does not load, overrides with no dark palette, a
+  stored choice that resets when the theme's values change, and the
+  server rendering the app theme.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

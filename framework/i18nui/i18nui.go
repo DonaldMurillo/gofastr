@@ -212,6 +212,10 @@ const (
 	KeyThemeAuto        Key = "ui.themeToggle.auto"
 	KeyThemeColorScheme Key = "ui.themeToggle.colorScheme"
 
+	// ThemePicker
+	KeyThemePicker  Key = "ui.themePicker.label"
+	KeyThemeDefault Key = "ui.themePicker.default"
+
 	// Site navigation (an app's own header package)
 	KeyNavPrimary       Key = "ui.nav.primary"
 	KeyNavMobilePrimary Key = "ui.nav.mobilePrimary"
@@ -448,6 +452,9 @@ var Defaults = map[Key]string{
 	KeyThemeDark:        "Dark",
 	KeyThemeAuto:        "Auto",
 	KeyThemeColorScheme: "Color scheme",
+
+	KeyThemePicker:  "Theme",
+	KeyThemeDefault: "Default",
 
 	KeyNavPrimary:       "Primary",
 	KeyNavMobilePrimary: "Mobile primary",
@@ -695,6 +702,7 @@ func AllKeys() []Key {
 		KeySectionLabel,
 		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
 		KeyThemeAuto, KeyThemeColorScheme,
+		KeyThemePicker, KeyThemeDefault,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
 		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,

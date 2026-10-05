@@ -42,9 +42,16 @@ func moduleTestCtxMux(t *testing.T, body string, extra func(mux *http.ServeMux),
 		adds = append(adds, extra)
 	}
 	srv := themeToggleTestPage(t, body, adds...)
+	return moduleTestCtxURL(t, srv.URL, pre...)
+}
+
+// moduleTestCtxURL opens a page some other harness serves and waits
+// for its #ready marker.
+func moduleTestCtxURL(t *testing.T, url string, pre ...chromedp.Action) context.Context {
+	t.Helper()
 	ctx := chromedptest.Context(t)
 	actions := append(append([]chromedp.Action{}, pre...),
-		chromedp.Navigate(srv.URL),
+		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 	)
 	if err := chromedp.Run(ctx, actions...); err != nil {

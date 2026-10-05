@@ -1413,7 +1413,7 @@ html[data-color-scheme="light"] [data-cui-comp="ui-theme-toggle"] .fui-theme-tog
 html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__light { display: none; }
 html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
-/* Pill variant. It keeps its labels'
+/* Pill variant (ThemeToggle's and ThemePicker's). It keeps its labels'
    width in a crowded row: shrinking it clipped the last option under
    the rounded overflow. */
 :where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {

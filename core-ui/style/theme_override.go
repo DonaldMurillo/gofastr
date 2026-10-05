@@ -141,6 +141,7 @@ func AllThemeOverrides() map[string]Theme {
 
 // ThemeOverrideCSS emits the class-scoped blocks for one override:
 //
+//	:root.cui-theme-<hash>,
 //	.cui-theme-<hash> {
 //	  --color-primary: …;
 //	  …every typed token…
@@ -152,10 +153,24 @@ func AllThemeOverrides() map[string]Theme {
 // and, when the theme carries a dark palette (DarkColors or DarkCode),
 // the same declarations under the document's dark scheme:
 //
+//	[data-color-scheme="dark"]:root.cui-theme-<hash>,
 //	[data-color-scheme="dark"] .cui-theme-<hash> { …dark tokens… }
 //	@media (prefers-color-scheme: dark) {
+//	  :root.cui-theme-<hash>:not([data-color-scheme="light"]),
 //	  :root:not([data-color-scheme="light"]) .cui-theme-<hash> { …dark tokens… }
 //	}
+//
+// # The class on <html>
+//
+// ui.ThemePicker puts the class on the document element itself, so
+// each block names a :root compound beside the descendant selector.
+// The compound carries the specificity of the canonical
+// :root[data-color-scheme="dark"] block and comes after it in app.css,
+// so on <html> the override's light tokens hold in dark mode (an
+// override without a dark palette stays light, as a wrapped subtree
+// does) and its dark tokens beat the canonical dark ones. The bare
+// descendant selectors could never match there: <html> is nobody's
+// descendant.
 //
 // The light block re-declares every typed token, AND sets `color` +
 // `background` on the wrapper itself. The `color` declaration is
@@ -205,7 +220,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	lines = append(lines, knobDecls(t.Knobs)...)
 	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	var b strings.Builder
-	fmt.Fprintf(&b, ".cui-theme-%s {\n", hash)
+	fmt.Fprintf(&b, ":root.cui-theme-%s,\n.cui-theme-%s {\n", hash, hash)
 	writeScopeLines(&b, "  ", lines)
 	// The wrapper itself adopts the overridden palette so inherited
 	// `color` flows down. Without this, descendants that don't
@@ -218,11 +233,11 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 		return b.String()
 	}
 	darkLines := darkScopeLines(t)
-	b.WriteString("\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
+	b.WriteString("\n[data-color-scheme=\"dark\"]:root.cui-theme-" + hash + ",\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "  ", darkLines)
 	b.WriteString("}\n")
 	b.WriteString("@media (prefers-color-scheme: dark) {\n")
-	b.WriteString("  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + hash + " {\n")
+	b.WriteString("  :root.cui-theme-" + hash + ":not([data-color-scheme=\"light\"]),\n  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "    ", darkLines)
 	b.WriteString("  }\n")
 	b.WriteString("}")
