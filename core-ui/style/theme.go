@@ -488,9 +488,10 @@ func validateTokens(v reflect.Value, path string) error {
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Radius.Name is empty", path)
 		}
-		// "none" / "0" is a legitimate sharp-corner sentinel.
-		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
-			return fmt.Errorf("%s: Radius.Value is 0 (Name=%q). Use Radius{Name: \"none\"} for sharp corners explicitly", path, tk.Name)
+		// 0 is a real radius on any step: a square theme sets them all
+		// to it. Only a negative value is broken.
+		if tk.Value < 0 {
+			return fmt.Errorf("%s: Radius.Value is negative (%d, Name=%q)", path, tk.Value, tk.Name)
 		}
 		return nil
 	case Font:

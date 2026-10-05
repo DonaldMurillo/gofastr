@@ -1318,14 +1318,15 @@ func TestThemeHelpRoutesLocally(t *testing.T) {
 
 // The written file has to survive the validation the app performs at boot.
 // ApplyTokens is not that boundary: its spacing/radius/z-index setters accept
-// 0 while Theme.Validate rejects it, so one keystroke in a number field
-// produced a green "updated", a written theme.go, and a panic on next run.
+// values Theme.Validate rejects (a 0 spacing, a negative radius), so one
+// keystroke in a number field produced a green "updated", a written theme.go,
+// and a panic on next run.
 func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	srv := newTestServer(t)
 
 	for _, bad := range []struct{ key, value string }{
 		{"spacing-md", "0px"},
-		{"radii-sm", "0px"},
+		{"radii-sm", "-2px"},
 		// White ink on pure red is 4.0:1: the pair guard refuses it for
 		// the same reason — the written app panics at WithTheme.
 		{"color-primary", "#FF0000"},
@@ -1338,6 +1339,10 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	// A legitimate edit still applies, or the guard has simply broken the tool.
 	if _, err := srv.applyToken("color-primary", "#0F766E"); err != nil {
 		t.Errorf("a valid edit was refused: %v", err)
+	}
+	// A square corner is a design, not a broken token.
+	if _, err := srv.applyToken("radii-sm", "0px"); err != nil {
+		t.Errorf("radii-sm=0px was refused: %v", err)
 	}
 }
 

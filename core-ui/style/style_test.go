@@ -537,7 +537,6 @@ func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 		setup func(*Theme)
 	}{
 		{"Spacing.MD=0", func(t *Theme) { t.Spacing.MD = Spacing{Name: "md", Value: 0} }},
-		{"Radii.MD=0", func(t *Theme) { t.Radii.MD = Radius{Name: "md", Value: 0} }},
 		{"Breakpoints.MD=0", func(t *Theme) { t.Breakpoints.MD = Breakpoint{Name: "md", Value: 0} }},
 		{"ZIndex.Modal=0", func(t *Theme) { t.ZIndex.Modal = ZIndexValue{Name: "modal", Value: 0} }},
 		{"Durations.Normal=0", func(t *Theme) { t.Durations.Normal = Duration{Name: "normal", Value: 0} }},
@@ -550,6 +549,34 @@ func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 				t.Errorf("%s should fail validation (zero Value)", c.name)
 			}
 		})
+	}
+}
+
+// A zero radius is a design, not a broken token: a square theme sets
+// every step to 0. Validate refused Radii.SM=0 (only a step named
+// "none" could be 0), so a theme could not square --radii-sm/md/lg.
+func TestZeroRadiusStepsValidate(t *testing.T) {
+	th := DefaultTheme()
+	th.Radii.SM = Radius{Name: "sm", Value: 0}
+	th.Radii.MD = Radius{Name: "md", Value: 0}
+	th.Radii.LG = Radius{Name: "lg", Value: 0}
+	th.Radii.XL = Radius{Name: "xl", Value: 0}
+	if err := th.Validate(); err != nil {
+		t.Fatalf("a square theme must validate: %v", err)
+	}
+	css := th.CSSCustomProperties()
+	for _, step := range []string{"sm", "md", "lg", "xl"} {
+		if !strings.Contains(css, "--radii-"+step+": 0px;") {
+			t.Errorf("--radii-%s is not emitted as 0px:\n%s", step, css)
+		}
+	}
+}
+
+func TestNegativeRadiusIsRefused(t *testing.T) {
+	th := DefaultTheme()
+	th.Radii.MD = Radius{Name: "md", Value: -2}
+	if err := th.Validate(); err == nil {
+		t.Fatal("a negative radius must fail validation")
 	}
 }
 

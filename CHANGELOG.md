@@ -571,6 +571,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A theme can set any radius step to 0.** `Theme.Validate` refused
+  `Radii.SM`, `MD`, `LG` or `XL` at 0 (only the `none` step could be
+  0), so a square theme could not flatten `--radii-sm` and the rest.
+  Every step now accepts 0; a negative radius is still refused.
 - **Six component sheets follow the theme again.** They read tokens
   the theme never declares (`--radius-lg`, `--fonts-mono`,
   `--easing-standard`, `--duration-medium`, `--font-size-md`), so each
