@@ -153,6 +153,15 @@ func TestBlueprintSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 			t.Logf("seeded post owner_id %q matches bootstrap admin", ownerID)
 		}
 	}
+	// The bootstrap admin's address is the operator's choice, so the seed
+	// marks it verified. Left unverified, the first magic link to it claims
+	// the account and clears the seeded password.
+	var verified bool
+	if err := dbq.QueryRow("SELECT email_verified FROM auth_users WHERE email = 'admin@example.com'").Scan(&verified); err != nil {
+		t.Errorf("read admin email_verified: %v", err)
+	} else if !verified {
+		t.Errorf("bootstrap admin seeded with email_verified = false; a magic link would claim it and clear its password")
+	}
 	if t.Failed() {
 		t.FailNow()
 	}

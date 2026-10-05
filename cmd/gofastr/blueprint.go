@@ -8188,8 +8188,17 @@ func renderBlueprintApp(bp Blueprint) string {
 			if adminRole == "" {
 				adminRole = "admin"
 			}
-			sb.WriteString(fmt.Sprintf("\t\t\tif _, err := authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"}); err != nil && err != auth.ErrEmailTaken {\n", bp.App.Admin.SeedEmail, adminRole))
+			sb.WriteString(fmt.Sprintf("\t\t\tu, err := authCfg.UserStore.CreateUser(ctx, %q, h, []string{%q, \"user\"})\n", bp.App.Admin.SeedEmail, adminRole))
+			sb.WriteString("\t\t\tif err != nil && err != auth.ErrEmailTaken {\n")
 			sb.WriteString("\t\t\t\treturn fmt.Errorf(\"create bootstrap admin: %w\", err)\n")
+			sb.WriteString("\t\t\t}\n")
+			sb.WriteString("\t\t\t// The operator chose this address, so it counts as proven.\n")
+			sb.WriteString("\t\t\t// Left unverified, the first magic link to it would claim\n")
+			sb.WriteString("\t\t\t// the account and clear the seeded password.\n")
+			sb.WriteString("\t\t\tif v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && u != nil {\n")
+			sb.WriteString("\t\t\t\tif err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {\n")
+			sb.WriteString("\t\t\t\t\treturn fmt.Errorf(\"verify bootstrap admin email: %w\", err)\n")
+			sb.WriteString("\t\t\t\t}\n")
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t\treturn nil\n")
 			sb.WriteString("\t\t})\n")

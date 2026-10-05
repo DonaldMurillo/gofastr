@@ -711,6 +711,25 @@ someone else's address. The cost lands once per legacy account:
   so a host can backfill accounts it trusts by its own evidence with
   `MarkEmailVerified`.
 
+A user your own code creates, such as a bootstrap admin seeded from an
+operator-chosen address, is unverified too. Mark it right after
+`CreateUser`, or its first magic link claims it and clears the seeded
+password:
+
+```go
+u, err := authCfg.UserStore.CreateUser(ctx, "admin@example.com", hash, []string{"admin"})
+if err != nil {
+	return err
+}
+if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok {
+	if err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {
+		return err
+	}
+}
+```
+
+The blueprint's generated admin seed does this.
+
 `AuthManager.Init` also re-registers the right-to-be-forgotten erasers
 against the table names the CONFIGURED stores actually use (the
 `datexport` registry is last-writer-wins per name), so an app wired as
