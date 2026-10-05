@@ -70,7 +70,7 @@
       .then((j) => {
         if (!j || !j.sessionId) return;
         const m = document.querySelector('meta[name="gofastr-sse"]');
-        if (m) m.setAttribute('content', m.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + j.sessionId));
+        if (m) m.setAttribute('content', m.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + j.sessionId));
       })
       .catch(() => {});
   }

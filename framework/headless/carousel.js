@@ -74,7 +74,7 @@
           const fmt = pack.slice(0, bar);
           const total = pack.slice(bar + 1);
           track.setAttribute('data-hui-carousel-status',
-            fmt.replace(/\{n\}/g, String(idx + 1)).replace(/\{total\}/g, total));
+            fmt.replace(/\{n\}/g, () => String(idx + 1)).replace(/\{total\}/g, () => total));
         }
       }
     }

@@ -14,7 +14,7 @@
 // from its Strings — the dismiss label and the copy status travel on
 // the stack and the copy control — so a translated page announces in
 // its own language.
-(function () {
+(() => {
   'use strict';
   const NAME = 'headless-feedback';
   const NS = window.__gofastr = window.__gofastr || {};
@@ -34,13 +34,13 @@
   NS._toastTimers = NS._toastTimers || new Map();
   NS._toastSeq = NS._toastSeq || 0;
 
-  NS._initToasts = function (root) {
+  NS._initToasts = (root) => {
     // A row the module built carries its id; a row the server
     // rendered carries the toast marker and, when it has a lifetime,
     // the TTL. Both arm here; a server row is given its id on sight.
     const items = root.querySelectorAll('[data-hui-toast-id], [data-hui-toast-ttl-ms]');
     const present = new Set();
-    items.forEach(function (item) {
+    items.forEach((item) => {
       if (!item.hasAttribute('data-hui-toast-id')) item.setAttribute('data-hui-toast-id', 's' + (++NS._toastSeq));
       const id = item.getAttribute('data-hui-toast-id');
       present.add(id);
@@ -51,11 +51,11 @@
       if (ttl > 0) {
         const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
         NS._toastTimers.set(id, rec);
-        const arm = function () {
+        const arm = () => {
           rec.startedAt = Date.now();
-          rec.timer = setTimeout(function () { NS._dismissToast(item, id); }, rec.remaining);
+          rec.timer = setTimeout(() => { NS._dismissToast(item, id); }, rec.remaining);
         };
-        const pause = function () {
+        const pause = () => {
           if (!rec.timer) return;
           clearTimeout(rec.timer);
           rec.timer = 0;
@@ -71,31 +71,30 @@
       // A server row's dismiss is a link with its Island: the kernel
       // owns that click. The module's own rows dismiss here.
       if (item.hasAttribute('data-hui-toast')) return;
-      item.addEventListener('click', function (e) {
+      item.addEventListener('click', (e) => {
         if (e.target.closest('[data-hui-toast-dismiss]')) {
           e.preventDefault();
           NS._dismissToast(item, id);
         }
       });
     });
-    for (const entry of Array.from(NS._toastTimers)) {
-      if (!present.has(entry[0])) {
-        clearTimeout(entry[1].timer);
-        NS._toastTimers.delete(entry[0]);
+    NS._toastTimers.forEach((rec, id) => {
+      if (!present.has(id)) {
+        clearTimeout(rec.timer);
+        NS._toastTimers.delete(id);
       }
-    }
+    });
   };
 
-  NS._dismissToast = function (item, id) {
+  NS._dismissToast = (item, id) => {
     if (!item || item.hasAttribute('data-hui-toast-leaving')) return;
     // The leaving mark is the module's own (written here, rendered by
     // no component): the kit's stack sheet animates the row out on it.
     item.setAttribute('data-hui-toast-leaving', '');
     const rec = NS._toastTimers.get(id);
     if (rec) { clearTimeout(rec.timer); NS._toastTimers.delete(id); }
-    const cs = getComputedStyle(item);
-    const ms = parseFloat(cs.animationDuration) * 1000 || 200;
-    setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
+    const ms = parseFloat(getComputedStyle(item).animationDuration) * 1000 || 200;
+    setTimeout(() => { if (item.parentNode) item.parentNode.removeChild(item); }, ms);
   };
 
   // ─── toast rows ─────────────────────────────────────────────────
@@ -143,7 +142,7 @@
     item.setAttribute('data-hui-toast-item', '');
     const root = document.createElement('div');
     root.setAttribute('data-hui-toast', '');
-    ['data-hui-toast-tone', 'data-hui-toast-icon', 'data-hui-toast-title', 'data-hui-toast-body'].forEach(function (hook) {
+    ['data-hui-toast-tone', 'data-hui-toast-icon', 'data-hui-toast-title', 'data-hui-toast-body'].forEach((hook) => {
       const el = document.createElement('span');
       el.setAttribute(hook, '');
       root.appendChild(el);
@@ -189,7 +188,7 @@
     };
   }
 
-  NS.toast = function (cfg) {
+  NS.toast = (cfg) => {
     if (cfg == null) return null;
     if (typeof cfg === 'string') cfg = { title: cfg, ttl: 4000 };
     if (!cfg.title) return null;
@@ -230,7 +229,7 @@
       variantCls = extra.cls;
       glyph = extra.glyph;
     }
-    variantCls.split(/\s+/).forEach(function (c) { if (c) root.classList.add(c); });
+    variantCls.split(/\s+/).forEach((c) => { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
     root.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
 
@@ -242,7 +241,7 @@
     const dismiss = root.querySelector('[data-hui-toast-dismiss]');
     if (dismiss) {
       const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '%s';
-      dismiss.setAttribute('aria-label', fmt.replace('%s', cfg.title));
+      dismiss.setAttribute('aria-label', fmt.replace('%s', () => cfg.title));
     }
     container.appendChild(item);
 
@@ -266,7 +265,7 @@
   // promises nothing about the clipboard. The words (button label,
   // copied label, status sentence with {name}) travel on the wrapper
   // from Strings.
-  document.addEventListener('click', function (e) {
+  document.addEventListener('click', (e) => {
     const t = e.target;
     const wrap = t && t.closest && t.closest('[data-hui-copy]');
     if (!wrap) return;
@@ -281,7 +280,7 @@
       : (target.innerText || target.textContent) || '').trim();
     if (!text) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(function () {});
+      navigator.clipboard.writeText(text).catch(() => {});
     }
     wrap.setAttribute('data-hui-copy-state', 'done');
     const btn = wrap.querySelector('[data-hui-copy-label]');
@@ -290,12 +289,12 @@
     const status = wrap.querySelector('[data-hui-copy-status]');
     if (status) {
       const name = wrap.getAttribute('data-hui-copy-name') || id || '';
-      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replace('{name}', name);
+      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replace('{name}', () => name);
       status.textContent = '';
-      requestAnimationFrame(function () { status.textContent = sentence; });
+      requestAnimationFrame(() => { status.textContent = sentence; });
     }
     const back = wrap.getAttribute('data-hui-copy-back') || '';
-    setTimeout(function () {
+    setTimeout(() => {
       wrap.removeAttribute('data-hui-copy-state');
       if (btn && back) btn.textContent = back;
     }, 1200);
@@ -324,21 +323,21 @@
     // it); anything else that is not a whole count leaves the name
     // alone: parseInt would read "12x" as 12 and announce a number the
     // badge does not show.
-    if (text !== '' && !/^\d{1,9}$/.test(text)) return;
-    const n = text === '' ? 0 : Number(text);
+    if (!/^\d{0,9}$/.test(text)) return;
+    const n = +text;
     const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
-    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(String(n)));
+    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(n));
     // The badge's count attribute follows too, so the next reader of
     // it (a stylesheet's 99+ shaping, a test) sees the same number the
     // anchor says. An attribute write, so the observer does not hear it.
-    badge.setAttribute('data-hui-notification-count', String(n));
+    badge.setAttribute('data-hui-notification-count', n);
   }
   function watchBell(bell) {
     if (bellsWatched.has(bell) || typeof MutationObserver !== 'function') return;
     const badge = bell.querySelector('[data-hui-notification-count]');
     if (!badge) return;
     bellsWatched.add(bell);
-    new MutationObserver(function () { sayBellCount(bell, badge); })
+    new MutationObserver(() => { sayBellCount(bell, badge); })
       .observe(badge, { childList: true, characterData: true, subtree: true });
   }
 
@@ -349,30 +348,38 @@
   // the page reloads through it), and with script the fetch happens
   // in place — a 2xx reports recovery and hides the banner, a failed
   // probe leaves it shown.
-  document.addEventListener('click', function (e) {
+  document.addEventListener('click', (e) => {
     const t = e.target;
     const retry = t && t.closest && t.closest('[data-hui-network-retry]');
     if (!retry) return;
     e.preventDefault();
     const href = retry.getAttribute('href') || '';
-    if (!href) return;
+    // One probe at a time: a click while one is in flight is a no-op.
+    if (!href || retry.getAttribute('aria-busy')) return;
+    // While the probe runs, the link is aria-busy and the banner root
+    // says data-state="checking" (the busy state a styled banner
+    // dresses); both clear when the probe settles, either way. Nothing
+    // else in the module writes the banner's data-state.
+    const banner = retry.closest('[data-hui-system]') || retry;
+    retry.setAttribute('aria-busy', 'true');
+    banner.setAttribute('data-state', 'checking');
     // A 2xx from the health endpoint is the reconnect: hide the
     // banner (reportRecovery drives every mounted offline one). A
     // failed probe leaves it shown — the connection is still down
     // and hiding it would lie.
     fetch(href, { credentials: 'same-origin' })
-      .then(function (r) { if (r.ok) NS.networkStatus.reportRecovery(); })
-      .catch(function () {});
+      .then((r) => { if (r.ok) NS.networkStatus.reportRecovery(); }, () => {})
+      .finally(() => { retry.removeAttribute('aria-busy'); banner.removeAttribute('data-state'); });
   });
 
   // The public status API app code called on the retired module,
   // kept on the namespace so callers do not break: reportFailure and
   // reportRecovery drive every mounted offline banner's data-state.
   NS.networkStatus = NS.networkStatus || {};
-  NS.networkStatus.reportFailure = function () {
+  NS.networkStatus.reportFailure = () => {
     for (const b of document.querySelectorAll('[data-hui-system-offline]')) b.hidden = false;
   };
-  NS.networkStatus.reportRecovery = function () {
+  NS.networkStatus.reportRecovery = () => {
     for (const b of document.querySelectorAll('[data-hui-system-offline]')) b.hidden = true;
   };
 

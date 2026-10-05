@@ -934,7 +934,7 @@
       const resp = await fetch(path, Object.assign({ headers: hdrs }, parts && parts.fetchOpts));
       if (!NS._navLive(myEpoch)) return;
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
-      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
+      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       // A session change is an identity change: one identity's pages
       // must never replay for another.
       if (rs) NS.invalidate('*');

@@ -25,7 +25,7 @@
   }
 
   function fill(tpl, label) {
-    return tpl.replace(/\{label\}/g, label);
+    return tpl.replace(/\{label\}/g, () => label);
   }
 
   // renderChips rebuilds the strip from the checked options. The chip

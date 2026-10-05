@@ -29,7 +29,7 @@ func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
 	for _, token := range []string{
 		"var(--color-border", "var(--color-surface", "var(--color-text",
 		"var(--color-text-muted", "var(--color-primary", "var(--radii-md",
-		"var(--duration-fast", "var(--easing-standard",
+		"var(--duration-fast", "var(--easing-ease-in-out",
 	} {
 		if !strings.Contains(css, token) {
 			t.Errorf("collapsible CSS missing canonical token %q:\n%s", token, css)

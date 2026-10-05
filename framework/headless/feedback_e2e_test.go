@@ -6,7 +6,9 @@ package headless
 
 import (
 	"net/http"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 
@@ -72,6 +74,61 @@ func TestE2E_NetworkRetryFailedProbeLeavesItShown(t *testing.T) {
 	}
 	if hidden {
 		t.Fatal("a failed health probe hid the banner — the connection is still down")
+	}
+}
+
+// While the retry probe is in flight the banner root says
+// data-state="checking" (the state ui.NetworkRetryBanner's sheet
+// styles as busy) and the link is aria-busy; a second click meanwhile
+// fires no second probe; both clear when the probe settles.
+func TestE2E_NetworkRetryMarksChecking(t *testing.T) {
+	release := make(chan struct{})
+	var probes atomic.Int32
+	extra := func(mux *http.ServeMux) {
+		mux.HandleFunc("/__hui/health", func(w http.ResponseWriter, r *http.Request) {
+			probes.Add(1)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+	}
+	b := startBehaviorServer(t, offlineBannerPage(), extra)
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
+		t.Fatal("the offline banner marker never loaded headless-feedback")
+	}
+	const link = `document.querySelector('[data-hui-network-retry]')`
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('wrap').hidden = false; `+link+`.click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('wrap').getAttribute('data-state') === 'checking' && `+
+		link+`.getAttribute('aria-busy') === 'true'`) {
+		t.Fatal("the banner did not say data-state=\"checking\" (and the link aria-busy) while the probe ran")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(link+`.click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := probes.Load(); n != 1 {
+		t.Errorf("a click while checking fired another probe: %d probes", n)
+	}
+	close(release)
+	if !pollTrue(ctx, `!document.getElementById('wrap').hasAttribute('data-state') && !`+link+`.hasAttribute('aria-busy')`) {
+		t.Fatal("data-state and aria-busy did not clear when the probe settled")
+	}
+	if !pollTrue(ctx, `!document.getElementById('wrap').hidden`) {
+		t.Fatal("a failed probe hid the banner")
 	}
 }
 

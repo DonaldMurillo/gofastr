@@ -120,7 +120,7 @@ func cardCSS(t style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
   border-radius: var(--radii-lg, 12px);
-  box-shadow: var(--shadows-sm, 0 1px 2px rgba(0,0,0,0.05));
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
   overflow: hidden;
   text-decoration: none;
 }
@@ -139,7 +139,7 @@ func cardCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-card"].fui-card--interactive:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadows-md, 0 4px 6px -1px rgba(0,0,0,0.10));
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.10));
 }
 [data-cui-comp="ui-card"].fui-card--interactive[aria-current="page"] {
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
@@ -508,7 +508,7 @@ func tooltipCSS(_ style.Theme) string {
   visibility: hidden;
   white-space: nowrap;
   max-inline-size: 240px;
-  z-index: var(--zindex-popover, 400);
+  z-index: var(--z-popover, 400);
   transition: opacity var(--duration-fast, 150ms) ease,
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);

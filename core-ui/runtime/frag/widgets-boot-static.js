@@ -167,3 +167,21 @@
     });
   }
   _installEagerWidgetDelegators();
+
+  // SPA navigation. widgets-boot re-fetches the live per-page catalog
+  // here; a serverless export has no such endpoint, and the dumped
+  // catalog loaded at boot already holds every widget. So the pass is
+  // local: once that catalog is in, mount any non-hidden widget the
+  // swap left unmounted (_mountByName is idempotent) and open whatever
+  // the destination URL's deep link names.
+  window.addEventListener('gofastr:navigate', () => {
+    _wready.then(() => {
+      const G = window.__gofastr;
+      if (!G || !G._widgetCatalog) return;
+      for (const item of Object.values(G._widgetCatalog)) {
+        if (item.hidden) continue;
+        if (G._mountByName) G._mountByName(item.cfg.name);
+      }
+      if (G._syncDeepLinks) G._syncDeepLinks();
+    });
+  });

@@ -259,8 +259,8 @@
         // like any other server-rendered screen. Without it an entity list
         // renders permanently empty inside the frame and live updates are
         // silent to screen readers.
-        // The path is the SURFACE's app route, not the shell's URL. Boot's
-        // gofastr:navigate listener re-fetches the widget catalog with
+        // The path is the SURFACE's app route, not the shell's URL.
+        // widgets-boot's gofastr:navigate listener re-fetches the catalog with
         // ?page=<path>, and a widget scoped with .Pages("/reports") is not
         // scoped to /__gofastr/embed/reports. This also runs AFTER the grant
         // is installed, so that catalog fetch is authenticated, the boot-time

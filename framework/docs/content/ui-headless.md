@@ -550,11 +550,14 @@ registered the same way:
   query deep link; a crafted slot value is refused before any
   selector, so the click is a no-op. It replaced the retired
   `panehost` runtime module.
-- **headless-sidebar** (`[data-hui-sidebar]`): the collapse state —
-  persisted only under a namespaced, component-encoded storage key the
-  root names; a root with no key is the server's and the module never
+- **headless-sidebar** (`[data-hui-sidebar]`, `[data-hui-sidebar-group-toggle]`):
+  the collapse state — persisted only under a namespaced,
+  component-encoded storage key the root names; a root with no key is the server's and the module never
   writes — the custom collapse/expand labels, and the button-dialect
-  group toggle. It replaced the retired `sidebar` runtime module.
+  group toggle. The group toggle loads the module on its own, so a
+  `SidebarRegion` slotted into a host's chrome with no sidebar root
+  still opens its groups. It replaced the retired `sidebar` runtime
+  module.
 
 Two of this package's members ship no module at all: `JSONTree` (the
 browser's own `<details>` is the whole behaviour, and its object keys

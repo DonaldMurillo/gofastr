@@ -620,7 +620,7 @@
       // threw first, the meta would keep the dead id and never recover
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
-      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
+      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 

@@ -257,3 +257,31 @@ func TestE2E_SidebarLinkClickIsNavigationNotCollapse(t *testing.T) {
 		t.Errorf("the module relabelled a toggle that carries no data labels: aria-label=%q, want the shipped %q", labelAfter, "Docs")
 	}
 }
+
+// SidebarRegion renders no data-hui-sidebar shell, only the button
+// dialect's group toggles. The group toggle itself must load the
+// module, or a host that slots the region into its own chrome (a
+// drawer body, ui.SidebarBody) ships groups that can never open.
+func TestE2E_BareRegionGroupToggleOpens(t *testing.T) {
+	body := SidebarRegion(SidebarProps{NavLabel: "Sections", GroupMarkup: "button",
+		GroupIDPrefix: "bare", Items: []SidebarItem{
+			{Label: "Home", Href: "/"},
+			{Label: "Settings", Children: []SidebarItem{{Label: "Profile", Href: "/settings/profile"}}},
+		}}, nil)
+	b := startBehaviorServer(t, string(body))
+	ctx := behaviorPage(t, b)
+	const toggle = `document.querySelector('[data-hui-sidebar-group-toggle]')`
+	const panel = `document.getElementById(` + toggle + `.getAttribute('aria-controls'))`
+	if !pollTrue(ctx, toggle+`.getAttribute('aria-expanded') === 'false' && `+panel+`.hidden`) {
+		t.Fatal("the region did not ship a closed button-dialect group")
+	}
+	if !pollTrue(ctx, sidebarLoaded) {
+		t.Fatal("a bare region's group toggle never loaded headless-sidebar")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(toggle+`.click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, toggle+`.getAttribute('aria-expanded') === 'true' && !`+panel+`.hidden`) {
+		t.Fatal("clicking the group toggle did not open its panel")
+	}
+}

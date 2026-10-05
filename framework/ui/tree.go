@@ -110,7 +110,7 @@ func treeCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
-  transition: transform var(--duration-fast, 150ms) var(--easing-standard, ease);
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-tree"] .fui-tree__item[aria-expanded="true"] > .fui-tree__row > .fui-tree__toggle {
   transform: rotate(90deg);

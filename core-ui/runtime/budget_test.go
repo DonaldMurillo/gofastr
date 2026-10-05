@@ -1051,7 +1051,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// in-flight rpc state (cui-loading, aria-busy, disabled,
 		// data-state=pending) from the cached markup, so a cached
 		// screen never restores a control stuck busy.
-		"envelope": 7662,
+		// 7664 measured after the session-id rewrite took a replacer
+		// function, so a `$&` or `$1` in the header is never read as a
+		// replacement pattern.
+		"envelope": 7664,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
