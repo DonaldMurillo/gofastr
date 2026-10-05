@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -30,8 +31,12 @@ func GrantFromContext(ctx context.Context) (Grant, bool) {
 }
 
 // WithGrant installs a verified grant on the context. Exported for the UI host,
-// which verifies grants on its own routes before rendering.
+// which verifies grants on its own routes before rendering. The grant's
+// scopes are also installed as the request's held scopes
+// (access.WithHeldScopes), so the CRUD layer narrows ?include=, ?rel.field=
+// filters and cascade writes to them. A grant with no scopes holds none.
 func WithGrant(ctx context.Context, g Grant) context.Context {
+	ctx = access.WithHeldScopes(ctx, g.Scopes)
 	return context.WithValue(ctx, grantCtxKey{}, g)
 }
 

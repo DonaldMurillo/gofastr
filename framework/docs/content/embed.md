@@ -111,6 +111,12 @@ fwApp.Group("/reports", routegroup.WithMiddleware(embeds.RequireScope("reports:r
 ordinary first-party traffic straight through: it narrows what an *embed* may
 do and nothing else.
 
+A grant's scopes also bind the auto-CRUD routes it reaches across relations.
+`embed.WithGrant` installs them as the request's held scopes
+(`access.WithHeldScopes`), so a grant scoped `customers:read` gets 403 on
+`?include=invoices` and on `?invoices.memo=…` filters, and a cascade write
+needs `<target>:write` for each child it touches.
+
 To branch inside a handler or a screen rather than gate a whole group, read the
 grant off the context:
 

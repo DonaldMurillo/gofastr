@@ -483,6 +483,17 @@ Without it (or per-route `RequireScope`), a token's scope list is
 **advisory only**: the token still authenticates as its owner everywhere.
 Session/JWT callers and paths outside the prefix are untouched.
 
+The CRUD layer holds the same line when one route reaches another entity.
+A scoped request needs `<target>:read` for every `?include=` target, at
+every depth, and for every `?rel.field=` filter hop, and `<target>:write`
+for every child a cascade write creates or updates; ManyToMany
+link-by-id needs `<target>:read`. A `["customers:read"]` token gets 403
+on `/api/customers?include=invoices`, and a `["customers:write"]` token
+cannot create invoices through a nested `"invoices": [...]` body. This
+applies wherever the CRUD routes are mounted, prefix or not. The token
+middleware marks the request through `access.WithHeldScopes`, which
+`auth.WithTokenScopes` calls; embed grants are marked the same way.
+
 `auth.TokenScopes(ctx)` returns `(scopes, true)` only for
 token-authenticated requests; `(nil, false)` for sessions/JWT.
 

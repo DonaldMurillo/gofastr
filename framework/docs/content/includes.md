@@ -192,6 +192,11 @@ the entity that failed:
 {"code":403,"error":"access denied: include targets entity users, which you may not read","success":false}
 ```
 
+A scope-restricted request (an API token or an embed grant) also needs
+`<target table>:read` for every include target, so a `["customers:read"]`
+token is refused `?include=invoices`. Nested filters apply the same rule to
+every hop. See [auth](auth.md) → "Service accounts & scoped API tokens" for the scope grammar.
+
 A target declared `Exposure.CRUD: false` (`auth.UserEntityConfig()` among them)
 is refused the same way for every caller: opting an entity out of generated
 routes also keeps it out of other entities' includes and nested filters.

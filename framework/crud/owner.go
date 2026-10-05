@@ -178,11 +178,19 @@ func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op 
 // must not become the generated surface it opted out of. auth.UserEntityConfig
 // is the case that matters: users with CRUD off were still readable through
 // any ?include=author and filterable through ?author.email_like=.
+//
+// A scope-restricted request (an API token or an embed grant, see
+// access.WithHeldScopes) must also hold "<table>:<verb>" for this entity.
+// auth.RequireAPIScopes checks only the entity in the path, so a
+// ["customers:read"] token read every invoice through
+// /api/customers?include=invoices and wrote them through a cascade. The
+// resource is the table name, the same segment RequireAPIScopes derives from
+// the route. Unscoped requests (sessions, JWT, server code) are unaffected.
 func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool {
 	if crud := ch.Entity.Config.Exposure.CRUD; crud != nil && !*crud {
 		return false
 	}
-	return true
+	return access.ScopeAllows(ctx, access.Permission(ch.Entity.GetTable()+":"+verb))
 }
 
 // canReadEntityGate answers the part of the read posture that is a GATE rather
