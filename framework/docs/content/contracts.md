@@ -135,16 +135,38 @@ code.
 `GOFASTR1823` (error) guards the kit itself, the design-system trees
 (`core-ui/`, `framework/ui/`, `framework/uihost/`, `battery/` and the
 rest GOFASTR1807 reads there). GOFASTR1807 judges a value whole, so
-`border: 1px solid var(--color-border)` passes it. GOFASTR1823 reads
-inside the shorthand, in stylesheet strings and in builder `Set` pairs:
-a non-zero border, outline or inset-ring width, an outline offset, a px
-border radius, a transition or animation duration up to 500ms, or a
-z-index above 10 must read `--stroke-*`, `--radii-*`, `--duration-*` or
-`--z-*`. Write the token with its default as the fallback,
-`var(--stroke-thin, 1px) solid`, so the kit still draws with no theme
-loaded. A literal inside a `var()` fallback or inside a `calc()` that
-reads a token (`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero
-widths, percentage radii, loop periods over 500ms and `animation-delay`.
+`border: 1px solid var(--color-border)` passes it, and a `padding: 6px`
+matches no token at all. GOFASTR1823 reads inside every declaration, in
+stylesheet strings and in builder `Set` pairs, and refuses a look value
+written as a literal:
+
+| Property | Reads |
+|---|---|
+| border, outline and inset-ring widths, outline offset | `--stroke-*` |
+| border radius (px or rem) | `--radii-*` |
+| transition or animation duration up to 500ms | `--duration-*` |
+| z-index above 10 | `--z-*` |
+| padding, margin, gap | `--spacing-*`; an off-step value is `calc(var(--spacing-sm, 4px) * n)` |
+| top, right, bottom, left, inset | `--spacing-*` or a `--ui-<component>-<part>` knob |
+| width, height, inline-size, block-size, their min/max, flex-basis | a `--ui-<component>-<part>` knob or a `--size-*` token |
+| font size | `--text-*` |
+| line height (a number other than 0 and 1, or a length) | `--leading-*` |
+| letter spacing | `--tracking-*` |
+| opacity between 0 and 1 | `--opacity-*` or a knob |
+| box shadow with a colour or a length over 1px | `--shadow-*` or a knob |
+| colour, background, border, fill, stroke, text-shadow with hex, `rgb()`, `hsl()`, `oklch()`, `white` or `black` | `--color-*` or a knob |
+
+Write the token or knob with today's value as the fallback,
+`var(--stroke-thin, 1px) solid` or `width: var(--ui-checkbox-box-size,
+18px)`, so the kit still draws with no theme loaded. A literal inside a
+`var()` fallback or inside a `calc()` that reads a token
+(`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero, 1px hairlines
+and visually hidden boxes, `em`, `%`, `ch` and viewport lengths,
+`line-height` 0 and 1, `opacity` 0 and 1, local stacking orders, loop
+periods over 500ms and `animation-delay`. `@media` conditions are never
+read (`var()` is invalid there). Dev tooling under `framework/dev/` is
+held to the width, radius, motion and layer rows only: its chrome is not
+an app theme's.
 
 `GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
 a handle method is called inside the `Class` field of a `framework/ui`

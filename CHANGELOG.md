@@ -67,9 +67,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.Section` body reads `--ui-section-body-gap` and a `ui.Carousel`
   track `--ui-carousel-gap`, each over the matching layout step, so one
   theme setting widens the room between cards without widening any
-  padding. The defaults draw what they drew before. The new groups reach
-  `.tokens.css` (`--leading-*`, `--tracking-*`, `--opacity-*`) and the
-  plugin host's token bridge.
+  padding. The defaults draw what they drew before. GOFASTR1823 widens
+  to match: spacing, position offsets, sizes, type, opacity, box shadows
+  and colour literals in design-system CSS are errors, with `em`, `%`,
+  `ch` and viewport lengths, zero and 1px hairlines allowed, and
+  `framework/dev` held to the stroke, radius, motion and layer arms
+  only. The new groups reach `.tokens.css` (`--leading-*`,
+  `--tracking-*`, `--opacity-*`) and the plugin host's token bridge.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

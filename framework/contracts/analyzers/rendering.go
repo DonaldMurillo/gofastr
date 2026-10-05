@@ -227,7 +227,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			// GOFASTR1823: the literals GOFASTR1807 cannot see because
 			// they sit inside a shorthand.
 			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
-				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, line, lines[i])...)
+				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, line, lines[i], devSurface)...)
 			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of
@@ -951,7 +951,7 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 // font fallbacks stay out: `currentColor`, `inherit`, `transparent`, and
 // a dark-surface hex beside a light token are degraded-mode choices an
 // author made on purpose, and the rule cannot tell those from drift.
-var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "text": true, "duration": true}
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
 
 // declaredTokenValues is the theme's token table by name, light entries
 // only, for the fallback comparison.

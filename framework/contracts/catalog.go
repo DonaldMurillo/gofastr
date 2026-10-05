@@ -1239,24 +1239,33 @@ func renderingRules() []Rule {
 		}},
 	}, {
 		ID: RuleBareThemeLiteral, Slug: "rendering/bare-theme-literal",
-		Title: "Line width, radius, motion duration or layer written as a literal in kit CSS", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Design-system CSS writes a border, outline or inset-ring width, an outline offset, a px border radius, " +
-			"a transition or animation duration up to 500ms, or a z-index above 10 as a bare literal instead of reading " +
-			"--stroke-*, --radii-*, --duration-* or --z-*. Literals inside a var() fallback or a calc() that reads a token, " +
-			"zero widths, percentage radii, local stacking orders (z-index 10 or less), loop periods over 500ms and " +
-			"animation-delay pass.",
+		Title: "A look value written as a literal in kit CSS, where no theme can reach it", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS writes a value a theme owns as a bare literal: a border, outline or inset-ring width, " +
+			"an outline offset, a border radius, a transition or animation duration up to 500ms, a z-index above 10, a " +
+			"padding, margin or gap, a position offset, a width or height, a font size, line height or letter spacing, " +
+			"an opacity between 0 and 1, a box shadow, or a colour (hex, rgb(), hsl(), oklch(), white, black). Each one " +
+			"reads a token (--stroke-*, --radii-*, --duration-*, --z-*, --spacing-*, --text-*, --leading-*, --tracking-*, " +
+			"--opacity-*, --shadow-*, --color-*) or a --ui-<component>-<part> knob, with the old value as the fallback. " +
+			"Literals inside a var() fallback or a calc() that reads a token, zero, 1px hairlines and visually hidden boxes, " +
+			"em, %, ch and viewport lengths, line-height 0 and 1, opacity 0 and 1, local stacking orders, loop periods over " +
+			"500ms and animation-delay pass. Dev tooling (framework/dev) is held to the width, radius, motion and layer " +
+			"arms only: its chrome is not an app theme's.",
 		Why: "GOFASTR1807 judges a value whole, so `border: 1px solid var(--color-border)` and `transition: color 150ms ease` " +
-			"passed it: no token value equals the shorthand. A theme that sets --stroke-thin to 3px, every radius to 0 or " +
-			"the durations to 0 for a reduced-motion brand then reaches none of those declarations, and the kit cannot be " +
-			"restyled by its theme alone. Before the stroke tokens there were 997 such literals across 90 kit files.",
-		Fix: "Read the token with its default as the fallback: `var(--stroke-thin, 1px) solid`, `var(--stroke-focus, 2px) solid`, " +
-			"`outline-offset: var(--stroke-focus-offset, 2px)`, `border-radius: var(--radii-full, 9999px)`, " +
-			"`var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`. An off-step width is a calc() over a token " +
-			"(`calc(-2 * var(--stroke-focus-offset, 2px))`), so it still scales with the theme.",
+			"passed it: no token value equals the shorthand, and a `padding: 6px` or `width: 18px` matches no token at all. " +
+			"A theme that sets --stroke-thin to 3px, every radius to 0, a tighter spacing scale or a larger control size " +
+			"then reaches none of those declarations, and the kit cannot be restyled by one theme block alone. Before the " +
+			"stroke tokens there were 997 such literals across 90 kit files.",
+		Fix: "Read the token or knob with today's value as the fallback: `var(--stroke-thin, 1px) solid`, " +
+			"`border-radius: var(--radii-full, 9999px)`, `var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`, " +
+			"`padding: var(--spacing-md, 8px)`, `width: var(--ui-checkbox-box-size, 18px)`, `line-height: var(--leading-snug, 1.4)`, " +
+			"`box-shadow: var(--shadow-md)`, `color: var(--ui-gallery-caption-fg, white)`. An off-step value is a calc() over " +
+			"a token (`calc(var(--spacing-sm, 4px) * 1.5)`), and geometry that follows a size is a calc() over its knobs, " +
+			"so both still move with the theme.",
 		Doc: "theming",
 		Examples: []Example{{
-			Bad:  "border: 1px solid var(--color-border); transition: color 150ms ease;",
-			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); transition: color var(--duration-fast, 150ms) ease;",
+			Bad: "border: 1px solid var(--color-border); transition: color 150ms ease; padding: 6px 12px; width: 18px;",
+			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); transition: color var(--duration-fast, 150ms) ease; " +
+				"padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3); width: var(--ui-checkbox-box-size, 18px);",
 		}},
 	}}
 }

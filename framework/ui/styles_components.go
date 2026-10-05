@@ -1306,7 +1306,9 @@ func paginationCSS(_ style.Theme) string {
 func skipLinkCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-skip-link"] {
   position: absolute;
-  left: -9999px;
+` +
+		//gofastr:allow(GOFASTR1823) off-stage parking offset, not a look value: any far-off-stage length works, and no theme should restyle where the unread skip link waits
+		`  left: -9999px;
   top: auto;
   width: 1px;
   height: 1px;

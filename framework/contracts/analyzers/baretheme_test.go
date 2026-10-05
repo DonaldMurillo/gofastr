@@ -69,7 +69,19 @@ func TestBareThemeLiteralQuietCases(t *testing.T) {
 		".a { z-index: 2; }",
 		".a { z-index: var(--z-modal, 300); }",
 		".a { inline-size: 1px; block-size: 1px; margin: -1px; }",
-		".a { box-shadow: 0 1px 2px rgba(0,0,0,.05); }",
+		".a { box-shadow: 0 1px 0 var(--color-border); }",
+		".a { box-shadow: var(--shadow-md); }",
+		".a { padding: var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 1.5); }",
+		".a { gap: 0; padding: 1px; margin-block: 0 1px; }",
+		".a { width: 100%; max-width: 60ch; height: 100vh; inline-size: 2em; }",
+		".a { width: var(--ui-checkbox-box-size, 18px); }",
+		".a { top: calc(100% + var(--spacing-xs, 2px)); }",
+		".a { font-size: 1.25em; font-size: var(--text-sm, 0.875rem); }",
+		".a { line-height: 1; line-height: 0; line-height: var(--leading-snug, 1.4); }",
+		".a { letter-spacing: 0; letter-spacing: var(--tracking-wide, 0.04em); }",
+		".a { opacity: 0; opacity: 1; opacity: var(--opacity-muted, 0.6); }",
+		".a { color: var(--color-text, #111); background: transparent; fill: currentColor; }",
+		"@media (max-width: 640px) { .a { display: none; } }",
 	} {
 		ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `"+css+"`\n")
 		if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 0 {
@@ -79,5 +91,69 @@ func TestBareThemeLiteralQuietCases(t *testing.T) {
 	ds := fixture(t, map[string]string{"internal/app/x.go": "package app\n\nvar css = `.a { border: 1px solid red; }`\n"})
 	if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 0 {
 		t.Errorf("fires outside the design-system trees: %v", found)
+	}
+}
+
+// The scale arms: a spacing, size, type, colour, opacity or shadow value
+// written as a literal is a value no theme can reach. Before them, a
+// theme could swap every colour and radius and still not move a gap, a
+// control's height or a caption's line height.
+func TestBareScaleLiteralsAreReported(t *testing.T) {
+	for _, tc := range []struct {
+		css, want string
+	}{
+		{".a { padding: 6px 12px; }", "--spacing-"},
+		{".a { margin-top: 0.75rem; }", "--spacing-"},
+		{".a { column-gap: 12px; }", "--spacing-"},
+		{".a { top: 12px; }", "--spacing-* or a --ui-"},
+		{".a { inset-inline-end: -6px; }", "--spacing-* or a --ui-"},
+		{".a { width: 18px; }", "--ui-<component>-<part>"},
+		{".a { max-inline-size: 20rem; }", "--ui-<component>-<part>"},
+		{".a { flex-basis: 240px; }", "--ui-<component>-<part>"},
+		{".a { font-size: 13px; }", "--text-"},
+		{".a { font-size: 0.8125rem; }", "--text-"},
+		{".a { line-height: 1.45; }", "--leading-"},
+		{".a { line-height: 20px; }", "--leading-"},
+		{".a { letter-spacing: 0.02em; }", "--tracking-"},
+		{".a { letter-spacing: -1px; }", "--tracking-"},
+		{".a { opacity: 0.85; }", "--opacity-"},
+		{".a { box-shadow: 0 1px 2px rgba(0,0,0,.05); }", "--shadow-"},
+		{".a { box-shadow: 0 4px 12px var(--color-shadow); }", "--shadow-"},
+		{".a { box-shadow: 0 1px 0 rgba(0,0,0,.1); }", "--shadow-"},
+		{".a { color: #fff; }", "--color-"},
+		{".a { background: rgba(0, 0, 0, 0.5); }", "--color-"},
+		{".a { border-color: white; }", "--color-"},
+		{".a { text-shadow: 0 1px 0 oklch(0.2 0 0); }", "--color-"},
+		{".a { border-radius: 0.5rem; }", "--radii-"},
+		{".a { border-radius: 62.5rem; }", "--radii-full"},
+	} {
+		ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `"+tc.css+"`\n")
+		found := countRule(t, ds, contracts.RuleBareThemeLiteral)
+		if len(found) != 1 {
+			t.Errorf("%s: want 1 GOFASTR1823, got %d: %v", tc.css, len(found), found)
+			continue
+		}
+		if !strings.Contains(found[0].Message, tc.want) {
+			t.Errorf("%s: message does not name %s: %q", tc.css, tc.want, found[0].Message)
+		}
+	}
+	ds := designFixture(t, "battery/admin/x.go",
+		"package admin\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".card\").Set(\"padding\", \"10px\").End()\n}\n")
+	if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 1 {
+		t.Errorf("want 1 GOFASTR1823 on a Set(\"padding\", \"10px\") pair, got %d: %v", len(found), found)
+	}
+}
+
+// Dev tooling (framework/dev) draws its own chrome, which no app theme
+// owns: the scale arms skip it, while the stroke, radius, motion and
+// layer arms still apply there.
+func TestDevSurfaceSkipsScaleArms(t *testing.T) {
+	ds := designFixture(t, "framework/dev/x.go", "package dev\n\nvar css = `.a { padding: 6px; width: 18px; color: #fff; opacity: 0.85; }`\n")
+	if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 0 {
+		t.Errorf("scale arms fire on a dev surface: %v", found)
+	}
+	ds = designFixture(t, "framework/dev/x.go", "package dev\n\nvar css = `.a { border: 2px solid #fff; }`\n")
+	if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 1 {
+		t.Errorf("want the stroke arm on a dev surface, got %d: %v", len(found), found)
 	}
 }
