@@ -353,9 +353,20 @@ func menuCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   min-height: var(--spacing-touch-target, 44px);
+  transition: background var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
-[data-cui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
+/* Press knobs: --ui-menu-trigger-{hover,active}-{translate,shadow}
+   over the shared --ui-press-* knobs, as on a button. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+  box-shadow: var(--ui-menu-trigger-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-xs)));
+  translate: var(--ui-menu-trigger-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger:active {
+  box-shadow: var(--ui-menu-trigger-active-shadow, var(--ui-press-active-shadow, var(--ui-menu-trigger-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-xs)))));
+  translate: var(--ui-menu-trigger-active-translate, var(--ui-press-active-translate, var(--ui-menu-trigger-hover-translate, var(--ui-press-hover-translate, none))));
+}
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);

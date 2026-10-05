@@ -76,7 +76,8 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)
 
 func statusPillCSS(_ style.Theme) string {
-	// Knob: --ui-status-pill-dot-size (6px) sizes the status dot (beside
+	// Knobs: --ui-status-pill-dot-size (6px) sizes the status dot and
+	// --ui-status-pill-case (none) sets the label's letter case (beside
 	// the frame knobs below).
 	return `[data-cui-comp="ui-status-pill"] {
   display: inline-flex;
@@ -86,6 +87,7 @@ func statusPillCSS(_ style.Theme) string {
   font-family: var(--ui-status-pill-font, inherit);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
+  text-transform: var(--ui-status-pill-case, none);
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);

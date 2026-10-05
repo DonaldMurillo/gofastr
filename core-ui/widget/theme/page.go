@@ -125,7 +125,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-subtle").Set("color", "{colors.text-subtle}").End()
 	ss.Rule(".kiln-eyebrow").
 		Set(
-			"text-transform", "uppercase",
+			"text-transform", "var(--ui-kiln-eyebrow-case, uppercase)",
 			"letter-spacing", "var(--tracking-wider, 0.08em)",
 			"font-size", "{text.xs}",
 			"font-weight", "{font-weight.bold}",

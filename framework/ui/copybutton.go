@@ -261,7 +261,7 @@ func copyButtonCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
+  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
 }
 /* Hover keeps the theme's own surface pair: surface-soft is defined by every
    theme in both schemes, so text set to --color-text stays readable (a rule
@@ -270,6 +270,15 @@ func copyButtonCSS(_ style.Theme) string {
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn:hover {
   background: var(--ui-copy-btn-hover-bg, var(--color-surface-soft, #F4F4F5));
   color: var(--ui-copy-btn-hover-color, var(--ui-copy-btn-color, var(--color-text, #09090B)));
+  box-shadow: var(--ui-copy-btn-hover-shadow, var(--ui-press-hover-shadow, var(--ui-copy-btn-shadow, var(--shadow-xs))));
+  translate: var(--ui-copy-btn-hover-translate, var(--ui-press-hover-translate, none));
+}
+/* Knobs: --ui-copy-btn-hover-shadow / -active-shadow and
+   --ui-copy-btn-hover-translate / -active-translate over the shared
+   --ui-press-* knobs. */
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn:active {
+  box-shadow: var(--ui-copy-btn-active-shadow, var(--ui-press-active-shadow, var(--ui-copy-btn-hover-shadow, var(--ui-press-hover-shadow, var(--ui-copy-btn-shadow, var(--shadow-xs))))));
+  translate: var(--ui-copy-btn-active-translate, var(--ui-press-active-translate, var(--ui-copy-btn-hover-translate, var(--ui-press-hover-translate, none))));
 }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);

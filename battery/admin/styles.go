@@ -208,7 +208,7 @@ func adminCSS(_ style.Theme) string {
 }
 .admin-detail__label {
   padding: calc(var(--spacing-sm, 4px) * 3.4) var(--spacing-lg, 16px);
-  font-size: var(--text-xs, 0.75rem); text-transform: uppercase; letter-spacing: calc(var(--tracking-wide, 0.04em) + 0.01em);
+  font-size: var(--text-xs, 0.75rem); text-transform: var(--ui-admin-label-case, uppercase); letter-spacing: calc(var(--tracking-wide, 0.04em) + 0.01em);
   color: var(--color-text-subtle, #818187);
   background: color-mix(in oklab, var(--color-surface, #17181a) 60%, var(--color-background, #0c0c0d));
   border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #2a2b2e);

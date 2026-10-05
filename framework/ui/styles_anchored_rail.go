@@ -60,6 +60,9 @@ func anchoredRailCSS(t style.Theme) string {
 			"font-family", "{fonts.mono}",
 			"font-size", "var(--text-xs, 0.75rem)",
 			"color", "{colors.text-subtle}",
+			// Knob: --ui-anchored-rail-eyebrow-case (none) sets the
+			// eyebrow's letter case.
+			"text-transform", "var(--ui-anchored-rail-eyebrow-case, none)",
 		).End().
 		Rule(".fui-anchored-rail__count").
 		Set(

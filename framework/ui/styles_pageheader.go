@@ -48,6 +48,9 @@ func pageHeaderCSS(t style.Theme) string {
 			"font-size", "var(--text-sm, 0.875rem)",
 			"font-weight", "{font-weight.medium}",
 			"color", "var(--color-text-muted, #52525B)",
+			// Knob: --ui-page-header-eyebrow-case (none) sets the
+			// eyebrow's letter case.
+			"text-transform", "var(--ui-page-header-eyebrow-case, none)",
 		).
 		End().
 		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host

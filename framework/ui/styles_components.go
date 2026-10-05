@@ -91,7 +91,28 @@ func buttonCSS(t style.Theme) string {
   overflow-wrap: break-word;
   cursor: pointer;
   text-decoration: none;
-  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, opacity var(--duration-fast, 150ms) ease;
+  text-transform: var(--ui-button-case, none);
+  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, opacity var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease;
+}
+/* Pointer motion. Knobs: --ui-button-shadow (the resting shadow of a
+   primary, danger or secondary button, default --shadow-xs),
+   --ui-button-hover-shadow and --ui-button-active-shadow, and
+   --ui-button-hover-translate / --ui-button-active-translate (default
+   none). Each falls back to the shared --ui-press-* knob every
+   clickable surface reads, then to the state before it. A press-down
+   theme lifts on hover and sinks flat on click without touching this
+   sheet.
+   The motion uses the individual translate property, never transform,
+   so a component that positions a button with transform keeps it; and
+   a state writes only --fui-button-state-shadow, so a component that
+   sets its button's box-shadow outright keeps that too. */
+.fui-button:hover:not(:disabled, [aria-disabled="true"]) {
+  translate: var(--ui-button-hover-translate, var(--ui-press-hover-translate, none));
+  --fui-button-state-shadow: var(--ui-button-hover-shadow, var(--ui-press-hover-shadow, var(--ui-button-shadow, var(--shadow-xs))));
+}
+.fui-button:active:not(:disabled, [aria-disabled="true"]) {
+  translate: var(--ui-button-active-translate, var(--ui-press-active-translate, var(--ui-button-hover-translate, var(--ui-press-hover-translate, none))));
+  --fui-button-state-shadow: var(--ui-button-active-shadow, var(--ui-press-active-shadow, var(--ui-button-hover-shadow, var(--ui-press-hover-shadow, var(--ui-button-shadow, var(--shadow-xs))))));
 }
 /* The shared focus ring: a 2px outline in the subtle ink, offset off
    the control. An outline (never a box-shadow) so it survives forced
@@ -126,13 +147,13 @@ func buttonCSS(t style.Theme) string {
   background: var(--fui-button-primary-bg);
   color: var(--fui-button-primary-fg);
   border-color: var(--fui-button-primary-border);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--danger {
   background: var(--fui-button-danger-bg);
   color: var(--fui-button-danger-fg);
   border-color: var(--fui-button-danger-border);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--primary:hover:not(:disabled, [aria-disabled="true"]),
 .fui-button--danger:hover:not(:disabled, [aria-disabled="true"]) {
@@ -142,7 +163,7 @@ func buttonCSS(t style.Theme) string {
   background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-border);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--secondary:hover { background: var(--color-surface-soft); }
 .fui-button--ghost {
@@ -248,6 +269,12 @@ func codeBlockCSS(_ style.Theme) string {
   --ui-copy-btn-bg: transparent;
   --ui-copy-btn-border: transparent;
   --ui-copy-btn-shadow: none;
+  /* Chrome, not a tile: the quiet button stays still under a
+     press-down theme. */
+  --ui-copy-btn-hover-shadow: none;
+  --ui-copy-btn-active-shadow: none;
+  --ui-copy-btn-hover-translate: none;
+  --ui-copy-btn-active-translate: none;
   --ui-copy-btn-color: color-mix(in oklab, var(--color-code-text, #E4E4E7) 62%, var(--color-code-surface, #18181B));
   --ui-copy-btn-hover-bg: color-mix(in oklab, var(--color-code-text, #E4E4E7) 12%, transparent);
   --ui-copy-btn-hover-color: var(--color-code-text, #E4E4E7);
@@ -377,14 +404,15 @@ func sectionCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-section"] .fui-section__eyebrow {
   margin: 0;
-  /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color let a
-     host retune the kicker (e.g. body face instead of mono) without
-     restyling the component's internals. */
+  /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color/-case
+     let a host retune the kicker (e.g. body face instead of mono, or
+     upper case) without restyling the component's internals. */
   font-family: var(--ui-section-eyebrow-font, inherit);
   font-size: var(--ui-section-eyebrow-size, var(--text-sm));
   font-weight: var(--ui-section-eyebrow-weight, var(--font-weight-medium));
   letter-spacing: var(--ui-section-eyebrow-tracking, normal);
   color: var(--ui-section-eyebrow-color, var(--color-text-muted));
+  text-transform: var(--ui-section-eyebrow-case, none);
 }
 [data-cui-comp="ui-section"] .fui-section__heading {
   /* Knobs: --ui-section-heading-size/-weight/-tracking scale the heading
@@ -415,7 +443,9 @@ func sectionCSS(_ style.Theme) string {
   /* The body is a grid of its own: an auto column would size to its
      widest content (a code block's longest line) past the section. */
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-lg, 16px);
+  /* Knob: --ui-section-body-gap, the room between the body's blocks,
+     over the lg layout gap step. */
+  gap: var(--ui-section-body-gap, var(--ui-layout-gap-lg, var(--spacing-lg, 16px)));
 }`
 }
 
@@ -581,7 +611,8 @@ func formSectionCSS(_ style.Theme) string {
 
 func statusBadgeCSS(t style.Theme) string {
 	// Knobs: --ui-badge-line-height (1rem) pins the pill's line box so
-	// xs padding keeps it a pill at any body leading.
+	// xs padding keeps it a pill at any body leading; --ui-badge-case
+	// (none) sets its letter case.
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -593,6 +624,7 @@ func statusBadgeCSS(t style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
   line-height: var(--ui-badge-line-height, 1rem);
+  text-transform: var(--ui-badge-case, none);
   border: var(--stroke-thin, 1px) solid transparent;
   /* A pill states one word; wrapping mid-label breaks the shape and
      the reading. Narrow columns must give the badge room, not fold
@@ -1323,11 +1355,23 @@ func themeToggleCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms);
+  transition: background var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms), box-shadow var(--duration-fast, 150ms), translate var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-theme-toggle"] button:hover,
 button[data-cui-comp="ui-theme-toggle"]:hover {
   background: var(--color-surface-soft, #F4F4F5);
+}
+/* Knobs: --ui-theme-toggle-hover-shadow / -active-shadow and
+   --ui-theme-toggle-hover-translate / -active-translate over the shared
+   --ui-press-* knobs, on the standalone toggle only: the pill variant's
+   options are segments in a track and stay still. */
+:where(button)[data-cui-comp="ui-theme-toggle"]:hover {
+  box-shadow: var(--ui-theme-toggle-hover-shadow, var(--ui-press-hover-shadow, none));
+  translate: var(--ui-theme-toggle-hover-translate, var(--ui-press-hover-translate, none));
+}
+:where(button)[data-cui-comp="ui-theme-toggle"]:active {
+  box-shadow: var(--ui-theme-toggle-active-shadow, var(--ui-press-active-shadow, var(--ui-theme-toggle-hover-shadow, var(--ui-press-hover-shadow, none))));
+  translate: var(--ui-theme-toggle-active-translate, var(--ui-press-active-translate, var(--ui-theme-toggle-hover-translate, var(--ui-press-hover-translate, none))));
 }
 [data-cui-comp="ui-theme-toggle"] button:focus-visible,
 button[data-cui-comp="ui-theme-toggle"]:focus-visible {
@@ -1413,7 +1457,7 @@ func backToTopCSS(_ style.Theme) string {
   opacity: 0;
   visibility: hidden;
   transform: translateY(0.5rem);
-  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
   pointer-events: none;
 }
 
@@ -1426,9 +1470,18 @@ func backToTopCSS(_ style.Theme) string {
 }
 
 /* ── Interaction ── */
+/* Knobs: --ui-back-to-top-hover-shadow / -active-shadow and
+   --ui-back-to-top-hover-translate / -active-translate over the shared
+   --ui-press-* knobs. The show/hide slide is transform, so the press
+   motion's translate composes with it. */
 [data-cui-comp="ui-back-to-top"]:hover {
   background: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
-  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
+  box-shadow: var(--ui-back-to-top-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1))));
+  translate: var(--ui-back-to-top-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-back-to-top"]:active {
+  box-shadow: var(--ui-back-to-top-active-shadow, var(--ui-press-active-shadow, var(--ui-back-to-top-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1))))));
+  translate: var(--ui-back-to-top-active-translate, var(--ui-press-active-translate, var(--ui-back-to-top-hover-translate, var(--ui-press-hover-translate, none))));
 }
 [data-cui-comp="ui-back-to-top"]:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);

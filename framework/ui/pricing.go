@@ -162,6 +162,8 @@ func pricingCardCSS(_ style.Theme) string {
   white-space: nowrap;
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
+  /* Knob: --ui-pricing-card-badge-case (none) sets the letter case. */
+  text-transform: var(--ui-pricing-card-badge-case, none);
   /* A soft secondary chip, the same as Tag and Badge: text on the soft
      surface clears 4.5:1 in both schemes. The knob overrides the text. */
   color: var(--ui-pricing-card-badge-fg, var(--color-text, #09090B));

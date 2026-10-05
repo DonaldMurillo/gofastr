@@ -164,7 +164,9 @@ func carouselCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__track {
   display: flex;
-  gap: var(--spacing-md, 8px);
+  /* Knob: --ui-carousel-gap, the room between slides, over the md
+     layout gap step. The slide width below subtracts the same value. */
+  gap: var(--ui-carousel-gap, var(--ui-layout-gap-md, var(--spacing-md, 8px)));
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -172,7 +174,7 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__track::-webkit-scrollbar { display: none; }
 [data-cui-comp="ui-carousel"] .fui-carousel__slide {
   --_carousel-cols: var(--ui-carousel-cols, 1);
-  flex: 0 0 calc((100% - (var(--_carousel-cols) - 1) * var(--spacing-md, 8px)) / var(--_carousel-cols));
+  flex: 0 0 calc((100% - (var(--_carousel-cols) - 1) * var(--ui-carousel-gap, var(--ui-layout-gap-md, var(--spacing-md, 8px)))) / var(--_carousel-cols));
   scroll-snap-align: start;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
@@ -232,6 +234,7 @@ func carouselCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   color: var(--color-text, #18181B);
   cursor: pointer;
+  transition: background var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
   text-decoration: none;
   font: inherit;
   /* The primitive's word ("Previous"/"Next") stays the accessible
@@ -254,8 +257,21 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__next::before { transform: rotate(135deg); }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev { inset-inline-start: 0; }
 [data-cui-comp="ui-carousel"] .fui-carousel__next { inset-inline-end: 0; }
+/* Press knobs: --ui-carousel-arrow-{hover,active}-{translate,shadow}
+   over the shared --ui-press-* knobs. The arrows centre themselves
+   with transform, so the press moves them with translate, which
+   composes with it. */
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:hover,
-[data-cui-comp="ui-carousel"] .fui-carousel__next:hover { background: var(--color-surface-soft, #F4F4F5); }
+[data-cui-comp="ui-carousel"] .fui-carousel__next:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+  box-shadow: var(--ui-carousel-arrow-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-xs)));
+  translate: var(--ui-carousel-arrow-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-carousel"] .fui-carousel__prev:active,
+[data-cui-comp="ui-carousel"] .fui-carousel__next:active {
+  box-shadow: var(--ui-carousel-arrow-active-shadow, var(--ui-press-active-shadow, var(--ui-carousel-arrow-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-xs)))));
+  translate: var(--ui-carousel-arrow-active-translate, var(--ui-press-active-translate, var(--ui-carousel-arrow-hover-translate, var(--ui-press-hover-translate, none))));
+}
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:focus-visible,
 [data-cui-comp="ui-carousel"] .fui-carousel__next:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);

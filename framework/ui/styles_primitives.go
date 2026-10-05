@@ -59,20 +59,20 @@ func layoutCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md, 8px);
+  gap: var(--ui-layout-gap-md, var(--spacing-md, 8px));
 }
 :where([data-cui-comp="ui-layout"]).fui-cluster {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: var(--spacing-md, 8px);
+  gap: var(--ui-layout-gap-md, var(--spacing-md, 8px));
   align-items: center;
 }
 [data-cui-comp="ui-layout"].fui-cluster--nowrap { flex-wrap: nowrap; }
 
 :where([data-cui-comp="ui-layout"]).fui-grid {
   display: grid;
-  gap: var(--spacing-md, 8px);
+  gap: var(--ui-layout-gap-md, var(--spacing-md, 8px));
   /* min(…, 100%): a column minimum wider than the container (a 24rem
      card grid on a phone) shrinks to the container instead of
      overflowing it. */
@@ -114,13 +114,17 @@ func layoutCSS(_ style.Theme) string {
 [data-cui-comp="ui-layout"].fui-box--pad-lg { padding: var(--spacing-lg, 16px); }
 [data-cui-comp="ui-layout"].fui-box--pad-xl { padding: var(--spacing-xl, 24px); }
 
-/* gap modifiers — apply to ui-stack/ui-cluster/ui-grid. */
+/* gap modifiers — apply to ui-stack/ui-cluster/ui-grid. Knobs:
+   --ui-layout-gap-xs/-sm/-md/-lg/-xl/-2xl, each defaulting to its
+   spacing token. A gap is the room between things, not the padding
+   inside them, so a theme whose cards cast a hard offset shadow widens
+   the gaps without inflating every padding on the spacing scale. */
 [data-cui-comp="ui-layout"].fui-layout--gap-none { gap: 0; }
-[data-cui-comp="ui-layout"].fui-layout--gap-xs   { gap: var(--spacing-xs, 2px); }
-[data-cui-comp="ui-layout"].fui-layout--gap-sm   { gap: var(--spacing-sm, 4px); }
-[data-cui-comp="ui-layout"].fui-layout--gap-lg   { gap: var(--spacing-lg, 16px); }
-[data-cui-comp="ui-layout"].fui-layout--gap-xl   { gap: var(--spacing-xl, 24px); }
-[data-cui-comp="ui-layout"].fui-layout--gap-2xl  { gap: var(--spacing-2xl, 32px); }
+[data-cui-comp="ui-layout"].fui-layout--gap-xs   { gap: var(--ui-layout-gap-xs, var(--spacing-xs, 2px)); }
+[data-cui-comp="ui-layout"].fui-layout--gap-sm   { gap: var(--ui-layout-gap-sm, var(--spacing-sm, 4px)); }
+[data-cui-comp="ui-layout"].fui-layout--gap-lg   { gap: var(--ui-layout-gap-lg, var(--spacing-lg, 16px)); }
+[data-cui-comp="ui-layout"].fui-layout--gap-xl   { gap: var(--ui-layout-gap-xl, var(--spacing-xl, 24px)); }
+[data-cui-comp="ui-layout"].fui-layout--gap-2xl  { gap: var(--ui-layout-gap-2xl, var(--spacing-2xl, 32px)); }
 
 /* alignment modifiers. */
 [data-cui-comp="ui-layout"].fui-layout--align-start    { align-items: flex-start; }
@@ -160,12 +164,21 @@ func cardCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-card"].fui-card--interactive {
   transition: border-color var(--duration-fast, 150ms) ease,
-              box-shadow var(--duration-fast, 150ms) ease;
+              box-shadow var(--duration-fast, 150ms) ease,
+              translate var(--duration-fast, 150ms) ease;
   cursor: pointer;
 }
+/* Knobs: --ui-card-hover-shadow / -active-shadow and
+   --ui-card-hover-translate / -active-translate, each falling back to
+   the shared --ui-press-* knob, then to the state before it. */
 [data-cui-comp="ui-card"].fui-card--interactive:hover {
   border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--ui-card-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-sm)));
+  translate: var(--ui-card-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-card"].fui-card--interactive:active {
+  box-shadow: var(--ui-card-active-shadow, var(--ui-press-active-shadow, var(--ui-card-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-sm)))));
+  translate: var(--ui-card-active-translate, var(--ui-press-active-translate, var(--ui-card-hover-translate, var(--ui-press-hover-translate, none))));
 }
 [data-cui-comp="ui-card"].fui-card--interactive[aria-current="page"] {
   background: var(--color-surface-soft);
@@ -225,7 +238,8 @@ func cardCSS(t style.Theme) string {
   gap: var(--spacing-md, 8px);
 }
 [data-cui-comp="ui-card"].fui-card--row { box-shadow: none; border-color: transparent; border-radius: var(--radii-sm); background: transparent; overflow: visible; }
-[data-cui-comp="ui-card"].fui-card--row.fui-card--interactive:hover { transform: none; box-shadow: none; background: var(--color-surface-soft); }
+[data-cui-comp="ui-card"].fui-card--row.fui-card--interactive:hover { transform: none; translate: none; box-shadow: none; background: var(--color-surface-soft); }
+[data-cui-comp="ui-card"].fui-card--row.fui-card--interactive:active { translate: none; box-shadow: none; }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__header { display: contents; }
 [data-cui-comp="ui-card"].fui-card--row .fui-card__heading { grid-column: 1; grid-row: 1; font-size: var(--text-xs); font-weight: var(--font-weight-normal); color: var(--color-text-muted); }
@@ -601,7 +615,8 @@ func tooltipCSS(_ style.Theme) string {
 func tagCSS(t style.Theme) string {
 	// Knobs: --ui-tag-line-height (1rem) pins the chip's line box;
 	// --ui-tag-dismiss-size (1.1rem) squares the × hit area and
-	// --ui-tag-dismiss-opacity (0.7) rests it until hover.
+	// --ui-tag-dismiss-opacity (0.7) rests it until hover; --ui-tag-case
+	// (none) sets its letter case.
 	return `[data-cui-comp="ui-tag"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -616,6 +631,7 @@ func tagCSS(t style.Theme) string {
   font-weight: var(--font-weight-medium);
   line-height: var(--ui-tag-line-height, 1rem);
   text-decoration: none;
+  text-transform: var(--ui-tag-case, none);
 }
 /* Same drawing as ui-badge: the tint is 15% of the status hue, the ink
    mixes the hue toward --color-text so it holds AA on the tint in
@@ -647,9 +663,20 @@ func tagCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
 }
-[data-cui-comp="ui-tag"].fui-tag--interactive:hover { border-color: var(--color-border-strong); }
+/* Knobs: --ui-tag-hover-shadow / -active-shadow and
+   --ui-tag-hover-translate / -active-translate over the shared
+   --ui-press-* knobs. */
+[data-cui-comp="ui-tag"].fui-tag--interactive:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--ui-tag-hover-shadow, var(--ui-press-hover-shadow, none));
+  translate: var(--ui-tag-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-tag"].fui-tag--interactive:active {
+  box-shadow: var(--ui-tag-active-shadow, var(--ui-press-active-shadow, var(--ui-tag-hover-shadow, var(--ui-press-hover-shadow, none))));
+  translate: var(--ui-tag-active-translate, var(--ui-press-active-translate, var(--ui-tag-hover-translate, var(--ui-press-hover-translate, none))));
+}
 [data-cui-comp="ui-tag"]:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);

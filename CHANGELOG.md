@@ -50,7 +50,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   0.45 and 0.18 draw at 0.6, 0.5 and 0.2, line heights 1.15, 1.25, 1.45
   and 1.65 move by 0.05, and two letter spacings move by under 0.01em.
   Filled and soft buttons draw their border in the new
-  `--ui-button-edge` knob (default `transparent`). The new groups reach
+  `--ui-button-edge` knob (default `transparent`). Clickable surfaces
+  take shared press knobs (`--ui-press-hover-translate`,
+  `--ui-press-active-translate`, `--ui-press-hover-shadow`,
+  `--ui-press-active-shadow`), so one theme setting lifts buttons,
+  interactive cards and tags, gallery items, the back-to-top and copy
+  buttons, the carousel arrows, the menu trigger and the standalone
+  theme toggle on hover and presses them flat on click; each also has
+  its own `--ui-<component>-hover-*` / `-active-*` knob, and
+  `--ui-button-shadow` sets a button's resting shadow. Button labels,
+  badges, tags and eyebrows take a letter-case knob (`--ui-button-case`,
+  `--ui-badge-case`, `--ui-tag-case`, `--ui-status-pill-case`,
+  `--ui-pricing-card-badge-case`, `--ui-<component>-eyebrow-case`).
+  `ui.Stack`, `ui.Cluster` and `ui.Grid` read their gaps from
+  `--ui-layout-gap-<step>` knobs over the spacing tokens, and a
+  `ui.Section` body reads `--ui-section-body-gap` and a `ui.Carousel`
+  track `--ui-carousel-gap`, each over the matching layout step, so one
+  theme setting widens the room between cards without widening any
+  padding. The defaults draw what they drew before. The new groups reach
   `.tokens.css` (`--leading-*`, `--tracking-*`, `--opacity-*`) and the
   plugin host's token bridge.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
@@ -672,6 +689,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A theme's `--ui-gallery-gap` reaches `ui.Gallery`.** The gallery
+  set the knob on its own root, which shadowed any value a theme wrote
+  on `:root`. It now reads the knob, falling back to
+  `--ui-layout-gap-md`, and each `Gap` preset reads its layout step.
 - **A theme can set any radius step to 0.** `Theme.Validate` refused
   `Radii.SM`, `MD`, `LG` or `XL` at 0 (only the `none` step could be
   0), so a square theme could not flatten `--radii-sm` and the rest.

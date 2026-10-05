@@ -162,7 +162,7 @@ func TestGalleryColumnsAreResponsiveMaximum(t *testing.T) {
 	for _, want := range []string{
 		"--ui-gallery-min",
 		"repeat(auto-fill",
-		"var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)",
+		"var(--ui-gallery-cols) - 1) * var(--_gallery-gap)",
 		"column-width: var(--ui-gallery-min)",
 	} {
 		if !strings.Contains(css, want) {
