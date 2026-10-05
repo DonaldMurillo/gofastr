@@ -1281,8 +1281,9 @@ as `404.html` at the root (see `framework/docs/content/static-export.md`).
 
 The framework's design tokens live in `core-ui/style.Theme`, a
 **typed Go struct** with a fixed canonical field set: `Colors`,
-`Spacing`, `Radii`, `Fonts`, `Breakpoints`, `Shadows`, `ZIndex`,
-`Durations`, `Typography`. Every token carries a `Name` (the CSS
+`Spacing`, `Radii`, `Strokes`, `Fonts`, `Breakpoints`, `Shadows`,
+`ZIndex`, `Durations`, `Easings`, `Typography`, `FontWeights`,
+`Layout`, `Code`. Every token carries a `Name` (the CSS
 custom property identifier) and a `Value` (the concrete value):
 
 ```go

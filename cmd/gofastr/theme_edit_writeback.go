@@ -108,6 +108,7 @@ func emitThemeGoSourceWithDoc(t style.Theme, pkgName string, doc []string) ([]by
 	emitColorSet(&b, &t.Colors)
 	emitSpacingScale(&b, &t.Spacing)
 	emitRadiusSet(&b, &t.Radii)
+	emitStrokeSet(&b, &t.Strokes)
 	emitFontSet(&b, &t.Fonts)
 	emitBreakpointSet(&b, &t.Breakpoints)
 	emitShadowSet(&b, &t.Shadows)
@@ -188,6 +189,23 @@ func emitRadiusSet(b *strings.Builder, r *style.RadiusSet) {
 	fmt.Fprintf(b, "\t\tXL:   style.Radius{Value: %d},\n", r.XL.Value)
 	fmt.Fprintf(b, "\t\tFull: style.Radius{Value: %d},\n", r.Full.Value)
 	b.WriteString("\t},\n")
+}
+
+// emitStrokeSet writes only the strokes the theme sets: an unset one
+// stays unset in the file, so the kit's fallback width keeps applying.
+func emitStrokeSet(b *strings.Builder, s *style.StrokeSet) {
+	b.WriteString("\tStrokes: style.StrokeSet{\n")
+	emitStroke(b, "Thin", s.Thin)
+	emitStroke(b, "Thick", s.Thick)
+	emitStroke(b, "Focus", s.Focus)
+	emitStroke(b, "FocusOffset", s.FocusOffset)
+	b.WriteString("\t},\n")
+}
+
+func emitStroke(b *strings.Builder, field string, s style.Stroke) {
+	if s.Value != "" {
+		fmt.Fprintf(b, "\t\t%s: style.Stroke{Value: %q},\n", field, s.Value)
+	}
 }
 
 func emitFontSet(b *strings.Builder, f *style.FontSet) {

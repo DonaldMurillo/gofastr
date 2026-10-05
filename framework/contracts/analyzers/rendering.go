@@ -945,7 +945,7 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 // font fallbacks stay out: `currentColor`, `inherit`, `transparent`, and
 // a dark-surface hex beside a light token are degraded-mode choices an
 // author made on purpose, and the rule cannot tell those from drift.
-var driftCategories = map[string]bool{"spacing": true, "radii": true, "text": true, "duration": true}
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "text": true, "duration": true}
 
 // declaredTokenValues is the theme's token table by name, light entries
 // only, for the fallback comparison.

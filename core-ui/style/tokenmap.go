@@ -201,6 +201,9 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 	case Radius:
 		registerIntPxSetter(v, "radii-", setters)
 		return
+	case Stroke:
+		registerValidatedSetter(v, "stroke-", map[string]bool{}, validateStrokeValue, setters)
+		return
 	case Breakpoint:
 		name, ok := nonEmptyStringField(v, "Name")
 		if !ok {
@@ -507,6 +510,20 @@ func validateSizeValue(v string) error {
 }
 
 // validateFontWeight enforces CSS's numeric font-weight range.
+// reStrokeLength is a non-negative length in the units a line width is
+// written in. A bare 0 is the one unitless width.
+var reStrokeLength = regexp.MustCompile(`^(?:0|\d*\.?\d+(?:px|rem|em))$`)
+
+// validateStrokeValue accepts "0" or a non-negative px/rem/em length:
+// a negative width is invalid CSS for a border and a calc() would hide
+// one, so neither is a theme value.
+func validateStrokeValue(v string) error {
+	if !reStrokeLength.MatchString(v) {
+		return fmt.Errorf("a stroke is 0 or a non-negative px/rem/em length (got %q)", v)
+	}
+	return nil
+}
+
 func validateFontWeight(n int) error {
 	if n < 1 || n > 1000 {
 		return fmt.Errorf("font weight must be 1 to 1000 (got %d)", n)

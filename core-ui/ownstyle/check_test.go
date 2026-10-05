@@ -129,6 +129,9 @@ func TestCheckHardcodedTokenValues(t *testing.T) {
 		// A trailing comment is not part of the value a browser reads,
 		// so this is still exactly the token value.
 		{".a{padding:16px /* lg */}", "1:12"},
+		// Line widths are stroke tokens.
+		{".a{border-width:1px}", "1:17 error GOFASTR1807 1px is --stroke-thin; write var(--stroke-thin)"},
+		{".a{outline-offset:2px}", "1:19 error GOFASTR1807 2px is --stroke-focus"},
 	}
 	for _, tc := range cases {
 		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
@@ -162,6 +165,8 @@ func TestCheckFallbackDrift(t *testing.T) {
 		// .5s is 500ms... spacing only goes to 48px; use a duration.
 		{".a{transition-duration:var(--duration-normal, 250ms)}", ""},
 		{".a{transition-duration:var(--duration-normal, 400ms)}", "1:24"},
+		{".a{border-width:var(--stroke-thin, 1px)}", ""},
+		{".a{border-width:var(--stroke-thin, 2px)}", "1:17"},
 		// Colour fallbacks are author's degraded-mode choices.
 		{".a{color:var(--color-text, #18181B)}", ""},
 		// Complex fallbacks are left alone.

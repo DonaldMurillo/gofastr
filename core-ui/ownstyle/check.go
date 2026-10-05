@@ -223,7 +223,13 @@ func tokenCategory(key string) string { return style.TokenCategory(key) }
 var PropTokenCategories = map[string][]string{
 	"font-size":     {"text"},
 	"border-radius": {"radii"},
-	"padding":       {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
+	"border-width":  {"stroke"}, "border-top-width": {"stroke"}, "border-right-width": {"stroke"},
+	"border-bottom-width": {"stroke"}, "border-left-width": {"stroke"},
+	"border-inline-width": {"stroke"}, "border-block-width": {"stroke"},
+	"border-inline-start-width": {"stroke"}, "border-inline-end-width": {"stroke"},
+	"border-block-start-width": {"stroke"}, "border-block-end-width": {"stroke"},
+	"outline-width": {"stroke"}, "outline-offset": {"stroke"}, "column-rule-width": {"stroke"},
+	"padding": {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
 	"padding-left": {"spacing"}, "padding-right": {"spacing"},
 	"margin": {"spacing"}, "margin-top": {"spacing"}, "margin-bottom": {"spacing"},
 	"margin-left": {"spacing"}, "margin-right": {"spacing"},
@@ -253,7 +259,7 @@ var propTokenCategories = PropTokenCategories
 // whose values are lengths or times, where a fallback either restates
 // the token or teaches a scale the theme does not declare. Colour and
 // font fallbacks stay out: they are degraded-mode choices on purpose.
-var driftCategories = map[string]bool{"spacing": true, "radii": true, "text": true, "duration": true}
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "text": true, "duration": true}
 
 // collectDeclaredCustomProperties gathers every custom property the
 // sheet declares (in rule blocks, not in @supports conditions, which

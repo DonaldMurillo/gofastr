@@ -84,10 +84,12 @@
 //	             Border, BorderStrong,
 //	             Danger, DangerFg, Success, Warning, Info, Accent
 //	Spacing:     XS, SM, MD, LG, XL, XXL, XXXL  (pixels)
-//	Radii:       None, SM, MD, LG, XL, Full     (pixels)
+//	Radii:       None, SM, MD, LG, XL, Full     (pixels, 0 allowed)
+//	Strokes:     Thin, Thick, Focus, FocusOffset (CSS lengths; optional,
+//	             unset strokes fall back to the kit's widths)
 //	Fonts:       Body, Heading, Mono            (font-family stacks)
 //	Breakpoints: SM, MD, LG, XL, XXL            (pixels)
-//	Shadows:     None, SM, MD, LG, XL           (box-shadow values)
+//	Shadows:     None, XS, SM, MD, LG, XL       (box-shadow values)
 //	ZIndex:      Dropdown, Sticky, Modal, Popover, Toast
 //	Durations:   Fast, Normal, Slow             (time.Duration)
 //	Typography:  XS, SM, Base, LG, XL, XXL, XXXL  (font-size strings)

@@ -65,6 +65,7 @@ type Theme struct {
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
+	Strokes     StrokeSet
 	Fonts       FontSet
 	Breakpoints BreakpointSet
 	Shadows     ShadowSet
@@ -118,6 +119,14 @@ type SpacingScale struct {
 // RadiusSet: border-radius scale.
 type RadiusSet struct {
 	None, SM, MD, LG, XL, Full Radius
+}
+
+// StrokeSet: line widths. Thin draws a control's or card's border and
+// every divider, Thick an emphasised border (a selected card, a tab's
+// active rule), Focus the keyboard focus outline and FocusOffset its
+// gap from the element.
+type StrokeSet struct {
+	Thin, Thick, Focus, FocusOffset Stroke
 }
 
 // FontSet: font-family stacks.
@@ -261,6 +270,16 @@ func autofillTokens(v reflect.Value, path []string) {
 	// stays zero (skipped by validation + emission, component CSS
 	// falls back), so only autofill the Name once a Value was set.
 	if v.Type() == reflect.TypeFor[CodeColor]() {
+		nameField := v.FieldByName("Name")
+		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
+			len(path) > 0 && nameField.CanSet() {
+			nameField.SetString(derivedTokenName(path[len(path)-1]))
+		}
+		return
+	}
+	// Stroke is optional the same way: a fully-unset stroke stays zero
+	// so it is skipped and the kit's fallback width applies.
+	if v.Type() == reflect.TypeFor[Stroke]() {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
 			len(path) > 0 && nameField.CanSet() {
@@ -494,6 +513,18 @@ func validateTokens(v reflect.Value, path string) error {
 			return fmt.Errorf("%s: Radius.Value is negative (%d, Name=%q)", path, tk.Value, tk.Name)
 		}
 		return nil
+	case Stroke:
+		// Optional: fully unset falls back to the kit's width.
+		if tk.Value == "" && tk.Name == "" {
+			return nil
+		}
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Stroke.Name is empty (Value=%q). Run AutoFillNames or set the Name", path, tk.Value)
+		}
+		if err := validateStrokeValue(tk.Value); err != nil {
+			return fmt.Errorf("%s: Stroke.Value (Name=%q): %w", path, tk.Name, err)
+		}
+		return nil
 	case Font:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Font.Name is empty", path)
@@ -667,6 +698,12 @@ func DefaultTheme() Theme {
 			LG:   Radius{Name: "lg", Value: 10},
 			XL:   Radius{Name: "xl", Value: 14},
 			Full: Radius{Name: "full", Value: 9999},
+		},
+		Strokes: StrokeSet{
+			Thin:        Stroke{Name: "thin", Value: "1px"},
+			Thick:       Stroke{Name: "thick", Value: "2px"},
+			Focus:       Stroke{Name: "focus", Value: "2px"},
+			FocusOffset: Stroke{Name: "focus-offset", Value: "2px"},
 		},
 		Fonts: FontSet{
 			Body:    Font{Name: "body", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},

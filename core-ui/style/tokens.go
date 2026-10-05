@@ -98,6 +98,8 @@ func categoryPrefix(category string) string {
 		return "spacing"
 	case "radii", "radius":
 		return "radii"
+	case "strokes", "stroke":
+		return "stroke"
 	case "fonts", "font":
 		return "font"
 	case "breakpoints", "breakpoint":
@@ -125,7 +127,7 @@ func categoryPrefix(category string) string {
 // tokenCategories is every custom-property prefix a typed token emits,
 // one per token type. TokenCategory matches against it longest first.
 var tokenCategories = []string{
-	"color", "spacing", "radii", "font", "breakpoint", "shadow", "z",
+	"color", "spacing", "radii", "stroke", "font", "breakpoint", "shadow", "z",
 	"duration", "easing", "text", "tk", "size", "font-weight",
 }
 
@@ -397,6 +399,11 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 			return "", "", false
 		}
 		return "radii-" + t.Name, fmt.Sprintf("%dpx", t.Value), true
+	case Stroke:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "stroke-" + t.Name, t.Value, true
 	case Font:
 		if t.Name == "" {
 			return "", "", false

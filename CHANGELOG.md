@@ -8,6 +8,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
+  `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
+  `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
+  border, divider, inset ring and focus outline reads them, pill shapes
+  read `--radii-full`, transitions `--duration-fast/normal/slow` and
+  stacking layers `--z-*`, so a theme alone can redraw the kit: thick
+  borders, square corners and hard shadows need no component CSS. A
+  value is `"0"` or a non-negative px/rem/em length. The set is
+  optional: an unset stroke is not emitted and the kit draws its
+  default width, so a `theme.go` written before strokes existed keeps
+  its borders. Strokes reach `ApplyTokens`, `theme edit`'s write-back,
+  `.tokens.css` (`--stroke-*`, `syntax: "<length>"`), the plugin
+  host's token bridge and the GOFASTR1807/1808 checks
+  (`border-width`, `outline-width`, `outline-offset` and
+  `column-rule-width` compare against strokes). The kit's transitions
+  moved onto the nearest duration step (100–200ms → fast, 220ms →
+  normal), and the skip link, navigation toast and progress strip now
+  sit one layer above `--z-toast` instead of at 9999. The
+  `button.radius: pill` component option now emits
+  `var(--radii-full)`.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

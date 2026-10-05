@@ -90,7 +90,7 @@ func validateComponentEntry(key, value string) error {
 // Declaration is one custom property a component-options compiler
 // returns for a theme's Components: Name includes the leading "--"
 // ("--fui-button-radius"), Value is the exact text after the colon
-// ("var(--radii-md)", "0", "9999px").
+// ("var(--radii-md)", "0", "var(--radii-full)").
 type Declaration struct {
 	Name  string
 	Value string

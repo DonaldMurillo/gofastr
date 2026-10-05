@@ -114,6 +114,7 @@
     "--size-page-width", "--size-wide-width",
     "--spacing-2xl", "--spacing-3xl", "--spacing-lg", "--spacing-md", "--spacing-sm",
     "--spacing-touch-target", "--spacing-xl", "--spacing-xs",
+    "--stroke-focus", "--stroke-focus-offset", "--stroke-thick", "--stroke-thin",
     "--text-2xl", "--text-3xl", "--text-base", "--text-lg", "--text-sm", "--text-xl", "--text-xs",
     "--tk-com", "--tk-fn", "--tk-kw", "--tk-num", "--tk-pn", "--tk-str", "--tk-type",
     "--z-dropdown", "--z-modal", "--z-popover", "--z-sticky", "--z-toast"

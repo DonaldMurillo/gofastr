@@ -18,15 +18,17 @@ warning when one arrives too late.
 ## The token catalog
 
 `style.Theme` is a struct made of typed token groups. Every field is
-required; `WithTheme` panics at startup and names any token you left
-out. Each group writes CSS variables with a fixed prefix:
+required except `Strokes` and `Code`; `WithTheme` panics at startup and
+names any token you left out. Each group writes CSS variables with a
+fixed prefix:
 
 | Theme group | Emits | Examples |
 |---|---|---|
 | `Colors` | `--color-<name>` | `--color-primary`, `--color-primary-fg`, `--color-danger`, `--color-danger-fg`, `--color-text-muted`, `--color-code-surface` |
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
-| `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full` |
+| `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full`. Any step can be `0`: a square theme sets them all to it |
+| `Strokes` | `--stroke-<name>` | `--stroke-thin` (1px: every control and card border, every divider, the inset ring on a shadow), `--stroke-thick` (2px: an emphasised border such as a selected card or an active tab's rule), `--stroke-focus` (2px: the focus outline) and `--stroke-focus-offset` (2px: its gap from the element). A value is `"0"` or a non-negative px/rem/em length. The group is optional: a stroke you leave unset is not emitted and the kit draws its default width, so a `theme.go` written before strokes existed keeps its borders |
 | `Shadows` | `--shadow-<name>` | `--shadow-xs` … `--shadow-xl`: `xs` is the hairline lift under a resting control (button, input, select), `sm` sits under a card, `md` under a popover or menu, `lg` under a dialog |
 | `ZIndex` | `--z-<name>` | `--z-dropdown`, `--z-modal`, `--z-toast` |
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
@@ -35,7 +37,7 @@ out. Each group writes CSS variables with a fixed prefix:
 | `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
 | `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
-| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. Optional like `Strokes`: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
 Token names come from the Go field path, converted to kebab-case
 (`Colors.PrimaryFg` → `--color-primary-fg`). Set an explicit `Name` on
@@ -79,9 +81,16 @@ parts reads as one system:
   panels `--radii-lg` or `--radii-xl` (10px, 14px), small chips
   `--radii-sm` (6px).
 - **One focus ring.** Every focusable part draws
-  `outline: 2px solid var(--color-text-subtle); outline-offset: 2px`
-  on `:focus-visible`, in neutral grey rather than the brand colour.
-  Re-skin it by changing `TextSubtle`, not per component.
+  `outline: var(--stroke-focus) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset)` on `:focus-visible`, in
+  neutral grey rather than the brand colour. Re-skin it by changing
+  `TextSubtle` and the two focus strokes, not per component.
+- **One line weight.** Borders, dividers and inset rings read
+  `--stroke-thin` and emphasised borders `--stroke-thick`; pill shapes
+  read `--radii-full`, transitions `--duration-*` and stacking layers
+  `--z-*`. A theme that sets `Strokes.Thin` to 3px, every radius to 0
+  and the shadows to hard offsets restyles the whole kit with no
+  component CSS.
 - **Soft tones for status.** Badges, tags, chips and the pricing
   badge are soft fills: the tone tints the background and colours the
   text, never a solid saturated block.
@@ -202,8 +211,9 @@ else: a class rule, another media query, or a dark value for a
 non-colour token is an error. Each `@property`:
 
 - is named `--<type>-<name>`, where the prefix is a token type
-  (`color`, `font`, `spacing`, `radii`, `shadow`, `z`, `duration`,
-  `easing`, `text`, `font-weight`, `size`) and the name is lowercase
+  (`color`, `font`, `spacing`, `radii`, `stroke`, `shadow`, `z`,
+  `duration`, `easing`, `text`, `font-weight`, `size`) and the name is
+  lowercase
   kebab-case,
 - declares the syntax that matches its type,
 - says `inherits: true`, since a theme token must reach every element,
@@ -215,7 +225,7 @@ non-colour token is an error. Each `@property`:
 | `--color-` | `style.Color` | `"<color>"` |
 | `--size-` | `style.Size` | `"<length>"` or `"<length-percentage>"` |
 | `--text-` | `style.FontSize` | `"<length>"` or `"<length-percentage>"` |
-| `--spacing-`, `--radii-` | `style.Spacing`, `style.Radius` | `"<length>"` |
+| `--spacing-`, `--radii-`, `--stroke-` | `style.Spacing`, `style.Radius`, `style.Stroke` | `"<length>"` |
 | `--font-weight-` | `style.FontWeight` | `"<number>"` or `"<integer>"` |
 | `--z-` | `style.ZIndexValue` | `"<integer>"` |
 | `--duration-` | `style.Duration` | `"<time>"` |
@@ -281,7 +291,12 @@ one package can read a token declared in another.
   (`font-weight: 600` is `var(--font-weight-semibold)`) and sizes
   (`width`, `height`, `inline-size`, `block-size`, their `min-`/`max-`
   forms, and `flex-basis`). Padding, margin and gap compare against
-  spacing only.
+  spacing only; `border-width` (and its side and logical forms),
+  `outline-width`, `outline-offset` and `column-rule-width` compare
+  against strokes (`outline-offset: 2px` is
+  `var(--stroke-focus-offset)`). A `border` shorthand is judged whole,
+  so `1px solid …` passes this rule; write `var(--stroke-thin) solid …`
+  anyway, so a theme's line weight reaches it.
 - **GOFASTR1821**: an app token whose value is already another token's
   value of the same type, built-in or app (`--color-brand: #18181B`
   where `--color-primary` is `#18181B`). Read the other token, or give
@@ -623,7 +638,7 @@ where one declaration covers every rule beneath it.
 | Option | Emits |
 |---|---|
 | `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
-| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
+| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `var(--radii-full)` |
 | `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
 | `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |

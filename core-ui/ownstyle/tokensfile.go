@@ -70,6 +70,7 @@ var tokenSyntax = map[string][]string{
 	"text":        {"<length>", "<length-percentage>"},
 	"spacing":     {"<length>"},
 	"radii":       {"<length>"},
+	"stroke":      {"<length>"},
 	"font-weight": {"<number>", "<integer>"},
 	"z":           {"<integer>"},
 	"duration":    {"<time>"},
@@ -193,8 +194,13 @@ func parseProperty(r *Rule, bad func(Pos, string, ...any)) (AppToken, bool) {
 	cat := style.TokenCategory(key)
 	allowed, typed := tokenSyntax[cat]
 	if !typed {
-		_, err := style.ParseToken(key, initial)
-		bad(pos, "%v", err)
+		// A kind style parses but this table lacks would otherwise
+		// report the message "<nil>".
+		if _, err := style.ParseToken(key, initial); err != nil {
+			bad(pos, "%v", err)
+		} else {
+			bad(pos, "--%s: a %s token has no @property syntax registered here", key, cat)
+		}
 		return AppToken{}, false
 	}
 	typeName := tokenTypeName(cat)
@@ -248,6 +254,7 @@ var tokenGroups = []tokenGroup{
 	{"font", "Fonts", "Font"},
 	{"spacing", "Spacing", "Spacing"},
 	{"radii", "Radii", "Radius"},
+	{"stroke", "Strokes", "Stroke"},
 	{"shadow", "Shadows", "Shadow"},
 	{"z", "ZIndex", "ZIndexValue"},
 	{"duration", "Durations", "Duration"},
@@ -435,6 +442,8 @@ func tokenLiteral(v any) string {
 		return fmt.Sprintf("style.Spacing{Name: %q, Value: %d}", t.Name, t.Value)
 	case style.Radius:
 		return fmt.Sprintf("style.Radius{Name: %q, Value: %d}", t.Name, t.Value)
+	case style.Stroke:
+		return fmt.Sprintf("style.Stroke{Name: %q, Value: %q}", t.Name, t.Value)
 	case style.FontWeight:
 		return fmt.Sprintf("style.FontWeight{Name: %q, Value: %d}", t.Name, t.Value)
 	case style.ZIndexValue:

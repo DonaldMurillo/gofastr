@@ -133,6 +133,8 @@ func ParseToken(key, value string) (any, error) {
 		slot = &Spacing{Name: name}
 	case "radii":
 		slot = &Radius{Name: name}
+	case "stroke":
+		slot = &Stroke{Name: name}
 	case "font":
 		slot = &Font{Name: name}
 	case "font-weight":

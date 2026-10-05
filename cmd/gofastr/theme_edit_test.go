@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -1491,5 +1492,26 @@ func TestThemeEditUnknownComponentKeyFallsBackToText(t *testing.T) {
 	}
 	if !strings.Contains(out, `value="x"`) {
 		t.Errorf("the fallback input does not carry the current value:\n%s", out)
+	}
+}
+
+// Every token set on style.Theme must reach the write-back. A set the
+// emitter skips still boots: init's AutoFillNames names its tokens and
+// a zero width or radius validates, so saving an edited theme would
+// quietly zero every stroke.
+func TestWritebackEmitsEveryTokenSet(t *testing.T) {
+	src, err := emitThemeGoSource(uitheme.Default(), "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	typ := reflect.TypeFor[style.Theme]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Struct {
+			continue
+		}
+		if !strings.Contains(string(src), "\t"+f.Name+": style."+f.Type.Name()+"{") {
+			t.Errorf("write-back drops Theme.%s (%s)", f.Name, f.Type.Name())
+		}
 	}
 }
