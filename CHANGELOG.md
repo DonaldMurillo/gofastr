@@ -73,7 +73,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ch` and viewport lengths, zero and 1px hairlines allowed, and
   `framework/dev` held to the stroke, radius, motion and layer arms
   only. The new groups reach `.tokens.css` (`--leading-*`,
-  `--tracking-*`, `--opacity-*`) and the plugin host's token bridge.
+  `--tracking-*`, `--opacity-*`), the plugin host's token bridge and the
+  GOFASTR1807/1808 checks.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets
@@ -467,6 +468,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   other user's create, and the 409 reveals that the value exists.
 
 ### Changed
+- **BREAKING: owned sheets read line height, letter spacing and opacity
+  from the new tokens.** The owned-style check (`gofastr gen styles`,
+  `gofastr verify`) compares `line-height`, `letter-spacing` and
+  `opacity` against `--leading-*`, `--tracking-*` and `--opacity-*`, so
+  `line-height: 1.6` or `letter-spacing: -0.01em` in a `.style.css` is a
+  GOFASTR1807 error and that sheet's Go is not generated. The
+  sitefooter and siteheader sheets the blueprint wrote carry both; `gofastr
+  upgrade` lists them. Write `var(--leading-relaxed)` and
+  `var(--tracking-snug)` and re-run `gofastr gen styles`.
 - **BREAKING: the default theme is reskinned to a neutral zinc look.**
   `style.DefaultTheme()` and `theme.Default()` now use a near-black
   primary (`#18181B`, was indigo `#4F46E5`) on a white page, one

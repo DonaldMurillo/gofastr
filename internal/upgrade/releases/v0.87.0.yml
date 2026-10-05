@@ -79,3 +79,10 @@ notes:
       strings:
         match: '(?:^|[^-a-z])(?:outline-offset|outline-width|column-rule-width|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-width)\s*:\s*[12]px\s*(?:;|\}|!|$)'
     guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads line-height, letter-spacing and opacity against the new --leading-*, --tracking-* and --opacity-* tokens: a .style.css declaration whose value is one of theirs, such as line-height: 1.6 or letter-spacing: -0.01em, which the sitefooter and siteheader sheets the blueprint wrote carry, is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        match: '(?:^|[^-a-z])(?:line-height\s*:\s*1\.[2456]|letter-spacing\s*:\s*(?:-0\.0[123]|0\.0[48])em|opacity\s*:\s*0?\.[256])\s*(?:;|\}|!|$)'
+    guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write line-height 1.2 / 1.4 / 1.5 / 1.6 as var(--leading-tight) / var(--leading-snug) / var(--leading-normal) / var(--leading-relaxed), letter-spacing -0.03em / -0.02em / -0.01em / 0.04em / 0.08em as var(--tracking-tighter) / var(--tracking-tight) / var(--tracking-snug) / var(--tracking-wide) / var(--tracking-wider), and opacity 0.2 / 0.5 / 0.6 as var(--opacity-faint) / var(--opacity-disabled) / var(--opacity-muted), then re-run gofastr gen styles. Other values pass the check."

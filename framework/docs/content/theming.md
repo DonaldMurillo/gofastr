@@ -310,7 +310,9 @@ one package can read a token declared in another.
   spacing only; `border-width` (and its side and logical forms),
   `outline-width`, `outline-offset` and `column-rule-width` compare
   against strokes (`outline-offset: 2px` is
-  `var(--stroke-focus-offset)`). A `border` shorthand is judged whole,
+  `var(--stroke-focus-offset)`); `line-height`, `letter-spacing` and
+  `opacity` compare against `--leading-*`, `--tracking-*` and
+  `--opacity-*` (`line-height: 1.6` is `var(--leading-relaxed)`). A `border` shorthand is judged whole,
   so `1px solid …` passes this rule; write `var(--stroke-thin) solid …`
   anyway, so a theme's line weight reaches it.
 - **GOFASTR1821**: an app token whose value is already another token's

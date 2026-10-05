@@ -245,7 +245,8 @@ var PropTokenCategories = map[string][]string{
 	"animation-timing-function": {"easing"},
 	"z-index":                   {"z"},
 	"font-weight":               {"font-weight"},
-	"width":                     {"size"}, "min-width": {"size"}, "max-width": {"size"},
+	"line-height":               {"leading"}, "letter-spacing": {"tracking"}, "opacity": {"opacity"},
+	"width": {"size"}, "min-width": {"size"}, "max-width": {"size"},
 	"height": {"size"}, "min-height": {"size"}, "max-height": {"size"},
 	"inline-size": {"size"}, "min-inline-size": {"size"}, "max-inline-size": {"size"},
 	"block-size": {"size"}, "min-block-size": {"size"}, "max-block-size": {"size"},
@@ -259,7 +260,7 @@ var propTokenCategories = PropTokenCategories
 // whose values are lengths or times, where a fallback either restates
 // the token or teaches a scale the theme does not declare. Colour and
 // font fallbacks stay out: they are degraded-mode choices on purpose.
-var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "text": true, "duration": true}
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
 
 // collectDeclaredCustomProperties gathers every custom property the
 // sheet declares (in rule blocks, not in @supports conditions, which
