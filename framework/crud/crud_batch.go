@@ -360,6 +360,10 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 					id = fmt.Sprintf("%v", idVal)
 				}
 				delete(body, ch.PrimaryKey)
+				if !ch.itemPermitted(ctx, opUpdate, id) {
+					results[i] = batchResult{Index: i, Error: "access denied"}
+					return errBatchAborted
+				}
 				res, err := ch.doUpdate(ctx, r, id, body)
 				if err != nil {
 					msg, fields := classifyDoErr(err)
@@ -455,6 +459,10 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		results := initSkipped(len(req.IDs))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, id := range req.IDs {
+				if !ch.itemPermitted(ctx, opDelete, id) {
+					results[i] = batchResult{Index: i, Error: "access denied"}
+					return errBatchAborted
+				}
 				if err := ch.doDelete(ctx, r, id); err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}

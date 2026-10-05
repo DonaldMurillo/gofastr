@@ -203,7 +203,8 @@ func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
 // consulted before the role policy, the issue #80 seam for per-resource
 // authority ("member may edit project 42"). recordID is the path id for
 // item-scoped ops (read-one/update/delete) and "" for collection-level ops
-// (list/create/batch/the SSE feed); with no decider configured, CanResource
+// (list/create/batch/the SSE feed); batch update and delete re-ask per item
+// through itemPermitted. With no decider configured, CanResource
 // answers exactly what access.Can answered, so behaviour is byte-identical.
 func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp, recordID string) bool {
 	perm := ch.permissionForOp(op)
@@ -216,6 +217,20 @@ func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	return true
+}
+
+// itemPermitted re-asks op's permission about one record: the per-item twin
+// of requirePermission for routes whose path carries no id. The _batch
+// update and delete routes pass requireScope with Ref{ID: ""} and then write
+// caller-named ids, so a Decider that denies one record by id was never asked
+// about it. Each item is asked here, inside the batch transaction, and a
+// refusal rolls the whole batch back.
+func (ch *CrudHandler) itemPermitted(ctx context.Context, op crudOp, id string) bool {
+	perm := ch.permissionForOp(op)
+	if perm == "" {
+		return true
+	}
+	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
 }
 
 // tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the
