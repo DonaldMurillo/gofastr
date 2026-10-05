@@ -277,6 +277,13 @@ func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
 		panic(err.Error())
 	}
+	if builtDeepLinkScheme != "" {
+		if cfg.DeepLink == nil {
+			cfg.DeepLink = &DeepLinkConfig{Scheme: builtDeepLinkScheme}
+		} else if cfg.DeepLink.Scheme != builtDeepLinkScheme {
+			panic(fmt.Sprintf("desktop: Config.DeepLink.Scheme %q does not match the scheme embedded by `gofastr desktop build --scheme` (%q)", cfg.DeepLink.Scheme, builtDeepLinkScheme))
+		}
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -919,6 +926,26 @@ func (b *Battery) Run(app *framework.App) error {
 	// nothing a headless CI run cannot do.
 	if os.Getenv(ManifestEnv) == "1" {
 		return b.runManifestMode(app, os.Stdout)
+	}
+	// A packaged Windows app claims its protocol when the user starts it.
+	// Check for an existing instance before app.Start opens the database or
+	// listener, so a second activation can be forwarded without starting a
+	// duplicate app process.
+	if builtDeepLinkScheme != "" {
+		if activator, ok := b.shell.(interface {
+			PrepareLaunch(appID, appName, scheme string) (handled bool, startupURLs []string, err error)
+		}); ok {
+			handled, startupURLs, err := activator.PrepareLaunch(b.cfg.ID, b.windowTitle(), builtDeepLinkScheme)
+			if err != nil {
+				return fmt.Errorf("desktop: prepare Windows launch: %w", err)
+			}
+			if handled {
+				return nil
+			}
+			for _, rawURL := range startupURLs {
+				b.handleDeepLink(rawURL)
+			}
+		}
 	}
 
 	// Arm the boot gate BEFORE the listener opens (see gateMiddleware):

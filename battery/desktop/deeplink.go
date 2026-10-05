@@ -21,9 +21,10 @@ import (
 
 // DeepLinkConfig enables deep links for the app. Zero value: none.
 type DeepLinkConfig struct {
-	// Scheme is the URL scheme the app claims ("notes"). The bundle
-	// builder registers it (CFBundleURLTypes); the battery refuses
-	// links on any other scheme.
+	// Scheme is the URL scheme the app claims ("notes"). The macOS
+	// bundle builder registers it in Info.plist. A Windows build made
+	// with `gofastr desktop build --scheme` registers it for the current
+	// user whenever the app starts. The battery refuses links on other schemes.
 	Scheme string
 
 	// OnDeepLink, when set, replaces the default mapping: return the
