@@ -68,6 +68,29 @@
   // direct, no opaque blob — nothing outside reads them).
   const screenCache = new Map();
   const MAX_CACHE_SIZE = 20;
+  // captureHTML is a region's markup for the screen cache with the
+  // runtime's in-flight markers removed. A control the rpc module
+  // disabled (disabled, cui-loading, aria-busy) or an action control
+  // mid-settlement (data-state=pending) is a moment, not the page: a
+  // Back that replayed it would restore a control nothing re-enables,
+  // since the rpc's finally only touches the node it disabled, by then
+  // detached. Pages with nothing in flight pay only the selector.
+  function captureHTML(el) {
+    if (!el.querySelector('.cui-loading,[data-state="pending"]')) return el.innerHTML;
+    const c = el.cloneNode(true);
+    for (const n of c.querySelectorAll('.cui-loading')) {
+      n.classList.remove('cui-loading');
+      if (!n.classList.length) n.removeAttribute('class');
+      n.removeAttribute('aria-busy');
+      n.removeAttribute('disabled');
+    }
+    for (const n of c.querySelectorAll('[data-state="pending"]')) {
+      n.setAttribute('data-state', 'idle');
+      n.removeAttribute('aria-busy');
+    }
+    return c.innerHTML;
+  }
+
   const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
     if (screenCache.has(path)) screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
@@ -722,7 +745,7 @@
           const prevEntry = getCachedScreen(prevPath);
           const lsnap = captureEnvelopeSnapshot(busySlot);
           const ps0 = P && P.leaveSnap(prevEntry);
-          cacheScreen(prevPath, busySlot.innerHTML, document.title, keys[busyDepth - 1],
+          cacheScreen(prevPath, captureHTML(busySlot), document.title, keys[busyDepth - 1],
             lsnap.fills, lsnap.seed, ps0 && ps0.partAddrs, ps0 && ps0.parts);
         }
         // The loading module starts loading at evaluation; the first
@@ -1214,7 +1237,7 @@
     const m = document.querySelector('[role="main"]') ?? document.querySelector('main');
     if (m) {
       const snap = captureEnvelopeSnapshot(m);
-      cacheScreen(_liveDomPath, m.innerHTML, document.title,
+      cacheScreen(_liveDomPath, captureHTML(m), document.title,
         m.getAttribute('data-cui-layout-slot') || '', snap.fills, snap.seed);
     }
     recordScroll(_liveDomPath);
