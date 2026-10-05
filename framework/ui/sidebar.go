@@ -1030,6 +1030,20 @@ func sidebarCSS(_ style.Theme) string {
   padding-bottom: var(--spacing-md, 8px);
   border-bottom: 1px solid var(--color-border, #E4E4E7);
 }
+/* The drawer body has no column padding (each nav row pads itself), so
+   the title, Prepend and footer take the rows' inline inset: their text
+   starts where the rows' text does, not flush against the drawer edge.
+   Compact rows add a 1px current-marker border before their padding. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__footer {
+  padding-inline: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__footer {
+  padding-inline: calc(var(--spacing-sm) + 1px);
+}
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
   min-width: 64px;
   width: 64px;
