@@ -96,7 +96,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		site = app.NewApp("ShopFront")
 	}
 	site.WithTheme(appTheme())
-	sbCfg := sidebarConfig(context.Background())
 	sbComponent := app.NewContextComponent(func(ctx context.Context) render.HTML {
 		html, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))
 		return html
@@ -107,7 +106,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
 	})
 	site.SetDefaultLayout(appLayout)
-	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
+	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)

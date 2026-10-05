@@ -28,8 +28,8 @@
   // data-cui-activelink link is then still the truth, even where the
   // href is not exactly the URL (Active on /orders served at
   // /orders?page=2, or on a detail page), so the sweep leaves it.
-  const update = (path, navigated) => {
-    for (const link of document.querySelectorAll('nav a')) {
+  const update = (path, navigated, scope) => {
+    for (const link of (scope || document).querySelectorAll('nav a')) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-cui-activelink-skip')) continue;
@@ -96,6 +96,14 @@
   G._updateActiveLink = update;
   window.addEventListener('gofastr:navigate', (e) => {
     update((e.detail && e.detail.path) || location.pathname + location.search, true);
+  });
+  // Widget chrome (the sidebar's phone drawer) mounts after load and is
+  // served without the page's current path, and no navigation follows
+  // its mount: sweep the announced root so its nav marks the page the
+  // drawer opened over. Scoped to the root, so the page is not swept.
+  document.addEventListener('fui:widget-open', (e) => {
+    const root = e.detail && e.detail.root;
+    if (root && root.querySelectorAll) update(location.pathname + location.search, !!G._navigated, root);
   });
   // Correct the highlight for wherever the page is NOW, SSR covered the
   // initial URL, but a navigation may have happened before idle load.

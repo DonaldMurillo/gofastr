@@ -730,15 +730,35 @@ func sidebarHasActiveDescendant(it SidebarItem, currentPath string) bool {
 // data-cui-comp="ui-sidebar" so the sidebar stylesheet applies
 // inside the drawer too (the framework's per-component CSS scoping
 // keys on that marker).
-type sidebarDrawerSlot struct{ cfg SidebarConfig }
+//
+// resolve, when set (MountSidebarFunc), rebuilds the config from the
+// request on every render, so a footer or item list that depends on the
+// session matches the inline sidebar's; cfg then carries the mount-time
+// identity (DrawerName, Variant) the resolved config keeps.
+type sidebarDrawerSlot struct {
+	cfg     SidebarConfig
+	resolve func(context.Context) SidebarConfig
+}
+
+// config returns the drawer's config for ctx: the per-request one when
+// the drawer was mounted with a resolver, the boot-time one otherwise.
+func (s sidebarDrawerSlot) config(ctx context.Context) SidebarConfig {
+	if s.resolve == nil {
+		return s.cfg
+	}
+	cfg := s.resolve(ctx)
+	cfg.DrawerName, cfg.Variant = s.cfg.DrawerName, s.cfg.Variant
+	return cfg
+}
 
 // RenderCtx renders the drawer body with role-filtered items. The widget host
 // serves the drawer chrome per-request (serveChrome) and threads the request
 // context here, so the mobile drawer hides the same role-gated entries the
 // desktop sidebar does.
 func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
-	cfg := s.cfg.withFilteredItems(ctx)
-	if len(cfg.Items) == 0 && len(s.cfg.Items) > 0 {
+	base := s.config(ctx)
+	cfg := base.withFilteredItems(ctx)
+	if len(cfg.Items) == 0 && len(base.Items) > 0 {
 		// Every entry gated away: the drawer body is empty, as the
 		// inline sidebar is (see sidebarComponent.RenderCtx).
 		return ""
@@ -746,7 +766,9 @@ func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 	return sidebarDrawerSlot{cfg: cfg}.render(ctx)
 }
 
-func (s sidebarDrawerSlot) Render() render.HTML { return s.render(context.Background()) }
+func (s sidebarDrawerSlot) Render() render.HTML {
+	return sidebarDrawerSlot{cfg: s.config(context.Background())}.render(context.Background())
+}
 
 func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 	cfg := s.cfg
@@ -787,10 +809,33 @@ func (h sidebarDrawerHeader) Render() render.HTML {
 // `Sidebar(cfg)` when rendering screens so the two views stay in
 // sync.
 //
+// The drawer renders cfg as given on every request (only the role
+// filter sees the request). When the sidebar's content depends on the
+// request beyond Roles (a footer with the signed-in user's Sign out),
+// use MountSidebarFunc with the same builder the layout calls.
+//
 // Generic signature: `r` is anything widget.Mount accepts (the
 // gofastr router). We use a tiny adapter type so this package doesn't
 // need to import the router directly.
 func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.Definition {
+	return mountSidebar(r, cfg, nil, pages)
+}
+
+// MountSidebarFunc is MountSidebar for a sidebar built per request:
+// the drawer body calls build with each chrome request's context, so
+// its footer and items match what the inline Sidebar(build(ctx))
+// renders for the same session. Pass the function the app layout
+// already uses. The drawer's identity (DrawerName, Variant) and its
+// header brand (DrawerTitle, falling back to Title) come from
+// build(context.Background()) at mount time.
+func MountSidebarFunc(r WidgetMounter, build func(ctx context.Context) SidebarConfig, pages ...string) widget.Definition {
+	if build == nil {
+		panic("ui.MountSidebarFunc: build is nil")
+	}
+	return mountSidebar(r, build(context.Background()), build, pages)
+}
+
+func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context) SidebarConfig, pages []string) widget.Definition {
 	if cfg.Variant == "" {
 		cfg.Variant = SidebarPersistent
 	}
@@ -804,7 +849,7 @@ func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.De
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
 		Slot("header", sidebarDrawerHeader{title: title}).
-		Slot("body", sidebarDrawerSlot{cfg: cfg})
+		Slot("body", sidebarDrawerSlot{cfg: cfg, resolve: build})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`
 	// keeps the drawer globally available.
@@ -985,6 +1030,20 @@ func sidebarCSS(_ style.Theme) string {
   padding-bottom: var(--spacing-md, 8px);
   border-bottom: 1px solid var(--color-border, #E4E4E7);
 }
+/* The drawer body has no column padding (each nav row pads itself), so
+   the title, Prepend and footer take the rows' inline inset: their text
+   starts where the rows' text does, not flush against the drawer edge.
+   Compact rows add a 1px current-marker border before their padding. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__footer {
+  padding-inline: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__title,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body.fui-sidebar--compact .fui-sidebar__footer {
+  padding-inline: calc(var(--spacing-sm) + 1px);
+}
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
   min-width: 64px;
   width: 64px;
@@ -1127,6 +1186,7 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
+  font: inherit;
   font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }

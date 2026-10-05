@@ -143,3 +143,35 @@ func TestSidebarNoItemsRendersEmpty(t *testing.T) {
 		}()
 	}
 }
+
+// userKey is the request-scoped session a per-request sidebar footer reads.
+type userKey struct{}
+
+func footerFor(ctx context.Context) SidebarConfig {
+	cfg := SidebarConfig{DrawerTitle: "Acme", Items: []SidebarItem{{Label: "Home", Href: "/"}}}
+	if u, _ := ctx.Value(userKey{}).(string); u != "" {
+		cfg.Footer = render.HTML(`<button>Sign out ` + render.Escape(u) + `</button>`)
+	}
+	return cfg
+}
+
+// The drawer chrome renders per request, so a sidebar whose footer
+// depends on the session must reach the drawer with that session: a
+// config built once at boot rendered the anonymous footer to everyone.
+func TestDrawerFooterResolvesPerRequest(t *testing.T) {
+	r := &mountRecorder{}
+	def := MountSidebarFunc(r, footerFor)
+	ctx := context.WithValue(context.Background(), userKey{}, "ada")
+	if chrome := widget.RenderChromeCtx(ctx, &def); !strings.Contains(chrome, "Sign out ada") {
+		t.Errorf("signed-in drawer chrome must render the request's footer:\n%s", chrome)
+	}
+	if chrome := widget.RenderChrome(&def); strings.Contains(chrome, "Sign out") {
+		t.Errorf("anonymous drawer chrome must not render a signed-in footer:\n%s", chrome)
+	}
+	if !strings.Contains(widget.RenderChrome(&def), `<span class="fui-sidebar__drawer-brand">Acme</span>`) {
+		t.Errorf("the drawer header reads the boot-time config's DrawerTitle")
+	}
+	if len(r.mounted) != 1 || r.mounted[0].Name != "ui-sidebar-drawer" {
+		t.Errorf("MountSidebarFunc must mount one default-named drawer, got %d", len(r.mounted))
+	}
+}
