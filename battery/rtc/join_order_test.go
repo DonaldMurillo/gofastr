@@ -26,10 +26,8 @@ func TestLateJoinNotReplayedToHydratedPeer(t *testing.T) {
 				c, err := wsConnect(base + "/ws/room1?peer=pB")
 				if err == nil {
 					b = c
-					// Give pB's hydration the chance to land inside the
-					// window: with the ordering guard in place pB waits
-					// for the announce and this read times out, which is
-					// the point.
+					// Read pB's snapshot, taken inside pA's window, so
+					// it lists pA before pA's join is published.
 					_, _ = b.recvEnv(300 * time.Millisecond)
 				}
 				dialed <- err

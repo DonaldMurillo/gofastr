@@ -105,14 +105,7 @@ type room struct {
 	// RoomIdleTTL after this.
 	emptySince time.Time
 	channel    *stream.StateChannel[string, roomSnapshot, roomEvent]
-	// announce serializes hydrate-then-announce per joining socket:
-	// held from Connect (the snapshot job is queued and run) through
-	// the join publish, so a socket that joins next queues its snapshot
-	// behind this join and never hears a join for a peer its snapshot
-	// already lists (the browser module reads such a join as a
-	// reconnect and rebuilds a connection it just made). Never taken
-	// under s.mu; s.mu is taken under it.
-	announce sync.Mutex
+	listed     *listedPeers
 }
 
 // roomPeer is one locally connected socket and its identity.
@@ -130,8 +123,25 @@ type roomPeer struct {
 // under Signaler.mu, so payload and sequence come from one locked
 // read (the one-immutable-read contract stream documents).
 type roomSource struct {
-	s    *Signaler
-	name string
+	s      *Signaler
+	name   string
+	listed *listedPeers
+}
+
+// listedPeers remembers, per socket, the peers its hydration snapshot
+// listed whose join it has not yet been sent. The channel is
+// at-least-once: a join published before a snapshot was built can still
+// be dequeued after it (a peer that registers while another socket's
+// snapshot is pending, or a mirrored join from another replica). The
+// browser module reads a join for a peer it already knows as a
+// reconnect and rebuilds the connection it just made, so FilterEvent
+// drops one join per listed peer, and a leave clears the mark so a
+// real rejoin still arrives. Only the channel's Run loop touches it
+// (SnapshotFor and FilterEvent both run there); the mutex keeps that
+// an implementation detail rather than a proof obligation.
+type listedPeers struct {
+	mu sync.Mutex
+	by map[string]map[string]struct{}
 }
 
 // SnapshotFor builds the peer's view: itself, the other members
@@ -154,7 +164,50 @@ func (src roomSource) SnapshotFor(peerID string) (roomSnapshot, uint64) {
 		}
 	}
 	snap.ICEServers = src.s.iceServersFor(peerID, time.Now())
+	src.listed.record(peerID, snap.Peers)
 	return snap, rm.seq
+}
+
+// record replaces peerID's listed set with the peers its snapshot
+// carried.
+func (l *listedPeers) record(peerID string, peers []PeerInfo) {
+	if l == nil {
+		return
+	}
+	set := make(map[string]struct{}, len(peers))
+	for _, p := range peers {
+		set[p.ID] = struct{}{}
+	}
+	l.mu.Lock()
+	l.by[peerID] = set
+	l.mu.Unlock()
+}
+
+// consume reports whether subject was on peerID's listed set and
+// removes it either way. A join consumes the mark (true means the
+// snapshot already carried it); a leave only clears it.
+func (l *listedPeers) consume(peerID, subject string) bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	set := l.by[peerID]
+	if _, ok := set[subject]; !ok {
+		return false
+	}
+	delete(set, subject)
+	return true
+}
+
+// forget drops a departed socket's set.
+func (l *listedPeers) forget(peerID string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	delete(l.by, peerID)
+	l.mu.Unlock()
 }
 
 // iceServersFor is the configured ICE list plus, with TURN set, a
@@ -173,14 +226,16 @@ func (s *Signaler) iceServersFor(peerID string, now time.Time) []ICEServer {
 //   - signal: addressed delivery. The frame is marshaled for its `to`
 //     only; the sender never receives its own SDP back and no other
 //     peer ever sees the bytes.
-//   - join/leave/status: every peer except the subject.
+//   - join/leave/status: every peer except the subject, and a join
+//     never reaches a peer whose snapshot already listed its subject
+//     (see listedPeers).
 //   - iceServers: every peer, each with its own credential.
 func (src roomSource) FilterEvent(peerID string, ev roomEvent) (any, bool) {
 	switch ev.kind {
 	case evICEServers:
 		return iceServersPayload{ICEServers: src.s.iceServersFor(peerID, time.Now())}, true
 	case evJoin:
-		if peerID == ev.peer.ID {
+		if peerID == ev.peer.ID || src.listed.consume(peerID, ev.peer.ID) {
 			return nil, false
 		}
 		return ev.peer, true
@@ -188,6 +243,7 @@ func (src roomSource) FilterEvent(peerID string, ev roomEvent) (any, bool) {
 		if peerID == ev.id {
 			return nil, false
 		}
+		src.listed.consume(peerID, ev.id)
 		return leavePayload{ID: ev.id}, true
 	case evStatus:
 		if peerID == ev.id {
@@ -349,7 +405,6 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	// returns once the snapshot is queued; the join that follows
 	// carries a greater sequence and is filtered out for its subject.
 	defer s.peerGone(join.Room, p)
-	rm.announce.Lock()
 	rm.channel.Connect(peerID, conn)
 	if s.testAtAnnounce != nil {
 		s.testAtAnnounce <- peerID
@@ -365,7 +420,6 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	}
 	roomLog, peerLog, roleLog := scrubLogField(join.Room), scrubLogField(peerID), scrubLogField(join.Role)
 	s.mu.Unlock()
-	rm.announce.Unlock()
 	s.logger.Debug("rtc: join", "room", roomLog, "peer", peerLog, "role", roleLog)
 
 	for {
@@ -409,6 +463,7 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 		return
 	}
 	delete(rm.peers, p.info.ID)
+	rm.listed.forget(p.info.ID)
 	// A live remote seat for the same id keeps the peer in the merged
 	// roster (local wins while local exists; remote carries it after), so
 	// the wire says nothing: the room never lost the peer. Other replicas
@@ -504,8 +559,8 @@ func isObjectJSON(data []byte) bool {
 // The first room with TURN configured also starts the credential
 // refresh loop. Caller holds s.mu.
 func (s *Signaler) newRoomLocked(name string) *room {
-	rm := &room{name: name, peers: make(map[string]*roomPeer)}
-	rm.channel = stream.NewStateChannel[string, roomSnapshot, roomEvent](roomSource{s: s, name: name})
+	rm := &room{name: name, peers: make(map[string]*roomPeer), listed: &listedPeers{by: map[string]map[string]struct{}{}}}
+	rm.channel = stream.NewStateChannel[string, roomSnapshot, roomEvent](roomSource{s: s, name: name, listed: rm.listed})
 	// Signals are not in the snapshot: a peer that cannot take a
 	// frame must reconnect and re-hydrate (the far side then sees a
 	// leave and a join and renegotiates), never run on silently
