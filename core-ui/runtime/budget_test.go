@@ -1047,7 +1047,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// toast, the retry, the epoch bump — and the scroll anchors went
 		// path-keyed with the _pushURL wrap and the popstate listener.
 		// Before that: 6041 (before the supersede rule moved in).
-		"envelope": 7621,
+		// 7662 measured after the leave capture started stripping
+		// in-flight rpc state (cui-loading, aria-busy, disabled,
+		// data-state=pending) from the cached markup, so a cached
+		// screen never restores a control stuck busy.
+		"envelope": 7662,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

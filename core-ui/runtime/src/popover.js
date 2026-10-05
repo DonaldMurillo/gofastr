@@ -59,7 +59,8 @@
       // anchor. Marking the trigger and attaching window listeners
       // now would leave the trigger in its open state for good and
       // the listeners running on every scroll.
-      if (NS._widgets[name] !== widget || !root.isConnected) return;
+      if (!Object.prototype.hasOwnProperty.call(NS._widgets, name)
+        || NS._widgets[name] !== widget || !root.isConnected) return;
     }
 
 
