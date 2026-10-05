@@ -34,8 +34,7 @@ func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		s := string(src)
-		if strings.Contains(s, "chromedp.NewExecAllocator(") && !strings.Contains(s, "WSURLReadTimeout") {
+		if lacksLaunchAllowance(string(src)) {
 			bad = append(bad, path)
 		}
 		return nil
@@ -45,5 +44,33 @@ func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 	}
 	for _, p := range bad {
 		t.Errorf("%s boots Chrome with chromedp's 20s launch wait: use chromedptest.Context, or pass chromedp.WSURLReadTimeout", p)
+	}
+}
+
+// lacksLaunchAllowance reports whether a file boots Chrome more times
+// than it raises the launch wait. Counting per call, not per file: a
+// file with two allocators and one allowance still has a call on the
+// 20s default.
+func lacksLaunchAllowance(src string) bool {
+	return strings.Count(src, "chromedp.NewExecAllocator(") > strings.Count(src, "chromedp.WSURLReadTimeout(")
+}
+
+func TestLaunchAllowanceCountsEachAllocator(t *testing.T) {
+	const boot = "chromedp.NewExecAllocator(ctx, opts...)\n"
+	const allow = "chromedp.WSURLReadTimeout(90*time.Second),\n"
+	for _, tc := range []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"no browser", "package x\n", false},
+		{"one boot, no allowance", boot, true},
+		{"one boot, allowance", allow + boot, false},
+		{"two boots, one allowance", allow + boot + boot, true},
+		{"two boots, two allowances", allow + boot + allow + boot, false},
+	} {
+		if got := lacksLaunchAllowance(tc.src); got != tc.want {
+			t.Errorf("%s: lacksLaunchAllowance = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
