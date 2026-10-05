@@ -237,10 +237,16 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
+		// hidden marks items whose created row the caller's ReadScope hides;
+		// they answer with the id only, as the single Create route does.
+		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				res, err := ch.doCreate(ctx, r, body)
+				if err == nil {
+					hidden[i], err = ch.readScopeHidesRow(ctx, res)
+				}
 				if err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}
@@ -278,6 +284,10 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		if txErr == nil {
 			for i, res := range results {
 				if res.Data == nil {
+					continue
+				}
+				if hidden[i] {
+					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)

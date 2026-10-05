@@ -155,6 +155,63 @@ func TestInProcessWritesHideReadScopedRow(t *testing.T) {
 	}
 }
 
+// Create answers the same way. RETURNING carries values the caller did not
+// send (column defaults, hook stamps), so a created row outside the scope
+// comes back as its id only, on every create-shaped path.
+func TestCreateHidesReadScopedRow(t *testing.T) {
+	ch := readBackNotes(t, nil)
+	post := func(id, status string) map[string]any {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/notes",
+			strings.NewReader(`{"id":"`+id+`","status":"`+status+`","body":"b"}`))
+		r.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		ch.Create()(rec, r)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("POST /notes = %d %s", rec.Code, rec.Body.String())
+		}
+		return decodeSingleResponse(t, rec.Body.Bytes())
+	}
+	assertIDOnly(t, "anon POST draft", post("c1", "draft"), "c1")
+	if got := post("c2", "published"); got["body"] != "b" {
+		t.Fatalf("anon POST published: response = %v, want the full row", got)
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/notes/_batch",
+		strings.NewReader(`{"items":[{"id":"c3","status":"published","body":"b"},{"id":"c4","status":"draft","body":"b"}]}`))
+	r.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ch.BatchCreate()(rec, r)
+	resp := decodeBatch(t, rec)
+	if !resp.Committed {
+		t.Fatalf("batch did not commit: %s", rec.Body.String())
+	}
+	if resp.Results[0].Data["body"] != "b" {
+		t.Fatalf("batch items[0] = %v, want the full published row", resp.Results[0].Data)
+	}
+	assertIDOnly(t, "batch items[1]", resp.Results[1].Data, "c4")
+
+	ctx := context.Background()
+	row, err := ch.CreateOne(ctx, map[string]any{"id": "c5", "status": "draft", "body": "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertIDOnly(t, "CreateOne", row, "c5")
+	rows, err := ch.BatchCreateMany(ctx, []map[string]any{{"id": "c6", "status": "draft", "body": "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertIDOnly(t, "BatchCreateMany", rows[0], "c6")
+
+	row, err = ch.CreateOne(WithServerWrites(ctx), map[string]any{"id": "c7", "status": "draft", "body": "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row["body"] != "b" {
+		t.Fatalf("CreateOne under WithServerWrites = %v, want the full row", row)
+	}
+}
+
 // WithServerWrites marks a trusted server-side caller, which reads back the
 // row it wrote whatever principal the context carries.
 func TestServerWritesReadBackFullRow(t *testing.T) {

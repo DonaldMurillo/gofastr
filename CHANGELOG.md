@@ -935,9 +935,12 @@ has a `*_security_test.go` that failed before it, and `gofastr upgrade
   carries owner, tenant and soft-delete predicates, and `UpsertOne`
   calls the `belongs_to` scope check that `CreateOne` and `UpdateOne`
   already made.
-- **Write responses respect `ReadScope`.** Update, upsert and batch
-  update returned the full row even when the caller's read scope hid it
-  (GET answered 404). A hidden row now answers with its id only.
+- **Write responses respect `ReadScope`.** Create, update, upsert and
+  their batch forms returned the full row even when the caller's read
+  scope hid it (GET answered 404), including column defaults and hook
+  stamps the caller never sent. A hidden row now answers with its id
+  only, over HTTP and in-process; a `WithServerWrites` caller still
+  reads back the whole row.
 - **`?include=` serves only declared columns.** The include loaders ran
   `SELECT *` and stripped only Hidden fields, so a column another API
   version declared, a removed field kept by additive migration, or an

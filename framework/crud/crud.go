@@ -1011,6 +1011,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		}
 
 		var result map[string]any
+		var hidden bool
 		// The keys this request's multipart parse saved are the only
 		// storage keys it may write (media_provenance.go).
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
@@ -1019,7 +1020,8 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 				return err
 			}
 			result = res
-			return nil
+			hidden, err = ch.readScopeHidesRow(ctx, res)
+			return err
 		})
 		if err != nil {
 			// Validation, a hook rejection, or the INSERT itself
@@ -1044,15 +1046,25 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		// answering 500: the row is committed and the event has shipped, so a
 		// 500 would be a lie the caller acts on by retrying, creating it
 		// twice. See identityOnly.
-		body, hookErr := ch.runResponseHooks(r, result)
-		if hookErr != nil {
-			log.Printf("crud: after-get hook failed on create response, returning id only: %v", hookErr)
-			body = ch.identityOnly(result)
+		//
+		// A row the caller's ReadScope hides comes back as its id only, as
+		// on Update: RETURNING carries server-stamped values (defaults,
+		// hook writes) a GET of the row would answer 404 for.
+		var resp map[string]any
+		if hidden {
+			resp = ch.identityOnly(result)
+		} else {
+			var hookErr error
+			resp, hookErr = ch.runResponseHooks(r, result)
+			if hookErr != nil {
+				log.Printf("crud: after-get hook failed on create response, returning id only: %v", hookErr)
+				resp = ch.identityOnly(result)
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(singleResponse{Data: body})
+		json.NewEncoder(w).Encode(singleResponse{Data: resp})
 	}
 }
 
