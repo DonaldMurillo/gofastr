@@ -127,14 +127,7 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 	// redirect hop. Only installed when the client carries no custom
 	// transport (tests that inject httptest.Client keep their transport).
 	if safeClient.Transport == nil {
-		safeClient.Transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   webFetchTimeout,
-				KeepAlive: 30 * time.Second,
-				Control:   ssrfDialControl,
-			}).DialContext,
-		}
+		safeClient.Transport = webFetchTransport()
 	}
 	safeClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
@@ -189,6 +182,21 @@ func (w webFetchImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventS
 // runs AFTER name resolution but BEFORE the connect completes, it
 // closes the DNS-rebinding TOCTOU that assertPublicHost (a separate,
 // earlier resolution) cannot. address is "ip:port".
+// webFetchTransport is the default WebFetch transport: every connect runs
+// ssrfDialControl. It never routes through an environment proxy. Through
+// HTTP_PROXY the dial check would only see the proxy's address while the
+// proxy connected to the model-chosen target, metadata service included.
+func webFetchTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: nil,
+		DialContext: (&net.Dialer{
+			Timeout:   webFetchTimeout,
+			KeepAlive: 30 * time.Second,
+			Control:   ssrfDialControl,
+		}).DialContext,
+	}
+}
+
 func ssrfDialControl(_, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {

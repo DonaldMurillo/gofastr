@@ -70,7 +70,10 @@ re-validates the actual resolved IP at connect time. This closes the
 DNS-rebinding / TOCTOU window where a host validates public at
 `Subscribe` and is then re-pointed at `127.0.0.1` /
 `169.254.169.254` / an RFC1918 address before the worker fires; the
-connection is refused before any bytes leave the process.
+connection is refused before any bytes leave the process. The default
+transport ignores `HTTP_PROXY`/`HTTPS_PROXY`: through a proxy the hook
+would see only the proxy's address. To deliver through an egress proxy,
+supply your own client (next paragraph).
 
 Supplying your own `Options.HTTPClient` (proxy, tracing, custom
 timeout) does **not** drop the guard: `New` wraps the client with a
