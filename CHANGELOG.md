@@ -27,7 +27,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   normal), and the skip link, navigation toast and progress strip now
   sit one layer above `--z-toast` instead of at 9999. The
   `button.radius: pill` component option now emits
-  `var(--radii-full)`.
+  `var(--radii-full)`. A new `gofastr verify` rule, GOFASTR1823, keeps
+  the kit that way: a bare border, outline or ring width, outline
+  offset, px radius, duration up to 500ms or z-index above 10 in
+  design-system CSS is an error, with a literal inside a `var()`
+  fallback or a token-reading `calc()` allowed. The contract catalog
+  holds 78 rules.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

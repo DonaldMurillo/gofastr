@@ -90,7 +90,9 @@ parts reads as one system:
   read `--radii-full`, transitions `--duration-*` and stacking layers
   `--z-*`. A theme that sets `Strokes.Thin` to 3px, every radius to 0
   and the shadows to hard offsets restyles the whole kit with no
-  component CSS.
+  component CSS. `gofastr verify` holds the kit to this: a bare width,
+  radius, short duration or layer in kit CSS is GOFASTR1823
+  ([contracts](contracts.md)).
 - **Soft tones for status.** Badges, tags, chips and the pricing
   badge are soft fills: the tone tints the background and colours the
   text, never a solid saturated block.

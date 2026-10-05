@@ -164,6 +164,7 @@ const (
 	RuleTokenCustomProperty = "GOFASTR1820"
 	RuleDuplicateTokenValue = "GOFASTR1821"
 	RuleRepeatedLiteral     = "GOFASTR1822"
+	RuleBareThemeLiteral    = "GOFASTR1823"
 )
 
 // Permission rules.
@@ -1235,6 +1236,27 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "/* article.style.css */ .body { max-width: 37rem; }\n/* help.style.css */ .answer { max-width: 37rem; }",
 			Good: "/* article.style.css */ .body { max-width: var(--size-reading-width); }\n/* help.style.css */ .answer { max-width: var(--size-reading-width); }",
+		}},
+	}, {
+		ID: RuleBareThemeLiteral, Slug: "rendering/bare-theme-literal",
+		Title: "Line width, radius, motion duration or layer written as a literal in kit CSS", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS writes a border, outline or inset-ring width, an outline offset, a px border radius, " +
+			"a transition or animation duration up to 500ms, or a z-index above 10 as a bare literal instead of reading " +
+			"--stroke-*, --radii-*, --duration-* or --z-*. Literals inside a var() fallback or a calc() that reads a token, " +
+			"zero widths, percentage radii, local stacking orders (z-index 10 or less), loop periods over 500ms and " +
+			"animation-delay pass.",
+		Why: "GOFASTR1807 judges a value whole, so `border: 1px solid var(--color-border)` and `transition: color 150ms ease` " +
+			"passed it: no token value equals the shorthand. A theme that sets --stroke-thin to 3px, every radius to 0 or " +
+			"the durations to 0 for a reduced-motion brand then reaches none of those declarations, and the kit cannot be " +
+			"restyled by its theme alone. Before the stroke tokens there were 997 such literals across 90 kit files.",
+		Fix: "Read the token with its default as the fallback: `var(--stroke-thin, 1px) solid`, `var(--stroke-focus, 2px) solid`, " +
+			"`outline-offset: var(--stroke-focus-offset, 2px)`, `border-radius: var(--radii-full, 9999px)`, " +
+			"`var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`. An off-step width is a calc() over a token " +
+			"(`calc(-2 * var(--stroke-focus-offset, 2px))`), so it still scales with the theme.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "border: 1px solid var(--color-border); transition: color 150ms ease;",
+			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); transition: color var(--duration-fast, 150ms) ease;",
 		}},
 	}}
 }

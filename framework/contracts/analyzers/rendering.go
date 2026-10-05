@@ -45,6 +45,7 @@ func init() {
 			contracts.RuleTokenCustomProperty,
 			contracts.RuleDuplicateTokenValue,
 			contracts.RuleRepeatedLiteral,
+			contracts.RuleBareThemeLiteral,
 		},
 		Run: runRendering,
 	})
@@ -222,6 +223,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			// whose fallback restates the token at the wrong value.
 			if ownsStyling && strings.Contains(line, "var(") {
 				out = append(out, checkFallbackDrift(f.Rel, lineNo, line, lines[i])...)
+			}
+			// GOFASTR1823: the literals GOFASTR1807 cannot see because
+			// they sit inside a shorthand.
+			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
+				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, line, lines[i])...)
 			}
 
 			// Cheap pre-filter. Every pattern below needs at least one of

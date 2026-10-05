@@ -608,6 +608,7 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-widget").
 		Set(
 			"position", "fixed",
+			//gofastr:allow(GOFASTR1823) dev and agent widgets sit above every app layer, so no theme z step may move them
 			"z-index", "2147483600",
 			"font-family", "{fonts.body}",
 			"color", "{colors.text}",
@@ -731,6 +732,7 @@ func widgetCSS(def Definition) string {
 		Set(
 			"position", "fixed", "inset", "0",
 			"background", "rgba(0,0,0,0.45)",
+			//gofastr:allow(GOFASTR1823) one below the widget layer above, outside the theme's z steps for the same reason
 			"z-index", "2147483599",
 			"animation", "cui-backdrop-in {durations.overlay-enter} {easings.ease-out}",
 		).

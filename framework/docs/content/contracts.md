@@ -132,6 +132,20 @@ code.
 | `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #18181B` where `--color-primary` is `#18181B` |
 | `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
 
+`GOFASTR1823` (error) guards the kit itself, the design-system trees
+(`core-ui/`, `framework/ui/`, `framework/uihost/`, `battery/` and the
+rest GOFASTR1807 reads there). GOFASTR1807 judges a value whole, so
+`border: 1px solid var(--color-border)` passes it. GOFASTR1823 reads
+inside the shorthand, in stylesheet strings and in builder `Set` pairs:
+a non-zero border, outline or inset-ring width, an outline offset, a px
+border radius, a transition or animation duration up to 500ms, or a
+z-index above 10 must read `--stroke-*`, `--radii-*`, `--duration-*` or
+`--z-*`. Write the token with its default as the fallback,
+`var(--stroke-thin, 1px) solid`, so the kit still draws with no theme
+loaded. A literal inside a `var()` fallback or inside a `calc()` that
+reads a token (`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero
+widths, percentage radii, loop periods over 500ms and `animation-delay`.
+
 `GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
 a handle method is called inside the `Class` field of a `framework/ui`
 config literal, `ui.Card(ui.CardConfig{Class: board.Style.Column()})`,
