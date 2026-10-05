@@ -485,6 +485,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   "USD" sat against the border under `dir="rtl"`.
 - **A DataTable header row has no hairline seams** between cells at
   fractional widths in Chromium.
+- **A carousel's dots follow a manual scroll and count positions.** A
+  swipe, trackpad or scrollbar drag moved the track while the dots
+  stayed on the last clicked slide; the active slide and dot now update
+  when the scroll settles. With three slides in view, six slides had six
+  dots, two of which named places the track cannot reach. The module now
+  hides the dots past the last reachable position (four here), stops
+  Next and End there, and re-counts when the track or a slide resizes.
+  Only whole slides count as in view, so a track showing two and a half
+  slides still reaches the last one, and rotation wraps from the last
+  position to the first. Moving to a slide (dot, arrow, key or
+  autoplay) scrolls only the track: `scrollIntoView` also scrolled the
+  page, so an autoplaying carousel below the fold pulled the reader
+  down to it on every turn. A carousel nested in another's slide keeps
+  its slides and dots to itself (the outer Next marked an inner slide),
+  and a carousel under a scaled or zoomed ancestor counts its
+  positions right.
+- **Cards in a `ui.Carousel` row share a height.** The track stretched
+  every slide to the tallest, but a card inside a slide kept its own
+  height, so a short quote's card ended above its neighbours'. A slide's
+  lone child now fills it, drawing its focus ring inside its edge
+  where the slide does not clip it; a slide with several (an image and
+  its caption) stacks them from the top.
 - **A catalog block under a node block is refused at validation.** A
   `type: div` (or any node-tree block) holding a `card`, `stack`, form
   control or other catalog kind passed validation and rendered as an

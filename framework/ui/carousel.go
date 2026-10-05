@@ -44,7 +44,9 @@ type CarouselConfig struct {
 	// Loop makes Next-on-last wrap to first (and vice versa). Default
 	// false: Prev/Next refuse at the ends.
 	Loop bool
-	// VisiblePerView (default 1) shows N slides side-by-side.
+	// VisiblePerView (default 1) is the most slides shown side by
+	// side: a carousel narrower than 40rem shows at most two, and one
+	// narrower than 26rem shows one, without its arrows when it has dots.
 	VisiblePerView int
 	ID             string
 	Class          string
@@ -135,6 +137,13 @@ var carouselStyle = registry.RegisterStyle("ui-carousel", carouselCSS)
 func carouselCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-carousel"]).fui-carousel {
   position: relative;
+  /* The carousel's own width picks how many slides fit (see the
+     @container rules below), so a three-up carousel in a phone column
+     shows one readable slide, not three slivers. */
+  container-type: inline-size;
+  /* Containment gives the carousel no width of its own, so as a flex
+     item with an auto basis it collapsed to 0px. It fills its row. */
+  inline-size: 100%;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__stage {
   /* Positioning context for the overlaid prev/next arrows, so they
@@ -146,6 +155,13 @@ func carouselCSS(_ style.Theme) string {
   position: relative;
   min-block-size: var(--spacing-touch-target, 44px);
 }
+/* The arrows sit in a gutter beside the track rather than over it, so
+   they never cover a slide's text: a card slide lost its first letters
+   under an overlaid arrow. NoArrows renders no prev control and keeps
+   the full width. */
+[data-cui-comp="ui-carousel"] .fui-carousel__stage:has(> .fui-carousel__prev) {
+  padding-inline: calc(var(--spacing-touch-target, 44px) + var(--spacing-md, 8px));
+}
 [data-cui-comp="ui-carousel"] .fui-carousel__track {
   display: flex;
   gap: var(--spacing-md, 8px);
@@ -155,11 +171,24 @@ func carouselCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__track::-webkit-scrollbar { display: none; }
 [data-cui-comp="ui-carousel"] .fui-carousel__slide {
-  flex: 0 0 calc((100% - (var(--ui-carousel-cols, 1) - 1) * var(--spacing-md, 8px)) / var(--ui-carousel-cols, 1));
+  --_carousel-cols: var(--ui-carousel-cols, 1);
+  flex: 0 0 calc((100% - (var(--_carousel-cols) - 1) * var(--spacing-md, 8px)) / var(--_carousel-cols));
   scroll-snap-align: start;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
+  /* The track stretches every slide to the tallest; a slide's lone
+     child takes that height, so cards in a row end on one line. Several
+     children (an image and its caption) stack from the top instead of
+     spreading over it. An image keeps its ratio: a replaced item does
+     not stretch. */
+  display: grid;
+  align-content: start;
 }
+[data-cui-comp="ui-carousel"] .fui-carousel__slide:has(> :only-child) { align-content: stretch; }
+/* A child that fills the slide would have its focus ring clipped by
+   the slide's overflow, so the ring draws inside its edge. The extra
+   track step outweighs a component's own :focus-visible rule. */
+[data-cui-comp="ui-carousel"] .fui-carousel__track > .fui-carousel__slide > :focus-visible { outline-offset: -4px; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-1 { --ui-carousel-cols: 1; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-2 { --ui-carousel-cols: 2; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-3 { --ui-carousel-cols: 3; }
@@ -168,8 +197,22 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"].fui-carousel--cols-6 { --ui-carousel-cols: 6; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-7 { --ui-carousel-cols: 7; }
 [data-cui-comp="ui-carousel"].fui-carousel--cols-8 { --ui-carousel-cols: 8; }
+/* VisiblePerView is the most a wide carousel shows. A tablet-wide one
+   shows at most two, a phone-wide one shows one. */
+@container (max-width: 40rem) {
+  [data-cui-comp="ui-carousel"] .fui-carousel__slide { --_carousel-cols: min(var(--ui-carousel-cols, 1), 2); }
+}
+/* A phone-wide carousel with dots drops its arrows and their gutters,
+   which took a third of a 320px column: a swipe and the dots still move
+   it. Without dots the arrows are the only pointer control, so they
+   stay. The child chain keeps a nested carousel's arrows its own. */
+@container (max-width: 26rem) {
+  [data-cui-comp="ui-carousel"] .fui-carousel__slide { --_carousel-cols: 1; }
+  [data-cui-comp="ui-carousel"]:has(> .fui-carousel__dots) > .fui-carousel__stage:has(> .fui-carousel__prev) { padding-inline: 0; }
+  [data-cui-comp="ui-carousel"]:has(> .fui-carousel__dots) > .fui-carousel__stage > :is(.fui-carousel__prev, .fui-carousel__next) { display: none; }
+}
 [data-cui-comp="ui-carousel"] .fui-carousel__track:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev,
@@ -183,10 +226,10 @@ func carouselCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  border: 0;
+  border: 1px solid var(--color-border, #E4E4E7);
   border-radius: 999px;
   background: var(--color-surface, #FFFFFF);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  box-shadow: var(--shadow-xs);
   color: var(--color-text, #18181B);
   cursor: pointer;
   text-decoration: none;
@@ -206,13 +249,13 @@ func carouselCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev::before { transform: rotate(-45deg); }
 [data-cui-comp="ui-carousel"] .fui-carousel__next::before { transform: rotate(135deg); }
-[data-cui-comp="ui-carousel"] .fui-carousel__prev { inset-inline-start: var(--spacing-md, 8px); }
-[data-cui-comp="ui-carousel"] .fui-carousel__next { inset-inline-end: var(--spacing-md, 8px); }
+[data-cui-comp="ui-carousel"] .fui-carousel__prev { inset-inline-start: 0; }
+[data-cui-comp="ui-carousel"] .fui-carousel__next { inset-inline-end: 0; }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:hover,
 [data-cui-comp="ui-carousel"] .fui-carousel__next:hover { background: var(--color-surface-soft, #F4F4F5); }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:focus-visible,
 [data-cui-comp="ui-carousel"] .fui-carousel__next:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dots {
@@ -241,6 +284,10 @@ func carouselCSS(_ style.Theme) string {
   font-size: 0;
   color: transparent;
 }
+/* The module hides the dots past the last reachable position; the
+   display above would beat the UA's [hidden] rule on a page without a
+   global reset. */
+[data-cui-comp="ui-carousel"] .fui-carousel__dot[hidden] { display: none; }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot::after {
   content: "";
   position: absolute;
@@ -258,7 +305,7 @@ func carouselCSS(_ style.Theme) string {
   transform: translate(-50%, -50%) scale(1.2);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
+  outline: 2px solid var(--color-text-subtle);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
