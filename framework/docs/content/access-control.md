@@ -542,6 +542,12 @@ revoked grant stays revoked on every replica:
 - **Tombstone wins on conflict.** If a permission is somehow both granted
   and tombstoned (an inconsistent write), reloads fail closed: the
   tombstone wins.
+- **Wildcards expand before tombstones apply.** A grant made while the
+  registry did not know a resource persists the wildcard literally
+  (`reports:*`). Reloads and `LoadInto` both expand that row against the
+  current registry first and subtract tombstones second, so revoking one
+  capability it covers (`reports:delete`) keeps it revoked on every
+  reload.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
