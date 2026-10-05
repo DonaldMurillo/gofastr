@@ -1005,7 +1005,8 @@ has a `*_security_test.go` that failed before it, and `gofastr upgrade
   `TrustedProxies`; list every tier behind a CDN.
 - **`HMACSHA256Verifier` refuses every request when its secret is
   empty**, as `VerifyTimestamped` already did. An unset environment
-  variable let anyone forge inbound webhooks.
+  variable let anyone forge inbound webhooks. Both now also refuse a
+  whitespace-only secret.
 - **Revoking one capability survives a `GrantStore` reload** when the
   role holds a literal wildcard grant. Reload subtracted revocations
   before expanding the wildcard, which brought the revoked capability

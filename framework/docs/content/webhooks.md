@@ -124,7 +124,7 @@ if !ok {
 
 `VerifyTimestamped` is constant-time and rejects:
 
-- empty secret
+- an empty or whitespace-only secret
 - header missing `t=` or `v1=` fields
 - a timestamp outside the tolerance window (replay defense)
 - mismatched HMAC (any body tampering)
