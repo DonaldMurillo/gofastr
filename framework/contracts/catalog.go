@@ -956,7 +956,7 @@ func renderingRules() []Rule {
 		Doc: "reactivity",
 		Examples: []Example{{
 			Bad:  `new EventSource('/my-feed')`,
-			Good: `<div data-cui-poll="5s" data-cui-island="orders-count">`,
+			Good: `<div data-cui-poll="5s" data-cui-poll-src="/islands/orders/count">`,
 		}},
 	}, {
 		ID: RuleInlineStyle, Slug: "rendering/inline-style",
