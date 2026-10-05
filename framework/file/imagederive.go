@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -27,6 +28,29 @@ type DerivedVariant struct {
 	// responsive srcset directly.
 	Width  int `json:"width"`
 	Height int `json:"height"`
+}
+
+// VariantStorageRefs reads the storage_ref of every rendition in a stored
+// `<field>_variants` value. ok is false when raw is not a JSON array of
+// rendition objects; such a value names no stored objects.
+//
+// The CRUD write path (which refuses refs this write did not upload) and
+// EraseUserData (which deletes the refs of erased rows) both parse through
+// this one function, so the two can never disagree about which keys a
+// column names.
+func VariantStorageRefs(raw []byte) (refs []string, ok bool) {
+	var vs []struct {
+		StorageRef string `json:"storage_ref"`
+	}
+	if err := json.Unmarshal(raw, &vs); err != nil {
+		return nil, false
+	}
+	for _, v := range vs {
+		if v.StorageRef != "" {
+			refs = append(refs, v.StorageRef)
+		}
+	}
+	return refs, true
 }
 
 // ImageDerivatives holds everything derived from an uploaded image beyond

@@ -28,6 +28,12 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			return nil, err
 		}
 	}
+	// A storage key in a file field must be one this request uploaded
+	// (media_provenance.go). Checked on the caller's body, before hooks
+	// add their own values.
+	if err := ch.checkMediaProvenance(ctx, body, nil); err != nil {
+		return nil, err
+	}
 	ch.InjectTenant(body, ctx)
 	ch.InjectOwner(body, ctx)
 	for _, f := range ch.Entity.GetFields() {
@@ -185,6 +191,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		if err := ch.requireOwnerContext(ctx); err != nil {
 			return nil, err
 		}
+	}
+	// A storage key in a file field must be one this request uploaded or
+	// one already on this row (media_provenance.go).
+	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id)); err != nil {
+		return nil, err
 	}
 	// Snapshot the pre-change row inside the same transaction so the audit
 	// hook can diff old vs new. Best-effort, a SELECT failure here must

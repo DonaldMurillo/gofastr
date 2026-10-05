@@ -71,6 +71,13 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 
 	var result, out map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		// A storage key in a file field must be one this caller uploaded
+		// or one already on the row it is writing (media_provenance.go).
+		// Checked on the caller's body, before hooks add their own values.
+		if err := ch.checkMediaProvenance(ctx, body,
+			ch.currentMediaKeys(ctx, req, body[ch.PrimaryKey])); err != nil {
+			return err
+		}
 		ch.InjectTenant(body, ctx)
 		ch.InjectOwner(body, ctx)
 		// Run the media-URL allow-list (http/https/relative only) before
