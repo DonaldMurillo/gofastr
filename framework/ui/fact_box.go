@@ -123,7 +123,7 @@ func factBoxCSS(_ style.Theme) string {
   color: var(--color-text-muted, currentColor);
 }
 [data-cui-comp="ui-fact-box"] .fui-fact-box__value {
-  font-size: var(--font-size-md, 14px);
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, currentColor);
   line-height: 1.5;
 }

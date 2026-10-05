@@ -494,9 +494,9 @@ func filterToolbarCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
   user-select: none;
-  transition: background var(--duration-fast, 150ms) var(--easing-standard, ease),
-              color var(--duration-fast, 150ms) var(--easing-standard, ease),
-              border-color var(--duration-fast, 150ms) var(--easing-standard, ease);
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
+              color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
+              border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
   color: var(--color-text, #18181B);

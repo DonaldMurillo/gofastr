@@ -210,7 +210,7 @@ func segmentedCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 4px);
   cursor: pointer;
   color: var(--color-text-muted, #6b7280);
-  transition: color var(--duration-fast, 150ms) var(--easing-standard, ease);
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   user-select: none;
   text-align: center;
   white-space: nowrap;
@@ -254,7 +254,7 @@ func segmentedCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   box-shadow: 0 1px 2px rgba(0,0,0,0.08),
               0 0 0 1px rgba(0,0,0,0.05);
-  transition: transform var(--duration-medium, 200ms) var(--easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
 [data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
