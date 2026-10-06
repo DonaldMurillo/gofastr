@@ -16,14 +16,14 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	}}
 	bulkOp := openapi.NewOperation()
 	bulkOp.Summary = "Run a bulk action on " + entityName
-	bulkOp.Description = "The list's bulk bar posts here. The server re-reads the selection under the caller's scope and asks each record's write gate before writing it; a refused record counts as skipped. Over the in-request cap the run is queued (202) when the app has a job runner, else refused (422)."
+	bulkOp.Description = "The list's bulk bar posts here, and so does a record's action button with scope record and one id. The server re-reads the selection under the caller's scope and asks each record's write gate before writing it; a refused record counts as skipped. Over the in-request cap the run is queued (202) when the app has a job runner, else refused (422). A record action answers 200 when it ran, 403 when the record's gates skipped it and 500 when it failed."
 	bulkOp.OperationID = "bulk_" + schemaName
 	bulkOp.Tags = []string{tagName}
 	bulkOp.SetRequestBody("application/json", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"action": map[string]any{"type": "string", "description": "An action key the list's bulk bar offers this caller"},
-			"scope":  map[string]any{"type": "string", "enum": []string{"selected", "page", "every"}},
+			"action": map[string]any{"type": "string", "description": "An action key the list's bulk bar offers this caller, or for scope record a run:<key> app action"},
+			"scope":  map[string]any{"type": "string", "enum": []string{"selected", "page", "every", "record"}},
 			"ids":    ids,
 			"page":   ids,
 			"key":    map[string]any{"type": "string", "description": "The list's key, which namespaces its query parameters"},
@@ -46,11 +46,12 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	}))
 	bulkOp.AddResponse(400, "Invalid request body", errorRef)
 	bulkOp.AddResponse(403, "Forbidden, or an action not offered to this caller", errorRef)
-	bulkOp.AddResponse(404, entityName+" has no bulk actions", errorRef)
+	bulkOp.AddResponse(404, entityName+" has no bulk actions (a list scope with bulk off)", errorRef)
 	bulkOp.AddResponse(409, "Every match no longer matches the rows the list offered", errorRef)
 	bulkOp.AddResponse(413, "Request body too large", errorRef)
 	bulkOp.AddResponse(415, "A body that is not JSON", errorRef)
-	bulkOp.AddResponse(422, "Nothing selected, a scope or filter the list refuses, or over a cap", errorRef)
+	bulkOp.AddResponse(422, "Nothing selected, a scope or filter the list refuses, a record scope without exactly one readable id, or over a cap", errorRef)
+	bulkOp.AddResponse(500, "A record action that failed", errorRef)
 	exportOp := openapi.NewOperation()
 	exportOp.Summary = "Export " + entityName + " as CSV"
 	exportOp.Description = "Every row the list's query matches, up to the every-match cap. The list's own query parameters narrow it; _list names the list's key."

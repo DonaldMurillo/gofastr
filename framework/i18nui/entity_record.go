@@ -9,6 +9,7 @@ const (
 	KeyEntitySaveFailed     Key = "ui.entity.saveFailed"     // "Could not save."
 	KeyEntityMoved          Key = "ui.entity.moved"          // "{entity} updated"
 	KeyEntityMoveFailed     Key = "ui.entity.moveFailed"     // "Could not {action}."
+	KeyEntityActionRan      Key = "ui.entity.actionRan"      // "Ran {action}."
 	KeyEntityTabEdit        Key = "ui.entity.tabEdit"        // "Edit"
 	KeyEntityTabRelated     Key = "ui.entity.tabRelated"     // "Related"
 	KeyEntityTabActivity    Key = "ui.entity.tabActivity"    // "Activity"
@@ -35,6 +36,7 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntitySaveFailed:     "Could not save.",
 	KeyEntityMoved:          "{entity} updated",
 	KeyEntityMoveFailed:     "Could not {action}.",
+	KeyEntityActionRan:      "Ran {action}.",
 	KeyEntityTabEdit:        "Edit",
 	KeyEntityTabRelated:     "Related",
 	KeyEntityTabActivity:    "Activity",

@@ -679,7 +679,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `title` is named by its first plain `String` column. A record draws its state
   badge, a button per open move (gated by `access.CanResourceExact`, the
   route's own check), and Edit, Related and Activity tabs, with
-  `Related` and `RelatedAt` naming the related lists. New, Duplicate,
+  `Related` and `RelatedAt` naming the related lists. An app action
+  draws as a record header button in its `ui.ButtonVariant` and runs on
+  that record through the `_bulk` route's `record` scope, bulk on or off.
+  New, Duplicate,
   Delete, the moves and the edit form follow the caller's create, update
   and delete access, so a screen never draws a write the route refuses.
   A relation the caller may not read shows the em dash, in pickers and

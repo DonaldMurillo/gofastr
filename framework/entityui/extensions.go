@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // Extensions is the code an app registers next to its screens: field
@@ -127,13 +128,16 @@ type RecordContext struct {
 	Record Record
 }
 
-// Action is a record or bulk action. Permission, when set, is checked
-// about each record on top of the entity's update access, with
-// access.CanResourceExact: a Wildcard grant does not satisfy it.
+// Action is a record or bulk action: a button in the record's header,
+// posting to the entity's bulk route with the record scope. Permission,
+// when set, is checked about each record on top of the entity's update
+// access, with access.CanResourceExact: a Wildcard grant does not
+// satisfy it. Variant is the button's (ui.ButtonSecondary when empty);
+// New refuses one no Button knows.
 type Action struct {
 	Key        string
 	Label      string
-	Variant    string
+	Variant    ui.ButtonVariant
 	Permission string
 	// Bulk offers the action on the list's selection as well as on the
 	// record.
@@ -404,6 +408,7 @@ func (x Extension) check(e *entity.Entity) error {
 	}
 	seen = map[string]bool{}
 	for _, a := range x.Actions {
+		_, knownVariant := ui.ParseButtonVariant(string(a.Variant))
 		switch {
 		case !entity.ValidKey(a.Key):
 			return fmt.Errorf("entityui: entity %q: action key %q is not a key", name, a.Key)
@@ -411,6 +416,8 @@ func (x Extension) check(e *entity.Entity) error {
 			return fmt.Errorf("entityui: entity %q: duplicate action %q", name, a.Key)
 		case a.Run == nil:
 			return fmt.Errorf("entityui: entity %q: action %q has no Run", name, a.Key)
+		case a.Variant != "" && !knownVariant:
+			return fmt.Errorf("entityui: entity %q: action %q: unknown button variant %q", name, a.Key, a.Variant)
 		}
 		seen[a.Key] = true
 	}

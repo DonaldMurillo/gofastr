@@ -181,7 +181,13 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
 - **Actions** add record header buttons and, with `Bulk`, list bulk
-  actions. `Permission`, when set, is checked against the caller's own
+  actions. A record button posts to the entity's `_bulk` route with scope
+  `record` and the one id, so it runs through the same re-read, gates and
+  audit row as a bulk run; it answers 200 when the action ran, 403 when
+  the record's gates skipped it and 500 when `Run` failed. It shows only
+  to a caller who may run it on that record, in its `Variant`
+  (`ui.ButtonSecondary` when empty; `New` refuses a variant no Button
+  knows). `Permission`, when set, is checked against the caller's own
   roles on top of the entity's update access; a `Wildcard` grant does not
   satisfy it. `Run` receives the resolved selection and a CRUD handle
   scoped to the caller. Up to `InRequestCap` (100) records run inside the
@@ -311,7 +317,8 @@ and so does an entity with no REST write routes.
 Both routes mount on the router the entity's CRUD routes went on, so an
 entity registered with `App.GroupEntity` keeps its group's prefix and
 middleware, and its screens post to the group's path. Both answer 404 for
-an entity with bulk off. The router serves the static `_bulk` and
+an entity with bulk off, except a record action, which `_bulk` still
+runs. The router serves the static `_bulk` and
 `_export.csv` segments ahead of `/{id}`, so no record id can shadow them.
 
 The screens look an entity up by name (`Registry.Get`), so they draw the

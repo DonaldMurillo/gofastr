@@ -59,11 +59,13 @@ import (
 // and at most a page of ids.
 const bulkBodyLimit = 256 << 10
 
-// Bulk scopes, the bar's "Apply to" values.
+// Bulk scopes, the bar's "Apply to" values, and the record scope a
+// record header's action button posts.
 const (
 	bulkScopeSelected = "selected"
 	bulkScopePage     = "page"
 	bulkScopeEvery    = "every"
+	bulkScopeRecord   = "record"
 )
 
 type bulkKind int
@@ -134,13 +136,29 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		if !a.Bulk || !holdsExact(ctx, m, a.Permission) {
 			continue
 		}
-		label := a.Label
-		if label == "" {
-			label = a.Key
-		}
-		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: label, perm: a.Permission, app: a})
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
 	}
 	return out
+}
+
+// recordActions are m's app actions, Bulk or not, in declaration order:
+// what the record scope may run. The built-in bar actions never run on it
+// (the record has its own delete and moves). Who may run each is asked
+// about the record itself, by mayRun, so a grant on that one record
+// counts where the collection-level holdsExact would refuse it.
+func recordActions(m *meta) []bulkAction {
+	var out []bulkAction
+	for _, a := range m.ext.Actions {
+		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
+	}
+	return out
+}
+
+func actionLabel(a Action) string {
+	if a.Label == "" {
+		return a.Key
+	}
+	return a.Label
 }
 
 // holdsExact reports whether ctx holds perm by name on the entity ("" is
@@ -250,6 +268,11 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 		ids = body.Page
 	case bulkScopeEvery:
 		return u.everyMatch(ctx, m, body)
+	case bulkScopeRecord:
+		if ids = dedupeIDs(body.IDs); len(ids) != 1 {
+			return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+		}
+		return u.visibleIDs(ctx, m, ids)
 	default:
 		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 	}
@@ -520,17 +543,20 @@ func (u *UI) auditBulk(ctx context.Context, m *meta, runID, action, creator stri
 func newRunID() string { return strings.ToLower(rand.Text()) }
 
 // BulkHandler serves POST <api>/_bulk for the entity: the bulk bar's form
-// RPC. App.EntityUI mounts it for every entity with write routes. It
-// answers 404 for an entity with no write routes or with Display.NoBulk,
-// 403 when the caller may not read the entity, 422 naming what to fix,
-// and on success a toast header with the counts (200) or the queued count
-// (202).
+// RPC, and the record header's action buttons (scope "record"). App.EntityUI
+// mounts it for every entity with write routes. It answers 404 for an
+// entity with no write routes, or a list scope on one with
+// Display.NoBulk; 403 when the caller may not read the entity or run the
+// action; 422 naming what to fix; and on success a toast header with the
+// counts (200) or the queued count (202). A record action answers 200
+// when it ran, 403 when the record's gates skipped it and 500 when Run
+// failed.
 func (u *UI) BulkHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
 		m, err := u.meta(entityName)
-		if err != nil || !bulkOn(m) {
+		if err != nil || !m.hasAPI {
 			writeBulkError(w, http.StatusNotFound, "not found")
 			return
 		}
@@ -553,11 +579,20 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			writeBulkError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
+		record := body.Scope == bulkScopeRecord
+		if !record && !bulkOn(m) {
+			writeBulkError(w, http.StatusNotFound, "not found")
+			return
+		}
 		if !canRead(ctx, m.ch) {
 			writeBulkError(w, http.StatusForbidden, "access denied")
 			return
 		}
-		act, ok := findBulkAction(u.bulkActions(ctx, m), body.Action)
+		offered := u.bulkActions
+		if record {
+			offered = func(_ context.Context, m *meta) []bulkAction { return recordActions(m) }
+		}
+		act, ok := findBulkAction(offered(ctx, m), body.Action)
 		if !ok {
 			writeBulkError(w, http.StatusForbidden, i18nui.T(ctx, i18nui.KeyEntityBulkUnknown))
 			return
@@ -589,6 +624,10 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		if err := u.auditBulk(ctx, m, runID, act.key, "", len(ids), t, BulkDone); err != nil {
 			slog.ErrorContext(ctx, "entityui: bulk audit row", "entity", m.name, "run", runID, "error", err)
 		}
+		if record {
+			answerRecordAction(ctx, w, runID, t)
+			return
+		}
 		variant := ui.StatusSuccess
 		if t.failed > 0 {
 			variant = ui.StatusWarning
@@ -598,6 +637,20 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		})})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"run": runID, "done": t.done, "skipped": t.skipped, "failed": t.failed})
 	})
+}
+
+// answerRecordAction answers a record action's one outcome: ran (200),
+// skipped by the record's gates (403) or failed (500). The button's own
+// toasts name the action, so the answer carries no toast header.
+func answerRecordAction(ctx context.Context, w http.ResponseWriter, runID string, t bulkTally) {
+	switch {
+	case t.done == 1:
+		writeBulkJSON(w, http.StatusOK, map[string]any{"run": runID, "done": 1, "skipped": 0, "failed": 0})
+	case t.skipped == 1:
+		writeBulkError(w, http.StatusForbidden, i18nui.T(ctx, i18nui.KeyEntityBulkUnknown))
+	default:
+		writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+	}
 }
 
 // queueBulk writes a selection over InRequestCap to the snapshot store and
