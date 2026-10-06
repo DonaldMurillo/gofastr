@@ -105,7 +105,7 @@ func Rating(cfg RatingDisplayConfig) render.HTML {
 
 func ratingDisplayCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-rating-display"] {
-  --ui-rating-glyph: 16px;
+  --_rating-display-glyph: var(--ui-rating-glyph, 16px);
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
@@ -131,7 +131,7 @@ func ratingDisplayCSS(_ style.Theme) string {
   color: var(--ui-rating-color, var(--_rating-shape-color, #D97706));
 }
 [data-cui-comp="ui-rating-display"] .fui-rating-display__glyph svg {
-  inline-size: var(--ui-rating-glyph);
-  block-size: var(--ui-rating-glyph);
+  inline-size: var(--_rating-display-glyph);
+  block-size: var(--_rating-display-glyph);
 }`
 }

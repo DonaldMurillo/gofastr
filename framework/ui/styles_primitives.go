@@ -716,15 +716,15 @@ func spinnerCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm, 4px);
-  --ui-spinner-size: 1.5rem;
+  --_spinner-size: var(--ui-spinner-size, 1.5rem);
 }
 [data-cui-comp="ui-spinner"].fui-spinner--sm { --ui-spinner-size: 1rem; }
 [data-cui-comp="ui-spinner"].fui-spinner--lg { --ui-spinner-size: 2.5rem; }
 :where([data-cui-comp="ui-spinner"]).fui-spinner--inline { display: inline-flex; }
 [data-cui-comp="ui-spinner"] .fui-spinner__ring {
   display: inline-block;
-  inline-size: var(--ui-spinner-size);
-  block-size:  var(--ui-spinner-size);
+  inline-size: var(--_spinner-size);
+  block-size:  var(--_spinner-size);
   border-radius: 50%;
   border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
   border-top-color: var(--color-primary, #18181B);
@@ -737,8 +737,8 @@ func spinnerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot {
   display: inline-block;
-  inline-size: calc(var(--ui-spinner-size) * 0.28);
-  block-size:  calc(var(--ui-spinner-size) * 0.28);
+  inline-size: calc(var(--_spinner-size) * 0.28);
+  block-size:  calc(var(--_spinner-size) * 0.28);
   border-radius: 50%;
   background: var(--color-primary, #18181B);
   animation: fui-spinner-pulse 1.2s ease-in-out infinite both;
@@ -750,9 +750,9 @@ func spinnerCSS(_ style.Theme) string {
 [data-cui-comp="ui-spinner"] .fui-spinner__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: calc(var(--ui-spinner-size) * 0.08);
-  inline-size: var(--ui-spinner-size);
-  block-size:  var(--ui-spinner-size);
+  gap: calc(var(--_spinner-size) * 0.08);
+  inline-size: var(--_spinner-size);
+  block-size:  var(--_spinner-size);
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell {
   display: block;

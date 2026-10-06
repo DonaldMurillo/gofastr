@@ -238,8 +238,8 @@ func galleryCSS(_ style.Theme) string {
   list-style: none;
   margin: 0;
   padding: 0;
-  --ui-gallery-cols: 3;
-  --ui-gallery-min: 9.5rem;
+  --_gallery-cols: var(--ui-gallery-cols, 3);
+  --_gallery-min: var(--ui-gallery-min, 9.5rem);
   /* Knob: --ui-gallery-gap, over the md layout gap step. The root
      resolves it into a private property rather than setting the knob
      itself, so a theme's value on :root reaches it and a Gap preset
@@ -322,7 +322,7 @@ func galleryCSS(_ style.Theme) string {
    media queries. */
 [data-cui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--_gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--_gallery-min), calc((100% - (var(--_gallery-cols) - 1) * var(--_gallery-gap)) / var(--_gallery-cols)))), 1fr));
   gap: var(--_gallery-gap);
 }
 
@@ -346,8 +346,8 @@ func galleryCSS(_ style.Theme) string {
    browser drops columns as the container narrows — same responsive contract
    as the grid variant. */
 .fui-gallery--masonry {
-  column-width: var(--ui-gallery-min);
-  column-count: var(--ui-gallery-cols);
+  column-width: var(--_gallery-min);
+  column-count: var(--_gallery-cols);
   column-gap: var(--_gallery-gap);
   display: block;
 }

@@ -156,14 +156,14 @@ func TestGalleryRejectsUnknownVariant(t *testing.T) {
 // tiles on narrow viewports for every consumer at once.
 func TestGalleryColumnsAreResponsiveMaximum(t *testing.T) {
 	css := galleryCSS(style.DefaultTheme())
-	if strings.Contains(css, "repeat(var(--ui-gallery-cols), 1fr)") {
+	if strings.Contains(css, "repeat(var(--_gallery-cols), 1fr)") {
 		t.Fatal("grid uses a fixed column count — Columns must be a responsive maximum (auto-fill + minmax)")
 	}
 	for _, want := range []string{
 		"--ui-gallery-min",
 		"repeat(auto-fill",
-		"var(--ui-gallery-cols) - 1) * var(--_gallery-gap)",
-		"column-width: var(--ui-gallery-min)",
+		"var(--_gallery-cols) - 1) * var(--_gallery-gap)",
+		"column-width: var(--_gallery-min)",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("gallery CSS missing responsive piece %q", want)

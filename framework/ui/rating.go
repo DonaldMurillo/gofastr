@@ -202,8 +202,8 @@ var ratingStyle = registry.RegisterStyle("ui-rating", ratingCSS)
 
 func ratingCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-rating"] {
-  --ui-rating-glyph: 24px;
-  --ui-rating-cell: var(--spacing-touch-target, 44px);
+  --_rating-glyph: var(--ui-rating-glyph, 24px);
+  --_rating-cell: var(--ui-rating-cell, var(--spacing-touch-target, 44px));
   display: inline-flex;
   /* Flex-direction:row-reverse turns our reverse-DOM order back
      into 1..N visual order, while keeping the ~ sibling cascade. */
@@ -234,7 +234,7 @@ func ratingCSS(_ style.Theme) string {
      driven by --ui-rating-cell which Gap variants can shrink for
      tighter density. */
   min-block-size: var(--spacing-touch-target, 44px);
-  min-inline-size: var(--ui-rating-cell);
+  min-inline-size: var(--_rating-cell);
   color: var(--color-border, #E4E4E7);
   cursor: pointer;
   transition: color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
@@ -242,8 +242,8 @@ func ratingCSS(_ style.Theme) string {
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */
 [data-cui-comp="ui-rating"] .fui-rating__star svg {
-  width: var(--ui-rating-glyph, 24px);
-  height: var(--ui-rating-glyph, 24px);
+  width: var(--_rating-glyph);
+  height: var(--_rating-glyph);
 }
 [data-cui-comp="ui-rating"].fui-rating--small { --ui-rating-glyph: 16px; }
 [data-cui-comp="ui-rating"].fui-rating--large { --ui-rating-glyph: 32px; }
@@ -255,7 +255,7 @@ func ratingCSS(_ style.Theme) string {
    stays ≥24px (WCAG 2.5.8 AA), but AAA is intentionally relaxed for
    dense inline ratings. */
 [data-cui-comp="ui-rating"].fui-rating--gap-tight {
-  --ui-rating-cell: max(24px, calc(var(--ui-rating-glyph) + 8px));
+  --_rating-cell: max(24px, calc(var(--_rating-glyph) + 8px));
   gap: 0;
 }
 [data-cui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
