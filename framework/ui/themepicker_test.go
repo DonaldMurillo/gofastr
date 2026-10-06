@@ -9,8 +9,9 @@ import (
 
 // The picker is a radiogroup of one option per theme plus the default,
 // each naming the class the module puts on <html>; the default names
-// none. The server cannot know the visitor's stored choice, so every
-// option ships unchecked and the module's arrival pass checks one.
+// none. The server cannot know the visitor's stored choice, so it
+// ships Default checked, a first visit's choice, and the module's
+// arrival pass re-checks the stored one.
 func TestThemePickerRendersOneOptionPerTheme(t *testing.T) {
 	th := style.DefaultTheme()
 	th.Colors.Primary = style.Color{Name: "primary", Value: "#123456"}

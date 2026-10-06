@@ -628,8 +628,8 @@ header.
   theme, and a private window or another device starts on Default.
   Anything drawn from the Go `style.Theme` value rather than from
   `app.css`, such as emails, draws the app theme. The picker ships
-  every option unchecked, and the module checks the stored one when it
-  loads.
+  with Default checked, a first visit's choice, and the module
+  re-checks the stored one when it loads.
 - **A theme reaches what the kit draws, nothing else.** Images and
   screenshots keep their baked colors. Owned style sheets
   (`<name>.style.css`) follow the theme only through the tokens they
