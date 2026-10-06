@@ -102,6 +102,70 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestDelimiterComponentsDoNotCollide(t *testing.T) {
+	s := newStore(t)
+	first := Entry{Provider: "provider|account", Account: "tail"}
+	second := Entry{Provider: "provider", Account: "account|tail"}
+	if err := s.Put(first.Provider, first.Account, "first-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(second.Provider, second.Account, "second-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for entry, want := range map[Entry]string{first: "first-secret", second: "second-secret"} {
+		got, err := s.Get(entry.Provider, entry.Account)
+		if err != nil || got != want {
+			t.Fatalf("Get(%q, %q) = (%q, %v), want %q", entry.Provider, entry.Account, got, err, want)
+		}
+	}
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[Entry]bool{}
+	for _, entry := range entries {
+		seen[entry] = true
+	}
+	if len(seen) != 2 || !seen[first] || !seen[second] {
+		t.Fatalf("List() = %#v, want both distinct provider/account pairs", entries)
+	}
+
+	if err := s.Delete(first.Provider, first.Account); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get(second.Provider, second.Account); err != nil || got != "second-secret" {
+		t.Fatalf("deleting one pair affected the other: Get = (%q, %v)", got, err)
+	}
+}
+
+func TestLegacyCredentialKeysRemainReadableAndMigrateOnWrite(t *testing.T) {
+	s := newStore(t)
+	s.mu.Lock()
+	s.loaded = true
+	s.data = storeData{Entries: map[string]string{"openrouter|default": "legacy-secret"}}
+	if err := s.saveLocked(); err != nil {
+		s.mu.Unlock()
+		t.Fatal(err)
+	}
+	s.loaded = false
+	s.data = storeData{}
+	s.mu.Unlock()
+
+	if got, err := s.Get("openrouter", "default"); err != nil || got != "legacy-secret" {
+		t.Fatalf("legacy Get = (%q, %v), want legacy-secret", got, err)
+	}
+	if err := s.Put("openrouter", "default", "new-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get("openrouter", "default"); err != nil || got != "new-secret" {
+		t.Fatalf("Get after migration = (%q, %v), want new-secret", got, err)
+	}
+	if _, exists := s.data.Entries["openrouter|default"]; exists {
+		t.Fatal("legacy key remained after the pair was updated")
+	}
+}
+
 func TestMachineKey(t *testing.T) {
 	k1 := MachineKey("host-a", []byte("aux"))
 	k2 := MachineKey("host-a", []byte("aux"))

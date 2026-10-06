@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -113,7 +114,14 @@ func (s *EncryptedFileStore) Get(provider, account string) (string, error) {
 	if err := s.loadLocked(); err != nil {
 		return "", err
 	}
-	key := provider + "|" + account
+	if v, ok := s.data.Entries[credentialKey(provider, account)]; ok {
+		return v, nil
+	}
+	key := legacyCredentialKey(provider, account)
+	entry, ok := parseLegacyCredentialKey(key)
+	if !ok || entry.Provider != provider || entry.Account != account {
+		return "", ErrNotFound
+	}
 	v, ok := s.data.Entries[key]
 	if !ok {
 		return "", ErrNotFound
@@ -130,7 +138,11 @@ func (s *EncryptedFileStore) Put(provider, account, secret string) error {
 	if s.data.Entries == nil {
 		s.data.Entries = make(map[string]string)
 	}
-	s.data.Entries[provider+"|"+account] = secret
+	s.data.Entries[credentialKey(provider, account)] = secret
+	legacyKey := legacyCredentialKey(provider, account)
+	if entry, ok := parseLegacyCredentialKey(legacyKey); ok && entry.Provider == provider && entry.Account == account {
+		delete(s.data.Entries, legacyKey)
+	}
 	return s.saveLocked()
 }
 
@@ -140,7 +152,11 @@ func (s *EncryptedFileStore) Delete(provider, account string) error {
 	if err := s.loadLocked(); err != nil {
 		return err
 	}
-	delete(s.data.Entries, provider+"|"+account)
+	delete(s.data.Entries, credentialKey(provider, account))
+	legacyKey := legacyCredentialKey(provider, account)
+	if entry, ok := parseLegacyCredentialKey(legacyKey); ok && entry.Provider == provider && entry.Account == account {
+		delete(s.data.Entries, legacyKey)
+	}
 	return s.saveLocked()
 }
 
@@ -152,15 +168,46 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 	}
 	out := make([]Entry, 0, len(s.data.Entries))
 	for k := range s.data.Entries {
-		// Split "provider|account"
-		for i := 0; i < len(k); i++ {
-			if k[i] == '|' {
-				out = append(out, Entry{Provider: k[:i], Account: k[i+1:]})
-				break
-			}
+		if entry, ok := parseCredentialKey(k); ok {
+			out = append(out, entry)
 		}
 	}
 	return out, nil
+}
+
+// credentialKey encodes each component independently. Raw URL base64 does
+// not contain ':', so the separator cannot occur inside either encoded field.
+func credentialKey(provider, account string) string {
+	enc := base64.RawURLEncoding
+	return "v1:" + enc.EncodeToString([]byte(provider)) + ":" + enc.EncodeToString([]byte(account))
+}
+
+func legacyCredentialKey(provider, account string) string {
+	return provider + "|" + account
+}
+
+func parseCredentialKey(key string) (Entry, bool) {
+	if strings.HasPrefix(key, "v1:") {
+		rest := strings.TrimPrefix(key, "v1:")
+		provider, account, ok := strings.Cut(rest, ":")
+		if ok {
+			enc := base64.RawURLEncoding
+			providerBytes, providerErr := enc.DecodeString(provider)
+			accountBytes, accountErr := enc.DecodeString(account)
+			if providerErr == nil && accountErr == nil {
+				return Entry{Provider: string(providerBytes), Account: string(accountBytes)}, true
+			}
+		}
+	}
+	return parseLegacyCredentialKey(key)
+}
+
+func parseLegacyCredentialKey(key string) (Entry, bool) {
+	provider, account, ok := strings.Cut(key, "|")
+	if !ok {
+		return Entry{}, false
+	}
+	return Entry{Provider: provider, Account: account}, true
 }
 
 // loadLocked reads and decrypts the store on first use.

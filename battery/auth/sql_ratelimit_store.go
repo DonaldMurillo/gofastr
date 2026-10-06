@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
 // escapeLikeLiteral escapes the LIKE wildcards (%, _) and the escape char
@@ -167,7 +168,7 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	if sweep {
 		// Escape LIKE metacharacters in the (host-settable) scope so a scope
 		// containing '_' or '%' can't over-match into a sibling scope's keys.
-		scopePrefix := escapeLikeLiteral(cfg.Scope) + "|%"
+		scopePrefix := escapeLikeLiteral(ratelimit.NamespaceScope(cfg.Scope)) + "|%"
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND attempted_at_ms <= $2`, attempts), scopePrefix, cutoffMs); err != nil {
 			return false, 0, err
 		}

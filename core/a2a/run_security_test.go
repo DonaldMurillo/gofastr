@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -190,6 +191,69 @@ func TestConcurrentResumeExactlyOneWinner(t *testing.T) {
 	}
 	if goMsgs != 1 {
 		t.Fatalf("resume message appears %d times in history, want exactly the winner's 1", goMsgs)
+	}
+}
+
+func TestOwnerCannotExceedConcurrentRunLimit(t *testing.T) {
+	h := newHarness(t, nil)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	h.setHandler(func(_ context.Context, tc TaskContext) error {
+		<-release
+		return tc.Complete(TextPart("done"))
+	})
+
+	const runLimit = 16
+	tasks := make([]*Task, 0, runLimit)
+	for range runLimit {
+		tasks = append(tasks, h.send("alice", map[string]any{"returnImmediately": true}))
+	}
+	_, e, _ := h.call("alice", MethodSendMessage, map[string]any{
+		"message": map[string]any{
+			"role": "ROLE_USER", "parts": []any{map[string]any{"text": "extra"}},
+			"metadata": map[string]any{"skill": "echo"},
+		},
+		"configuration": map[string]any{"returnImmediately": true},
+	})
+	if e.Error == nil || e.Error.Code != CodeUnsupportedOperation {
+		t.Fatalf("17th concurrent run error = %+v, want CodeUnsupportedOperation", e.Error)
+	}
+	_, total, err := h.srv.store.ListTasks(context.Background(), "alice", ListQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != runLimit {
+		t.Fatalf("rejected run left a task row: count=%d, want %d", total, runLimit)
+	}
+
+	unblock()
+	for _, task := range tasks {
+		h.waitTask("alice", task.ID, TaskStateCompleted, 3*time.Second)
+	}
+}
+
+func TestResumeWithRemovedSkillReleasesRunRegistration(t *testing.T) {
+	h := newHarness(t, nil)
+	h.setHandler(func(_ context.Context, tc TaskContext) error {
+		return tc.RequireInput(TextPart("need input"))
+	})
+	task := h.send("alice")
+	if task.Status.State != TaskStateInputRequired {
+		t.Fatalf("setup task state = %s, want INPUT_REQUIRED", task.Status.State)
+	}
+	delete(h.srv.byID, "echo") // simulate a skill removed during a deploy
+
+	resumed := h.sendWithTask("alice", task.ID, "continue")
+	if resumed.Status.State != TaskStateRejected {
+		t.Fatalf("resumed task state = %s, want REJECTED", resumed.Status.State)
+	}
+	h.srv.mu.Lock()
+	activeRuns := len(h.srv.runs)
+	h.srv.mu.Unlock()
+	if activeRuns != 0 {
+		t.Fatalf("rejected resume leaked %d run registrations", activeRuns)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -237,6 +238,38 @@ func TestSQLRateLimit_SweepScopedNotCrossWindow(t *testing.T) {
 // Regression: each scope owns its own sweep timer. A busy scope must not
 // monopolize a single shared timer and starve another scope's GC, letting
 // that scope's abandoned attacker-minted keys accumulate forever.
+func TestSQLRateLimit_ScopeSeparatorSweepPreservesLongWindow(t *testing.T) {
+	s, db := newRLStore(t)
+	ctx := context.Background()
+	longCfg := RateLimiterConfig{MaxAttempts: 10, Window: time.Hour, BlockDuration: time.Hour, Scope: "shared|long"}
+	longKey := ratelimit.NamespaceScope(longCfg.Scope) + "|victim"
+	if _, _, err := s.Allow(ctx, longKey, longCfg); err != nil {
+		t.Fatalf("long-window Allow: %v", err)
+	}
+
+	thirtyMinAgo := time.Now().Add(-30 * time.Minute).UnixMilli()
+	if _, err := db.Exec("UPDATE auth_rate_limits_attempts SET attempted_at_ms = $1 WHERE rl_key = $2", thirtyMinAgo, longKey); err != nil {
+		t.Fatalf("age long-window attempt: %v", err)
+	}
+	s.mu.Lock()
+	s.lastSweep["shared"] = time.Now().Add(-time.Hour)
+	s.mu.Unlock()
+
+	shortCfg := RateLimiterConfig{MaxAttempts: 10, Window: time.Minute, BlockDuration: time.Hour, Scope: "shared"}
+	shortKey := ratelimit.NamespaceScope(shortCfg.Scope) + "|long|victim"
+	if _, _, err := s.Allow(ctx, shortKey, shortCfg); err != nil {
+		t.Fatalf("short-window Allow: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits_attempts WHERE rl_key = $1", longKey).Scan(&n); err != nil {
+		t.Fatalf("count long-window attempt: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("short-window scope sweep removed a 30-minute-old attempt from a colliding 1-hour scope: %d remain, want 1", n)
+	}
+}
+
 func TestSQLRateLimit_SweepNotStarvedByBusyScope(t *testing.T) {
 	s, db := newRLStore(t)
 	ctx := context.Background()

@@ -251,6 +251,7 @@ func TestEntitySessionStore_Cleanup(t *testing.T) {
 	defer db.Close()
 
 	store := NewEntitySessionStore(db, "sessions")
+	store.lastSweep = time.Now() // Keep Create's opportunistic sweep out of this test.
 	ctx := context.Background()
 
 	// One expired, one fresh

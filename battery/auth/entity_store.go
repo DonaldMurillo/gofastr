@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -551,6 +553,9 @@ func (uf UserFields) With(extra ...schema.Field) UserFields {
 type EntitySessionStore struct {
 	db    *sql.DB
 	table string
+
+	sweepMu   sync.Mutex
+	lastSweep time.Time
 }
 
 // NewEntitySessionStore creates a SessionStore backed by a database table.
@@ -580,7 +585,17 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor")
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor"); err != nil {
+		return err
+	}
+	idxName, err := query.SafeIdent("idx_" + s.table + "_expires")
+	if err != nil {
+		return err
+	}
+	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (expires_at)",
+		query.QuoteIdent(idxName), query.QuoteIdent(s.table))
+	_, err = s.db.ExecContext(ctx, idx)
+	return err
 }
 
 // qTable wraps a statement template with the validated table name.
@@ -619,12 +634,28 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	if err != nil {
 		return nil, err
 	}
+	s.sweepExpiredOnCreate(ctx, now)
 	return &Session{
 		Token:     tok,
 		UserID:    userID,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// sweepExpiredOnCreate reaps abandoned rows at most once per interval while
+// allowing session creation to succeed if cleanup itself is unavailable.
+func (s *EntitySessionStore) sweepExpiredOnCreate(ctx context.Context, now time.Time) {
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	if now.Sub(s.lastSweep) < sessionSweepInterval {
+		return
+	}
+	if _, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), now); err != nil {
+		slog.Warn("auth: expired session sweep failed", "err", err)
+		return
+	}
+	s.lastSweep = now
 }
 
 // Get returns the session for the given token. The presented token is

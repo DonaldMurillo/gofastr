@@ -66,6 +66,95 @@ func TestRedisExhaustedJobSurvivesDLQFailure(t *testing.T) {
 	}
 }
 
+// A malformed job has no processing record after RPop, so a failed
+// quarantine write must restore it to the main list and surface the error.
+func TestRedisMalformedJobSurvivesDLQFailure(t *testing.T) {
+	r := newMockRedis()
+	ctx := context.Background()
+	_ = r.LPush(ctx, "test", "{malformed")
+
+	fail := &dlqFailingRedis{RedisClient: r, dlqErr: errors.New("dlq down")}
+	q := NewRedisQueue(fail, "test")
+	if _, err := q.Dequeue(ctx); err == nil || errors.Is(err, ErrNoJob) {
+		t.Fatalf("Dequeue must surface the quarantine failure, got: %v", err)
+	}
+
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	deadLen := len(r.lists["test:dead"])
+	r.mu.Unlock()
+	if deadLen != 0 {
+		t.Fatalf("dead list has %d entries despite failing pushes", deadLen)
+	}
+	if mainLen != 1 {
+		t.Fatalf("malformed job should be restored while quarantine is unavailable, main list = %d", mainLen)
+	}
+
+	fail.dlqErr = nil
+	if _, err := q.Dequeue(ctx); err == nil {
+		t.Fatal("healed dequeue should still report malformed JSON")
+	}
+	r.mu.Lock()
+	deadLen = len(r.lists["test:dead"])
+	mainLen = len(r.lists["test"])
+	r.mu.Unlock()
+	if deadLen != 1 || mainLen != 0 {
+		t.Fatalf("healed quarantine should move malformed job to DLQ (dead=%d main=%d)", deadLen, mainLen)
+	}
+}
+
+type cancelAfterPopRedis struct {
+	RedisClient
+	cancel context.CancelFunc
+}
+
+func (f *cancelAfterPopRedis) RPop(ctx context.Context, key string) (string, error) {
+	data, err := f.RedisClient.RPop(ctx, key)
+	if err == nil {
+		f.cancel()
+	}
+	return data, err
+}
+
+func (f *cancelAfterPopRedis) HSet(ctx context.Context, key string, values ...any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.RedisClient.HSet(ctx, key, values...)
+}
+
+func (f *cancelAfterPopRedis) LPush(ctx context.Context, key string, values ...any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+// Once RPop succeeds, caller cancellation cannot be allowed to cancel the
+// rollback write if recording the processing lease then fails.
+func TestRedisCanceledDequeueRestoresPoppedJob(t *testing.T) {
+	r := newMockRedis()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	job := Job{ID: "claimed", Type: "email", MaxAttempts: 3}
+	data, _ := json.Marshal(job)
+	_ = r.LPush(context.Background(), "test", data)
+
+	client := &cancelAfterPopRedis{RedisClient: r, cancel: cancel}
+	q := NewRedisQueue(client, "test")
+	if _, err := q.Dequeue(ctx); err == nil {
+		t.Fatal("Dequeue should report the canceled claim write")
+	}
+
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	processingLen := len(r.hashes["test:processing"])
+	r.mu.Unlock()
+	if mainLen != 1 || processingLen != 0 {
+		t.Fatalf("popped job must be restored (main=%d processing=%d)", mainLen, processingLen)
+	}
+}
+
 // pushFailingRedis fails every LPush, whatever list it targets.
 type pushFailingRedis struct {
 	RedisClient
