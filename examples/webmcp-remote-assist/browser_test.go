@@ -199,7 +199,7 @@ func TestRemoteAssistFlow(t *testing.T) {
 	// ── 3. Discovery: four tools on the console document ─────────
 	pollExpr(t, support, toolNamesExpr,
 		"clear_instruction,get_app_instructions,inspect_session,send_instruction", 15*time.Second)
-	pollExpr(t, support, `window.__assist.phase`, "hydrated", 15*time.Second)
+	pollExpr(t, support, `'' + window.__assist?.phase`, "hydrated", 15*time.Second)
 
 	// ── 4. Operator joins: the link opens a confirmation page (a
 	// previewer fetching it spends nothing); the button's POST is
@@ -211,15 +211,15 @@ func TestRemoteAssistFlow(t *testing.T) {
 	clickSel(t, operator, `form[action^="/join/"] button[type=submit]`)
 	waitReady(t, operator, "#assist-share")
 	pollExpr(t, operator, toolNamesExpr, "", 15*time.Second)
-	pollExpr(t, operator, `window.__assist.phase`, "hydrated", 15*time.Second)
+	pollExpr(t, operator, `'' + window.__assist?.phase`, "hydrated", 15*time.Second)
 
 	// Support sees the operator arrive.
 	pollExpr(t, support, `'' + !document.getElementById('assist-pill-op-on').hidden`, "true", 15*time.Second)
 
 	// ── 5. Camera: peer-to-peer, server sees only signaling ──────
 	clickSel(t, operator, "#assist-share")
-	pollExpr(t, operator, `window.__assist.pcState`, "connected", 30*time.Second)
-	pollExpr(t, support, `window.__assist.pcState`, "connected", 30*time.Second)
+	pollExpr(t, operator, `'' + window.__assist?.pcState`, "connected", 30*time.Second)
+	pollExpr(t, support, `'' + window.__assist?.pcState`, "connected", 30*time.Second)
 	pollExpr(t, support, `'' + !!document.getElementById('assist-remote').srcObject`, "true", 15*time.Second)
 	pollExpr(t, support, `'' + !document.getElementById('assist-pill-media-on').hidden`, "true", 15*time.Second)
 
@@ -296,8 +296,8 @@ func TestRemoteAssistFlow(t *testing.T) {
 	if !assist.dropRoleSocket(sid, roleOperator) {
 		t.Fatal("no operator socket to drop")
 	}
-	pollExpr(t, operator, `'' + (window.__assist.generations >= 2)`, "true", 30*time.Second)
-	pollExpr(t, operator, `window.__assist.phase`, "hydrated", 30*time.Second)
+	pollExpr(t, operator, `'' + (window.__assist?.generations >= 2)`, "true", 30*time.Second)
+	pollExpr(t, operator, `'' + window.__assist?.phase`, "hydrated", 30*time.Second)
 	pollExpr(t, operator, `document.getElementById('assist-instruction-text').textContent`,
 		"No instruction yet.", 15*time.Second)
 	appliedAfter := evalString(t, operator,
@@ -306,7 +306,7 @@ func TestRemoteAssistFlow(t *testing.T) {
 		t.Fatalf("reconnect resurrected instruction state: %s -> %s", appliedBefore, appliedAfter)
 	}
 	// The media path is peer-to-peer: it survives the transport drop.
-	pollExpr(t, operator, `window.__assist.pcState`, "connected", 15*time.Second)
+	pollExpr(t, operator, `'' + window.__assist?.pcState`, "connected", 15*time.Second)
 
 	// Second drop, and a mutation lands while the operator is offline
 	// (the reconnect backoff is one second; the tool call takes
@@ -322,8 +322,8 @@ func TestRemoteAssistFlow(t *testing.T) {
 		fmt.Sprintf(`{"session":%q,"instruction":"Sent while you were offline."}`, sid)); err != nil {
 		t.Fatal(err)
 	}
-	pollExpr(t, operator, `'' + (window.__assist.generations >= 3)`, "true", 30*time.Second)
-	pollExpr(t, operator, `window.__assist.phase`, "hydrated", 30*time.Second)
+	pollExpr(t, operator, `'' + (window.__assist?.generations >= 3)`, "true", 30*time.Second)
+	pollExpr(t, operator, `'' + window.__assist?.phase`, "hydrated", 30*time.Second)
 	pollExpr(t, operator, `document.getElementById('assist-instruction-text').textContent`,
 		"Sent while you were offline.", 15*time.Second)
 	appliedOffline := evalString(t, operator,
