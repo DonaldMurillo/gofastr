@@ -30,6 +30,9 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	if !canRead(ctx, m.ch) {
 		return accessDenied(ctx, m.plural(ctx))
 	}
+	if m.hasAPI && !m.ch.CanCreateScoped(ctx) {
+		return accessDenied(ctx, m.plural(ctx))
+	}
 	values := map[string]string{}
 	if b.prefill != nil {
 		for k, v := range b.prefill {
@@ -38,7 +41,11 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	}
 	q := appui.QueryFromContext(ctx)
 	for name, vs := range q {
-		if f, ok := m.field(strings.TrimPrefix(name, "prefill_")); ok && len(vs) > 0 && mayCreateSet(m, f) {
+		field, ok := strings.CutPrefix(name, "prefill_")
+		if !ok || len(vs) == 0 {
+			continue
+		}
+		if f, ok := m.field(field); ok && mayCreateSet(m, f) {
 			values[f.Name] = vs[0]
 		}
 	}
@@ -102,7 +109,8 @@ func mayCreateSet(m *meta, f schema.Field) bool {
 }
 
 // editTab draws the record's Edit tab: the form, or the read-only
-// field values when the entity mounts no write routes. The form's
+// field values when the entity mounts no write routes or the caller may
+// not update this record. The form's
 // inputs prefill from the raw row; its read-only values (the header's
 // detail values) show the hooked row.
 func (b *RecordBuilder) editTab(ctx context.Context, m *meta, raw, hooked map[string]any, masked map[string]bool, base string) render.HTML {
@@ -121,11 +129,13 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	if masked == nil {
 		masked = map[string]bool{}
 	}
-	// The form's field set: editable on a writable entity; on a
-	// read-only mount every field draws as a locked value so nothing
-	// about it can submit.
+	// The form's field set: editable where the caller may write; on a
+	// read-only mount, or for a caller the route would refuse, every
+	// field draws as a locked value so nothing about it can submit.
+	// A create form is drawn only after createScreen's own gates.
+	writable := createValues != nil || canUpdate(ctx, m, b.id)
 	locked := map[string]bool{}
-	if !m.hasAPI {
+	if !writable {
 		for _, f := range editable {
 			locked[f.Name] = true
 		}
@@ -144,10 +154,10 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	} else {
 		body = render.Join(main...)
 	}
-	if !m.hasAPI {
-		// No write routes: the tab is the frame of read-only values,
-		// with no form around it — nothing to submit and no action to
-		// point one at.
+	if !writable {
+		// No write the caller may make: the tab is the frame of
+		// read-only values, with no form around it — nothing to submit
+		// and no action to point one at.
 		return body
 	}
 
@@ -559,14 +569,21 @@ func (fb *formBuilder) relationSelect(ctx context.Context, f schema.Field, label
 	if cur == "" {
 		opts = append(opts, ui.SelectOption{Value: "", Text: i18nui.T(ctx, i18nui.KeyEntitySelect)})
 	}
-	for _, o := range fb.relationOptions(ctx, f) {
+	related, refused := fb.relationOptions(ctx, f)
+	for _, o := range related {
 		opts = append(opts, ui.SelectOption{Value: o.id, Text: o.label, Selected: o.id == cur})
 	}
 	if cur != "" && !optionListed(opts, cur) {
 		// The current value was not among the first 100 (or the picker
 		// read none): offer it anyway so a submit cannot silently
-		// clear the column.
-		opts = append([]ui.SelectOption{{Value: cur, Text: cur, Selected: true}}, opts...)
+		// clear the column. Its label is the id when the caller may
+		// read the related entity (a legibility limit), and the em dash
+		// when it may not: never the raw foreign key of a refused entity.
+		text := cur
+		if refused {
+			text = "—"
+		}
+		opts = append([]ui.SelectOption{{Value: cur, Text: text, Selected: true}}, opts...)
 	}
 	return ui.Select(ui.SelectConfig{
 		Name: f.Name, Label: label, ID: id, Options: opts, Help: help,
@@ -593,18 +610,19 @@ type relationOption struct {
 // relationOptions reads the related entity's first 100 rows through
 // its own handler after its own read gate: a picker for an open entity
 // must not become a window onto a gated one. The read runs with hooks
-// so the labels show what a hooked read shows.
-func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) []relationOption {
+// so the labels show what a hooked read shows. refused reports that the
+// related entity is unknown or its read gate refused the caller.
+func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) (opts []relationOption, refused bool) {
 	other, err := fb.b.ui.entityFor(f.To)
 	if err != nil {
-		return nil
+		return nil, true
 	}
 	om, err := fb.b.ui.meta(other.GetName())
 	if err != nil {
-		return nil
+		return nil, true
 	}
 	if !canRead(ctx, om.ch) {
-		return nil
+		return nil, true
 	}
 	fields := []string{om.pk}
 	if tf := om.titleField(); tf != "" && tf != om.pk {
@@ -612,7 +630,7 @@ func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) []re
 	}
 	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Fields: fields, Limit: 100, Sorts: []filter.ParsedSort{{Field: om.pk}}})
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	out := make([]relationOption, 0, len(rows))
 	for _, r := range rows {
@@ -628,7 +646,7 @@ func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) []re
 		}
 		out = append(out, relationOption{id: oid, label: label})
 	}
-	return out
+	return out, false
 }
 
 // kindInput draws the input a registered kind (or a built-in one)

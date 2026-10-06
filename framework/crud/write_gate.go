@@ -18,6 +18,14 @@ func (ch *CrudHandler) CanUpdateRecordScoped(ctx context.Context, id string) boo
 	return ch.canScopedRecord(ctx, opUpdate, id)
 }
 
+// CanCreateScoped is CanUpdateRecordScoped for POST /<entity>: the gates
+// a create runs before the write, with the Decider asked about the
+// collection (Ref.ID ""). A screen asks it before drawing New or a
+// create form.
+func (ch *CrudHandler) CanCreateScoped(ctx context.Context) bool {
+	return ch.canScopedRecord(ctx, opCreate, "")
+}
+
 // CanDeleteRecordScoped is CanUpdateRecordScoped for DELETE /<entity>/{id}.
 func (ch *CrudHandler) CanDeleteRecordScoped(ctx context.Context, id string) bool {
 	return ch.canScopedRecord(ctx, opDelete, id)

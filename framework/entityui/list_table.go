@@ -297,13 +297,13 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 		{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href},
 		{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}},
 	}
-	if b.dup && !m.d.NoDuplicate {
+	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
 		items = append(items, ui.MenuItem{
 			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
 			Href:  s.base + "/create?duplicate=" + url.QueryEscape(id),
 		})
 	}
-	if b.delete && m.hasAPI {
+	if b.delete && canDelete(ctx, m, id) {
 		del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
 			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": m.singular(ctx)})).
 			OnSuccess(interactive.Navigate(listHref(s.path, s.q))).
@@ -345,7 +345,7 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
-	if b.mayCreate() && s.m.hasAPI {
+	if b.mayCreate() && canCreate(ctx, s.m) {
 		cfg.Action = ui.LinkButton(ui.LinkButtonConfig{
 			Label: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": s.m.singular(ctx)}),
 			Href:  s.createHref(),

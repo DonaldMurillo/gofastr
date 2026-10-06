@@ -26,6 +26,19 @@ func canReadRecord(ctx context.Context, ch *crud.CrudHandler, id string) bool {
 	return ch != nil && ch.CanReadRecordScoped(ctx, id)
 }
 
+// canCreate, canUpdate and canDelete answer whether a screen may draw a
+// write: the entity mounts write routes and the caller passes the gates
+// that route runs. A builder never draws a write the API would refuse.
+func canCreate(ctx context.Context, m *meta) bool { return m.hasAPI && m.ch.CanCreateScoped(ctx) }
+
+func canUpdate(ctx context.Context, m *meta, id string) bool {
+	return m.hasAPI && m.ch.CanUpdateRecordScoped(ctx, id)
+}
+
+func canDelete(ctx context.Context, m *meta, id string) bool {
+	return m.hasAPI && m.ch.CanDeleteRecordScoped(ctx, id)
+}
+
 // AccessDeniedTitle is the heading drawn in place of rows the caller may
 // not read. Exported so a test in another package detects the notice by
 // symbol, not by copying prose.
