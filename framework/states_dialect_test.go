@@ -1,10 +1,14 @@
 package framework
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -47,6 +51,61 @@ func TestStatesRefusalsPerDialect(t *testing.T) {
 		}
 		if status != "paid" || !paidOn.Valid || paidOn.String == "" {
 			t.Fatalf("after pay: status %q paid_on %+v, want paid with a stamp", status, paidOn)
+		}
+	})
+}
+
+// Two moves of one record on two Postgres connections: the winner commits
+// after the loser read "open" and before its UPDATE, and the loser's
+// statement, pinned to From, matches zero rows under READ COMMITTED and
+// answers a typed conflict naming the winner's state. (SQLite's version of
+// the race, which fails the write with SQLITE_BUSY, is in crud.)
+func TestStatesMoveRacePostgres(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
+		if dialect != migrate.DialectPostgres {
+			t.Skip("SQLite's race is TestRunTransitionSQLiteBusyConflict in framework/crud")
+		}
+		db.SetMaxOpenConns(2)
+		app := statesAuditApp(t, db)
+		handler, err := app.CrudHandler("invoices")
+		if err != nil {
+			t.Fatal(err)
+		}
+		created, err := handler.CreateOne(context.Background(), map[string]any{"number": "INV-1", "status": "open"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := created["id"].(string)
+
+		raced := false
+		var winner error
+		app.HookRegistry("invoices").RegisterHook(hook.BeforeUpdate, func(ctx context.Context, _ any) error {
+			if crud.TransitionFromContext(ctx) != "pay" || raced {
+				return nil
+			}
+			raced = true
+			_, winner = handler.RunTransition(context.Background(), id, "void")
+			return nil
+		})
+
+		_, err = handler.RunTransition(context.Background(), id, "pay")
+		if winner != nil {
+			t.Fatalf("winning move: %v", winner)
+		}
+		tce, ok := errors.AsType[*crud.TransitionConflictError](err)
+		if !ok {
+			t.Fatalf("losing move = %v (%T), want *crud.TransitionConflictError", err, err)
+		}
+		if tce.Current != "void" {
+			t.Fatalf("conflict current = %q, want the winner's void", tce.Current)
+		}
+		var status string
+		var paidOn sql.NullString
+		if err := db.QueryRow("SELECT status, paid_on FROM invoices WHERE id = $1", id).Scan(&status, &paidOn); err != nil {
+			t.Fatal(err)
+		}
+		if status != "void" || paidOn.Valid {
+			t.Fatalf("stored %q paid_on %v, want void and no stamp", status, paidOn)
 		}
 	})
 }

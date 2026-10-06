@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
 // App pre-flight: an endpoint whose MCP tool name equals one of the
@@ -66,4 +67,47 @@ func withSystemMove(st *entity.StatesConfig) *entity.StatesConfig {
 		Key: "mark_overdue", From: []string{"open"}, To: "void", System: true,
 	})
 	return st
+}
+
+// GroupEntity runs the same preflight before it registers anything: a
+// grouped endpoint on the generated transition route, or one whose tool
+// name a namespaced move tool claims, is refused with the registry, the
+// router and the MCP server untouched.
+func TestGroupEntityPreflightBeforeRegister(t *testing.T) {
+	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	tool := func(context.Context, map[string]any) (any, error) { return nil, nil }
+	cases := map[string]entity.Endpoint{
+		"route": {Method: "POST", Path: "{id}/transitions/{key}", Handler: noop},
+		"tool":  {Method: "POST", Path: "/resend", Name: "invoices.pay", MCP: true, Handler: noop, MCPHandler: tool},
+	}
+	for name, ep := range cases {
+		t.Run(name, func(t *testing.T) {
+			app := atomicTestApp(t)
+			g := app.Group("/v1", routegroup.WithMCPNamespace("billing"))
+			routes := len(app.router.Routes())
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Fatal("GroupEntity accepted the colliding endpoint")
+					}
+				}()
+				app.GroupEntity(g, "invoices", EntityConfig{
+					Table:     "invoices",
+					Fields:    statesAuditFields(),
+					States:    statesAuditStates(),
+					Exposure:  &entity.ExposureConfig{MCP: true},
+					Endpoints: []entity.Endpoint{ep},
+				})
+			}()
+			if _, err := app.Registry.GetVersioned("invoices", "/v1"); err == nil {
+				t.Fatal("refused grouped entity remains in the registry")
+			}
+			if n := len(app.router.Routes()); n != routes {
+				t.Fatalf("refused grouped entity mounted %d routes", n-routes)
+			}
+			if app.MCP.HasTool("billing.invoices.list") {
+				t.Fatal("refused grouped entity registered its MCP tools")
+			}
+		})
+	}
 }
