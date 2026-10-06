@@ -287,3 +287,73 @@ func idsOf(rows []map[string]any) []string {
 	}
 	return out
 }
+
+// Hand-built ListOptions.Filters pass the same operator/type rule
+// ?field_<op>= passes: a `like` on an Int column is refused by ListAll
+// and CountAll alike, while the operators that suit the column still
+// work. This is what makes the change note's "every filter surface"
+// true for the in-process list too.
+func TestListAllRefusesLikeOnIntFilter(t *testing.T) {
+	ch, db := setupInvoiceWorld(t)
+	seedInvoices(t, db,
+		map[string]any{"id": "a1", "user_id": "alice", "status": "open", "amount": 500},
+	)
+	bad := ListOptions{Filters: []filter.ParsedFilter{
+		{Field: "amount", Op: filter.OpLike, Value: "5"},
+	}}
+	if _, err := ch.ListAll(ctxWithUser("alice"), bad); err == nil {
+		t.Fatal("ListAll accepted a hand-built like filter on an Int column")
+	}
+	if _, err := ch.CountAll(ctxWithUser("alice"), bad); err == nil {
+		t.Fatal("CountAll accepted a hand-built like filter on an Int column")
+	}
+	good := ListOptions{Filters: []filter.ParsedFilter{
+		{Field: "amount", Op: filter.OpGte, Value: "100"},
+	}}
+	rows, err := ch.ListAll(ctxWithUser("alice"), good)
+	if err != nil {
+		t.Fatalf("ListAll refused a suited hand-built filter: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %v, want the one seeded row", rows)
+	}
+}
+
+// A hand-built filter may name a field by its WireName, the spelling
+// ?field= accepts; the SQL names the column, so the list resolves it.
+func TestListAllFilterResolvesWireName(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE items (id TEXT PRIMARY KEY, amount INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (id, amount) VALUES ('a1', 500), ('a2', 50)`); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("items", entity.EntityConfig{
+		Name:   "items",
+		Table:  "items",
+		Fields: []schema.Field{{Name: "amount", WireName: "total", Type: schema.Int}},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db)
+	ch.Hooks = hook.NewHookRegistry()
+
+	opts := ListOptions{Filters: []filter.ParsedFilter{{Field: "total", Op: filter.OpGte, Value: "100"}}}
+	rows, err := ch.ListAll(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if got := idsOf(rows); len(got) != 1 || got[0] != "a1" {
+		t.Fatalf("rows = %v, want [a1]", got)
+	}
+	if n, err := ch.CountAll(context.Background(), opts); err != nil || n != 1 {
+		t.Fatalf("CountAll = %d, %v; want 1", n, err)
+	}
+	if opts.Filters[0].Field != "total" {
+		t.Error("ListAll rewrote the caller's filter slice")
+	}
+}

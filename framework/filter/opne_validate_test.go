@@ -3,6 +3,7 @@ package filter
 import (
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -96,6 +97,17 @@ func TestWhereComparisonOnBoolRefused(t *testing.T) {
 	}
 }
 
+// A JSON blob has no order a request value can compare against: on
+// Postgres the JSONB cast of a plain string fails at query time.
+func TestWhereRangeOnJSONRefused(t *testing.T) {
+	fields := append(predFields(), schema.Field{Name: "payload", Type: schema.JSON})
+	for _, op := range []string{"gt", "gte", "lt", "lte"} {
+		if _, err := ParseWhere(`{"field":"payload","op":"`+op+`","value":"1"}`, fields); err == nil {
+			t.Errorf("%s on a JSON column must be refused", op)
+		}
+	}
+}
+
 func TestWhereNeSuitsEveryType(t *testing.T) {
 	for _, f := range []schema.Field{
 		{Name: "s", Type: schema.String}, {Name: "i", Type: schema.Int},
@@ -121,8 +133,12 @@ func vpFields() []schema.Field {
 }
 
 func TestValidatePredicateNilOK(t *testing.T) {
-	if err := ValidatePredicate(nil, vpFields()); err != nil {
+	p, err := ValidatePredicate(nil, vpFields())
+	if err != nil {
 		t.Fatalf("nil predicate must be valid, got %v", err)
+	}
+	if p != nil {
+		t.Fatalf("nil in, nil out; got %#v", p)
 	}
 }
 
@@ -134,14 +150,14 @@ func TestValidatePredicateAcceptsValidTree(t *testing.T) {
 			{Field: "status", Op: OpIn, Values: []string{"a", "b"}},
 		}},
 	}}
-	if err := ValidatePredicate(p, vpFields()); err != nil {
+	if _, err := ValidatePredicate(p, vpFields()); err != nil {
 		t.Fatalf("valid tree refused: %v", err)
 	}
 }
 
 func TestValidatePredicateSetsBoolMarker(t *testing.T) {
-	p := &Predicate{Field: "active", Op: OpEq, Value: "true"}
-	if err := ValidatePredicate(p, vpFields()); err != nil {
+	p, err := ValidatePredicate(&Predicate{Field: "active", Op: OpEq, Value: "true"}, vpFields())
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !p.isBool {
@@ -153,9 +169,8 @@ func TestValidatePredicateSetsBoolMarker(t *testing.T) {
 	}
 	// And the schema is the authority: a wrongly hand-set marker on a
 	// non-Bool column is cleared.
-	q := &Predicate{Field: "status", Op: OpEq, Value: "x"}
-	q.isBool = true
-	if err := ValidatePredicate(q, vpFields()); err != nil {
+	q, err := ValidatePredicate(&Predicate{Field: "status", Op: OpEq, Value: "x", isBool: true}, vpFields())
+	if err != nil {
 		t.Fatal(err)
 	}
 	if q.isBool {
@@ -164,8 +179,8 @@ func TestValidatePredicateSetsBoolMarker(t *testing.T) {
 }
 
 func TestValidatePredicateResolvesWireAlias(t *testing.T) {
-	p := &Predicate{Field: "dueDate", Op: OpEq, Value: "2026-10-01"}
-	if err := ValidatePredicate(p, vpFields()); err != nil {
+	p, err := ValidatePredicate(&Predicate{Field: "dueDate", Op: OpEq, Value: "2026-10-01"}, vpFields())
+	if err != nil {
 		t.Fatalf("wire alias refused: %v", err)
 	}
 	if p.Field != "due_on" {
@@ -174,26 +189,25 @@ func TestValidatePredicateResolvesWireAlias(t *testing.T) {
 }
 
 func TestValidatePredicateRefusesMetaCharsField(t *testing.T) {
-	p := &Predicate{Field: "id; DROP TABLE x; --", Op: OpEq, Value: "1"}
-	if err := ValidatePredicate(p, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Field: "id; DROP TABLE x; --", Op: OpEq, Value: "1"}, vpFields()); err == nil {
 		t.Fatal("a field name with SQL metacharacters must be refused before BuildPredicate splices it into SQL")
 	}
 }
 
 func TestValidatePredicateRefusesUnknownField(t *testing.T) {
-	if err := ValidatePredicate(&Predicate{Field: "nope", Op: OpEq, Value: "x"}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Field: "nope", Op: OpEq, Value: "x"}, vpFields()); err == nil {
 		t.Fatal("unknown field must be refused")
 	}
 }
 
 func TestValidatePredicateRefusesHiddenField(t *testing.T) {
-	if err := ValidatePredicate(&Predicate{Field: "secret", Op: OpEq, Value: "x"}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Field: "secret", Op: OpEq, Value: "x"}, vpFields()); err == nil {
 		t.Fatal("Hidden field must be refused")
 	}
 }
 
 func TestValidatePredicateRefusesNoQueryField(t *testing.T) {
-	err := ValidatePredicate(&Predicate{Field: "card", Op: OpEq, Value: "4111"}, vpFields())
+	_, err := ValidatePredicate(&Predicate{Field: "card", Op: OpEq, Value: "4111"}, vpFields())
 	if err == nil {
 		t.Fatal("NoQuery field must be refused")
 	}
@@ -206,39 +220,97 @@ func TestValidatePredicateRefusesNoQueryField(t *testing.T) {
 }
 
 func TestValidatePredicateRefusesLikeOnNonText(t *testing.T) {
-	if err := ValidatePredicate(&Predicate{Field: "score", Op: OpLike, Value: "1"}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Field: "score", Op: OpLike, Value: "1"}, vpFields()); err == nil {
 		t.Fatal("like on an Int column must be refused")
 	}
 }
 
 func TestValidatePredicateRefusesEmptyIn(t *testing.T) {
-	if err := ValidatePredicate(&Predicate{Field: "status", Op: OpIn}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Field: "status", Op: OpIn}, vpFields()); err == nil {
 		t.Fatal("OpIn with zero values must be refused")
 	}
 }
 
-func TestValidatePredicateRefusesInOverCap(t *testing.T) {
-	vals := make([]string, MaxINListEntries+1)
-	for i := range vals {
-		vals[i] = "v"
+// Validation resolves the tree on a copy: the caller's input stays
+// byte-for-byte what it built, both for a wire alias (which must not be
+// rewritten into the input's Field) and for the Bool coercion marker.
+// A host may share one parsed tree across goroutines, so a write here
+// would be a data race against every other reader.
+func TestValidatePredicateLeavesInputUntouched(t *testing.T) {
+	in := &Predicate{Or: true, Children: []Predicate{
+		{Field: "dueDate", Op: OpEq, Value: "2026-10-01"},
+		{Field: "active", Op: OpEq, Value: "true", Values: []string{"x"}},
+	}}
+	resolved, err := ValidatePredicate(in, vpFields())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := ValidatePredicate(&Predicate{Field: "status", Op: OpIn, Values: vals}, vpFields()); err == nil {
-		t.Fatal("OpIn over MaxINListEntries must be refused")
+	if in.Field != "" || in.Or != true || len(in.Children) != 2 {
+		t.Fatalf("group node rewritten: %#v", in)
+	}
+	if in.Children[0].Field != "dueDate" {
+		t.Fatalf("input leaf's alias was resolved in place: %q", in.Children[0].Field)
+	}
+	if in.Children[1].isBool {
+		t.Fatal("input leaf got the Bool coercion marker in place")
+	}
+	if resolved.Children[0].Field != "due_on" {
+		t.Fatalf("resolved copy did not resolve the alias: %q", resolved.Children[0].Field)
+	}
+	if !resolved.Children[1].isBool {
+		t.Fatal("resolved copy did not set the Bool coercion marker")
+	}
+	// The copy owns its Values slice: appending to it cannot reach the
+	// input's backing array.
+	resolved.Children[1].Values = append(resolved.Children[1].Values, "y")
+	if len(in.Children[1].Values) != 1 {
+		t.Fatal("resolved copy shares its Values backing array with the input")
 	}
 }
 
+// A shared tree (a parsed Display view handed to concurrent requests)
+// is validated and compiled from several goroutines at once. Validation
+// must take no write on the shared tree, or this test races under
+// -race (it did when validateLeaf resolved aliases in place).
+func TestValidatePredicateSharedTreeNoRace(t *testing.T) {
+	shared := &Predicate{Or: true, Children: []Predicate{
+		{Field: "status", Op: OpEq, Value: "open"},
+		{Field: "dueDate", Op: OpGte, Value: "2026-10-01"},
+		{Field: "active", Op: OpEq, Value: "true"},
+	}}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				resolved, err := ValidatePredicate(shared, vpFields())
+				if err != nil {
+					t.Errorf("shared tree refused: %v", err)
+					return
+				}
+				if c := BuildPredicate(resolved); c.SQL == "" {
+					t.Error("resolved tree built no SQL")
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestValidatePredicateRefusesEmptyGroup(t *testing.T) {
-	if err := ValidatePredicate(&Predicate{Or: true, Children: []Predicate{}}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Or: true, Children: []Predicate{}}, vpFields()); err == nil {
 		t.Fatal("a group with zero children must be refused")
 	}
-	if err := ValidatePredicate(&Predicate{}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{}, vpFields()); err == nil {
 		t.Fatal("an empty node must be refused")
 	}
 }
 
 func TestValidatePredicateRefusesGroupWithField(t *testing.T) {
 	p := &Predicate{Field: "status", Children: []Predicate{{Field: "status", Op: OpEq, Value: "x"}}}
-	if err := ValidatePredicate(p, vpFields()); err == nil {
+	if _, err := ValidatePredicate(p, vpFields()); err == nil {
 		t.Fatal("a node that is both leaf and group must be refused")
 	}
 }
@@ -248,7 +320,7 @@ func TestValidatePredicateDepthBounded(t *testing.T) {
 	for range maxPredicateDepth {
 		p = &Predicate{Children: []Predicate{*p}}
 	}
-	if err := ValidatePredicate(p, vpFields()); err == nil {
+	if _, err := ValidatePredicate(p, vpFields()); err == nil {
 		t.Fatal("over-depth tree must be refused")
 	}
 }
@@ -258,7 +330,7 @@ func TestValidatePredicateNodeCountBounded(t *testing.T) {
 	for i := range kids {
 		kids[i] = Predicate{Field: "status", Op: OpEq, Value: "x"}
 	}
-	if err := ValidatePredicate(&Predicate{Children: kids}, vpFields()); err == nil {
+	if _, err := ValidatePredicate(&Predicate{Children: kids}, vpFields()); err == nil {
 		t.Fatal("over-cap node count must be refused")
 	}
 }
