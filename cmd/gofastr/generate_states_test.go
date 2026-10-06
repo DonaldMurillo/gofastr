@@ -245,6 +245,30 @@ func (r staticRegistry) Get(name string) (*entity.Entity, error) {
 	return nil, fmt.Errorf("entity not found: %s", name)
 }
 
+// The CLI prints a move's summary raw in its help, so state values that
+// carry terminal escapes (ESC, a C1 CSI, a bidi override, a newline)
+// reach it with those bytes dropped.
+func TestCLIMoveSummaryDropsControlBytes(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].Fields[2].Values = []string{"draft", "open\x1b[2J", "paid\u009b31m", "void‮\n"}
+	decls[0].States.Initial = []string{"draft"}
+	decls[0].States.Transitions = []framework.Transition{
+		{Key: "pay", From: []string{"open\x1b[2J"}, To: "paid\u009b31m"},
+		{Key: "void", From: []string{"draft"}, To: "void‮\n"},
+	}
+	spec, err := buildCLISpec(decls, cliOptions{binary: "myapp"}, "example.com/app/entities/client")
+	if err != nil {
+		t.Fatalf("buildCLISpec: %v", err)
+	}
+	got := map[string]string{}
+	for _, tr := range spec.Entities[0].Transitions {
+		got[tr.Key] = tr.Summary
+	}
+	if got["pay"] != "move status from open[2J to paid31m" || got["void"] != "move status from draft to void" {
+		t.Fatalf("summaries = %q", got)
+	}
+}
+
 // The generators refuse what the server's boot check would have refused:
 // a key outside the move-key grammar, a duplicate, or one colliding with
 // any generated surface's own name (hand-written declarations never passed

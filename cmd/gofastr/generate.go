@@ -1269,6 +1269,9 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 		}
 		files = append(files, generatedFile{name: entityFileName(decl.Name), content: content})
 	}
+	if err := refuseDuplicateDecls(files); err != nil {
+		return nil, err
+	}
 	return files, nil
 }
 

@@ -635,6 +635,9 @@ func sdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 // client.go is gofmt'd here so the zipped bytes match the written tree.
 func renderSDKGoFiles(spec sdkSpec) ([]generatedFile, error) {
 	clientSrc := "// " + spec.Header() + "\n// Regenerate: gofastr generate sdk\n\n" + renderClient(spec.Decls)
+	if err := refuseDuplicateDecls([]generatedFile{{name: "client.go", content: clientSrc}}); err != nil {
+		return nil, err
+	}
 	formatted, err := format.Source([]byte(clientSrc))
 	if err != nil {
 		return nil, fmt.Errorf("generated client.go does not parse: %w", err)

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -227,6 +229,15 @@ func runGenerateCLI(args []string) {
 // render, preserve custom.go, honor --force/--dry-run/--json, write.
 func emitCLIFiles(opts cliOptions, spec cliSpec) {
 	files := renderCLIFiles(spec)
+	if err := refuseDuplicateDecls(files); err != nil {
+		if opts.json {
+			printGeneratedErrorsJSON(err)
+		} else {
+			fail("%v", err)
+		}
+		osExit(1)
+		return
+	}
 	if err := validateOutputDir(opts.outDir); err != nil {
 		fail("%v", err)
 		osExit(1)
@@ -640,12 +651,14 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	// One command per non-system move (the route and the MCP tools serve
 	// the same set, Advisory entities included). System moves have no
 	// route and appear nowhere.
+	// The CLI's help prints the summary raw, so the declaration's state
+	// values reach it with terminal-control and bidi runes dropped.
 	for _, t := range crud.RoutableTransitions(decl.States) {
 		summary := "move " + decl.States.Field + " from " + strings.Join(t.From, " or ") + " to " + t.To
 		if t.Stamp != "" {
 			summary += ", stamps " + t.Stamp
 		}
-		ent.Transitions = append(ent.Transitions, cliTransition{Key: t.Key, Summary: summary})
+		ent.Transitions = append(ent.Transitions, cliTransition{Key: t.Key, Summary: textsafe.StripUnsafe(summary)})
 	}
 	return ent
 }
