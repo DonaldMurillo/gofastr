@@ -111,8 +111,7 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 // CanResourceExact is CanResource for a capability that must be held by
 // name: the Decider is asked first, as in CanResource, and on abstain the
 // caller's roles must hold capability itself. A role granted the Wildcard
-// does not satisfy it. A move's Permission, an entityui action's
-// Permission and the admin's state override are checked this way, so a
+// does not satisfy it. A move's Permission is checked this way, so a
 // superuser role does not pick up every narrow capability an app declares.
 func CanResourceExact(ctx context.Context, capability Permission, resource Ref) bool {
 	if ctx == nil {

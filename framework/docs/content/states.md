@@ -112,7 +112,7 @@ Each `Transition`:
 
 | Setting | What it does |
 | --- | --- |
-| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`), its MCP tool and its generated client calls. Lowercase segments joined by single underscores, each led by a letter (`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`), so no two keys turn into one generated name (`mark__paid` and `mark_paid` would both be `MarkPaid`). Unique on the entity, and not a name the entity's own surfaces use: `list`, `get`, `create`, `update`, `delete`, `patch`, `watch`, `batch_create`, `batch_update`, `batch_delete`, `events`, `remove`, `transition`. The boot error names the surface a reserved key collides with. |
+| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`), its MCP tool and its generated client calls. Lowercase segments joined by single underscores, each led by a letter (`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`), so no two keys turn into one generated name (`mark__paid` and `mark_paid` would both be `MarkPaid`). Unique on the entity, and not a name the entity's own surfaces use: `list`, `get`, `create`, `update`, `delete`, `patch`, `watch`, `batch_create`, `batch_update`, `batch_delete`, `events`, `remove`, `transition`, and the JS resource's own `client`, `table` and `constructor`. The boot error names the surface a reserved key collides with. |
 | `Label` | The button text. Empty draws the key. |
 | `From` | The values the move starts from; never empty. |
 | `To` | The value the move writes. |
@@ -201,18 +201,20 @@ field changes. In order:
 
 A hook cannot move the record whose update or move is running it:
 `RunTransition` on that record from inside the write answers
-`crud.ErrReentrantMove` (409 on the route). The nested move would either
+`crud.ErrReentrantMove`, and a hook that returns it fails the write with
+409, from a `Before` hook as from an `After` one. The nested move would either
 break the outer statement's pin on `From`, rolling both back, or leave the
 outer write answering a state the record no longer holds. Moving another
 record from a hook runs as normal; to chain a move onto this record, run it
 after the write commits.
 
-On SQLite, two connections racing to move one record can both read the old
-state; the loser's write then fails with `SQLITE_BUSY` instead of matching
-zero rows. A move that began its own transaction restarts on `SQLITE_BUSY`
-(a few times, briefly backed off), and the restart reads the winner's state
-and answers the usual 409. Inside a transaction the caller opened, the
-caller owns the retry, and the error comes back as is.
+On SQLite, a deferred transaction reads under a snapshot, so two
+connections racing to move one record could both read the old state, and
+the loser's write would fail with `SQLITE_BUSY` after its hooks ran. A move
+takes the write lock before it reads (a statement that writes no row), so
+the loser waits for the winner to commit, reads the winner's state, and
+answers the usual 409 before any of its hooks run. On Postgres the
+statement is a no-op; the conditional `UPDATE` already serializes there.
 
 The REST route is `POST <api>/<entity>/<id>/transitions/<key>`, mounted on
 a writable entity whose `States` hold at least one non-system move. It
@@ -311,7 +313,15 @@ never passed registration, so they run the same boot check
 (`entity.ValidateStates`) and refuse what the app would. Declaration text
 that lands in a generated doc comment (an enum value, a table name) has its
 control bytes flattened, and `*/` broken in the JS and TS block comments, so
-a value can never end the comment.
+a value can never end the comment. The CLI prints a move's summary in its
+help, so state values reach it with control and bidi characters dropped.
+
+A move's Go names join the entity to the key, so two entities can meet in
+one name: `orders` with the move `mark_paid` and `paid_orders` with `mark`
+both make `client.MarkPaidOrders`, and `orders`/`mark_paid` against
+`orders_mark`/`paid` both make the CLI's `runOrdersMarkPaid`. The project,
+SDK and CLI generators refuse such a pair and name the identifier; rename
+an entity or a key.
 
 ## The audit trail
 

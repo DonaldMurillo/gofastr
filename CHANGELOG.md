@@ -23,9 +23,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Permission`, asked about the record, and writes an audit row with op
   `transition:<key>`. Stamps set a Date or Timestamp field to the
   server's UTC date or time. A hook cannot move the record whose write is
-  running it (`crud.ErrReentrantMove`, 409). On SQLite a move that loses
-  a race between two connections restarts on `SQLITE_BUSY` and answers
-  the 409 a Postgres race gives. A 409 or 422 names the stored state and
+  running it (`crud.ErrReentrantMove`, 409). On SQLite a move takes the write
+  lock before it reads, so the loser of a race between two connections
+  answers the 409 a Postgres race gives, and its hooks never run. A 409 or 422 names the stored state and
   the open moves only to a caller whose `ReadScope` admits the record.
   `App.ImportData` and `App.EraseUserData` stand outside the check. See
   `framework/docs/content/states.md`.
@@ -55,7 +55,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   name the entity's own tools, client methods or SDK members use; the boot
   error names the collision. `entity.ValidateStates` runs the states boot
   check over a declaration, and the generators call it, so they refuse what
-  registration refuses. A state field or stamp on `deleted_at` under soft
+  registration refuses. They also refuse two entities whose names meet in
+  one generated Go identifier (`orders` with move `mark_paid` and
+  `paid_orders` with move `mark` both make `client.MarkPaidOrders`), and
+  the CLI drops control and bidi characters from the move summaries its
+  help prints. A state field or stamp on `deleted_at` under soft
   delete or on an auto-generated column is refused. A move's `Permission`
   is held by name: `access.CanResourceExact` asks the Decider and then the
   caller's own grants, and a Wildcard grant does not satisfy it.
