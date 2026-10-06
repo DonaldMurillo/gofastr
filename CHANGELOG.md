@@ -22,16 +22,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   is Go-only. A move needs the entity's update permission plus its own
   `Permission`, asked about the record, and writes an audit row with op
   `transition:<key>`. Stamps set a Date or Timestamp field to the
-  server's UTC date or time. See `framework/docs/content/states.md`.
+  server's UTC date or time. A hook cannot move the record whose write is
+  running it (`crud.ErrReentrantMove`, 409). On SQLite a move that loses
+  a race between two connections restarts on `SQLITE_BUSY` and answers
+  the 409 a Postgres race gives. A 409 or 422 names the stored state and
+  the open moves only to a caller whose `ReadScope` admits the record.
+  `App.ImportData` and `App.EraseUserData` stand outside the check. See
+  `framework/docs/content/states.md`.
 - **`crud.WithStateOverride` and the audit `reason` column.** Trusted Go
-  code (seeds, imports, repair jobs) wraps its context in
+  code (seeds, backfills, repair jobs) wraps its context in
   `crud.WithStateOverride(ctx, reason)` to write a state field or stamp
   outside a move. A non-empty reason and an audited entity
-  (`App.WithAuditLog`) are required, else the write is refused. An update
-  under it is audited with op `state_override` and the reason in the new
-  nullable `reason` column, which `EnsureAuditTable` adds to an existing
-  audit table. `WithServerWrites` does not release the state field;
-  `TypedQuery.UpdateAll` refuses guarded columns even under the override.
+  (`App.WithAuditLog`, which marks every version of a grouped entity) are
+  required, else the write is refused. An update under it, or an
+  `UpsertOne` under it that lands on an existing row, is audited with op
+  `state_override` and the reason in the new nullable `reason` column,
+  which `EnsureAuditTable` adds to an existing audit table; two replicas
+  booting on one old table both succeed. `UpsertOne`'s `DO UPDATE SET`
+  names a guarded column only when the caller sent it under an override
+  that passes, so an omitted state keeps the stored one. `WithServerWrites`
+  does not release the state field; `TypedQuery.UpdateAll` refuses guarded
+  columns even under the override.
 - **Generated clients carry the state moves.** OpenAPI, the MCP tools,
   the Go client, the JS SDK and the CLI each gain one call per non-system
   move, and the per-entity `EntityLLMMD` document gains a `## States`
@@ -39,9 +50,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   accepts: stamps leave every write shape, the patch shapes drop the
   state field, and the OpenAPI and MCP create bodies narrow the state
   enum to the initial values. The SDK schema hash covers `States`, so a
-  changed move set changes the hash. `entity.ValidKey` reports whether a string follows
-  the Display and States key grammar; the generators check move keys
-  with it and refuse a key that collides with a CRUD verb.
+  changed move set changes the hash. Move keys are lowercase segments
+  joined by single underscores, each led by a letter, and may not take a
+  name the entity's own tools, client methods or SDK members use; the boot
+  error names the collision. `entity.ValidateStates` runs the states boot
+  check over a declaration, and the generators call it, so they refuse what
+  registration refuses. A state field or stamp on `deleted_at` under soft
+  delete or on an auto-generated column is refused. A move's `Permission`
+  is held by name: `access.CanResourceExact` asks the Decider and then the
+  caller's own grants, and a Wildcard grant does not satisfy it.
 - **`EntityConfig.Display` carries an entity's screen hints.** One
   block holds what admin and generated screens read: singular and plural
   names, list columns, named views (a DSL `Where` and a `Sort`), facets,

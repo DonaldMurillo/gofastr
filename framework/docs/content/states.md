@@ -5,7 +5,9 @@ declares the rule beside the entity it governs: which Enum field holds the
 state, the values a record may start at, and the named moves that change it.
 Unless `Advisory` is set, the state field and every stamp change only through
 a move, whatever the write comes from: REST, MCP, `_batch`, a cascade write,
-`UpsertOne`, a typed query, a hook.
+`UpsertOne`, a typed query, a hook. Two whole-database operations stand
+outside the rule, `App.ImportData` and `App.EraseUserData`; see
+[outside the check](#outside-the-check).
 
 A move is one conditional UPDATE pinned to the values it starts from, so two
 callers racing to move the same record cannot both win. The second sees a
@@ -110,13 +112,13 @@ Each `Transition`:
 
 | Setting | What it does |
 | --- | --- |
-| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`) and its MCP tool. A lowercase slug (`^[a-z][a-z0-9_]*$`), unique on the entity, and not one of `list`, `get`, `create`, `update`, `delete`, which name the entity's own tools. |
+| `Key` | Names the move in its route (`POST <api>/<entity>/<id>/transitions/<key>`), its MCP tool and its generated client calls. Lowercase segments joined by single underscores, each led by a letter (`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`), so no two keys turn into one generated name (`mark__paid` and `mark_paid` would both be `MarkPaid`). Unique on the entity, and not a name the entity's own surfaces use: `list`, `get`, `create`, `update`, `delete`, `patch`, `watch`, `batch_create`, `batch_update`, `batch_delete`, `events`, `remove`, `transition`. The boot error names the surface a reserved key collides with. |
 | `Label` | The button text. Empty draws the key. |
 | `From` | The values the move starts from; never empty. |
 | `To` | The value the move writes. |
 | `Stamp` | A Date or Timestamp field the move sets to the server's current UTC date or time. The client never supplies it. |
 | `Variant` | The button variant screens draw the move with (`ui.ParseButtonVariant` spellings, e.g. `danger`). Empty is the screen's default. |
-| `Permission` | Required on top of the entity's update access. Empty means update access alone. |
+| `Permission` | Required on top of the entity's update access, and held by name: a Wildcard grant does not satisfy it. Empty means update access alone. |
 | `System` | No route, button or MCP tool. Only Go code calls `RunTransition` for this move. |
 
 Registration (`App.Entity` → `Entity.Validate`) checks every name the
@@ -157,9 +159,15 @@ The check runs after the `BeforeCreate`/`BeforeUpdate` hooks, so a hook
 cannot set the field either. It covers every write path: the REST create
 and update, `_batch` items, cascade writes, `UpsertOne` (an update of the
 row the body's key names when that row is visible, a create otherwise; its
-`DO UPDATE SET` never names a guarded column, so the insert arm's
-`Default` cannot clobber a stored state on conflict), and the in-process
-`CreateOne` and `UpdateOne`.
+`DO UPDATE SET` names a guarded column only when the caller sent it under
+a `WithStateOverride` that has its reason and audit log, so an omitted
+state field keeps the stored state and the insert arm's `Default` never
+lands on conflict), and the in-process `CreateOne` and `UpdateOne`.
+
+A refusal names the stored state and the open moves only to a caller whose
+`ReadScope` admits the record. One the scope hides gets the same 422 or 409
+with neither, so a caller who may write a record but not read it learns
+nothing of its state from the refusal.
 
 `TypedQuery.UpdateAll` refuses a body that names any guarded column
 (`crud.ErrBulkStateWrite`), override or not: one value written onto many
@@ -173,7 +181,10 @@ field changes. In order:
 1. **Who may move.** A System move skips this; no route reaches it. Any
    other move asks the entity's update permission and, when the move sets
    one, its `Permission`. Both are asked about this record, so a `Decider`
-   can answer per row. `WithServerWrites` does not skip them.
+   can answer per row. The move's `Permission` is held by name
+   (`access.CanResourceExact`): a role granted the Wildcard passes the
+   update permission but not the move's own. `WithServerWrites` does not
+   skip them.
 2. **A read of the row** under tenant, owner-write and soft-delete scope.
    A row the caller cannot see answers 404, so another owner's id reveals
    nothing. A visible row whose value is not in `From` answers a
@@ -188,6 +199,21 @@ field changes. In order:
 5. **`AfterUpdate` hooks, the audit row and the `entity.updated` event**,
    in the same transaction.
 
+A hook cannot move the record whose update or move is running it:
+`RunTransition` on that record from inside the write answers
+`crud.ErrReentrantMove` (409 on the route). The nested move would either
+break the outer statement's pin on `From`, rolling both back, or leave the
+outer write answering a state the record no longer holds. Moving another
+record from a hook runs as normal; to chain a move onto this record, run it
+after the write commits.
+
+On SQLite, two connections racing to move one record can both read the old
+state; the loser's write then fails with `SQLITE_BUSY` instead of matching
+zero rows. A move that began its own transaction restarts on `SQLITE_BUSY`
+(a few times, briefly backed off), and the restart reads the winner's state
+and answers the usual 409. Inside a transaction the caller opened, the
+caller owns the retry, and the error comes back as is.
+
 The REST route is `POST <api>/<entity>/<id>/transitions/<key>`, mounted on
 a writable entity whose `States` hold at least one non-system move. It
 takes no body and requires the JSON content type, which a cross-site form
@@ -198,7 +224,7 @@ cannot satisfy. The response is the moved record in Update's envelope.
 | 200 | The move ran; the body is the moved record. |
 | 403 | Missing the update permission or the move's `Permission`. |
 | 404 | Unknown key, a System move, or a row the caller cannot see under its scope. |
-| 409 | The current value is not in `From`, including the race where another write moved the record first. |
+| 409 | The current value is not in `From`, including the race where another write moved the record first, or a hook tried to move the record whose write is running it. |
 | 415 | Not `Content-Type: application/json`. |
 
 When the entity sets `mcp: true`, each non-system move is one MCP tool,
@@ -236,7 +262,7 @@ writes, and keeps the moves as calls and buttons. For an entity whose
 status is a label, not a rule.
 
 **`crud.WithStateOverride(ctx, reason)`** lets trusted Go code (seeds,
-imports, repair jobs) write the guarded columns directly, outside a move.
+backfills, repair jobs) write the guarded columns directly, outside a move.
 It is set only from Go, never from a request value, and two things are
 required or the write is refused with an error:
 
@@ -245,12 +271,24 @@ required or the write is refused with an error:
   (`crud.ErrStateOverrideUnaudited`), because the override's only trail is
   the audit row.
 
-An update under it is audited with the operation `state_override` and the
-reason in the audit row's `reason` column (see
-[audit log](audit-log.md)). `WithServerWrites` does not release the state
+An update under it, and an `UpsertOne` under it that lands on an existing
+row, is audited with the operation `state_override` and the reason in the
+audit row's `reason` column (see [audit log](audit-log.md)). `WithServerWrites` does not release the state
 field; `WithStateOverride` does, and only it does.
 `TypedQuery.UpdateAll` refuses guarded columns even under the override: a
 bulk UPDATE runs no hooks, so it would leave no audit row.
+
+### Outside the check
+
+`App.ImportData` restores an `ExportData` archive verbatim: every column
+of every row, states and stamps included, with no hooks and no audit rows,
+inside one transaction. It is a restore of a database the rule already
+governed, not a write path, so it neither checks states nor needs
+`WithStateOverride`. Do not use it to load new records; seed those with
+`CreateOne` and, for a non-initial state, `WithStateOverride`.
+
+`App.EraseUserData` deletes a user's rows whatever their state; it runs no
+moves and no write hooks.
 
 ## Generated clients
 
@@ -267,9 +305,13 @@ shapes also leave out what only a move may change.
 | CLI | `<app> <entity> <key> <id>` | Create and update drop the stamp flags. The state flag stays on both, so a create can start at an initial value; an update that changes the state answers 422. |
 
 A move sends an empty JSON body: the route takes no payload but requires
-the JSON content type. The generators refuse a move key outside the key
-grammar, a duplicate key, and a key whose command or method name collides
-with a CRUD verb (`patch`, `batch_update`).
+the JSON content type, and the OpenAPI operation declares that body as a
+required empty object. The generators read hand-written declarations that
+never passed registration, so they run the same boot check
+(`entity.ValidateStates`) and refuse what the app would. Declaration text
+that lands in a generated doc comment (an enum value, a table name) has its
+control bytes flattened, and `*/` broken in the JS and TS block comments, so
+a value can never end the comment.
 
 ## The audit trail
 
@@ -292,9 +334,14 @@ state override writes `state_override` with its reason. See
 - **Calling `WithStateOverride` before `App.WithAuditLog`.** The override
   is refused on an entity no audit log records. Register the entities
   first, then `WithAuditLog`, then override.
-- **Naming a move `update` or `delete`.** Those keys collide with the
-  entity's own MCP tools; registration refuses them, along with `list`,
-  `get` and `create`.
+- **Naming a move `update`, `patch` or `remove`.** Those keys collide
+  with a name the entity's own tools, client methods or SDK members already
+  use; registration refuses them and the other reserved keys in the `Key`
+  row above.
+- **A stamp on a column the framework writes.** A stamp or state field on
+  the primary key, the owner or tenant column, `deleted_at` under soft
+  delete, or an auto-generated column (`created_at`, `updated_at`) is
+  refused at boot: those columns already have a writer.
 - **Looking for the route of a System move.** It answers 404, like an
   unknown key. System moves exist for Go jobs; write the job that calls
   `RunTransition`.

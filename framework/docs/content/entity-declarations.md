@@ -1380,9 +1380,9 @@ request:
   ASCII slugs (`^[a-z][a-z0-9_]*$`, no dots), unique within their list, and
   not `all` or `deleted` (the screens own those). At most one view sets
   `Default`. `entity.ValidKey(s)` reports whether a string follows this
-  grammar, the same one `States` move keys use; a code generator that
-  emits a key as an identifier or route segment checks it there, so it
-  refuses what registration refuses.
+  grammar. `States` move keys follow a stricter one, checked with the rest
+  of the states block by `entity.ValidateStates` (see
+  [States](states.md)).
 - **The form.** Each item sets exactly one of field, row or section; a row
   holds one to three distinct fields; only a section carries `Items`,
   `Help` and `Collapsed`, and holds at least one item; sections nest at
