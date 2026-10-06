@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -54,10 +55,11 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 }
 
 // mountEntityUIRoutes mounts e's bulk and export routes once EntityUI has
-// run, when e has write routes. recordCrudMount calls it too, so an
-// entity registered after EntityUI is not left with a bar whose posts 404.
+// run, when e has write routes and its name resolves to it. recordCrudMount
+// calls it too, so an entity registered after EntityUI is not left with a
+// bar whose posts 404.
 func (a *App) mountEntityUIRoutes(e *entity.Entity) {
-	if a.entityUI == nil {
+	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return
 	}
 	if _, ok := (entityUIHost{a: a}).APIPath(e); !ok {
@@ -67,14 +69,36 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	// sub-router carries the group's middleware, and a route beside it
 	// would skip that guard.
 	m := a.crudMounts[e]
-	m.r.Post(m.rel+"/_bulk", a.entityUI.BulkHandler(e.GetName()))
-	m.r.Get(m.rel+"/_export.csv", a.entityUI.ExportHandler(e.GetName()))
+	m.r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
+	m.r.Get(m.rel+"/_export.csv", a.entityUIOwned(e, a.entityUI.ExportHandler(e.GetName())))
 }
 
-// entityUIMounted reports whether EntityUI mounted e's bulk and export
-// routes, for the OpenAPI document.
+// entityUIOwns reports whether e is the entity its name resolves to. The
+// screens and the bulk handlers look an entity up by name, so a version
+// the name does not resolve to (another one is unversioned, or several
+// versions share the name) gets no routes: they would run the other
+// entity's handler, hooks and access rules under this version's path.
+func (a *App) entityUIOwns(e *entity.Entity) bool {
+	got, err := a.Registry.Get(e.GetName())
+	return err == nil && got == e
+}
+
+// entityUIOwned answers 404 once e no longer owns its name: an entity
+// registered after the routes mounted can take it over.
+func (a *App) entityUIOwned(e *entity.Entity, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.entityUIOwns(e) {
+			http.NotFound(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// entityUIMounted reports whether EntityUI's bulk and export routes answer
+// for e, for the OpenAPI document.
 func (a *App) entityUIMounted(e *entity.Entity) bool {
-	if a.entityUI == nil {
+	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return false
 	}
 	_, ok := entityUIHost{a: a}.APIPath(e)

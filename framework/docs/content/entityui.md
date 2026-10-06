@@ -284,7 +284,14 @@ entity registered with `App.GroupEntity` keeps its group's prefix and
 middleware, and its screens post to the group's path. Both answer 404 for
 an entity with bulk off. The router serves the static `_bulk` and
 `_export.csv` segments ahead of `/{id}`, so no record id can shadow them.
-The app's OpenAPI document lists both routes for each entity EntityUI
+
+The screens look an entity up by name (`Registry.Get`), so they draw the
+version a name resolves to: the unversioned entity, else the sole
+version. Only that entity gets the two routes. A group version that
+shares its name with an unversioned entity gets none, and when several
+versions share a name and none is unversioned, the name is ambiguous and
+no version gets them. A version that owned its name stops answering
+(404) once a later `App.Entity` takes the name over. The app's OpenAPI document lists both routes for each entity EntityUI
 mounted them on; `openapi.EntityOpenAPIWithBulk` builds that document
 outside the app.
 

@@ -706,7 +706,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   run reports the whole job. The export holds what the list narrowed to,
   leaves out `NoQuery`, omitted and JSON fields, and quotes cells a
   spreadsheet would run as formulas; a `Where`-pinned list draws none.
-  An entity registered after `App.EntityUI` gets both routes too.
+  An entity registered after `App.EntityUI` gets both routes too. Only
+  the entity its name resolves to gets them: a group version that shares
+  the name with an unversioned entity, or with other versions, gets none.
 - **`crud.CrudHandler.CanUpdateRecordScoped`, `CanDeleteRecordScoped`
   and `CanCreateScoped`** answer, as booleans, the gates `PUT` and
   `DELETE /<entity>/{id}` and `POST /<entity>` run: session, owner,
