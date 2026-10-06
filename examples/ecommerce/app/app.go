@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -128,8 +129,17 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// before the server accepts traffic and returns errors to Start,
 		// so a fresh database can never fail silently.
 		fwApp.WithSeed(func(ctx context.Context) error {
-			_, _, err := authCfg.UserStore.FindByEmail(ctx, "admin@shop.example")
+			u, _, err := authCfg.UserStore.FindByEmail(ctx, "admin@shop.example")
 			if err == nil {
+				// An admin seeded before email_verified existed reads as
+				// unverified. Only an account holding the admin role came
+				// from this seed; one without it was registered by someone
+				// else and stays unproven.
+				if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && slices.Contains(u.GetRoles(), "admin") {
+					if err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {
+						return fmt.Errorf("verify bootstrap admin email: %w", err)
+					}
+				}
 				return nil
 			}
 			if err != auth.ErrUserNotFound {
@@ -145,8 +155,17 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			if err != nil {
 				return fmt.Errorf("hash bootstrap admin password: %w", err)
 			}
-			if _, err := authCfg.UserStore.CreateUser(ctx, "admin@shop.example", h, []string{"admin", "user"}); err != nil && err != auth.ErrEmailTaken {
+			u, err = authCfg.UserStore.CreateUser(ctx, "admin@shop.example", h, []string{"admin", "user"})
+			if err != nil && err != auth.ErrEmailTaken {
 				return fmt.Errorf("create bootstrap admin: %w", err)
+			}
+			// The operator chose this address, so it counts as proven.
+			// Left unverified, the first magic link to it would claim
+			// the account and clear the seeded password.
+			if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok && u != nil {
+				if err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {
+					return fmt.Errorf("verify bootstrap admin email: %w", err)
+				}
 			}
 			return nil
 		})

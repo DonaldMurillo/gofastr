@@ -7,7 +7,9 @@ import (
 
 // Ref identifies the resource a capability check is about. Type is the entity
 // name (e.g. "projects"); ID is the record id, or "" for a collection-level
-// check (List, Create, a batch, or the SSE feed). The zero Ref carries no
+// check (List, Create, the up-front gate of a batch, or the SSE feed). A
+// batch update or delete then asks again for each item with that item's id.
+// The zero Ref carries no
 // resource information, a decider that ignores empty Refs is effectively
 // opting out of resource-awareness for that call.
 type Ref struct {

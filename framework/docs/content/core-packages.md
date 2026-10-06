@@ -239,9 +239,16 @@ The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
 IPv4-mapped IPv6 first,
 with a `Reason` helper. Tiny: two exported funcs. Indirect:
-outbound-fetch surfaces (webhooks, the harness) enforce it at dial time;
+outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
+the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
-`IsInternal`.
+`IsInternal`. `GuardedTransport` ignores `HTTP_PROXY`/`HTTPS_PROXY`:
+through a proxy the dial check would see only the proxy's address while
+the proxy connected to the target. A deployment that must egress
+through a proxy supplies its own client where the surface takes one
+(battery/webhook `Options.HTTPClient`, which keeps a per-request target
+check) or turns the surface's private-network opt-out on and leaves the
+egress policy to the proxy.
 
 ### webbotauth
 

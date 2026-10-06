@@ -194,12 +194,77 @@ func pathWithin(prefix, p string) bool {
 	return strings.HasPrefix(rest, "/")
 }
 
+// runtimeEndpoints and runtimePrefixes are the /__gofastr routes framework/uihost
+// mounts for the browser runtime and the embed flow. They are the only part of
+// /__gofastr a grant reaches without a Reach entry. Each one is grant-aware or
+// serves static runtime code; the widget catalog substitutes the grant's own
+// surface path rather than trusting the caller.
+//
+// This is a list on purpose. It used to be the whole /__gofastr subtree, and
+// batteries mount there too: battery/rtc's signalling socket, the desktop
+// bridge, the plugin host, the relay. None of them reads a grant, so a grant
+// for a surface with no Reach at all opened an rtc room as its subject. A new
+// runtime route an embed needs is added here, next to the uihost mount.
+//
+// /__gofastr/session is left out deliberately: it mints an anonymous session
+// and refuses a grant itself (see uihost handleCreateSession).
+var runtimeEndpoints = []string{
+	"/__gofastr/runtime.js",
+	"/__gofastr/color-scheme.js",
+	"/__gofastr/actions.js",
+	"/__gofastr/manifest.js",
+	"/__gofastr/app.css",
+	"/__gofastr/comp-bundle.css",
+	"/__gofastr/sse",
+	"/__gofastr/action",
+	"/__gofastr/widgets",
+	LoaderPath,
+	RuntimePath,
+	ExchangePath,
+	RefreshPath,
+}
+
+var runtimePrefixes = []string{
+	"/__gofastr/widget",
+	"/__gofastr/comp",
+	"/__gofastr/runtime",
+	"/__gofastr/compute",
+	"/__gofastr/pwa",
+	"/__gofastr/icons",
+	strings.TrimSuffix(SurfacePrefix, "/"),
+}
+
+// runtimeReach reports whether p is one of the runtime endpoints above.
+func runtimeReach(p string) bool {
+	if slices.Contains(runtimeEndpoints, p) {
+		return true
+	}
+	for _, pre := range runtimePrefixes {
+		// The subtree only: "/__gofastr/runtime" itself is not a route, and
+		// "/__gofastr/runtime.js" is matched exactly above.
+		if strings.HasPrefix(p, pre+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// reservedFor reports the reserved prefix p falls under, if any.
+func reservedFor(reserved []string, p string) (string, bool) {
+	for _, res := range reserved {
+		if pathWithin(res, p) {
+			return res, true
+		}
+	}
+	return "", false
+}
+
 // MayReach reports whether a grant for this surface may be used on p.
 //
-// Three things are in reach: the surface's own Path subtree, the runtime's
-// /__gofastr/* endpoints (which are already grant-aware and scoped per surface,
-// the widget catalog substitutes the grant's own surface path rather than
-// trusting the caller), and each declared Reach prefix.
+// Three things are in reach: the surface's own Path subtree, the runtime
+// endpoints uihost mounts under /__gofastr (runtimeEndpoints), and each
+// declared Reach prefix. The middleware also refuses any path under a reserved
+// prefix before it asks MayReach.
 //
 // Pass the result of [RoutedPath], never a raw r.URL.Path. The cleaning below
 // is a backstop for direct callers, and cleaning alone is NOT sufficient: it
@@ -215,7 +280,7 @@ func (s *ResolvedSurface) MayReach(p string) bool {
 	if pathWithin(s.path, cleaned) {
 		return true
 	}
-	if pathWithin("/__gofastr", cleaned) {
+	if runtimeReach(cleaned) {
 		return true
 	}
 	for _, r := range s.Reach {

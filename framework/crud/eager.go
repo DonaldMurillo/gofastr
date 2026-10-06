@@ -23,8 +23,11 @@ import (
 //
 //  1. Soft-delete exclusion: a soft-deletable target gets
 //     `deleted_at IS NULL` on its SELECT so trashed rows never resurface.
-//  2. Hidden-column scrub: columns flagged Hidden on the target (e.g.
-//     password_hash) are dropped from every loaded row.
+//  2. Column allow-list: a loaded row keeps only the target's declared,
+//     non-Hidden fields plus its primary key, the columns its own read
+//     route serves. Hidden fields (e.g. password_hash) and columns the
+//     target does not declare (another API version's, a removed field's)
+//     are dropped.
 //  3. Owner scope: an owner-scoped target (OwnerField set) gets
 //     `owner_field = <ctx owner>` ANDed in, exactly like the include path's
 //     applyRelatedOwnerScope. With no user in context the predicate becomes
@@ -81,7 +84,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		}
 
 		// Resolve the relation's target entity (when a registry is given) so
-		// we can scrub soft-deleted rows + Hidden columns, exactly like the
+		// we can scrub soft-deleted rows + undeclared columns, exactly like the
 		// live include path.
 		//
 		// Resolution goes through entity.ResolveTarget against the SOURCE
@@ -90,7 +93,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		// unrelated version's Hidden set or resolved to nothing at all.
 		//
 		// And it fails CLOSED. Swallowing the error left target nil, which
-		// makes hiddenColumns(nil) empty and drops the soft-delete predicate,
+		// makes servedColumns(nil) keep every column and drops the soft-delete predicate,
 		// both scrubs silently off, which is the disclosure this block
 		// exists to prevent. An unresolvable target means we do not know the
 		// schema, so we refuse rather than serve the raw row.
@@ -123,7 +126,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		if target != nil && target.Config.Scope.SoftDelete {
 			softDeleteFilter = " AND deleted_at IS NULL"
 		}
-		hidden := hiddenColumns(target)
+		served := servedColumns(target)
 		// Row-scope predicates for the target (owner + tenant), mirroring
 		// the include path's applyRelatedOwnerScope/applyRelatedTenantScope.
 		// Empty when the target is neither owner-scoped nor multi-tenant, so
@@ -138,11 +141,11 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 
 		switch rel.Type {
 		case entity.RelHasOne, entity.RelHasMany:
-			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, softDeleteFilter, scopeFilters, readPreds, hidden, target); err != nil {
+			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, softDeleteFilter, scopeFilters, readPreds, served, target); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToOne:
-			if err := eagerLoadBelongsTo(ctx, db, tableName, safeRelEntity, safeFK, rel, ids, result, softDeleteFilter, scopeFilters, readPreds, hidden, target); err != nil {
+			if err := eagerLoadBelongsTo(ctx, db, tableName, safeRelEntity, safeFK, rel, ids, result, softDeleteFilter, scopeFilters, readPreds, served, target); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToMany:
@@ -152,7 +155,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				// `deleted_at` would be ambiguous, qualify it with the target.
 				mtmSoftDelete = " AND " + query.QuoteIdent(safeRelEntity) + ".deleted_at IS NULL"
 			}
-			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, mtmSoftDelete, scopeFilters, readPreds, hidden, target); err != nil {
+			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, safeFK, rel, ids, pkCol, result, mtmSoftDelete, scopeFilters, readPreds, served, target); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
@@ -162,7 +165,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 }
 
 // eagerLoadHasMany handles HasOne and HasMany: target table has a FK pointing back to us.
-func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, hidden map[string]bool, target *entity.Entity) error {
+func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	placeholders := make([]string, len(ids))
 	args := make([]any, 0, len(ids))
 	for i, id := range ids {
@@ -208,7 +211,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK str
 			if c == safeFK {
 				fkVal = vals[i]
 			}
-			if hidden[c] {
+			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
@@ -241,7 +244,7 @@ func attachChildRow(rel entity.Relation, fkVal any, row map[string]any, result m
 }
 
 // eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK pointing to the target.
-func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, safeFK string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, hidden map[string]bool, target *entity.Entity) error {
+func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, safeFK string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	pkCol := "id"
 
 	placeholders := make([]string, len(ids))
@@ -342,7 +345,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 			if c == "id" {
 				idVal = vals[i]
 			}
-			if hidden[c] {
+			if served.drop(c) {
 				continue
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
@@ -365,7 +368,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 }
 
 // eagerLoadManyToMany handles ManyToMany through a pivot table.
-func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, hidden map[string]bool, target *entity.Entity) error {
+func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK string, rel entity.Relation, ids []string, pkCol string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
 		return fmt.Errorf("invalid through table %q: %w", rel.Through, err)
@@ -437,7 +440,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 		for i, c := range cols {
 			if c == "__parent_id" {
 				parentID = fmt.Sprintf("%v", vals[i])
-			} else if !hidden[c] {
+			} else if !served.drop(c) {
 				row[c] = convertDatabaseValue(vals[i], boolCols[i])
 			}
 		}

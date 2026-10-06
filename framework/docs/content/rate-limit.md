@@ -69,12 +69,14 @@ budget instead of sharing its egress address's.
 | `ratelimit.NewLimiter(cfg Config) *Limiter` | Construct a limiter; zero fields default to MaxAttempts=10, Window=15m, BlockDuration=30m. |
 | `(*Limiter).Allow(key string) (bool, time.Duration)` | Record one attempt for `key`; returns allowed + retry-after. Use the context form on HTTP paths. |
 | `(*Limiter).AllowContext(ctx, key)` | Same, observing request cancellation when a shared `Store` is set. |
+| `(*Limiter).Admit(ctx, key) (bool, time.Duration, error)` | `AllowContext` plus the shared store's error. A store error still denies; use it when a spent budget triggers an action (ending a session) that an outage must not. |
 | `(*Limiter).Middleware()` | `func(http.Handler) http.Handler`, keyed by client IP. |
 | `(*Limiter).MiddlewareByKey(keyFunc)` | Same, keyed by a custom extractor. |
-| `ratelimit.ClientIP(r, trustXFF)` | The default IP extractor; honours `X-Forwarded-For` only when `trustXFF` is true. |
+| `ratelimit.ClientIP(r, trustXFF)` | IP extractor for a single proxy tier; honours `X-Forwarded-For` (its rightmost entry) only when `trustXFF` is true. |
+| `(*Limiter).ClientIP(r)` | The limiter's own extractor: `TrustForwardedFor` plus `TrustedProxies`. `Middleware()` uses it. |
 
 `Config` fields: `MaxAttempts`, `Window`, `BlockDuration`, `TrustForwardedFor`,
-`Store`, `Scope`, `DevMode`.
+`TrustedProxies`, `Store`, `Scope`, `DevMode`.
 
 ## Two limiters, two jobs
 
@@ -146,6 +148,13 @@ On a store error the limiter **fails closed** (denies); degrading the backend
 must never lift the limit. A custom Redis/etcd backend only needs to satisfy the
 `ratelimit.Store` interface.
 
+The budget holds under concurrency. `SQLRateLimitStore` records each attempt
+before it counts, so a burst on one key admits at most `MaxAttempts` callers
+across every replica; when the whole burst lands at once it can admit fewer,
+and the key blocks either way. A custom `Store` must keep the same property: a
+count followed by a separate insert lets every caller in a burst read the same
+pre-insert count. Record first and count second, or use an atomic counter.
+
 ## X-Forwarded-For and proxies
 
 `ClientIP` (and therefore the default `Middleware()`) ignores
@@ -153,7 +162,23 @@ must never lift the limit. A custom Redis/etcd backend only needs to satisfy the
 directly to the origin can put any value in that header; trusting it
 unconditionally would let one `curl` with a rotating `X-Forwarded-For` bypass
 every per-IP limit. Enable `TrustForwardedFor` **only** behind a reverse proxy
-you control that strips client-supplied XFF.
+you control.
+
+The header is read from the right. A proxy that appends (nginx
+`$proxy_add_x_forwarded_for`, Go's `httputil.ReverseProxy`, most CDNs) keeps
+whatever the client sent on the left and writes the address it saw on the
+right, so the leftmost entry is client-chosen and never picks the bucket.
+
+- One proxy tier: `TrustForwardedFor: true` is enough. The rightmost entry is
+  the client.
+- More than one tier (a CDN in front of a load balancer, say): also list every
+  tier in `TrustedProxies` (IPs or CIDRs). Only a request whose TCP peer is in
+  the list may speak for the header, listed hops are skipped, and the key is
+  the first hop no tier vouches past. Leave a tier out and the key lands on
+  that tier's address, so all its clients share one bucket.
+
+`core/middleware.RateLimit` (`TrustProxyHeaders` + `TrustedProxies`) and the
+`battery/log` access log's `remote` field read the header the same way.
 
 ## DevMode
 

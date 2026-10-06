@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -893,13 +894,16 @@ func TestDebugEndpoints_EnabledViaConfig(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{
 		DebugEndpoints: true,
 	}))
-	// /.debug/stats now 401s anonymous callers (see
-	// TestDebugStatsEndpoint_RequiresAuth in exposure_security_test.go).
-	// Mount a stub auth middleware so the happy-path body assertions
-	// below can still run.
-	app.Router().Use(stubAuthMiddleware)
+	// /.debug/stats 401s anonymous callers and 403s non-admins (see
+	// TestDebugEndpointsNeedAdminRole). Mount a stub auth middleware that
+	// installs an admin so the happy-path body assertions below can run.
+	app.Router().Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(handler.SetUser(r.Context(), debugRoleUser{roles: []string{"admin"}})))
+		})
+	})
 	app.registerDebugEndpoints()
-	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+	ta := TestHarness(t, app).AsUser(debugRoleUser{roles: []string{"admin"}})
 
 	resp := ta.Get("/.debug/stats")
 	if resp.Status() != http.StatusOK {
