@@ -17,12 +17,13 @@ import (
 
 // EntityUI returns this app's entity screens: lists and records drawn from
 // each entity's schema, Display and States, with ext's kinds, view funcs,
-// tabs and actions. Call it once, after every entity is registered. It
-// checks every name ext uses and panics at boot on a bad one, naming it,
-// the way App.Entity refuses a bad declaration.
+// tabs and actions. Call it once. It checks every name ext uses and panics
+// at boot on a bad one, naming it, the way App.Entity refuses a bad
+// declaration, so ext can only name entities registered before the call.
 //
 // It mounts the bulk bar's routes beside each entity's write routes:
-// POST <api>/_bulk and GET <api>/_export.csv. With ext.Jobs set it also
+// POST <api>/_bulk and GET <api>/_export.csv, for the entities registered
+// before the call and for every one registered after it. With ext.Jobs set it also
 // creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
 // gofastr_bulk_items), which needs a database. A second call panics: the
 // routes belong to one UI, so share the one it returned.
@@ -45,19 +46,29 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	if err != nil {
 		panic(fmt.Sprintf("framework: EntityUI: %v", err))
 	}
-	for _, e := range a.Registry.AllSorted() {
-		if _, ok := host.APIPath(e); !ok {
-			continue
-		}
-		// On the router the entity's CRUD routes went on: a group's
-		// sub-router carries the group's middleware, and a route beside
-		// it would skip that guard.
-		m := a.crudMounts[e]
-		m.r.Post(m.rel+"/_bulk", u.BulkHandler(e.GetName()))
-		m.r.Get(m.rel+"/_export.csv", u.ExportHandler(e.GetName()))
-	}
 	a.entityUI = u
+	for _, e := range a.Registry.AllSorted() {
+		a.mountEntityUIRoutes(e)
+	}
 	return u
+}
+
+// mountEntityUIRoutes mounts e's bulk and export routes once EntityUI has
+// run, when e has write routes. recordCrudMount calls it too, so an
+// entity registered after EntityUI is not left with a bar whose posts 404.
+func (a *App) mountEntityUIRoutes(e *entity.Entity) {
+	if a.entityUI == nil {
+		return
+	}
+	if _, ok := (entityUIHost{a: a}).APIPath(e); !ok {
+		return
+	}
+	// On the router the entity's CRUD routes went on: a group's
+	// sub-router carries the group's middleware, and a route beside it
+	// would skip that guard.
+	m := a.crudMounts[e]
+	m.r.Post(m.rel+"/_bulk", a.entityUI.BulkHandler(e.GetName()))
+	m.r.Get(m.rel+"/_export.csv", a.entityUI.ExportHandler(e.GetName()))
 }
 
 // entityUIMounted reports whether EntityUI mounted e's bulk and export
