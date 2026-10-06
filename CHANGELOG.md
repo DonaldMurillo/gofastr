@@ -61,6 +61,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ConditionalField.WhenValues`** shows its children while the
   watched field holds any of the listed values
   (`headless.ConditionalFieldProps.Values`, carried as one JSON `data-hui-when-in` attribute).
+- **Intercepted drawers stack.** A link inside an open drawer to a
+  route intercepted from the drawer's own route opens another drawer
+  over it, up to four. A fifth open is refused with a toast and changes
+  nothing. Lower drawers keep their DOM, unsaved edits included, and go
+  inert; Back and Escape close one layer at a time. Stacked drawers
+  overlap at the inline end, each `--ui-intercept-stack-step` (default
+  `--spacing-2xl`) narrower than the one under it, and every layer casts
+  the scrim over the layers under it, so the lower ones show as strips.
+- **A list inside a drawer stays in the drawer.** A link that changes
+  only the drawer's own query (sort, page, filter) re-renders the
+  drawer, one history entry per click, instead of navigating the page
+  under it.
+- **`data-hui-leave-guard` on a form asks before its unsaved edits are
+  lost**: to a link, Back or Forward, a drawer's Escape or close
+  control, or a reload. It asks only when the move discards the form,
+  so opening a related drawer over a changed record does not ask.
+  `data-hui-leave-guard-message` sets the question. The form cleans on
+  a successful submit or a reset; a refused submit marks it changed
+  again (the rpc module now dispatches `gofastr:formresult` with
+  `detail.ok` on the form).
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit

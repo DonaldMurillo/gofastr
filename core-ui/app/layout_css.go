@@ -36,12 +36,32 @@ func InterceptOverlayCSS() string {
   padding: clamp(calc(var(--spacing-sm, 4px) * 5), 3vw, var(--spacing-2xl, 32px));
   box-shadow: var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
 }
-/* Drawer: docked to the inline end, full height. */
-[data-cui-intercept-as="drawer"] { justify-content: flex-end; }
+/* Stacked layers: only the top one is live; the runtime marks the rest
+   inert. Every layer over another casts the scrim over everything under
+   it (an outer spread shadow paints over earlier siblings, never over
+   the layer itself), the way the first layer sits over the page's
+   scrim, so each lower layer dims one step per layer above it. */
+[data-cui-intercept-overlay] > * + * {
+  box-shadow: 0 0 0 100vmax var(--ui-intercept-overlay-bg, rgba(0, 0, 0, 0.45)), var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
+}
+/* Drawer: docked to the inline end, full height. Stacked drawers
+   overlap there, each one a step narrower than the layer under it, so
+   the lower layers stay visible as a strip at the inline start. */
 [data-cui-intercept-as="drawer"] > * {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
   width: min(var(--ui-intercept-drawer-w, 480px), 100%);
-  height: 100%;
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+}
+[data-cui-intercept-as="drawer"] > :nth-child(2) {
+  width: min(calc(var(--ui-intercept-drawer-w, 480px) - var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
+}
+[data-cui-intercept-as="drawer"] > :nth-child(3) {
+  width: min(calc(var(--ui-intercept-drawer-w, 480px) - 2 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
+}
+[data-cui-intercept-as="drawer"] > :nth-child(4) {
+  width: min(calc(var(--ui-intercept-drawer-w, 480px) - 3 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
 /* Sheet: docked to the bottom, capped so the page stays visible above. */
 [data-cui-intercept-as="sheet"] { align-items: flex-end; }
@@ -55,8 +75,10 @@ func InterceptOverlayCSS() string {
 /* Below the drawer breakpoint a side drawer is a poor fit; present it
    as a sheet instead. Matches the pane-host collapse at the same width. */
 @media (max-width: 768px) {
-  [data-cui-intercept-as="drawer"] { align-items: flex-end; justify-content: stretch; }
-  [data-cui-intercept-as="drawer"] > * {
+  /* :nth-child(n) outranks the per-depth widths above; stacked sheets
+     overlap at the bottom edge, full width. */
+  [data-cui-intercept-as="drawer"] > :nth-child(n) {
+    inset-block-start: auto;
     width: 100%;
     height: auto;
     max-height: var(--ui-intercept-sheet-h, 85vh);

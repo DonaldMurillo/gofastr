@@ -846,7 +846,7 @@
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
-    if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
+    if (window.__gofastr._intercept?.(fullPath, navHash)) return;
     // Capture the origin BEFORE _pushURL syncs currentPath to the
     // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
@@ -901,6 +901,13 @@
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
+    // An open intercept stack owns history moves within its layers: the
+    // module closes or refetches panes itself and re-pushes an entry a
+    // leave guard declined, and the stack's URLs never moved the
+    // router's currentPath, so the diff below would misread them. The
+    // module loads only when a route declares an intercept; without it
+    // this is one absent-property read.
+    if (window.__gofastr._interceptPopstate?.()) return;
     // With manual scrollRestoration the viewport still holds the LEAVING
     // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore

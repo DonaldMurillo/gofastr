@@ -63,6 +63,14 @@
     await _kilnPost(node, body);
   }
 
+
+  // formResult tells one shared "changed" state (headless-leaveguard's
+  // data-hui-leave-guard hook) whether a form submit committed: ok on a
+  // 2xx, ok:false on a refusal, so a refused save puts the dirt back.
+  const formResult = (form, ok) => {
+    if (form) { try { form.dispatchEvent(new CustomEvent('gofastr:formresult', { bubbles: true, detail: { ok } })); } catch (_) {} }
+  };
+
   async function _dispatchPlainForm(form) {
     const action = form.getAttribute('action');
     // Re-check in the module even though core checks before preventing the
@@ -114,15 +122,18 @@
         // may not be in the SPA route table, and rebuilding also resets SSE.
         window.location.assign(resp.url);
       }
+      formResult(form, resp.ok);
     } catch (err) {
       // The write may have committed. Surface the failure so the user does not
       // press submit again and duplicate it.
+      formResult(form, false);
       console.error('[gofastr] form submit could not complete', err);
       if (typeof NS.toast === 'function') {
         NS.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
       }
     }
   }
+
 
   async function _dispatchRPC(node, opts) {
     const path = node.getAttribute('data-cui-rpc');
@@ -239,6 +250,7 @@
         // module renders the server's validation envelope into the
         // fields (demand-loaded; the happy path never pays for it).
         if (formSource) {
+          formResult(formSource, false);
           NS.loadModule('formerrors')
             .then(() => NS._formErrors.report(formSource, r.status, txt))
             .catch(() => {});
@@ -254,6 +266,7 @@
         }
         return;
       }
+      formResult(formSource, true);
       // A form the server rendered with errors (aria-invalid) clears
       // them on success too, loading the module if no refusal has yet.
       if (formSource && formSource.querySelector('[aria-invalid="true"]')) {

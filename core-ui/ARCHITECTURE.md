@@ -318,9 +318,10 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` (headless.PaneHost) on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
 | `data-hui-pane-mode="overlay"` | Written by the registered `headless-panehost` module onto the host when `matchMedia('(max-width: 768px)')` matches AND a pane is open. CSS flips the open pane to a fixed overlay drawer (backdrop scrim via `::before`, right edge, full height) and the module applies a focus trap + scroll lock + ESC/backdrop-to-close. Cleared when the viewport widens or the pane closes. |
 | `data-hui-pane-deeplink="<param>"` | Emitted by `PaneHost` when `PaneHostConfig.DeepLinkParam` is set: opt-in URL round-tripping, naming the query parameter that records pane state. Opening through a keyed trigger writes `?<param>=<pane>:<key>`, closing strips it, and `popstate` replays the state by re-clicking the matching `[data-hui-pane-key]`. Pane state stays in-page state (Hard Rule 1); the parameter only records it so refresh/share/Back reproduce what is on screen, the same contract widget deep links give modals. The SERVER renders first paint from the same parameter via `ui.PaneDeepLink`. Without that a shared link paints the pane closed and opens it after hydration. Absent on every host that does not opt in, so the popstate listener is inert for them. |
-| `data-cui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. Removed on close. |
-| `data-cui-intercept-as="drawer\|sheet"` | On the same container: which presentation the SERVER chose, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys the docking edge off it. The client never picks its own chrome: a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
-| `data-cui-intercept-close` | On a button inside intercepted overlay content: click closes the overlay. Closing routes through `history.back()`, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched. |
+| `data-cui-intercept-overlay` | Written by the demand-loaded `intercept` module on the container it appends to `<body>` for an intercepted route. Holds the screen render the server returned as an overlay variant; the scrim and docking come from `app.InterceptOverlayCSS()`, which the host injects only when some route declares an intercept. The container's children are the LAYERS of an open stack, deepest first. Removed when the last layer closes. |
+| `data-cui-intercept-as="drawer\|sheet"` | On the same container: which presentation the SERVER chose, mirrored from the `X-Gofastr-Overlay` response header (itself derived from the registered `app.InterceptFrom` ScreenType). CSS keys the docking edge off it, so a stack shares the presentation of its TOP layer (the attribute follows the top). The client never picks its own chrome: a forged request can change the wrapper element and nothing else, since policy, params, Load, and content are identical on the canonical and overlay paths. |
+| `data-cui-intercept-close` | On a button inside intercepted overlay content: click closes the TOP layer (through `history.back()`'s path, so the button, ESC, and the backdrop all resolve to the same history move and the page underneath is never refetched). A layer whose form carries `data-hui-leave-guard` and unsaved edits asks first. |
+| `data-hui-leave-guard` / `data-hui-leave-guard-message="<text>"` | On a `<form>` whose unsaved edits must ask before the user leaves them: the registered `headless-leaveguard` module (framework/headless) keeps one shared "changed" state per guarded form — dirty on `input`/`change`, clean after a successful submit (the rpc module dispatches `gofastr:formresult` on the form, and a refused answer with `ok:false` puts the dirt back) or a `reset`. The guard asks only when a move would discard a dirty form, scoped to what that move discards: a router-taken link asks through `gofastr:beforenavigate` (the intercept module's `_interceptScope` says what the click discards: nothing when it stacks a layer over the edits or the cap refuses it, the top pane for a query move inside it, everything when the router replaces the page); Back and Forward on a page with no open stack ask through the router's first popstate hook; the intercept module's close paths (Esc, the close control, a popstate that closes layers, refetches a pane, or leaves for a page other than the one under the stack) ask through `__gofastr._leaveGuard.ok(scope)`; and `beforeunload` is armed so a reload or tab close gets the browser's own prompt. The ask is `window.confirm` (the message attribute's text, defaulting to "You have unsaved changes."), the same synchronous gate `data-cui-confirm` uses, because the hooks it answers are synchronous cancellable events. A declined Back is repaired with a re-push, so the URL, the layers and history.length all stay where they were. Without the runtime the hook is inert markup. |
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
 | `data-cui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger: present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-cui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-cui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
 | `data-fui-plugin="<name>"` | Mount marker emitted by `framework/pluginhost.MountMarker` for a heavy-JS plugin. The host broker (`framework/pluginhost/host/pluginhost.js`, served at its own route, NOT part of runtime.js) scans for it and mounts the plugin's sandboxed opaque-origin iframe in place. |
@@ -660,6 +661,41 @@ would poison a later direct visit. Closing routes through
 `history.back()`, so Back, Escape, the backdrop, and any
 `data-cui-intercept-close` button are one code path and the page
 underneath is never refetched.
+
+**Stacking.** An intercepted link clicked INSIDE an open pane opens the
+target as a NEW layer over the current one — the same route check as
+the first open, with the layer the click happened in as the origin
+(the target's `InterceptFrom` names the pattern of the screen it
+stacks over). Each open is one `pushState`, inside the tab's history;
+the router's `currentPath` deliberately stays on the page under the
+stack, so the router's own popstate diff never refetches the list
+underneath (the module claims those history moves first). At most
+four layers (a record and three related records over it): a fifth
+intercepted open is REFUSED with a warning toast, fetching nothing and
+leaving the stack, the URL and every layer's content as they were, so
+no unsaved edit is discarded to make room; the cap keeps the DOM, the
+history and the drawer chrome bounded while the deep link of every
+layer stays a full page. `app.InterceptOverlayCSS()` overlaps stacked
+drawers at the inline end, each a step (`--ui-intercept-stack-step`)
+narrower than the layer under it, and has every layer cast the scrim
+over the layers under it, so the lower layers show as strips that dim
+one step per layer above them. Lower layers stay in the DOM untouched (their form inputs
+keep unsaved edits) and are `inert` + `aria-hidden="true"`; only the
+top layer takes focus and the Tab trap (a modal widget opened inside a
+layer keeps its own trap; an open dropdown or overlay-mode pane host
+consumes Escape first). Back closes exactly the top layer and restores
+focus to the control that opened it; Esc, the backdrop and the close
+control close the top layer only; a refresh or cold load of the top
+URL renders it full page as ever; Forward does what it does for a
+single layer today — no layer re-opens, the URL loads as a plain page.
+A link inside a pane that changes only the pane's own query
+(`?sort=…&page=…`) re-renders INSIDE the pane — the pane's URL gains
+one history entry per click, the same contract a list at top level
+follows — and Back/Forward walk those query states within the pane. A
+form in a layer carrying `data-hui-leave-guard` asks before any of
+these moves discard its edits, and only then: opening a related record
+over a changed one discards nothing and does not ask; a declined Back
+is repaired with a re-push that restores the URL and history.length.
 
 Choosing between the three overlay tools: an intercept is for a detail
 with its own canonical page; a widget deep link
@@ -1966,7 +2002,7 @@ framework/
 
 ## Hard rules
 
-1. **Never** treat in-page state changes as routes: no `<a href="?p=2">` for a pager embedded in a region — that is an island. A list screen's own page, sort and filter state lives in the URL, and its anchors are navigations the client router intercepts.
+1. **In-page state stays on its route: query params or islands, never a new route.** A list screen's own sort, page and filter live in its query string, and its links are navigations the client router intercepts; a region embedded in a page (a pager inside a card, an expand) is an island, so no `<a href="?p=2">` for it. Neither gets a path of its own.
 2. **Never** re-implement pagination/sort/filter logic in JS. Server-side, always.
 3. **Never** make user-action-driven updates flow through SSE. SSE is for server-pushed updates only. RPC is for user-initiated updates.
 4. **Never** introduce a hard refresh as a fix. If you find yourself doing `location.href = …`, stop.

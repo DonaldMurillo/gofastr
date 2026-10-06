@@ -26,6 +26,11 @@ import (
 // deliberate: it keeps behavior predictable and reviewable. A screen
 // says which list it overlays, so nothing else can turn it into a
 // drawer by accident.
+//
+// Intercepts stack: a screen reached through an open overlay from a
+// layer whose pattern it names opens as another overlay over it (the
+// runtime caps the stack at four and refuses a fifth with a toast).
+// The deep link of every layer stays the canonical full page.
 
 // Intercept records how a screen presents when it is reached by a soft
 // navigation from a declared origin route.
@@ -82,6 +87,12 @@ func InterceptFrom(from string, as ScreenType) ScreenOption {
 // origin is compared by RESOLVED PATTERN, not by string. "/products?
 // page=2&sort=name" and "/products" are the same screen and both
 // intercept; "/products/9/edit" is a different screen and does not.
+//
+// The origin may itself be an open intercept layer: a related record
+// whose screen intercepts from the record's pattern stacks as a new
+// drawer over it (at most four deep; a fifth open is refused). The
+// server sees only URLs, so stacking needs no extra flag — declare the
+// chain the same way as the first open.
 func (r *Router) InterceptFor(target, origin string) (*Intercept, bool) {
 	screen, _, ok := r.Resolve(target)
 	if !ok || screen.Intercept == nil {

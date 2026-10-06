@@ -600,7 +600,7 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 	}{
 		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
 		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
-		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
+		{"src/intercept.js", "fetch(path", "mountLayer(res", "intercept overlay mount"},
 	}
 
 	for _, s := range surfaces {
