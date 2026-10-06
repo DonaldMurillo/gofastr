@@ -82,19 +82,13 @@ func (h entityUIHost) Crud(e *entity.Entity) (*crud.CrudHandler, error) {
 	return h.a.CrudHandlerForEntity(e)
 }
 
-// APIPath reports the entity's REST base when it mounts write routes: a
-// read-only mount (App.View) or CRUD turned off draws read-only screens.
+// APIPath reports where the entity's write routes mounted: a grouped
+// entity lives under its group's prefix, not the API prefix. Only an
+// entity with CRUD routes is recorded there, so a read-only view
+// (App.View) or CRUD turned off draws read-only screens.
 func (h entityUIHost) APIPath(e *entity.Entity) (string, bool) {
-	if m := h.a.entityCrudMount(e); !m.Mounted || m.ReadOnly {
-		return "", false
-	}
-	// Where the routes actually mounted: a grouped entity lives under its
-	// group's prefix, not the API prefix.
 	m, ok := h.a.crudMounts[e]
-	if !ok {
-		return "", false
-	}
-	return m.full, true
+	return m.full, ok
 }
 
 func (h entityUIHost) Translator() *i18n.Translator { return h.a.Translator() }
