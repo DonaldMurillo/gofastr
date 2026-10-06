@@ -53,10 +53,9 @@ func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, erro
 	if p.pos < len(p.src) {
 		return nil, p.errorf("unexpected input after expression")
 	}
-	if err := filter.ValidatePredicate(root, fields); err != nil {
-		return nil, err
-	}
-	return root, nil
+	// The returned tree is ValidatePredicate's resolved copy: aliases
+	// resolved and Bool markers set, on memory this call owns.
+	return filter.ValidatePredicate(root, fields)
 }
 
 // maxSortTerms bounds how many keys one Sort string may carry. Mirrors

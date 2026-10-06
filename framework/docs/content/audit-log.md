@@ -63,12 +63,15 @@ an older binary gets each missing nullable column on the next
 
 `restore` and `purge` come from the soft-delete operations
 (`crud.RestoreOne`, `crud.PurgeOne`): they run the ordinary update and
-delete hook chains, and the operation they carry on the context reaches
-the audit row, so the trail says what actually happened rather than
-"update"/"delete". A state move writes `transition:<key>` and a state
-override `state_override` the same way (see [states](states.md)). Only
-the framework names an operation; app code cannot write an arbitrary
-operation name into the trail.
+delete hook chains, and the operation they carry on the context — keyed
+to the one entity and record being restored or purged — reaches that
+record's audit row, so the trail says what actually happened rather than
+"update"/"delete". A hook that writes another entity's row mid-restore
+still gets that row's own operation: only the CRUD handler sets an
+override, and app code cannot write an arbitrary operation name into the
+trail.
+A state move writes `transition:<key>` and a state override
+`state_override` the same way (see [states](states.md)).
 
 ## Configuration
 

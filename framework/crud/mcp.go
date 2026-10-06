@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -185,8 +186,24 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			if field.Hidden || field.NoQuery {
 				continue
 			}
-			for _, suffix := range []string{"", "_ne", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
-				key := mcpFieldKey(field) + suffix
+			// Plain equality first (the suffix table carries no ""
+			// entry, and every field accepts equals), then one key per
+			// operator from filter.FilterSuffixes ∩ OpSuitsType — the
+			// same predicate the HTTP list handler applies — so the tool
+			// forwards exactly the params listToolSchema advertises and
+			// the route accepts. An operator the field's type refuses
+			// (a _gt on a Bool) is dropped, not forwarded: the same
+			// wider-not-narrower posture as the Hidden/NoQuery skip
+			// above, and it was never advertised, so a well-formed call
+			// never sends one.
+			if v, ok := params[mcpFieldKey(field)]; ok {
+				values[mcpFieldKey(field)] = toolParamValues(v)
+			}
+			for _, s := range filter.FilterSuffixes {
+				if !filter.OpSuitsType(s.Op, field.Type) {
+					continue
+				}
+				key := mcpFieldKey(field) + s.Suffix
 				if v, ok := params[key]; ok {
 					values[key] = toolParamValues(v)
 				}
@@ -445,8 +462,56 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 			continue
 		}
 		props[mcpFieldKey(field)] = mcpFieldSchema(field)
+		// One prop per operator the field's type accepts, from the same
+		// filter.FilterSuffixes ∩ OpSuitsType derivation the forwarding
+		// loop uses: the schema advertises exactly the field/operator
+		// params the HTTP list handler accepts — an operator the parser
+		// refuses is never offered, one it accepts never hidden.
+		for _, s := range filter.FilterSuffixes {
+			if !filter.OpSuitsType(s.Op, field.Type) {
+				continue
+			}
+			ps := mcpFieldSchema(field)
+			if s.Op == filter.OpLike {
+				// A substring, never a whole value: an Enum's value list
+				// would make a client refuse "pai" for "paid".
+				ps = map[string]any{"type": "string"}
+			}
+			if s.Op == filter.OpIn {
+				// A JSON array is the natural spelling an MCP client
+				// sends, and toolParamValues expands it into the
+				// repeated query entries the route parses.
+				ps = map[string]any{"type": "array", "items": mcpFieldSchema(field)}
+			}
+			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
+			props[mcpFieldKey(field)+s.Suffix] = ps
+		}
 	}
 	return map[string]any{"type": "object", "properties": props}
+}
+
+// mcpOperatorLabel names one filter operator in a tool-schema
+// description.
+func mcpOperatorLabel(op filter.FilterOp) string {
+	switch op {
+	case filter.OpEq:
+		return "equals"
+	case filter.OpNe:
+		return "not equal"
+	case filter.OpGt:
+		return "greater than"
+	case filter.OpGte:
+		return "greater than or equal"
+	case filter.OpLt:
+		return "less than"
+	case filter.OpLte:
+		return "less than or equal"
+	case filter.OpLike:
+		return "contains the substring"
+	case filter.OpIn:
+		return "is one of"
+	}
+	return "matches"
 }
 
 func writeToolSchema(ent *entity.Entity) map[string]any {

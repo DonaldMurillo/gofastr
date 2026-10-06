@@ -210,7 +210,7 @@ func TestRestoreOneHooksAuditOpAndEvent(t *testing.T) {
 	})
 	ch.Hooks.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 		after = true
-		auditOp = AuditOperationFromContext(ctx) == "restore"
+		auditOp = AuditOperationFor(ctx, "invoices", "a1") == "restore"
 		if pre := AuditPreImageFromContext(ctx); pre != nil {
 			v, ok := pre["deleted_at"]
 			preImageDeleted = ok && v != nil
@@ -370,7 +370,7 @@ func TestPurgeOneHooksAuditOpAndEvent(t *testing.T) {
 	})
 	ch.Hooks.RegisterHook(hook.AfterDelete, func(ctx context.Context, _ any) error {
 		after = true
-		auditOp = AuditOperationFromContext(ctx) == "purge"
+		auditOp = AuditOperationFor(ctx, "invoices", "gone") == "purge"
 		return nil
 	})
 

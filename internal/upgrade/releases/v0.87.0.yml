@@ -210,8 +210,22 @@ notes:
     find:
       uses:
         - gofastr/framework/i18nui.LabelForField
-    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, ent.Config.Display), passing nil for display where the entity has none, and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
-  - change: "a filter operator must suit the field's type: like (?field_like=, like in ?where=) works only on a String, Text, Enum or UUID column and gt / lt / gte / lte are refused on a Bool column, on flat params, ?where=, relation filters (?rel.field_like=), include-scoped filters and Go-built predicates alike"
+    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, label), where label is the field's Display label string (\"\" where the field has none — the argument is the label text, not the Display config), and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
+  - change: "a filter operator must suit the field's type: like (?field_like=, like in ?where=) works only on a String, Text, Enum or UUID column and gt / gte / lt / lte are refused on a Bool or JSON column, on flat params, ?where=, relation filters (?rel.field_like=), include-scoped filters and Go-built predicates alike"
     breaking: true
     nodetect: "the operators arrive in request query strings and stored client links, which no source scan can find"
-    guidance: "Requests that sent like against a number, date or Bool column, or a range operator against a Bool, now answer 400: send eq / in for those columns instead."
+    guidance: "Requests that sent like against a number, date or Bool column, or a range operator against a Bool or JSON column, now answer 400: send eq / in for those columns instead."
+  - change: "crud.ListOptions.Filters (ListAll / CountAll) is validated like the ?field_<op>= parser: a filter naming an unknown, Hidden or NoQuery column, or an operator the column's type refuses, returns an error instead of reaching SQL, and a WireName resolves to its column"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/framework/crud.ListOptions.Filters
+    guidance: "Where a hand-built Filters slice reaches ListAll or CountAll, check every entry names a queryable column (not Hidden, not NoQuery) and an operator its type accepts (no like on a number, no range on a Bool or JSON column); use crud.ListOptions.Where with a filter.Predicate to keep the shape the ?where= parser accepts."
+  - change: "ui.WorkbenchConfig.RailWidth is a ui.WorkbenchRailWidth (WorkbenchRailNarrow 240px, the default 320px, WorkbenchRailWide 480px) instead of a free-form CSS length; any other value panics at render"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
+    guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."

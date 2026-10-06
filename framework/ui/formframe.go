@@ -52,21 +52,35 @@ type FormFrameConfig struct {
 	// width.
 	Side []render.HTML
 
-	// SideWidth overrides the side column's inline size. One plain
-	// CSS length (number + unit, e.g. "18rem", or a var(--token)
-	// reference); anything else is dropped and the CSS default
-	// applies. Defaults to 16rem, which fits a labelled select
-	// comfortably.
-	SideWidth string
+	// SideWidth names the side column's inline size from the small set
+	// the kit ships: FormFrameSideNarrow (12rem), the default (16rem,
+	// which fits a labelled select comfortably) and FormFrameSideWide
+	// (22rem). An unknown name panics at render — the widths are
+	// registered CSS reading the --ui-form-frame-side-narrow / -wide
+	// tokens (retune them on any ancestor), never an inline style
+	// attribute the default CSP strips.
+	SideWidth FormFrameSideWidth
 
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and style (SideWidth owns the inline custom
-	// property).
+	// ID), data-cui-*, and style (no surface of this component ships
+	// one).
 	ExtraAttrs html.Attrs
 }
+
+// FormFrameSideWidth is one of the named side-rail widths.
+type FormFrameSideWidth string
+
+const (
+	// FormFrameSideDefault is the 16rem rail.
+	FormFrameSideDefault FormFrameSideWidth = ""
+	// FormFrameSideNarrow is the 12rem rail.
+	FormFrameSideNarrow FormFrameSideWidth = "narrow"
+	// FormFrameSideWide is the 22rem rail.
+	FormFrameSideWide FormFrameSideWidth = "wide"
+)
 
 // FormFrame renders the two-column record-form frame. The frame is
 // its own query container and switches on its own inline size, so a
@@ -77,19 +91,18 @@ func FormFrame(cfg FormFrameConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
+	switch cfg.SideWidth {
+	case FormFrameSideDefault, FormFrameSideNarrow, FormFrameSideWide:
+		if cfg.SideWidth != FormFrameSideDefault {
+			cls += " fui-form-frame--side-" + string(cfg.SideWidth)
+		}
+	default:
+		panic("ui: FormFrame unknown SideWidth " + string(cfg.SideWidth) +
+			`. Pick one of: "" (default), narrow, wide`)
+	}
 	attrs := html.Attrs{"class": cls}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
-	}
-	if w := cssLengthOr(cfg.SideWidth, ""); w != "" {
-		// The rail width as a scoped custom property rather than an
-		// inline width, so the CSS keeps ownership of how the value is
-		// used and a strict-CSP host still gets no inline style
-		// attribute it has to allow. One plain CSS length only
-		// (cssLengthOr): a declaration list in request-derived config
-		// would otherwise ship verbatim as live page CSS. See
-		// core-ui/check/noinlinescripts.go.
-		attrs["style"] = "--ui-form-frame-side: " + w
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 
@@ -148,6 +161,18 @@ func formFrameCSS(_ style.Theme) string {
      select); min 0 lets the column shrink instead of overflowing the
      frame. */
   min-inline-size: 0;
+}
+/* Named rail widths. The modifier sets the --ui-form-frame-side knob
+   on the frame's root, where it outranks a value any ancestor
+   declared; each step reads its own token so a theme or page retunes
+   one width (--ui-form-frame-side-narrow / -wide) without touching the
+   others. The default rail stays 16rem through the knob's fallback in
+   the @container rule below. */
+[data-cui-comp="ui-form-frame"].fui-form-frame--side-narrow {
+  --ui-form-frame-side: var(--ui-form-frame-side-narrow, 12rem);
+}
+[data-cui-comp="ui-form-frame"].fui-form-frame--side-wide {
+  --ui-form-frame-side: var(--ui-form-frame-side-wide, 22rem);
 }
 /* A form 48rem wide holds a usable main column (28rem and up for
    field rows) beside the 16rem rail with room for the gap; below it

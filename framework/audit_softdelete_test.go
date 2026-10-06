@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // auditSoftDeleteApp builds a soft-delete posts app with the audit helper
@@ -75,6 +76,83 @@ func TestAudit_RestoreAndPurgeOps(t *testing.T) {
 			if ops[i] != want[i] {
 				t.Fatalf("audit ops = %v, want %v", ops, want)
 			}
+		}
+	})
+}
+
+// The restore/purge audit override is keyed to the entity and record it
+// is about: an AfterUpdate hook on entity A that writes a row of entity
+// B during A's restore must leave B's audit row saying "update" — the
+// operation B's write actually was — while A's own row says "restore".
+// Unkeyed, the override stained every nested write the hook chain made.
+func TestAudit_RestoreNestedWriteKeepsOwnOp(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("posts", entity.EntityConfig{
+			Table: "posts",
+			Scope: &entity.ScopeConfig{SoftDelete: true},
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false))
+		app.Entity("notes", entity.EntityConfig{
+			Table: "notes",
+			Fields: []schema.Field{
+				{Name: "body", Type: schema.String},
+			},
+		}.WithTimestamps(false))
+		if err := AutoMigrate(db, app.Registry); err != nil {
+			t.Fatalf("automigrate: %v", err)
+		}
+		app.WithAuditLog(AuditConfig{Actor: func(context.Context) string { return "alice" }})
+		posts, err := app.CrudHandler("posts")
+		if err != nil {
+			t.Fatal(err)
+		}
+		notes, err := app.CrudHandler("notes")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		post, err := posts.CreateOne(context.Background(), map[string]any{"title": "hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		postID, _ := post["id"].(string)
+		note, err := notes.CreateOne(context.Background(), map[string]any{"body": "untouched"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		noteID, _ := note["id"].(string)
+		if err := posts.DeleteOne(context.Background(), postID); err != nil {
+			t.Fatal(err)
+		}
+
+		// The hook the host registers: on every post update, touch the
+		// note. It runs inside RestoreOne with the restore's ctx.
+		app.HookRegistry("posts").RegisterHook(hook.AfterUpdate, func(ctx context.Context, _ any) error {
+			_, err := notes.UpdateOne(ctx, noteID, map[string]any{"body": "touched"})
+			return err
+		})
+
+		if err := posts.RestoreOne(context.Background(), postID); err != nil {
+			t.Fatalf("RestoreOne: %v", err)
+		}
+
+		ops := map[string]string{}
+		for _, r := range readAuditRows(t, db) {
+			if r["entity"].(string) == "notes" && r["record_id"].(string) == noteID {
+				ops["notes"] = r["op"].(string)
+			}
+			if r["entity"].(string) == "posts" && r["record_id"].(string) == postID && r["op"].(string) == "restore" {
+				ops["posts"] = r["op"].(string)
+			}
+		}
+		if ops["posts"] != "restore" {
+			t.Fatalf("the restored post's audit op = %q, want \"restore\"", ops["posts"])
+		}
+		if ops["notes"] != "update" {
+			t.Fatalf("SECURITY: the nested note write's audit op = %q, want \"update\": the restore override leaked into it", ops["notes"])
 		}
 	})
 }

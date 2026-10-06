@@ -1074,8 +1074,16 @@ a row whose column is NULL matches neither `=` nor `!=`, and no
 `OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
 `ne`/`in` leaf) when you want "everything except these".
 
-`_like` on a number, date or Bool column, or `_gt`/`_gte`/`_lt`/`_lte`
-on a Bool, is a 400: see "Operators must suit the field's type" below.
+`_like` on a number, date, Bool or JSON column, or `_gt`/`_gte`/`_lt`/`_lte`
+on a Bool or JSON column, is a 400: see "Operators must suit the field's
+type" below.
+
+**Field names cannot shadow an operator suffix.** A queryable field whose
+name or wire name is another queryable field's plus a suffix from the
+table above (`status` beside `status_ne`) is refused at entity
+registration: the parser tries the suffix first, so `?status_ne=` would
+filter `status` and the `status_ne` column could never be filtered at
+all. Rename one field or set a `WireName`.
 
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
@@ -1155,14 +1163,20 @@ like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
 
 **Operators must suit the field's type.** `like` works only on a
 String, Text, Enum or UUID column, and the ordered comparisons (`gt`,
-`lt`, `gte`, `lte`) are refused on Bool: SQL orders `false < true`, but
-no caller means that. `eq`, `ne` and `in` suit every type. The rule is
-`filter.CheckOpType`, and every filter surface applies it: the flat
-`?field_<op>=` params, `?where=`, Go-built predicates
-(`filter.ValidatePredicate` below), the filter DSL, relation filters
-(`?author.active_like=`, `crud.NestedFilter`) and include-scoped
-filters. A refusal is a 400 naming the operator, the key sent and the
-column type.
+`lt`, `gte`, `lte`) are refused on Bool and JSON: SQL orders
+`false < true`, but no caller means that, and a JSON blob has no order
+a request value can compare against. `eq`, `ne` and `in` suit every
+type. The rule is `filter.CheckOpType` (one predicate,
+`filter.OpSuitsType`, behind every surface), and every filter surface
+applies it: the flat `?field_<op>=` params, `?where=`, Go-built
+predicates (`filter.ValidatePredicate` below), the filter DSL, relation
+filters (`?author.active_like=`, `crud.NestedFilter`) and include-
+scoped filters — and every surface that ADVERTISES operators (the
+OpenAPI spec, the generated CLI's flags, the MCP list tool, `llm.md`,
+the SDK docs and readmes) derives its per-field set from the same
+predicate, so no client is offered a filter the server answers 400. A
+refusal is a 400 naming the operator, the key sent and the column
+type.
 
 **Safety.** Every field is validated against the entity's schema
 (Hidden fields rejected; the same value-disclosure-oracle rationale as
@@ -1203,8 +1217,10 @@ that depends on who is looking, say). It runs every `?where=` check over
 the tree: each leaf field exists and is neither Hidden nor NoQuery, the
 operator is known and suits the field's type, an `in` leaf carries 1 to
 1000 values, and the tree stays within the depth (8) and node (64)
-bounds. Wire aliases resolve to columns and Bool leaves get their
-coercion marker set, in place. Field names in a predicate are spliced
+bounds. It never writes to the input — the tree may be shared across
+goroutines — and returns a resolved deep copy: wire aliases resolved to
+columns, Bool leaves carrying their coercion marker. That copy is the
+tree to hand `BuildPredicate`. Field names in a predicate are spliced
 into SQL by `BuildPredicate` (values are bound placeholders), so this
 check is what keeps a hand-built tree safe to compile.
 
@@ -1214,8 +1230,11 @@ applies — flat filters, nested filters, search, owner, tenant,
 soft-delete and read scopes — as one parenthesized clause, so an `or`
 inside it cannot widen past a scope. The tree is validated again inside
 `ListAll`/`CountAll`, because a caller may have built it by hand; a
-refusal names the offending leaf. `ListOptions.Fields` narrows the
-columns a list reads to the named subset plus `id` (always included);
+refusal names the offending leaf. `ListOptions.Filters` is held to the
+flat parser's rules too: an entry naming an unknown, Hidden or NoQuery
+column, or an operator the column's type refuses, returns an error
+instead of reaching SQL, and a `WireName` resolves to its column.
+`ListOptions.Fields` narrows the columns a list reads to the named subset plus `id` (always included);
 unknown and Hidden names are refused, never silently dropped (a NoQuery
 column may be read: NoQuery keeps it out of filters and sorts only),
 and masking hooks still run on whatever came back. `CountAll` applies
@@ -1322,18 +1341,16 @@ every key lives under it, and an unknown key is a decode error.
 
 ### Every setting
 
-| Setting | What it does |
+| `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
-| `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name title-cased is |
 | `Description` | One line under the list heading |
 | `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden` |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
-| `Nav` | Sidebar placement: `Group` (a key), `Icon`, `Order`, `Hide`. `Hide` drops the entity from nav and the dashboard; it never changes what the admin exposes |
-| `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (how rows are drawn), and `Default` (at most one view may set it) |
+| `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |
 | `Form` | Where fields sit on the record: `Main` and `Side` columns of `FormItem`s |
 | `Card` | The fields a card shows when a list is drawn as cards: `Title`, `Subtitle`, `Badge`, `Meta` |
-| `Fields` | Per-field hints keyed by field name: `Label`, `Help`, `Placeholder`, `Locked` (drawn read-only on screens; the API may still write it), `Omit` (left out of forms and columns; the API still returns it), `ShowWhen` (`field = value` or `field in [...]` on an editable Enum or Bool field) |
+| `Fields` | Per-field hints keyed by field name: `Label`, `Help`, `Placeholder`, `Locked` (drawn read-only on screens; the API may still write it), `Omit` (left out of forms and columns; the API still returns it), `ShowWhen` (`field = value` or `field in [...]` on an editable Enum or Bool field). None of the three may take a Required field with no `Default` |
 | `PageSizes` | The page-size menu; every entry is positive and within `Pagination.MaxListLimit` when that is set |
 | `NoDuplicate`, `NoBulk` | Turn off the Duplicate row action, or every bulk action, for this entity |
 
@@ -1355,6 +1372,8 @@ request:
 - **Fields.** Every name in `Columns`, `TitleField`, `Facets`, `Card`,
   `Form` (items, rows, nested sections) and the keys of `Fields` must
   exist and not be `Hidden`.
+- **Duplicates.** `Columns`, `Facets` and `PageSizes` are menus; a
+  repeated entry is refused, naming the duplicate.
 - **Facet types.** A facet must be an Enum, Bool or Relation field, and
   not `NoQuery`.
 - **Keys.** View keys, form section keys and the nav group are lowercase
@@ -1368,20 +1387,24 @@ request:
   holds one to three distinct fields; only a section carries `Items`,
   `Help` and `Collapsed`, and holds at least one item; sections nest at
   most two deep; a field appears once across `Main` and `Side`.
-- **`Omit`.** Refused on a Required field with no `Default` and no
-  auto-generation: no form could create the record.
-- **`PageSizes`.** Every entry is positive and within
+- **`Omit`, `Locked`, `ShowWhen`.** Refused on a Required field with no
+  `Default` and no auto-generation: an omitted field is not on the
+  form, a locked one never submits (the save path drops it), and a
+  conditionally hidden one is disabled while its condition does not
+  hold — no form could create the record.
+- **`PageSizes`.** Every entry is positive, appears once, and is within
   `Pagination.MaxListLimit` when that is set.
-- **`Sort`.** A comma-separated list of `<field> ASC` or `<field> DESC`
-  (either case), each field existing and neither `Hidden` nor `NoQuery`:
-  `amount DESC, number ASC`.
+- **`As`.** A view's `As` is `"table"` (or empty, the same thing) or
+  `"cards"`; anything else is refused.
 
-A view's `Where` and a field's `ShowWhen` are parsed with the query DSL
-when `App.Entity` registers the entity (`framework/entity` cannot import
-the DSL), and a bad one fails registration the same way: a `Where` naming
-an unknown, Hidden or NoQuery field, or a `ShowWhen` that is anything but
-`field = value` or `field in [...]` over an editable Enum or Bool field
-whose values it names. The
+A view's `Where` and `Sort` and a field's `ShowWhen` are parsed with the
+query DSL when the app registers the entity — `App.Entity` and
+`GroupEntity` both run the check (`framework/entity` cannot import the
+DSL) — and a bad one fails registration the same way: a `Where` naming
+an unknown, Hidden or NoQuery field; a `Sort` outside the `?sort=`
+grammar (`amount DESC, number ASC`; a direction defaults to ASC); or a
+`ShowWhen` that is anything but `field = value` or `field in [...]`
+over an editable Enum or Bool field whose values it names. The
 translation keys Display's names produce (`entity.<entity>.*`,
 `nav.groups.<key>`) are listed on the
 [Internationalization](i18n.md) page.

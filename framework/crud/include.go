@@ -92,8 +92,8 @@ type convertedSubtree struct {
 //
 // Filters narrows the eager-load to rows on the target that match every
 // scoped predicate, e.g. include=comments(status=published) attaches only
-// published comments. Suffixes (_gt/_gte/_lt/_lte/_like/_in) work the same
-// way they do for top-level filters.
+// published comments. Operator suffixes work the same way they do for
+// top-level filters (filter.FilterSuffixes, one shared table).
 type IncludeNode struct {
 	Name     string                // segment name (matches the relation's Name)
 	Relation entity.Relation       // relation declared on the parent entity

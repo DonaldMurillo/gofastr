@@ -22,19 +22,22 @@ import (
 )
 
 // interceptStackPage draws the markup the intercept module mounts for
-// a four-layer drawer stack: the overlay host with one child per layer,
-// every layer but the top inert. Each layer holds a record header and
-// its details, the shape an entity record drawer shows.
-func interceptStackPage() string {
+// a stack with one layer per presentation in as: the overlay host with
+// one child per layer, each wearing the presentation the server chose
+// for it, every layer but the top inert. Each layer holds a record
+// header and its details, the shape an entity record drawer shows.
+func interceptStackPage(as ...string) string {
 	var b strings.Builder
 	b.WriteString(string(PageHeader(PageHeaderConfig{Title: "Invoices", Subtitle: "Every invoice, newest first"})))
-	b.WriteString(`<div id="cui-intercept" data-cui-intercept-overlay data-cui-intercept-as="drawer">`)
-	for i, rec := range []string{"INV-0042", "Acme Corp", "SUB-0007", "PAY-0193"} {
+	b.WriteString(`<div id="cui-intercept" data-cui-intercept-overlay>`)
+	recs := []string{"INV-0042", "Acme Corp", "SUB-0007", "PAY-0193"}
+	for i, a := range as {
+		rec := recs[i]
 		attrs := ""
-		if i < 3 {
+		if i < len(as)-1 {
 			attrs = ` inert aria-hidden="true"`
 		}
-		fmt.Fprintf(&b, `<div class="layer"%s>`, attrs)
+		fmt.Fprintf(&b, `<div class="layer" data-cui-intercept-as="%s"%s>`, a, attrs)
 		b.WriteString(string(PageHeader(PageHeaderConfig{Title: rec, Eyebrow: fmt.Sprintf("Layer %d", i+1), HeadingLevel: 2})))
 		b.WriteString(string(DetailList(DetailListConfig{Items: []DetailItem{
 			{Label: "Status", Value: "Open"},
@@ -55,7 +58,26 @@ type interceptLayerBox struct{ L, R, T, B, W float64 }
 // it (every layer casts the scrim over the layers under it); below the
 // drawer breakpoint every layer is a full-width sheet at the bottom
 // edge.
-func TestInterceptDrawersStackOverlapped(t *testing.T) {
+const interceptStackProbe = `(() => {
+	const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+	const ls = Array.from(document.querySelectorAll('#cui-intercept > .layer')).map(el => {
+		const r = el.getBoundingClientRect();
+		return {L: r.left, R: r.right, T: r.top, B: r.bottom, W: r.width};
+	});
+	return {VW: vw, VH: vh, Layers: ls};
+})()`
+
+type interceptStackBoxes struct {
+	VW, VH float64
+	Layers []interceptLayerBox
+}
+
+// interceptStackBrowser serves interceptStackPage(as...) under the
+// overlay CSS and the theme, and opens it at 1280x800 with reduced
+// motion: the enter animation is a translate, so without it the boxes
+// would be measured mid-flight.
+func interceptStackBrowser(t *testing.T, as ...string) context.Context {
+	t.Helper()
 	css := theme.Default().CSSCustomProperties() +
 		pageHeaderStyle.Entry().CSSFor(theme.Default()) +
 		detailListStyle.Entry().CSSFor(theme.Default()) +
@@ -64,42 +86,38 @@ func TestInterceptDrawersStackOverlapped(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html data-color-scheme="light"><head><meta charset=utf-8><meta name=viewport content="width=device-width"><style>%s</style></head><body>%s</body></html>`,
-			css, interceptStackPage())
+			css, interceptStackPage(as...))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
 		append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.WSURLReadTimeout(90*time.Second),
 			chromedp.NoSandbox, chromedp.WindowSize(1280, 800))...)
-	defer cancelAlloc()
+	t.Cleanup(cancelAlloc)
 	ctx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
+	t.Cleanup(cancel)
 	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelTimeout()
-
-	const probe = `(() => {
-		const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
-		const ls = Array.from(document.querySelectorAll('#cui-intercept > .layer')).map(el => {
-			const r = el.getBoundingClientRect();
-			return {L: r.left, R: r.right, T: r.top, B: r.bottom, W: r.width};
-		});
-		return {VW: vw, VH: vh, Layers: ls};
-	})()`
-	var got struct {
-		VW, VH float64
-		Layers []interceptLayerBox
-	}
-	var shot []byte
+	t.Cleanup(cancelTimeout)
 	if err := chromedp.Run(ctx,
-		// The enter animation is a translate; reduced motion drops it, so
-		// the boxes are measured where they rest.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return emulation.SetEmulatedMedia().
 				WithFeatures([]*emulation.MediaFeature{{Name: "prefers-reduced-motion", Value: "reduce"}}).
 				Do(ctx)
 		}),
 		chromedp.Navigate(srv.URL),
+	); err != nil {
+		t.Fatal(err)
+	}
+	return ctx
+}
+
+func TestInterceptDrawersStackOverlapped(t *testing.T) {
+	ctx := interceptStackBrowser(t, "drawer", "drawer", "drawer", "drawer")
+	const probe = interceptStackProbe
+	var got interceptStackBoxes
+	var shot []byte
+	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(probe, &got),
 		chromedp.CaptureScreenshot(&shot),
 	); err != nil {
@@ -183,4 +201,28 @@ func interceptStackShots(t *testing.T, ctx context.Context, suffix string) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.documentElement.setAttribute('data-color-scheme', 'light')`, nil)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestInterceptMixedStackDocksEachLayer: each layer docks by its own
+// presentation, so sheets over a drawer overlap at the bottom edge,
+// full width, and the drawer under them stays docked at the inline end.
+func TestInterceptMixedStackDocksEachLayer(t *testing.T) {
+	ctx := interceptStackBrowser(t, "drawer", "sheet", "sheet")
+	var got interceptStackBoxes
+	if err := chromedp.Run(ctx, chromedp.Evaluate(interceptStackProbe, &got)); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Layers) != 3 {
+		t.Fatalf("want 3 layers, got %d", len(got.Layers))
+	}
+	d := got.Layers[0]
+	if d.R != got.VW || d.T != 0 || d.B != got.VH || d.W != 480 {
+		t.Errorf("the drawer under the sheets is not docked full-height at the inline end, 480px wide: %+v", d)
+	}
+	for i, l := range got.Layers[1:] {
+		if l.L != 0 || l.W != got.VW || l.B != got.VH || l.T <= 0 {
+			t.Errorf("sheet %d is not a full-width layer at the bottom edge: %+v (viewport %.0fx%.0f)", i+1, l, got.VW, got.VH)
+		}
+	}
+	interceptStackShots(t, ctx, "-mixed")
 }

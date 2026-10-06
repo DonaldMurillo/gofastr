@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
 // Key is a translation key for framework UI surfaces.
@@ -644,9 +645,13 @@ func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator str
 
 // EntitySingular returns the entity's singular name for headings, buttons
 // and breadcrumbs: entity.<entity>.singular, else the Display singular,
-// else the entity name title-cased.
+// else the entity name singularized and title-cased. The singularization
+// matters: entity names are usually plurals ("invoices"), and a heading
+// that read "New Invoices" for ONE record is the bug the derived
+// fallback exists to avoid. Words the shared singularizer leaves alone
+// (irregulars like "people") come back title-cased, same as before.
 func EntitySingular(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
-	return displayLabel(ctx, tr, "entity."+entityName+".singular", display, entityName)
+	return displayLabel(ctx, tr, "entity."+entityName+".singular", display, inflect.Singular(entityName))
 }
 
 // EntityPlural returns the entity's plural name for nav and list headings:

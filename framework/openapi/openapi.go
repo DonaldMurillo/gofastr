@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
@@ -367,25 +368,22 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 				name = f.WireName
 			}
 			filterSchema := fieldToFilterSchema(f)
-			// Exact match, _ne and _in apply to every field type.
-			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
-			listOp.AddParameter(name+"_ne", "query", name+" not equal (NULL matches neither = nor !=)", false, filterSchema)
-			// Range operators only make sense for ordered/comparable
-			// types (numbers, timestamps, dates). Advertising _gt/_lt on
-			// a boolean or JSON blob misleads SDK generators into
-			// proposing comparisons the field can't satisfy.
-			if fieldSupportsRange(f.Type) {
-				listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
-				listOp.AddParameter(name+"_gte", "query", name+" greater than or equal", false, filterSchema)
-				listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
-				listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
+			// The advertised set is derived from filter.OpSuitsType, the same
+			// type predicate CheckOpType applies to ?field_<op>= (and every
+			// other filter surface), so the spec can never list an operator
+			// the runtime answers 400 — or hide one it accepts. Description
+			// and schema per operator are the spec's own; which types see the
+			// operator is the filter package's call, one source of truth.
+			for _, o := range advertisedFilterOps {
+				if !filter.OpSuitsType(o.op, f.Type) {
+					continue
+				}
+				ps := filterSchema
+				if o.stringSchema {
+					ps = map[string]any{"type": "string"}
+				}
+				listOp.AddParameter(name+o.suffix, "query", o.desc(name), false, ps)
 			}
-			// _like is a substring match, only meaningful for text-ish
-			// fields, not booleans or JSON.
-			if fieldSupportsLike(f.Type) {
-				listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
-			}
-			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
 		// ?q= free-text search: advertised only when the entity declares
@@ -688,19 +686,6 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	return s
 }
 
-// fieldSupportsRange reports whether _gt/_gte/_lt/_lte filter operators are
-// meaningful for a field type. Booleans and JSON blobs have no useful
-// ordering, so advertising range comparisons on them only misleads SDK
-// generators. Every other scalar/text type keeps its range operators.
-func fieldSupportsRange(t schema.FieldType) bool {
-	switch t {
-	case schema.Bool, schema.JSON:
-		return false
-	default:
-		return true
-	}
-}
-
 // requestSchema returns the write-request view of the entity schema:
 // excludeFieldsByBehavior, then the states rules. With enforced states
 // (declared and not Advisory) a create keeps the state field but narrows
@@ -768,16 +753,30 @@ func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.
 	return cp
 }
 
-// fieldSupportsLike reports whether the _like (substring) filter operator is
-// meaningful for a field type. A LIKE match makes no sense on a boolean or
-// an opaque JSON blob; all other types keep it.
-func fieldSupportsLike(t schema.FieldType) bool {
-	switch t {
-	case schema.Bool, schema.JSON:
-		return false
-	default:
-		return true
-	}
+// advertisedFilterOps is the spec's operator table: every
+// <field><suffix> query parameter the List operation describes, in
+// emission order. Membership per field type is NOT decided here — the
+// emitting loop consults filter.OpSuitsType, the one type predicate
+// behind filter.CheckOpType — so the spec and the runtime cannot drift
+// the way a local fieldSupportsLike once did (advertising _like on Int,
+// Float, Date and Decimal columns the filter parser refuses).
+var advertisedFilterOps = []struct {
+	suffix string
+	op     filter.FilterOp
+	desc   func(name string) string
+	// stringSchema selects the comma-list schema _in carries (a string
+	// whatever the column type); every other operator reuses the
+	// column's own filterSchema.
+	stringSchema bool
+}{
+	{"", filter.OpEq, func(n string) string { return "Exact match on " + n }, false},
+	{"_ne", filter.OpNe, func(n string) string { return n + " not equal (NULL matches neither = nor !=)" }, false},
+	{"_gt", filter.OpGt, func(n string) string { return n + " greater than" }, false},
+	{"_gte", filter.OpGte, func(n string) string { return n + " greater than or equal" }, false},
+	{"_lt", filter.OpLt, func(n string) string { return n + " less than" }, false},
+	{"_lte", filter.OpLte, func(n string) string { return n + " less than or equal" }, false},
+	{"_like", filter.OpLike, func(n string) string { return n + " contains (LIKE)" }, false},
+	{"_in", filter.OpIn, func(n string) string { return n + " in comma-separated list" }, true},
 }
 
 // fieldToFilterSchema returns an OpenAPI query parameter schema for filtering

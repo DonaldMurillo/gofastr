@@ -186,9 +186,12 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			}
 			diff := buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, row, auditMeta(ctx))
 			// A write that is an update in mechanism but its own operation
-			// in meaning (crud.RestoreOne) carries the override on ctx.
+			// in meaning (crud.RestoreOne) carries a keyed override on ctx:
+			// it answers only for this entity and record id, so a hook
+			// that writes ANOTHER entity's row mid-restore leaves that
+			// row's audit entry saying "update".
 			op := auditOpUpdate
-			if o := crud.AuditOperationFromContext(ctx); o != "" {
+			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
@@ -228,10 +231,11 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			} else if meta != nil {
 				diff = buildAuditDeleteDiff(nil, nil, meta)
 			}
-			// Same override seam as AfterUpdate: crud.PurgeOne's delete is
-			// recorded as "purge".
+			// Same override seam as AfterUpdate: crud.PurgeOne's delete of
+			// THIS record is recorded as "purge"; a nested delete of another
+			// entity's row keeps "delete".
 			op := auditOpDelete
-			if o := crud.AuditOperationFromContext(ctx); o != "" {
+			if o := crud.AuditOperationFor(ctx, ent.GetName(), originalID); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, sanitizeAuditField(recordID), cfg.actor(ctx), diff)

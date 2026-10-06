@@ -117,12 +117,14 @@
         redirect: 'follow',
         credentials: 'same-origin',
       });
+      // Reported before the redirect below: a committed form must be
+      // clean by the time the page unloads.
+      formResult(form, resp.ok);
       if (resp.redirected && resp.url) {
         // A hard navigation preserves the original form contract: the target
         // may not be in the SPA route table, and rebuilding also resets SSE.
         window.location.assign(resp.url);
       }
-      formResult(form, resp.ok);
     } catch (err) {
       // The write may have committed. Surface the failure so the user does not
       // press submit again and duplicate it.

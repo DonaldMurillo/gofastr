@@ -62,8 +62,9 @@ type nestedFilter struct {
 // relation references against the entity's declared relations. Multi-hop
 // nesting is supported up to depth 4 (e.g. `?comments.post.author.name=alice`).
 //
-// Suffixes (_gt/_gte/_lt/_lte/_like/_in) mirror ParseFilters semantics, but
-// the suffix applies to the FIELD half, not the relation half:
+// Suffixes (filter.FilterSuffixes, the one shared table) mirror
+// ParseFilters semantics, but the suffix applies to the FIELD half, not
+// the relation half:
 //
 //	?author.name_like=al%        ok
 //	?author_like.name=al         not supported

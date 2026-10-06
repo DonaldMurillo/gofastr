@@ -11,12 +11,13 @@ package app
 // intercept, so pages that never intercept carry none of it.
 //
 // Every value is a theme token, so the overlay inherits an app's palette,
-// spacing, and radii without an override. Presentation keys off
-// data-cui-intercept-as, which the SERVER sets from the registered
-// ScreenType, the client cannot pick its own chrome.
+// spacing, and radii without an override. Presentation keys off each
+// layer's data-cui-intercept-as, which the SERVER sets from the
+// registered ScreenType (the client cannot pick its own chrome), so one
+// stack can hold a sheet over a drawer.
 func InterceptOverlayCSS() string {
 	return `/* Intercepted-route overlay: a scrim over the page that stays
-   mounted underneath, with the screen render docked to an edge. */
+   mounted underneath, with each layer docked to an edge. */
 [data-cui-intercept-overlay] {
   position: fixed;
   inset: 0;
@@ -25,10 +26,12 @@ func InterceptOverlayCSS() string {
      paints UNDER app chrome — a sticky site header sits at 50 — and the
      top of the overlay gets clipped. */
   z-index: var(--z-modal, 300);
-  display: flex;
   background: var(--ui-intercept-overlay-bg, rgba(0, 0, 0, 0.45));
 }
+/* Every layer is positioned on its own, so stacked layers overlap
+   instead of sharing the host's width. */
 [data-cui-intercept-overlay] > * {
+  position: absolute;
   background-color: var(--color-surface, #fff);
   color: var(--color-text, #18181b);
   overflow-y: auto;
@@ -47,26 +50,26 @@ func InterceptOverlayCSS() string {
 /* Drawer: docked to the inline end, full height. Stacked drawers
    overlap there, each one a step narrower than the layer under it, so
    the lower layers stay visible as a strip at the inline start. */
-[data-cui-intercept-as="drawer"] > * {
-  position: absolute;
+[data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"] {
   inset-block: 0;
   inset-inline-end: 0;
   width: min(var(--ui-intercept-drawer-w, 480px), 100%);
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
 }
-[data-cui-intercept-as="drawer"] > :nth-child(2) {
+[data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(2) {
   width: min(calc(var(--ui-intercept-drawer-w, 480px) - var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
-[data-cui-intercept-as="drawer"] > :nth-child(3) {
+[data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(3) {
   width: min(calc(var(--ui-intercept-drawer-w, 480px) - 2 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
-[data-cui-intercept-as="drawer"] > :nth-child(4) {
+[data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(4) {
   width: min(calc(var(--ui-intercept-drawer-w, 480px) - 3 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
-/* Sheet: docked to the bottom, capped so the page stays visible above. */
-[data-cui-intercept-as="sheet"] { align-items: flex-end; }
-[data-cui-intercept-as="sheet"] > * {
-  width: 100%;
+/* Sheet: docked to the bottom, capped so the page stays visible above.
+   Stacked sheets overlap at the bottom edge, full width. */
+[data-cui-intercept-overlay] > [data-cui-intercept-as="sheet"] {
+  inset-inline: 0;
+  inset-block-end: 0;
   max-height: var(--ui-intercept-sheet-h, 85vh);
   border-top: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   border-start-start-radius: var(--radii-lg, 10px);
@@ -77,8 +80,9 @@ func InterceptOverlayCSS() string {
 @media (max-width: 768px) {
   /* :nth-child(n) outranks the per-depth widths above; stacked sheets
      overlap at the bottom edge, full width. */
-  [data-cui-intercept-as="drawer"] > :nth-child(n) {
+  [data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(n) {
     inset-block-start: auto;
+    inset-inline: 0;
     width: 100%;
     height: auto;
     max-height: var(--ui-intercept-sheet-h, 85vh);

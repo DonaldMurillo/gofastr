@@ -24,28 +24,55 @@ var (
 	ErrNotSoftDeleted = errors.New("crud: record is not soft-deleted")
 )
 
+// ErrForbidden is wrapped around every RestoreOne/PurgeOne access
+// refusal, so an in-process caller can tell a permission denial from a
+// not-found (the two share a 40x shape but mean different things to an
+// admin screen). Not seen by writeCRUDError: both operations are
+// in-process only, no HTTP route maps their errors.
+var ErrForbidden = errors.New("crud: forbidden")
+
 type auditOperationKey struct{}
+
+// auditOperation is the ctx-carried override RestoreOne and PurgeOne
+// stamp: the operation the audit row should name, keyed to the ONE
+// entity and record the operation is about. The key is what keeps the
+// override from leaking into nested writes: a hook on entity A that
+// updates a row of entity B during A's restore must leave B's audit row
+// saying "update", so only an (entity, id) match answers the override.
+type auditOperation struct {
+	entity string
+	id     string
+	op     string
+}
 
 // withAuditOperation overrides the operation name audit hooks record for
 // the writes whose ctx carries it. Unexported so only this package names
-// an operation: app code cannot forge a "purge" row in the trail. RestoreOne sets "restore" and PurgeOne
-// "purge" before running the ordinary update/delete hook chains, so an
+// an operation: app code cannot forge a "purge" row in the trail.
+// RestoreOne sets "restore" and PurgeOne "purge" for the one record they
+// act on, before running the ordinary update/delete hook chains, so an
 // audit row (framework.WithAuditLog) says what actually happened instead
-// of "update"/"delete". The value flows only on ctx, never a request
-// body, and is sanitized by the audit writer.
-func withAuditOperation(ctx context.Context, op string) context.Context {
+// of "update"/"delete" — for THAT record, and for nothing a hook writes
+// on the way through. The value flows only on ctx, never a request body,
+// and is sanitized by the audit writer.
+func withAuditOperation(ctx context.Context, entity, id, op string) context.Context {
 	if op == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, auditOperationKey{}, op)
+	return context.WithValue(ctx, auditOperationKey{}, auditOperation{entity: entity, id: id, op: op})
 }
 
-// AuditOperationFromContext returns the operation override set by
-// withAuditOperation, or "" when none is present. Audit hooks consult it
-// for the op column; empty means "use the hook's own operation".
-func AuditOperationFromContext(ctx context.Context) string {
-	op, _ := ctx.Value(auditOperationKey{}).(string)
-	return op
+// AuditOperationFor returns the operation override stamped for exactly
+// this entity and record id, or "" when none matches. Audit hooks
+// consult it for the op column; empty means "use the hook's own
+// operation". The entity and id match is load-bearing: a hook chain may
+// write other entities' rows inside one restore or purge, and those
+// rows' audit entries must name their own operation, not the outer one.
+func AuditOperationFor(ctx context.Context, entity, id string) string {
+	o, ok := ctx.Value(auditOperationKey{}).(auditOperation)
+	if !ok || o.entity != entity || o.id != id {
+		return ""
+	}
+	return o.op
 }
 
 // RestoreOne clears the soft-delete marker on one record: the admin's
@@ -54,9 +81,10 @@ func AuditOperationFromContext(ctx context.Context) string {
 // access.CanResource call the update route makes — so a resource-aware
 // Decider on ctx can deny the one record — and the BeforeUpdate and
 // AfterUpdate hooks, the audit row (operation "restore") and the
-// entity.updated event all fire as they do for UpdateOne. WithServerWrites
-// skips the permission question, matching every other trusted-write
-// escape hatch; owner and tenant context are still required.
+// entity.updated event all fire as they do for UpdateOne. A permission
+// denial is wrapped in ErrForbidden; WithServerWrites skips the
+// permission question, matching every other trusted-write escape hatch;
+// owner and tenant context are still required.
 //
 // Visibility answers the read question first: a row the caller cannot see
 // under owner and tenant scoping answers errNotFound, the same error a
@@ -74,7 +102,7 @@ func (ch *CrudHandler) RestoreOne(ctx context.Context, id string) error {
 		return err
 	}
 	if !serverWrites(ctx) && !ch.itemPermitted(ctx, opUpdate, id) {
-		return fmt.Errorf("access denied: missing permission %s", ch.permissionForOp(opUpdate))
+		return fmt.Errorf("%w: missing permission %s", ErrForbidden, ch.permissionForOp(opUpdate))
 	}
 	req := syntheticRequest(ctx, http.MethodPatch, "/")
 	var result map[string]any
@@ -113,7 +141,7 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 		return err
 	}
 	if !serverWrites(ctx) && !ch.itemPermitted(ctx, opDelete, id) {
-		return fmt.Errorf("access denied: missing permission %s", ch.permissionForOp(opDelete))
+		return fmt.Errorf("%w: missing permission %s", ErrForbidden, ch.permissionForOp(opDelete))
 	}
 	req := syntheticRequest(ctx, http.MethodDelete, "/")
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
@@ -174,7 +202,7 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 		return nil, ErrNotSoftDeleted
 	}
 	ctx = WithAuditPreImage(ctx, pre)
-	ctx = withAuditOperation(ctx, "restore")
+	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "restore")
 
 	if ch.Hooks != nil {
 		// Empty body: restore changes no data column. Hooks that need to
@@ -232,7 +260,7 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 		return ErrNotSoftDeleted
 	}
 	ctx = WithAuditPreImage(ctx, pre)
-	ctx = withAuditOperation(ctx, "purge")
+	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "purge")
 
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {

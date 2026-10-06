@@ -257,7 +257,7 @@ func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id
 		if err := ch.allowStateOverride(ctx); err != nil {
 			return ctx, err
 		}
-		return withAuditOperation(ctx, "state_override"), nil
+		return withAuditOperation(ctx, ch.Entity.GetName(), id, "state_override"), nil
 	}
 	current, _ := stored[ch.convertKey(st.Field)].(string)
 	return ctx, &StateError{Field: changed[0], Current: current, Moves: openMoves(st, current)}
@@ -479,7 +479,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		return nil, &TransitionConflictError{Key: t.Key, Current: current, Moves: openMoves(st, current)}
 	}
 	ctx = WithAuditPreImage(ctx, pre)
-	ctx = withAuditOperation(ctx, "transition:"+t.Key)
+	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "transition:"+t.Key)
 	ctx = context.WithValue(ctx, transitionKey{}, t.Key)
 
 	writes := map[string]any{st.Field: t.To}

@@ -78,19 +78,27 @@ var textualColumnTypes = map[schema.FieldType]bool{
 	schema.UUID:   true,
 }
 
-// opSuitsType reports whether op is meaningful on a column of type t.
+// OpSuitsType reports whether op is meaningful on a column of type t. It
+// is the one type predicate behind every filter surface: CheckOpType,
+// the URL parsers, and the OpenAPI spec generator's advertised-operator
+// set all read it, so no surface can accept (or advertise) an operator
+// another refuses.
+//
 // OpLike is a text-shape question and is refused on non-text columns (a
-// `like` on an Int or Bool is always a client bug, and on a JSON column it
-// quietly depends on dialect-specific text coercion). The ordered
-// comparisons are refused on Bool: SQL orders false < true, but no caller
-// means that, and accepting it invites accidental always-true predicates.
-// OpEq, OpNe and OpIn suit every type; their values are bound parameters.
-func opSuitsType(op FilterOp, t schema.FieldType) bool {
+// `like` on an Int or Bool is always a client bug, and on a JSON column
+// it quietly depends on dialect-specific text coercion). The ordered
+// comparisons are refused on Bool: SQL orders false < true, but no
+// caller means that, and accepting it invites accidental always-true
+// predicates. OpEq, OpNe and OpIn suit every type; their values are
+// bound parameters.
+func OpSuitsType(op FilterOp, t schema.FieldType) bool {
 	switch op {
 	case OpLike:
 		return textualColumnTypes[t]
 	case OpGt, OpLt, OpGte, OpLte:
-		return t != schema.Bool
+		// A Bool has two values and a JSON blob no order a request value
+		// can compare against (Postgres casts the value to JSONB first).
+		return t != schema.Bool && t != schema.JSON
 	default: // OpEq, OpNe, OpIn
 		return true
 	}
@@ -101,7 +109,7 @@ func opSuitsType(op FilterOp, t schema.FieldType) bool {
 // Go-built predicates, nested ?rel.field_<op>= filters and include-scoped
 // filters. The error names the field the caller sent.
 func CheckOpType(field string, op FilterOp, t schema.FieldType) error {
-	if opSuitsType(op, t) {
+	if OpSuitsType(op, t) {
 		return nil
 	}
 	return fmt.Errorf("operator %q cannot filter %q (type %s)", op, field, fieldTypeName(t))
@@ -144,12 +152,14 @@ func fieldTypeName(t schema.FieldType) string {
 	return "unknown"
 }
 
-// validateLeaf checks one leaf node against idx. It mutates p in place the
-// way ParseWhere's parse node does: a wire alias resolves to the column
-// name (Predicate.Field reaches the WHERE clause), and isBool is (re)set
+// validateLeaf checks one leaf node against idx. It writes the two
+// resolutions the tree that reaches SQL needs, on the COPY
+// ValidatePredicate built (parseNode does the same on its fresh nodes
+// at parse time): a wire alias resolves to the column name
+// (Predicate.Field reaches the WHERE clause), and isBool is (re)set
 // from the schema so BuildPredicate coerces true/false spellings to Go
-// bools. A caller that hand-set isBool on a non-Bool column loses it here,
-// the schema is the authority.
+// bools. A caller that hand-set isBool on a non-Bool column loses it
+// here, the schema is the authority.
 func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 	if p.Field == "" {
 		return fmt.Errorf("where: predicate leaf has no field")
@@ -195,9 +205,14 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 // NoQuery (Hidden under either its column name or its wire alias), the
 // operator is known and suits the field's type, an OpIn leaf carries 1…
 // MaxINListEntries values, and the tree stays inside the depth and node
-// caps. Wire aliases resolve to column names and Bool leaves get their
-// coercion marker set, both in place, so the tree that passed is the tree
-// BuildPredicate compiles.
+// caps.
+//
+// It never writes to the input: the caller's tree may be shared across
+// goroutines (a parsed Display view handed to concurrent requests), so
+// the two resolutions a validated tree carries — a wire alias resolved
+// to its column name, a Bool leaf's coercion marker — are written on a
+// deep copy that is returned, and that copy is the tree to hand
+// BuildPredicate. The input stays byte-for-byte what the caller built.
 //
 // Field names in a predicate are spliced into SQL by BuildPredicate (values
 // are bound as placeholders, names are not), so this check is what keeps a
@@ -206,14 +221,36 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 // key — is refused before any SQL exists. A node that is neither a
 // well-formed leaf nor a non-empty group is refused too.
 //
-// nil is valid (the empty predicate) and returns nil.
-func ValidatePredicate(p *Predicate, fields []schema.Field) error {
+// nil is valid (the empty predicate) and returns (nil, nil).
+func ValidatePredicate(p *Predicate, fields []schema.Field) (*Predicate, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
 	idx := newPredicateFieldIndex(fields)
 	count := 0
-	return validatePredicateNode(p, idx, 1, &count)
+	resolved := copyPredicateTree(p)
+	if err := validatePredicateNode(resolved, idx, 1, &count); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+// copyPredicateTree deep-copies a predicate tree: every node and every
+// Values slice is rebuilt, so the resolutions validateLeaf writes land on
+// memory the caller of ValidatePredicate owns alone.
+func copyPredicateTree(p *Predicate) *Predicate {
+	c := *p
+	if len(p.Values) > 0 {
+		c.Values = append([]string(nil), p.Values...)
+	}
+	c.Children = nil
+	if len(p.Children) > 0 {
+		c.Children = make([]Predicate, len(p.Children))
+		for i := range p.Children {
+			c.Children[i] = *copyPredicateTree(&p.Children[i])
+		}
+	}
+	return &c
 }
 
 func validatePredicateNode(p *Predicate, idx *predFieldIndex, depth int, count *int) error {

@@ -31,8 +31,9 @@
 // Lower layers stay in the DOM untouched — their unsaved edits survive
 // — and go inert + aria-hidden; only the top layer takes focus and the
 // Tab trap. Back closes exactly the top layer and restores focus to the
-// control that opened it; a popstate the leave guard declines is
-// re-pushed so history.length comes back to what it was.
+// control that opened it; a history move the leave guard declines is
+// undone with history.go back to the entry it left, so the history list
+// stays as it was in either direction.
 //
 // A link inside a pane that changes only the pane's own query re-renders
 // INSIDE the pane (the pane's URL gains one history entry per click,
@@ -45,13 +46,25 @@
 
   const OVERLAY_ID = 'cui-intercept';
   const MAX_LAYERS = 4;
-  // Each layer: { el, urls: [full URLs it showed], cur, fromURL, as,
-  // restoreFocus }. urls/cur record every history entry the layer owns
-  // (its open and its query changes), so popstate
-  // can tell a move WITHIN a layer (refetch the pane) from a move that
-  // closes layers, for any depth of stack.
+  // Each layer: { el, key, p0, cur, url, fromURL, restoreFocus }. A
+  // layer owns the history entries p0..p0+cur (its open and its query
+  // changes), counted from the page under the stack at 0, so a layer
+  // opened over another starts one past the lower layer's current entry.
   const layers = [];
   let underPath = ''; // the page under the stack, captured at first open
+  // Identity for history entries: stackId names the open stack, each
+  // layer gets a key. RUN keeps entries from an earlier document load
+  // from matching this one's.
+  const RUN = Math.random().toString(36).slice(2) + ':';
+  let seq = 0;
+  let stackId = '';
+  // Bumped by every move that changes what the stack shows. A fetch
+  // captures it and drops its answer when it moved meanwhile, so a pane
+  // closed (or superseded) mid-fetch is never written into or revived.
+  let epoch = 0;
+  // The entry a declined move's history.go is heading back to: its
+  // popstate is the repair arriving, not a move of its own.
+  let repair = null;
   // The anchor of the click core is handling. Recorded on window in the
   // capture phase, so it is set before core's document listener runs;
   // document.activeElement is no substitute (Safari never focuses a
@@ -84,7 +97,17 @@
   // Every history write here is a RAW pushState on purpose: currentPath
   // must stay on the page UNDER the stack, so popstate diffs inside the
   // router see no path change and never refetch the list underneath.
-  function rawPush(url) { history.pushState(null, '', url); }
+  // The entry is tagged {s: stack, k: layer, i: index in the layer}, so
+  // popstate resolves the entry it landed on exactly (one URL can recur
+  // in a pane's history) and knows how far the move went.
+  function rawPush(t) { history.pushState({ cui: { s: stackId, k: t.key, i: t.cur } }, '', t.url); }
+
+  // A fresh render of a layer, wearing the presentation the server
+  // chose for it. Each layer carries its own: a stack can mix them.
+  function swap(t, res) {
+    t.el.innerHTML = res.html;
+    t.el.setAttribute('data-cui-intercept-as', res.as);
+  }
 
   function overlayHost() {
     let el = document.getElementById(OVERLAY_ID);
@@ -153,17 +176,21 @@
   }
 
   function mountLayer(res, path, hash, fromURL, trigger) {
-    if (!layers.length) underPath = location.pathname + location.search;
-    const el = overlayHost();
-    el.setAttribute('data-cui-intercept-as', res.as);
-    const child = document.createElement('div');
-    child.innerHTML = res.html;
-    el.appendChild(child);
+    const below = top();
+    if (!below) {
+      // The page under the stack is entry 0 of the new stack.
+      underPath = location.pathname + location.search;
+      stackId = RUN + ++seq;
+      try { history.replaceState(Object.assign({}, history.state, { cui: { s: stackId } }), '', location.href); } catch (_) {}
+    }
+    const t = { el: document.createElement('div'), key: RUN + ++seq, p0: below ? below.p0 + below.cur + 1 : 1, cur: 0, url: path + (hash || ''), fromURL, restoreFocus: trigger };
+    swap(t, res);
+    overlayHost().appendChild(t.el);
     if (NS.doc) NS.doc.lockScroll('intercept');
-    layers.push({ el: child, urls: [path + (hash || '')], cur: 0, fromURL, as: res.as, restoreFocus: trigger });
+    layers.push(t);
     setStacking();
-    rawPush(path + (hash || ''));
-    focusFirst(child);
+    rawPush(t);
+    focusFirst(t.el);
     // No explicit rescan: core's MutationObserver watches document.body
     // with subtree:true and demand-loads modules for markers in newly
     // inserted nodes, which is exactly how dynamically-opened widget
@@ -176,17 +203,18 @@
   function claimQuery(path, hash) {
     const t = top();
     const u = path + (hash || '');
-    const sameURL = u === t.urls[t.cur];
+    const e = ++epoch;
     fetchOverlay(path, t.fromURL)
       .then((res) => {
+        if (e !== epoch) return;
         if (!res) { fallbackNav(path, hash); return; }
-        t.el.innerHTML = res.html;
-        t.as = res.as;
-        overlayHost().setAttribute('data-cui-intercept-as', res.as);
-        if (!sameURL) { t.urls.push(u); t.cur = t.urls.length - 1; rawPush(u); }
+        swap(t, res);
+        // The push drops the entries ahead of this one, the same as the
+        // browser does: the layer now ends here.
+        if (u !== t.url) { t.cur++; t.url = u; rawPush(t); }
         focusFirst(t.el);
       })
-      .catch(() => fallbackNav(path, hash));
+      .catch(() => { if (e === epoch) fallbackNav(path, hash); });
   }
 
   // Close the top layer from a direct gesture (Esc, the close control,
@@ -197,17 +225,17 @@
     const t = top();
     if (!t) return;
     if (!guardOK(t.el)) return;
-    const back = t.cur + 1; // entries this layer owns above the layer below
-    const focus = t.restoreFocus;
+    epoch++;
     layers.pop();
     t.el.remove();
-    settleAfterDrop(focus);
-    if (back > 0) history.go(-back);
+    settleAfterDrop(t.restoreFocus);
+    history.go(-(t.cur + 1)); // the entries this layer owns
   }
 
   // Drop every layer without a history move: a real navigation has
   // taken over the URL (gofastr:navigate) or a popstate left the stack.
   function closeAllNow() {
+    epoch++;
     if (!layers.length) return;
     layers.length = 0;
     const el = document.getElementById(OVERLAY_ID);
@@ -220,7 +248,6 @@
   function settleAfterDrop(focus) {
     if (layers.length) {
       setStacking();
-      overlayHost().setAttribute('data-cui-intercept-as', top().as);
     } else {
       const el = document.getElementById(OVERLAY_ID);
       if (el) el.remove();
@@ -255,8 +282,8 @@
       const t = top();
       const inPane = !!(anchor && cont.contains(anchor));
       // The pane's own URL, query-only change: stay in the pane.
-      if (inPane && pathOf(path) === pathOf(t.urls[t.cur])) return { kind: 'query' };
-      const origin = inPane ? t.urls[t.cur] : underPath;
+      if (inPane && pathOf(path) === pathOf(t.url)) return { kind: 'query' };
+      const origin = inPane ? t.url : underPath;
       if (!target || !target.intercept) return null;
       const o = routeFor(pathOf(origin));
       if (!o || o.path !== target.intercept.from) return null;
@@ -304,73 +331,88 @@
       return true;
     }
     const trigger = anchor || document.activeElement;
+    const e = ++epoch;
     fetchOverlay(path, d.origin)
       .then((res) => {
+        if (e !== epoch) return;
         if (!res) { fallbackNav(path, hash); return; }
         mountLayer(res, path, hash, d.origin, trigger);
       })
-      .catch(() => fallbackNav(path, hash));
+      .catch(() => { if (e === epoch) fallbackNav(path, hash); });
     return true;
   };
 
   // Core's popstate handler calls this FIRST: an open stack owns every
-  // history move whose URL one of its layers recorded. true = handled,
+  // history move onto an entry one of its layers wrote. true = handled,
   // the router stands down; false = no claim, load as usual (which
   // includes the no-op diff back to the page underneath).
   NS._interceptPopstate = function () {
+    const tag = (history.state && history.state.cui) || {};
+    if (repair) {
+      const r = repair;
+      repair = null;
+      if (r.k === tag.k && r.i === tag.i) return true;
+    }
+    epoch++;
     if (!layers.length) return false;
-    const u = location.pathname + location.search + location.hash;
-    for (let i = layers.length - 1; i >= 0; i--) {
-      const j = layers[i].urls.indexOf(u);
-      if (j === -1) continue;
-      if (i === layers.length - 1 && j === layers[i].cur) return true; // nothing to do
+    const t = top();
+    // A declined move cannot be cancelled; go back to the entry it left
+    // by the distance it moved, so nothing ahead of it is truncated.
+    const undo = (p) => { repair = { k: t.key, i: t.cur }; history.go(t.p0 + t.cur - p); };
+    const i = tag.s === stackId && tag.k ? layers.findIndex((l) => l.key === tag.k) : -1;
+    if (i >= 0) {
+      const lay = layers[i];
+      const j = tag.i;
+      if (lay === t && j === t.cur) return true; // nothing to do
       // What the move discards: the layers closing above i, plus layer
       // i's current content when the move refetches it.
-      const scope = [];
-      for (let k = layers.length - 1; k > i; k--) scope.push(layers[k].el);
-      const refetch = j !== layers[i].cur;
-      if (refetch) scope.push(layers[i].el);
-      if (!guardOK(scope)) {
-        // Back cannot be cancelled; put the declined entry back so the
-        // URL, the stack and history.length all stay where they were.
-        const t = top();
-        rawPush(t.urls[t.cur]);
-        return true;
-      }
+      const scope = layers.slice(i + 1).map((l) => l.el);
+      const refetch = j !== lay.cur;
+      if (refetch) scope.push(lay.el);
+      if (!guardOK(scope)) { undo(lay.p0 + j); return true; }
+      // Focus returns to the control that opened the LOWEST closed
+      // layer: it lives in layer i, the one left showing.
       let focus = null;
       while (layers.length > i + 1) {
         const shut = layers.pop();
-        if (!focus) focus = shut.restoreFocus;
+        focus = shut.restoreFocus;
         shut.el.remove();
       }
-      const lay = layers[i];
       if (refetch) {
+        const u = location.pathname + location.search + location.hash;
+        const e = epoch;
         lay.cur = j;
+        lay.url = u;
         fetchOverlay(u, lay.fromURL)
           .then((res) => {
-            if (!res) { fallbackNav(pathOf(u), ''); return; }
-            lay.el.innerHTML = res.html;
-            lay.as = res.as;
-            overlayHost().setAttribute('data-cui-intercept-as', res.as);
+            if (e !== epoch) return;
+            if (!res) { fallbackNav(u, ''); return; }
+            swap(lay, res);
           })
-          .catch(() => {});
+          .catch(() => { if (e === epoch) fallbackNav(u, ''); });
       }
       settleAfterDrop(focus);
       return true;
     }
-    // The URL belongs to none of the layers (the base page, or a page
-    // further afield): closing the whole stack still discards every
-    // layer's content, and a page further afield replaces the page under
-    // the stack too, so the guard has its say here as well (null scope =
-    // the whole document). Declined, re-push and stand down; accepted,
-    // drop the stack and let the router load the destination.
-    const scope = [];
-    for (const l of layers) scope.push(l.el);
-    if (!guardOK(location.pathname + location.search === underPath ? scope : null)) {
-      rawPush(top().urls[top().cur]);
+    // The entry belongs to none of the layers (the page under the
+    // stack, or a page further afield): closing the whole stack still
+    // discards every layer's content, and a page further afield replaces
+    // the page under the stack too, so the guard has its say here as
+    // well (null scope = the whole document). Declined, go back to the
+    // stack (an entry outside it has no known distance, so the top's
+    // entry is pushed again instead); accepted, drop the stack and let
+    // the router load the destination.
+    const base = tag.s === stackId && !tag.k;
+    if (!guardOK(base ? layers.map((l) => l.el) : null)) {
+      if (base) undo(0);
+      else rawPush(t);
       return true;
     }
+    // Back on the page under the stack, focus returns to the control
+    // that opened the first layer.
+    const focus = base && layers[0].restoreFocus;
     closeAllNow();
+    refocus(focus);
     return false;
   };
 

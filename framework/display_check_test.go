@@ -41,6 +41,58 @@ func TestDisplayQueriesAcceptValid(t *testing.T) {
 	}
 }
 
+// A view's Sort is parsed with the same DSL ?sort= uses: a bad
+// direction, an unknown or Hidden field, or a NoQuery field refuses the
+// registration naming the view; a bare field (direction defaults to
+// ASC) and a multi-key sort pass, matching the URL grammar.
+func TestDisplayViewSortParsedByDSL(t *testing.T) {
+	bad := map[string]string{
+		"bad direction": `paid_on SIDEWAYS`,
+		"trailing junk": `paid_on ASC extra`,
+		"empty key":     `paid_on ASC,`,
+		"unknown field": `nope ASC`,
+		"hidden field":  `secret ASC`,
+		"noquery field": `notes ASC`,
+	}
+	for name, sort := range bad {
+		err := tryDisplay(t, &entity.DisplayConfig{
+			Views: []entity.ListView{{Key: "open", Sort: sort}},
+		})
+		if err == nil || !strings.Contains(err.Error(), `display view "open" sort`) {
+			t.Fatalf("%s: sort %q accepted: %v", name, sort, err)
+		}
+	}
+	for _, sort := range []string{"paid_on", "paid_on desc", `paid_on DESC, title ASC`} {
+		if err := tryDisplay(t, &entity.DisplayConfig{
+			Views: []entity.ListView{{Key: "open", Sort: sort}},
+		}); err != nil {
+			t.Fatalf("valid sort %q refused: %v", sort, err)
+		}
+	}
+}
+
+// GroupEntity runs the same Display boot check App.Entity runs: a bad
+// view Where refuses the registration at the group call, naming the
+// view, instead of failing at first screen render.
+func TestGroupEntityRefusesBadViewWhere(t *testing.T) {
+	app := atomicTestApp(t)
+	g := app.Group("/billing")
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("GroupEntity accepted a bad view Where")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, `display view "open" where`) || !strings.Contains(msg, "unknown") {
+			t.Fatalf("panic = %v, want the display view refusal naming the view", r)
+		}
+	}()
+	app.GroupEntity(g, "invoices", EntityConfig{
+		Fields:  displayCheckFields(),
+		Display: &entity.DisplayConfig{Views: []entity.ListView{{Key: "open", Where: `nope = "x"`}}},
+	})
+}
+
 func TestDisplayViewWhereRefused(t *testing.T) {
 	cases := map[string]string{
 		"syntax":  `status = `,

@@ -7,7 +7,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -21,10 +20,9 @@ import (
 //
 // Where the entity already says something (search fields, page limits, who may
 // write), Display reads it rather than repeating it. Strings that hold a query
-// (a view's Where, a field's ShowWhen) are not parsed here: this package
-// cannot import the query DSL, so App.Entity parses them when the app
-// registers the entity. A view's Sort is checked here because
-// "<field> ASC|DESC" needs no DSL.
+// (a view's Where and Sort, a field's ShowWhen) are not parsed here: this
+// package cannot import the query DSL, so App.Entity and GroupEntity parse
+// them when the app registers the entity.
 type DisplayConfig struct {
 	Singular    string   `json:"singular,omitempty"`
 	Plural      string   `json:"plural,omitempty"`
@@ -67,10 +65,10 @@ type EntityNav struct {
 
 // ListView is a named starting point for a list: a DSL Where and Sort, an
 // optional As for how rows are drawn ("table", "cards"), and Default for the
-// one view that opens when the URL names none. A view whose filter depends on
-// the caller names no Where; its func is registered under the view's key next
-// to the screens (entityui.Extensions), which is also where an unregistered
-// Where-less view fails, at app start.
+// one view that opens when the URL names none. A view whose filter depends
+// on the caller names no Where; its func is registered under the view's key
+// next to the record screens, and an unregistered Where-less view fails
+// there, at app start.
 type ListView struct {
 	Key     string `json:"key"`
 	Label   string `json:"label,omitempty"`
@@ -117,8 +115,11 @@ type FieldDisplay struct {
 	Help        string `json:"help,omitempty"`
 	Placeholder string `json:"placeholder,omitempty"`
 
-	// Locked draws the field read-only on screens. The screens' save path
-	// drops a Locked key before the write; the API may still write it.
+	// Locked draws the field read-only on screens. The screens' save
+	// path drops a Locked key before the write; the API may still write
+	// it. Refused at registration on a Required field with no Default:
+	// the value never submits on create, so no form could create the
+	// record.
 	Locked bool `json:"locked,omitempty"`
 
 	// Omit leaves the field out of forms and columns on purpose. Unlike
@@ -129,7 +130,9 @@ type FieldDisplay struct {
 	// ShowWhen shows the field only while `field = value` or
 	// `field in [...]` holds on an editable Enum or Bool field. Parsed
 	// with the query DSL when App.Entity registers the entity; any
-	// other shape is refused there.
+	// other shape is refused there. A hidden region's controls are
+	// disabled, so they never submit — refused at registration on a
+	// Required field with no Default, like Omit.
 	ShowWhen string `json:"show_when,omitempty"`
 }
 
@@ -277,17 +280,27 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 			return err
 		}
 	}
+	seenColumns := make(map[string]bool, len(d.Columns))
 	for i, col := range d.Columns {
 		if err := checkField(fmt.Sprintf("columns[%d]", i), col); err != nil {
 			return err
 		}
+		if seenColumns[col] {
+			return fmt.Errorf("entity %q: display columns list %q more than once", name, col)
+		}
+		seenColumns[col] = true
 	}
 	// A facet is a one-click filter over a small value set, so only Enum,
 	// Bool and Relation fields can be one.
+	seenFacets := make(map[string]bool, len(d.Facets))
 	for i, facet := range d.Facets {
 		if err := checkQueryable(fmt.Sprintf("facets[%d]", i), facet); err != nil {
 			return err
 		}
+		if seenFacets[facet] {
+			return fmt.Errorf("entity %q: display facets list %q more than once", name, facet)
+		}
+		seenFacets[facet] = true
 		switch byName[facet].Type {
 		case schema.Enum, schema.Bool, schema.Relation:
 		default:
@@ -319,11 +332,27 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 			return err
 		}
 		fd := d.Fields[field]
-		// Omit on a Required field with no supplied value (a Default or an
-		// auto-generation) leaves no way to create the record from a screen.
-		if fd.Omit {
-			if f := byName[field]; f.Required && f.Default == nil && f.AutoGenerate == schema.AutoNone {
-				return fmt.Errorf("entity %q: display fields[%s] omits a Required field with no Default; no form could create the record", name, field)
+		f := byName[field]
+		// A Required field with no supplied value (a Default or an
+		// auto-generation) needs the form to submit it. Three hints
+		// take that away: Omit leaves it off the form entirely;
+		// ShowWhen hides its region while the condition does not hold,
+		// and when.js disables a hidden region's controls, so they
+		// never submit; Locked draws it read-only and the screens'
+		// save path drops a Locked key before the write. Under any of
+		// the three, no screen could create the record.
+		if f.Required && f.Default == nil && f.AutoGenerate == schema.AutoNone {
+			what := ""
+			switch {
+			case fd.Omit:
+				what = "omits"
+			case fd.Locked:
+				what = "locks"
+			case fd.ShowWhen != "":
+				what = "hides behind show_when on"
+			}
+			if what != "" {
+				return fmt.Errorf("entity %q: display fields[%s] %s a Required field with no Default; no form could create the record", name, field, what)
 			}
 		}
 	}
@@ -348,28 +377,29 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 				return fmt.Errorf("entity %q: display declares more than one default view; at most one view may set Default", name)
 			}
 		}
-		// Where is a DSL expression: parsed by App.Entity. Sort is checked
-		// here because its shape is a comma-separated list of
-		// "<field> ASC|DESC" with no DSL involved.
-		if view.Sort != "" {
-			for _, term := range strings.Split(view.Sort, ",") {
-				parts := strings.Fields(term)
-				if len(parts) != 2 || (!strings.EqualFold(parts[1], "ASC") && !strings.EqualFold(parts[1], "DESC")) {
-					return fmt.Errorf("entity %q: display view %q sort %q must read \"<field> ASC|DESC\", comma-separated", name, view.Key, view.Sort)
-				}
-				if err := checkQueryable(fmt.Sprintf("view %q sort", view.Key), parts[0]); err != nil {
-					return err
-				}
-			}
+		// Where and Sort are DSL expressions: parsed when the app
+		// registers the entity (framework/display_check.go), the same
+		// grammar ?where= and ?sort= parse, so one grammar answers for
+		// both. As names how rows are drawn; the two shapes the screens
+		// know are table (the default) and cards.
+		switch view.As {
+		case "", "table", "cards":
+		default:
+			return fmt.Errorf("entity %q: display view %q as %q must be \"table\" or \"cards\"", name, view.Key, view.As)
 		}
 	}
 	if err := d.Form.validate(name, checkField, checkKey); err != nil {
 		return err
 	}
+	seenSizes := make(map[int]bool, len(d.PageSizes))
 	for i, size := range d.PageSizes {
 		if size <= 0 {
 			return fmt.Errorf("entity %q: display page_sizes[%d] is %d; every entry must be positive", name, i, size)
 		}
+		if seenSizes[size] {
+			return fmt.Errorf("entity %q: display page_sizes list %d more than once", name, size)
+		}
+		seenSizes[size] = true
 		if pagination != nil && pagination.MaxListLimit > 0 && size > pagination.MaxListLimit {
 			return fmt.Errorf("entity %q: display page_sizes[%d] is %d, above Pagination.MaxListLimit %d", name, i, size, pagination.MaxListLimit)
 		}

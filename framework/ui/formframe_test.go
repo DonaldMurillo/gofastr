@@ -90,45 +90,81 @@ func TestFormFrameSwitchesOnItsOwnWidth(t *testing.T) {
 	}
 }
 
-// SideWidth rides the root as one scoped custom property — the
-// Workbench rail pattern — never an inline width, so strict-CSP pages
-// stay clean and a malformed value is dropped, not shipped.
-func TestFormFrameSideWidthIsAScopedKnob(t *testing.T) {
-	h := string(FormFrame(FormFrameConfig{
+// SideWidth names one of the kit's rail widths: the name rides the root
+// as a modifier class whose registered CSS sets the scoped
+// --ui-form-frame-side knob from a --ui-form-frame-side-narrow / -wide
+// token — never an inline style attribute, which the default CSP
+// strips, and never a free-form length from caller config.
+func TestFormFrameSideWidthIsANamedModifier(t *testing.T) {
+	narrow := string(FormFrame(FormFrameConfig{
 		Side:      []render.HTML{render.Text("s")},
-		SideWidth: "20rem",
+		SideWidth: FormFrameSideNarrow,
 	}))
-	if !strings.Contains(h, `style="--ui-form-frame-side: 20rem"`) {
-		t.Errorf("the side width did not land as the scoped knob:\n%s", h)
+	if !strings.Contains(narrow, `fui-form-frame--side-narrow`) {
+		t.Errorf("the narrow width did not land as its modifier:\n%s", narrow)
 	}
-	bad := string(FormFrame(FormFrameConfig{
+	wide := string(FormFrame(FormFrameConfig{
 		Side:      []render.HTML{render.Text("s")},
-		SideWidth: "20rem; color: red",
+		SideWidth: FormFrameSideWide,
 	}))
-	if strings.Contains(bad, "--ui-form-frame-side") {
-		t.Errorf("a malformed SideWidth must be dropped, not shipped:\n%s", bad)
+	if !strings.Contains(wide, `fui-form-frame--side-wide`) {
+		t.Errorf("the wide width did not land as its modifier:\n%s", wide)
 	}
+	def := string(FormFrame(FormFrameConfig{
+		Side:      []render.HTML{render.Text("s")},
+		SideWidth: FormFrameSideDefault,
+	}))
+	if strings.Contains(def, "fui-form-frame--side-") {
+		t.Errorf("the default width must not ship a modifier:\n%s", def)
+	}
+	// The registered sheet backs every name with a token-reading rule;
+	// an unknown name is a programming error and panics at render.
+	css := formFrameStyle.Entry().CSSFor(theme.Default())
+	for _, want := range []string{
+		"--ui-form-frame-side: var(--ui-form-frame-side-narrow, 12rem)",
+		"--ui-form-frame-side: var(--ui-form-frame-side-wide, 22rem)",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("the sheet lacks the named-width rule %q:\n%s", want, css)
+		}
+	}
+	defer func() { recover() }()
+	FormFrame(FormFrameConfig{Side: []render.HTML{render.Text("s")}, SideWidth: "18rem"})
+	t.Error("an unknown SideWidth must panic at render")
 }
 
 // The usual seams: a caller's class joins the root's, an id lands, and
-// ExtraAttrs cannot smuggle the style attribute the knob owns.
+// ExtraAttrs cannot smuggle a style attribute — no surface of this
+// component ever ships one, so the default CSP never strips part of it.
 func TestFormFrameSeams(t *testing.T) {
 	h := string(FormFrame(FormFrameConfig{
 		Main:      []render.HTML{render.Text("m")},
 		Side:      []render.HTML{render.Text("s")},
 		ID:        "ff",
 		Class:     "extra",
-		SideWidth: "18rem",
+		SideWidth: FormFrameSideNarrow,
 		ExtraAttrs: map[string]string{
 			"data-test": "hook", "style": "display:none",
 		},
 	}))
-	for _, want := range []string{`id="ff"`, `"fui-form-frame extra"`, `data-test="hook"`, `--ui-form-frame-side: 18rem`} {
+	for _, want := range []string{`id="ff"`, `fui-form-frame extra`, `data-test="hook"`, `fui-form-frame--side-narrow`} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
 		}
 	}
 	if strings.Contains(h, "display:none") {
-		t.Errorf("a caller forged the style attribute the SideWidth knob owns:\n%s", h)
+		t.Errorf("a caller forged a style attribute:\n%s", h)
+	}
+	// No spelling of the attribute may ship, whatever the config: the
+	// default CSP strips it before paint, so its presence would be a
+	// silently broken layout, not a style.
+	for _, cfg := range []FormFrameConfig{
+		{Main: []render.HTML{render.Text("m")}, Side: []render.HTML{render.Text("s")}},
+		{Side: []render.HTML{render.Text("s")}, SideWidth: FormFrameSideNarrow},
+		{Side: []render.HTML{render.Text("s")}, SideWidth: FormFrameSideWide},
+	} {
+		if out := string(FormFrame(cfg)); strings.Contains(out, "style=") {
+			t.Errorf("the frame shipped a style attribute the default CSP strips:\n%s", out)
+		}
 	}
 }
