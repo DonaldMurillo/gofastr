@@ -210,7 +210,7 @@ notes:
     find:
       uses:
         - gofastr/framework/i18nui.LabelForField
-    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, ent.Config.Display), passing nil for display where the entity has none, and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
+    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, label), where label is the field's Display label string (\"\" where the field has none — the argument is the label text, not the Display config), and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
   - change: "a filter operator must suit the field's type: like (?field_like=, like in ?where=) works only on a String, Text, Enum or UUID column and gt / lt / gte / lte are refused on a Bool column, on flat params, ?where=, relation filters (?rel.field_like=), include-scoped filters and Go-built predicates alike"
     breaking: true
     nodetect: "the operators arrive in request query strings and stored client links, which no source scan can find"

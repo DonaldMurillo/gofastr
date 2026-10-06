@@ -87,8 +87,8 @@ func TestEntityLabelFallbackOrder(t *testing.T) {
 	if got := EntitySingular(ctx, nil, "invoices", "Factura"); got != "Factura" {
 		t.Fatalf("display value ignored: %q", got)
 	}
-	if got := EntitySingular(ctx, nil, "invoices", ""); got != "Invoices" {
-		t.Fatalf("entity name not title-cased: %q", got)
+	if got := EntitySingular(ctx, nil, "invoices", ""); got != "Invoice" {
+		t.Fatalf("entity name not singularized and title-cased: %q", got)
 	}
 	// The catalog beats the Display value.
 	catCtx, tr := frCatalog("entity.invoices.singular")
@@ -103,6 +103,27 @@ func TestEntityLabelFallbackOrder(t *testing.T) {
 	}
 	if got := FieldHelp(ctx, nil, "invoices", "memo", "Shown on invoices"); got != "Shown on invoices" {
 		t.Fatalf("help display value ignored: %q", got)
+	}
+}
+
+// EntitySingular's derived fallback must never be the plural entity
+// name: entity names are usually plurals, and a singular surface (the
+// "New <entity>" button, "This <entity> does not exist") reading "New
+// Invoices" is exactly the bug the fallback exists to prevent. A word
+// the singularizer leaves unchanged (a singular name, an irregular
+// plural) still title-cases.
+func TestEntitySingularFallbackNotPlural(t *testing.T) {
+	ctx := context.Background()
+	for name, want := range map[string]string{
+		"invoices":  "Invoice",
+		"statuses":  "Status",
+		"batches":   "Batch",
+		"customers": "Customer",
+		"people":    "People", // irregular: left alone, still title-cased
+	} {
+		if got := EntitySingular(ctx, nil, name, ""); got != want {
+			t.Errorf("EntitySingular(%q) = %q, want %q", name, got, want)
+		}
 	}
 }
 
