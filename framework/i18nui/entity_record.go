@@ -9,6 +9,7 @@ const (
 	KeyEntitySaveFailed     Key = "ui.entity.saveFailed"     // "Could not save."
 	KeyEntityMoved          Key = "ui.entity.moved"          // "{entity} updated"
 	KeyEntityMoveFailed     Key = "ui.entity.moveFailed"     // "Could not {action}."
+	KeyEntityActionRan      Key = "ui.entity.actionRan"      // "Ran {action}."
 	KeyEntityTabEdit        Key = "ui.entity.tabEdit"        // "Edit"
 	KeyEntityTabRelated     Key = "ui.entity.tabRelated"     // "Related"
 	KeyEntityTabActivity    Key = "ui.entity.tabActivity"    // "Activity"
@@ -20,6 +21,9 @@ const (
 	KeyEntityReadOnly       Key = "ui.entity.readOnly"       // "This {entity} is read-only."
 	KeyEntityLeaveGuard     Key = "ui.entity.leaveGuard"     // "You have unsaved changes."
 	KeyEntityUnchanged      Key = "ui.entity.unchanged"      // "— unchanged —"
+	KeyEntityReplace        Key = "ui.entity.replace"        // "Replace"
+	KeyEntityReplaceHint    Key = "ui.entity.replaceHint"    // "Saving the form keeps it. Type a new value and choose Replace to change it."
+	KeyEntityNewValue       Key = "ui.entity.newValue"       // "New value"
 	KeyEntityBefore         Key = "ui.entity.before"         // "Before"
 	KeyEntityAfter          Key = "ui.entity.after"          // "After"
 )
@@ -32,6 +36,7 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntitySaveFailed:     "Could not save.",
 	KeyEntityMoved:          "{entity} updated",
 	KeyEntityMoveFailed:     "Could not {action}.",
+	KeyEntityActionRan:      "Ran {action}.",
 	KeyEntityTabEdit:        "Edit",
 	KeyEntityTabRelated:     "Related",
 	KeyEntityTabActivity:    "Activity",
@@ -43,6 +48,9 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityReadOnly:       "This {entity} is read-only.",
 	KeyEntityLeaveGuard:     "You have unsaved changes.",
 	KeyEntityUnchanged:      "— unchanged —",
+	KeyEntityReplace:        "Replace",
+	KeyEntityReplaceHint:    "Saving the form keeps it. Type a new value and choose Replace to change it.",
+	KeyEntityNewValue:       "New value",
 	KeyEntityBefore:         "Before",
 	KeyEntityAfter:          "After",
 }

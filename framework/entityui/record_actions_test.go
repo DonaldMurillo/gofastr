@@ -1,136 +1,171 @@
 package entityui
 
 import (
+	"context"
+	"encoding/json"
+	"html"
+	"net/http"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// A move draws a button only when its From holds the stored value, a
-// System move never draws one, and the button posts the transition
-// route.
-func TestRecordTransitionButtonsFromStoredState(t *testing.T) {
-	x := newInvoiceUI(t)
-	body := renderRecord(t, x, "inv-1", nil)
+var rpcButtonRe = regexp.MustCompile(`<button[^>]*>`)
 
-	if !strings.Contains(body, `data-cui-rpc="/api/invoices/inv-1/transitions/send"`) {
-		t.Fatalf("the draft's open move must post its route:\n%s", body)
+// recordActionBody finds the header button labelled label and returns
+// the JSON body it posts and the path it posts to.
+func recordActionBody(t *testing.T, body, label string) (map[string]any, string, string) {
+	t.Helper()
+	for _, tag := range rpcButtonRe.FindAllString(body, -1) {
+		i := strings.Index(body, tag)
+		if !strings.Contains(body[i:min(len(body), i+len(tag)+400)], ">"+label+"<") {
+			continue
+		}
+		attr := func(name string) string {
+			m := regexp.MustCompile(name + `="([^"]*)"`).FindStringSubmatch(tag)
+			if m == nil {
+				return ""
+			}
+			return html.UnescapeString(m[1])
+		}
+		var out map[string]any
+		if err := json.Unmarshal([]byte(attr("data-cui-rpc-body")), &out); err != nil {
+			t.Fatalf("button %q posts no JSON body: %v\n%s", label, err, tag)
+		}
+		return out, attr("data-cui-rpc"), tag
 	}
-	// mark_paid starts from open, not draft: no button.
-	if strings.Contains(body, "transitions/mark_paid") {
-		t.Fatalf("a move whose From does not hold the stored value draws no button:\n%s", body)
+	return nil, "", ""
+}
+
+func resendExt(perm string, variant ui.ButtonVariant, ran *[]ActionContext, fail bool) Extensions {
+	return Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
+		Key: "resend", Label: "Resend receipt", Variant: variant, Permission: perm,
+		Run: func(_ context.Context, ac ActionContext) error {
+			*ran = append(*ran, ac)
+			if fail {
+				return context.Canceled
+			}
+			return nil
+		},
+	}}}}}
+}
+
+// An action without Bulk is a record header button in its declared
+// variant. Its body names the record scope and the one record, and the
+// bulk route runs it on that record alone.
+func TestRecordActionRendersAndRuns(t *testing.T) {
+	var ran []ActionContext
+	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("", ui.ButtonPrimary, &ran, false),
+		withAPI(map[string]string{"invoices": "/api/invoices"}))
+	page := renderRecord(t, x, "inv-1", nil)
+	body, path, tag := recordActionBody(t, page, "Resend receipt")
+	if body == nil {
+		t.Fatalf("no Resend receipt button on the record:\n%s", page)
 	}
-	// sweep is System: no button, ever.
-	if strings.Contains(body, "transitions/sweep") {
-		t.Fatalf("a System move draws no button:\n%s", body)
+	if path != "/api/invoices/_bulk" || !strings.Contains(tag, "fui-button--primary") {
+		t.Fatalf("button posts to %q in %s, want the bulk route as a primary button", path, tag)
 	}
-	if !strings.Contains(body, `data-cui-rpc-success-toast="Invoice updated"`) {
-		t.Fatalf("the move's success carries the moved toast:\n%s", body)
+	if body["scope"] != "record" || body["ids"] != "inv-1" || body["action"] != "run:resend" {
+		t.Fatalf("button body = %v", body)
+	}
+	if list := listHTML(t, x.ui.List("invoices").Bulk(), x.userCtx("/invoices", "", "u1")); strings.Contains(list, "Resend receipt") {
+		t.Fatalf("an action without Bulk was offered on the list:\n%s", list)
+	}
+	code, out := postBulk(t, x, bulkCtx("u1", nil), body)
+	if code != http.StatusOK || len(ran) != 1 || !slices.Equal(ran[0].IDs, []string{"inv-1"}) || ran[0].Run == "" {
+		t.Fatalf("status %d %v ran=%+v, want one run over inv-1", code, out, ran)
 	}
 }
 
-// A transition's Permission gates its button with the same resource
-// check the route runs: a caller without it never sees the move.
-func TestRecordTransitionPermissionHidesButton(t *testing.T) {
-	entities := invoiceEntities()
-	inv := entities["invoices"]
-	inv.States.Transitions = append(inv.States.Transitions, entity.Transition{
-		Key: "audit", From: []string{"draft"}, To: "paid", Permission: "invoices:audit",
-	})
-	entities["invoices"] = inv
-	x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
-	body := renderRecord(t, x, "inv-1", nil)
-	if strings.Contains(body, "transitions/audit") {
-		t.Fatalf("a caller without the move's Permission sees no button:\n%s", body)
+// The record scope runs app actions on exactly one readable record, and
+// nothing else: not a built-in action, not two ids, not another owner's
+// record. An action without Bulk stays off every list scope.
+func TestRecordScopeRefusals(t *testing.T) {
+	var ran []ActionContext
+	x := ownedInvoices(t, resendExt("", "", &ran, false))
+	ctx := bulkCtx("u1", nil)
+	for name, tc := range map[string]struct {
+		body map[string]any
+		code int
+	}{
+		"built-in":      {map[string]any{"action": "delete", "scope": "record", "ids": "a1"}, http.StatusForbidden},
+		"two ids":       {map[string]any{"action": "run:resend", "scope": "record", "ids": []string{"a1", "a2"}}, http.StatusUnprocessableEntity},
+		"foreign":       {map[string]any{"action": "run:resend", "scope": "record", "ids": "b1"}, http.StatusUnprocessableEntity},
+		"list selected": {map[string]any{"action": "run:resend", "scope": "selected", "ids": "a1"}, http.StatusForbidden},
+	} {
+		if code, out := postBulk(t, x, ctx, tc.body); code != tc.code {
+			t.Errorf("%s: status %d %v, want %d", name, code, out, tc.code)
+		}
 	}
-	if !strings.Contains(body, "transitions/send") {
-		t.Fatalf("the permission-free move stays:\n%s", body)
+	if len(ran) != 0 {
+		t.Fatalf("a refused request ran the action: %+v", ran)
+	}
+	if got := invoiceIDs(t, x); len(got) != 4 {
+		t.Fatalf("a refused request deleted rows: %v", got)
 	}
 }
 
-// A Wildcard role does not hold a move's Permission, the route's own
-// exact check, so it sees no button the route would refuse; a role
-// granted the capability by name does.
-func TestRecordMovePermissionIsExact(t *testing.T) {
-	entities := invoiceEntities()
-	inv := entities["invoices"]
-	inv.States.Transitions = append(inv.States.Transitions, entity.Transition{
-		Key: "audit", From: []string{"draft"}, To: "paid", Permission: "invoices:audit",
-	})
-	entities["invoices"] = inv
+// An action's Permission is held by name per record: a caller without it
+// sees no button and its post is refused; a failing Run answers an error.
+func TestRecordActionPermissionAndFailure(t *testing.T) {
+	var ran []ActionContext
+	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("invoices:resend", "", &ran, true),
+		withAPI(map[string]string{"invoices": "/api/invoices"}))
 	policy := access.NewRolePolicy()
 	if err := policy.Grant("root", access.Wildcard); err != nil {
 		t.Fatal(err)
 	}
-	if err := policy.Grant("auditor", "invoices:audit"); err != nil {
+	if err := policy.Grant("clerk", "invoices:resend"); err != nil {
 		t.Fatal(err)
 	}
-	x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
-	render := func(role string) string {
-		ctx := access.WithRoles(access.WithPolicy(x.userCtx("/rec/invoices/inv-1", "", "u1"), policy), []string{role})
-		return string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(ctx))
+	as := func(role string) context.Context {
+		return access.WithRoles(access.WithPolicy(x.userCtx("/rec/invoices/inv-1", "", "u1"), policy), []string{role})
 	}
-	if body := render("root"); strings.Contains(body, "transitions/audit") {
-		t.Fatalf("a Wildcard role sees a move the route refuses it:\n%s", body)
+	page := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(as("root")))
+	if strings.Contains(page, "Resend receipt") {
+		t.Fatalf("a Wildcard role was offered a named-permission action:\n%s", page)
 	}
-	if body := render("auditor"); !strings.Contains(body, "transitions/audit") {
-		t.Fatalf("the named grant lost its move:\n%s", body)
+	body := map[string]any{"action": "run:resend", "scope": "record", "ids": "inv-1"}
+	if code, _ := postBulk(t, x, bulkCtx("u1", policy, "root"), body); code != http.StatusForbidden || len(ran) != 0 {
+		t.Fatalf("Wildcard post: status %d ran=%d, want 403 and no run", code, len(ran))
 	}
-}
-
-// An entity with no REST write routes renders read-only: no form RPC,
-// no delete, no move buttons — every field a value, nothing submittable.
-func TestRecordNoAPIIsReadOnly(t *testing.T) {
-	x := newTestUI(t, invoiceEntities(), invoiceRows())
-	body := renderRecord(t, x, "inv-1", func(b *RecordBuilder) { b.Delete().Duplicate() })
-
-	if strings.Contains(body, "data-cui-rpc") {
-		t.Fatalf("a read-only record carries no RPC:\n%s", body)
+	page = string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(as("clerk")))
+	if b, _, _ := recordActionBody(t, page, "Resend receipt"); b == nil {
+		t.Fatalf("the named grant was not offered the action:\n%s", page)
 	}
-	if strings.Contains(body, "transitions/") || strings.Contains(body, ">Delete<") {
-		t.Fatalf("a read-only record draws no moves and no delete:\n%s", body)
-	}
-	if hasSubmittableControl(body, "number") {
-		t.Fatalf("a read-only record submits nothing:\n%s", body)
-	}
-	if !strings.Contains(body, "INV-1") {
-		t.Fatalf("the read-only record still shows its values:\n%s", body)
+	if code, _ := postBulk(t, x, bulkCtx("u1", policy, "clerk"), body); code != http.StatusInternalServerError || len(ran) != 1 {
+		t.Fatalf("failing Run: status %d ran=%d, want 500 after one run", code, len(ran))
 	}
 }
 
-// ?duplicate= prefills from that record minus what a create may not
-// set: system fields, the state field, stamps, unique fields and
-// masked fields.
-func TestRecordDuplicateDropsWhatCreateMayNotSet(t *testing.T) {
-	x := newInvoiceUI(t)
-	body := string(x.ui.Create("invoices").Base("/rec/invoices").
-		RenderCtx(x.userCtx("/rec/invoices/create", "?duplicate=inv-1", "u1")))
-
-	if v := attrValue(body, "number", "value"); v != "" {
-		t.Fatalf("the unique field must start blank, got %q:\n%s", v, body)
+// An entity with bulk off still runs its record actions.
+func TestRecordActionWithBulkOff(t *testing.T) {
+	var ran []ActionContext
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	d := *inv.Display
+	d.NoBulk = true
+	inv.Display = &d
+	ents["invoices"] = inv
+	x := newTestUIExt(t, ents, invoiceRows(), resendExt("", "", &ran, false), withAPI(map[string]string{"invoices": "/api/invoices"}))
+	if code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:resend", "scope": "record", "ids": "inv-1"}); code != http.StatusOK || len(ran) != 1 {
+		t.Fatalf("status %d %v ran=%d", code, out, len(ran))
 	}
-	if hasSubmittableControl(body, "status") || hasSubmittableControl(body, "issued_on") {
-		t.Fatalf("guarded fields never prefill:\n%s", body)
+	if code, _ := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "selected", "ids": "inv-1"}); code != http.StatusNotFound {
+		t.Fatalf("a list scope on a bulk-off entity answered %d, want 404", code)
 	}
 }
 
-// ?prefill_<field>= is the convention the Related tab's New link uses:
-// a value a create may set lands selected, one it may not (a Locked
-// field, the guarded state field) is ignored.
-func TestCreatePrefillQueryConvention(t *testing.T) {
-	x := newInvoiceUI(t)
-	body := string(x.ui.Create("invoices").Base("/rec/invoices").
-		RenderCtx(x.userCtx("/rec/invoices/create", "?prefill_customer_id=cus-1&prefill_status=paid&prefill_amount=500.00", "u1")))
-
-	if !strings.Contains(body, `selected="" value="cus-1"`) {
-		t.Fatalf("the prefillable foreign key lands selected:\n%s", body)
-	}
-	if strings.Contains(body, `selected="" value="paid"`) {
-		t.Fatalf("the guarded state field ignores its prefill:\n%s", body)
-	}
-	if strings.Contains(body, "500.00") {
-		t.Fatalf("a Locked field ignores its prefill:\n%s", body)
+// A Variant no Button knows is refused at New, naming the action.
+func TestActionVariantChecked(t *testing.T) {
+	x := newTestHost(t, invoiceEntities(), invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+	var ran []ActionContext
+	_, err := New(x.host, resendExt("", ui.ButtonVariant("loud"), &ran, false))
+	if err == nil || !strings.Contains(err.Error(), `"resend"`) {
+		t.Fatalf("New = %v, want the bad variant refused naming resend", err)
 	}
 }

@@ -15,6 +15,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.PaletteResults` renders the option rows a palette's search
   endpoint answers, dropping any href that is not a safe link. The
   palette sheet now styles its option rows, including the active row.
+- **`ui.TextAreaConfig.Monospace`** draws the text in the mono font
+  token; entity screens set it on JSON fields and the `code` and
+  `markdown` kinds.
 - **`EntityConfig.States` gives an entity a state machine.** The config
   names the Enum field holding the state, the values a create may start
   at, and the named moves that change it. Unless `Advisory` is set, the
@@ -683,7 +686,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `title` is named by its first plain `String` column. A record draws its state
   badge, a button per open move (gated by `access.CanResourceExact`, the
   route's own check), and Edit, Related and Activity tabs, with
-  `Related` and `RelatedAt` naming the related lists. New, Duplicate,
+  `Related` and `RelatedAt` naming the related lists. An app action
+  draws as a record header button in its `ui.ButtonVariant` and runs on
+  that record through the `_bulk` route's `record` scope, bulk on or off.
+  New, Duplicate,
   Delete, the moves and the edit form follow the caller's create, update
   and delete access, so a screen never draws a write the route refuses.
   A relation the caller may not read shows the em dash, in pickers and
@@ -694,6 +700,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   another entity (relation labels, pickers, facets, related lists, stats)
   passes that entity's own read gate. See
   `framework/docs/content/entityui.md`.
+- **`crud.SumAll` and `crud.GroupCountAll`.** The database totals a
+  numeric field, or counts rows per stored value, over every match under
+  the same owner, tenant, read, soft-delete and `BeforeList` scopes as
+  `ListAll`. A decimal sums as `NUMERIC` on Postgres. Under
+  `WithReadHooks` an entity with `AfterList` hooks refuses both with
+  `crud.ErrAggregateMasked`. `StatValue` and the chart helpers compute
+  through them: a sum covers every row and rounds once, an agg other
+  than `count` or `sum` prints "—" (the blueprint refuses it, and a sum
+  of a non-numeric field), and an `AfterList`-hooked entity totals its
+  masked rows up to 100,000, printing "—" past that.
 - **Bulk actions and CSV export on entity lists.** `.Bulk()` adds a
   select column, a bulk bar and an Export CSV link; `bulk: true` on a
   blueprint `entity_list` emits it. `App.EntityUI` mounts
@@ -702,7 +718,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   sits behind its group's middleware. The server re-reads every posted id
   through the scoped handler, rebuilds "every match" from the list's own
   narrowing (at most `EveryMatchCap`, 10,000) and refuses it with 409 when
-  the match is not the count the bar offered, and asks each record's
+  the matching ids are not the set the bar offered (it carries their
+  digest), even at the same size, and asks each record's
   update or delete gate before the write, counting a refusal as skipped.
   The bulk route takes JSON only (415 otherwise). Up to
   `InRequestCap` (100) records run in the request; past it the run needs
@@ -710,10 +727,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofastr_bulk_jobs` and `gofastr_bulk_items` (it panics without
   `App.DB`). Every run writes one audit row with op `bulk` under
   `WithAuditLog`, counted from the store (`BulkStore.Tally`) so a resumed
-  run reports the whole job. The export holds what the list narrowed to,
+  run reports the whole job. A queued run leases its job and fences every
+  write on the lease, so a second worker runs nothing and a lapsed one
+  writes nothing; app actions read `ActionContext.Run` to stay
+  idempotent under at-least-once delivery. A repeated confirm answers the
+  job already queued, and `App.Start` re-hands jobs a crash left
+  unenqueued and deletes finished jobs past `BulkRetention` (30 days).
+  The export holds what the list narrowed to,
   leaves out `NoQuery`, omitted and JSON fields, and quotes cells a
   spreadsheet would run as formulas; a `Where`-pinned list draws none.
-  An entity registered after `App.EntityUI` gets both routes too.
+  An entity registered after `App.EntityUI` gets both routes too. Only
+  the entity its name resolves to gets them: a group version that shares
+  the name with an unversioned entity, or with other versions, gets none.
 - **`crud.CrudHandler.CanUpdateRecordScoped`, `CanDeleteRecordScoped`
   and `CanCreateScoped`** answer, as booleans, the gates `PUT` and
   `DELETE /<entity>/{id}` and `POST /<entity>` run: session, owner,
@@ -1499,6 +1524,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Host with the full textsafe set** (C1 and bidi runes included), which
   slog's JSON handler otherwise leaves raw in the logged line (#417).
 ### Security
+- **`crud.WithReadHooks` applies the `BeforeList`/`BeforeGet` scopes.**
+  Under the opt-in, `ListAll`, `CountAll` and `TypedQuery.Find`/`First`/
+  `Count` run `BeforeList` and `GetOne` runs `BeforeGet`, ANDing the
+  clauses those hooks append the way the HTTP routes do; a before hook
+  that errors fails the read. A screen rendering through the in-process
+  API previously listed, counted and opened rows a team or status scope
+  added in `BeforeList` hid from `GET /api/<entity>`. Reads without the
+  opt-in are unchanged.
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
   operation's `Exposure.Access` permission as a `WithToolGate` gate. A

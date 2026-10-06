@@ -69,6 +69,9 @@ func TestTabNavRefusesBrokenConfiguration(t *testing.T) {
 		"no items": func() { TabNav(TabNavConfig{Label: "Views"}) },
 		"no text":  func() { TabNav(TabNavConfig{Label: "V", Items: []TabNavItem{{Href: "/a"}}}) },
 		"no href":  func() { TabNav(TabNavConfig{Label: "V", Items: []TabNavItem{{Text: "A"}}}) },
+		"two current": func() {
+			TabNav(TabNavConfig{Label: "V", Items: []TabNavItem{{Text: "A", Href: "/a", Current: true}, {Text: "B", Href: "/b", Current: true}}})
+		},
 	}
 	for name, fn := range cases {
 		func() {

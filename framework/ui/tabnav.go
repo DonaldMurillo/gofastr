@@ -67,6 +67,15 @@ func TabNav(cfg TabNavConfig) render.HTML {
 		panic("ui: TabNav requires at least one item")
 	}
 	links := make([]render.HTML, 0, len(cfg.Items))
+	current := 0
+	for _, it := range cfg.Items {
+		if it.Current {
+			current++
+		}
+	}
+	if current > 1 {
+		panic("ui: TabNav marks at most one item Current — each would claim aria-current=\"page\"")
+	}
 	for _, it := range cfg.Items {
 		if it.Text == "" {
 			panic("ui: TabNav item requires Text")

@@ -235,37 +235,6 @@ func hasSubmittableControl(body, name string) bool {
 	return false
 }
 
-// A masked field never renders its value: a hook rewrites it, the form
-// draws a blank input with the Set/Not set hint, and the stored value
-// appears nowhere.
-func TestRecordMaskedFieldBlankInput(t *testing.T) {
-	x := newInvoiceUI(t)
-	ch, err := x.host.Crud(mustEntity(t, x, "invoices"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
-		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil {
-			p.Result["token"] = "****"
-		}
-		return nil
-	})
-	body := renderRecord(t, x, "inv-1", nil)
-	if strings.Contains(body, "tok-secret") {
-		t.Fatalf("SECURITY: the masked field rendered its stored value:\n%s", body)
-	}
-	if !strings.Contains(body, `name="token"`) {
-		t.Fatalf("the masked field keeps a blank input:\n%s", body)
-	}
-	if v := attrValue(body, "token", "value"); v != "" {
-		t.Fatalf("the masked field's input must be blank, got value=%q", v)
-	}
-	if !strings.Contains(body, i18nui.Defaults[i18nui.KeyEntitySet]) {
-		t.Fatalf("a set masked field says so:\n%s", body)
-	}
-}
-
 // attrValue reads value="..." off the control named name.
 func attrValue(body, name, attr string) string {
 	for _, tag := range []string{"<input", "<textarea"} {

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -20,13 +22,17 @@ import (
 // tabs and actions. Call it once. It checks every name ext uses and panics
 // at boot on a bad one, naming it, the way App.Entity refuses a bad
 // declaration, so ext can only name entities registered before the call.
+// An entity registered after it gets the same checks at App.Entity.
 //
 // It mounts the bulk bar's routes beside each entity's write routes:
 // POST <api>/_bulk and GET <api>/_export.csv, for the entities registered
 // before the call and for every one registered after it. With ext.Jobs set it also
 // creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
-// gofastr_bulk_items), which needs a database. A second call panics: the
-// routes belong to one UI, so share the one it returned.
+// gofastr_bulk_items), which needs a database, and at App.Start re-hands
+// the JobRunner any job a crash left unenqueued and deletes finished jobs
+// older than entityui.BulkRetention (UI.ResumeBulkJobs and
+// UI.PruneBulkJobs; an app that runs for long schedules both). A second
+// call panics: the routes belong to one UI, so share the one it returned.
 func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	if a.entityUI != nil {
 		panic("framework: EntityUI was already called on this app; its bulk and export routes belong to that UI, so pass the *entityui.UI it returned instead of building a second")
@@ -50,14 +56,40 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	for _, e := range a.Registry.AllSorted() {
 		a.mountEntityUIRoutes(e)
 	}
+	if ext.Jobs != nil {
+		a.OnStart(func(ctx context.Context) error {
+			resumeAndPruneBulkJobs(ctx, u)
+			return nil
+		})
+	}
 	return u
 }
 
+// bulkResumeGrace is how old an unenqueued job must be before a start
+// hands it over again: younger ones may belong to a confirm still between
+// writing its snapshot and enqueuing it.
+const bulkResumeGrace = time.Minute
+
+// resumeAndPruneBulkJobs hands over the jobs a crash left unenqueued and
+// drops finished jobs past entityui.BulkRetention. A failure is logged,
+// not fatal: the app serves without it, and the next start tries again.
+func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
+	if n, err := u.ResumeBulkJobs(ctx, bulkResumeGrace); err != nil {
+		slog.ErrorContext(ctx, "framework: EntityUI: resume bulk jobs", "resumed", n, "error", err)
+	} else if n > 0 {
+		slog.InfoContext(ctx, "framework: EntityUI: resumed bulk jobs", "count", n)
+	}
+	if _, err := u.PruneBulkJobs(ctx, entityui.BulkRetention); err != nil {
+		slog.ErrorContext(ctx, "framework: EntityUI: prune bulk jobs", "error", err)
+	}
+}
+
 // mountEntityUIRoutes mounts e's bulk and export routes once EntityUI has
-// run, when e has write routes. recordCrudMount calls it too, so an
-// entity registered after EntityUI is not left with a bar whose posts 404.
+// run, when e has write routes and its name resolves to it. recordCrudMount
+// calls it too, so an entity registered after EntityUI is not left with a
+// bar whose posts 404.
 func (a *App) mountEntityUIRoutes(e *entity.Entity) {
-	if a.entityUI == nil {
+	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return
 	}
 	if _, ok := (entityUIHost{a: a}).APIPath(e); !ok {
@@ -67,14 +99,36 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	// sub-router carries the group's middleware, and a route beside it
 	// would skip that guard.
 	m := a.crudMounts[e]
-	m.r.Post(m.rel+"/_bulk", a.entityUI.BulkHandler(e.GetName()))
-	m.r.Get(m.rel+"/_export.csv", a.entityUI.ExportHandler(e.GetName()))
+	m.r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
+	m.r.Get(m.rel+"/_export.csv", a.entityUIOwned(e, a.entityUI.ExportHandler(e.GetName())))
 }
 
-// entityUIMounted reports whether EntityUI mounted e's bulk and export
-// routes, for the OpenAPI document.
+// entityUIOwns reports whether e is the entity its name resolves to. The
+// screens and the bulk handlers look an entity up by name, so a version
+// the name does not resolve to (another one is unversioned, or several
+// versions share the name) gets no routes: they would run the other
+// entity's handler, hooks and access rules under this version's path.
+func (a *App) entityUIOwns(e *entity.Entity) bool {
+	got, err := a.Registry.Get(e.GetName())
+	return err == nil && got == e
+}
+
+// entityUIOwned answers 404 once e no longer owns its name: an entity
+// registered after the routes mounted can take it over.
+func (a *App) entityUIOwned(e *entity.Entity, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.entityUIOwns(e) {
+			http.NotFound(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// entityUIMounted reports whether EntityUI's bulk and export routes answer
+// for e, for the OpenAPI document.
 func (a *App) entityUIMounted(e *entity.Entity) bool {
-	if a.entityUI == nil {
+	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return false
 	}
 	_, ok := entityUIHost{a: a}.APIPath(e)

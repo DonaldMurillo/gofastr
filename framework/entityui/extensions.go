@@ -2,9 +2,11 @@ package entityui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -13,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // Extensions is the code an app registers next to its screens: field
@@ -52,7 +55,10 @@ type InputContext struct {
 	Placeholder string
 }
 
-// CellContext is what a Kind's Cell and Detail receive.
+// CellContext is what a Kind's Cell and Detail receive. Row and Value
+// come from the read after its hooks, so a masked column stays masked; a
+// relation whose target the caller may not read draws muted and never
+// reaches the callback.
 type CellContext struct {
 	Ctx    context.Context
 	Entity string
@@ -122,13 +128,16 @@ type RecordContext struct {
 	Record Record
 }
 
-// Action is a record or bulk action. Permission, when set, is checked
-// about each record on top of the entity's update access, with
-// access.CanResourceExact: a Wildcard grant does not satisfy it.
+// Action is a record or bulk action: a button in the record's header,
+// posting to the entity's bulk route with the record scope. Permission,
+// when set, is checked about each record on top of the entity's update
+// access, with access.CanResourceExact: a Wildcard grant does not
+// satisfy it. Variant is the button's (ui.ButtonSecondary when empty);
+// New refuses one no Button knows.
 type Action struct {
 	Key        string
 	Label      string
-	Variant    string
+	Variant    ui.ButtonVariant
 	Permission string
 	// Bulk offers the action on the list's selection as well as on the
 	// record.
@@ -143,6 +152,14 @@ type ActionContext struct {
 	Entity string
 	IDs    []string
 	Crud   *crud.CrudHandler
+	// Run names the bulk run: the queued job's id, the same on every
+	// retry, or a fresh id for a run inside the request. A queued run
+	// hands each record to Run at least once: a worker that dies after
+	// Run returns but before the outcomes are saved runs those records
+	// again under the same Run. An action with effects outside the
+	// database (mail, a payment, a webhook) keys them on Run and the
+	// record id so the second delivery does nothing.
+	Run string
 }
 
 // InRequestCap is the most records a bulk action runs inside one request,
@@ -155,10 +172,13 @@ const EveryMatchCap = 10000
 // JobRunner runs a bulk action over more than InRequestCap records,
 // outside the request. entityui writes the confirmed selection to the
 // Host's snapshot store and hands Enqueue the job; the runner's worker
-// then calls UI.RunBulkJob with job.ID, as often as it retries. The admin
-// backs it with battery/queue.
+// then calls UI.RunBulkJob with job.ID, as often as it retries, until it
+// returns nil. The admin backs it with battery/queue.
 type JobRunner interface {
-	// Enqueue schedules job. It must not run the job inline.
+	// Enqueue schedules job. It must not run the job inline. Enqueuing a
+	// job twice is safe: RunBulkJob runs a job under a lease and answers
+	// nil once it has finished, so UI.ResumeBulkJobs can hand over again
+	// a job whose first Enqueue is not known to have happened.
 	Enqueue(ctx context.Context, job BulkJob) error
 	// Principal rebuilds the creator's request context as of now from
 	// job.Creator and job.Tenant: the user, their current roles and the
@@ -183,8 +203,16 @@ type BulkJob struct {
 	// FilterHash is a SHA-256 of the scope and list query the selection
 	// came from, for the audit trail.
 	FilterHash string
+	// Key identifies the confirmed run: a SHA-256 of the creator, tenant,
+	// entity, action and the ids. While a job with a Key is queued, a
+	// second confirm of the same run answers that job instead of queuing
+	// another.
+	Key string
 	// Status is "queued", "done" or "stopped"; Store.Job fills it.
 	Status string
+	// Done, Skipped and Failed are a finished job's tally; Store.Job
+	// fills them once Finish has run.
+	Done, Skipped, Failed int
 }
 
 // Bulk job statuses.
@@ -202,23 +230,55 @@ const (
 )
 
 // BulkStore keeps queued bulk runs: the job and the ids its selection
-// resolved to at confirm, each settled once it has run.
+// resolved to at confirm, each settled once it has run. One runner at a
+// time holds a job's lease (Claim); Settle and Finish write only for the
+// runner holding it, so two workers handed the same job never both
+// record it.
 type BulkStore interface {
-	// Create writes the job and its ids in one transaction.
-	Create(ctx context.Context, job BulkJob, ids []string) error
+	// Create writes the job and its ids in one transaction and returns
+	// it. When a queued job with the same Key is held it writes nothing
+	// and returns that job instead.
+	Create(ctx context.Context, job BulkJob, ids []string) (BulkJob, error)
+	// Enqueued records that the JobRunner accepted the job.
+	Enqueued(ctx context.Context, id string) error
 	// Job reads one job; an unknown id is an error.
 	Job(ctx context.Context, id string) (BulkJob, error)
+	// Claim gives runner the job's lease until until, or renews it when
+	// runner holds it. It answers false when the job is not queued or
+	// another runner's lease is still live at now.
+	Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error)
 	// Pending returns up to limit ids not yet settled, in a stable order.
 	Pending(ctx context.Context, id string, limit int) ([]string, error)
 	// Settle records each id's outcome (BulkRowDone, BulkRowSkipped,
-	// BulkRowFailed). A settled id never comes back from Pending.
-	Settle(ctx context.Context, id string, outcomes map[string]string) error
+	// BulkRowFailed) while runner holds the lease, and answers
+	// ErrBulkLeaseLost when it does not. A settled id never comes back
+	// from Pending.
+	Settle(ctx context.Context, id, runner string, outcomes map[string]string) error
 	// Tally counts the job's settled ids by outcome, across every call
 	// that settled any, so a resumed run's summary covers the whole job.
 	Tally(ctx context.Context, id string) (map[string]int, error)
-	// Finish sets the job's status.
-	Finish(ctx context.Context, id, status string) error
+	// Finish, while runner holds the lease, sets the job's final status
+	// (BulkDone or BulkStopped) at at, keeps its tally on the job and
+	// deletes its ids. It answers ErrBulkLeaseLost when runner does not
+	// hold the lease.
+	Finish(ctx context.Context, id, runner, status string, at time.Time) error
+	// Unenqueued lists the queued jobs created before before that no
+	// Enqueued call has marked.
+	Unenqueued(ctx context.Context, before time.Time) ([]BulkJob, error)
+	// Prune deletes the jobs that finished before before, and reports
+	// how many.
+	Prune(ctx context.Context, before time.Time) (int, error)
 }
+
+// ErrBulkLeaseLost answers a Settle or Finish from a runner that no
+// longer holds the job's lease. RunBulkJob returns it and the JobRunner
+// retries; the lease's holder finishes the run.
+var ErrBulkLeaseLost = errors.New("entityui: bulk job lease lost")
+
+// ErrBulkJobBusy is RunBulkJob's answer while another runner holds the
+// job's live lease. The JobRunner retries later; once the job has
+// finished, RunBulkJob answers nil.
+var ErrBulkJobBusy = errors.New("entityui: bulk job held by another runner")
 
 // BulkHost is what a Host implements to back bulk actions: the snapshot
 // store queued runs walk, and the audit rows every run writes. The host
@@ -245,16 +305,8 @@ func (x Extensions) check(reg entity.Registry) error {
 		}
 	}
 	for _, e := range reg.AllSorted() {
-		d := e.Config.Display
-		if d == nil {
-			continue
-		}
-		for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
-			if in := d.Fields[f].Input; in != "" {
-				if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
-					return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
-				}
-			}
+		if err := x.checkInputs(e); err != nil {
+			return err
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(x.Entities)) {
@@ -269,21 +321,59 @@ func (x Extensions) check(reg entity.Registry) error {
 	// Every Where-less view needs a registered Filter, on every entity,
 	// extended or not.
 	for _, e := range reg.AllSorted() {
-		d := e.Config.Display
-		if d == nil {
-			continue
+		if err := x.checkViews(e); err != nil {
+			return err
 		}
-		ext := x.Entities[e.GetName()]
-		for _, v := range d.Views {
-			if v.Where != "" {
-				continue
-			}
-			if vf, ok := ext.Views[v.Key]; !ok || vf.Filter == nil {
-				return fmt.Errorf("entityui: entity %q view %q has no where and no registered filter func", e.GetName(), v.Key)
+	}
+	return nil
+}
+
+// checkInputs refuses a FieldDisplay.Input on e naming no kind.
+func (x Extensions) checkInputs(e *entity.Entity) error {
+	d := e.Config.Display
+	if d == nil {
+		return nil
+	}
+	for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
+		if in := d.Fields[f].Input; in != "" {
+			if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
+				return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
 			}
 		}
 	}
 	return nil
+}
+
+// checkViews refuses a view on e with neither a Where nor a registered
+// Filter.
+func (x Extensions) checkViews(e *entity.Entity) error {
+	d := e.Config.Display
+	if d == nil {
+		return nil
+	}
+	ext := x.Entities[e.GetName()]
+	for _, v := range d.Views {
+		if v.Where != "" {
+			continue
+		}
+		if vf, ok := ext.Views[v.Key]; !ok || vf.Filter == nil {
+			return fmt.Errorf("entityui: entity %q view %q has no where and no registered filter func", e.GetName(), v.Key)
+		}
+	}
+	return nil
+}
+
+// CheckEntity runs New's checks on an entity registered after it: every
+// FieldDisplay.Input names a kind, and every view has a Where or a
+// registered Filter. Extensions.Entities can only name entities that
+// existed at New, so a later entity's views all need a Where. The host
+// calls it before registering the entity and refuses the entity on an
+// error.
+func (u *UI) CheckEntity(e *entity.Entity) error {
+	if err := u.ext.checkInputs(e); err != nil {
+		return err
+	}
+	return u.ext.checkViews(e)
 }
 
 func (x Extension) check(e *entity.Entity) error {
@@ -318,6 +408,7 @@ func (x Extension) check(e *entity.Entity) error {
 	}
 	seen = map[string]bool{}
 	for _, a := range x.Actions {
+		_, knownVariant := ui.ParseButtonVariant(string(a.Variant))
 		switch {
 		case !entity.ValidKey(a.Key):
 			return fmt.Errorf("entityui: entity %q: action key %q is not a key", name, a.Key)
@@ -325,6 +416,8 @@ func (x Extension) check(e *entity.Entity) error {
 			return fmt.Errorf("entityui: entity %q: duplicate action %q", name, a.Key)
 		case a.Run == nil:
 			return fmt.Errorf("entityui: entity %q: action %q has no Run", name, a.Key)
+		case a.Variant != "" && !knownVariant:
+			return fmt.Errorf("entityui: entity %q: action %q: unknown button variant %q", name, a.Key, a.Variant)
 		}
 		seen[a.Key] = true
 	}

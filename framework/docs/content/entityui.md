@@ -27,7 +27,11 @@ appUI := fwApp.EntityUI(entityui.Extensions{})
 
 `App.EntityUI` checks every name the extensions use against the registered
 entities and panics at boot on a bad one, naming it, the way `App.Entity`
-refuses a bad declaration. Builders are components: return them from a
+refuses a bad declaration. An entity registered after `App.EntityUI` gets
+the same checks at `App.Entity` (`UI.CheckEntity`): an input naming no kind
+panics there, and so does a view with no `Where`, since
+`Extensions.Entities` could not name the entity to register its filter.
+Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
 ## What it draws
@@ -48,10 +52,16 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   `?prefill_<field>=<value>` prefills one field — the convention a
   `Where`-pinned list's New link uses, the Related tab's among them. A
   bare `?<field>=` is some other param and prefills nothing.
-- **Stats and charts**: `appUI.StatValue` (a count or sum, `where` in the
-  query DSL), `GroupBars`, `GroupSlices` and `LineChart` (rows per value
-  of a field). A dashboard block reads an entity without a screen of its
-  own.
+- **Stats and charts**: `appUI.StatValue` (agg `count` or empty, or
+  `sum` of an int, float or decimal field; `where` in the query DSL),
+  `GroupBars`, `GroupSlices` and `LineChart` (rows per value of a field,
+  in value order, an enum's in its declared order). The database computes
+  each over every match (`crud.SumAll`, `GroupCountAll`), so a sum is
+  whole and rounded once, from the database's total. Any other agg
+  prints "—". On an entity with `AfterList` hooks the stat totals the
+  masked rows instead, and past 100,000 rows prints "—" rather than part
+  of them; a field with more than 100 values draws no chart. Each logs
+  why. A dashboard block reads an entity without a screen of its own.
 
 ## How it reads the entity
 
@@ -159,6 +169,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
   built in; an app kind of the same name replaces a built-in one.
+  `Cell` and `Detail` get the row after the read hooks, so a column a hook
+  masks stays masked in them, and a relation whose target the caller may
+  not read draws muted without calling them. Only `Input` gets the stored
+  value, since a form prefills from it.
 - **Views** bind a func to a `Display.Views` key, for a filter that
   depends on who is looking, the tenant or the clock. The URL carries the
   key (`?view=overdue`), never the predicate. The func's predicate passes
@@ -173,7 +187,13 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
 - **Actions** add record header buttons and, with `Bulk`, list bulk
-  actions. `Permission`, when set, is checked against the caller's own
+  actions. A record button posts to the entity's `_bulk` route with scope
+  `record` and the one id, so it runs through the same re-read, gates and
+  audit row as a bulk run; it answers 200 when the action ran, 403 when
+  the record's gates skipped it and 500 when `Run` failed. It shows only
+  to a caller who may run it on that record, in its `Variant`
+  (`ui.ButtonSecondary` when empty; `New` refuses a variant no Button
+  knows). `Permission`, when set, is checked against the caller's own
   roles on top of the entity's update access; a `Wildcard` grant does not
   satisfy it. `Run` receives the resolved selection and a CRUD handle
   scoped to the caller. Up to `InRequestCap` (100) records run inside the
@@ -254,10 +274,11 @@ and so does an entity with no REST write routes.
   through the scoped CRUD handler under the caller's context, so an id
   from another owner or tenant drops out. "Every match" rebuilds the
   list's view (a builder's `View` included), search, filter and facets
-  from the posted query, up to `EveryMatchCap`, and the bar posts the
-  count it offered: a match of any other size is refused with 409, so a
-  list that changed since it was drawn never runs over rows the caller
-  did not see counted. Each record then passes its own update or delete
+  from the posted query, up to `EveryMatchCap`, and the bar posts a
+  digest of the ids it offered (`match`): any other set is refused with
+  409, even one of the same size, so a row that entered the list after
+  it was drawn is never touched. A list past the cap is not offered
+  every match. Each record then passes its own update or delete
   gate before the write; a refused record counts as skipped.
 - **Every run writes one audit row** (`op: "bulk"`) with the action, the
   count and the done, skipped and failed tallies, when the app has
@@ -269,7 +290,27 @@ and so does an entity with no REST write routes.
   in order. A retried job resumes at the first record with no outcome,
   and the first outcome recorded for a record is the one kept. The
   summary row counts every outcome the store holds (`BulkStore.Tally`),
-  so a resumed run reports the whole job.
+  so a resumed run reports the whole job, and a queued run writes that
+  row once, when it finishes.
+- **Queued runs are leased.** `RunBulkJob` claims the job for five
+  minutes before each chunk, and every outcome and the finish write are
+  fenced on that claim: a second worker handed the same job runs nothing
+  while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
+  a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
+  that dies holding the lease blocks the job until it expires. Delivery
+  is at least once, so an app `Actions` callback reads
+  `ActionContext.Run`, the job id, to make its own side effects
+  idempotent.
+- **A double submit answers the job already queued.** The job is keyed on
+  the action, its input and the resolved ids; while one with that key is
+  queued, the second confirm gets its id and count and enqueues nothing.
+- **App start resumes and prunes.** A job written but never handed to
+  the runner (the process died in between, or `Enqueue` failed) is
+  handed over again at `App.Start` once it is a minute old
+  (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
+  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
+  schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's
   narrowing (a builder's `View` included) and `_list=<key>`: the file
   holds what the list narrowed to, up
@@ -282,9 +323,17 @@ and so does an entity with no REST write routes.
 Both routes mount on the router the entity's CRUD routes went on, so an
 entity registered with `App.GroupEntity` keeps its group's prefix and
 middleware, and its screens post to the group's path. Both answer 404 for
-an entity with bulk off. The router serves the static `_bulk` and
+an entity with bulk off, except a record action, which `_bulk` still
+runs. The router serves the static `_bulk` and
 `_export.csv` segments ahead of `/{id}`, so no record id can shadow them.
-The app's OpenAPI document lists both routes for each entity EntityUI
+
+The screens look an entity up by name (`Registry.Get`), so they draw the
+version a name resolves to: the unversioned entity, else the sole
+version. Only that entity gets the two routes. A group version that
+shares its name with an unversioned entity gets none, and when several
+versions share a name and none is unversioned, the name is ambiguous and
+no version gets them. A version that owned its name stops answering
+(404) once a later `App.Entity` takes the name over. The app's OpenAPI document lists both routes for each entity EntityUI
 mounted them on; `openapi.EntityOpenAPIWithBulk` builds that document
 outside the app.
 

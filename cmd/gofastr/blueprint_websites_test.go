@@ -189,6 +189,53 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	assertContains(t, fileContent(files, "extensions.go"), "var appExtensions = entityui.Extensions{}")
 }
 
+// An entity_list or entity_detail inside a section or card is the same
+// screen as one at the top of the body: the list's create: true gets its
+// /create screen, the detail mounts as a drawer over the list, both land
+// in the entity's CRUD file, and the generated e2e test targets them.
+func TestBlueprint_NestedCRUDBlocksSynthesized(t *testing.T) {
+	section := func(children ...BlueprintBlock) []BlueprintBlock {
+		return []BlueprintBlock{{Kind: "section", Props: map[string]any{"heading": "Rows"}, Children: []BlueprintBlock{
+			{Kind: "card", Children: children},
+		}}}
+	}
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Shop", Module: "example.com/shop", APIPrefix: "api"},
+		Entities: []framework.EntityDeclaration{
+			{Name: "widgets", Fields: []framework.FieldDeclaration{
+				{Name: "name", Type: "string", Required: true},
+			}},
+		},
+		Nav: []BlueprintNavItem{{Label: "Widgets", Href: "/app/widgets"}},
+		Screens: []BlueprintScreen{
+			{Name: "widgets", Route: "/app/widgets", Layout: "app", Body: section(
+				BlueprintBlock{Kind: "entity_list", Entity: "widgets", Fields: []string{"name"}, Create: true},
+			)},
+			{Name: "widget_detail", Route: "/app/widgets/{id}", Layout: "app", Body: section(
+				BlueprintBlock{Kind: "entity_detail", Entity: "widgets"},
+			)},
+		},
+	}
+	if err := validateBlueprint(bp); err != nil {
+		t.Fatalf("validateBlueprint: %v", err)
+	}
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	crudFile := fileContent(files, "screen_widgets_crud.go")
+	if crudFile == "" {
+		t.Fatalf("the nested list and detail screens were not classified as CRUD; files=%v", sortedFileNames(files))
+	}
+	assertContains(t, crudFile, `appUI.Create("widgets").Base("/app/widgets")`)
+	assertContains(t, crudFile, `"/app/widgets/create"`)
+	assertContains(t, crudFile, `record.Intercept = &app.Intercept{From: "/app/widgets", As: app.ScreenDrawer}`)
+	target, ok := blueprintE2EWritableTarget(bp)
+	if !ok || target.newRoute != "/app/widgets/create" || target.detailBase != "/app/widgets" {
+		t.Fatalf("e2e target = %+v, %v; want the nested list's create and detail routes", target, ok)
+	}
+}
+
 // TestBlueprint_ExtensionSeamShipsAlways: the entityui seam ships even
 // with zero entities, so a later --add entity screen never edits an owned
 // file, and it imports only the entityui package.

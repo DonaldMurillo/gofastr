@@ -37,7 +37,7 @@ func builtinKind(name string) Kind {
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
 				Name: ic.Name, Label: kindLabel(ic), ID: kindID(ic), Value: ic.Value,
-				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Class: "fui-textarea--mono",
+				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Monospace: true,
 			})
 		}}
 	default:
@@ -124,6 +124,17 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 	return muted()
 }
 
+// relationReadable reports whether the caller may read the record f's
+// foreign key id points at, through the related entity's own read gate.
+func (fb *formBuilder) relationReadable(ctx context.Context, f schema.Field, id string) bool {
+	other, err := fb.b.ui.entityFor(f.To)
+	if err != nil {
+		return false
+	}
+	om, err := fb.b.ui.meta(other.GetName())
+	return err == nil && canReadRecord(ctx, om.ch, id)
+}
+
 // relationDisplay names a foreign key by its record's title: one read
 // of that one row through the related entity's own handler and read
 // gate. A target the caller may not read renders muted, never its label
@@ -131,7 +142,7 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 // return renders the id.
 func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v any) render.HTML {
 	id := cell(v)
-	if id == "" {
+	if id == "" || !fb.relationReadable(ctx, f, id) {
 		return muted()
 	}
 	other, err := fb.b.ui.entityFor(f.To)
@@ -139,7 +150,7 @@ func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v an
 		return muted()
 	}
 	om, err := fb.b.ui.meta(other.GetName())
-	if err != nil || !canReadRecord(ctx, om.ch, id) {
+	if err != nil {
 		return muted()
 	}
 	fields := []string{om.pk}

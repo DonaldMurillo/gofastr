@@ -171,63 +171,6 @@ func TestAuditTrailEdges(t *testing.T) {
 	}
 }
 
-// Create is all or nothing: a reused job id or a repeated record id
-// leaves no partial job behind. Pending with no room returns nothing.
-func TestSQLBulkStoreCreateRollsBack(t *testing.T) {
-	db := memDB(t)
-	ctx := context.Background()
-	s, err := newSQLBulkStore(ctx, db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job := entityui.BulkJob{ID: "j1", Entity: "notes", Action: "delete", Count: 1, Creator: "u1", FilterHash: "h"}
-	if err := s.Create(ctx, job, []string{"a"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Create(ctx, job, []string{"b"}); err == nil {
-		t.Fatal("a reused job id was created")
-	}
-	dup := entityui.BulkJob{ID: "j2", Entity: "notes", Action: "delete", Count: 2, Creator: "u1", FilterHash: "h"}
-	if err := s.Create(ctx, dup, []string{"a", "a"}); err == nil {
-		t.Fatal("a selection naming one record twice was created")
-	}
-	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM ` + bulkJobsTable + ` WHERE id = 'j2'`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("failed create left %d job rows (%v), want 0", n, err)
-	}
-	if got, err := s.Pending(ctx, "j1", 0); err != nil || got != nil {
-		t.Fatalf("Pending limit 0 = %v, %v; want nil", got, err)
-	}
-}
-
-// Every store call reports a database it cannot reach rather than
-// answering as if the job were empty or settled.
-func TestSQLBulkStoreReportsDBErrors(t *testing.T) {
-	db := memDB(t)
-	ctx := context.Background()
-	s, err := newSQLBulkStore(ctx, db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Close()
-	job := entityui.BulkJob{ID: "j1", Entity: "notes", Action: "delete", Count: 1, Creator: "u1", FilterHash: "h"}
-	if err := s.Create(ctx, job, []string{"a"}); err == nil {
-		t.Error("Create on a closed database succeeded")
-	}
-	if _, err := s.Pending(ctx, "j1", 10); err == nil {
-		t.Error("Pending on a closed database returned no error")
-	}
-	if err := s.Settle(ctx, "j1", map[string]string{"a": entityui.BulkRowDone}); err == nil {
-		t.Error("Settle on a closed database succeeded")
-	}
-	if err := s.Finish(ctx, "j1", entityui.BulkDone); err == nil {
-		t.Error("Finish on a closed database succeeded")
-	}
-	if _, err := newSQLBulkStore(ctx, db); err == nil {
-		t.Error("ensuring the schema on a closed database succeeded")
-	}
-}
-
 // AppendAuditEvent writes to audit_log when no table is named, and
 // refuses a detail map it cannot encode instead of writing a NULL diff.
 func TestAppendAuditEventDefaultsAndRefusals(t *testing.T) {

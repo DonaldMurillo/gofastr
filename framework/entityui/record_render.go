@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"path"
@@ -137,13 +138,16 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	if !canRead(ctx, m.ch) {
 		return accessDenied(ctx, m.plural(ctx)), nil
 	}
+	// The per-record gate is asked before any read, so a denied id
+	// runs no query and no hook; it answers the same not-found body a
+	// missing id does.
+	if !canReadRecord(ctx, m.ch, b.id) {
+		return m.notFound(ctx), nil
+	}
 	// WithReadHooks: the header and every display value show what an
 	// AfterGet redaction shows, never the stored column.
 	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), b.id, nil)
 	if err != nil || row == nil {
-		return m.notFound(ctx), nil
-	}
-	if !canReadRecord(ctx, m.ch, b.id) {
 		return m.notFound(ctx), nil
 	}
 	// Deliberately NOT WithReadHooks: the edit form's inputs
@@ -236,6 +240,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			}))
 		}
 	}
+	out = append(out, b.appActions(ctx, m)...)
 	if link := b.copyLink(ctx, m, base); link != "" {
 		out = append(out, link)
 	}
@@ -265,6 +270,40 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 		Variant: ui.ButtonGhost,
 		Icon:    "chevron-left",
 	}))
+	return out
+}
+
+// appActions are the Extension actions the caller may run on this
+// record, each a button posting the record scope to the bulk route: the
+// same route, gates and audit as a bulk run over one record.
+func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
+	if !m.hasAPI {
+		return nil
+	}
+	var out []render.HTML
+	for _, act := range recordActions(m) {
+		if !mayRun(ctx, m, act, b.id) {
+			continue
+		}
+		variant := act.app.Variant
+		if variant == "" {
+			variant = ui.ButtonSecondary
+		}
+		body, err := json.Marshal(map[string]string{"action": act.key, "scope": bulkScopeRecord, "ids": b.id})
+		if err != nil {
+			continue
+		}
+		name := strings.ToLower(act.label)
+		out = append(out, ui.Button(ui.ButtonConfig{
+			Label:   act.label,
+			Variant: variant,
+			ExtraAttrs: interactive.Post(m.api + "/_bulk").WithBody(string(body)).
+				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
+				OnSuccess(interactive.Navigate(currentURL(ctx))).
+				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name})).
+				Attrs(),
+		}))
+	}
 	return out
 }
 

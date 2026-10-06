@@ -4,10 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -110,70 +108,6 @@ func TestEntityUISecondCallPanics(t *testing.T) {
 		}
 	}()
 	app.EntityUI(entityui.Extensions{})
-}
-
-// The snapshot store keeps a job and its ids, hands back the unsettled
-// ids in confirm order, keeps an id's first outcome, and refuses an
-// unknown job and a status it does not know.
-func TestSQLBulkStoreRoundTrip(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		ctx := context.Background()
-		s, err := newSQLBulkStore(ctx, db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := newSQLBulkStore(ctx, db); err != nil {
-			t.Fatalf("second ensure: %v", err)
-		}
-		ids := make([]string, 0, bulkInsertBatch+3)
-		for i := range bulkInsertBatch + 3 {
-			ids = append(ids, "r"+string(rune('a'+i%26))+strings.Repeat("x", i/26))
-		}
-		job := entityui.BulkJob{ID: "j1", Entity: "notes", Action: "delete", Count: len(ids), Creator: "u1", FilterHash: "h"}
-		if err := s.Create(ctx, job, ids); err != nil {
-			t.Fatal(err)
-		}
-		got, err := s.Job(ctx, "j1")
-		if err != nil || got.Status != entityui.BulkQueued || got.Creator != "u1" || got.Count != len(ids) {
-			t.Fatalf("job = %+v, %v", got, err)
-		}
-		first, err := s.Pending(ctx, "j1", 2)
-		if err != nil || !slices.Equal(first, ids[:2]) {
-			t.Fatalf("pending = %v, %v; want %v", first, err, ids[:2])
-		}
-		if err := s.Settle(ctx, "j1", map[string]string{ids[0]: entityui.BulkRowDone, ids[1]: entityui.BulkRowSkipped}); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.Settle(ctx, "j1", map[string]string{ids[0]: entityui.BulkRowFailed}); err != nil {
-			t.Fatal(err)
-		}
-		var outcome string
-		if err := db.QueryRow(`SELECT outcome FROM gofastr_bulk_items WHERE job_id = 'j1' AND record_id = $1`, ids[0]).Scan(&outcome); err != nil || outcome != entityui.BulkRowDone {
-			t.Fatalf("first outcome = %q, %v; want done kept", outcome, err)
-		}
-		if tally, err := s.Tally(ctx, "j1"); err != nil || len(tally) != 2 || tally[entityui.BulkRowDone] != 1 || tally[entityui.BulkRowSkipped] != 1 {
-			t.Fatalf("tally = %v, %v; want 1 done 1 skipped", tally, err)
-		}
-		rest, err := s.Pending(ctx, "j1", len(ids))
-		if err != nil || len(rest) != len(ids)-2 || rest[0] != ids[2] {
-			t.Fatalf("pending after settle = %d ids from %v, %v", len(rest), rest[:1], err)
-		}
-		if err := s.Settle(ctx, "j1", map[string]string{ids[2]: "maybe"}); err == nil {
-			t.Fatal("an unknown outcome settled")
-		}
-		if err := s.Finish(ctx, "j1", entityui.BulkDone); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.Finish(ctx, "j1", "paused"); err == nil {
-			t.Fatal("an unknown status was written")
-		}
-		if _, err := s.Job(ctx, "nope"); !errors.Is(err, errBulkJobUnknown) {
-			t.Fatalf("unknown job = %v", err)
-		}
-		if err := s.Finish(ctx, "nope", entityui.BulkDone); !errors.Is(err, errBulkJobUnknown) {
-			t.Fatalf("finish unknown job = %v", err)
-		}
-	})
 }
 
 // The bulk answer is JSON the bar's form reads.

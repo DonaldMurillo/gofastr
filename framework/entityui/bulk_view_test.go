@@ -48,7 +48,7 @@ func TestBulkEveryMatchKeepsBuilderView(t *testing.T) {
 	page := listHTML(t, x.ui.List("invoices").View("open").PageSize(1).Bulk().Delete(), x.userCtx("/invoices", "", "u1"))
 	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{
 		"action": "delete", "scope": "every",
-		"query": hiddenValue(t, page, "query"), "count": hiddenValue(t, page, "count"),
+		"query": hiddenValue(t, page, "query"), "match": hiddenValue(t, page, "match"),
 	})
 	if code != http.StatusOK {
 		t.Fatalf("status %d: %v", code, out)
@@ -58,12 +58,12 @@ func TestBulkEveryMatchKeepsBuilderView(t *testing.T) {
 	}
 }
 
-// Every match refuses when the rows it would touch are not the count the
+// Every match refuses when the rows it would touch are not the ones the
 // screen offered: the list changed, or the query was not the screen's.
-func TestBulkEveryMatchStaleCountRefused(t *testing.T) {
+func TestBulkEveryMatchStaleRefused(t *testing.T) {
 	x := viewInvoices(t, false)
 	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{
-		"action": "delete", "scope": "every", "query": "view=open", "count": "3",
+		"action": "delete", "scope": "every", "query": "view=open", "match": "stale",
 	})
 	if code != http.StatusConflict {
 		t.Fatalf("status %d: %v, want 409", code, out)
@@ -72,7 +72,7 @@ func TestBulkEveryMatchStaleCountRefused(t *testing.T) {
 		"action": "delete", "scope": "every", "query": "view=open",
 	})
 	if code != http.StatusUnprocessableEntity {
-		t.Fatalf("no count: status %d, want 422", code)
+		t.Fatalf("no match: status %d, want 422", code)
 	}
 	if got := invoiceIDs(t, x); len(got) != 4 {
 		t.Fatalf("a refused every match deleted rows: %v", got)

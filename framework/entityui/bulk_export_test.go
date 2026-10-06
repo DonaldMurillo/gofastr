@@ -27,6 +27,25 @@ func getExport(t *testing.T, x *testUI, ctx context.Context, query string) (*htt
 	return rec, rows
 }
 
+// Every prefix a spreadsheet reads as a formula is quoted: a leading line
+// feed, a full-width introducer, and one behind leading spaces too.
+func TestCSVSafeTriggerForms(t *testing.T) {
+	for _, v := range []string{
+		"=1", "+1", "-1", "@SUM(A1)", "\t=1", "\r=1", "\tx", "\rx", "\nx",
+		"\n=WEBSERVICE(\"x\")", "＝1+1", "＋1", "－1", "＠SUM(A1)",
+		"  =1", " =1", "　=1",
+	} {
+		if got := csvSafe(v); got != "'"+v {
+			t.Errorf("csvSafe(%q) = %q, want it quoted", v, got)
+		}
+	}
+	for _, v := range []string{"", "plain", "1-2", "a=b", "café", " plain"} {
+		if got := csvSafe(v); got != v {
+			t.Errorf("csvSafe(%q) = %q, want it unchanged", v, got)
+		}
+	}
+}
+
 // A cell a spreadsheet would run as a formula gets a leading quote; the
 // masked (NoQuery) token never appears.
 func TestExportDefusesFormulasAndDropsNoQuery(t *testing.T) {

@@ -148,6 +148,11 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 // kit shapes, the related record's title, or a registered kind's Cell.
 func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any, name string) render.HTML {
 	m := s.m
+	// A relation the caller may not read is muted before any kind sees
+	// its foreign key.
+	if f.Type == schema.Relation && labels.refused(name) {
+		return muted()
+	}
 	if kind, ok := u.kindCell(m, f); ok {
 		// An app's Cell runs behind a recover: a panicking kind degrades
 		// to a muted value, never a failed list.
@@ -205,6 +210,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 // without the markup: a link label, a card title, a chip.
 func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any, name string) string {
 	m := s.m
+	if f.Type == schema.Relation && labels.refused(name) {
+		return ""
+	}
 	if kind, ok := u.kindCell(m, f); ok {
 		return string(contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
 			return kind.Cell(CellContext{Ctx: ctx, Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil

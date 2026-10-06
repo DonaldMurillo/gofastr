@@ -74,7 +74,7 @@ func TestBulkResumedRunTalliesAll(t *testing.T) {
 	x, mb, policy := guardedInvoices(t, entity.AccessControl{Delete: "invoices:delete"}, 150, Extensions{}, nil)
 	grant(t, policy, "clerk", "invoices:delete")
 	mb.principal = func(BulkJob) (context.Context, error) { return bulkCtx("u1", policy, "clerk"), nil }
-	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"}); code != http.StatusAccepted {
+	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))}); code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	mb.failPending = func(call int) bool { return call == 2 }
@@ -114,7 +114,7 @@ func TestBulkJobStopsWhenReadRevoked(t *testing.T) {
 	grant(t, policy, "clerk", "invoices:read", "invoices:delete")
 	grant(t, policy, "deleter", "invoices:delete")
 	mb.principal = func(BulkJob) (context.Context, error) { return bulkCtx("u1", policy, "deleter"), nil }
-	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"}); code != http.StatusAccepted {
+	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))}); code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	if err := x.ui.RunBulkJob(context.Background(), mb.queued[0].ID); err != nil {
@@ -153,7 +153,7 @@ func TestBulkJobRereadsEachChunk(t *testing.T) {
 		}
 	})
 	mb.principal = func(BulkJob) (context.Context, error) { return bulkCtx("u1", nil), nil }
-	if code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:remind", "scope": "every", "count": "151"}); code != http.StatusAccepted {
+	if code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "run:remind", "scope": "every", "match": matchDigest(invoiceIDs(t, x))}); code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	if _, err := x.db.Exec(`UPDATE invoices SET owner_id = 'u2' WHERE id IN ('q000', 'q149')`); err != nil {
@@ -195,7 +195,7 @@ func TestBulkSetAndMoveNeedUpdate(t *testing.T) {
 func TestBulkQueueRefusesAnonymousCreator(t *testing.T) {
 	x, mb, policy := guardedInvoices(t, entity.AccessControl{Delete: "invoices:delete"}, 150, Extensions{}, nil)
 	grant(t, policy, "clerk", "invoices:delete")
-	code, out := postBulk(t, x, bulkCtx("", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"})
+	code, out := postBulk(t, x, bulkCtx("", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))})
 	if code != http.StatusUnprocessableEntity || !strings.Contains(fmt.Sprint(out["error"]), "Sign in") {
 		t.Fatalf("status %d: %v, want 422 naming sign-in", code, out)
 	}

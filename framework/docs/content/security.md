@@ -490,8 +490,9 @@ accepts a caller-built condition on a `NoQuery` column and returns the
 stored value, because read-modify-write, seed lookups, and aggregates
 all need the real row; the server cannot tell those apart from a
 rendered list. Where rows reach an end user, pass
-`crud.WithReadHooks(ctx)` so the same `AfterList`/`AfterGet` chain the
-HTTP surface runs applies (see `hooks-and-transactions.md`).
+`crud.WithReadHooks(ctx)` so the read hooks the HTTP surface runs apply:
+the `BeforeList`/`BeforeGet` scopes and the `AfterList`/`AfterGet` masks
+(see `hooks-and-transactions.md`).
 
 A nested `?rel.field=` filter needs the target entity's schema to run
 that check, so an unresolvable target refuses the filter rather than

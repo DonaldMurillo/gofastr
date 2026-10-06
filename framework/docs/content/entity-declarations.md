@@ -1240,6 +1240,26 @@ column may be read: NoQuery keeps it out of filters and sorts only),
 and masking hooks still run on whatever came back. `CountAll` applies
 both identically, so a page count matches its rows.
 
+Two aggregates run under the same scopes and compute in the database,
+over every match rather than a page:
+
+```go
+total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
+groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
+```
+
+`SumAll` returns the database's own decimal text ("0" over no rows), so
+a `decimal` column sums as `NUMERIC` on Postgres, exactly; it takes a
+visible int, float or decimal field. `GroupCountAll` returns each stored
+value with its count, ordered by value, a bool as `true`/`false`; a
+positive limit caps the groups, so ask for one more than you draw to
+tell a capped result from a whole one. Both refuse `Fields`, `Sorts`,
+`Limit`, `Offset` and `Includes`, and a Hidden field. Under
+`WithReadHooks`, an entity with `AfterList` hooks refuses both with
+`crud.ErrAggregateMasked`: those hooks mask rows after the query, and a
+total the database computed would count what they hide. Read the rows
+with `ListAll` there.
+
 ## Restoring and purging soft-deleted rows
 
 For a `soft_delete: true` entity, the in-process handler offers the pair

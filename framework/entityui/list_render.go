@@ -118,7 +118,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// The count only feeds pagination chrome; a refused count degrades to
 	// unknown totals rather than a failed screen, and only a known total
 	// may clamp the requested page.
-	total, countErr := m.ch.CountAll(ctx, read)
+	total, countErr := m.ch.CountAll(crud.WithReadHooks(ctx), read)
 	known := countErr == nil
 	if countErr != nil {
 		slog.WarnContext(ctx, "entityui: count", "entity", m.name, "error", countErr)

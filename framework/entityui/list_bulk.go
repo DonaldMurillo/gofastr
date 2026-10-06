@@ -59,7 +59,15 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	scopes = append(scopes, ui.SelectOption{Value: bulkScopePage, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkPage, map[string]string{
 		"count": strconv.Itoa(len(rows)),
 	})})
-	every := known && !s.filterBad && len(b.where) == 0 && total > len(rows)
+	// The bar carries the digest of the ids every match covers, so the
+	// run refuses any other set. A list past the cap is not offered it.
+	var match string
+	if known && !s.filterBad && len(b.where) == 0 && total > len(rows) {
+		if ids, err := b.ui.matchIDs(ctx, m, s.key, s.carry()); err == nil {
+			match = matchDigest(ids)
+		}
+	}
+	every := match != ""
 	if every {
 		scopes = append(scopes, ui.SelectOption{Value: bulkScopeEvery, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkEvery, map[string]string{
 			"count": formatNumber(float64(total), 0),
@@ -71,9 +79,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		fields = append(fields, hiddenInput("page", cell(rowValue(row, m.pk))))
 	}
 	if every {
-		// The count every match offered: the run refuses when the rows
-		// it would touch are not that many.
-		fields = append(fields, hiddenInput("count", strconv.Itoa(total)))
+		fields = append(fields, hiddenInput("match", match))
 	}
 	fields = append(fields,
 		hiddenInput("key", s.key),
