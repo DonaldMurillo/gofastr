@@ -289,7 +289,7 @@ func ratingCSS(_ style.Theme) string {
    stay on the default amber. */
 .fui-rating--heart   { --_rating-shape-color: var(--color-danger, #DC2626); }
 .fui-rating--fire    { --_rating-shape-color: var(--color-danger, #DC2626); }
-.fui-rating--thumb   { --_rating-shape-color: var(--color-primary, #4F46E5); }
+.fui-rating--thumb   { --_rating-shape-color: var(--color-primary, #18181B); }
 .fui-rating--diamond { --_rating-shape-color: var(--color-info, #3B82F6); }
 
 [data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {

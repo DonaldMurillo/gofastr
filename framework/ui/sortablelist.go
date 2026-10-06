@@ -142,15 +142,15 @@ func sortablelistCSS(_ style.Theme) string {
   outline-offset: 2px;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
-  background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
-  border-color: var(--color-primary, #4F46E5);
+  background: color-mix(in srgb, var(--color-primary, #18181B) 12%, transparent);
+  border-color: var(--color-primary, #18181B);
   cursor: grabbing;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
   opacity: 0.5;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
-  border-top: 2px solid var(--color-primary, #4F46E5);
+  border-top: 2px solid var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__grip {
   display: inline-flex;

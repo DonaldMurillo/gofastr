@@ -215,7 +215,7 @@ func progressStepsCSS(_ style.Theme) string {
   z-index: 0;
 }
 .fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item::before {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-progress-steps"] .fui-progress-steps__row {
   position: relative;
@@ -262,16 +262,16 @@ func progressStepsCSS(_ style.Theme) string {
 
 /* Status states. */
 .fui-progress-steps__item[data-state="current"] .fui-progress-steps__marker {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="current"] .fui-progress-steps__label {
   color: var(--color-text, #18181B);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__marker {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__label {

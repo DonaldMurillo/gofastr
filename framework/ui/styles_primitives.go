@@ -384,8 +384,8 @@ func toggleCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-sm) - 2px);
 }
 .fui-choice--checkbox .fui-choice__input:checked {
-  background-color: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   background-image:
     linear-gradient(to top right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px)),
     linear-gradient(to bottom right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px));
@@ -399,8 +399,8 @@ func toggleCSS(_ style.Theme) string {
   border-radius: 50%;
 }
 .fui-choice--radio .fui-choice__input:checked {
-  border-color: var(--color-primary, #4F46E5);
-  background-image: radial-gradient(circle at center, var(--color-primary, #4F46E5) 0 5px, transparent 5.5px);
+  border-color: var(--color-primary, #18181B);
+  background-image: radial-gradient(circle at center, var(--color-primary, #18181B) 0 5px, transparent 5.5px);
 }
 
 /* ─── Switch: the track IS the input; the thumb is a positioned
@@ -434,8 +434,8 @@ func toggleCSS(_ style.Theme) string {
               background-position var(--duration-fast, 150ms) ease;
 }
 .fui-switch__input:checked {
-  background-color: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   background-position: right 0.0625rem center;
 }
 .fui-switch__text {
@@ -690,7 +690,7 @@ func spinnerCSS(_ style.Theme) string {
   block-size:  var(--ui-spinner-size);
   border-radius: 50%;
   border: 2px solid var(--color-border, #E4E4E7);
-  border-top-color: var(--color-primary, #4F46E5);
+  border-top-color: var(--color-primary, #18181B);
   animation: fui-spinner-rotate var(--duration-slow, 400ms) linear infinite;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dots {
@@ -703,7 +703,7 @@ func spinnerCSS(_ style.Theme) string {
   inline-size: calc(var(--ui-spinner-size) * 0.28);
   block-size:  calc(var(--ui-spinner-size) * 0.28);
   border-radius: 50%;
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   animation: fui-spinner-pulse 1.2s ease-in-out infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot:nth-child(1) { animation-delay: -0.32s; }
@@ -719,7 +719,7 @@ func spinnerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell {
   display: block;
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   border-radius: 2px;
   animation: fui-spinner-grid 1.3s ease-in-out infinite both;
 }

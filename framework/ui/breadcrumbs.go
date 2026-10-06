@@ -112,7 +112,7 @@ func breadcrumbsCSS(_ style.Theme) string {
   text-decoration: none;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link:hover {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   text-decoration: underline;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {

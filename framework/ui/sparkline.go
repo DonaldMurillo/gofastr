@@ -220,7 +220,7 @@ func sparklineCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-sparkline"] {
   display: inline-block;
   vertical-align: middle;
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-sparkline"] .fui-sparkline__line {
   fill: none;

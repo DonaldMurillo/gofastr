@@ -45,7 +45,7 @@
   text-decoration: none;
 }
 .brand:hover { color: var(--color-primary); }
-.brand:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.brand:focus-visible { outline: 2px solid var(--color-text-subtle); outline-offset: 2px; }
 
 .links {
   display: flex;
@@ -86,7 +86,7 @@
 }
 .toggle::-webkit-details-marker { display: none; }
 .toggle:hover { background: var(--color-surface-soft); }
-.toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.toggle:focus-visible { outline: 2px solid var(--color-text-subtle); outline-offset: 2px; }
 /* The three bars turn into the cross: both icons share one cell and
    swap with a quarter turn. */
 .icon-open,
