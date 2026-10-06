@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -96,9 +98,14 @@ func exportColumns(m *meta) []string {
 }
 
 // csvSafe defuses a cell a spreadsheet would evaluate: one starting with
-// = + - @ or a tab or carriage return gets a leading quote.
+// a tab, carriage return or line feed, or whose first non-space rune is
+// = + - @ or a full-width form of one, gets a leading quote.
 func csvSafe(v string) string {
-	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+	if v != "" && strings.ContainsRune("\t\r\n", rune(v[0])) {
+		return "'" + v
+	}
+	rest := strings.TrimLeftFunc(v, unicode.IsSpace)
+	if r, _ := utf8.DecodeRuneInString(rest); rest != "" && strings.ContainsRune("=+-@\uFF1D\uFF0B\uFF0D\uFF20", r) {
 		return "'" + v
 	}
 	return v
