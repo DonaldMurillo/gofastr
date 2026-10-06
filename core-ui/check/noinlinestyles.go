@@ -23,7 +23,7 @@ import (
 //
 // LintNoInlineStyles walks every .go file in dir (recursive variant
 // below) and reports any source location that would emit a forbidden
-// inline style attribute. Three detection paths:
+// inline style attribute. Four detection paths:
 //
 //   1. Raw string literals containing `style="…"` or `style='…'`
 //      anywhere in the body. Catches `render.HTML("<div style=…>")`
@@ -34,6 +34,11 @@ import (
 //      …}}, etc.
 //   3. html.* config struct literals whose Attrs field literal carries
 //      a "style" key (covered by case 2 because Attrs is a map).
+//   4. Index assignments onto an attribute map, `attrs["style"] = …` —
+//      the computed-value spelling the literal scans cannot see, and
+//      the one a component reaches for when it "owns" the attribute:
+//      ui.FormFrame shipped its rail width exactly this way and the
+//      default CSP silently ignored it.
 //
 // Files that legitimately need to embed a style string (the linter
 // itself, the CSP-test fixtures, the style-builder package emitting
@@ -98,9 +103,43 @@ func scanInlineStyles(fset *token.FileSet, file *ast.File, filename string, resu
 			checkInlineStyleInString(val, fset.Position(node.Pos()).Line, filename, result)
 		case *ast.CompositeLit:
 			checkStyleKeyInComposite(node, fset, filename, result)
+		case *ast.AssignStmt:
+			checkStyleIndexAssignment(node, fset, filename, result)
 		}
 		return true
 	})
+}
+
+// checkStyleIndexAssignment flags `x["style"] = …` assignments, the
+// computed-value twin of checkStyleKeyInComposite: an attrs map built
+// empty and filled key by key evades the composite-literal scan while
+// shipping exactly the attribute the CSP strips. Only string-valued
+// right-hand sides count, mirroring the composite check, so a
+// map[string]bool denylist keyed by "style" stays quiet.
+func checkStyleIndexAssignment(node *ast.AssignStmt, fset *token.FileSet, filename string, result *Result) {
+	for i, lhs := range node.Lhs {
+		idx, ok := lhs.(*ast.IndexExpr)
+		if !ok {
+			continue
+		}
+		key, ok := idx.Index.(*ast.BasicLit)
+		if !ok || key.Kind != token.STRING {
+			continue
+		}
+		// Attribute names are case-insensitive: attrs["Style"] emits the
+		// same attribute the browser strips under strict CSP.
+		if !strings.EqualFold(stripStringLiteral(key.Value), "style") {
+			continue
+		}
+		if i < len(node.Rhs) && !valueLooksLikeString(node.Rhs[i]) {
+			continue
+		}
+		result.add(filename, fset.Position(lhs.Pos()).Line,
+			"\"style\" index assignment onto an attrs map forbidden: framework "+
+				"strict-CSP strips inline style attributes. Use a class name backed by a "+
+				"registered stylesheet (style.NewStyleSheet / registry.RegisterStyle / "+
+				"theme.go) instead.")
+	}
 }
 
 // checkInlineStyleInString flags any string literal whose body

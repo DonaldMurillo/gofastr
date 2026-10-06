@@ -292,7 +292,7 @@ var Catalog = []Entry{
 		// viewport-height by design, which inside a catalog card would eat the
 		// page. Both the class and its rule live in this package (css.go).
 		return html.Div(html.DivConfig{Class: "demo-viewport"},
-			ui.Workbench(ui.WorkbenchConfig{RailWidth: "220px", Rail: rail, Pane: pane}))
+			ui.Workbench(ui.WorkbenchConfig{RailWidth: ui.WorkbenchRailNarrow, Rail: rail, Pane: pane}))
 	}},
 	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
 		primary := html.Div(html.DivConfig{},
