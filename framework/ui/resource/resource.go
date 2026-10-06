@@ -104,9 +104,11 @@ type Config struct {
 	// HeadingLevel is the list title's heading level (default 1, the
 	// list as the page). Set 2 when the list is a block under a page that
 	// already has its <h1>, a dashboard's recent rows, so the outline
-	// gets one <h1> and the title sizes as a section. 2 to 5 are honoured;
-	// any other value renders 1. The empty state's title takes the next
-	// level down, so 5 is the deepest that leaves it a heading.
+	// gets one <h1> and the title sizes as a section. 0 means 1; 1 to 5
+	// are honoured and any other value panics at render, since falling
+	// back to 1 would print the second <h1> the field exists to prevent.
+	// The empty state's title takes the next level down, so 5 is the
+	// deepest that leaves it a heading.
 	HeadingLevel int
 	EmptyText    string        // overrides the empty-state description (the block's empty_text:)
 	Related      []RelatedList // reverse relations surfaced on the detail page
@@ -210,12 +212,16 @@ func (c Config) WithHeading(s string) Config { c.Heading = s; return c }
 // WithHeadingLevel sets the list title's heading level (Config.HeadingLevel).
 func (c Config) WithHeadingLevel(n int) Config { c.HeadingLevel = n; return c }
 
-// headingLevel is the list title's level: HeadingLevel, or 1.
+// headingLevel is the list title's level: HeadingLevel, or 1 when it
+// is unset.
 func (c Config) headingLevel() int {
-	if c.HeadingLevel >= 2 && c.HeadingLevel <= 5 {
+	switch {
+	case c.HeadingLevel == 0:
+		return 1
+	case c.HeadingLevel >= 1 && c.HeadingLevel <= 5:
 		return c.HeadingLevel
 	}
-	return 1
+	panic(fmt.Sprintf("resource: %s: HeadingLevel %d is out of range — 1 to 5 (0 means 1); the empty state takes the level below", c.Entity, c.HeadingLevel))
 }
 
 // WithEmpty overrides the empty-state text.
