@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.TextAreaConfig.Monospace`** draws the text in the mono font
+  token; entity screens set it on JSON fields and the `code` and
+  `markdown` kinds.
 - **`EntityConfig.States` gives an entity a state machine.** The config
   names the Enum field holding the state, the values a create may start
   at, and the named moves that change it. Unless `Advisory` is set, the

@@ -84,7 +84,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **slider**: `framework/ui.Slider`, `<input type=range>` with optional live value mirror
 - **rangeslider**: `framework/ui.RangeSlider`, dual-thumb range with cross-clamp
 - **numberinput**: `framework/ui.NumberInput`, number field with explicit +/- buttons
-- **textarea**: `framework/ui.TextArea`, multi-line input with typed Autogrow
+- **textarea**: `framework/ui.TextArea`, multi-line input with typed Autogrow and Monospace (the mono font token, for JSON and code)
 - **colorpicker**: `framework/ui.ColorPicker`, styled native `<input type=color>`
 - **timepicker**: `framework/ui.TimePicker`, styled native `<input type=time>`
 - **select**: `framework/ui.Select`, labelled native `<select>` with help, error, placeholder, and required marker

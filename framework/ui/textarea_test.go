@@ -124,13 +124,16 @@ func TestTextAreaExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 }
 
-// The mono variant rides TextArea's Class (the field root), and the
-// sheet reaches the control as a descendant: JSON and code fields draw
-// in the mono token without any app-side CSS.
+// Monospace marks the field root, and the sheet reaches the control as a
+// descendant: JSON and code fields draw in the mono token without any
+// app-side CSS or knowledge of the component's classes.
 func TestTextAreaMonoVariant(t *testing.T) {
-	ta := TextArea(TextAreaConfig{Name: "cfg", Label: "Config", Rows: 6, Class: "fui-textarea--mono"})
-	if !strings.Contains(string(ta), `fui-textarea--mono`) {
+	ta := TextArea(TextAreaConfig{Name: "cfg", Label: "Config", Rows: 6, Monospace: true, Class: "app-cfg"})
+	if !strings.Contains(string(ta), `class="fui-field fui-textarea--mono app-cfg"`) {
 		t.Fatalf("variant class missing on the field root:\n%s", ta)
+	}
+	if plain := TextArea(TextAreaConfig{Name: "cfg", Label: "Config"}); strings.Contains(string(plain), "--mono") {
+		t.Fatalf("a plain TextArea drew the mono variant:\n%s", plain)
 	}
 	if !strings.Contains(textAreaCSS(style.Theme{}), `.fui-textarea--mono .fui-textarea {`) {
 		t.Fatal("the sheet must scope the mono family through the field root")

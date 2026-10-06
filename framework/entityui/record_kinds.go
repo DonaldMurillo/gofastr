@@ -37,7 +37,7 @@ func builtinKind(name string) Kind {
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
 				Name: ic.Name, Label: kindLabel(ic), ID: kindID(ic), Value: ic.Value,
-				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Class: "fui-textarea--mono",
+				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Monospace: true,
 			})
 		}}
 	default:
