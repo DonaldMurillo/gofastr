@@ -3714,7 +3714,7 @@ func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 		extra = append(extra, s)
 	}
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+		for _, b := range blueprintBlocksDeep(s.Body) {
 			e := strings.Trim(b.Entity, "/")
 			if e == "" {
 				continue
@@ -4045,7 +4045,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 	createOf := map[string]string{}
 	detailOf := map[string]string{}
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+		for _, b := range blueprintBlocksDeep(s.Body) {
 			e := strings.Trim(b.Entity, "/")
 			if isEntityListBlock(b) && b.Create {
 				createOf[e] = blueprintEntityListScreen(bp, e).Route
@@ -5661,7 +5661,7 @@ func screenFileName(base string) string {
 // (marketing, dashboards, auth forms) return ("", false) and land in their
 // own screen_<snake>.go.
 func screenEntityRef(s BlueprintScreen) (entity string, isCrud bool) {
-	for _, b := range s.Body {
+	for _, b := range blueprintBlocksDeep(s.Body) {
 		e := strings.Trim(b.Entity, "/")
 		if e == "" {
 			continue
@@ -5718,7 +5718,7 @@ func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
 	// base route is its entity's list route (validateDetailRoutes enforces
 	// the shape; the guard here keeps the emitter honest on its own).
 	intercept := ""
-	for _, b := range screen.Body {
+	for _, b := range blueprintBlocksDeep(screen.Body) {
 		if !isEntityDetailBlock(b) {
 			continue
 		}
@@ -6088,19 +6088,12 @@ func screenParamName(screen BlueprintScreen) string {
 	return "id"
 }
 
-// screenNeedsParams reports whether a screen reads a route param
-// (either supported syntax), or renders an entity detail/edit block
-// whose synthesized route carries {id}.
+// screenNeedsParams reports whether a screen reads a route param (either
+// supported syntax). An entity_detail or edit form at any depth needs one
+// too, and validation refuses such a screen whose route has no {id}, so
+// the route alone answers.
 func screenNeedsParams(screen BlueprintScreen) bool {
-	if len(routeParamNames(screen.Route)) > 0 {
-		return true
-	}
-	for _, b := range screen.Body {
-		if isEntityDetailBlock(b) {
-			return true
-		}
-	}
-	return false
+	return len(routeParamNames(screen.Route)) > 0
 }
 
 // screenNeedsRouteID reports whether a screen's body tree contains an
@@ -6108,19 +6101,14 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 // specific record identified by a route {id} param. The first return is the
 // detail case, the second the edit-form case, so the validator can name it.
 func screenNeedsRouteID(screen BlueprintScreen) (detail, editForm bool) {
-	var walk func([]BlueprintBlock)
-	walk = func(blocks []BlueprintBlock) {
-		for _, b := range blocks {
-			if isEntityDetailBlock(b) {
-				detail = true
-			}
-			if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
-				editForm = true
-			}
-			walk(b.Children)
+	for _, b := range blueprintBlocksDeep(screen.Body) {
+		if isEntityDetailBlock(b) {
+			detail = true
+		}
+		if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
+			editForm = true
 		}
 	}
-	walk(screen.Body)
 	return
 }
 
@@ -6178,15 +6166,28 @@ func blueprintEntityListScreen(bp Blueprint, entity string) *BlueprintScreen {
 	return &bp.Screens[lists[0]]
 }
 
+// blueprintBlocksDeep returns blocks and every block nested under them,
+// depth first, in document order. A screen's entity blocks count wherever
+// they sit, so every question about them (create synthesis, the drawer,
+// the CRUD file, the e2e target, route params) walks this, never Body
+// alone.
+func blueprintBlocksDeep(blocks []BlueprintBlock) []BlueprintBlock {
+	var out []BlueprintBlock
+	for _, b := range blocks {
+		out = append(out, b)
+		out = append(out, blueprintBlocksDeep(b.Children)...)
+	}
+	return out
+}
+
 // entityDetailsOn returns the entities blocks show an entity_detail of,
 // at any nesting depth, in block order.
 func entityDetailsOn(blocks []BlueprintBlock) []string {
 	var out []string
-	for _, b := range blocks {
+	for _, b := range blueprintBlocksDeep(blocks) {
 		if isEntityDetailBlock(b) {
 			out = append(out, strings.Trim(b.Entity, "/"))
 		}
-		out = append(out, entityDetailsOn(b.Children)...)
 	}
 	return out
 }
@@ -6194,13 +6195,11 @@ func entityDetailsOn(blocks []BlueprintBlock) []string {
 // entityListOn reports whether blocks hold an entity_list of entity at
 // any nesting depth, and whether one of them sets create: true.
 func entityListOn(blocks []BlueprintBlock, entity string) (found, create bool) {
-	for _, b := range blocks {
+	for _, b := range blueprintBlocksDeep(blocks) {
 		if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
 			found = true
 			create = create || b.Create
 		}
-		f, c := entityListOn(b.Children, entity)
-		found, create = found || f, create || c
 	}
 	return found, create
 }
@@ -6280,16 +6279,11 @@ func blueprintEntityListExpr(bp Blueprint, screen BlueprintScreen, block Bluepri
 // nesting depth.
 func countEntityListBlocks(screen BlueprintScreen) int {
 	var n int
-	var walk func([]BlueprintBlock)
-	walk = func(blocks []BlueprintBlock) {
-		for _, b := range blocks {
-			if isEntityListBlock(b) {
-				n++
-			}
-			walk(b.Children)
+	for _, b := range blueprintBlocksDeep(screen.Body) {
+		if isEntityListBlock(b) {
+			n++
 		}
 	}
-	walk(screen.Body)
 	return n
 }
 
