@@ -253,6 +253,7 @@ func TestParseRefuses(t *testing.T) {
 		{"unknown css declaration key", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n                value: x\n                bogus: 1\n"), "unknown key"},
 		{"css declaration without value", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n"), "value"},
 		{"css declaration without properties", note("        find:\n          css:\n            declarations:\n              - value: x\n"), "properties"},
+		{"css declaration glob off css", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n                value: x\n                glob: '**/*.js'\n"), "must name .css files"},
 		{"css declaration custom property", note("        find:\n          css:\n            declarations:\n              - properties: [--x]\n                value: x\n"), "custom property"},
 		{"unknown gomod key", note("        find:\n          gomod:\n            bogus: 1\n"), "unknown key"},
 		{"unknown fields item key", note("        find:\n          fields:\n            - field: gofastr/framework/ui.C.F\n              bogus: 1\n"), "unknown key"},

@@ -417,10 +417,23 @@ func parseCSSDeclarations(n *coreyaml.Node) ([]CSSDeclaration, error) {
 		if item.Kind != coreyaml.Map {
 			return nil, errAt(item.Line, "css.declarations entry must be a map")
 		}
-		if err := unknownKeys(item, "properties", "value"); err != nil {
+		if err := unknownKeys(item, "properties", "value", "glob"); err != nil {
 			return nil, err
 		}
 		var d CSSDeclaration
+		if gn := item.Map["glob"]; gn != nil {
+			glob, err := optString(gn, "css.declarations.glob")
+			if err != nil {
+				return nil, err
+			}
+			if glob == "" || !strings.HasSuffix(glob, ".css") {
+				return nil, errAt(gn.Line, "css.declarations.glob %q must name .css files", glob)
+			}
+			if err := checkGlob(glob); err != nil {
+				return nil, errAt(gn.Line, "css.declarations.glob %q: %v", glob, err)
+			}
+			d.Glob = glob
+		}
 		pn := item.Map["properties"]
 		if pn == nil {
 			return nil, errAt(item.Line, "css.declarations entry is missing properties")

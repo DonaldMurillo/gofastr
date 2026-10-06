@@ -44,6 +44,9 @@ func (e *engine) cssDeclarations(rel string, toks []ownstyle.Token) {
 		name := cssUnescape(t.Text)
 		for _, n := range e.cssNotes {
 			for _, d := range n.Find.CSS.Declarations {
+				if d.Glob != "" && !matchGlob(d.Glob, rel) {
+					continue
+				}
 				if slices.Contains(d.Properties, name) && d.Value.MatchString(value) {
 					e.add(n, Hit{File: rel, Line: t.Line, Col: t.Col, Why: "css " + name + ": " + value})
 				}

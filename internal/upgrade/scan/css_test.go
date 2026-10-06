@@ -168,3 +168,13 @@ func TestCSSDeclarationStartsAtBlock(t *testing.T) {
 	res := mustRun(t, cssWorkspace(t, map[string]string{"site/site.style.css": css}), n)
 	wantHits(t, res, n, hitAt(css, "b: 1px;\n\t.y", "site/site.style.css", "css b: 1px"))
 }
+
+func TestCSSDeclarationGlob(t *testing.T) {
+	css := ".a {\n\topacity: 0.6;\n}\n"
+	// A glob keeps a note about owned sheets off the app's plain CSS.
+	n := &upgrade.Note{Find: upgrade.Find{CSS: upgrade.CSSMatch{Declarations: []upgrade.CSSDeclaration{
+		{Properties: []string{"opacity"}, Value: regexp.MustCompile(`^0\.6$`), Glob: "**/*.style.css"},
+	}}}}
+	res := mustRun(t, cssWorkspace(t, map[string]string{"site/site.style.css": css, "static/app.css": css}), n)
+	wantHits(t, res, n, hitAt(css, "opacity", "site/site.style.css", "css opacity: 0.6"))
+}

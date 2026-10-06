@@ -209,10 +209,12 @@ type CSSMatch struct {
 // CSSDeclaration matches a declaration whose property is one of
 // Properties (standard names, never a --x custom property) and whose
 // value, whitespace collapsed to single spaces and !important dropped,
-// matches Value.
+// matches Value. A non-empty Glob limits it to the stylesheets whose
+// root-relative slash path matches ("**/*.style.css": owned sheets).
 type CSSDeclaration struct {
 	Properties []string
 	Value      *regexp.Regexp
+	Glob       string
 }
 
 // Empty reports whether m has no matcher.

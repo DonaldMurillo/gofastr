@@ -309,7 +309,8 @@ Each matcher reads the code the way its language means it:
   lists `properties` (standard names, never a `--x`) with a `value`
   regex, matched against the declaration's value with whitespace
   collapsed and `!important` dropped: `outline-offset: 2px` against
-  `'^[12]px$'`. Escapes decode first: `.ui\2d button` is `.ui-button`.
+  `'^[12]px$'`. An optional `glob` limits an entry to matching
+  stylesheets (`"**/*.style.css"` for owned sheets only). Escapes decode first: `.ui\2d button` is `.ui-button`.
 - `config`: `gofastr.yml` keys (`*` matches any one key or list item),
   with an optional `value` regex over the scalar or a `refused` URL
   policy, as in `fields`.
