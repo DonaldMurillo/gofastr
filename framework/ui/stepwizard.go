@@ -219,7 +219,7 @@ func stepWizardCSS(_ style.Theme) string {
   height: var(--ui-step-wizard-step-dot-height, 4px);
   border-radius: calc(var(--radii-sm, 6px) / 3);
   background: var(--color-border, #E4E4E7);
-  transition: background var(--duration-fast, 150ms) ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="done"],
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="current"] {

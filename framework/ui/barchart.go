@@ -510,7 +510,7 @@ func barChartCSS(_ style.Theme) string {
   max-inline-size: 100%;
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar {
-  transition: opacity var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
   opacity: var(--ui-bar-chart-bar-hover-opacity, 0.85);

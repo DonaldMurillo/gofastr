@@ -97,7 +97,7 @@ func jsonViewerCSS(_ style.Theme) string {
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__summary::before {
   content: "▸";
   color: var(--color-text-muted, #52525B);
-  transition: transform var(--duration-fast, 150ms) ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__node[open] > .fui-json-viewer__summary::before {
   transform: rotate(90deg);

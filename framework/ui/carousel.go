@@ -234,7 +234,7 @@ func carouselCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   color: var(--color-text, #18181B);
   cursor: pointer;
-  transition: background var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   text-decoration: none;
   font: inherit;
   /* The primitive's word ("Previous"/"Next") stays the accessible
@@ -317,7 +317,7 @@ func carouselCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   background: var(--color-border, #E4E4E7);
   transform: translate(-50%, -50%);
-  transition: background var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot[aria-current="true"]::after {
   background: var(--color-primary, #18181B);

@@ -874,7 +874,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
   border-radius: var(--radii-sm, 6px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
   text-decoration: none;
 }
 /* SPA-nav failure toast — shown when loadPage can't fetch the new
@@ -894,8 +894,8 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #FAFAFA);
   border-radius: var(--radii-md, 8px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
-  box-shadow: var(--shadow-lg, 0 10px 25px rgba(0,0,0,0.25));
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10));
   opacity: 0;
   transform: translateY(8px);
   transition: opacity var(--duration-fast, 150ms), transform var(--duration-fast, 150ms);
@@ -961,7 +961,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
 const frameworkPageLoadingCSS = `[data-fui-page-loading] {
   visibility: hidden;
   opacity: 0;
-  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms);
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), visibility var(--duration-fast, 150ms);
   pointer-events: none;
 }
 html[aria-busy="true"] [data-fui-page-loading] {
@@ -983,13 +983,13 @@ const frameworkDimCSS = `
    NOT dimmed — the loading content replaces the old content, dimming
    it would double the signal. */
 [data-cui-outlet], [data-cui-area], [data-cui-layout-slot] {
-  transition: opacity var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-outlet][aria-busy="true"],
 [data-cui-area][aria-busy="true"],
 [data-cui-layout-slot][aria-busy="true"] {
   opacity: var(--opacity-muted, 0.6);
-  transition-delay: .12s;
+  transition-delay: var(--duration-fast, 150ms);
 }
 [data-cui-outlet][data-cui-loadstate],
 [data-cui-area][data-cui-loadstate],
@@ -1006,12 +1006,12 @@ const frameworkDimCSS = `
 [data-cui-outlet][data-cui-loadstate="shown"],
 [data-cui-area][data-cui-loadstate="shown"],
 [data-cui-layout-slot][data-cui-loadstate="shown"] {
-  animation: fui-load-in var(--duration-fast, 150ms) ease both;
+  animation: fui-load-in var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 [data-cui-outlet][data-cui-loadstate="exit"],
 [data-cui-area][data-cui-loadstate="exit"],
 [data-cui-layout-slot][data-cui-loadstate="exit"] {
-  animation: fui-load-out var(--duration-fast, 150ms) ease both;
+  animation: fui-load-out var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 @keyframes fui-load-in { from { opacity: 0; } }
 @keyframes fui-load-out { to { opacity: 0; } }

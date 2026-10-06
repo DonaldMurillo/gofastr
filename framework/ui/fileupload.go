@@ -214,7 +214,7 @@ func fileUploadCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-align: center;
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               background var(--duration-fast, 150ms) ease;
   min-block-size: calc(var(--spacing-touch-target, 44px) * 2);
 }

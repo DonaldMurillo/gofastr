@@ -99,7 +99,7 @@ const pollingIndicatorCSSText = `
   block-size: var(--ui-polling-indicator-dot-size, 0.5rem);
   border-radius: var(--radii-full, 9999px);
   background: var(--color-success, #16A34A);
-  animation: ui-polling-pulse 1.6s ease-in-out infinite;
+  animation: ui-polling-pulse 1.6s var(--easing-ease-in-out, ease-in-out) infinite;
 }
 .fui-polling-indicator--paused .fui-polling-indicator__dot {
   background: var(--color-text-muted, #6B7280);

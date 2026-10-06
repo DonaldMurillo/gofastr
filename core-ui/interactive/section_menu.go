@@ -262,7 +262,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__eyebrow { color: var(--fui-section-menu-eyebrow-color, var(--color-text-subtle, #A1A1AA)); }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-label { flex: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__chevron {
-  transition: transform var(--duration-fast, 150ms) ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   opacity: var(--ui-section-menu-chevron-opacity, 0.7);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group[open] > .cui-section-menu__group-summary .cui-section-menu__chevron {

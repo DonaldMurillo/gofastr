@@ -147,7 +147,7 @@ func sliderCSS(_ style.Theme) string {
   box-shadow: var(--shadow-sm);
   margin-top: calc((var(--ui-slider-track-height, 6px) - var(--ui-slider-thumb-size, 20px)) / 2);
   cursor: pointer;
-  transition: transform var(--duration-fast, 150ms) ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);

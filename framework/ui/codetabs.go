@@ -142,7 +142,7 @@ func codeTabsCSS(_ style.Theme) string {
   color: var(--color-text-muted, #6B7280);
   border-bottom: var(--stroke-thick, 2px) solid transparent;
   margin-bottom: -1px; /* overlap the strip's 1px border-bottom */
-  transition: color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease;
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   white-space: nowrap;
   text-decoration: none;
 }

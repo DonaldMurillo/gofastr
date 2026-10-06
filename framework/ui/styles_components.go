@@ -92,7 +92,7 @@ func buttonCSS(t style.Theme) string {
   cursor: pointer;
   text-decoration: none;
   text-transform: var(--ui-button-case, none);
-  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, opacity var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Pointer motion. Knobs: --ui-button-shadow (the resting shadow of a
    primary, danger or secondary button, default --shadow-xs),
@@ -542,7 +542,7 @@ func formFieldCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   font: inherit;
   font-size: var(--text-sm);
-  transition: border-color var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-input::placeholder { color: var(--color-text-subtle); }
 /* iOS Safari zooms the page into a focused control whose text is under
@@ -972,7 +972,7 @@ func notificationCSS(t style.Theme) string {
   position: fixed;
   z-index: var(--z-toast, 500);
   box-shadow: var(--shadow-lg);
-  animation: ui-notification-slide-in var(--duration-toast-enter, 220ms) ease-out;
+  animation: ui-notification-slide-in var(--duration-toast-enter, 220ms) var(--easing-ease-out, ease-out);
 }
 :where([data-cui-comp="ui-notification"]).fui-notification--at-top-right    { top: var(--spacing-lg, 16px); right: var(--spacing-lg, 16px); }
 :where([data-cui-comp="ui-notification"]).fui-notification--at-top-left     { top: var(--spacing-lg, 16px); left: var(--spacing-lg, 16px); }
@@ -1106,7 +1106,7 @@ func dataTableCSS(_ style.Theme) string {
   white-space: nowrap;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr {
-  transition: background-color var(--duration-fast, 150ms) ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
   background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
@@ -1274,7 +1274,7 @@ func paginationCSS(_ style.Theme) string {
   font-size: inherit;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color var(--duration-fast, 150ms) ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-pagination"] .pagination span { cursor: default; }
 [data-cui-comp="ui-pagination"] .pagination a:hover {
@@ -1459,7 +1459,7 @@ func backToTopCSS(_ style.Theme) string {
   opacity: 0;
   visibility: hidden;
   transform: translateY(0.5rem);
-  transition: opacity var(--duration-fast, 150ms) ease, visibility var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), visibility var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   pointer-events: none;
 }
 

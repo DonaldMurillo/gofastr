@@ -353,7 +353,7 @@ func menuCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   min-height: var(--spacing-touch-target, 44px);
-  transition: background var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
 /* Press knobs: --ui-menu-trigger-{hover,active}-{translate,shadow}

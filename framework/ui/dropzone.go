@@ -284,7 +284,7 @@ func dropzoneCSS(_ style.Theme) string {
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   text-align: center;
-  transition: border-color var(--duration-fast, 150ms) ease, background var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-drop[data-hui-drop-over] .fui-drop__zone,
 .fui-drop__label-wrap:hover .fui-drop__zone {
@@ -295,7 +295,7 @@ func dropzoneCSS(_ style.Theme) string {
 /* Slight lift for tactile feedback while a drag is over. */
 .fui-drop[data-hui-drop-over] .fui-drop__icon {
   transform: translateY(-2px);
-  transition: transform var(--duration-fast, 150ms) ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-drop__input {
   position: absolute;

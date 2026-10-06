@@ -237,7 +237,7 @@ func ratingCSS(_ style.Theme) string {
   min-inline-size: var(--_rating-cell);
   color: var(--color-border, #E4E4E7);
   cursor: pointer;
-  transition: color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */

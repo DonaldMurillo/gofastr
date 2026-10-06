@@ -259,7 +259,7 @@ func galleryCSS(_ style.Theme) string {
   text-decoration: none;
   color: inherit;
   cursor: zoom-in;
-  transition: border-color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Knobs: --ui-gallery-item-hover-shadow / -active-shadow and
    --ui-gallery-item-hover-translate / -active-translate over the
@@ -373,7 +373,7 @@ func galleryCSS(_ style.Theme) string {
   background: linear-gradient(to top, var(--ui-scrim, rgba(0,0,0,0.7)), transparent);
   font-size: var(--text-sm, 0.875rem);
   opacity: 0;
-  transition: opacity var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* The caption is the anchor's sibling in the primitive's markup, so
    the row (the li) carries the hover/focus-within surface. */

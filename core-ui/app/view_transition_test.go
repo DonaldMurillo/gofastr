@@ -85,11 +85,11 @@ func TestTransitionCSSGeneratesSlideAndBackVariant(t *testing.T) {
 	css := l.TransitionCSS()
 	for _, want := range []string{
 		`[data-cui-vt="vt-items-primary"] { view-transition-name: vt-items-primary; }`,
-		`::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms ease both; }`,
+		`::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms var(--easing-ease-in-out, ease) both; }`,
 		`@keyframes vt-items-primary-in { 0%, 50% { transform: translateX(var(--spacing-xl, 24px)); opacity: 0; } }`,
 		`:root:active-view-transition-type(back) ::view-transition-new(vt-items-primary) { animation-name: vt-items-primary-in-back; }`,
 		`@keyframes vt-items-primary-in-back { 0%, 50% { transform: translateX(calc(-1 * var(--spacing-xl, 24px))); opacity: 0; } }`,
-		`::view-transition-old(vt-items-primary) { animation: vt-items-primary-out 220ms ease both; }`,
+		`::view-transition-old(vt-items-primary) { animation: vt-items-primary-out 220ms var(--easing-ease-in-out, ease) both; }`,
 		// S2: the legs are sequential — the old snapshot is fully faded
 		// by the midpoint, the new one holds opacity 0 until then.
 		`@keyframes vt-items-primary-out { 50%, to { opacity: 0; } }`,

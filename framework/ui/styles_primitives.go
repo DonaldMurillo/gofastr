@@ -163,7 +163,7 @@ func cardCSS(t style.Theme) string {
   background: transparent;
 }
 [data-cui-comp="ui-card"].fui-card--interactive {
-  transition: border-color var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               box-shadow var(--duration-fast, 150ms) ease,
               translate var(--duration-fast, 150ms) ease;
   cursor: pointer;
@@ -369,7 +369,7 @@ func toggleCSS(_ style.Theme) string {
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   cursor: inherit;
-  transition: background-color var(--duration-fast, 150ms) ease,
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               border-color var(--duration-fast, 150ms) ease;
 }
 .fui-choice__text {
@@ -449,7 +449,7 @@ func toggleCSS(_ style.Theme) string {
   background-size: 1.125rem 1.125rem;
   background-position: left 0.0625rem center;
   cursor: inherit;
-  transition: background-color var(--duration-fast, 150ms) ease,
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               background-position var(--duration-fast, 150ms) ease;
 }
 .fui-switch__input:checked {
@@ -564,7 +564,7 @@ func tooltipCSS(_ style.Theme) string {
   white-space: nowrap;
   max-inline-size: var(--ui-tooltip-pop-max-width, 240px);
   z-index: var(--z-popover);
-  transition: opacity var(--duration-fast, 150ms) ease,
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);
 }
@@ -663,7 +663,7 @@ func tagCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Knobs: --ui-tag-hover-shadow / -active-shadow and
    --ui-tag-hover-translate / -active-translate over the shared
@@ -741,7 +741,7 @@ func spinnerCSS(_ style.Theme) string {
   block-size:  calc(var(--_spinner-size) * 0.28);
   border-radius: 50%;
   background: var(--color-primary, #18181B);
-  animation: fui-spinner-pulse 1.2s ease-in-out infinite both;
+  animation: fui-spinner-pulse 1.2s var(--easing-ease-in-out, ease-in-out) infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot:nth-child(1) { animation-delay: -0.32s; }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot:nth-child(2) { animation-delay: -0.16s; }
@@ -758,7 +758,7 @@ func spinnerCSS(_ style.Theme) string {
   display: block;
   background: var(--color-primary, #18181B);
   border-radius: calc(var(--radii-sm, 6px) / 3);
-  animation: fui-spinner-grid 1.3s ease-in-out infinite both;
+  animation: fui-spinner-grid 1.3s var(--easing-ease-in-out, ease-in-out) infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell:nth-child(1) { animation-delay: 0.0s; }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell:nth-child(2) { animation-delay: 0.1s; }
