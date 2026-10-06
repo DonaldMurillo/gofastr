@@ -35,6 +35,8 @@ type (
 	FormItem                = entity.FormItem
 	CardFields              = entity.CardFields
 	FieldDisplay            = entity.FieldDisplay
+	StatesConfig            = entity.StatesConfig
+	Transition              = entity.Transition
 	Relation                = entity.Relation
 	RelationType            = entity.RelationType
 	OnDeleteAction          = entity.OnDeleteAction

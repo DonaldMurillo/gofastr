@@ -216,6 +216,12 @@ func (fi *FormItem) UnmarshalJSON(data []byte) error {
 // letter, no dots, so it is safe in a URL, a translation key and a binding.
 var displayKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+// ValidKey reports whether s follows the grammar every Display and
+// States key follows: a lowercase ASCII slug starting with a letter.
+// Code generators that emit a key as an identifier or a route segment
+// check it here, so they refuse exactly what registration refuses.
+func ValidKey(s string) bool { return displayKeyGrammar.MatchString(s) }
+
 // reservedDisplayKeys are taken by the screens themselves: "all" is the
 // unfiltered view every list has, "deleted" is the soft-delete view.
 var reservedDisplayKeys = map[string]bool{"all": true, "deleted": true}
