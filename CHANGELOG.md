@@ -1492,6 +1492,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Host with the full textsafe set** (C1 and bidi runes included), which
   slog's JSON handler otherwise leaves raw in the logged line (#417).
 ### Security
+- **`crud.WithReadHooks` applies the `BeforeList`/`BeforeGet` scopes.**
+  Under the opt-in, `ListAll`, `CountAll` and `TypedQuery.Find`/`First`/
+  `Count` run `BeforeList` and `GetOne` runs `BeforeGet`, ANDing the
+  clauses those hooks append the way the HTTP routes do; a before hook
+  that errors fails the read. A screen rendering through the in-process
+  API previously listed, counted and opened rows a team or status scope
+  added in `BeforeList` hid from `GET /api/<entity>`. Reads without the
+  opt-in are unchanged.
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
   operation's `Exposure.Access` permission as a `WithToolGate` gate. A

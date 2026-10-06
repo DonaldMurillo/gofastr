@@ -155,6 +155,13 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
+	hookWheres, err := ch.runBeforeGet(ctx, req, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
 
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -291,6 +298,13 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
 	for _, c := range searchConds {
+		qb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range hookWheres {
 		qb.Where(c.SQL, c.Args...)
 	}
 	filter.ApplySortToQuery(qb, opts.Sorts)
@@ -482,6 +496,13 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
 	for _, c := range searchConds {
+		cb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range hookWheres {
 		cb.Where(c.SQL, c.Args...)
 	}
 	sqlStr, args := cb.Build()
