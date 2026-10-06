@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
@@ -51,5 +50,5 @@ func (ch *CrudHandler) canScopedRecord(ctx context.Context, op crudOp, id string
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.accessAllows(ctx, perm, id)
 }

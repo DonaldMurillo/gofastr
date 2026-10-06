@@ -18,7 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
-	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -336,8 +335,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if readPerm == "" {
 				return true
 			}
-			return access.CanResource(fresh, access.Permission(readPerm),
-				access.Ref{Type: ch.Entity.GetName(), ID: ""})
+			return ch.accessAllows(fresh, readPerm, "")
 		}
 
 		reauth := time.NewTicker(ch.eventStreamReauthInterval())
