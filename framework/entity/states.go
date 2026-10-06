@@ -182,6 +182,11 @@ var transitionKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*
 //     client.<table>.transition(id, key), which every per-move member sits
 //     beside; a move keyed transition would rebind it to a function that
 //     calls itself.
+//   - client, table, constructor: the JS resource's own instance fields
+//     (the Client it calls through and its table path) and its
+//     constructor. Each per-move member is an instance property, so a
+//     move keyed client or table would overwrite the field every request
+//     reads.
 //
 // The value names the collision in the boot error.
 var reservedTransitionKeys = map[string]string{
@@ -198,6 +203,9 @@ var reservedTransitionKeys = map[string]string{
 	"events":       "the entity's own OpenAPI id events_<Schema> (the SSE subscription)",
 	"remove":       "the JS SDK resource's own remove member",
 	"transition":   "the JS SDK resource's own transition method",
+	"client":       "the JS SDK resource's own client field",
+	"table":        "the JS SDK resource's own table field",
+	"constructor":  "the JS SDK resource's constructor",
 }
 
 // validate checks every name the config holds against the entity's
