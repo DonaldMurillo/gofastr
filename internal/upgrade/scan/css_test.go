@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -118,4 +119,52 @@ func TestCSSEscapedProperty(t *testing.T) {
 	if got := len(res.Hits[n]); got != 2 {
 		t.Fatalf("hits = %v, want the escaped declaration and the escaped var() argument", hitStrs(res.Hits[n]))
 	}
+}
+
+func TestCSSDeclarationValue(t *testing.T) {
+	css := `.ring:focus-visible {
+	outline: 2px solid red;
+	outline-offset: 2px;
+}
+.lift {
+	outline-offset:2px !important;
+	outline-offset: -2px;
+	outline-offset: var(--stroke-focus-offset, 2px);
+	--outline-offset: 2px;
+	content: "outline-offset: 2px";
+}
+outline-offset:hover {
+	color: red;
+}
+`
+	// The value is read whole, !important dropped: a custom property of
+	// the same name, a var() fallback, a string and a selector that
+	// happens to start with the name are all silent.
+	n := &upgrade.Note{Find: upgrade.Find{CSS: upgrade.CSSMatch{Declarations: []upgrade.CSSDeclaration{
+		{Properties: []string{"outline-offset"}, Value: regexp.MustCompile(`^[12]px$`)},
+	}}}}
+	res := mustRun(t, cssWorkspace(t, map[string]string{"site/site.style.css": css}), n)
+	wantHits(t, res, n,
+		hitAt(css, "outline-offset: 2px;", "site/site.style.css", "css outline-offset: 2px"),
+		hitAt(css, "outline-offset:2px", "site/site.style.css", "css outline-offset: 2px"))
+}
+
+func TestCSSDeclarationStartsAtBlock(t *testing.T) {
+	css := `.x {
+	grid-area: a b: 1px;
+	b: 1px;
+	.y {
+		b:hover {
+			color: red;
+		}
+	}
+}
+`
+	// Only an ident right after "{" or ";" names a property, and a run
+	// that reaches "{" was a nested rule's selector.
+	n := &upgrade.Note{Find: upgrade.Find{CSS: upgrade.CSSMatch{Declarations: []upgrade.CSSDeclaration{
+		{Properties: []string{"b"}, Value: regexp.MustCompile(`.`)},
+	}}}}
+	res := mustRun(t, cssWorkspace(t, map[string]string{"site/site.style.css": css}), n)
+	wantHits(t, res, n, hitAt(css, "b: 1px;\n\t.y", "site/site.style.css", "css b: 1px"))
 }

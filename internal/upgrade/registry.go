@@ -387,7 +387,7 @@ func parseCSSMatch(n *coreyaml.Node) (CSSMatch, error) {
 	if n.Kind != coreyaml.Map {
 		return m, errAt(n.Line, "css must be a map")
 	}
-	if err := unknownKeys(n, "classes", "properties", "selectors"); err != nil {
+	if err := unknownKeys(n, "classes", "properties", "selectors", "declarations"); err != nil {
 		return m, err
 	}
 	var err error
@@ -400,7 +400,59 @@ func parseCSSMatch(n *coreyaml.Node) (CSSMatch, error) {
 	if m.Selectors, err = parseStringList(n.Map["selectors"], "css.selectors", false); err != nil {
 		return m, err
 	}
+	if dn := n.Map["declarations"]; dn != nil {
+		if m.Declarations, err = parseCSSDeclarations(dn); err != nil {
+			return m, err
+		}
+	}
 	return m, nil
+}
+
+func parseCSSDeclarations(n *coreyaml.Node) ([]CSSDeclaration, error) {
+	if n.Kind != coreyaml.List {
+		return nil, errAt(n.Line, "css.declarations must be a list")
+	}
+	out := make([]CSSDeclaration, 0, len(n.List))
+	for _, item := range n.List {
+		if item.Kind != coreyaml.Map {
+			return nil, errAt(item.Line, "css.declarations entry must be a map")
+		}
+		if err := unknownKeys(item, "properties", "value"); err != nil {
+			return nil, err
+		}
+		var d CSSDeclaration
+		pn := item.Map["properties"]
+		if pn == nil {
+			return nil, errAt(item.Line, "css.declarations entry is missing properties")
+		}
+		var err error
+		if d.Properties, err = parseStringList(pn, "css.declarations.properties", false); err != nil {
+			return nil, err
+		}
+		if len(d.Properties) == 0 {
+			return nil, errAt(pn.Line, "css.declarations.properties is empty")
+		}
+		for _, p := range d.Properties {
+			// A custom property's value is the host's own data; the
+			// properties matcher already finds its declarations.
+			if strings.HasPrefix(p, "--") {
+				return nil, errAt(pn.Line, "css.declarations.properties names the custom property %q; use css.properties", p)
+			}
+		}
+		vn := item.Map["value"]
+		if vn == nil {
+			return nil, errAt(item.Line, "css.declarations entry is missing value")
+		}
+		src, err := optString(vn, "css.declarations.value")
+		if err != nil {
+			return nil, err
+		}
+		if d.Value, err = compileRegex(vn.Line, "css.declarations.value", src); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 // URLPolicies maps a fields entry's refused name to its core-ui/urlsafe

@@ -76,9 +76,11 @@ notes:
     breaking: true
     hits: edit
     find:
-      strings:
-        match: '(?:^|[^-a-z])(?:outline-offset|outline-width|column-rule-width|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-width)\s*:\s*[12]px\s*(?:;|\}|!|$)'
-    guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
+      css:
+        declarations:
+          - properties: [outline-offset, outline-width, column-rule-width, border-width, border-top-width, border-right-width, border-bottom-width, border-left-width, border-inline-width, border-block-width, border-inline-start-width, border-inline-end-width, border-block-start-width, border-block-end-width]
+            value: '^[12]px$'
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
   - change: "EntityUserStore records email_verified (FALSE for every existing row). A magic link or a completed password reset on an unverified account claims it: OAuth links, API tokens and sessions are removed, and a magic link also clears the password. OAuth auto-links a new provider only into a verified account (409 otherwise). A magic link on an existing account answers 500 when the user store does not implement EmailVerifiedChecker"
     breaking: true
     hits: review
