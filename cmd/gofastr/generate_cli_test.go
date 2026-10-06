@@ -137,6 +137,8 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		`{flag: "views-gt", param: "views_gt"`,
 		`{flag: "views-lte", param: "views_lte"`,
 		`{flag: "title-like", param: "title_like"`,
+		`{flag: "title-ne", param: "title_ne"`,
+		`{flag: "views-ne", param: "views_ne"`,
 	} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("posts.go filter table missing %q", w)

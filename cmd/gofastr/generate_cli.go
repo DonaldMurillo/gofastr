@@ -1490,6 +1490,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, f.Snake, help)
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-ne", f.Snake+"_ne", "filter: "+f.Snake+" not equal")
 		if f.Comparable {
 			for _, op := range []string{"gt", "gte", "lt", "lte"} {
 				fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-"+op, f.Snake+"_"+op, "filter: "+f.Snake+" "+op)

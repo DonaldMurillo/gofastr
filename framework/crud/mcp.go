@@ -178,7 +178,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			if field.Hidden || field.NoQuery {
 				continue
 			}
-			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
+			for _, suffix := range []string{"", "_ne", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
 				key := mcpFieldKey(field) + suffix
 				if v, ok := params[key]; ok {
 					values[key] = toolParamValues(v)

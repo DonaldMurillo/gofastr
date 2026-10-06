@@ -685,7 +685,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	if filterField == "" {
 		filterField = "id"
 	}
-	fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, filterField+"_gte", first.Struct)
+	fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, filterField+"_gte", first.Struct)
 	sb.WriteString("Validation errors return `*APIError`; its `Body` holds the JSON envelope\n`{\"error\", \"success\", \"code\", \"fields\"}` where `fields` keys are snake_case\ncolumn names.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()

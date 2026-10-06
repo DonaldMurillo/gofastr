@@ -626,7 +626,7 @@ func (sc *entityScreen) listParamsNotes(cfg entity.EntityConfig) render.HTML {
 	items := []render.HTML{
 		para(code("?page=2&limit=25"), text(": offset pagination; "), code("?cursor=&limit=25"), text(": keyset pagination (pass the returned cursor to continue).")),
 		para(code("?sort=-created_at"), text(": leading "), code("-"), text(" for descending; snake_case column names.")),
-		para(code("?<column>=x"), text(": equality filter; suffix operators: "), code("_gt _gte _lt _lte _like _in"), text(".")),
+		para(code("?<column>=x"), text(": equality filter; suffix operators: "), code("_ne _gt _gte _lt _lte _like _in"), text(".")),
 		para(code("?include=relation"), text(": eager-load declared relations; "), code("?fields=col1,col2"), text(": project columns.")),
 	}
 	if len(cfg.SearchFields) > 0 {

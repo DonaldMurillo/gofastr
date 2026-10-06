@@ -376,14 +376,6 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			}
 		}
 	}
-	suffixes := []struct {
-		suffix string
-		op     filter.FilterOp
-	}{
-		{"_gte", filter.OpGte}, {"_lte", filter.OpLte},
-		{"_gt", filter.OpGt}, {"_lt", filter.OpLt},
-		{"_like", filter.OpLike}, {"_in", filter.OpIn},
-	}
 	var out []filter.ParsedFilter
 	for kv := range strings.SplitSeq(raw, ",") {
 		kv = strings.TrimSpace(kv)
@@ -397,10 +389,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		key, value := kv[:eq], kv[eq+1:]
 		field := key
 		op := filter.OpEq
-		for _, s := range suffixes {
-			if before, ok := strings.CutSuffix(key, s.suffix); ok {
+		for _, s := range filter.FilterSuffixes {
+			if before, ok := strings.CutSuffix(key, s.Suffix); ok {
 				field = before
-				op = s.op
+				op = s.Op
 				break
 			}
 		}
@@ -410,11 +402,17 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		if fields != nil && !knownField[field] {
 			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
 		}
+		sent := field
 		// Resolve the wire key to its column AFTER the allow-list check:
 		// ParsedFilter.Field reaches the WHERE clause, so emitting the alias
 		// would name a column that does not exist.
 		if col, ok := wireAlias[field]; ok {
 			field = col
+		}
+		if fields != nil {
+			if err := filter.CheckOpType(sent, op, colType[field]); err != nil {
+				return nil, fmt.Errorf("include %q: scoped %w", pathForErrors, err)
+			}
 		}
 		if op == filter.OpIn {
 			// Count separators before splitting, so an oversized list is

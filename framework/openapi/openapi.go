@@ -320,8 +320,8 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		}
 
 		// Add filter parameters matching the actual filter parser
-		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
-		// <field>_lte, <field>_like, <field>_in.
+		// which accepts <field>, <field>_ne, <field>_gt, <field>_gte,
+		// <field>_lt, <field>_lte, <field>_like, <field>_in.
 		// Filter parameters use raw field names (e.g. "created_at_gt")
 		// because ParseFilters matches against the schema field names
 		// directly, plus a WireName alias when one is set. The wire key
@@ -338,8 +338,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 				name = f.WireName
 			}
 			filterSchema := fieldToFilterSchema(f)
-			// Exact match and _in apply to every field type.
+			// Exact match, _ne and _in apply to every field type.
 			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
+			listOp.AddParameter(name+"_ne", "query", name+" not equal (NULL matches neither = nor !=)", false, filterSchema)
 			// Range operators only make sense for ordered/comparable
 			// types (numbers, timestamps, dates). Advertising _gt/_lt on
 			// a boolean or JSON blob misleads SDK generators into

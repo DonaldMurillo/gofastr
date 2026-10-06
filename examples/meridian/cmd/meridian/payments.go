@@ -29,14 +29,19 @@ func paymentsCommands() []command {
 // per flag, in help order, each bound to the query param it sets.
 var paymentsListFilters = []filterFlag{
 	{flag: "invoice-id", param: "invoice_id", help: "filter: invoice_id equals (comma list = IN)"},
+	{flag: "invoice-id-ne", param: "invoice_id_ne", help: "filter: invoice_id not equal"},
 	{flag: "customer-id", param: "customer_id", help: "filter: customer_id equals (comma list = IN)"},
+	{flag: "customer-id-ne", param: "customer_id_ne", help: "filter: customer_id not equal"},
 	{flag: "amount", param: "amount", help: "filter: amount equals (comma list = IN)"},
+	{flag: "amount-ne", param: "amount_ne", help: "filter: amount not equal"},
 	{flag: "amount-gt", param: "amount_gt", help: "filter: amount gt"},
 	{flag: "amount-gte", param: "amount_gte", help: "filter: amount gte"},
 	{flag: "amount-lt", param: "amount_lt", help: "filter: amount lt"},
 	{flag: "amount-lte", param: "amount_lte", help: "filter: amount lte"},
 	{flag: "method", param: "method", help: "filter: method equals (comma list = IN) [card|ach|wire]"},
+	{flag: "method-ne", param: "method_ne", help: "filter: method not equal"},
 	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [succeeded|failed|refunded]"},
+	{flag: "status-ne", param: "status_ne", help: "filter: status not equal"},
 }
 
 // Table columns for `payments list -o table`: paymentsListHeaders are the display

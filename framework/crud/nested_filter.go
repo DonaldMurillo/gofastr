@@ -136,6 +136,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 
 		target := currentEntity
 		known, blocked, isBool := false, false, false
+		var colType schema.FieldType
 		for _, f := range target.GetFields() {
 			if f.Name == fieldName || (f.WireName != "" && f.WireName == fieldName) || casing.ToSnake(fieldName) == f.Name {
 				known = !f.Hidden
@@ -143,6 +144,7 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 				if known {
 					fieldName = f.Name // rewrite to the column: this reaches SQL
 					isBool = f.Type == schema.Bool
+					colType = f.Type
 				}
 				break
 			}
@@ -152,6 +154,9 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 		}
 		if !known {
 			return nil, fmt.Errorf("nested filter %q: field %q not declared on %q", key, fieldName, target.GetName())
+		}
+		if err := filter.CheckOpType(fieldName, op, colType); err != nil {
+			return nil, fmt.Errorf("nested filter %q: %w", key, err)
 		}
 
 		nf := nestedFilter{
@@ -244,6 +249,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 
 		target := currentEntity
 		known, blocked, isBool := false, false, false
+		var colType schema.FieldType
 		for _, f := range target.GetFields() {
 			if f.Name == field || (f.WireName != "" && f.WireName == field) || casing.ToSnake(field) == f.Name {
 				known = !f.Hidden
@@ -251,6 +257,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 				if known {
 					field = f.Name // rewrite to the column: this reaches SQL
 					isBool = f.Type == schema.Bool
+					colType = f.Type
 				}
 				break
 			}
@@ -266,10 +273,13 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 			op = filter.OpEq
 		}
 		switch op {
-		case filter.OpEq, filter.OpGt, filter.OpGte, filter.OpLt, filter.OpLte, filter.OpLike, filter.OpIn:
+		case filter.OpEq, filter.OpNe, filter.OpGt, filter.OpGte, filter.OpLt, filter.OpLte, filter.OpLike, filter.OpIn:
 			// valid
 		default:
 			return nil, fmt.Errorf("nested filter %q.%q: unsupported operator %q", spec.Relation, spec.Field, spec.Op)
+		}
+		if err := filter.CheckOpType(spec.Field, op, colType); err != nil {
+			return nil, fmt.Errorf("nested filter %q: %w", spec.Relation, err)
 		}
 		nf := nestedFilter{
 			Hops:       hops,
@@ -470,6 +480,8 @@ func opToSQL(op filter.FilterOp) string {
 	switch op {
 	case filter.OpEq:
 		return "="
+	case filter.OpNe:
+		return "!="
 	case filter.OpGt:
 		return ">"
 	case filter.OpGte:

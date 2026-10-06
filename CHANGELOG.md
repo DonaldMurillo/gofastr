@@ -8,6 +8,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`.**
+  `ParsePredicate(text, fields)` parses `status in ["open", "past_due"]
+  and due_on < "2026-10-01"` into a `*filter.Predicate` that has passed
+  `filter.ValidatePredicate`; `ParseSort` parses `amount DESC, number
+  ASC`. Neither builds SQL. `contains` escapes `%`, `_` and the escape
+  character, so it matches literally. `filter.ValidatePredicate` runs the
+  `?where=` checks over a predicate built in Go.
+- **A not-equal filter.** `?field_ne=`, `ne` in `?where=` trees,
+  `?rel.field_ne=` and include-scoped `field_ne=`. A NULL column matches
+  neither `=` nor `!=`. OpenAPI specs, generated CLIs (`--<field>-ne`),
+  the SDK docs, `llm.md` and the process-module broker carry it.
+- **`crud.ListOptions.Where` and `crud.ListOptions.Fields`** on
+  `ListAll` and `CountAll`. `Where` is a validated predicate ANDed inside
+  every owner, tenant and soft-delete scope, so an `or` in it cannot
+  widen past them. `Fields` projects the listed columns (unknown and
+  Hidden refused, `id` always included).
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
@@ -507,6 +523,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   other user's create, and the 409 reveals that the value exists.
 
 ### Changed
+- **BREAKING: filter operators must suit the column type.** `like`
+  works only on String, Text, Enum and UUID columns, and `gt`, `gte`,
+  `lt` and `lte` are refused on Bool, with a 400 naming the operator, the
+  key and the type. Every filter surface applies the one rule
+  (`filter.CheckOpType`): flat `?field_<op>=` params, `?where=`,
+  Go-built predicates, relation filters and include-scoped filters. A
+  client that sent `?count_like=5` sends `?count=5` or `?count_in=`.
 - **BREAKING: owned sheets read line height, letter spacing and opacity
   from the new tokens.** The owned-style check (`gofastr gen styles`,
   `gofastr verify`) compares `line-height`, `letter-spacing` and

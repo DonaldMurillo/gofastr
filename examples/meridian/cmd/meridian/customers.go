@@ -29,13 +29,18 @@ func customersCommands() []command {
 // per flag, in help order, each bound to the query param it sets.
 var customersListFilters = []filterFlag{
 	{flag: "name", param: "name", help: "filter: name equals (comma list = IN)"},
+	{flag: "name-ne", param: "name_ne", help: "filter: name not equal"},
 	{flag: "name-like", param: "name_like", help: "filter: name contains"},
 	{flag: "email", param: "email", help: "filter: email equals (comma list = IN)"},
+	{flag: "email-ne", param: "email_ne", help: "filter: email not equal"},
 	{flag: "email-like", param: "email_like", help: "filter: email contains"},
 	{flag: "company", param: "company", help: "filter: company equals (comma list = IN)"},
+	{flag: "company-ne", param: "company_ne", help: "filter: company not equal"},
 	{flag: "company-like", param: "company_like", help: "filter: company contains"},
 	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [trialing|active|past_due|canceled]"},
+	{flag: "status-ne", param: "status_ne", help: "filter: status not equal"},
 	{flag: "mrr", param: "mrr", help: "filter: mrr equals (comma list = IN)"},
+	{flag: "mrr-ne", param: "mrr_ne", help: "filter: mrr not equal"},
 	{flag: "mrr-gt", param: "mrr_gt", help: "filter: mrr gt"},
 	{flag: "mrr-gte", param: "mrr_gte", help: "filter: mrr gte"},
 	{flag: "mrr-lt", param: "mrr_lt", help: "filter: mrr lt"},

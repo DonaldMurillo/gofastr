@@ -29,16 +29,21 @@ func plansCommands() []command {
 // per flag, in help order, each bound to the query param it sets.
 var plansListFilters = []filterFlag{
 	{flag: "name", param: "name", help: "filter: name equals (comma list = IN)"},
+	{flag: "name-ne", param: "name_ne", help: "filter: name not equal"},
 	{flag: "name-like", param: "name_like", help: "filter: name contains"},
 	{flag: "slug", param: "slug", help: "filter: slug equals (comma list = IN)"},
+	{flag: "slug-ne", param: "slug_ne", help: "filter: slug not equal"},
 	{flag: "slug-like", param: "slug_like", help: "filter: slug contains"},
 	{flag: "price", param: "price", help: "filter: price equals (comma list = IN)"},
+	{flag: "price-ne", param: "price_ne", help: "filter: price not equal"},
 	{flag: "price-gt", param: "price_gt", help: "filter: price gt"},
 	{flag: "price-gte", param: "price_gte", help: "filter: price gte"},
 	{flag: "price-lt", param: "price_lt", help: "filter: price lt"},
 	{flag: "price-lte", param: "price_lte", help: "filter: price lte"},
 	{flag: "interval", param: "interval", help: "filter: interval equals (comma list = IN) [month|year]"},
+	{flag: "interval-ne", param: "interval_ne", help: "filter: interval not equal"},
 	{flag: "active", param: "active", help: "filter: active equals (comma list = IN)"},
+	{flag: "active-ne", param: "active_ne", help: "filter: active not equal"},
 }
 
 // Table columns for `plans list -o table`: plansListHeaders are the display

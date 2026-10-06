@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -189,9 +190,28 @@ type ListOptions struct {
 	// to both ListAll and CountAll, mirroring the HTTP List handler.
 	NestedFilters []NestedFilter
 	Sorts         []filter.ParsedSort
-	Limit         int
-	Offset        int
-	Includes      []string
+	// Where is a boolean predicate tree (filter.Predicate) ANDed with
+	// everything else ListAll and CountAll apply: the flat Filters,
+	// nested filters, search, and the owner, tenant, soft-delete and
+	// read scopes. It is compiled as ONE parenthesized clause, so an OR
+	// inside it can never widen past a scope. The tree is re-validated
+	// with filter.ValidatePredicate before use — a caller may have built
+	// it by hand — and a refusal names the offending leaf.
+	//
+	// Build one with dsl.ParsePredicate (text such as
+	// `status = "open" and amount >= 10000`) or filter.ParseWhere (the
+	// ?where= JSON shape); both return a validated tree.
+	Where *filter.Predicate
+	// Fields limits the columns read to the named subset plus the primary
+	// key (always included). Unknown and Hidden names are refused with an
+	// error, never silently dropped. NoQuery columns may be read: NoQuery
+	// keeps a field out of filters and sorts, not out of the row. Masking still
+	// applies: AfterList/AfterGet hooks run on whatever columns the read
+	// returned. Empty means every visible column.
+	Fields   []string
+	Limit    int
+	Offset   int
+	Includes []string
 	// Search carries a free-text ?q= term for in-process parity with the
 	// HTTP List handler. When non-empty AND the entity declares
 	// SearchFields, it produces AND-composed LOWER(col) LIKE conditions.
@@ -221,10 +241,27 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
 	}
-	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	// Where: a hand-built tree is re-validated before it reaches SQL.
+	if err := ch.validateWherePredicate(opts.Where); err != nil {
+		return nil, fmt.Errorf("ListAll: %w", err)
+	}
 	cols := ch.visibleFields()
+	if len(opts.Fields) > 0 {
+		var err error
+		cols, err = ch.projectListFields(opts.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("ListAll: %w", err)
+		}
+	}
+	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, opts.Filters)
+	// Where joins the caller filters as one parenthesized clause; the
+	// scopes below each wrap in their own parens, so an OR inside Where
+	// cannot widen past them.
+	if c := filter.BuildPredicate(opts.Where); c.SQL != "" {
+		qb.Where(c.SQL, c.Args...)
+	}
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
@@ -392,9 +429,24 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return 0, fmt.Errorf("CountAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
 	}
+	// Where and Fields are validated exactly as ListAll validates them, so
+	// a page count can never accept a list call's refusal (or silently
+	// ignore a projection the list would reject). Fields shapes no columns
+	// here — COUNT(*) reads none — the check is for parity of refusals.
+	if err := ch.validateWherePredicate(opts.Where); err != nil {
+		return 0, fmt.Errorf("CountAll: %w", err)
+	}
+	if len(opts.Fields) > 0 {
+		if _, err := ch.projectListFields(opts.Fields); err != nil {
+			return 0, fmt.Errorf("CountAll: %w", err)
+		}
+	}
 	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	cb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(cb, opts.Filters)
+	if c := filter.BuildPredicate(opts.Where); c.SQL != "" {
+		cb.Where(c.SQL, c.Args...)
+	}
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
@@ -413,6 +465,26 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 		return 0, err
 	}
 	return total, nil
+}
+
+// validateWherePredicate runs filter.ValidatePredicate over a ListOptions
+// Where tree against the handler's field snapshot. ListOptions.Where is
+// documented as taking a validated tree, but a caller may have built one
+// by hand, and field names in a predicate are spliced into SQL by
+// BuildPredicate, so the same checks ParseWhere applies to URL input run
+// here too, before any SQL exists.
+func (ch *CrudHandler) validateWherePredicate(p *filter.Predicate) error {
+	return filter.ValidatePredicate(p, ch.snapshotFields())
+}
+
+// projectListFields resolves a ListOptions.Fields projection to the
+// columns ListAll reads through projectFromRequestQ, the ?fields= parser:
+// the unknown/Hidden refusal, the JSON-cased name mapping and the
+// always-included primary key are that parser's, so the in-process list
+// and the HTTP list project the same way.
+func (ch *CrudHandler) projectListFields(names []string) ([]string, error) {
+	q := url.Values{"fields": {joinNonEmpty(names, ",")}}
+	return ch.projectFromRequestQ(q)
 }
 
 // buildIncludeNodesFromNames takes a flat list of include names (possibly

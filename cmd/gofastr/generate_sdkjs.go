@@ -289,7 +289,7 @@ class Resource {
   /**
    * Offset-paged list. params: {page, limit, sort, include, fields, q,
    * trashed, filters}: filter keys are the snake_case column names (see
-   * the exported <entity>Fields constants), with _gt/_gte/_lt/_lte/_like/_in
+   * the exported <entity>Fields constants), with _ne/_gt/_gte/_lt/_lte/_like/_in
    * suffixes for operators.
    */
   list(params) {
@@ -490,7 +490,7 @@ export interface ListParams {
   trashed?: string;
   /**
    * Filter params keyed by snake_case column name (use the <entity>Fields
-   * constants), with _gt/_gte/_lt/_lte/_like/_in operator suffixes.
+   * constants), with _ne/_gt/_gte/_lt/_lte/_like/_in operator suffixes.
    */
   filters?: Record<string, string | number | boolean | Array<string | number>>;
 }

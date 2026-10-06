@@ -357,4 +357,9 @@ func TestComparableFieldsKeepRangeFilters(t *testing.T) {
 	if findParam(params, "label_like") == nil {
 		t.Error("string field must keep _like filter param")
 	}
+	for _, name := range []string{"count_ne", "label_ne"} {
+		if findParam(params, name) == nil {
+			t.Errorf("every queryable field advertises _ne; %q missing", name)
+		}
+	}
 }

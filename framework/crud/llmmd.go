@@ -187,6 +187,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("|--------|----------|----------|\n")
 		sampleField := visibleFields[0].Name
 		fmt.Fprintf(&b, "| (none) | equals | `%s=active` |\n", sampleField)
+		fmt.Fprintf(&b, "| `_ne` | not equal | `%s_ne=active` |\n", sampleField)
 		fmt.Fprintf(&b, "| `_gt` | greater than | `%s_gt=100` |\n", sampleField)
 		fmt.Fprintf(&b, "| `_gte` | greater than or equal | `%s_gte=100` |\n", sampleField)
 		fmt.Fprintf(&b, "| `_lt` | less than | `%s_lt=100` |\n", sampleField)
