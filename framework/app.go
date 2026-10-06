@@ -1434,7 +1434,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		// Pre-flight collision check against the full group-prefixed path,
 		// mirroring App.Entity. Routes() records full (prefix-applied)
 		// patterns, so compare against g.Prefix()+"/"+table.
-		if msg := a.entityRouteCollision(name, g.Prefix()+"/"+e.GetTable()); msg != "" {
+		if msg := a.entityRouteCollision(e, g.Prefix()+"/"+e.GetTable()); msg != "" {
 			panic("framework: " + msg)
 		}
 		crudHandler = crud.NewCrudHandler(e, a.DB)
@@ -1926,7 +1926,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		// entity's URL space, surface an actionable diagnostic that names
 		// the entity, the path, and the fix. BEFORE the mux panics on the
 		// opaque "/foods/llm.md conflicts with pattern" duplicate.
-		if msg := a.entityRouteCollision(name, mountPath); msg != "" {
+		if msg := a.entityRouteCollision(e, mountPath); msg != "" {
 			return fmt.Errorf("%s", msg)
 		}
 	}
@@ -2203,7 +2203,8 @@ func (a *App) RegisterEntities(entities map[string]entity.EntityConfig) *App {
 // points at the generated doc handler rather than the underlying name
 // clash. We catch the most common overlaps (the bare path and its /llm.md
 // doc route) and explain WHAT collided and HOW to fix it.
-func (a *App) entityRouteCollision(name, mountPath string) string {
+func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string {
+	name := ent.Config.Name
 	mountPath = strings.TrimRight(mountPath, "/")
 	if mountPath == "" {
 		return ""
@@ -2220,7 +2221,7 @@ func (a *App) entityRouteCollision(name, mountPath string) string {
 	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
-	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
 		method, path, _ := strings.Cut(pattern, " ")
 		path = normalizeRoutePattern(path)
 		claimed[path] = append(claimed[path], method)
@@ -2308,7 +2309,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// The CRUD routes are not on the router yet, this runs before
 		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
-			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 			}
 		}
@@ -2333,6 +2334,10 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// lets us pre-compute them here without reaching into crud.
 		for _, action := range []string{"list", "get", "create", "update", "delete"} {
 			claimed[ent.GetName()+"_"+action] = true
+		}
+		// Each non-system move is a tool named by its key, beside them.
+		for _, t := range crud.RoutableTransitions(ent.Config.States) {
+			claimed[ent.GetName()+"_"+t.Key] = true
 		}
 	}
 	for _, endpoint := range endpoints {

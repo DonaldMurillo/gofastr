@@ -69,6 +69,15 @@ func RegisterEntityMCPTools(server *mcp.Server, crud1 *crud.CrudHandler, router 
 // WithServerWrites wraps crud.WithServerWrites.
 func WithServerWrites(ctx context.Context) context.Context { return crud.WithServerWrites(ctx) }
 
+// WithStateOverride wraps crud.WithStateOverride: trusted Go code writes
+// a state field and its stamps directly, audited with reason.
+func WithStateOverride(ctx context.Context, reason string) context.Context {
+	return crud.WithStateOverride(ctx, reason)
+}
+
+// TransitionFromContext wraps crud.TransitionFromContext.
+func TransitionFromContext(ctx context.Context) string { return crud.TransitionFromContext(ctx) }
+
 // WithUploadedKeys wraps crud.WithUploadedKeys.
 func WithUploadedKeys(ctx context.Context, keys ...string) context.Context {
 	return crud.WithUploadedKeys(ctx, keys...)

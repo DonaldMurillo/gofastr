@@ -137,6 +137,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.checkBelongsToScope(ctx, body); err != nil {
 			return err
 		}
+		// The state check, as an update of the existing row or a create
+		// (states.go).
+		var err error
+		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
+			return err
+		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
 		// fields are always included (the body has the generated value);
@@ -179,7 +185,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				if !serverWrites(ctx) {
+				if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 					continue
 				}
 			}
@@ -209,6 +215,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if isAutoField(ch.Entity, c) {
+				continue
+			}
+			// A stored state stays put on conflict: the insert arm's value
+			// may be the Default, which is not this row's state.
+			if !ch.upsertSetsGuarded(ctx, c) {
 				continue
 			}
 			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))

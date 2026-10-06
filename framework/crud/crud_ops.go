@@ -74,6 +74,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
 		return nil, err
 	}
+	// The state field starts at an Initial value and no stamp is set
+	// (states.go). After the hooks, so a hook cannot set them either.
+	if err := ch.checkStateCreate(ctx, body); err != nil {
+		return nil, err
+	}
 
 	var cols []string
 	var vals []any
@@ -102,7 +107,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			continue
 		}
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-			if !serverWrites(ctx) {
+			if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 				continue
 			}
 		}
@@ -240,6 +245,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
 		return nil, err
 	}
+	// The state field and stamps change only through a move: the stored
+	// value written back is dropped, any other is refused (states.go).
+	ctx, err = ch.checkStateUpdate(ctx, r, id, body)
+	if err != nil {
+		return nil, err
+	}
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
@@ -249,8 +260,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			continue
 		}
 		// ReadOnly/Hidden fields are client-unsettable and skipped unless
-		// the caller opted in via WithServerWrites(ctx).
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
+		// the caller opted in via WithServerWrites(ctx), or a state
+		// override releases them.
+		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 			continue
 		}
 		// Refuse to let a client reassign ownership through an update body.
