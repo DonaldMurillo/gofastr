@@ -1248,7 +1248,7 @@ func renderingRules() []Rule {
 		Why: "GOFASTR1807 judges a value whole, so `border: 1px solid var(--color-border)` and `transition: color 150ms ease` " +
 			"passed it: no token value equals the shorthand. A theme that sets --stroke-thin to 3px, every radius to 0 or " +
 			"the durations to 0 for a reduced-motion brand then reaches none of those declarations, and the kit cannot be " +
-			"restyled by its theme alone. Before the stroke tokens there were 997 such literals across 90 kit files.",
+			"restyled by its theme alone.",
 		Fix: "Read the token with its default as the fallback: `var(--stroke-thin, 1px) solid`, `var(--stroke-focus, 2px) solid`, " +
 			"`outline-offset: var(--stroke-focus-offset, 2px)`, `border-radius: var(--radii-full, 9999px)`, " +
 			"`var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`. An off-step width is a calc() over a token " +
