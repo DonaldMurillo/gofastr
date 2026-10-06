@@ -219,10 +219,10 @@ func (fi *FormItem) UnmarshalJSON(data []byte) error {
 // letter, no dots, so it is safe in a URL, a translation key and a binding.
 var displayKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-// ValidKey reports whether s follows the grammar every Display and
-// States key follows: a lowercase ASCII slug starting with a letter.
-// Code generators that emit a key as an identifier or a route segment
-// check it here, so they refuse exactly what registration refuses.
+// ValidKey reports whether s follows the Display key grammar: a
+// lowercase ASCII slug starting with a letter. Code that names screen
+// parts with keys checks them here. States move keys follow the stricter
+// transitionKeyGrammar; see ValidateStates.
 func ValidKey(s string) bool { return displayKeyGrammar.MatchString(s) }
 
 // reservedDisplayKeys are taken by the screens themselves: "all" is the

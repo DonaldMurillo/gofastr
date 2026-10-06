@@ -531,7 +531,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 			if t.Permission != "" {
 				desc += ". Requires the entity's update permission and " + t.Permission
 			}
-			desc += ". Takes no request body, but the route answers 415 unless the request still carries Content-Type: application/json (its cross-site-form gate): send an empty JSON body."
+			// The route takes no payload but answers 415 unless the request
+			// carries the JSON content type (its cross-site-form gate), so the
+			// operation declares the body a caller must send: a required,
+			// property-free JSON object. Generated clients post exactly that.
+			moveOp.SetRequestBody("application/json", map[string]any{
+				"type":                 "object",
+				"maxProperties":        0,
+				"additionalProperties": false,
+			}, true)
+			desc += ". Sends no payload but requires Content-Type: application/json: POST the declared empty object, {}."
 			moveOp.Description = desc
 			moveOp.AddResponse(200, "Moved "+entityName+" (Update's envelope)", singleRef)
 			moveOp.AddResponse(403, "Forbidden", errorRef)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"sync/atomic"
 
@@ -40,7 +41,9 @@ type StatesConfig struct {
 // Transition is one named move of the state field.
 type Transition struct {
 	// Key names the move in its route (POST <api>/<entity>/<id>/transitions/<key>)
-	// and its MCP tool: a lowercase slug, unique on the entity.
+	// and its MCP tool: lowercase segments joined by single underscores
+	// (see transitionKeyGrammar), unique on the entity, and not one of the
+	// names a generated surface already uses (reservedTransitionKeys).
 	Key string `json:"key"`
 	// Label is the button text. Empty draws the key.
 	Label string `json:"label,omitempty"`
@@ -138,9 +141,64 @@ func (s *StatesConfig) InitialValues(fields []schema.Field) []string {
 	return nil
 }
 
-// reservedTransitionKeys collide with the entity's own MCP tool names
-// (<entity>_list, …) and so cannot name a move.
-var reservedTransitionKeys = map[string]bool{"list": true, "get": true, "create": true, "update": true, "delete": true}
+// transitionKeyGrammar is the shape every move key must follow: lowercase
+// segments joined by single underscores, each segment led by a letter. It is
+// strict enough that no two keys normalize onto one generated identifier:
+// the emitters PascalCase a key by dropping the underscores and upper-casing
+// the next segment's first letter, and that map is injective only when every
+// segment starts with a letter and no underscore is doubled or trailing
+// ("mark__paid" and "mark_paid" both become MarkPaid; "a_1" and "a1" both
+// become A1). Display keys keep the looser displayKeyGrammar.
+var transitionKeyGrammar = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$`)
+
+// reservedTransitionKeys are the key spellings a generated surface already
+// uses for every entity, so a move named one of them would shadow that
+// surface's own name. The set is the union of the fixed names, each traced
+// to the emitter that mints it (a move's own names are <entity>_<key> for
+// the MCP tool, <key>_<Schema> for the OpenAPI operation id,
+// toCamelCase(key)+<Entity> for the Go client method, <key> for the CLI
+// subcommand and the JS SDK resource member):
+//
+//   - list, get, create, update, delete: the MCP tools <entity>_<verb>
+//     (framework/crud/mcp.go), the OpenAPI ids <verb>_<Schema> and the Go
+//     client methods <Verb><Entity> (framework/openapi/openapi.go,
+//     cmd/gofastr/generate_client.go); also the CLI subcommands
+//     (cmd/gofastr/generate_cli.go) and the JS resource members
+//     (cmd/gofastr/generate_sdkjs.go).
+//   - patch: the OpenAPI id patch_<Schema>, the Go client method
+//     Patch<Entity>, the CLI subcommand and the JS member of the same
+//     spelling (the MCP surface has no patch tool; the route is the
+//     sparse-update twin of update).
+//   - watch: the Go client method Watch<Entity>, the CLI subcommand and the
+//     JS resource member for the SSE feed.
+//   - batch_create, batch_update, batch_delete: the OpenAPI ids
+//     batch_<verb>_<Schema>; toCamelCase maps them onto the Go client
+//     methods BatchCreate/BatchUpdate/BatchDelete<Entity> (and the CLI
+//     batch-verb wrappers of the same normalized name).
+//   - events: the OpenAPI operation id events_<Schema> (the SSE
+//     subscription stream).
+//   - remove: the JS resource member — the SDK's spelling of delete.
+//   - transition: the JS resource's generic move method,
+//     client.<table>.transition(id, key), which every per-move member sits
+//     beside; a move keyed transition would rebind it to a function that
+//     calls itself.
+//
+// The value names the collision in the boot error.
+var reservedTransitionKeys = map[string]string{
+	"list":         "the entity's own MCP tool <entity>_list, OpenAPI id list_<Schema> and client method List<Entity>",
+	"get":          "the entity's own MCP tool <entity>_get, OpenAPI id get_<Schema> and client method Get<Entity>",
+	"create":       "the entity's own MCP tool <entity>_create, OpenAPI id create_<Schema> and client method Create<Entity>",
+	"update":       "the entity's own MCP tool <entity>_update, OpenAPI id update_<Schema> and client method Update<Entity>",
+	"delete":       "the entity's own MCP tool <entity>_delete, OpenAPI id delete_<Schema> and client method Delete<Entity>",
+	"patch":        "the entity's own OpenAPI id patch_<Schema> and client method Patch<Entity>",
+	"watch":        "the entity's own client method Watch<Entity> and CLI subcommand watch",
+	"batch_create": "the entity's own OpenAPI id batch_create_<Schema> and client method BatchCreate<Entity>",
+	"batch_update": "the entity's own OpenAPI id batch_update_<Schema> and client method BatchUpdate<Entity>",
+	"batch_delete": "the entity's own OpenAPI id batch_delete_<Schema> and client method BatchDelete<Entity>",
+	"events":       "the entity's own OpenAPI id events_<Schema> (the SSE subscription)",
+	"remove":       "the JS SDK resource's own remove member",
+	"transition":   "the JS SDK resource's own transition method",
+}
 
 // validate checks every name the config holds against the entity's
 // fields, so a typo fails the app at boot naming the offender.
@@ -163,6 +221,14 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 	if err := checkGuardedColumn(c, pk, "states field", s.Field); err != nil {
 		return err
 	}
+	// A Default of any other type (a JSON `true`, a number) silently
+	// bypasses the string checks below and would be written unchecked into
+	// the enum column on create, so refuse it here, naming the field.
+	if field.Default != nil {
+		if _, ok := field.Default.(string); !ok {
+			return fmt.Errorf("entity %q: states field %q has a non-string Default (%T); a state Default names one of the field's values and must be a string", name, s.Field, field.Default)
+		}
+	}
 	inValues := func(what, v string) error {
 		if !slices.Contains(field.Values, v) {
 			return fmt.Errorf("entity %q: states %s %q is not one of %s's values %v", name, what, v, s.Field, field.Values)
@@ -184,11 +250,11 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 	seen := map[string]bool{}
 	for i, t := range s.Transitions {
 		where := fmt.Sprintf("transitions[%d]", i)
-		if !displayKeyGrammar.MatchString(t.Key) {
-			return fmt.Errorf("entity %q: states %s key %q must be a lowercase slug matching ^[a-z][a-z0-9_]*$", name, where, t.Key)
+		if !transitionKeyGrammar.MatchString(t.Key) {
+			return fmt.Errorf("entity %q: states %s key %q must be lowercase segments joined by single underscores (^[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$), each segment led by a letter, so no two keys normalize to one generated identifier", name, where, t.Key)
 		}
-		if reservedTransitionKeys[t.Key] {
-			return fmt.Errorf("entity %q: states %s key %q is reserved (list, get, create, update and delete name the entity's own tools)", name, where, t.Key)
+		if surface, reserved := reservedTransitionKeys[t.Key]; reserved {
+			return fmt.Errorf("entity %q: states %s key %q is reserved: it collides with %s; rename the move", name, where, t.Key, surface)
 		}
 		if seen[t.Key] {
 			return fmt.Errorf("entity %q: states declares move %q more than once", name, t.Key)
@@ -237,8 +303,30 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 	return nil
 }
 
+// ValidateStates runs the states block's boot checks over an EntityConfig
+// the way App.Entity would, for code generators that read hand-written
+// entity declarations (entities/*.go through packReadEntities) which never
+// passed registration. Define runs first so the guards judge the same
+// field set the app judges — Define injects the framework-managed columns
+// (timestamps, deleted_at, tenant and owner columns) the guards refuse.
+// Only the states block is validated; the rest of the entity is the
+// generator's caller's business.
+func ValidateStates(name string, cfg EntityConfig) error {
+	e := Define(name, cfg)
+	if e.Config.States == nil {
+		return nil
+	}
+	return e.Config.States.validate(e.Config, e.PrimaryKey)
+}
+
 // checkGuardedColumn refuses a state field or stamp that is also a column
-// the framework manages itself.
+// the framework manages itself: the primary key, the owner and tenant
+// scope columns, the soft-delete column, and every auto-generated column
+// (the injected created_at/updated_at, or any field the declaration marks
+// AutoGenerate). Writing any of them through a move would fight the
+// machinery that already owns it — a Stamp of deleted_at would soft-delete
+// the row, and delete/restore would then write a guarded column outside
+// any move.
 func checkGuardedColumn(c EntityConfig, pk, what, col string) error {
 	if pk == "" {
 		pk = "id"
@@ -252,6 +340,17 @@ func checkGuardedColumn(c EntityConfig, pk, what, col string) error {
 		}
 		if c.Scope.MultiTenant && col == c.TenantColumn() {
 			return fmt.Errorf("entity %q: states %s %q is the tenant column", c.Name, what, col)
+		}
+		// Soft delete writes deleted_at on delete and restore, and every
+		// scoped read filters on it by name; the column is managed whether
+		// the declaration declared it or Define injected it.
+		if c.Scope.SoftDelete && col == "deleted_at" {
+			return fmt.Errorf("entity %q: states %s %q is the soft-delete column; delete and restore write it, a move never may", c.Name, what, col)
+		}
+	}
+	for _, f := range c.Fields {
+		if f.Name == col && f.AutoGenerate != schema.AutoNone {
+			return fmt.Errorf("entity %q: states %s %q is auto-generated; the framework writes it (created_at/updated_at when the entity has timestamps)", c.Name, what, col)
 		}
 	}
 	return nil
