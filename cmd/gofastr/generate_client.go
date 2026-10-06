@@ -39,6 +39,17 @@ func tsCommentSafe(v string) string {
 	return strings.ReplaceAll(goCommentSafe(v), "*/", "* /")
 }
 
+// clientHasMoves reports whether any declaration has a routable move, the
+// only caller of the emitted moveBody.
+func clientHasMoves(decls []framework.EntityDeclaration) bool {
+	for _, d := range decls {
+		if len(crud.RoutableTransitions(d.States)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // renderClient builds gen/client/client.go, a standalone Go client for
 // hitting the CRUD HTTP surface of every generated entity.
 //
@@ -187,12 +198,16 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 	return c.doJSON(ctx, method, path, body, out)
 }
 
-// moveBody is the empty JSON body every transition POST sends: a move
+`)
+	if clientHasMoves(decls) {
+		sb.WriteString(`// moveBody is the empty JSON body every transition POST sends: a move
 // carries no payload, but its route requires the JSON content type (its
 // cross-site-form gate), which doJSON only sets on a non-nil body.
 var moveBody = map[string]any{}
 
-
+`)
+	}
+	sb.WriteString(`
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
 // successes still carry Data, but Committed=false on the envelope means
@@ -516,7 +531,6 @@ func (c *Client) BatchDelete%s(ctx context.Context, ids []string) (BatchResponse
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) Watch%s(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/%s/_events", fn)
 }
 

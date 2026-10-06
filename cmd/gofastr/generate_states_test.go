@@ -110,6 +110,18 @@ func TestTypedClientRendersTransitionMethods(t *testing.T) {
 	if strings.Contains(out, "MarkOverdue") {
 		t.Error("typed client has a method for the System move; system moves appear nowhere")
 	}
+	if !strings.Contains(out, "var moveBody = map[string]any{}") {
+		t.Error("typed client with moves does not declare moveBody")
+	}
+}
+
+// A client with no routable move carries no moveBody: nothing would use it.
+func TestTypedClientNoMovesNoMoveBody(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].States = nil
+	if out := renderClient(decls); strings.Contains(out, "moveBody") {
+		t.Error("typed client without moves declares moveBody")
+	}
 }
 
 // The JS SDK binds each move as a quoted property over the shared
