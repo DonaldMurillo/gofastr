@@ -156,7 +156,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 
 	// Snake-case field-name constant, so filter/sort params never require
 	// guessing the server-side column casing.
-	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", ent.Struct, jsResourceProp(ent))
+	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", tsCommentSafe(ent.Struct), jsResourceProp(ent))
 	fmt.Fprintf(dts, "export declare const %sFields: Readonly<{\n", jsResourceProp(ent))
 	for _, f := range ent.Fields {
 		// The constant exists to be used as a filter/sort key, so a NoQuery
@@ -193,8 +193,12 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	if moves := crud.RoutableTransitions(decl.States); len(moves) > 0 {
 		fmt.Fprintf(dts, "export interface %sMoves {\n", ent.Struct)
 		for _, t := range moves {
+			// The doc comment is a /** … */ block: every declaration-derived
+			// part goes through tsCommentSafe, or a `*/` in an enum value
+			// ends the comment early and the rest becomes live .d.ts tokens
+			// (t.Key stays raw — it is a grammar-checked identifier there).
 			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: string): Promise<%s>;\n",
-				decl.States.Field, strings.Join(t.From, "|"), t.To, stampNote(t.Stamp), t.Key, ent.Struct)
+				tsCommentSafe(decl.States.Field), tsCommentSafe(strings.Join(t.From, "|")), tsCommentSafe(t.To), tsCommentSafe(stampNote(t.Stamp)), t.Key, ent.Struct)
 		}
 		dts.WriteString("}\n\n")
 	}

@@ -9,6 +9,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
+// goCommentSafe makes a declaration-derived string inert inside the Go
+// line comments this generator writes it into (a move summary, the table
+// name in a List doc). Declaration bytes reach those slots unescaped: a
+// C0 control byte — a newline above all — ends the `//` comment and puts
+// the rest of the value at statement position in emitted code that
+// compiles and runs (a probe enum value "paid\nfunc init() { panic(1)
+// } //" escaped exactly that way). U+2028/U+2029 flatten too: they are
+// line terminators in the JavaScript twin of the same text. Everything
+// else survives verbatim; the value stays prose.
+func goCommentSafe(v string) string {
+	var b strings.Builder
+	b.Grow(len(v))
+	for _, r := range v {
+		if r < 0x20 || r == '\u2028' || r == '\u2029' {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// tsCommentSafe is goCommentSafe for the block comments the JS/TS SDK
+// emitter writes (/** … */): the same control flattening, plus breaking
+// `*/`, which would otherwise end the comment early and promote the rest
+// of the value to live tokens in client.d.ts.
+func tsCommentSafe(v string) string {
+	return strings.ReplaceAll(goCommentSafe(v), "*/", "* /")
+}
+
 // renderClient builds gen/client/client.go, a standalone Go client for
 // hitting the CRUD HTTP surface of every generated entity.
 //
@@ -383,7 +413,7 @@ func (c *Client) List%s(ctx context.Context, params url.Values) (%sListResponse,
 	return out, nil
 }
 
-`, pluralStruct, table, pluralStruct, struct_, struct_, route, struct_))
+`, pluralStruct, goCommentSafe(table), pluralStruct, struct_, struct_, route, struct_))
 
 	// Get
 	sb.WriteString(fmt.Sprintf(`// Get%s fetches a single record by id. Returns *APIError with 404 when missing.
@@ -496,9 +526,13 @@ func (c *Client) Watch%s(ctx context.Context, fn func(event string, data []byte)
 	// the same set, Advisory entities included. System moves have no
 	// route and appear nowhere.
 	for _, t := range crud.RoutableTransitions(decl.States) {
-		what := fmt.Sprintf("%s: %s → %s", decl.States.Field, strings.Join(t.From, "|"), t.To)
+		// The summary is a Go line comment: every declaration-derived part
+		// goes through goCommentSafe, or a newline in an enum value ends
+		// the comment and the rest compiles as live code (t.Key stays raw —
+		// it arrives quoted via %q below).
+		what := fmt.Sprintf("%s: %s → %s", goCommentSafe(decl.States.Field), goCommentSafe(strings.Join(t.From, "|")), goCommentSafe(t.To))
 		if t.Stamp != "" {
-			what += ", stamps " + t.Stamp
+			what += ", stamps " + goCommentSafe(t.Stamp)
 		}
 		fmt.Fprintf(&sb, `// %[1]s%[2]s runs the %[3]q move on the record at id (%[4]s).
 // The server writes the state and any stamp; the request sends an empty

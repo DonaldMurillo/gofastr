@@ -513,11 +513,11 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		}
 		propOwners[jsResourceProp(ent)] = decl.Name
 		structOwners[ent.Struct] = decl.Name
-		// Transition keys land in identifier slots in both targets (Go
-		// method names, d.ts members) and in route literals; the entity
-		// boot check never ran over a hand-written declaration, so the
-		// emitter refuses the same grammar here.
-		if err := validateTransitionKeys(decl.States); err != nil {
+		// Transition keys land in identifier slots in both targets (Go method
+		// names, d.ts members) and in route literals; the entity boot check
+		// never ran over a hand-written declaration, so the generators re-run
+		// it here (one implementation, framework/entity's own).
+		if err := validateDeclarationStates(decl); err != nil {
 			return sdkSpec{}, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 		spec.Decls = append(spec.Decls, decl)

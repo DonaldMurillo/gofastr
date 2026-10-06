@@ -234,15 +234,18 @@ func (r staticRegistry) Get(name string) (*entity.Entity, error) {
 }
 
 // The generators refuse what the server's boot check would have refused:
-// a key outside the slug grammar, or one colliding with a verb's command
-// or generated function name (hand-written declarations never passed
-// entity.Define).
+// a key outside the move-key grammar, a duplicate, or one colliding with
+// any generated surface's own name (hand-written declarations never passed
+// entity.Define; validateDeclarationStates re-runs the one boot check).
 func TestGeneratorsRefuseBadTransitionKeys(t *testing.T) {
 	cases := map[string][]framework.Transition{
-		"uppercase key":  {{Key: "Pay", From: []string{"draft"}, To: "paid"}},
-		"verb key":       {{Key: "patch", From: []string{"draft"}, To: "paid"}},
-		"batch verb key": {{Key: "batch_update", From: []string{"draft"}, To: "paid"}},
-		"duplicate key":  {{Key: "pay", From: []string{"draft"}, To: "paid"}, {Key: "pay", From: []string{"draft"}, To: "void"}},
+		"uppercase key":         {{Key: "Pay", From: []string{"draft"}, To: "paid"}},
+		"double underscore key": {{Key: "mark__paid", From: []string{"draft"}, To: "paid"}},
+		"verb key":              {{Key: "patch", From: []string{"draft"}, To: "paid"}},
+		"batch verb key":        {{Key: "batch_update", From: []string{"draft"}, To: "paid"}},
+		"duplicate key":         {{Key: "pay", From: []string{"draft"}, To: "paid"}, {Key: "pay", From: []string{"draft"}, To: "void"}},
+		"js member key":         {{Key: "transition", From: []string{"draft"}, To: "paid"}},
+		"openapi id key":        {{Key: "events", From: []string{"draft"}, To: "paid"}},
 	}
 	for name, moves := range cases {
 		decls := statesFixtureDecls()
@@ -254,5 +257,17 @@ func TestGeneratorsRefuseBadTransitionKeys(t *testing.T) {
 		if _, err := buildSDKSpec(decls, &opts); err == nil {
 			t.Errorf("SDK accepted %s", name)
 		}
+	}
+}
+
+// The scaffolded project's typed client is emitted straight from the same
+// declarations, so the states boot check runs on that path too: a move key
+// registration refuses never reaches renderClient, whatever declared it
+// (the blueprint path validates shape, not states).
+func TestRenderGeneratedProjectRefusesBadStates(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].States.Transitions[0].Key = "patch"
+	if _, err := renderGeneratedProject(decls); err == nil || !strings.Contains(err.Error(), `key "patch" is reserved`) {
+		t.Fatalf("renderGeneratedProject accepted a reserved move key: %v", err)
 	}
 }

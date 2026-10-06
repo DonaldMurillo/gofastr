@@ -703,45 +703,29 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 			seen[name] = f.Snake
 		}
 	}
-	if err := validateTransitionKeys(decl.States); err != nil {
+	if err := validateDeclarationStates(decl); err != nil {
 		return cliEntity{}, fmt.Errorf("entity %q: %w", decl.Name, err)
 	}
 	return ent, nil
 }
 
-// validateTransitionKeys refuses the non-system moves the generators
-// cannot render safely: a key outside the boot grammar, a key whose
-// derived command or function name collides with a CRUD verb's (a move
-// named "patch" or "batch_update" would shadow the generated verb), or a
-// duplicate key. Shared by the CLI and SDK spec builders.
-func validateTransitionKeys(st *framework.StatesConfig) error {
-	if st == nil {
+// validateDeclarationStates refuses a declaration whose states block the
+// app would refuse at boot. `gofastr gen cli/sdk` read hand-written
+// entities/*.go through packReadEntities — files that never passed
+// entity.Define — so the generators re-run the ONE boot check (the move-key
+// grammar, the reserved-name set, duplicates, the guarded columns) from
+// framework/entity instead of re-implementing any of it here. The boot
+// check runs Define first, so the guards see the injected
+// framework-managed columns the app sees.
+func validateDeclarationStates(decl framework.EntityDeclaration) error {
+	if decl.States == nil {
 		return nil
 	}
-	seen := map[string]bool{}
-	for _, t := range crud.RoutableTransitions(st) {
-		// Keys are re-emitted into identifier slots (run<Ent><Key>
-		// wrappers, SDK methods, d.ts members) and route literals, and
-		// packReadEntities reads hand-written entity files that never
-		// passed registration, so the generators refuse what it would.
-		if !entity.ValidKey(t.Key) {
-			return fmt.Errorf("states move %q: key must be a lowercase slug matching ^[a-z][a-z0-9_]*$, the grammar the server's boot check enforces; the generators emit it as identifiers and route segments", t.Key)
-		}
-		if seen[t.Key] {
-			return fmt.Errorf("states declares move %q more than once", t.Key)
-		}
-		seen[t.Key] = true
-		for _, verb := range cliVerbs {
-			// The key spells the subcommand (dashes never appear in keys,
-			// so only dashless verbs can collide there); its camelCase
-			// spells the generated function/method suffix, which also
-			// collides with the batch verbs ("batch_create" → BatchCreate).
-			if t.Key == verb || toCamelCase(t.Key) == verbFuncSuffix(verb) {
-				return fmt.Errorf("states move %q collides with the %q verb (same generated command or method name); rename the move", t.Key, verb)
-			}
-		}
+	cfg, err := decl.Config()
+	if err != nil {
+		return err
 	}
-	return nil
+	return entity.ValidateStates(decl.Name, cfg)
 }
 
 // cliEnvPrefix turns a binary name into the UPPER_SNAKE env-var prefix:
@@ -1596,7 +1580,7 @@ func verbFuncSuffix(verb string) string {
 // verbs.go (runListVerb); this is the part that genuinely varies.
 func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
-	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, goCommentSafe(ent.Command))
 	fmt.Fprintf(sb, "var %sListFilters = []filterFlag{\n", p)
 	if ent.Search {
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", "q", "q", "free-text search over the declared search fields")
@@ -1628,7 +1612,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		headers = append(headers, f.Snake)
 		keys = append(keys, f.Wire)
 	}
-	fmt.Fprintf(sb, "// Table columns for `%s list -o table`: %sListHeaders are the display\n// titles, %sListKeys the JSON wire keys each column reads.\n", ent.Command, p, p)
+	fmt.Fprintf(sb, "// Table columns for `%s list -o table`: %sListHeaders are the display\n// titles, %sListKeys the JSON wire keys each column reads.\n", goCommentSafe(ent.Command), p, p)
 	fmt.Fprintf(sb, "var (\n\t%sListHeaders = []string{%s}\n\t%sListKeys    = []string{%s}\n)\n\n", p, quoteList(headers), p, quoteList(keys))
 }
 
@@ -1640,7 +1624,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 // identifiers.
 func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
-	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
 	fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	for _, f := range ent.Fields {
 		if f.ReadOnly {
