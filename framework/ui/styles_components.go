@@ -1414,16 +1414,24 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
 /* Pill variant (ThemeToggle's and ThemePicker's). It keeps its labels'
-   width in a crowded row: shrinking it clipped the last option under
-   the rounded overflow. */
+   width in a crowded row (shrinking it clipped the last option under
+   the rounded overflow), but never grows past its container: a picker
+   with more or longer labels than the row holds scrolls its track, and
+   an arrow key or End brings the focused option into view. */
 :where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
   display: inline-flex;
   flex-shrink: 0;
+  max-inline-size: 100%;
   white-space: nowrap;
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
-  overflow: hidden;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   background: var(--color-surface, #fff);
+}
+[data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
+  flex-shrink: 0;
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;

@@ -79,7 +79,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   each extra theme with `style.RegisterThemeOverride` and list it in
   `ThemePickerConfig.Themes`; the picker draws as `ui.ThemeToggle`'s
   pill, with a Default option for the app's own theme, and the arrow
-  keys move the choice as in a native radio set. Picking a theme
+  keys move the choice as in a native radio set. The server draws
+  Default checked until the runtime reads the stored choice, and a row
+  too narrow for every label scrolls the pill's track instead of
+  widening the page. Picking a theme
   puts its `cui-theme-<hash>` class on `<html>` in place, stores it in
   `localStorage["gofastr.theme"]`, and the color-scheme bootstrap puts
   it back before first paint on the next load
@@ -721,7 +724,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **The arrow keys move the choice in `ui.ThemeToggle`'s pill.** The
   pill is a radiogroup but answered only clicks and Tab; the arrow
   keys now move and pick, wrapping at either end, and the checked
-  option is the group's one Tab stop.
+  option is the group's one Tab stop. The server draws Auto checked,
+  so the group has a checked option and one Tab stop before the
+  runtime reads the stored scheme.
 - **A theme's `--ui-gallery-gap` reaches `ui.Gallery`.** The gallery
   set the knob on its own root, which shadowed any value a theme wrote
   on `:root`. It now reads the knob, falling back to
