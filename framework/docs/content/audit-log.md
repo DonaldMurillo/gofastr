@@ -33,11 +33,13 @@ CREATE TABLE audit_log (
     id          TEXT       PRIMARY KEY,
     entity      TEXT       NOT NULL,
     op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete' | 'restore' | 'purge'
+                                        -- | 'state_override' | 'transition:<key>'
     record_id   TEXT       NOT NULL,
     actor_id    TEXT,                  -- nullable
     tenant_id   TEXT,                  -- nullable; current tenant at write time
     created_at  TIMESTAMPTZ NOT NULL,  -- DATETIME on SQLite
-    diff        TEXT                   -- JSON
+    diff        TEXT,                  -- JSON
+    reason      TEXT                   -- a state override's reason (states.md)
 );
 ```
 
@@ -53,18 +55,20 @@ loud failure is preferable to silent log loss).
 `tenant_id` is populated from `tenant.GetTenantID(ctx)` at write time, so
 multi-tenant apps can scope the audit trail per tenant instead of mixing
 every tenant's rows in one table. It is `NULL` for writes with no tenant
-in context (single-tenant apps, system/async writes). The column is added
-idempotently: an `audit_log` table created by an older binary gets a
-nullable `tenant_id` added on the next `EnsureAuditTable`, with existing
-rows left untouched. See [multi-tenant](multi-tenant.md) for the
-tenant-scoped query pattern.
+in context (single-tenant apps, system/async writes). The `tenant_id` and
+`reason` columns are added idempotently: an `audit_log` table created by
+an older binary gets each missing nullable column on the next
+`EnsureAuditTable`, with existing rows left untouched. See
+[multi-tenant](multi-tenant.md) for the tenant-scoped query pattern.
 
 `restore` and `purge` come from the soft-delete operations
 (`crud.RestoreOne`, `crud.PurgeOne`): they run the ordinary update and
 delete hook chains, and the operation they carry on the context reaches
 the audit row, so the trail says what actually happened rather than
-"update"/"delete". Only the CRUD handler sets that operation; app code
-cannot write an arbitrary operation name into the trail.
+"update"/"delete". A state move writes `transition:<key>` and a state
+override `state_override` the same way (see [states](states.md)). Only
+the framework names an operation; app code cannot write an arbitrary
+operation name into the trail.
 
 ## Configuration
 
@@ -111,6 +115,10 @@ transaction, so:
 - `AfterCreate` → `op = 'create'`, `diff = {"new": <record>}`
 - `AfterUpdate` → `op = 'update'`, `diff = {"old": <record>, "new": <record>}`
 - `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
+- a state move (`RunTransition`) → `op = 'transition:<key>'`, both images
+  in `diff`, inside the move's transaction
+- an update under `crud.WithStateOverride` → `op = 'state_override'`,
+  with the override's reason in the `reason` column
 
 `Before*` hooks are not audited; the audit only records committed
 changes (modulo transactional behaviour above).

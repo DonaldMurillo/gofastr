@@ -8,6 +8,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`EntityConfig.States` gives an entity a state machine.** The config
+  names the Enum field holding the state, the values a create may start
+  at, and the named moves that change it. Unless `Advisory` is set, the
+  state field and every stamp change only through a move, on every write
+  path: REST create/update, `_batch`, cascade writes, `UpsertOne`,
+  in-process `CreateOne`/`UpdateOne` and hooks. An update writing the
+  stored value back passes; any other change is a 422 naming the open
+  moves. `TypedQuery.UpdateAll` refuses a guarded column outright. A move
+  runs through `CrudHandler.RunTransition`, the route
+  `POST <api>/<entity>/<id>/transitions/<key>` (200/403/404/409/415), or
+  the MCP tool `<entity>_<key>`; a System move has no route or tool and
+  is Go-only. A move needs the entity's update permission plus its own
+  `Permission`, asked about the record, and writes an audit row with op
+  `transition:<key>`. Stamps set a Date or Timestamp field to the
+  server's UTC date or time. See `framework/docs/content/states.md`.
+- **`crud.WithStateOverride` and the audit `reason` column.** Trusted Go
+  code (seeds, imports, repair jobs) wraps its context in
+  `crud.WithStateOverride(ctx, reason)` to write a state field or stamp
+  outside a move. A non-empty reason and an audited entity
+  (`App.WithAuditLog`) are required, else the write is refused. An update
+  under it is audited with op `state_override` and the reason in the new
+  nullable `reason` column, which `EnsureAuditTable` adds to an existing
+  audit table. `WithServerWrites` does not release the state field;
+  `TypedQuery.UpdateAll` refuses guarded columns even under the override.
+- **Generated clients carry the state moves.** OpenAPI, the MCP tools,
+  the Go client, the JS SDK and the CLI each gain one call per non-system
+  move, and the per-entity `EntityLLMMD` document gains a `## States`
+  section. Under enforced States the write shapes match what the server
+  accepts: stamps leave every write shape, the patch shapes drop the
+  state field, and the OpenAPI and MCP create bodies narrow the state
+  enum to the initial values. The SDK schema hash covers `States`, so a
+  changed move set changes the hash. `entity.ValidKey` reports whether a string follows
+  the Display and States key grammar; the generators check move keys
+  with it and refuse a key that collides with a CRUD verb.
 - **`EntityConfig.Display` carries an entity's screen hints.** One
   block holds what admin and generated screens read: singular and plural
   names, list columns, named views (a DSL `Where` and a `Sort`), facets,
@@ -827,6 +861,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **`EnsureAuditTable` adds missing columns on SQLite.** An audit table
+  created before `tenant_id` existed kept running without it: SQLite has
+  no `ADD COLUMN IF NOT EXISTS`, and the fallback's probe reported the
+  missing column as present, so the call returned nil and the next
+  audit write failed on the missing column. The columns now come from the
+  catalog (`PRAGMA table_info`, `information_schema`) and each missing
+  one is added.
 - **The arrow keys move the choice in `ui.ThemeToggle`'s pill.** The
   pill is a radiogroup but answered only clicks and Tab; the arrow
   keys now move and pick, wrapping at either end, and the checked
