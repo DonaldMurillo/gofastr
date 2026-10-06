@@ -317,9 +317,16 @@ func (s *StatesConfig) validate(c EntityConfig, pk string) error {
 // passed registration. Define runs first so the guards judge the same
 // field set the app judges — Define injects the framework-managed columns
 // (timestamps, deleted_at, tenant and owner columns) the guards refuse.
-// Only the states block is validated; the rest of the entity is the
-// generator's caller's business.
-func ValidateStates(name string, cfg EntityConfig) error {
+// The states block is what it checks, but Define panics on other
+// declaration errors (an undeclared SearchFields entry, a bad ReadScope
+// predicate); those come back as the error too, so a generator reading a
+// hand-edited spec fails naming the entity rather than with a stack trace.
+func ValidateStates(name string, cfg EntityConfig) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
 	e := Define(name, cfg)
 	if e.Config.States == nil {
 		return nil

@@ -267,6 +267,9 @@ func TestValidateStatesRunsBootChecksOverDeclarations(t *testing.T) {
 		{"reserved key remove", func(_ *EntityConfig, s *StatesConfig) {
 			s.Transitions[0].Key = "remove"
 		}, `key "remove" is reserved: it collides with the JS SDK resource's own remove member`},
+		{"Define refusal", func(c *EntityConfig, _ *StatesConfig) {
+			c.SearchFields = []string{"nope"}
+		}, `SearchFields entry "nope" is not a declared field`},
 		{"valid fixture row", nil, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
