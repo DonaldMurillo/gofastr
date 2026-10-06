@@ -33,7 +33,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the kit that way: a bare border, outline or ring width, outline
   offset, px radius, duration up to 500ms or z-index above 10 in
   design-system CSS is an error, with a literal inside a `var()`
-  fallback or a token-reading `calc()` allowed.
+  fallback or a token-reading `calc()` allowed. The contract catalog
+  holds 78 rules.
 - **The whole kit is themeable from one `:root` block.** Three optional
   token groups join `Strokes`: `Theme.Leading` (`--leading-tight` 1.2,
   `--leading-snug` 1.4, `--leading-normal` 1.5, `--leading-relaxed`
