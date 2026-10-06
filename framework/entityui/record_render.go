@@ -137,13 +137,16 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	if !canRead(ctx, m.ch) {
 		return accessDenied(ctx, m.plural(ctx)), nil
 	}
+	// The per-record gate is asked before any read, so a denied id
+	// runs no query and no hook; it answers the same not-found body a
+	// missing id does.
+	if !canReadRecord(ctx, m.ch, b.id) {
+		return m.notFound(ctx), nil
+	}
 	// WithReadHooks: the header and every display value show what an
 	// AfterGet redaction shows, never the stored column.
 	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), b.id, nil)
 	if err != nil || row == nil {
-		return m.notFound(ctx), nil
-	}
-	if !canReadRecord(ctx, m.ch, b.id) {
 		return m.notFound(ctx), nil
 	}
 	// Deliberately NOT WithReadHooks: the edit form's inputs

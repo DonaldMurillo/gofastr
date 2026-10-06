@@ -261,7 +261,7 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 // visibleIDs re-reads ids through the scoped CRUD handler under ctx and
 // returns the ones that come back, in the order given.
 func (u *UI) visibleIDs(ctx context.Context, m *meta, ids []string) ([]string, error) {
-	rows, err := m.ch.ListAll(ctx, crud.ListOptions{
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
 		Where:  &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
 		Fields: []string{m.pk},
 		Limit:  len(ids),
@@ -330,7 +330,7 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 	if err != nil {
 		return nil, err
 	}
-	rows, err := m.ch.ListAll(ctx, crud.ListOptions{
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,

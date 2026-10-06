@@ -20,6 +20,9 @@ const (
 	KeyEntityReadOnly       Key = "ui.entity.readOnly"       // "This {entity} is read-only."
 	KeyEntityLeaveGuard     Key = "ui.entity.leaveGuard"     // "You have unsaved changes."
 	KeyEntityUnchanged      Key = "ui.entity.unchanged"      // "— unchanged —"
+	KeyEntityReplace        Key = "ui.entity.replace"        // "Replace"
+	KeyEntityReplaceHint    Key = "ui.entity.replaceHint"    // "Saving the form keeps it. Type a new value and choose Replace to change it."
+	KeyEntityNewValue       Key = "ui.entity.newValue"       // "New value"
 	KeyEntityBefore         Key = "ui.entity.before"         // "Before"
 	KeyEntityAfter          Key = "ui.entity.after"          // "After"
 )
@@ -43,6 +46,9 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityReadOnly:       "This {entity} is read-only.",
 	KeyEntityLeaveGuard:     "You have unsaved changes.",
 	KeyEntityUnchanged:      "— unchanged —",
+	KeyEntityReplace:        "Replace",
+	KeyEntityReplaceHint:    "Saving the form keeps it. Type a new value and choose Replace to change it.",
+	KeyEntityNewValue:       "New value",
 	KeyEntityBefore:         "Before",
 	KeyEntityAfter:          "After",
 }

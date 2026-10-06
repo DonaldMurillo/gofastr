@@ -50,31 +50,34 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		}
 	}
 	if dup := q.Get("duplicate"); dup != "" {
-		// The duplicate reads through the read gate WITHOUT read hooks:
-		// its values round-trip on submit, and a mask written back
-		// would replace the stored column. Fields a create may not set
-		// (system, the state field, stamps, unique, masked) start
-		// blank, so the normal create hooks and scope apply.
+		// The hooked read comes first and must succeed: it applies the
+		// caller's read scope, and a field its AfterGet rewrites is a
+		// masked one whose stored value a create must not copy. A
+		// failed or empty hooked read refuses the duplicate rather than
+		// fall back to raw values. The prefill itself comes from the
+		// raw read, since the values round-trip on submit. Fields a
+		// create may not set (system, the state field, stamps, unique)
+		// start blank, so the normal create hooks and scope apply.
 		if !canReadRecord(ctx, m.ch, dup) {
 			return m.notFound(ctx)
 		}
-		if row, err := m.ch.GetOne(ctx, dup, nil); err == nil && row != nil {
-			for _, f := range m.fields {
-				if !mayCreateSet(m, f) || f.Unique {
-					continue
-				}
-				if v := formValueText(f, rowValue(row, f.Name)); v != "" {
-					values[f.Name] = v
-				}
+		hooked, herr := m.ch.GetOne(crud.WithReadHooks(ctx), dup, nil)
+		if herr != nil || hooked == nil {
+			return m.notFound(ctx)
+		}
+		row, err := m.ch.GetOne(ctx, dup, nil)
+		if err != nil || row == nil {
+			return m.notFound(ctx)
+		}
+		for _, f := range m.fields {
+			if !mayCreateSet(m, f) || f.Unique {
+				continue
 			}
-			// A field an AfterGet hook rewrites never prefills: its
-			// stored shape is not something a create should copy.
-			if hooked, herr := m.ch.GetOne(crud.WithReadHooks(ctx), dup, nil); herr == nil && hooked != nil {
-				for k := range values {
-					if _, ok := m.field(k); ok && cell(rowValue(row, k)) != cell(rowValue(hooked, k)) {
-						delete(values, k)
-					}
-				}
+			if cell(rowValue(row, f.Name)) != cell(rowValue(hooked, f.Name)) {
+				continue
+			}
+			if v := formValueText(f, rowValue(row, f.Name)); v != "" {
+				values[f.Name] = v
 			}
 		}
 	}
@@ -175,7 +178,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(dest)).
 		Attrs()
-	return ui.Form(ui.FormConfig{
+	forms := []render.HTML{ui.Form(ui.FormConfig{
 		Action:      action,
 		Method:      "POST",
 		ID:          "eui-" + m.name + "-form",
@@ -183,7 +186,24 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		SubmitLabel: submitLabel(ctx, m, fb.create),
 		ExtraAttrs:  attrs,
 		LeaveGuard:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
-	}, body)
+	}, body)}
+	// The masked fields' Replace forms: empty, their input and button
+	// sit in the record form's markup and name them by the form
+	// attribute. Each PUTs the one field it owns.
+	for _, name := range fb.replace {
+		forms = append(forms, ui.Form(ui.FormConfig{
+			Action:     action,
+			Method:     "POST",
+			ID:         fb.replaceFormID(name),
+			Ctx:        ctx,
+			HideSubmit: true,
+			ExtraAttrs: interactive.Put(action).
+				OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySaved)).
+				OnSuccess(interactive.Navigate(dest)).
+				Attrs(),
+		}))
+	}
+	return render.Join(forms...)
 }
 
 // editableFields is the form's candidate set in schema order: visible,
@@ -221,6 +241,16 @@ type formBuilder struct {
 	values     map[string]string
 	placed     map[string]bool
 	err        error
+	// replace lists the masked fields drawn with their own Replace
+	// form, in placement order; drawForm emits those forms after the
+	// record form, which must not submit them.
+	replace []string
+}
+
+// replaceFormID names the form a masked field's input and Replace
+// button belong to.
+func (fb *formBuilder) replaceFormID(field string) string {
+	return "eui-" + fb.m.name + "-replace-" + field
 }
 
 // walk resolves the form layout: Main and Side children. A field the
@@ -449,21 +479,39 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 	case schema.Relation:
 		return fb.relationSelect(ctx, f, label, help, id, "")
 	default:
-		ph := i18nui.T(ctx, i18nui.KeyEntityKeepValue)
+		// A blank text input cannot mean "keep": CRUD stores "" for
+		// String and Text, so a record form that carried this input
+		// would clear the column on every unrelated save. The input
+		// and its Replace button belong to a form of their own (the
+		// form attribute), which the record form never serializes;
+		// that form writes this one field, and only a typed value.
+		formID := fb.replaceFormID(f.Name)
+		fb.replace = append(fb.replace, f.Name)
+		help = state + " · " + i18nui.T(ctx, i18nui.KeyEntityReplaceHint)
+		ph := i18nui.T(ctx, i18nui.KeyEntityNewValue)
+		owner := html.Attrs{"form": formID}
+		var input render.HTML
 		if f.Type == schema.Text || f.Type == schema.JSON {
-			return ui.TextArea(ui.TextAreaConfig{
+			input = ui.TextArea(ui.TextAreaConfig{
 				Name: f.Name, Label: label, ID: id, Rows: 4, Help: help, Placeholder: ph,
+				Required: true, ExtraAttrs: owner,
+			})
+		} else {
+			input = ui.FormField(ui.FormFieldConfig{
+				Label: label, For: id, Help: help, Required: true,
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{
+						Field: c, Type: inputType(f), Name: f.Name, Placeholder: ph,
+						ExtraAttrs: owner,
+					})
+				},
 			})
 		}
-		return ui.FormField(ui.FormFieldConfig{
-			Label: label, For: id, Help: help,
-			Input: func(c headless.FieldControl) render.HTML {
-				return ui.Control(ui.ControlConfig{
-					Field: c, Type: inputType(f), Name: f.Name, Placeholder: ph,
-					Disabled: false,
-				})
-			},
-		})
+		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, input,
+			ui.Button(ui.ButtonConfig{
+				Label: i18nui.T(ctx, i18nui.KeyEntityReplace), Type: "submit",
+				Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: owner,
+			}))
 	}
 }
 

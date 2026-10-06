@@ -29,7 +29,7 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 	if agg == "sum" {
 		opts.Fields = []string{field}
 		opts.Limit = statRowCap
-		rows, err := m.ch.ListAll(ctx, opts)
+		rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
 		if err != nil {
 			slog.WarnContext(ctx, "entityui: stat", "entity", entityName, "error", err)
 			return "—"
@@ -50,7 +50,7 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		}
 		return formatNumber(total, 2)
 	}
-	n, err := m.ch.CountAll(ctx, opts)
+	n, err := m.ch.CountAll(crud.WithReadHooks(ctx), opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: stat", "entity", entityName, "error", err)
 		return "—"
@@ -92,7 +92,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 	}
 	opts.Fields = []string{groupBy}
 	opts.Limit = statRowCap
-	rows, err := m.ch.ListAll(ctx, opts)
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: group", "entity", entityName, "error", err)
 		return m, nil
