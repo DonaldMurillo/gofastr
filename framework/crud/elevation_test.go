@@ -52,6 +52,9 @@ func TestElevationLiftsAccess(t *testing.T) {
 	if !ch.CanReadScoped(ctx) || !ch.CanReadRecordScoped(ctx, "d1") {
 		t.Fatal("elevated caller: CanReadScoped = false, want true")
 	}
+	if !ch.CanCreateScoped(ctx) || !ch.CanUpdateRecordScoped(ctx, "d1") || !ch.CanDeleteRecordScoped(ctx, "d1") {
+		t.Fatal("elevated caller: a write gate answered false, want true")
+	}
 }
 
 // A Decider's deny still refuses an elevated caller.
