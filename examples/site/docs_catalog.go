@@ -74,6 +74,7 @@ var docIntents = []docIntent{
 			{"cursor-pagination", "Cursor pagination", "Keyset by EntityConfig.CursorField. Opt in by sending ?cursor=."},
 			{"includes", "Eager loading", "?include=author.profile flattens the N+1."},
 			{"hooks-and-transactions", "Hooks & transactions", "BeforeCreate / AfterUpdate hooks share the parent tx."},
+			{"states", "States", "Named moves change a status field; each one is a route, an MCP tool and an audit row."},
 			{"migrations", "Migrations", "Versioned, ordered, reversible, versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
 			{"codegen", "Code generation", "What lands on disk under gen/, and how to read it."},
