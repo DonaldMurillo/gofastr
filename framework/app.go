@@ -1418,6 +1418,11 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	if err := validateDisplayQueries(e); err != nil {
 		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
 	}
+	// And the same operator-suffix collision refusal App.Entity runs:
+	// group-scoped routes parse ?field_<op>= exactly the same way.
+	if err := checkFilterSuffixCollisions(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
 	if a.DB != nil {
 		e.SetDB(a.DB)
 	}
@@ -2287,6 +2292,12 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // registration this split exists to prevent.
 func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
 	if err := validateDisplayQueries(ent); err != nil {
+		return err
+	}
+	// A queryable field whose name is another's plus an operator suffix
+	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
+	// filter, not an error; refuse it at the same gate.
+	if err := checkFilterSuffixCollisions(ent); err != nil {
 		return err
 	}
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
