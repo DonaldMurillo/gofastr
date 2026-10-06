@@ -2,9 +2,10 @@
 // data-hui-when regions, split from the headless module when the
 // system-dismissal cookie mirror pushed it over the size budget (the
 // plan's rule: split a module rather than raise the constant). A
-// region is shown when its watched field carries the value its
-// data-hui-when-value names, and hidden — with its controls disabled
-// under the runtime-owned data-hui-when-off mark — when it does not.
+// region is shown while its watched field carries the value its
+// data-hui-when-value names — or any of the values the JSON list in
+// its data-hui-when-in holds — and hidden, with its controls disabled
+// under the runtime-owned data-hui-when-off mark, while it does not.
 // The region renders VISIBLE server-side; this module is what hides
 // the non-matching one, so a page without script shows every field.
 (function () {
@@ -71,6 +72,33 @@
     return '';
   }
 
+  // whenValues decodes the JSON list a data-hui-when-in region
+  // carries, or null when the attribute is absent or is not a list
+  // nobody could have rendered: the module hides on a condition it
+  // cannot read, exactly as it hides on a value that never arrives —
+  // it never shows on a guess.
+  function whenValues(region) {
+    if (region.dataset.huiWhenIn === undefined) return null;
+    try {
+      const parsed = JSON.parse(region.dataset.huiWhenIn);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // whenHolds reports whether the watched field's current value
+  // satisfies the region's condition: equality with the single value
+  // data-hui-when-value names, or membership in the list data-hui-
+  // when-in carries. The list is JSON, so a value holding a comma, a
+  // quote or a bracket is one member and not a breakout.
+  function whenHolds(region) {
+    const v = whenValue(watchedControls(region, region.dataset.huiWhen));
+    const list = whenValues(region);
+    if (list !== null) return list.indexOf(v) !== -1;
+    return v === region.dataset.huiWhenValue;
+  }
+
   // insideHiddenWhen reports whether el sits inside a [data-hui-when]
   // region that is hidden. Regions nest, and each hides on its own
   // condition; a region inside a hidden region is out whatever its
@@ -97,7 +125,7 @@
   // showing inside a hidden outer one re-enables nothing.
   function syncWhenRegions(regions) {
     for (const region of regions) {
-      const own = whenValue(watchedControls(region, region.dataset.huiWhen)) === region.dataset.huiWhenValue;
+      const own = whenHolds(region);
       region.hidden = !(own && !insideHiddenWhen(region));
     }
     for (const region of regions) {

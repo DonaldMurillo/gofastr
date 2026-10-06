@@ -41,6 +41,13 @@ func ContributeCSS(ss *style.StyleSheet) {
 	ss.Rule(".demo-viewport").
 		Set("block-size", "320px",
 			"overflow", "hidden").End()
+	// A container-query demo needs the same component at two widths on
+	// one page (FormFrame): the wide half and the narrow half. min()
+	// keeps each box inside a narrow viewer instead of overflowing it.
+	ss.Rule(".demo-measure-wide").
+		Set("inline-size", "min(100%, var(--size-content-width))").End()
+	ss.Rule(".demo-measure-narrow").
+		Set("inline-size", "min(100%, var(--size-narrow-width))").End()
 }
 
 // BaseCSS renders [ContributeCSS] against a theme. For consumers that need a

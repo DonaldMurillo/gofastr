@@ -54,6 +54,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`crud.ErrNotSoftDeleted`), so it never skips the soft delete; a row
   the caller cannot see answers not found. Only the CRUD handler names
   an audit operation; app code cannot write one.
+- **`ui.FormFrame`** lays out a record form in a wide main column and a
+  narrow side column, switching on the form's own width (container
+  query at 48rem) and stacking below it. `SideWidth` takes a length or a
+  `var(--*)` token.
+- **`ui.ConditionalField.WhenValues`** shows its children while the
+  watched field holds any of the listed values
+  (`headless.ConditionalFieldProps.Values`, carried as one JSON `data-hui-when-in` attribute).
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit

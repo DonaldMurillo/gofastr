@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -328,8 +329,15 @@ type ConditionalFieldProps struct {
 	// The empty string is refused, so "show when unchecked" — a
 	// checkbox whose unchecked value is "" — is not expressible here;
 	// watch a select or a radio pair whose values are both stated
-	// instead.
+	// instead. Mutually exclusive with Values.
 	Value string
+	// Values is the list of watched-field values that show the
+	// region: shown while the value is ANY member. Mutually exclusive
+	// with Value, and held to the same rule per member — no empty
+	// strings, and never empty itself. The list rides the region as
+	// one JSON array (data-hui-when-in), so a member containing a
+	// comma, a quote or a bracket cannot break out of its slot.
+	Values []string
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -351,14 +359,29 @@ func ConditionalField(p ConditionalFieldProps, s Classes, children ...render.HTM
 	if p.When == "" {
 		panic("headless: ConditionalField requires When — a region that watches nothing is always shown")
 	}
-	if p.Value == "" {
-		panic("headless: ConditionalField requires Value — shown on every value is the same as always shown")
+	own := map[string]string{"id": p.ID, "data-hui-when": p.When}
+	switch {
+	case p.Value != "" && len(p.Values) > 0:
+		panic("headless: ConditionalField takes Value or Values, not both — two conditions cannot share one region")
+	case p.Value != "":
+		own["data-hui-when-value"] = p.Value
+	case len(p.Values) > 0:
+		for _, v := range p.Values {
+			if v == "" {
+				panic("headless: ConditionalField Values holds an empty value — it matches only the empty string, which the single-value form already refuses; watch a control whose values are all stated")
+			}
+		}
+		raw, err := json.Marshal(p.Values)
+		if err != nil {
+			panic("headless: ConditionalField Values did not encode: " + err.Error())
+		}
+		own["data-hui-when-in"] = string(raw)
+	default:
+		panic("headless: ConditionalField requires Value or Values — shown on every value is the same as always shown")
 	}
-	own := Merge(Safe(p.ExtraAttrs, "data-hui-when", "data-hui-when-value"),
-		Attrs(map[string]string{
-			"id": p.ID, "data-hui-when": p.When, "data-hui-when-value": p.Value,
-		}))
-	return El("div", s, PartRoot, own, children...)
+	return El("div", s, PartRoot,
+		Merge(Safe(p.ExtraAttrs, "data-hui-when", "data-hui-when-value", "data-hui-when-in"),
+			Attrs(own)), children...)
 }
 
 func init() {
@@ -424,7 +447,7 @@ func init() {
 	Register(Spec{
 		Name:    "ConditionalField",
 		Anatomy: []Part{PartRoot},
-		Hooks:   []string{"data-hui-when", "data-hui-when-value"},
+		Hooks:   []string{"data-hui-when", "data-hui-when-value", "data-hui-when-in"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -440,6 +463,22 @@ func init() {
 						Field(FieldProps{Label: "Webhook URL", For: "cond-webhook-url"}, k.For("Field"),
 							func(c FieldControl) render.HTML {
 								return Input(InputProps{Name: "webhook-url", ID: c.ID}, k.For("Input"))
+							})),
+				),
+			}, {
+				Name: "shown when the watched field matches any listed value",
+				Why:  "the list is one JSON attribute, so a member value holding a comma, a quote or a bracket stays one member — the module's JSON.parse and the browser's attribute parser each see exactly what Go encoded",
+				HTML: render.Join(
+					Select(SelectProps{Name: "notify", ID: "cond-notify-in", Options: []Option{
+						{Value: "email", Label: "Email"},
+						{Value: `webhook, "both"]`, Label: "Both"},
+						{Value: "none", Label: "None"},
+					}}, k.For("Select")),
+					ConditionalField(ConditionalFieldProps{When: "notify",
+						Values: []string{"email", `webhook, "both"]`}}, s,
+						Field(FieldProps{Label: "Address", For: "cond-notify-addr"}, k.For("Field"),
+							func(c FieldControl) render.HTML {
+								return Input(InputProps{Name: "notify-addr", ID: c.ID}, k.For("Input"))
 							})),
 				),
 			}}

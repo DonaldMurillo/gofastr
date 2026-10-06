@@ -138,6 +138,10 @@ the results region is bound to the island's signal, and the no-script path is th
 rendered visible with no hidden attribute, because a field only script can reveal is a field a scriptless reader never reaches — the runtime hides it when the watched field does not match, and not before
 <label data-hui-choice=""><input data-cui-internal="" name="notify" type="radio" value="webhook"><span data-cui-internal="">Webhook</span></label><div data-hui-when="notify" data-hui-when-value="webhook"><div data-hui-field=""><label data-cui-internal="" for="cond-webhook-url">Webhook URL</label><input id="cond-webhook-url" name="webhook-url" type="text"></div></div>
 
+=== ConditionalField / shown when the watched field matches any listed value ===
+the list is one JSON attribute, so a member value holding a comma, a quote or a bracket stays one member — the module's JSON.parse and the browser's attribute parser each see exactly what Go encoded
+<select id="cond-notify-in" name="notify"><option data-cui-internal="" value="email">Email</option><option data-cui-internal="" value="webhook, &quot;both&quot;]">Both</option><option data-cui-internal="" value="none">None</option></select><div data-hui-when="notify" data-hui-when-in="[&quot;email&quot;,&quot;webhook, \&quot;both\&quot;]&quot;]"><div data-hui-field=""><label data-cui-internal="" for="cond-notify-addr">Address</label><input id="cond-notify-addr" name="notify-addr" type="text"></div></div>
+
 === Container / reading measure ===
 the default is the measure a page of prose reads at — line length is readability, decided here once so no page has to remember to ask for it
 <div><p>One leader runs the cluster and any number of workers join it.</p></div>

@@ -245,7 +245,8 @@ keeps only the thumbnail strip for itself — a styling concern with no
 headless counterpart, bound by framework/ui's own `filedropzone`
 module; `ui.ConditionalField` is `headless.ConditionalField`, a region
 rendered VISIBLE and hidden by the module until the watched field
-matches (a field only a script can reveal is a field a scriptless
+matches — one value or any of a list, both spellings one condition per
+region (a field only a script can reveal is a field a scriptless
 reader never reaches — the module also disables what it hides, so
 nothing hidden submits); `ui.TextArea` is `headless.Field` +
 `headless.Textarea` the way `ui.Select` is, with `Autogrow` reaching
@@ -404,9 +405,14 @@ What it does, one line per behaviour:
   directions, and marks the shell `data-invalid` when the text holds a
   non-empty value that is neither `#rgb` nor `#rrggbb`.
 - **when** hides a `data-hui-when` region whose watched field does not
-  carry `data-hui-when-value`, disabling its controls under the
-  runtime-owned `data-hui-when-off` mark so only those re-enable.
-  The watched control is looked up in the region's own form first,
+  carry the value `data-hui-when-value` names — or, when the region
+  carries `data-hui-when-in`, any of the values its JSON list holds —
+  disabling its controls under the runtime-owned `data-hui-when-off`
+  mark so only those re-enable. The list is JSON in one attribute, so
+  a member value containing a comma, a quote or a bracket stays one
+  member; a list that cannot be parsed matches nothing and the region
+  hides, the same posture as a value that never arrives. The watched
+  control is looked up in the region's own form first,
   and only then in the document — preferring controls no form owns,
   else the first in document order — so two forms with a same-named
   control cannot decide a region that belongs to neither. Regions

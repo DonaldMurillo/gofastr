@@ -571,6 +571,24 @@ var Catalog = []Entry{
 			ui.TextField(ui.TextFieldConfig{Name: "last", Label: "Last name", ID: "demo-last"}),
 		)
 	}},
+	{"formframe", "FormFrame", "Forms", "Record form in two columns: a wide main column beside a narrow side rail that drops under it when the form's own width is narrow — a drawer stacks, a full page sits side by side.", func() render.HTML {
+		frame := ui.FormFrame(ui.FormFrameConfig{
+			Main: []render.HTML{
+				ui.TextField(ui.TextFieldConfig{Name: "number", Label: "Number", ID: "demo-ff-number", Value: "INV-0042"}),
+				ui.TextField(ui.TextFieldConfig{Name: "memo", Label: "Memo", ID: "demo-ff-memo", Placeholder: "What this invoice is for"}),
+			},
+			Side: []render.HTML{
+				ui.Select(ui.SelectConfig{Name: "status", Label: "Status", ID: "demo-ff-status",
+					Options: []ui.SelectOption{{Value: "open", Text: "Open"}, {Value: "paid", Text: "Paid"}}}),
+			},
+		})
+		// The same frame at two container widths: the switch reads the
+		// frame's own inline size (a container query), so the wide box
+		// sits side by side and the narrow box stacks on the same page.
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			html.Div(html.DivConfig{Class: "demo-measure-wide"}, frame),
+			html.Div(html.DivConfig{Class: "demo-measure-narrow"}, frame))
+	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
 		return ui.Select(ui.SelectConfig{
 			Name:    "country",
@@ -707,7 +725,7 @@ var Catalog = []Entry{
 			FieldOrder:  []string{"email", "password"},
 		})
 	}},
-	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
+	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
 		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "#"},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
@@ -721,6 +739,17 @@ var Catalog = []Entry{
 				WhenName: "plan", WhenValue: "pro",
 				Children: []render.HTML{
 					ui.TextField(ui.TextFieldConfig{Name: "coupon", Label: "Coupon code", Help: "Pro only."}),
+				},
+			}),
+			// The in condition: shown while the watched field holds ANY
+			// of the listed values.
+			ui.Select(ui.SelectConfig{Name: "notify", Label: "Notify", ID: "demo-conditional-notify",
+				Options: []ui.SelectOption{{Value: "none", Text: "Never"}, {Value: "email", Text: "Email"}, {Value: "webhook", Text: "Webhook"}}}),
+			ui.ConditionalField(ui.ConditionalFieldConfig{
+				WhenName:   "notify",
+				WhenValues: []string{"email", "webhook"},
+				Children: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "notify-address", Label: "Address", Help: "Shown for email and webhook."}),
 				},
 			}),
 		)
