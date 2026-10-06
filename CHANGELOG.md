@@ -728,6 +728,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING: `framework/ui/resource` is removed.** `framework/entityui`
+  replaces its `Config` and `Registry` screens and its island routes:
+  build the app's UI with `App.EntityUI` and render `appUI.List`,
+  `appUI.Record` and `appUI.Create`. `PublicIsland` has no replacement,
+  because entityui mounts no islands. `gofastr upgrade` lists the
+  importers.
 - **BREAKING: the blueprint's screen-level `filters:`, `transitions:`,
   `search:`, `island:` and `widget:` keys are removed**, and the decoder
   refuses each naming where the setting moved: `filters:` to the entity's

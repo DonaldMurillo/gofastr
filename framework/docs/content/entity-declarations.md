@@ -178,8 +178,8 @@ the user left blank arrives as `""`. Create and update treat that as
 optional field takes its declared `Default` on create and leaves the
 column alone on update, and a blank required field fails with
 `is required` rather than `must be an integer`. Empty text stays an
-empty string, since that is a value a user can mean. The
-resource-engine forms (`framework/ui/resource`) rely on this; a JSON
+empty string, since that is a value a user can mean. The entityui forms
+(`framework/entityui`) rely on this; a JSON
 client gets the same treatment.
 
 ## `Entity` vs `TryEntity`
@@ -1344,7 +1344,7 @@ every key lives under it, and an unknown key is a decode error.
 | `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
 | `Description` | One line under the list heading |
-| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden` |
+| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden`. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
 | `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |
