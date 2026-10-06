@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -116,6 +117,17 @@ type MenuItem struct {
 	// state change only needs to flip Disabled.
 	Children []MenuItem
 
+	// Do renders the row as a button carrying a built RPC, effects and
+	// toasts included: a Delete that confirms, re-fetches the page on
+	// success and toasts a refusal. Mutually exclusive with Href, RPC,
+	// Action, Copy, Radio and Children.
+	Do *interactive.Action
+
+	// Copy renders the row as a copy-to-clipboard command over another
+	// element's text, as CopyButton does. Mutually exclusive with Href,
+	// RPC, Do, Action, Radio and Children.
+	Copy *MenuCopy
+
 	// Class appends to the rendered item's class list (rare; mainly
 	// for testing or one-off hooks).
 	Class string
@@ -128,6 +140,11 @@ type MenuItem struct {
 	// aria-checked).
 	ExtraAttrs map[string]string
 }
+
+// MenuCopy is MenuItem's copy row: Target is the id of the element
+// whose text it copies (a leading "#" is allowed), Toast the title of
+// the success toast, empty for none.
+type MenuCopy = headless.MenuCopy
 
 // MenuAction is MenuItem's form-POST row. The menuitem is a submit
 // button inside <form method action>; Fields supplies the hidden
@@ -171,8 +188,14 @@ type MenuConfig struct {
 	Label string
 
 	// TriggerHTML overrides Label with custom inline HTML. Use for
-	// avatar buttons, icon-only triggers, etc.
+	// avatar buttons and other custom triggers.
 	TriggerHTML render.HTML
+
+	// IconOnly draws the trigger as the "more" glyph, a compact square
+	// like an icon button, with Label as its accessible name and no
+	// caret: a table row's actions, where the row already says what
+	// the menu acts on. Ignored with TriggerHTML or TriggerElement.
+	IconOnly bool
 
 	// TriggerElement replaces the framework-rendered summary with a
 	// caller-owned interactive element: inline HTML for a real <button>
@@ -249,49 +272,12 @@ var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
 func Menu(cfg MenuConfig) render.HTML {
 	items := make([]headless.MenuItem, len(cfg.Items))
 	for i, it := range cfg.Items {
-		extras := headless.Safe(it.ExtraAttrs)
-		if it.Class != "" {
-			extras["class"] = it.Class
-		}
-		var action *headless.MenuAction
-		if it.Action != nil {
-			action = &headless.MenuAction{
-				Path:   it.Action.Path,
-				Method: it.Action.Method,
-				Fields: it.Action.Fields,
-				Unsafe: it.Action.Unsafe,
-			}
-		}
+		items[i] = headlessMenuItem(it)
 		children := make([]headless.MenuItem, len(it.Children))
 		for j, c := range it.Children {
-			cextras := headless.Safe(c.ExtraAttrs)
-			if c.Class != "" {
-				cextras["class"] = c.Class
-			}
-			children[j] = headless.MenuItem{
-				Label: c.Label, Href: c.Href, RPC: c.RPC, RPCMethod: c.RPCMethod,
-				Confirm: c.Confirm, Icon: c.Icon, Danger: c.Danger, Disabled: c.Disabled,
-				Separator: c.Separator, ID: c.ID, Radio: c.Radio, Checked: c.Checked,
-				ExtraAttrs: cextras,
-			}
+			children[j] = headlessMenuItem(c)
 		}
-		items[i] = headless.MenuItem{
-			Label:      it.Label,
-			Href:       it.Href,
-			RPC:        it.RPC,
-			RPCMethod:  it.RPCMethod,
-			Confirm:    it.Confirm,
-			Icon:       it.Icon,
-			Danger:     it.Danger,
-			Disabled:   it.Disabled,
-			Separator:  it.Separator,
-			ID:         it.ID,
-			Radio:      it.Radio,
-			Checked:    it.Checked,
-			Action:     action,
-			Children:   children,
-			ExtraAttrs: extras,
-		}
+		items[i].Children = children
 	}
 	classes := headless.Classes{
 		headless.PartRoot:        "fui-menu",
@@ -318,10 +304,18 @@ func Menu(cfg MenuConfig) render.HTML {
 	if cfg.PanelClass != "" {
 		classes[headless.PartPanel] += " " + cfg.PanelClass
 	}
+	trigger := cfg.TriggerHTML
+	if cfg.IconOnly && trigger == "" && cfg.TriggerElement == "" {
+		classes[headless.PartSummary] += " fui-menu__trigger--icon"
+		trigger = render.Join(
+			Icon("more", IconConfig{Size: "18", ExtraAttrs: html.Attrs{"aria-hidden": "true"}}),
+			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)),
+		)
+	}
 	out := headless.Menu(headless.MenuProps{
 		ID:             cfg.ID,
 		Label:          cfg.Label,
-		TriggerHTML:    cfg.TriggerHTML,
+		TriggerHTML:    trigger,
 		TriggerElement: cfg.TriggerElement,
 		Items:          items,
 		Position:       string(cfg.Position),
@@ -329,6 +323,46 @@ func Menu(cfg MenuConfig) render.HTML {
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs),
 	}, classes)
 	return menuStyle.WrapHTML(out)
+}
+
+// headlessMenuItem maps one row, without its children, onto the
+// headless row.
+func headlessMenuItem(it MenuItem) headless.MenuItem {
+	extras := headless.Safe(it.ExtraAttrs)
+	if it.Class != "" {
+		extras["class"] = it.Class
+	}
+	var action *headless.MenuAction
+	if it.Action != nil {
+		action = &headless.MenuAction{
+			Path:   it.Action.Path,
+			Method: it.Action.Method,
+			Fields: it.Action.Fields,
+			Unsafe: it.Action.Unsafe,
+		}
+	}
+	var rpcAttrs map[string]string
+	if it.Do != nil {
+		rpcAttrs = it.Do.Attrs()
+	}
+	return headless.MenuItem{
+		Label:      it.Label,
+		Href:       it.Href,
+		RPC:        it.RPC,
+		RPCMethod:  it.RPCMethod,
+		RPCAttrs:   rpcAttrs,
+		Copy:       it.Copy,
+		Confirm:    it.Confirm,
+		Icon:       it.Icon,
+		Danger:     it.Danger,
+		Disabled:   it.Disabled,
+		Separator:  it.Separator,
+		ID:         it.ID,
+		Radio:      it.Radio,
+		Checked:    it.Checked,
+		Action:     action,
+		ExtraAttrs: extras,
+	}
 }
 
 func menuCSS(_ style.Theme) string {
@@ -370,6 +404,21 @@ func menuCSS(_ style.Theme) string {
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
+}
+/* IconOnly: a quiet square the touch target's size, the glyph centred,
+   for a row's actions where a bordered button per row would shout. It
+   takes the surface only on hover. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--icon {
+  justify-content: center;
+  padding: 0;
+  inline-size: var(--spacing-touch-target, 44px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-muted, #52525B);
+}
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--icon:hover {
+  color: var(--color-text, #18181B);
 }
 /* Knobs: --ui-menu-caret-size (12px) is the trigger caret's square;
    --ui-menu-min-width (12rem) and --ui-menu-max-width (20rem) bound

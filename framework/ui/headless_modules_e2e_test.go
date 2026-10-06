@@ -112,6 +112,32 @@ func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 	}
 }
 
+// A menu's copy row is the copy wrapper itself, so the toast config
+// rides the row: the feedback module must read it there, not only from
+// an element under the wrapper.
+func TestMenuCopyRowShowsAToast(t *testing.T) {
+	body := `<span id="row-url">/notes/n1</span>` +
+		string(ui.Menu(ui.MenuConfig{Label: "Row", Items: []ui.MenuItem{
+			{Label: "Copy link", Copy: &ui.MenuCopy{Target: "row-url", Toast: "Link copied"}},
+		}})) +
+		string(preset.ToastSlotHTML(context.Background(), "toasts"))
+	ctx := moduleTestCtx(t, body)
+	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
+		t.Fatal("the copy row never loaded headless-feedback")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-menu"] > summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-hui-copy]').click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `(function(){var t=document.querySelector('[data-cui-toast-stack] [data-hui-toast-id] [data-hui-toast-title]');`+
+		`return !!t && t.textContent==='Link copied';})()`) {
+		t.Fatalf("no toast after a copy row click; the stack holds:\n%s",
+			evalString(ctx, `(document.querySelector('[data-cui-toast-stack]')||{}).innerHTML||''`))
+	}
+}
+
 // colorSchemeScript is the bootstrap a uihost page ships in its head:
 // the window.__gofastr_colorScheme API the theme toggle drives.
 func colorSchemeScript(t *testing.T) string {

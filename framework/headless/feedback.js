@@ -299,10 +299,10 @@
       if (btn && back) btn.textContent = back;
     }, 1200);
     // A toast on copy rides this module's own toast runtime; the
-    // config JSON is read from whichever element under the wrapper
-    // carries it (ui.CopyButton puts it on the button).
-    const toastEl = wrap.querySelector('[data-hui-copy-toast]');
-    const toastCfg = (toastEl && toastEl.getAttribute('data-hui-copy-toast')) || '';
+    // config JSON is read from the wrapper itself (a menu's copy row)
+    // or whichever element under it carries it (ui.CopyButton puts it
+    // on the button).
+    const toastCfg = (wrap.querySelector('[data-hui-copy-toast]') || wrap).getAttribute('data-hui-copy-toast');
     if (toastCfg) {
       try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
     }

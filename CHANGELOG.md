@@ -668,6 +668,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ToggleConfig.LabelHidden`** keeps a Checkbox or Radio's label as
   its accessible name and hides the text, for a control whose meaning its
   surroundings show, such as a table's select column.
+- **`ui.MenuConfig.IconOnly`** draws the trigger as a "more" icon (new in
+  `ui.Icon`) with the label kept as its accessible name, for a table row's
+  action menu. **`ui.MenuItem.Do`** takes a built `*interactive.Action`,
+  effects and toasts included, and **`ui.MenuItem.Copy`** copies an
+  element's text with an optional success toast. The headless menu
+  carries both as `MenuItem.RPCAttrs` (only `data-cui-rpc*` and
+  `data-cui-confirm`, same-origin paths) and `MenuItem.Copy`, and refuses
+  a row that mixes either with another action.
+- **`--ui-page-header-section-title-size`** sizes an h2 `PageHeader`
+  title, so a host that scales page titles leaves sections a step below.
 
 ### Changed
 
