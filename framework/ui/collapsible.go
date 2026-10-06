@@ -37,13 +37,6 @@ func collapsibleCSS(_ style.Theme) string {
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"";flex:none;inline-size:var(--ui-collapsible-chevron-size, 16px);block-size:var(--ui-collapsible-chevron-size, 16px);background:var(--fui-muted, var(--color-text-muted, #52525B));-webkit-mask:` + collapsibleChevron + `;mask:` + collapsibleChevron + `;transition:transform var(--duration-fast, 150ms) var(--easing-ease-out, ease)}` +
 		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(180deg)}` +
-		// A closed section that holds an invalid control reveals its
-		// content: the form's 422 lands client-side (aria-invalid beside
-		// the field), and a collapsed section would otherwise hide the
-		// very words the save just refused on. The UA hides a closed
-		// details' children by style default, so this overrides it —
-		// exactly when and only when there is something invalid inside.
-		`[data-cui-comp="fui-collapsible"]:not([open]):has([aria-invalid="true"]) > *:not(summary){display:block}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px);border-radius:var(--radii-sm, 6px)}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:0 0 var(--spacing-lg, 16px);font-size:var(--text-sm, .875rem);color:var(--fui-foreground, var(--color-text, #09090B))}`
 }

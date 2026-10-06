@@ -60,6 +60,15 @@
     return next && next.matches(ERR) ? next : null;
   }
 
+  // reveal opens every closed <details> around a refused control, so the
+  // error is on screen. Setting open fires the element's toggle event,
+  // which a disclosure controller mirrors into aria-expanded.
+  function reveal(el) {
+    for (let d = el.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) {
+      if (!d.open) d.open = true;
+    }
+  }
+
   // report renders the envelope into the form. status and txt are the
   // response's; a body that is not the envelope falls back to a toast
   // naming the status.
@@ -81,6 +90,7 @@
       const choice = !field && el && el.closest && el.closest(CHOICE);
       if (!field && !choice) continue;
       el.setAttribute('aria-invalid', 'true');
+      reveal(el);
       let p = renderedNode(field, choice);
       if (p) {
         p.setAttribute('data-hui-field-error', 'filled');
