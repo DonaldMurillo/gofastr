@@ -85,7 +85,7 @@
 }
 .toggle::-webkit-details-marker { display: none; }
 .toggle:hover { background: var(--color-surface-soft); }
-.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
+.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 /* The three bars turn into the cross: both icons share one cell and
    swap with a quarter turn. */
 .icon-open,

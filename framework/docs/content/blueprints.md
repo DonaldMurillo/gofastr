@@ -707,8 +707,8 @@ The public seam is:
   and `WithIsland`: value-copy options for one screen without changing the
   registry entry. `WithHeadingLevel(2)` (`Config.HeadingLevel`) makes the list
   title a section heading, for a list that sits under a page that already has
-  its `<h1>`. Levels 2 to 5 are honoured and any other value renders 1;
-  the empty state's title sits one level below. The generator sets 2 on
+  its `<h1>`. Levels 1 to 5 are honoured (0 means 1) and any other value
+  panics at render; the empty state's title sits one level below. The generator sets 2 on
   an entity list when a block ahead of it on the screen renders an
   `<h1>` (a page header, a hero, an auth card, a form or detail page, a
   level-1 heading, or another list), such as a dashboard's recent rows

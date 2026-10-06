@@ -159,7 +159,7 @@ func codeTabsCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
 `)
 	for i := range headless.TabsMaxPanels() {
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:var(--font-weight-semibold)}`,
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #18181B);border-bottom-color:var(--color-primary, #18181B);font-weight:var(--font-weight-semibold)}`,
 			i, i))
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-cui-tab-index="%d"]{display:block}`,
 			i, i))

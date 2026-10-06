@@ -87,6 +87,9 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	if p.DurationMS < 0 {
 		panic("headless: Counter DurationMS " + strconv.Itoa(p.DurationMS) + " is negative — a countdown is not an animation duration")
 	}
+	if p.Display && p.Name != "" {
+		panic("headless: Counter Display with Name " + strconv.Quote(p.Name) + " — a display figure is not a form field; drop Name, or Display for a control")
+	}
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
 	// Trimmed: a label of spaces names nothing, so it falls to the
@@ -107,7 +110,10 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		delete(own, "role")
 		delete(own, "aria-label")
 	}
-	if p.AnimateFrom != nil {
+	// The module counts in JavaScript numbers, exact only to 2^53-1:
+	// past that it would round the server's figure, so a value out of
+	// that range renders without the animation.
+	if p.AnimateFrom != nil && jsSafeInt(p.Value) && jsSafeInt(*p.AnimateFrom) {
 		// The animation is presentation: the module that binds these
 		// hooks writes the value from AnimateFrom toward Value and
 		// leaves the number the signal owns alone.
@@ -205,4 +211,10 @@ func init() {
 			}}
 		},
 	})
+}
+
+// jsSafeInt reports whether n survives a JavaScript number unchanged.
+func jsSafeInt(n int) bool {
+	const max = 1<<53 - 1
+	return n >= -max && n <= max
 }

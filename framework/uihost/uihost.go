@@ -916,7 +916,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   }
 }
 @keyframes cui-flash {
-  from { background-color: color-mix(in srgb, var(--color-primary, #4F46E5) 25%, transparent); }
+  from { background-color: color-mix(in srgb, var(--color-primary, #18181B) 25%, transparent); }
 }
 /* Progress indicator on slow SPA navigation. The bar tracks the theme's
    primary color via the token — a literal hex here would keep the bar
@@ -942,7 +942,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   animation: fui-nav-progress 1s linear infinite;
   z-index: calc(var(--z-toast, 500) + 1);
   pointer-events: none;
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }

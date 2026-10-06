@@ -59,7 +59,7 @@
 }
 .links a:hover { color: var(--color-text); }
 .links a:focus-visible,
-.brand:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
+.brand:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 
 .note {
   margin: var(--spacing-2xl) 0 0;

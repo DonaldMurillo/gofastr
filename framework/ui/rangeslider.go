@@ -117,7 +117,7 @@ func rangeSliderCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 /* The track is the positioning context the two thumbs overlay; its
    own bar is drawn behind them. */

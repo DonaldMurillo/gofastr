@@ -292,3 +292,59 @@ func TestV087StrokeNoteHitsOwnedSheet(t *testing.T) {
 		t.Fatalf("fires on a sheet already on the stroke tokens: %v", got)
 	}
 }
+
+// The zinc reskin note, through the shipped YAML: a call to either
+// default-theme constructor is a review hit, and so is a sheet that
+// reads --color-secondary, whose role flipped from grey ink to a light
+// fill. A hover edge on --color-border-strong, its new role, is silent.
+func TestV087ZincNoteHitsDefaultTheme(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	var note *upgrade.Note
+	for _, rel := range reg.Releases {
+		for _, c := range rel.Notes {
+			if rel.Version == "v0.87.0" && strings.HasPrefix(c.Change, "style.DefaultTheme() and theme.Default() are reskinned") {
+				note = c
+			}
+		}
+	}
+	if note == nil {
+		t.Fatal("v0.87.0 has no zinc reskin note")
+	}
+	if !note.Review || !note.Breaking {
+		t.Fatalf("the zinc note must be breaking and review-tier: review=%v breaking=%v", note.Review, note.Breaking)
+	}
+	n := scantest.Only(note, "uses", "css")
+	kit := map[string]string{
+		"core-ui/style/style.go":      "package style\n\ntype Theme struct{ Name string }\n\nfunc DefaultTheme() Theme { return Theme{} }\n",
+		"framework/ui/theme/theme.go": "package theme\n\nimport \"github.com/DonaldMurillo/gofastr/core-ui/style\"\n\nfunc Default() style.Theme { return style.DefaultTheme() }\n",
+	}
+	app := scantest.App(t, map[string]string{
+		"theme/theme.go": `package theme
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+)
+
+var A = style.DefaultTheme()
+var B = uitheme.Default()
+`,
+		"web/app.css": ".tag { color: var(--color-secondary); }\n.page:hover { border-color: var(--color-border-strong); }\n",
+	}, scantest.Options{Kit: kit})
+	res := scantest.Run(t, app, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if !res.TypeChecked {
+		t.Fatalf("app did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
+	}
+	got := strings.Join(scantest.Hits(res, n), "\n")
+	for _, want := range []string{"theme/theme.go:8:", "theme/theme.go:9:", "web/app.css:1:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hits = %s\nwant one at %s", got, want)
+		}
+	}
+	if strings.Contains(got, "web/app.css:2:") {
+		t.Errorf("a hover edge on --color-border-strong is the token's new role, yet it hit: %s", got)
+	}
+}

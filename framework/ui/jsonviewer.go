@@ -129,7 +129,7 @@ func jsonViewerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #16A34A); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #D97706); }
-[data-cui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #4F46E5); font-weight: var(--font-weight-semibold); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #18181B); font-weight: var(--font-weight-semibold); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`
 }

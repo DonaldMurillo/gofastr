@@ -36,9 +36,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets
-  it: a number that animates in is read, not operated.
+  it: a number that animates in is read, not operated. Display with a
+  `Name` panics, since a figure is not a form field, and a value past
+  2^53-1, which a JavaScript number would round, renders unanimated.
 - **`resource.Config.HeadingLevel` and `WithHeadingLevel`** set the list
-  title's heading level, 2 to 5 (any other value renders 1). The
+  title's heading level, 1 to 5 (0 means 1; any other value panics at
+  render rather than print a second `<h1>`). The
   blueprint generator sets 2 on an entity list that a block ahead of it
   on the screen already gives an `<h1>` (a dashboard's page header), so
   the page keeps exactly one.

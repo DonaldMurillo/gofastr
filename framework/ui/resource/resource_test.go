@@ -166,7 +166,8 @@ func TestConfigEmptyStatesPreserveHeadingOrder(t *testing.T) {
 }
 
 // A list nested under a page's own h1 takes a lower title level, and its
-// empty state follows one level below; an out-of-range level renders 1.
+// empty state follows one level below; an out-of-range level panics
+// rather than print a second h1.
 func TestHeadingLevelShiftsTitleAndEmpty(t *testing.T) {
 	cfg := Config{
 		Entity:   "orders",
@@ -179,7 +180,7 @@ func TestHeadingLevelShiftsTitleAndEmpty(t *testing.T) {
 	for _, tc := range []struct {
 		level       int
 		title, empt string
-	}{{1, "<h1", "<h2"}, {2, "<h2", "<h3"}, {5, "<h5", "<h6"}, {6, "<h1", "<h2"}, {9, "<h1", "<h2"}} {
+	}{{0, "<h1", "<h2"}, {1, "<h1", "<h2"}, {2, "<h2", "<h3"}, {5, "<h5", "<h6"}} {
 		list := string(cfg.WithHeadingLevel(tc.level).List(context.Background()))
 		if !strings.Contains(list, tc.title) || !strings.Contains(list, tc.empt) {
 			t.Errorf("HeadingLevel %d: want title %s and empty state %s:\n%s", tc.level, tc.title, tc.empt, list)
@@ -187,6 +188,16 @@ func TestHeadingLevelShiftsTitleAndEmpty(t *testing.T) {
 		if tc.level == 2 && strings.Contains(list, "<h1") {
 			t.Errorf("HeadingLevel 2 still renders an h1:\n%s", list)
 		}
+	}
+	for _, level := range []int{-1, 6, 9} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("HeadingLevel %d rendered instead of panicking", level)
+				}
+			}()
+			_ = cfg.WithHeadingLevel(level).List(context.Background())
+		}()
 	}
 }
 

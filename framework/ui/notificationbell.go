@@ -288,7 +288,7 @@ func notificationBellCSS(_ style.Theme) string {
    rule won the colour: a white glyph on light grey (dark: near-black on
    dark grey) the moment the popover opened under the pointer. */
 [data-cui-comp="ui-notification-bell"].is-popover-trigger-active {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 [data-cui-comp="ui-notification-bell"]:focus-visible {

@@ -75,7 +75,7 @@
   text-align: end;
 }
 .page:hover { border-color: var(--color-border-strong); }
-.page:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }
+.page:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 .dir {
   font-family: var(--font-mono);
   font-size: var(--text-xs);

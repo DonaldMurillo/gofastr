@@ -258,7 +258,7 @@ func galleryCSS(_ style.Theme) string {
   transition: border-color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
