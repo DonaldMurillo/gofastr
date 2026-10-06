@@ -8,13 +8,14 @@
 
   // One shared "changed" state per guarded form. A form marked
   // data-hui-leave-guard becomes dirty on input/change and clean again
-  // after a successful submit (the rpc module's gofastr:formresult puts
-  // it back when the answer refuses) or a reset. A move asks only when
+  // once a submit commits (the rpc module's gofastr:formresult ok, or a
+  // native submit nobody cancelled) or on a reset. A move asks only when
   // it would discard a dirty form: a link (gofastr:beforenavigate),
   // Back or Forward on a page (the router's first popstate hook), and
   // the intercept module's close paths (through _leaveGuard.ok, scoped
   // to the layers they drop); beforeunload is armed while any form is
-  // dirty so a reload or tab close gets the browser's own prompt. The ask is window.confirm — the same synchronous gate
+  // dirty so a reload or tab close gets the browser's own prompt. The
+  // ask is window.confirm — the same synchronous gate
   // data-cui-confirm uses — because the cancellable hooks it answers
   // are synchronous events; an async dialog cannot answer them.
   const GUARD = '[data-hui-leave-guard]';
@@ -45,7 +46,11 @@
     return f.getAttribute('data-hui-leave-guard-message') || 'You have unsaved changes.';
   }
 
+  // Asks the document at the moment it fires: a dirty form removed since
+  // (a closed layer, a replaced pane, a dismissed widget) discards
+  // nothing on reload, and no removal path has to remember to disarm.
   function onBeforeUnload(e) {
+    if (!dirtyIn(document)) { syncBeforeUnload(); return; }
     e.preventDefault();
     e.returnValue = '';
   }
@@ -77,14 +82,18 @@
   }, true);
   document.addEventListener('reset', function (e) {
     mark(guardOf(e.target), false);
-  });
-  // A submit is the user committing the form; a refused answer (the
-  // rpc module's gofastr:formresult with ok:false) puts the dirt back.
-  document.addEventListener('submit', function (e) {
-    mark(guardOf(e.target), false);
   }, true);
+  // A submit commits the form only when it goes ahead. The router's
+  // submit listener cancels both a declined data-cui-confirm and every
+  // submit it carries over RPC, so the outcome is read at each end: a
+  // native submit still uncancelled when it reaches window (after every
+  // document listener) leaves the page, and a carried one reports
+  // through gofastr:formresult; until then the edits are unsaved.
+  window.addEventListener('submit', function (e) {
+    if (!e.defaultPrevented) mark(guardOf(e.target), false);
+  });
   document.addEventListener('gofastr:formresult', function (e) {
-    if (e.detail && e.detail.ok === false) mark(guardOf(e.target), true);
+    if (e.detail) mark(guardOf(e.target), e.detail.ok === false);
   });
 
   function ask(scope) {
@@ -113,21 +122,65 @@
   // wrapped rather than assigned so the intercept module, loaded before
   // or after this one, keeps its claim: an open stack guards its own
   // moves, and the guard asks only when no stack is open and the move
-  // leaves this page (a hash-only move discards nothing). Declined, the
-  // left entry is pushed back and the router stands down.
+  // leaves this page (a hash-only move discards nothing). A move whose
+  // only change is a pane or widget deep link asks too: it can drop a
+  // form inside that pane or widget, and the guard cannot see which.
+  //
+  // Declined, the move is undone with history.go(delta), so no entry is
+  // added or dropped. Every entry the router writes through _pushURL is
+  // tagged {hlg: {d, i}}: d names this numbering, i the entry's
+  // position in it. A push numbers its entry one past the entry it
+  // left, and only when that entry carries a tag of the same numbering;
+  // anything else starts a fresh one, so a position is never derived
+  // across an entry the guard did not write (an intercept layer's raw
+  // push). A destination without a usable tag falls back to pushing
+  // the left URL again. `repair` is the position the undo must land
+  // on; a landing anywhere else falls back the same way.
   let here = location.pathname + location.search;
   let inner = NS._interceptPopstate;
+  let numbering = '';
+  let pos = 0;
+  let repair = null;
+  function tagOf() {
+    const t = history.state && history.state.hlg;
+    return t && t.d === numbering ? t : null;
+  }
+  function tag(i) {
+    if (i === null) {
+      numbering = Math.random().toString(36).slice(2);
+      i = 0;
+    }
+    pos = i;
+    try { history.replaceState(Object.assign({}, history.state, { hlg: { d: numbering, i: i } }), '', location.href); } catch (_) {}
+  }
+  function pushBack() {
+    history.pushState(null, '', here);
+    tag(null);
+  }
   function guardedPopstate() {
+    const t = tagOf();
+    const to = location.pathname + location.search;
+    if (repair !== null) {
+      const want = repair;
+      repair = null;
+      if (!t || t.i !== want || to !== here) pushBack();
+      return true;
+    }
     if (!(NS._interceptOpen && NS._interceptOpen())) {
-      const to = location.pathname + location.search;
       if (to !== here) {
         if (!ask(document)) {
-          history.pushState(null, '', here);
+          if (t && pos !== null && t.i !== pos) {
+            repair = pos;
+            history.go(pos - t.i);
+          } else {
+            pushBack();
+          }
           return true;
         }
         here = to;
       }
     }
+    pos = t ? t.i : null;
     return inner ? inner() : false;
   }
   Object.defineProperty(NS, '_interceptPopstate', {
@@ -141,12 +194,28 @@
   // pane) ask through here, scoped to the content the move discards.
   NS._leaveGuard = { ok: ask };
 
-  // Closed layers and navigations drop forms (and their dirt) from the
-  // document; the listener state follows, and the page the popstate
-  // guard compares against moves with the router.
+  // The page the popstate guard compares against moves with the router:
+  // every history write it makes (a click, navigate(), an RPC's
+  // X-Gofastr-Push-State, a widget deep link) goes through _pushURL,
+  // and a load it starts from popstate ends in gofastr:navigate. A
+  // navigation's dropped forms are the scanner's job (the kernel reruns
+  // it on gofastr:navigate).
+  // The same wrap numbers the entry: a push one past a tagged entry it
+  // left, a replace (which writes a fresh state) the left entry's own
+  // position.
+  const push = NS._pushURL;
+  if (typeof push === 'function') {
+    NS._pushURL = function (url, o) {
+      const left = tagOf();
+      const r = push.apply(this, arguments);
+      here = location.pathname + location.search;
+      tag(left ? left.i + (o && o.replace ? 0 : 1) : null);
+      return r;
+    };
+  }
+  tag(null);
   window.addEventListener('gofastr:navigate', function () {
     here = location.pathname + location.search;
-    syncBeforeUnload();
   });
 
   function scan() { syncBeforeUnload(); }

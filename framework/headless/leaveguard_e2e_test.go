@@ -502,3 +502,269 @@ func TestLeaveGuardStackBackPastPageAsks(t *testing.T) {
 		t.Errorf("a declined move must keep the stack, at %q", url)
 	}
 }
+
+// unloadPrevented dispatches a synthetic beforeunload and reports
+// whether the guard cancelled it (the browser's reload prompt).
+const unloadPrevented = `(function(){var e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return String(e.defaultPrevented);})()`
+
+// TestLeaveGuardConfirmCancelKeepsDirty: a submit the user cancels at
+// its data-cui-confirm prompt commits nothing, so the form stays dirty.
+func TestLeaveGuardConfirmCancelKeepsDirty(t *testing.T) {
+	body := leaveGuardBody(`<form id="gf" data-hui-leave-guard data-cui-confirm="Save it?" data-cui-rpc="/__hui/ok" data-cui-rpc-method="POST">` +
+		`<input id="gf-name" name="name"><button id="gf-save" type="submit">Save</button></form>`)
+	b := startBehaviorServer(t, body)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!window.__gofastr.loadedModules['headless-leaveguard']`) {
+		t.Fatal("the guard marker never loaded headless-leaveguard")
+	}
+	var prevented, confirms string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
+		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Click(`#gf-save`, chromedp.ByID),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`JSON.stringify(window.__confirms)`, &confirms),
+		chromedp.Evaluate(unloadPrevented, &prevented),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if confirms != `["Save it?"]` {
+		t.Fatalf("the save never reached its confirm prompt: %s", confirms)
+	}
+	if prevented != "true" {
+		t.Error("a submit cancelled at its confirm prompt must leave the form dirty")
+	}
+}
+
+// TestLeaveGuardClosedLayerReleasesUnload: once a dirty layer closes
+// (the user accepted the loss), a reload no longer prompts.
+func TestLeaveGuardClosedLayerReleasesUnload(t *testing.T) {
+	b := leaveGuardLayerServer(t)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!(window.__gofastr.loadedModules.intercept)`) {
+		t.Fatal("the intercept route never loaded the intercept module")
+	}
+	var dirty, closed string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = true;`, nil),
+		chromedp.Click(`#open`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('gf-name')`) {
+		t.Fatal("the record layer never mounted")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Evaluate(unloadPrevented, &dirty),
+		chromedp.Click(`#layer-close`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if !pollTrue(ctx, `!document.getElementById('cui-intercept') && location.pathname === '/'`) {
+		t.Fatal("the accepted close never closed the layer")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(unloadPrevented, &closed)); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if dirty != "true" {
+		t.Fatal("the dirty layer never armed beforeunload")
+	}
+	if closed != "false" {
+		t.Error("a closed layer's form is gone; a reload must not prompt for it")
+	}
+}
+
+// TestLeaveGuardBackAfterPushURLAsks: a URL the router pushed without a
+// navigation (an RPC's X-Gofastr-Push-State) is the page Back leaves,
+// so Back from it with a dirty form asks.
+func TestLeaveGuardBackAfterPushURLAsks(t *testing.T) {
+	body := leaveGuardBody(`<form id="gf" data-hui-leave-guard><input id="gf-name" name="name"></form>`)
+	b := startBehaviorServer(t, body)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!window.__gofastr.loadedModules['headless-leaveguard']`) {
+		t.Fatal("the guard marker never loaded headless-leaveguard")
+	}
+	var path, note string
+	var asks int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
+		chromedp.Evaluate(`window.__gofastr._pushURL('/?tab=2')`, nil),
+		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`location.pathname + location.search`, &path),
+		chromedp.Evaluate(`document.getElementById('gf-name').value`, &note),
+		chromedp.Evaluate(`window.__confirms.length`, &asks),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if asks != 1 {
+		t.Errorf("Back from a pushed URL with a dirty form must ask once, got %d", asks)
+	}
+	if path != "/?tab=2" || note != "typed" {
+		t.Errorf("a declined Back must keep the page and its edit: at %q, note %q", path, note)
+	}
+}
+
+// TestLeaveGuardDeclinedBackKeepsForward: a declined Back on a page
+// returns to the entry it left instead of pushing a copy of it, so the
+// entries ahead survive and Forward still reaches them.
+func TestLeaveGuardDeclinedBackKeepsForward(t *testing.T) {
+	body := leaveGuardBody(`<form id="gf" data-hui-leave-guard><input id="gf-name" name="name"></form>`)
+	b := startBehaviorServer(t, body)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!window.__gofastr.loadedModules['headless-leaveguard']`) {
+		t.Fatal("the guard marker never loaded headless-leaveguard")
+	}
+	var lenBefore, lenAfter, asks int
+	var path string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
+		chromedp.Evaluate(`window.__gofastr._pushURL('/?tab=2')`, nil),
+		chromedp.Evaluate(`window.__gofastr._pushURL('/?tab=3')`, nil),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Evaluate(`history.length`, &lenBefore),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`location.pathname + location.search`, &path),
+		chromedp.Evaluate(`history.length`, &lenAfter),
+		chromedp.Evaluate(`window.__confirms.length`, &asks),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if asks != 1 || path != "/?tab=2" {
+		t.Fatalf("a declined Back must ask once and stay: %d asks, at %q", asks, path)
+	}
+	if lenAfter != lenBefore {
+		t.Errorf("a declined Back must leave history.length alone (before %d, after %d)", lenBefore, lenAfter)
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__confirmRet = true; history.forward()`, nil),
+	); err != nil {
+		t.Fatalf("forward: %v", err)
+	}
+	if !pollTrue(ctx, `location.search === '?tab=3'`) {
+		t.Error("after a declined Back, Forward must still reach the entry ahead")
+	}
+}
+
+// TestLeaveGuardDeclinedForwardKeepsHistory: Forward onto a pane state
+// that would replace a dirty form asks; declined, the move is undone
+// without adding or dropping a history entry.
+func TestLeaveGuardDeclinedForwardKeepsHistory(t *testing.T) {
+	b := leaveGuardStackServer(t, "")
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!(window.__gofastr.loadedModules.intercept)`) {
+		t.Fatal("the intercept route never loaded the intercept module")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
+		chromedp.Click(`#open`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('tab')`) {
+		t.Fatal("the record layer never mounted")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#tab`, chromedp.ByID)); err != nil {
+		t.Fatalf("tab: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('rec-history')`) {
+		t.Fatal("the tab never re-rendered the pane")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('gf-name') && location.search === ''`) {
+		t.Fatal("Back never re-rendered the record in the pane")
+	}
+	var lenBefore, lenAfter, asks int
+	var url, note string
+	if err := chromedp.Run(ctx,
+		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Evaluate(`history.length`, &lenBefore),
+		chromedp.Evaluate(`history.forward()`, nil),
+		chromedp.Sleep(900*time.Millisecond),
+		chromedp.Evaluate(`location.pathname + location.search`, &url),
+		chromedp.Evaluate(`history.length`, &lenAfter),
+		chromedp.Evaluate(`document.getElementById('gf-name').value`, &note),
+		chromedp.Evaluate(`window.__confirms.length`, &asks),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if asks != 1 {
+		t.Errorf("Forward over a dirty pane must ask once, got %d", asks)
+	}
+	if url != "/rec/1" || note != "edited" {
+		t.Errorf("a declined Forward must keep the pane and its edit: at %q, note %q", url, note)
+	}
+	if lenAfter != lenBefore {
+		t.Errorf("a declined Forward must leave history.length alone (before %d, after %d)", lenBefore, lenAfter)
+	}
+}
+
+// TestLeaveGuardDeclinedBackTwoKeepsStack: Back two entries, past the
+// whole stack, with a dirty lower layer asks; declined, the stack and
+// every history entry stay, and Back still walks the stack afterwards.
+func TestLeaveGuardDeclinedBackTwoKeepsStack(t *testing.T) {
+	b := leaveGuardStackServer(t, "")
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!(window.__gofastr.loadedModules.intercept)`) {
+		t.Fatal("the intercept route never loaded the intercept module")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
+		chromedp.Click(`#open`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('gf-name')`) {
+		t.Fatal("the record layer never mounted")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Click(`#rel`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("stack: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('rel-layer')`) {
+		t.Fatal("the related layer never mounted")
+	}
+	var lenBefore, lenAfter, asks, layers int
+	var url string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`history.length`, &lenBefore),
+		chromedp.Evaluate(`history.go(-2)`, nil),
+		chromedp.Sleep(900*time.Millisecond),
+		chromedp.Evaluate(`location.pathname`, &url),
+		chromedp.Evaluate(`history.length`, &lenAfter),
+		chromedp.Evaluate(`document.querySelectorAll('#cui-intercept > *').length`, &layers),
+		chromedp.Evaluate(`window.__confirms.length`, &asks),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if asks != 1 {
+		t.Errorf("Back past a dirty stack must ask once, got %d", asks)
+	}
+	if url != "/rel/1" || layers != 2 {
+		t.Errorf("a declined Back must keep both layers: at %q with %d layers", url, layers)
+	}
+	if lenAfter != lenBefore {
+		t.Errorf("a declined Back must leave history.length alone (before %d, after %d)", lenBefore, lenAfter)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !pollTrue(ctx, `location.pathname === '/rec/1' && document.querySelectorAll('#cui-intercept > *').length === 1`) {
+		t.Error("after the declined move, Back must close just the related layer")
+	}
+}
