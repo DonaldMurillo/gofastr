@@ -642,6 +642,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   other user's create, and the 409 reveals that the value exists.
 
 ### Changed
+
+- **BREAKING: the blueprint's screen-level `filters:`, `transitions:`,
+  `search:`, `island:` and `widget:` keys are removed**, and the decoder
+  refuses each naming where the setting moved: `filters:` to the entity's
+  `display: facets:`, `transitions:` to the entity's `states:`, `search:`
+  to the entity's `search_fields:`, and `island:`/`widget:` to nothing —
+  lists are query-param pages now. The `entity_create` and `entity_edit`
+  block kinds are gone with them, and the synthesized create screen moved
+  from `<list>/new` to `<list>/create`; there is no `/<detail>/edit`
+  screen any more, the record page holds the edit form.
+- **BREAKING: generated apps draw entity screens through
+  `framework/entityui`.** `display:` and `states:` on an entity reach the
+  generated app: the entity registration carries both, the screens render
+  `appUI.List`/`appUI.Record`/`appUI.Create` builders, `app.go` builds the
+  app's one UI from the new owned `extensions.go` seam, and the dashboard
+  stat and chart blocks read through it. An entity detail screen sits at
+  `<list route>/{id}` (enforced at validate time) and opens as a drawer
+  over its list.
 - **BREAKING: filter operators must suit the column type.** `like`
   works only on String, Text, Enum and UUID columns, and `gt`, `gte`,
   `lt` and `lte` are refused on Bool and JSON, with a 400 naming the

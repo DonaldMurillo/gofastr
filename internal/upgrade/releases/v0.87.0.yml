@@ -229,3 +229,11 @@ notes:
       fields:
         - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
     guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."
+  - change: "the blueprint's screen-level filters:, transitions:, search:, island: and widget: keys are removed (the decoder names the replacement for each), the entity_create and entity_edit block kinds are gone, and the synthesized create screen moved from <list>/new to <list>/create with no <detail>/edit screen behind it: generated apps draw entity screens through framework/entityui, and an entity detail screen must sit at <list route>/{id}"
+    breaking: true
+    hits: edit
+    find:
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^ {8,}(filters|transitions|search|island|widget):'
+    guidance: "In gofastr.yml: move an entity_list filters: list to that entity's display: facets:, move search: to the entity's search_fields:, drop island:/widget: (lists are query-param pages now), and move an entity_detail transitions: list to the entity's states: block — an old screen transition names no From, so write advisory: true on the states block and give each move a from: list of the statuses it may leave, then drop advisory: to let the CRUD handler enforce it. Point create links at <list>/create; the record page now holds the edit form, so delete the <detail>/edit route. A detail screen whose route is not <list route>/{id} is refused at validate time with the expected route in the error. Then regenerate the app (gofastr generate --force) to move its screens onto appUI."

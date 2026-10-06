@@ -114,29 +114,6 @@ func TestChartGroupByAcceptsOrdinaryColumn(t *testing.T) {
 // timestamps: true adds created_at/updated_at, which are therefore never in
 // decl.Fields. The search guard rejected them as "not defined", which was
 // both a regression and a false statement: these were working search columns.
-func TestSearchAcceptsFrameworkManagedColumns(t *testing.T) {
-	for _, col := range []string{"id", "created_at", "updated_at", "label"} {
-		err := r5Blueprint(t, `      - kind: entity_list
-        entity: cards
-        fields: [label]
-        search: `+col+`
-`)
-		if err != nil {
-			t.Errorf("search on %q should generate (it did before this validation existed): %v", col, err)
-		}
-	}
-}
-
-func TestSearchStillRefusesMaskedColumn(t *testing.T) {
-	err := r5Blueprint(t, `      - kind: entity_list
-        entity: cards
-        fields: [label]
-        search: number
-`)
-	if err == nil {
-		t.Fatal("search on a no_query column was accepted")
-	}
-}
 
 // entity.Define panics on a Hidden or no_query keyset column. That is
 // correct, since the cursor token carries its value. But a generated app
@@ -198,43 +175,6 @@ entities:
 // multi_tenant:, so accepting the name unconditionally let a screen reference
 // a column the table lacks, turning a named generate-time error into a runtime
 // SQL failure.
-func TestSearchRejectsSystemColumnsTheEntityLacks(t *testing.T) {
-	yaml := `
-app:
-  name: Demo
-  module: example.com/demo
-entities:
-  - name: plain
-    crud: true
-    timestamps: false
-    fields:
-      - name: label
-        type: string
-screens:
-  - name: dash
-    route: /
-    body:
-      - kind: entity_list
-        entity: plain
-        fields: [label]
-        search: created_at
-`
-	node, perr := coreyaml.Parse(yaml)
-	if perr != nil {
-		t.Fatalf("parse: %v", perr)
-	}
-	bp, err := decodeBlueprint(node)
-	if err == nil {
-		err = validateBlueprint(bp)
-	}
-	if err == nil {
-		t.Fatal("search on created_at was accepted for an entity with timestamps: false; " +
-			"the generated app then queries a column that does not exist")
-	}
-	if !strings.Contains(err.Error(), "created_at") {
-		t.Fatalf("error should name the column: %v", err)
-	}
-}
 
 // The paired hidden branch of each round-5 guard: every existing test uses
 // no_query, so hidden went unexercised.
@@ -326,105 +266,38 @@ entities:
 
 // The third framework-managed class blueprintColumn's own comment names: a FK
 // declared by a top-level relations: block rather than a type: relation field.
-func TestSearchAcceptsRelationsDeclaredForeignKey(t *testing.T) {
-	yaml := `
-app:
-  name: Demo
-  module: example.com/demo
-entities:
-  - name: authors
-    crud: true
-    fields:
-      - name: name
-        type: string
-  - name: posts
-    crud: true
-    fields:
-      - name: title
-        type: string
-    relations:
-      - type: belongs_to
-        name: author
-        entity: authors
-        foreign_key: author_id
-screens:
-  - name: dash
-    route: /
-    body:
-      - kind: entity_list
-        entity: posts
-        fields: [title]
-        search: author_id
-`
-	node, perr := coreyaml.Parse(yaml)
-	if perr != nil {
-		t.Fatalf("parse: %v", perr)
-	}
-	bp, err := decodeBlueprint(node)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if err := validateBlueprint(bp); err != nil {
-		t.Fatalf("a relations-declared FK is a real column and was a working search target "+
-			"before this validation existed: %v", err)
-	}
-}
 
 // deleted_at exists only under soft_delete:, tenant_id only under
 // multi_tenant:. Both arms of the system-column gate were unreachable from
 // any test: replacing their bodies with a panic left the whole package
 // green, so the round-6 bug was fixed for created_at and left live for its
 // two siblings.
-func TestScreenColumnsGateOnSoftDeleteAndTenancy(t *testing.T) {
-	build := func(entityBody, search string) string {
-		return `
+
+// The entity-level search_fields guard is the screen search key's
+// replacement: it names declared string/text columns only, so a column the
+// entity does not have is refused at decode, not queried at runtime.
+func TestSearchFieldsRefuseUndeclaredColumn(t *testing.T) {
+	yaml := `
 app:
   name: Demo
   module: example.com/demo
 entities:
-  - name: things
+  - name: plain
     crud: true
     timestamps: false
-` + entityBody + `    fields:
+    search_fields: [created_at]
+    fields:
       - name: label
         type: string
-screens:
-  - name: dash
-    route: /
-    body:
-      - kind: entity_list
-        entity: things
-        fields: [label]
-        search: ` + search + `
 `
+	node, perr := coreyaml.Parse(yaml)
+	if perr != nil {
+		t.Fatalf("parse: %v", perr)
 	}
-	run := func(t *testing.T, yaml string) error {
-		t.Helper()
-		node, err := coreyaml.Parse(yaml)
-		if err != nil {
-			t.Fatalf("parse: %v", err)
-		}
-		bp, err := decodeBlueprint(node)
-		if err != nil {
-			return err
-		}
-		return validateBlueprint(bp)
+	if _, err := decodeBlueprint(node); err == nil {
+		t.Fatal("search_fields on created_at was accepted for an entity with timestamps: false; " +
+			"the generated app then queries a column that does not exist")
+	} else if !strings.Contains(err.Error(), "created_at") {
+		t.Fatalf("error should name the column: %v", err)
 	}
-
-	t.Run("deleted_at without soft_delete", func(t *testing.T) {
-		if err := run(t, build("", "deleted_at")); err == nil {
-			t.Fatal("search on deleted_at was accepted for an entity without soft_delete; the " +
-				"generated app queries a column that does not exist")
-		}
-	})
-	t.Run("deleted_at with soft_delete", func(t *testing.T) {
-		if err := run(t, build("    soft_delete: true\n", "deleted_at")); err != nil {
-			t.Fatalf("deleted_at is a real column under soft_delete: %v", err)
-		}
-	})
-	t.Run("tenant_id without multi_tenant", func(t *testing.T) {
-		if err := run(t, build("", "tenant_id")); err == nil {
-			t.Fatal("search on tenant_id was accepted for an entity without multi_tenant")
-		}
-	})
 }

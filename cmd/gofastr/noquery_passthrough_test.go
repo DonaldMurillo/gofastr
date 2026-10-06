@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -183,39 +184,44 @@ entities:
         no_query: true
 `
 
-// TestNoQueryReachesGeneratedScreens is the end-to-end guard: a blueprint that
-// declares no_query must produce an app whose grid renders the column but
-// refuses to sort on it. The individual pieces (resource.Field.NoQuery,
-// Config.sortable, and Sortable: !f.NoQuery) each have a home, but this checks
-// they meet.
+// TestNoQueryReachesGeneratedScreens is the end-to-end guard for the
+// generator's half: a no_query column stays in the emitted entity (the
+// field literal keeps the flag, pinned by TestNoQueryReachesGeneratedField
+// above) and the generated screens carry no per-screen column config at
+// all — the list renders through appUI.List, and refusing to sort on a
+// no_query column is entityui's half (pinned against entityui in the
+// framework's own suite).
 func TestNoQueryReachesGeneratedScreens(t *testing.T) {
-	bp, err := covT_decode(t, blueprintWithNoQuery)
+	bp, err := covT_decode(t, blueprintWithNoQuery+`
+screens:
+  - name: cards
+    route: /cards
+    body:
+      - kind: entity_list
+        entity: cards
+        fields: [label, number]
+`)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-
-	entityMap, base, needed, editable := blueprintResourceIndex(bp)
-	_ = needed
-	src := blueprintResourceRegistryOne(bp, "cards", entityMap, base, editable)
-	if src == "" {
-		t.Fatal("no resource config emitted for cards")
+	files := mustRenderBlueprintFiles(t, bp)
+	crud := fileContent(files, "screen_cards_crud.go")
+	if !strings.Contains(crud, `appUI.List("cards").Columns("label", "number")`) {
+		t.Fatalf("the cards screen must render the no_query column through appUI.List:\n%s", crud)
 	}
-	if !strings.Contains(src, `{Key: "number"`) {
-		t.Errorf("NoQuery column missing from the generated grid — it must stay visible:\n%s", src)
+	if strings.Contains(crud, "NoQuery") {
+		t.Errorf("screens carry no per-screen column flags any more:\n%s", crud)
 	}
-	if !strings.Contains(src, "NoQuery: true") {
-		t.Errorf("generated resource.Field drops NoQuery, so the column renders sortable and "+
-			"?sort= on it blanks the page:\n%s", src)
-	}
-	if strings.Contains(src, `{Key: "label", Label: "Label", Type: "string", NoQuery: true}`) {
-		t.Errorf("NoQuery leaked onto a normal column:\n%s", src)
+	ent := fileContent(files, filepath.Join("entities", "cards.go"))
+	if !strings.Contains(ent, "NoQuery: true") {
+		t.Fatalf("the entity registration must keep the flag entityui reads:\n%s", ent)
 	}
 }
 
-// TestNoQuerySearchBlockRejected pins the screen-level half: entity_list
-// search: runs LIKE against the stored column through ListAll, bypassing
-// ParseFilters entirely, so a masked column there is a full oracle on the
-// app's own page.
+// TestNoQuerySearchBlockRejected: entity_list search: is gone with the
+// key; the refusal names the entity's search_fields:, which itself
+// refuses a no_query column (pinned by TestNoQuerySearchFieldRejected
+// above), so the oracle the old screen key opened stays closed.
 func TestNoQuerySearchBlockRejected(t *testing.T) {
 	yaml := blueprintWithNoQuery + `
 screens:
@@ -224,47 +230,31 @@ screens:
     body:
       - kind: entity_list
         entity: cards
-        text: Cards
         fields: [label]
         search: number
 `
-	bp, err := covT_decode(t, yaml)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	err = validateBlueprint(bp)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, yaml)
+	_, err := loadBlueprint(path)
 	if err == nil {
-		t.Fatal("entity_list search: on a no_query column must be rejected")
+		t.Fatal("entity_list search: must be refused at decode")
 	}
-	if !strings.Contains(err.Error(), "no_query") {
-		t.Errorf("error %q should explain the column is no_query", err)
+	if !strings.Contains(err.Error(), "search_fields:") {
+		t.Fatalf("error should name the entity's search_fields:, got: %v", err)
 	}
 }
 
-// TestSearchBlockStillAcceptsIdAndPlainColumns is the false-positive guard for
-// the check above: `id` is deliberately absent from decl.Fields, and both it
-// and any ordinary column were valid search targets before the check existed.
-func TestSearchBlockStillAcceptsIdAndPlainColumns(t *testing.T) {
-	for _, col := range []string{"id", "label"} {
-		yaml := blueprintWithNoQuery + `
-screens:
-  - name: cards
-    route: /cards
-    body:
-      - kind: entity_list
-        entity: cards
-        text: Cards
-        fields: [label]
-        search: ` + col + `
-`
-		bp, err := covT_decode(t, yaml)
-		if err != nil {
-			t.Errorf("search: %s decode failed: %v", col, err)
-			continue
-		}
-		if err := validateBlueprint(bp); err != nil {
-			t.Errorf("search: %s must stay valid, got %v", col, err)
-		}
+// TestSearchFieldsAcceptsPlainColumns is the false-positive guard for the
+// replacement: an ordinary string column is a valid search_fields entry.
+func TestSearchFieldsAcceptsPlainColumns(t *testing.T) {
+	bp, err := covT_decode(t, blueprintWithNoQuery)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	bp.Entities[0].SearchFields = []string{"label"}
+	if err := validateBlueprint(bp); err != nil {
+		t.Errorf("search_fields: label must stay valid, got %v", err)
 	}
 }
 
@@ -325,11 +315,9 @@ screens:
 	}
 }
 
-// The facet guard reaches ListAll with a hand-built ParsedFilter, bypassing
-// the HTTP filter parser. The error must name no_query specifically; without
-// the guard, validation falls through to the unrelated "only enum, bool, and
-// relation columns can be faceted" type error, which sends an author looking
-// in the wrong place.
+// The screen-level facet key is refused at decode, naming the entity's
+// display: facets: — the entity-level spelling, whose facets run through
+// the entityui list's own query-surface bar.
 func TestEntityListNoQueryFacetRejected(t *testing.T) {
 	yaml := blueprintWithNoQuery + `
 screens:
@@ -341,12 +329,14 @@ screens:
         fields: [label, number]
         filters: [number]
 `
-	bp, err := covT_decode(t, yaml)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, yaml)
+	_, err := loadBlueprint(path)
+	if err == nil {
+		t.Fatal("entity_list filters: must be refused at decode")
 	}
-	err = validateBlueprint(bp)
-	if err == nil || !strings.Contains(err.Error(), "no_query") {
-		t.Fatalf("NoQuery entity_list facet error = %v, want no_query", err)
+	if !strings.Contains(err.Error(), "display:") || !strings.Contains(err.Error(), "facets:") {
+		t.Fatalf("error should name display: facets:, got: %v", err)
 	}
 }

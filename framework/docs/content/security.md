@@ -556,9 +556,11 @@ behaviour for BelongsTo now; a hook is only needed for has-many
 retargeting or business rules beyond scope.
 
 Blueprint screens are checked at generate time, because several of them
-reach the database without passing through the HTTP filter parser: an
-`entity_list` `search:` or `filters:`, a `stat_card` `source.filter` or
-summed `source.field`, and a chart's `group_by`. The chart is the
+reach the database without passing through the HTTP filter parser: a
+`stat_card` `source.filter` or summed `source.field`, and a chart's
+`group_by`. (The screen-level `search:`/`filters:` keys are gone; the
+entity's `search_fields:` and `display: facets:` are checked at entity
+registration instead.) The chart is the
 sharpest of these: `group_by` renders each distinct stored value as a
 bar or slice LABEL, so a masked column would print in full on a page
 whose table shows the mask.

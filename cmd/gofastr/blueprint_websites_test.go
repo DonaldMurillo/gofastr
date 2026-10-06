@@ -97,14 +97,13 @@ func TestBlueprint_ScreensAreKilnFree(t *testing.T) {
 
 func TestBlueprint_NestedEntityListRenders(t *testing.T) {
 	screens := renderBlueprintScreens(websitesBlueprint())
-	// The nested entity_list is server-rendered via the resource engine
-	// (ui.DataTable), never a raw uinode.Node{Kind:"entity_list"} or a
-	// client-fetch island.
+	// The nested entity_list renders through the appUI builder, never a
+	// raw uinode.Node{Kind:"entity_list"} or a client-fetch island.
 	if strings.Contains(screens, `Kind: "entity_list"`) {
 		t.Error("nested entity_list left as an unrendered node kind")
 	}
-	if !strings.Contains(screens, `appResources["items"]`) {
-		t.Errorf("nested entity_list did not render via the resource engine:\n%s", screens)
+	if !strings.Contains(screens, `appUI.List("items")`) {
+		t.Errorf("nested entity_list did not render via appUI.List:\n%s", screens)
 	}
 }
 
@@ -129,9 +128,10 @@ func TestBlueprint_FormEnumAndRelationFields(t *testing.T) {
 }
 
 // TestBlueprint_AppCRUDScreensSynthesized verifies that an entity_list flagged
-// `create: true` and an entity_detail produce writable app screens: a /new
-// create form, a /{id}/edit form, a List "New" affordance, and a CanEdit detail
-// (Edit + Delete), all server-rendered through the resource engine's Form.
+// `create: true` and an entity_detail produce writable app screens: a
+// /create record form and a record page with the edit form in it, all
+// rendered through the appUI builders, with the record drawer intercepting
+// from the list.
 func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Shop", Module: "example.com/shop", APIPrefix: "api"},
@@ -161,33 +161,57 @@ func TestBlueprint_AppCRUDScreensSynthesized(t *testing.T) {
 		t.Fatalf("missing screen_widgets_crud.go; files=%v", sortedFileNames(files))
 	}
 
-	// Create + edit form screens render via the resource engine's Form.
-	assertContains(t, screens, `appResources["widgets"].Form(ctx, "")`)
-	assertContains(t, screens, `appResources["widgets"].Form(ctx, s.id)`)
-	// List shows "New"; detail shows Edit/Delete (CanEdit) and posts to the API.
-	// The island refinement (.WithIsland/.WithIslandPolicy) sits between
-	// .WithCreate() and .List(ctx), so assert the two ends separately.
-	assertContains(t, screens, ".WithCreate()")
-	assertContains(t, screens, ".List(ctx)")
-	assertContains(t, crudFile, "CanEdit: true")
-	assertContains(t, crudFile, `APIPath: "/api/widgets"`)
-	// The /new and /{id}/edit routes are registered (in the crud mount funcs).
-	assertContains(t, screens, `"/app/widgets/new"`)
-	assertContains(t, screens, `"/app/widgets/:id/edit"`)
-	// app.go no longer owns any of this. It calls mountGenerated instead.
-	if strings.Contains(fileContent(files, "app.go"), `appResources["widgets"]`) {
-		t.Error("app.go must not carry the widgets appResources entry")
+	// The create screen renders the empty record form, based on the list.
+	assertContains(t, screens, `appUI.Create("widgets").Base("/app/widgets")`)
+	// The record page renders Record with delete and duplicate on.
+	assertContains(t, screens, `appUI.Record("widgets", s.id).Delete().Duplicate()`)
+	// A list without create: hides the New button; this one shows it.
+	if strings.Contains(screens, `appUI.List("widgets").Columns("name", "status").NoCreate()`) {
+		t.Error("a create:true list must not hide the New button")
 	}
+	assertContains(t, screens, `appUI.List("widgets").Columns("name", "status")`)
+	// The /create route is registered, and no /edit route exists: the
+	// record page holds the edit form.
+	assertContains(t, screens, `"/app/widgets/create"`)
+	if strings.Contains(screens, "/edit") {
+		t.Errorf("no edit screen is synthesized any more:\n%s", screens)
+	}
+	// The detail screen registers as a drawer over the list.
+	assertContains(t, crudFile, `record.Intercept = &app.Intercept{From: "/app/widgets", As: app.ScreenDrawer}`)
+	// app.go no longer owns any of this. It calls mountGenerated instead.
+	if strings.Contains(fileContent(files, "app.go"), `appUI.List("widgets")`) {
+		t.Error("app.go must not carry the widgets screen render")
+	}
+	// The appUI seam: app.go declares the var and builds it before the
+	// screens mount; extensions.go holds the value it is built from.
+	assertContains(t, fileContent(files, "app.go"), "var appUI *entityui.UI")
+	assertContains(t, fileContent(files, "app.go"), "appUI = fwApp.EntityUI(appExtensions)")
+	assertContains(t, fileContent(files, "extensions.go"), "var appExtensions = entityui.Extensions{}")
 }
 
-func TestBlueprint_ImportsResourceEngine(t *testing.T) {
-	if !strings.Contains(blueprintResourceGo, `"github.com/DonaldMurillo/gofastr/framework/ui/resource"`) {
-		t.Fatal("thin resource.go must import framework/ui/resource")
+// TestBlueprint_ExtensionSeamShipsAlways: the entityui seam ships even
+// with zero entities, so a later --add entity screen never edits an owned
+// file, and it imports only the entityui package.
+func TestBlueprint_ExtensionSeamShipsAlways(t *testing.T) {
+	if !strings.Contains(blueprintExtensionsGo, `"github.com/DonaldMurillo/gofastr/framework/entityui"`) {
+		t.Fatal("extensions.go must import framework/entityui")
 	}
-	for _, copied := range []string{"func resCamel", "func resGet", "func resFormat"} {
-		if strings.Contains(blueprintResourceGo, copied) {
-			t.Errorf("thin resource.go still copies engine helper %q", copied)
+	if !strings.Contains(blueprintExtensionsGo, "var appExtensions = entityui.Extensions{}") {
+		t.Fatal("extensions.go must declare the empty appExtensions value")
+	}
+	for _, banned := range []string{"appResources", "ui/resource"} {
+		if strings.Contains(blueprintExtensionsGo, banned) {
+			t.Errorf("extensions.go still names the resource engine (%q)", banned)
 		}
+	}
+	// An entity-less app still gets the seam.
+	bp := Blueprint{App: BlueprintApp{Name: "Seam", Module: "example.com/seam"}}
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("renderBlueprintFiles: %v", err)
+	}
+	if fileContent(files, "extensions.go") == "" {
+		t.Fatal("extensions.go must ship beside app.go even with no entities")
 	}
 }
 

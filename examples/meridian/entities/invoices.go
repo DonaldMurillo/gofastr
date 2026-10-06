@@ -253,6 +253,7 @@ func registerInvoices(app *framework.App) {
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",
 		},
+		SearchFields: []string{"number"},
 		Exposure: &framework.ExposureConfig{
 			CRUD: boolPtr(true),
 			MCP:  true,
@@ -260,6 +261,8 @@ func registerInvoices(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_invoices_owner_number", Columns: []string{"user_id", "number"}, Unique: true},
 		},
+		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "mark_paid", Label: "Mark paid", From: []string{"draft", "open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}, Advisory: true},
+		Display:    &framework.DisplayConfig{Facets: []string{"status", "customer_id"}},
 		Properties: map[string]any{"label": "Invoices"},
 	})
 	_ = Invoices{}
