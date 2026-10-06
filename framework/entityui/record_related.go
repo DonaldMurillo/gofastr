@@ -2,11 +2,9 @@ package entityui
 
 import (
 	"context"
-	"net/url"
 	"path"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -18,9 +16,9 @@ import (
 // entity's own read gate, so a related entity the caller may not read
 // draws its refusal, never its rows.
 //
-// New pre-fills the foreign key through the create screen's
-// ?prefill_<field>= convention: the link is
-// <otherBase>/create?prefill_<fk>=<id>, and the create screen reads
+// The list's own New pre-fills the foreign key: a list carries each
+// Where pin into the create screen's ?prefill_<field>= convention, so
+// the link is <otherBase>/create?prefill_<fk>=<id>, and the screen reads
 // every ?prefill_<field> whose field a create may set. A query-param
 // prefill (not a POSTed value, not the bare field name) is the
 // convention because the create URL is public surface: a bare
@@ -28,8 +26,8 @@ import (
 // and the prefill_ prefix names its intent.
 func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) render.HTML {
 	var lists []render.HTML
-	for _, name := range b.related {
-		other, err := b.ui.entityFor(name)
+	for _, rl := range b.related {
+		other, err := b.ui.entityFor(rl.name)
 		if err != nil {
 			lists = append(lists, slotFailed(ctx))
 			continue
@@ -39,25 +37,30 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
-		otherBase := relatedBase(ctx, base, other.GetName())
+		otherBase := rl.base
+		if !rl.fixed {
+			otherBase = relatedBase(ctx, base, other.GetName())
+		}
 		om, err := b.ui.meta(other.GetName())
 		if err != nil {
 			lists = append(lists, slotFailed(ctx))
 			continue
 		}
-		newLink := ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": om.singular(ctx)}),
-			Href:    otherBase + "/create?prefill_" + url.QueryEscape(fk) + "=" + url.QueryEscape(b.id),
-			Variant: ui.ButtonSecondary,
-		})
+		// The list's own header names the section, one level below the
+		// record's title.
 		list := b.ui.List(other.GetName()).
 			Key(other.GetName()).
 			Where(fk, b.id).
-			Base(otherBase)
+			Heading(om.plural(ctx), 2)
+		if otherBase == "" {
+			// No screen of its own: rows without links and no New.
+			list = list.NoLinks()
+		} else {
+			list = list.Base(otherBase)
+		}
 		lists = append(lists, ui.Section(ui.SectionConfig{
-			Heading: om.plural(ctx),
-			ID:      "eui-related-" + other.GetName(),
-		}, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, newLink), list.RenderCtx(ctx)))
+			ID: "eui-related-" + other.GetName(),
+		}, list.RenderCtx(ctx)))
 	}
 	return render.Join(lists...)
 }

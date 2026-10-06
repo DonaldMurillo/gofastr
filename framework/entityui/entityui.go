@@ -101,6 +101,11 @@ func New(h Host, ext Extensions) (*UI, error) {
 	if err := ext.check(h.Registry()); err != nil {
 		return nil, err
 	}
+	if ext.Jobs != nil {
+		if bh, ok := h.(BulkHost); !ok || bh.BulkStore() == nil {
+			return nil, fmt.Errorf("entityui: Extensions.Jobs needs a Host that keeps bulk snapshots (BulkHost with a BulkStore)")
+		}
+	}
 	return &UI{host: h, ext: ext.clone()}, nil
 }
 

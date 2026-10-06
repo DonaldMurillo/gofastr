@@ -260,7 +260,7 @@ func (fb *formBuilder) items(ctx context.Context, items []entity.FormItem, depth
 					continue
 				}
 				if h := fb.field(ctx, f); h != "" {
-					cells = append(out[:0], append(cells, h)...)
+					cells = append(cells, h)
 				}
 			}
 			if len(cells) > 0 {

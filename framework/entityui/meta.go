@@ -76,11 +76,23 @@ func (m *meta) plural(ctx context.Context) string {
 	return i18nui.EntityPlural(ctx, m.tr, m.name, m.d.Plural)
 }
 
+// noun is the entity's name inside a sentence: "11 customers".
+func (m *meta) noun(ctx context.Context, plural bool) string {
+	display := m.d.Singular
+	if plural {
+		display = m.d.Plural
+	}
+	return i18nui.EntityNoun(ctx, m.tr, m.name, display, plural)
+}
+
 func (m *meta) description(ctx context.Context) string {
 	return i18nui.EntityDescription(ctx, m.tr, m.name, m.d.Description)
 }
 
 func (m *meta) label(ctx context.Context, field string) string {
+	if f, ok := m.byName[field]; ok && f.Type == schema.Relation {
+		return i18nui.RelationLabel(ctx, m.tr, m.name, field, m.hint(field).Label)
+	}
 	return i18nui.FieldLabel(ctx, m.tr, m.name, field, m.hint(field).Label)
 }
 
@@ -118,7 +130,9 @@ func (m *meta) locked(f schema.Field) bool {
 func (m *meta) omitted(field string) bool { return m.hint(field).Omit }
 
 // titleField is the field naming a record: Display.TitleField, else a
-// visible "name" or "title" field, else "" (the singular names it).
+// visible "name" or "title" field, else the first String column that is
+// not system, omitted or NoQuery (an invoice's number), else "" (the
+// singular names it).
 func (m *meta) titleField() string {
 	if m.d.TitleField != "" {
 		return m.d.TitleField
@@ -126,6 +140,11 @@ func (m *meta) titleField() string {
 	for _, n := range []string{"name", "title"} {
 		if _, ok := m.byName[n]; ok {
 			return n
+		}
+	}
+	for _, f := range m.fields {
+		if f.Type == schema.String && !f.NoQuery && !m.system(f) && !m.omitted(f.Name) {
+			return f.Name
 		}
 	}
 	return ""

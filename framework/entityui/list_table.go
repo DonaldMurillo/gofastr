@@ -17,10 +17,13 @@ import (
 // props — the active sort, the carried query, the param names — so the
 // namespaced params (?due_sort=, ?due_page=) ride every link the table
 // builds and a second list on the page keeps its own.
-func (b *ListBuilder) table(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
+func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, rows []map[string]any, total int, known bool, page int) render.HTML {
 	labels := b.ui.resolveRowLabels(ctx, s, rows, s.columns)
 	linkCol := linkColumn(s)
-	cols := make([]ui.Column, 0, len(s.columns)+1)
+	cols := make([]ui.Column, 0, len(s.columns)+2)
+	if lb != nil {
+		cols = append(cols, ui.Column{Key: "_s", Header: ""})
+	}
 	for _, name := range s.columns {
 		f, _ := s.m.field(name)
 		col := ui.Column{Key: name, Header: s.m.label(ctx, name), Sortable: s.sortable(name)}
@@ -29,23 +32,30 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, rows []map[string
 		}
 		cols = append(cols, col)
 	}
-	cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
+	if !b.noLinks {
+		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
+	}
 
 	uiRows := make([]ui.Row, 0, len(rows))
 	for i, row := range rows {
 		id := cell(rowValue(row, s.m.pk))
 		cells := map[string]render.HTML{}
+		if lb != nil {
+			cells["_s"] = selectCell(ctx, s, lb, row, i)
+		}
 		for _, name := range s.columns {
 			f, _ := s.m.field(name)
 			cells[name] = b.ui.cellHTML(ctx, s, labels, f, row, name)
-			if name == linkCol {
+			if name == linkCol && !b.noLinks {
 				cells[name] = ui.Link(ui.LinkConfig{
 					Href: s.recordHref(id),
 					Text: b.ui.plainText(ctx, s, labels, f, row, name),
 				})
 			}
 		}
-		cells["_a"] = b.rowActions(ctx, s, row, i)
+		if !b.noLinks {
+			cells["_a"] = b.rowActions(ctx, s, row, i)
+		}
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
 	}
 
@@ -182,9 +192,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	case schema.Decimal, schema.Float:
 		return render.Text(decimal(val))
 	case schema.Date:
-		return render.Text(formatDate(rowValue(row, name), "Jan 2, 2006"))
+		return render.Text(formatDate(rowValue(row, name), dateLayout))
 	case schema.Timestamp:
-		return render.Text(formatDate(rowValue(row, name), "Jan 2, 2006 3:04 PM"))
+		return render.Text(formatDate(rowValue(row, name), timestampLayout))
 	default:
 		// Everything else prints its value as text.
 	}
@@ -223,9 +233,9 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		}
 		return decimal(val)
 	case schema.Date:
-		return formatDate(raw, "Jan 2, 2006")
+		return formatDate(raw, dateLayout)
 	case schema.Timestamp:
-		return formatDate(raw, "Jan 2, 2006 3:04 PM")
+		return formatDate(raw, timestampLayout)
 	default:
 		// Everything else prints its value as text.
 	}
@@ -265,60 +275,53 @@ func sortDir(desc bool) string {
 	return "asc"
 }
 
-// rowActions draws the trailing per-row controls: copy link, the row
-// menu (Open, Duplicate) and, where turned on and the entity mounts
-// write routes, Delete as a form RPC whose answer re-fetches the page.
-// The kit's menu rows are links and bare RPCs; copy and the
-// navigate-on-success delete need the button contract, so they sit
-// beside the menu rather than inside it.
+// rowActions draws the row menu, one icon-only trigger named for the
+// record: Open, Copy link, Duplicate where turned on and, where turned
+// on and the entity mounts write routes, Delete as an RPC that confirms,
+// re-fetches the page on success and toasts a refusal.
 func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[string]any, i int) render.HTML {
 	m := s.m
 	id := cell(rowValue(row, m.pk))
 	href := s.recordHref(id)
 	title := m.recordTitle(ctx, row)
 
-	var parts []render.HTML
 	// Copy link targets a hidden span holding the URL: the copy module
 	// copies an element's text, so the page carries the link as text.
 	spanID := "eui-url-" + listIDSafe(s.key, m.name) + "-" + strconv.Itoa(i)
-	parts = append(parts,
-		html.Span(html.TextConfig{
-			Class:      "fui-visually-hidden",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true", "id": spanID, "data-cui-internal": ""},
-		}, render.Text(href)),
-		ui.CopyButton(ui.CopyButtonConfig{
-			Target:    spanID,
-			IconOnly:  true,
-			AriaLabel: i18nui.T(ctx, i18nui.KeyEntityCopyLink),
-			Ctx:       ctx,
-		}))
+	urlSpan := html.Span(html.TextConfig{
+		Class:      "fui-visually-hidden",
+		ExtraAttrs: html.Attrs{"aria-hidden": "true", "id": spanID, "data-cui-internal": ""},
+	}, render.Text(href))
 
-	items := []ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href}}
+	items := []ui.MenuItem{
+		{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href},
+		{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}},
+	}
 	if b.dup && !m.d.NoDuplicate {
 		items = append(items, ui.MenuItem{
 			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
 			Href:  s.base + "/create?duplicate=" + url.QueryEscape(id),
 		})
 	}
-	parts = append(parts, ui.Menu(ui.MenuConfig{
+	if b.delete && m.hasAPI {
+		del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
+			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": m.singular(ctx)})).
+			OnSuccess(interactive.Navigate(listHref(s.path, s.q))).
+			// A refusal (a row other records still reference) toasts
+			// the server's message instead of ending in silence.
+			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": m.singular(ctx)}))
+		items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
+			Label:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+			Danger: true,
+			Do:     &del,
+		})
+	}
+	return render.Join(urlSpan, ui.Menu(ui.MenuConfig{
 		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,
 	}))
-	if b.delete && m.hasAPI {
-		parts = append(parts, ui.Button(ui.ButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityDelete),
-			Variant: ui.ButtonGhost,
-			ExtraAttrs: interactive.Delete(m.api + "/" + url.PathEscape(id)).
-				WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": m.singular(ctx)})).
-				OnSuccess(interactive.Navigate(listHref(s.path, s.q))).
-				// A refusal (a row other records still reference) toasts
-				// the server's message instead of ending in silence.
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": m.singular(ctx)})).
-				Attrs(),
-		}))
-	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, parts...)
 }
 
 // listIDSafe is a fragment safe for an id attribute.
@@ -338,14 +341,14 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 		desc = i18nui.T(ctx, i18nui.KeyEntityEmptyBody)
 	}
 	cfg := ui.EmptyStateConfig{
-		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, map[string]string{"entity": s.m.plural(ctx)}),
+		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, map[string]string{"entity": s.m.noun(ctx, true)}),
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
-	if b.create && s.m.hasAPI {
+	if b.mayCreate() && s.m.hasAPI {
 		cfg.Action = ui.LinkButton(ui.LinkButtonConfig{
 			Label: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": s.m.singular(ctx)}),
-			Href:  s.base + "/create",
+			Href:  s.createHref(),
 		})
 	}
 	return cfg

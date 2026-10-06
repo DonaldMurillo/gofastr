@@ -661,6 +661,44 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr blueprint` warns on a single-column unique field in an
   owner-scoped entity.** Under owner scoping one user's row blocks every
   other user's create, and the 409 reveals that the value exists.
+- **`framework/entityui` draws entity screens.** `App.EntityUI(ext)`
+  builds the app's one `*entityui.UI`; a second call panics, so the admin
+  and the app's own screens share it. `List`, `Record` and `Create`
+  builders render from the entity's schema, `Display` and `States` with
+  no islands: a list keeps sort, page, search, filter, view and facets in
+  its query string, and writes are form RPCs to the REST routes. A list
+  draws a table or cards with view tabs, facets, filter chips and a pager,
+  and takes `Where` pins, `Base` and `NoLinks`. Each row's actions sit
+  behind one icon-only menu: open, copy link, duplicate and delete. A
+  pinned field leaves the default columns and the facets, and New
+  prefills it. A relation field labels as its target (`customer_id`
+  reads "Customer"), and an entity with no `TitleField`, `name` or
+  `title` is named by its first plain `String` column. A record draws its state
+  badge, a button per open move (gated by `access.CanResourceExact`, the
+  route's own check), and Edit, Related and Activity tabs, with
+  `Related` and `RelatedAt` naming the related lists. `StatValue`,
+  `GroupBars`, `GroupSlices` and `LineChart` serve dashboards.
+  `Extensions` adds field kinds, view funcs, record tabs, actions and
+  list or record overrides, every name checked at boot. Every read of
+  another entity (relation labels, pickers, facets, related lists, stats)
+  passes that entity's own read gate. See
+  `framework/docs/content/entityui.md`.
+- **Bulk actions and CSV export on entity lists.** `.Bulk()` adds a
+  select column, a bulk bar and an Export CSV link; `bulk: true` on a
+  blueprint `entity_list` emits it. `App.EntityUI` mounts
+  `POST <api>/<entity>/_bulk` and `GET <api>/<entity>/_export.csv`
+  on the router each entity's CRUD routes use, so a grouped entity's pair
+  sits behind its group's middleware. The server re-reads every posted id
+  through the scoped handler, rebuilds "every match" from the list's own
+  query (at most `EveryMatchCap`, 10,000), and asks each record's update
+  or delete gate before the write, counting a refusal as skipped. Up to
+  `InRequestCap` (100) records run in the request; past it the run needs
+  `Extensions.Jobs`, and `App.EntityUI` then creates the snapshot tables
+  `gofastr_bulk_jobs` and `gofastr_bulk_items` (it panics without
+  `App.DB`). Every run writes one audit row with op `bulk` under
+  `WithAuditLog`. The export holds what the list narrowed to, leaves out
+  `NoQuery`, omitted and JSON fields, and quotes cells a spreadsheet
+  would run as formulas.
 - **`crud.CrudHandler.CanUpdateRecordScoped` and
   `CanDeleteRecordScoped`** answer, as booleans about one record, the
   gates `PUT` and `DELETE /<entity>/{id}` run: session, owner, tenant,
@@ -671,6 +709,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`i18nui.EntityNoun`** returns an entity's name for use inside a
   sentence ("11 customers"): a catalog entry as written, else the Display
   or derived name with plain words lowercased and acronyms kept.
+- **`openapi.EntityOpenAPIWithBulk`** is `EntityOpenAPI` with a second
+  predicate that also documents an entity's `POST <path>/_bulk` and
+  `GET <path>/_export.csv`. The app's served spec lists them for every
+  entity `App.EntityUI` mounted them on.
 - **`ui.MenuConfig.IconOnly`** draws the trigger as a "more" icon (new in
   `ui.Icon`) with the label kept as its accessible name, for a table row's
   action menu. **`ui.MenuItem.Do`** takes a built `*interactive.Action`,

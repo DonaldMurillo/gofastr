@@ -25,6 +25,8 @@ type Extensions struct {
 	Entities map[string]Extension
 	// Jobs runs bulk actions over more records than one request may
 	// touch (InRequestCap). nil refuses such a selection, naming the cap.
+	// A queued run needs the Host to keep snapshots (BulkHost); New
+	// refuses Jobs on a Host that does not.
 	Jobs JobRunner
 }
 
@@ -121,8 +123,8 @@ type RecordContext struct {
 }
 
 // Action is a record or bulk action. Permission, when set, is checked
-// against the caller's own roles on top of the entity's update access;
-// a Wildcard grant does not satisfy it.
+// about each record on top of the entity's update access, with
+// access.CanResourceExact: a Wildcard grant does not satisfy it.
 type Action struct {
 	Key        string
 	Label      string
@@ -150,18 +152,82 @@ const InRequestCap = 100
 // EveryMatchCap is the most records an "every match" selection resolves.
 const EveryMatchCap = 10000
 
-// JobRunner runs a bulk action over a fixed selection outside the request.
-// The admin backs it with battery/queue.
+// JobRunner runs a bulk action over more than InRequestCap records,
+// outside the request. entityui writes the confirmed selection to the
+// Host's snapshot store and hands Enqueue the job; the runner's worker
+// then calls UI.RunBulkJob with job.ID, as often as it retries. The admin
+// backs it with battery/queue.
 type JobRunner interface {
-	RunBulk(ctx context.Context, job BulkJob) (jobID string, err error)
+	// Enqueue schedules job. It must not run the job inline.
+	Enqueue(ctx context.Context, job BulkJob) error
+	// Principal rebuilds the creator's request context as of now from
+	// job.Creator and job.Tenant: the user, their current roles and the
+	// tenant, read fresh, the way a request from them would carry them.
+	// RunBulkJob calls it before every chunk; an error stops the run.
+	Principal(ctx context.Context, job BulkJob) (context.Context, error)
 }
 
-// BulkJob is a bulk run handed to a JobRunner: the action and the ids the
-// selection resolved to when the caller confirmed it.
+// BulkJob is one queued bulk run. Its selection lives in the snapshot
+// store under ID; no ids ride in the job itself.
 type BulkJob struct {
+	ID     string
 	Entity string
+	// Action is the bulk bar's action key: "delete", "set:<field>:<value>",
+	// "move:<key>" or "run:<key>".
 	Action string
-	IDs    []string
+	Count  int
+	// Creator is the confirming user's id (handler.GetUser's GetID) and
+	// Tenant their tenant, "" for none.
+	Creator string
+	Tenant  string
+	// FilterHash is a SHA-256 of the scope and list query the selection
+	// came from, for the audit trail.
+	FilterHash string
+	// Status is "queued", "done" or "stopped"; Store.Job fills it.
+	Status string
+}
+
+// Bulk job statuses.
+const (
+	BulkQueued  = "queued"
+	BulkDone    = "done"
+	BulkStopped = "stopped"
+)
+
+// Outcomes a snapshot row settles to.
+const (
+	BulkRowDone    = "done"
+	BulkRowSkipped = "skipped"
+	BulkRowFailed  = "failed"
+)
+
+// BulkStore keeps queued bulk runs: the job and the ids its selection
+// resolved to at confirm, each settled once it has run.
+type BulkStore interface {
+	// Create writes the job and its ids in one transaction.
+	Create(ctx context.Context, job BulkJob, ids []string) error
+	// Job reads one job; an unknown id is an error.
+	Job(ctx context.Context, id string) (BulkJob, error)
+	// Pending returns up to limit ids not yet settled, in a stable order.
+	Pending(ctx context.Context, id string, limit int) ([]string, error)
+	// Settle records each id's outcome (BulkRowDone, BulkRowSkipped,
+	// BulkRowFailed). A settled id never comes back from Pending.
+	Settle(ctx context.Context, id string, outcomes map[string]string) error
+	// Finish sets the job's status.
+	Finish(ctx context.Context, id, status string) error
+}
+
+// BulkHost is what a Host implements to back bulk actions: the snapshot
+// store queued runs walk, and the audit rows every run writes. The host
+// App.EntityUI builds implements it; without it, bulk runs still work
+// inside the request and write no summary row, and Extensions.Jobs is
+// refused.
+type BulkHost interface {
+	// BulkStore returns the snapshot store, nil when the host keeps none.
+	BulkStore() BulkStore
+	// AuditEvent writes one audit row; a host with no audit log answers
+	// nil and writes nothing.
+	AuditEvent(ctx context.Context, entity, op, recordID string, detail map[string]any) error
 }
 
 // check is New's name check. See New for the refusals.

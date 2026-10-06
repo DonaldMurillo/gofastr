@@ -67,7 +67,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		return out, nil
 	}
 
-	s := &listState{m: m, key: b.key, p: listParamsFor(b.key)}
+	s := &listState{m: m, key: b.key, p: listParamsFor(b.key), pins: b.where}
 	s.q = appui.QueryFromContext(ctx)
 	// The page's own path carries the sort, page and view links, so they
 	// stay on the screen the list lives in; .Base overrides where RECORD
@@ -84,21 +84,13 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if err := s.resolveColumns(b); err != nil {
 		return "", err
 	}
-	viewKey, err := viewKeyOf(ctx, m, b, s.q)
-	if err != nil {
-		return "", err
-	}
-	s.view = viewKey
-	if s.viewPred, err = viewPredicate(ctx, m, viewKey); err != nil {
-		return "", err
-	}
-	if s.viewSorts, err = viewSorts(m, viewKey); err != nil {
+	if err := b.narrow(ctx, s); err != nil {
 		return "", err
 	}
 	s.as = b.as
 	if s.as == "" {
 		for _, v := range m.d.Views {
-			if v.Key == viewKey {
+			if v.Key == s.view {
 				s.as = v.As
 			}
 		}
@@ -107,24 +99,6 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	case "", "table", "cards":
 	default:
 		return "", fmt.Errorf("entityui: entity %q: As(%q) must be \"table\" or \"cards\"", m.name, b.as)
-	}
-
-	// Search, only over fields the entity declares for it.
-	if len(m.e.Config.SearchFields) > 0 {
-		s.search = strings.TrimSpace(s.q.Get(s.p.q))
-	}
-	// The filter text: a parse failure is a warning and an unfiltered
-	// list, never a failed screen — the reader typed it, not the app.
-	if text := strings.TrimSpace(s.q.Get(s.p.filter)); text != "" {
-		s.filterText = text
-		p, err := dsl.ParsePredicate(text, m.e.GetFields())
-		if err != nil {
-			// The error quotes the input; it goes to the log, not the page.
-			slog.InfoContext(ctx, "entityui: filter not applied", "entity", m.name, "error", err)
-			s.filterBad = true
-		} else {
-			s.filterPred = p
-		}
 	}
 
 	s.resolveSort()
@@ -163,6 +137,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
 
+	lb := b.bulkFor(ctx, s)
 	var body []render.HTML
 	body = append(body, b.header(ctx, s, total, known))
 	if tabs := viewTabs(ctx, s); tabs != "" {
@@ -178,12 +153,54 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		body = append(body, tb)
 	}
 
+	if lb != nil {
+		if bar := b.bulkBar(ctx, s, lb, rows, total, known); bar != "" {
+			body = append(body, bar)
+		}
+	}
 	if s.as == "cards" {
 		body = append(body, b.cards(ctx, s, rows, total, known, page))
 	} else {
-		body = append(body, b.table(ctx, s, rows, total, known, page))
+		body = append(body, b.table(ctx, s, lb, rows, total, known, page))
 	}
 	return render.Join(body...), nil
+}
+
+// narrow resolves the request's narrowing terms onto s: the view (its
+// predicate and sorts), the search and the filter text. The list render
+// and a bulk "every match" selection both run it, so the selection is
+// the rows the screen drew.
+func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
+	m := s.m
+	viewKey, err := viewKeyOf(ctx, m, b, s.q)
+	if err != nil {
+		return err
+	}
+	s.view = viewKey
+	if s.viewPred, err = viewPredicate(ctx, m, viewKey); err != nil {
+		return err
+	}
+	if s.viewSorts, err = viewSorts(m, viewKey); err != nil {
+		return err
+	}
+	// Search, only over fields the entity declares for it.
+	if len(m.e.Config.SearchFields) > 0 {
+		s.search = strings.TrimSpace(s.q.Get(s.p.q))
+	}
+	// The filter text: a parse failure is a warning and an unfiltered
+	// list, never a failed screen — the reader typed it, not the app.
+	if text := strings.TrimSpace(s.q.Get(s.p.filter)); text != "" {
+		s.filterText = text
+		p, err := dsl.ParsePredicate(text, m.e.GetFields())
+		if err != nil {
+			// The error quotes the input; it goes to the log, not the page.
+			slog.InfoContext(ctx, "entityui: filter not applied", "entity", m.name, "error", err)
+			s.filterBad = true
+		} else {
+			s.filterPred = p
+		}
+	}
+	return nil
 }
 
 // header draws the list's page header: the plural (or the builder's
@@ -197,11 +214,11 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	subtitle := ""
 	if known {
 		if total == 1 {
-			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.singular(ctx)})
+			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.noun(ctx, false)})
 		} else {
 			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCount, map[string]string{
 				"count":  formatNumber(float64(total), 0),
-				"entity": m.plural(ctx),
+				"entity": m.noun(ctx, true),
 			})
 		}
 	} else if desc := m.description(ctx); desc != "" {
@@ -209,10 +226,15 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	}
 	var actions []render.HTML
 	actions = append(actions, b.actions...)
-	if b.create && m.hasAPI {
+	// Export is a read: it rides with bulk, not with the caller's
+	// write actions.
+	if b.bulk && bulkOn(m) {
+		actions = append(actions, exportLink(ctx, s))
+	}
+	if b.mayCreate() && m.hasAPI {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
-			Href:    s.base + "/create",
+			Href:    s.createHref(),
 			Variant: ui.ButtonPrimary,
 		}))
 	}
@@ -244,13 +266,16 @@ func actionCluster(actions []render.HTML) render.HTML {
 func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 	m := s.m
 	facets := make([]ui.Facet, 0, len(m.d.Facets))
-	for _, name := range m.d.Facets {
+	for _, name := range s.facets() {
 		f, ok := m.field(name)
 		if !ok {
 			continue
 		}
 		p := s.facetParam(name)
-		facet := ui.Facet{Name: p, Label: m.label(ctx, name), Value: strings.TrimSpace(s.q.Get(p))}
+		// The label sits above the control, so the clear choice is a
+		// plain "All", never "All Customer".
+		facet := ui.Facet{Name: p, Label: m.label(ctx, name), Value: strings.TrimSpace(s.q.Get(p)),
+			AllLabel: i18nui.T(ctx, i18nui.KeyFilterAllPlain)}
 		switch f.Type {
 		case schema.Bool:
 			facet.Options = []ui.FacetOption{
@@ -329,7 +354,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 // ownsFacetParam reports whether name is one of this list's facet
 // params — controls the toolbar owns.
 func (s *listState) ownsFacetParam(name string) bool {
-	for _, f := range s.m.d.Facets {
+	for _, f := range s.facets() {
 		if name == s.facetParam(f) {
 			return true
 		}

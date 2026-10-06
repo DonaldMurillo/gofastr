@@ -49,6 +49,9 @@ func builtinKind(name string) Kind {
 // the builder attaches the app's translator before calling a kind, so
 // the kind sees the same catalog the built-in fields do.
 func kindLabel(ic InputContext) string {
+	if ic.Field.Type == schema.Relation {
+		return i18nui.RelationLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
+	}
 	return i18nui.FieldLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
 }
 
@@ -92,11 +95,11 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 			return render.Text(boolText(t))
 		}
 	case schema.Date:
-		if s := formatDate(v, "2006-01-02"); s != "" {
+		if s := formatDate(v, dateLayout); s != "" {
 			return render.Text(s)
 		}
 	case schema.Timestamp:
-		if s := formatDate(v, "2006-01-02 15:04"); s != "" {
+		if s := formatDate(v, timestampLayout); s != "" {
 			return render.Text(s)
 		}
 	case schema.Decimal:

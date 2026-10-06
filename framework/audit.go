@@ -160,6 +160,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		panic(fmt.Sprintf("framework: EnsureAuditTable: %v", err))
 	}
 	a.auditTable = table
+	a.auditActor = cfg.actor
 
 	want := map[string]bool{}
 	for _, name := range cfg.Entities {

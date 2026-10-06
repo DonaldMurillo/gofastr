@@ -1,0 +1,289 @@
+# Entity screens (entityui)
+
+`framework/entityui` draws an entity's list, record and create screens from
+its schema, its `Display` config and its `States`. Generated apps draw
+through it, the admin battery composes it, and a hand-written app page can
+place the same builders anywhere a component goes. It replaced
+`framework/ui/resource` (deleted): the old engine mounted island routes
+beside each screen. entityui draws no islands, and the only routes it
+adds are two JSON endpoints per entity, mounted by `App.EntityUI` beside
+the CRUD routes (see "Bulk actions and export").
+
+One `*entityui.UI` serves one app. Build it once after every entity is
+registered; a second `App.EntityUI` call panics, so the admin battery and
+the app's screens share the one the app built:
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var fwApp *framework.App
+var ctx = context.Context(nil)
+-->
+appUI := fwApp.EntityUI(entityui.Extensions{})
+```
+
+`App.EntityUI` checks every name the extensions use against the registered
+entities and panics at boot on a bad one, naming it, the way `App.Entity`
+refuses a bad declaration. Builders are components: return them from a
+screen, or call `RenderCtx(ctx)` to place one inside another component.
+
+## What it draws
+
+- **A list** (`appUI.List("invoices")`): a `ui.DataTable` (or cards),
+  its columns from `Display.Columns`, a title cell that links to the
+  record, view tabs, facets, a search box over `SearchFields`, filter
+  chips, sort headers and a pager. The row menu offers Open, Duplicate
+  and Delete where the builder turns them on.
+- **A record** (`appUI.Record("invoices", id)`): a page header with the
+  record's title and state badge, a button per state move whose `From`
+  holds the stored value, and tabs: Edit (the form from `Display.Form`),
+  Related (the related entities the page names), any extension tabs, and
+  Activity (the audit trail) where turned on.
+- **A create screen** (`appUI.Create("invoices")`): the same form, empty,
+  posting a create to the entity's REST base. `?duplicate=<id>` prefills
+  from that record minus what a create may not set;
+  `?prefill_<field>=<value>` prefills one field — the convention a
+  `Where`-pinned list's New link uses, the Related tab's among them.
+- **Stats and charts**: `appUI.StatValue` (a count or sum, `where` in the
+  query DSL), `GroupBars`, `GroupSlices` and `LineChart` (rows per value
+  of a field). A dashboard block reads an entity without a screen of its
+  own.
+
+## How it reads the entity
+
+`Display` (`entity.DisplayConfig`, spelled `display:` in a blueprint) is
+plain data on the entity; nil means every default falls back to the schema
+itself. It names the record (`Singular`, `Plural`, `TitleField`,
+`Description`), the list (`Columns`, `Views`, `Facets`, `PageSizes`,
+`Card`, `NoDuplicate`, `NoBulk`), the sidebar (`Nav`), the form layout
+(`Form`, with rows, sections and a side rail) and per-field hints
+(`Fields`: `Label`, `Help`, `Placeholder`, `Locked`, `Omit`, `ShowWhen`,
+`Input`). A hint changes how a screen draws a field, never what the API
+accepts; the field's own `Hidden`, `ReadOnly` and `NoQuery` keep their
+meaning and every screen honours them first.
+
+`States` (`entity.StatesConfig`) gives the record its moves. The state
+field and every stamp render read-only on every screen; a button per
+transition posts the entity's transition route
+(`POST <api>/<entity>/<id>/transitions/<key>`), whose success re-fetches
+the page. A `System: true` move draws no button — only Go code calls it.
+A move's `Permission` gates its button with the same exact resource check
+the route runs: the caller's roles must grant it by name, and a
+`Wildcard` grant does not, so no button is drawn that the route would
+refuse.
+
+Every chrome string (headings, buttons, tab names, notices) resolves
+through `framework/i18nui` keys, so a catalog entry translates the screens
+without touching the entity. The list's count reads as a sentence ("11
+customers"): `i18nui.EntityNoun` lowercases the English name, keeps an
+acronym ("API keys"), and uses a catalog's `entity.<entity>.plural` as
+written.
+
+## Building a screen
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var fwApp *framework.App
+var ctx = context.Context(nil)
+-->
+appUI := fwApp.EntityUI(entityui.Extensions{})
+list := appUI.List("invoices").
+	Columns("number", "amount").   // Display.Columns when unset
+	PageSize(20).                  // capped by Pagination.MaxListLimit
+	RenderCtx(ctx)                 // a component; place it anywhere
+record := appUI.Record("invoices", "inv-42").Delete().RenderCtx(ctx)
+_, _ = list, record
+```
+
+The list builder also takes `Key` (namespaces its query params when two
+lists share a page), `View` (the view that opens when the URL names
+none), `As("cards")`, `Where(field, value)` (pins a term inside the
+caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where
+record links hang off), `Heading(text, level)` and `Empty(text)`,
+`NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
+for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
+and `Actions` for header buttons beside New.
+
+The record builder takes `Base`, `Form` (replaces `Display.Form` on this
+page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
+`Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
+base)` for one whose screens live elsewhere (an empty base draws it with
+`NoLinks`), `Activity()`, `Delete()`, `Duplicate()` and `Prefill(values)`.
+A related list's heading sits one level below the record's title, so the
+page keeps one `<h1>`.
+
+A builder name that is wrong — an unknown entity, a bad `As`, an unknown
+column — fails that slot with a generic message and a log line, never a
+failed page.
+
+## Extensions
+
+`Extensions` is the code an app registers next to its screens: the entity
+says what to show, extensions draw or act.
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+import "github.com/DonaldMurillo/gofastr/framework/filter"
+var fwApp *framework.App
+-->
+appUI := fwApp.EntityUI(entityui.Extensions{
+	Kinds: map[string]entityui.Kind{
+		"slug": {Input: func(ic entityui.InputContext) render.HTML {
+			return render.HTML("") // draw the input for ic.Field
+		}},
+	},
+	Entities: map[string]entityui.Extension{
+		"invoices": {
+			Views: map[string]entityui.ViewFunc{
+				"overdue": {Filter: func(context.Context) (*filter.Predicate, error) {
+					return &filter.Predicate{Field: "status", Op: filter.OpEq, Value: "past_due"}, nil
+				}},
+			},
+		},
+	},
+})
+```
+
+- **Kinds** draw one field kind: `Input` on forms, `Cell` in list cells
+  and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
+  picks one by name. `email`, `url`, `color`, `markdown` and `code` are
+  built in; an app kind of the same name replaces a built-in one.
+- **Views** bind a func to a `Display.Views` key, for a filter that
+  depends on who is looking, the tenant or the clock. The URL carries the
+  key (`?view=overdue`), never the predicate. The func's predicate passes
+  `filter.ValidatePredicate` before it reaches SQL, every time — field
+  names are spliced into WHERE clauses, so a func's own tree gets the
+  same validation URL input gets. `Show` hides the view from callers it
+  does not apply to; a hidden default view falls back to All. A view with
+  neither a `Where` nor a registered func fails at boot, and so does a
+  func registered for a key no view declares.
+- **Tabs** add a record tab after the built-in ones. `Build` runs inside
+  a recover: a panicking tab fails that tab alone.
+- **Actions** add record header buttons and, with `Bulk`, list bulk
+  actions. `Permission`, when set, is checked against the caller's own
+  roles on top of the entity's update access; a `Wildcard` grant does not
+  satisfy it. `Run` receives the resolved selection and a CRUD handle
+  scoped to the caller. Up to `InRequestCap` (100) records run inside the
+  request; a larger selection needs `Extensions.Jobs` (the admin backs it
+  with `battery/queue`), and without one it is refused naming the cap.
+  "Every match" resolves at most `EveryMatchCap` (10,000) records.
+- **List and Record** replace an entity's list or record body with the
+  app's own component, under the same read gates and route.
+
+## The read gates
+
+Route middleware never runs for a component render, so the checks the
+JSON API applies live in the builders themselves:
+
+- The list runs `CanReadScoped` before any read; the record also runs
+  `CanReadRecordScoped`, so a resource-aware Decider that allows the
+  listing and denies one row answers not-found, byte-identical to a
+  missing id.
+- Every read of a DIFFERENT entity — relation cell labels (one IN read
+  per relation column), the create form's relation picker, a relation
+  facet's options, the Related tab's lists, the stats and charts — passes
+  that entity's own gate first.
+- A relation the caller may not read renders muted (an em dash), never
+  the related record's name and never the raw foreign key. A refused
+  relation facet draws no options, so the facet is absent. A refused
+  related list draws its notice, never its rows. A refused stat prints
+  the em dash: an aggregate never announces an entity it cannot read.
+
+A builder never allows a write the API refuses: buttons follow the
+entity's exposure, and an entity with no REST write routes renders
+read-only — values, moves and deletes gone, nothing submittable.
+
+## State in the URL, writes as form RPCs
+
+A list keeps its state in the page's own query string: `sort`, `dir`,
+`page`, `q`, `filter` (DSL text), `view` and `f_<field>` facets, each
+prefixed by the list's key when it has one (`due_sort` for
+`.Key("due")`). Sort headers, pager links and view tabs are plain
+anchors the client router intercepts; the toolbar is one GET form whose
+hidden inputs round-trip the state it does not own. There is no island
+to mount and no second route onto the rows: every request passes the
+page's own route gate. A page out of range lands on the last page; a
+failed count leaves the reader on the page asked for with no pager.
+
+The record's tabs are the same shape (`?tab=related`). Writes — save,
+delete, a state move — are form RPCs (`data-cui-rpc`) to the entity's
+REST routes whose answer re-fetches the page
+(`data-cui-rpc-navigate`), carrying a toast and, on a refusal, the
+runtime's error toast. The edit form's inputs prefill from the unhooked
+read so they round-trip; read-only values show what an `AfterGet`
+redaction shows.
+
+## Bulk actions and export
+
+`.Bulk()` on a list (on in the admin) adds a select column, a bulk bar and
+an Export CSV link. `Display.NoBulk` turns all three off for the entity,
+and so does an entity with no REST write routes.
+
+- **The bar** is one form RPC to `POST <api>/<entity>/_bulk`. It names an
+  action (Delete, set an enum or bool field, a state move, or an app
+  `Actions` entry with `Bulk`) and a scope: the checked rows, the page's
+  rows, or every match of the list's query. The bar offers only the
+  actions the caller's collection gates allow, and asks before it posts.
+  Cards have no checkboxes, so they offer no "selected" scope; "every
+  match" appears only when the count is known, the list is not pinned by
+  `Where`, and more rows match than the page shows.
+- **The server resolves the selection itself.** Posted ids are re-read
+  through the scoped CRUD handler under the caller's context, so an id
+  from another owner or tenant drops out. "Every match" rebuilds the
+  list's view, search, filter and facets from the posted query, up to
+  `EveryMatchCap`. Each record then passes its own update or delete gate
+  before the write; a refused record counts as skipped.
+- **Every run writes one audit row** (`op: "bulk"`) with the action, the
+  count and the done, skipped and failed tallies, when the app has
+  `WithAuditLog`. The actor is the audit log's actor.
+- **Past `InRequestCap`** the run needs `Extensions.Jobs`. `App.EntityUI`
+  then requires `App.DB` and creates two snapshot tables,
+  `gofastr_bulk_jobs` and `gofastr_bulk_items`: the job records the
+  resolved ids at the moment of the request, and `RunBulkJob` walks them
+  in order. A retried job resumes at the first record with no outcome,
+  and the first outcome recorded for a record is the one kept.
+- **Export** is `GET <api>/<entity>/_export.csv` with the list's own
+  query and `_list=<key>`: the file holds what the list narrowed to, up
+  to `EveryMatchCap`, read through the same scoped handler and read hooks
+  the list uses. `NoQuery`, omitted and JSON fields are left out, and a
+  cell a spreadsheet would run as a formula is prefixed with a quote.
+
+Both routes mount on the router the entity's CRUD routes went on, so an
+entity registered with `App.GroupEntity` keeps its group's prefix and
+middleware, and its screens post to the group's path. Both answer 404 for
+an entity with bulk off. The router serves the static `_bulk` and
+`_export.csv` segments ahead of `/{id}`, so no record id can shadow them.
+The app's OpenAPI document lists both routes for each entity EntityUI
+mounted them on; `openapi.EntityOpenAPIWithBulk` builds that document
+outside the app.
+
+## Common mistakes
+
+- **Expecting `Display` to change access.** `Nav.Hide` drops an entity
+  from the sidebar, `Omit` drops a field from screens; neither gates
+  anything. Exposure, scope and RBAC decide who reads what, and the
+  builders enforce them whatever `Display` says.
+- **Registering a view func under a key no view declares** (or declaring
+  a `Where`-less view with no func). `App.EntityUI` refuses at boot,
+  naming the entity and the key.
+- **Trusting a view func's predicate.** It passes `ValidatePredicate` on
+  every render; a func naming a `Hidden` or unknown field fails its slot
+  with the generic message, and the log line carries the detail.
+- **Calling `App.EntityUI` twice.** The second call panics: build the
+  one `*entityui.UI` at boot and pass it to whatever else draws entity
+  screens, the admin included.
+- **Two lists on one page with no `Key`.** The second list with a taken
+  key fails its slot. Give each list its own key.
+- **Expecting `Locked` to protect the column.** `Locked` keeps a field
+  out of the screen's submit; the JSON API still writes it. A field the
+  API must also refuse belongs in `States`, which the CRUD handler
+  enforces.

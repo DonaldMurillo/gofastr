@@ -38,7 +38,7 @@ func TestListRendersHeaderRowsAndNew(t *testing.T) {
 	html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", ""))
 	for _, want := range []string{
 		"Orders",        // the plural heading
-		"2 Orders",      // the count subtitle
+		"2 orders",      // the count subtitle, a sentence
 		"alpha", "zeta", // rows
 		`href="/orders/o1"`, // the title cell links to the record
 		`href="/orders/create"`, "New Order",
@@ -249,7 +249,7 @@ func TestEmptyStateOffersNew(t *testing.T) {
 	)
 	html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", ""))
 	for _, want := range []string{
-		"No Orders yet",
+		"No orders yet", // the plural mid-sentence, lowercased
 		`href="/orders/create"`,
 		"<h2", // the empty heading sits one level under the list's h1
 	} {

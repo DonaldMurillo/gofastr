@@ -325,8 +325,8 @@ storage restriction covers requests with an `Authorization` header,
 NOT cookie-authenticated ones — this framework's default session
 auth — so every authenticated 2xx body suppresses storage itself.
 CRUD responses, the auth battery's token and account listings, A2A
-POST responses, uihost pages (`no-store` plus `Vary: Cookie`), the
-resource `TableHandler`, kiln's JSON GETs, and the harness REST
+POST responses, uihost pages (`no-store` plus `Vary: Cookie`), kiln's
+JSON GETs, and the harness REST
 surface all stamp `Cache-Control: no-store` unless the handler set
 its own Cache-Control. The `nostore` analyzer holds the family: a
 handler that resolves a principal and writes a 2xx body with no
@@ -344,7 +344,9 @@ auto-generated OpenAPI spec.
 schemas for entity CRUD routes; the app passes its route predicate so
 the served spec never documents CRUD paths registration did not mount
 (no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
-documented either way). Plugin-registered HTTP handlers go
+documented either way). `EntityOpenAPIWithBulk` takes a second
+predicate and also documents the `_bulk` and `_export.csv` routes
+`App.EntityUI` mounts; the served spec passes it. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.

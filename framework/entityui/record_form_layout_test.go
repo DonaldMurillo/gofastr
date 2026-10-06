@@ -68,6 +68,31 @@ func TestRecordFormLeftoverAppends(t *testing.T) {
 	}
 }
 
+// A Row item following plain Field items keeps them: the row's cells
+// append to their own slice. Routing the append through out's backing
+// array overwrote the fields already placed, so every field before a
+// row vanished while the row's own fields rendered twice.
+func TestRecordFormRowKeepsPriorFields(t *testing.T) {
+	entities := invoiceEntities()
+	inv := entities["invoices"]
+	inv.Display.Form = &entity.EntityForm{
+		Main: []entity.FormItem{
+			{Field: "number"},
+			{Row: []string{"memo", "token"}},
+		},
+	}
+	entities["invoices"] = inv
+	x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").
+		RenderCtx(x.userCtx("/rec/invoices/inv-1", "", "u1")))
+
+	for _, name := range []string{"number", "memo", "token"} {
+		if n := strings.Count(body, `name="`+name+`"`); n != 1 {
+			t.Fatalf("field %s renders once, got %d:\n%s", name, n, body)
+		}
+	}
+}
+
 // ShowWhen wraps the field in the conditional region the when module
 // evaluates; on the state field the server decides against the stored
 // value, so the field is drawn or omitted, never wrapped.

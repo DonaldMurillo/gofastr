@@ -50,6 +50,14 @@ func truthy(s string) bool {
 	return false
 }
 
+// dateLayout and timestampLayout are how every screen prints a Date and
+// a Timestamp: list cells, plain-text cells and a record's read-only
+// fields alike.
+const (
+	dateLayout      = "Jan 2, 2006"
+	timestampLayout = "Jan 2, 2006 3:04 PM"
+)
+
 // formatDate renders a date or timestamp. Drivers hand dates back as
 // time.Time or as one of a few string layouts; anything else prints as is.
 func formatDate(raw any, layout string) string {

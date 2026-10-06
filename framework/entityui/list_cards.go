@@ -31,6 +31,9 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 			title = id
 		}
 		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title})}
+		if b.noLinks {
+			header[0] = render.Text(title)
+		}
 		if card.badge != "" {
 			if f, ok := s.m.field(card.badge); ok && f.Type == schema.Enum {
 				if v := cell(rowValue(row, card.badge)); v != "" {
@@ -58,10 +61,14 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 				desc = b.ui.plainText(ctx, s, labels, f, row, card.subtitle)
 			}
 		}
+		var footer render.HTML
+		if !b.noLinks {
+			footer = b.rowActions(ctx, s, row, i)
+		}
 		cards = append(cards, ui.Card(ui.CardConfig{
 			Header:      ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, header...),
 			Description: desc,
-			Footer:      b.rowActions(ctx, s, row, i),
+			Footer:      footer,
 		}, html.Span(html.TextConfig{Class: "fui-card__text", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
 	}
 	out := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD}, cards...)

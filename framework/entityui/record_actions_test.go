@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -46,6 +47,36 @@ func TestRecordTransitionPermissionHidesButton(t *testing.T) {
 	}
 	if !strings.Contains(body, "transitions/send") {
 		t.Fatalf("the permission-free move stays:\n%s", body)
+	}
+}
+
+// A Wildcard role does not hold a move's Permission, the route's own
+// exact check, so it sees no button the route would refuse; a role
+// granted the capability by name does.
+func TestRecordMovePermissionIsExact(t *testing.T) {
+	entities := invoiceEntities()
+	inv := entities["invoices"]
+	inv.States.Transitions = append(inv.States.Transitions, entity.Transition{
+		Key: "audit", From: []string{"draft"}, To: "paid", Permission: "invoices:audit",
+	})
+	entities["invoices"] = inv
+	policy := access.NewRolePolicy()
+	if err := policy.Grant("root", access.Wildcard); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.Grant("auditor", "invoices:audit"); err != nil {
+		t.Fatal(err)
+	}
+	x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+	render := func(role string) string {
+		ctx := access.WithRoles(access.WithPolicy(x.userCtx("/rec/invoices/inv-1", "", "u1"), policy), []string{role})
+		return string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(ctx))
+	}
+	if body := render("root"); strings.Contains(body, "transitions/audit") {
+		t.Fatalf("a Wildcard role sees a move the route refuses it:\n%s", body)
+	}
+	if body := render("auditor"); !strings.Contains(body, "transitions/audit") {
+		t.Fatalf("the named grant lost its move:\n%s", body)
 	}
 }
 

@@ -47,6 +47,7 @@ type listState struct {
 	viewSorts []filter.ParsedSort
 	as        string // "table" | "cards"
 	columns   []string
+	pins      []listWhere // the builder's Where pins: context, never a column or facet
 
 	search     string
 	filterText string
@@ -66,13 +67,55 @@ func (s *listState) facetParam(field string) string {
 	return param(s.key, "f_"+field)
 }
 
+// pinned reports a field the builder's Where pins.
+func (s *listState) pinned(field string) bool {
+	for _, w := range s.pins {
+		if w.field == field {
+			return true
+		}
+	}
+	return false
+}
+
+// facets are Display.Facets less the pinned fields: a pinned field holds
+// one value on every row, so there is nothing to pick.
+func (s *listState) facets() []string {
+	var out []string
+	for _, f := range s.m.d.Facets {
+		if !s.pinned(f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// createHref is New's link: <base>/create, carrying each Where pin as a
+// ?prefill_<field>= so the create lands pointed at the list's context
+// (a payments list on an invoice creates a payment for that invoice).
+// The create screen ignores a pin its form may not set.
+func (s *listState) createHref() string {
+	if len(s.pins) == 0 {
+		return s.base + "/create"
+	}
+	q := url.Values{}
+	for _, w := range s.pins {
+		q.Set("prefill_"+w.field, w.value)
+	}
+	return s.base + "/create?" + q.Encode()
+}
+
 // resolveColumns settles the columns a list shows: the builder's, else
-// Display's, else the schema-derived default. Every name must be a
-// visible, non-omitted field.
+// Display's, else the schema-derived default less the pinned fields
+// (every row repeats the pin). Every name must be a visible,
+// non-omitted field.
 func (s *listState) resolveColumns(b *ListBuilder) error {
 	names := b.columns
 	if len(names) == 0 {
-		names = s.m.columns()
+		for _, n := range s.m.columns() {
+			if !s.pinned(n) {
+				names = append(names, n)
+			}
+		}
 	}
 	out := make([]string, 0, len(names))
 	seen := map[string]bool{}
@@ -244,7 +287,7 @@ func andPredicate(children []*filter.Predicate) *filter.Predicate {
 // "true"/"false" and SQLite's INTEGER storage matches no TEXT spelling.
 func (s *listState) facetFilters() []filter.ParsedFilter {
 	var out []filter.ParsedFilter
-	for _, name := range s.m.d.Facets {
+	for _, name := range s.facets() {
 		fld, ok := s.m.field(name)
 		if !ok {
 			continue
@@ -266,7 +309,7 @@ func (s *listState) facetFilters() []filter.ParsedFilter {
 // them across sort and page links.
 func (s *listState) activeFacets() []string {
 	var out []string
-	for _, name := range s.m.d.Facets {
+	for _, name := range s.facets() {
 		if v := strings.TrimSpace(s.q.Get(s.facetParam(name))); v != "" {
 			out = append(out, name)
 		}

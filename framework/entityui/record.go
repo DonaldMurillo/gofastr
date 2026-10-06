@@ -21,7 +21,7 @@ type RecordBuilder struct {
 	form     *entity.EntityForm
 	omit     []string
 	tabs     []Tab
-	related  []string
+	related  []relatedList
 	activity bool
 	delete   bool
 	dup      bool
@@ -62,8 +62,27 @@ func (b *RecordBuilder) Tab(key string, build func(TabContext) (component.Compon
 // page. App pages show none unless named; the admin passes every entity
 // it exposes. Each list still passes that entity's own read gate.
 func (b *RecordBuilder) Related(entities ...string) *RecordBuilder {
-	b.related = append(b.related, entities...)
+	for _, name := range entities {
+		b.related = append(b.related, relatedList{name: name})
+	}
 	return b
+}
+
+// RelatedAt names one related entity whose list hangs off base instead
+// of the path Related derives. An empty base draws that list with no
+// links and no New (ListBuilder.NoLinks): the entity has no screen of its
+// own on this app.
+func (b *RecordBuilder) RelatedAt(entity, base string) *RecordBuilder {
+	b.related = append(b.related, relatedList{name: entity, base: base, fixed: true})
+	return b
+}
+
+// relatedList is one Related tab list: the entity, and the base its
+// record links hang off when fixed (RelatedAt) rather than derived.
+type relatedList struct {
+	name  string
+	base  string
+	fixed bool
 }
 
 // Activity turns on the Activity tab: this record's audit rows. Off by

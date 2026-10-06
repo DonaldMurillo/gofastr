@@ -72,8 +72,8 @@ func (b *RecordBuilder) check(m *meta) error {
 			}
 		}
 	}
-	for _, name := range b.related {
-		if err := b.checkRelated(m, name); err != nil {
+	for _, rl := range b.related {
+		if err := b.checkRelated(m, rl.name); err != nil {
 			return err
 		}
 	}
@@ -213,12 +213,12 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			if t.System || !slices.Contains(t.From, current) {
 				continue
 			}
-			// The same resource check the transition route runs; a
-			// caller who lacks the move's Permission never sees its
-			// button. The entity's own update access has no
-			// in-process answer, so those buttons stay drawn and the
-			// route refuses them.
-			if t.Permission != "" && !access.CanResource(ctx, access.Permission(t.Permission), access.Ref{Type: m.name, ID: b.id}) {
+			// The same exact resource check the transition route runs:
+			// a caller who lacks the move's Permission by name (a
+			// Wildcard role included) never sees its button. The
+			// entity's own update access has no in-process answer, so
+			// those buttons stay drawn and the route refuses them.
+			if t.Permission != "" && !access.CanResourceExact(ctx, access.Permission(t.Permission), access.Ref{Type: m.name, ID: b.id}) {
 				continue
 			}
 			label := i18nui.TransitionLabel(ctx, m.tr, m.name, t.Key, t.Label)

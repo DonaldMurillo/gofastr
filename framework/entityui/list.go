@@ -29,6 +29,7 @@ type ListBuilder struct {
 	delete   bool
 	dup      bool
 	bulk     bool
+	noLinks  bool
 	actions  []render.HTML
 }
 
@@ -63,7 +64,9 @@ func (b *ListBuilder) PageSize(n int) *ListBuilder { b.pageSize = n; return b }
 
 // Where pins field = value on every read of this list, ANDed inside the
 // caller's scope (a tab listing one invoice's payments). The field must be
-// queryable; value is matched as the field's type.
+// queryable; value is matched as the field's type. A pinned field leaves
+// the default columns and the facets, and New carries it as
+// ?prefill_<field>=<value>.
 func (b *ListBuilder) Where(field, value string) *ListBuilder {
 	b.where = append(b.where, listWhere{field: field, value: value})
 	return b
@@ -90,6 +93,15 @@ func (b *ListBuilder) NoCreate() *ListBuilder { b.create = false; return b }
 // off by default on app pages. Each still needs the entity's access.
 func (b *ListBuilder) Delete() *ListBuilder    { b.delete = true; return b }
 func (b *ListBuilder) Duplicate() *ListBuilder { b.dup = true; return b }
+
+// NoLinks draws the rows with no record links: the title is text, there
+// is no row menu and no New. It is for an entity with no screen of its
+// own on this app, such as a Related list of payments on an invoice.
+func (b *ListBuilder) NoLinks() *ListBuilder { b.noLinks = true; return b }
+
+// mayCreate reports whether the list offers New: on unless NoCreate or
+// NoLinks turned it off.
+func (b *ListBuilder) mayCreate() bool { return b.create && !b.noLinks }
 
 // Bulk turns on row selection and bulk actions, off by default on app
 // pages and off for an entity with Display.NoBulk.

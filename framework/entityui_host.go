@@ -17,19 +17,64 @@ import (
 
 // EntityUI returns this app's entity screens: lists and records drawn from
 // each entity's schema, Display and States, with ext's kinds, view funcs,
-// tabs and actions. Call it after every entity is registered. It checks
-// every name ext uses and panics at boot on a bad one, naming it, the way
-// App.Entity refuses a bad declaration.
+// tabs and actions. Call it once, after every entity is registered. It
+// checks every name ext uses and panics at boot on a bad one, naming it,
+// the way App.Entity refuses a bad declaration.
+//
+// It mounts the bulk bar's routes beside each entity's write routes:
+// POST <api>/_bulk and GET <api>/_export.csv. With ext.Jobs set it also
+// creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
+// gofastr_bulk_items), which needs a database. A second call panics: the
+// routes belong to one UI, so share the one it returned.
 func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
-	u, err := entityui.New(entityUIHost{a: a}, ext)
+	if a.entityUI != nil {
+		panic("framework: EntityUI was already called on this app; its bulk and export routes belong to that UI, so pass the *entityui.UI it returned instead of building a second")
+	}
+	host := entityUIHost{a: a}
+	if ext.Jobs != nil {
+		if a.DB == nil {
+			panic("framework: EntityUI: Extensions.Jobs needs a database (WithDB): queued bulk runs keep their selection there")
+		}
+		store, err := newSQLBulkStore(context.Background(), a.DB)
+		if err != nil {
+			panic(fmt.Sprintf("framework: EntityUI: %v", err))
+		}
+		host.store = store
+	}
+	u, err := entityui.New(host, ext)
 	if err != nil {
 		panic(fmt.Sprintf("framework: EntityUI: %v", err))
 	}
+	for _, e := range a.Registry.AllSorted() {
+		if _, ok := host.APIPath(e); !ok {
+			continue
+		}
+		// On the router the entity's CRUD routes went on: a group's
+		// sub-router carries the group's middleware, and a route beside
+		// it would skip that guard.
+		m := a.crudMounts[e]
+		m.r.Post(m.rel+"/_bulk", u.BulkHandler(e.GetName()))
+		m.r.Get(m.rel+"/_export.csv", u.ExportHandler(e.GetName()))
+	}
+	a.entityUI = u
 	return u
 }
 
+// entityUIMounted reports whether EntityUI mounted e's bulk and export
+// routes, for the OpenAPI document.
+func (a *App) entityUIMounted(e *entity.Entity) bool {
+	if a.entityUI == nil {
+		return false
+	}
+	_, ok := entityUIHost{a: a}.APIPath(e)
+	return ok
+}
+
 // entityUIHost is entityui's view of one App.
-type entityUIHost struct{ a *App }
+type entityUIHost struct {
+	a     *App
+	store *sqlBulkStore
+}
 
 func (h entityUIHost) Registry() entity.Registry { return h.a.Registry }
 
@@ -40,11 +85,16 @@ func (h entityUIHost) Crud(e *entity.Entity) (*crud.CrudHandler, error) {
 // APIPath reports the entity's REST base when it mounts write routes: a
 // read-only mount (App.View) or CRUD turned off draws read-only screens.
 func (h entityUIHost) APIPath(e *entity.Entity) (string, bool) {
-	m := h.a.entityCrudMount(e)
-	if !m.Mounted || m.ReadOnly {
+	if m := h.a.entityCrudMount(e); !m.Mounted || m.ReadOnly {
 		return "", false
 	}
-	return h.a.entityMountPath(e.GetTable()), true
+	// Where the routes actually mounted: a grouped entity lives under its
+	// group's prefix, not the API prefix.
+	m, ok := h.a.crudMounts[e]
+	if !ok {
+		return "", false
+	}
+	return m.full, true
 }
 
 func (h entityUIHost) Translator() *i18n.Translator { return h.a.Translator() }
