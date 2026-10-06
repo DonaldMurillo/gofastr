@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // pickerState reads class|primary|checked: the theme class on <html>,
@@ -108,4 +109,83 @@ func TestThemePickerSwitchesThePage(t *testing.T) {
 	if got := evalString(ctx, `document.documentElement.className`); got != "" {
 		t.Errorf("a malformed stored theme set <html class=%q>, want none", got)
 	}
+}
+
+// A stored class no option names (the picked theme was edited, so its
+// hash moved) draws the app's own theme; the picker must say Default,
+// not leave every option unchecked.
+func TestThemePickerStaleStoreShowsDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	base := style.DefaultTheme()
+	alt := style.DefaultTheme()
+	alt.Colors.Primary = style.Color{Name: "primary", Value: "#00aa00"}
+	ref := style.RegisterThemeOverride(alt)
+	head := "<style>" + base.CSSCustomProperties() + "\n" + style.ThemeOverrideCSS(ref.Hash(), alt) + "</style>" +
+		colorSchemeScript(t)
+	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: "Alt", Theme: ref}}}))
+	srv := themeTestPageWithHead(t, head, body)
+
+	ctx := moduleTestCtxURL(t, srv.URL, prefersScheme("light"))
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`localStorage.setItem('gofastr.theme', 'cui-theme-0123abcd')`, nil),
+		chromedp.Reload(), chromedp.WaitVisible(`#ready`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
+		t.Fatal("the picker never loaded headless-navigation")
+	}
+	const state = `(() => {
+		const on = [...document.querySelectorAll('[data-hui-theme-pick][aria-checked="true"]')];
+		return on.map(o => JSON.stringify(o.getAttribute('data-hui-theme-pick')) + ':' + o.getAttribute('tabindex')).join(',');
+	})()`
+	if !pollJS(ctx, state+` === '"":0'`) {
+		t.Fatalf("stale stored theme: checked options = %s, want only Default, as the Tab stop", evalString(ctx, state))
+	}
+}
+
+// Arrow keys move the choice through the group, wrapping at the ends,
+// the way a native radio set does; focus follows the choice.
+func TestThemePickerArrowKeysPick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	base := style.DefaultTheme()
+	alt := style.DefaultTheme()
+	alt.Colors.Primary = style.Color{Name: "primary", Value: "#00aa00"}
+	ref := style.RegisterThemeOverride(alt)
+	cls := ref.Class()
+	head := "<style>" + base.CSSCustomProperties() + "\n" + style.ThemeOverrideCSS(ref.Hash(), alt) + "</style>" +
+		colorSchemeScript(t)
+	body := string(ui.ThemePicker(ui.ThemePickerConfig{ID: "tp", Themes: []ui.ThemeChoice{{Label: "Alt", Theme: ref}}}))
+	srv := themeTestPageWithHead(t, head, body)
+
+	ctx := moduleTestCtxURL(t, srv.URL, prefersScheme("light"))
+	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
+		t.Fatal("the picker never loaded headless-navigation")
+	}
+	const state = `(() => {
+		const on = document.querySelector('[data-hui-theme-pick][aria-checked="true"]');
+		const f = document.activeElement;
+		return (on ? on.getAttribute('data-hui-theme-pick') : '<none>') + '|' +
+			(f && f.hasAttribute('data-hui-theme-pick') ? f.getAttribute('data-hui-theme-pick') : '<none>');
+	})()`
+	press := func(key, want string) {
+		t.Helper()
+		if err := chromedp.Run(ctx, chromedp.KeyEvent(key)); err != nil {
+			t.Fatal(err)
+		}
+		if !pollJS(ctx, state+` === `+strconv.Quote(want)) {
+			t.Fatalf("after %q: checked|focused = %q, want %q", key, evalString(ctx, state), want)
+		}
+	}
+	if err := chromedp.Run(ctx, chromedp.Focus(`[data-hui-theme-pick=""]`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	press(kb.ArrowRight, cls+"|"+cls)
+	press(kb.ArrowRight, "|") // wraps to Default
+	press(kb.ArrowLeft, cls+"|"+cls)
+	press(kb.Home, "|")
+	press(kb.End, cls+"|"+cls)
 }

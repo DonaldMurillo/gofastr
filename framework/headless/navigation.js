@@ -104,6 +104,21 @@
 
   // ─── theme ───────────────────────────────────────────────────────
 
+  // markRadios checks the option of one radio group whose attr equals
+  // value, or the option whose attr is '' when none does (a stored
+  // ThemePicker class that no option names any more draws the app's
+  // own theme, so Default is the honest answer). The checked option is
+  // the group's one Tab stop; with nothing checked it is the first.
+  function markRadios(group, attr, value) {
+    const opts = Array.prototype.slice.call(group.querySelectorAll('[' + attr + ']'));
+    let hit = opts.find(function (o) { return o.getAttribute(attr) === value; });
+    if (!hit) hit = opts.find(function (o) { return o.getAttribute(attr) === ''; });
+    for (const o of opts) {
+      o.setAttribute('aria-checked', o === hit ? 'true' : 'false');
+      o.setAttribute('tabindex', o === hit || (!hit && o === opts[0]) ? '0' : '-1');
+    }
+  }
+
   function currentScheme() {
     let s = '';
     try { s = localStorage.getItem(THEME_KEY) || ''; } catch (_) { return 'auto'; }
@@ -138,9 +153,7 @@
       document.documentElement.setAttribute('data-color-scheme', resolveScheme(scheme));
     }
     const scope = root && root.querySelectorAll ? root : document;
-    for (const opt of scope.querySelectorAll('[data-hui-theme-option]')) {
-      opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-option') === scheme ? 'true' : 'false');
-    }
+    for (const group of within(scope, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', scheme);
   }
 
   // ─── page theme ──────────────────────────────────────────────────
@@ -165,11 +178,7 @@
   }
 
   function markPageTheme(scope, cls) {
-    for (const group of within(scope, '[data-hui-theme-picker]')) {
-      for (const opt of group.querySelectorAll('[data-hui-theme-pick]')) {
-        opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-pick') === cls ? 'true' : 'false');
-      }
-    }
+    for (const group of within(scope, '[data-hui-theme-picker]')) markRadios(group, 'data-hui-theme-pick', cls);
   }
 
   function applyPageTheme(cls) {
@@ -227,6 +236,31 @@
       }
       applyScheme(next, cycle.closest('[data-hui-theme-toggle]') || document);
     }
+  });
+
+  // Arrow keys move through a theme radio group the way a native radio
+  // set does: the next option takes focus and is chosen, wrapping at
+  // either end; Home and End jump to the first and last.
+  document.addEventListener('keydown', function (e) {
+    if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    const opt = t && t.closest && t.closest('[data-hui-theme-pick],[data-hui-theme-option]');
+    const group = opt && opt.closest('[data-hui-theme-picker],[data-hui-theme-toggle][role="radiogroup"]');
+    if (!group) return;
+    const attr = opt.hasAttribute('data-hui-theme-pick') ? 'data-hui-theme-pick' : 'data-hui-theme-option';
+    const opts = Array.prototype.slice.call(group.querySelectorAll('[' + attr + ']'));
+    const i = opts.indexOf(opt);
+    let j;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowDown': j = (i + 1) % opts.length; break;
+      case 'ArrowLeft': case 'ArrowUp': j = (i - 1 + opts.length) % opts.length; break;
+      case 'Home': j = 0; break;
+      case 'End': j = opts.length - 1; break;
+      default: return;
+    }
+    e.preventDefault();
+    opts[j].focus();
+    opts[j].click();
   });
 
   // ─── shortcuts ───────────────────────────────────────────────────
@@ -315,12 +349,7 @@
     // within(), not scope.querySelector: the kernel hands scan() one
     // inserted subtree, and a subtree whose root IS the toggle group
     // is missed by a descendants-only lookup.
-    for (const group of within(scope, '[data-hui-theme-toggle]')) {
-      const scheme = currentScheme();
-      for (const opt of group.querySelectorAll('[data-hui-theme-option]')) {
-        opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-option') === scheme ? 'true' : 'false');
-      }
-    }
+    for (const group of within(scope, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', currentScheme());
     markPageTheme(scope, currentPageTheme());
   }
 

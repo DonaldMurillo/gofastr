@@ -78,7 +78,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ThemePicker` switches the whole page between themes.** Register
   each extra theme with `style.RegisterThemeOverride` and list it in
   `ThemePickerConfig.Themes`; the picker draws as `ui.ThemeToggle`'s
-  pill, with a Default option for the app's own theme. Picking a theme
+  pill, with a Default option for the app's own theme, and the arrow
+  keys move the choice as in a native radio set. Picking a theme
   puts its `cui-theme-<hash>` class on `<html>` in place, stores it in
   `localStorage["gofastr.theme"]`, and the color-scheme bootstrap puts
   it back before first paint on the next load
@@ -717,6 +718,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **The arrow keys move the choice in `ui.ThemeToggle`'s pill.** The
+  pill is a radiogroup but answered only clicks and Tab; the arrow
+  keys now move and pick, wrapping at either end, and the checked
+  option is the group's one Tab stop.
 - **A theme's `--ui-gallery-gap` reaches `ui.Gallery`.** The gallery
   set the knob on its own root, which shadowed any value a theme wrote
   on `:root`. It now reads the knob, falling back to
