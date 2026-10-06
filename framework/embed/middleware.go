@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -30,8 +31,12 @@ func GrantFromContext(ctx context.Context) (Grant, bool) {
 }
 
 // WithGrant installs a verified grant on the context. Exported for the UI host,
-// which verifies grants on its own routes before rendering.
+// which verifies grants on its own routes before rendering. The grant's
+// scopes are also installed as the request's held scopes
+// (access.WithHeldScopes), so the CRUD layer narrows ?include=, ?rel.field=
+// filters and cascade writes to them. A grant with no scopes holds none.
 func WithGrant(ctx context.Context, g Grant) context.Context {
+	ctx = access.WithHeldScopes(ctx, g.Scopes)
 	return context.WithValue(ctx, grantCtxKey{}, g)
 }
 
@@ -144,6 +149,17 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			routed, routable := RoutedPath(r.URL)
 			if !routable {
 				http.Error(w, "embed: request path is not canonical", http.StatusBadRequest)
+				return
+			}
+			// A reserved prefix is refused here as well as at boot. Boot
+			// only checks the declared Path and Reach against it; a reserved
+			// battery route that sits under a runtime prefix, or one the
+			// surface reaches some other way, must still never see a grant.
+			if res, reserved := reservedFor(h.reserved, path.Clean(routed)); reserved {
+				http.Error(w, fmt.Sprintf(
+					"embed surface %q may not reach %s: %s is mounted by the framework "+
+						"or a battery and no embed grant may reach it", g.Surface, routed, res),
+					http.StatusForbidden)
 				return
 			}
 			if !surface.MayReach(routed) {

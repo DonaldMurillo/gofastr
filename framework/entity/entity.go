@@ -150,7 +150,8 @@ type RowPredicate struct {
 // (List, Get, count, cursor, stream, the in-process API, typed queries, and
 // the ?include= / eager-load paths when this entity is the relation target)
 // unless the caller is unrestricted. Writes (update, delete, the upsert
-// write) are NOT filtered in this version.
+// write) are NOT filtered in this version, but the row an update or upsert
+// hands back is: a row outside the caller's scope comes back as its id only.
 //
 // Unrestricted names a permission: a caller holding it reads every row.
 // When Unrestricted is EMPTY the lift is weaker and deliberate: any caller

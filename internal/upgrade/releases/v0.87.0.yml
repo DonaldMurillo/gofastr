@@ -86,3 +86,87 @@ notes:
       strings:
         match: '(?:^|[^-a-z])(?:line-height\s*:\s*1\.[2456]|letter-spacing\s*:\s*(?:-0\.0[123]|0\.0[48])em|opacity\s*:\s*0?\.[256])\s*(?:;|\}|!|$)'
     guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write line-height 1.2 / 1.4 / 1.5 / 1.6 as var(--leading-tight) / var(--leading-snug) / var(--leading-normal) / var(--leading-relaxed), letter-spacing -0.03em / -0.02em / -0.01em / 0.04em / 0.08em as var(--tracking-tighter) / var(--tracking-tight) / var(--tracking-snug) / var(--tracking-wide) / var(--tracking-wider), and opacity 0.2 / 0.5 / 0.6 as var(--opacity-faint) / var(--opacity-disabled) / var(--opacity-muted), then re-run gofastr gen styles. Other values pass the check."
+  - change: "EntityUserStore records email_verified (FALSE for every existing row). A magic link or a completed password reset on an unverified account claims it: OAuth links, API tokens and sessions are removed, and a magic link also clears the password. OAuth auto-links a new provider only into a verified account (409 otherwise). A magic link on an existing account answers 500 when the user store does not implement EmailVerifiedChecker"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewOAuth2Plugin
+        - gofastr/battery/auth.UserStore.CreateUser
+    guidance: "Mark every user your own code creates (a seeded admin, an import) verified with EmailVerifier.MarkEmailVerified right after CreateUser, or its first magic link clears its password. Backfill accounts you trust by your own evidence the same way. A custom UserStore used with the magic link plugin implements EmailVerifiedChecker (and EmailVerifier, PasswordClearer)."
+  - change: "GET /auth/verify-email verifies only in a browser holding a full session of the account that requested the link: 401 without one (the token stays live), 403 for another account's session"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.NewEmailVerificationPlugin
+    guidance: "Tell users to open the verification link in the browser they signed up in; a link opened elsewhere asks them to sign in first."
+  - change: "RequireTwoFA judges the request principal, not the first session cookie: it requires a session of that user with the second factor verified, and refuses principals from a JWT or API token"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.TwoFAPlugin.RequireTwoFA
+    guidance: "Routes behind RequireTwoFA that JWT or API-token clients call need a session-cookie client, or a separate route without the step-up gate."
+  - change: "an Image or File field accepts a relative storage key on a JSON or in-process write only when the same request uploaded it, host code passed it through crud.WithUploadedKeys, or it is already on the row; anything else answers 400"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core/upload.Handler
+        - gofastr/framework/crud.CrudHandler.CreateOne
+        - gofastr/framework/crud.CrudHandler.UpdateOne
+        - gofastr/framework/crud.CrudHandler.UpsertOne
+        - gofastr/framework/crud.TypedQuery.UpdateAll
+    guidance: "Upload through the entity's multipart route instead of PATCHing a key from upload.Handler, or wrap the write's context in crud.WithUploadedKeys(ctx, keys...) with the keys your own code just saved. Never pass keys read from request data. TypedQuery.UpdateAll has no single current row, so it refuses even a key the matched rows already hold: leave the field out of the update, or pass the key through WithUploadedKeys."
+  - change: "upload.Handler caps a body at upload.DefaultMaxSize (32 MiB) when Config.MaxSize is zero or negative, instead of accepting any size"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core/upload.Handler
+    guidance: "Set Config.MaxSize explicitly where uploads larger than 32 MiB are expected."
+  - change: "X-Forwarded-For is read from the right: the client is the rightmost hop that is not a trusted proxy. With no TrustedProxies set, the immediate peer is taken to be the one proxy and the rightmost entry is the client"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework/ratelimit.Config.TrustForwardedFor
+        - gofastr/core/middleware.RateLimitConfig.TrustProxyHeaders
+    guidance: "Behind more than one proxy tier (a CDN in front of a load balancer), list every tier in TrustedProxies (framework/ratelimit.Config or core/middleware.RateLimitConfig); otherwise every client shares the inner proxy's bucket."
+  - change: "the /.debug endpoints answer 401 without a user, 403 to an embed grant, and otherwise require the admin role; framework.WithDebugAuthorize replaces the role check"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework.AppConfig.DebugEndpoints
+    guidance: "Give the operators who read /.debug/stats the admin role, or install framework.WithDebugAuthorize(fn) with your own check."
+  - change: "a server action compiled from a screen runs that screen's Policy chain first and answers 403 (or a Block decision's status) when the policy refuses. The policy sees the route params of the page the runtime names in the action body, and none when that page is not one of the screen's"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core-ui/app.Screen.WithPolicy
+    guidance: "A policy that reads a route param works unchanged for actions sent by the shipped runtime. Hand-written calls to /__gofastr/action must send the page path as page, or the policy sees an empty param and refuses. Per-record checks stay in the action handler: the client chooses the page."
+  - change: "an embed grant reaches only the runtime endpoints uihost mounts under /__gofastr (not the whole namespace), and never a prefix an EmbedReserving battery reserves; a grant's scopes also bind ?include=, ?rel.field= filters and cascade writes, so a grant with no scopes cannot include or filter across relations over HTTP"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework/embed.Host.Middleware
+    guidance: "Declare the scopes a surface's grants need for the relations its HTTP calls include (\"<table>:read\") or cascade-write (\"<table>:write\"), and add a Reach entry for any other /__gofastr route an embed must call."
+  - change: "a scoped API token needs \"<table>:read\" for each entity it reaches through ?include= or ?rel.field= filters, and \"<table>:write\" for each child a cascade write touches; RequireAPIScopes still checks only the entity in the path"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.RequireAPIScopes
+    guidance: "Mint integration tokens with the scopes of every related entity their requests include, filter on or cascade-write."
+  - change: "an entity declared CRUD:false (auth.UserEntityConfig included) is no longer reachable over HTTP through another entity's ?include=, ?rel.field= filters or cascade writes: includes and filters answer 403, cascades not found"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.UserEntityConfig
+    guidance: "Expose what clients need from such an entity through a custom route or a projection entity; in-process reads (ListAll, GetOne, EagerLoad) are unaffected."

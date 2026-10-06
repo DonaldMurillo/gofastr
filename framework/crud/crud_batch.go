@@ -237,10 +237,16 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
+		// hidden marks items whose created row the caller's ReadScope hides;
+		// they answer with the id only, as the single Create route does.
+		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				res, err := ch.doCreate(ctx, r, body)
+				if err == nil {
+					hidden[i], err = ch.readScopeHidesRow(ctx, res)
+				}
 				if err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}
@@ -278,6 +284,10 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		if txErr == nil {
 			for i, res := range results {
 				if res.Data == nil {
+					continue
+				}
+				if hidden[i] {
+					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)
@@ -347,6 +357,9 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
+		// hidden marks items whose written row the caller's ReadScope hides;
+		// they answer with the id only, as the single Update route does.
+		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
@@ -360,7 +373,14 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 					id = fmt.Sprintf("%v", idVal)
 				}
 				delete(body, ch.PrimaryKey)
+				if !ch.itemPermitted(ctx, opUpdate, id) {
+					results[i] = batchResult{Index: i, Error: "access denied"}
+					return errBatchAborted
+				}
 				res, err := ch.doUpdate(ctx, r, id, body)
+				if err == nil {
+					hidden[i], err = ch.readScopeHidesRow(ctx, res)
+				}
 				if err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}
@@ -398,6 +418,10 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		if txErr == nil {
 			for i, res := range results {
 				if res.Data == nil {
+					continue
+				}
+				if hidden[i] {
+					results[i].Data = ch.identityOnly(res.Data)
 					continue
 				}
 				body, hookErr := ch.runResponseHooks(r, res.Data)
@@ -455,6 +479,10 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 		results := initSkipped(len(req.IDs))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, id := range req.IDs {
+				if !ch.itemPermitted(ctx, opDelete, id) {
+					results[i] = batchResult{Index: i, Error: "access denied"}
+					return errBatchAborted
+				}
 				if err := ch.doDelete(ctx, r, id); err != nil {
 					msg, fields := classifyDoErr(err)
 					results[i] = batchResult{Index: i, Error: msg, Fields: fields}

@@ -898,11 +898,23 @@ func newTwoFAEnforceManager(t *testing.T) (*AuthManager, *TwoFAPlugin) {
 	return mgr, twofa
 }
 
+// seedUserID creates a user in mgr's store and returns its id. RequireTwoFA
+// judges the request principal, so a gated route needs a real user that
+// SessionMiddleware can load.
+func seedUserID(t *testing.T, mgr *AuthManager, email string) string {
+	t.Helper()
+	u, err := mgr.UserStore().CreateUser(context.Background(), email, "unused-hash", []string{"user"})
+	if err != nil {
+		t.Fatalf("seed %s: %v", email, err)
+	}
+	return u.GetID()
+}
+
 func TestTwoFA_RequireMiddleware_BlocksUnverifiedSession(t *testing.T) {
 	mgr, twofa := newTwoFAEnforceManager(t)
 
 	// Pretend the user enrolled 2FA earlier.
-	userID := "user-x"
+	userID := seedUserID(t, mgr, "x@example.com")
 	secret := GenerateSecret()
 	if err := twofa.store.SetTwoFA(context.Background(), userID, &TwoFAState{
 		Enabled: true, Secret: secret, Verified: true,
@@ -921,7 +933,7 @@ func TestTwoFA_RequireMiddleware_BlocksUnverifiedSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	r := router.New()
-	r.Get("/protected", twofa.RequireTwoFA()(protected).(http.HandlerFunc))
+	r.Get("/protected", SessionMiddleware(mgr)(twofa.RequireTwoFA()(protected)).(http.HandlerFunc))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, reqWithSession(http.MethodGet, "/protected", sess.Token, nil))
@@ -933,7 +945,7 @@ func TestTwoFA_RequireMiddleware_BlocksUnverifiedSession(t *testing.T) {
 func TestTwoFA_RequireMiddleware_AllowsAfterChallenge(t *testing.T) {
 	mgr, twofa := newTwoFAEnforceManager(t)
 
-	userID := "user-x"
+	userID := seedUserID(t, mgr, "x@example.com")
 	secret := GenerateSecret()
 	if err := twofa.store.SetTwoFA(context.Background(), userID, &TwoFAState{
 		Enabled: true, Secret: secret, Verified: true,
@@ -951,7 +963,7 @@ func TestTwoFA_RequireMiddleware_AllowsAfterChallenge(t *testing.T) {
 	protected := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	r.Get("/protected", twofa.RequireTwoFA()(protected).(http.HandlerFunc))
+	r.Get("/protected", SessionMiddleware(mgr)(twofa.RequireTwoFA()(protected)).(http.HandlerFunc))
 
 	// Submit a valid TOTP code via /2fa/challenge.
 	currentStep := uint64(time.Now().Unix()) / 30
@@ -975,7 +987,7 @@ func TestTwoFA_RequireMiddleware_NoEnrollmentBypass(t *testing.T) {
 	mgr, twofa := newTwoFAEnforceManager(t)
 
 	// User has NOT enrolled 2FA, the middleware should not gate them.
-	sess, err := mgr.SessionStore().Create(context.Background(), "user-y", time.Hour)
+	sess, err := mgr.SessionStore().Create(context.Background(), seedUserID(t, mgr, "y@example.com"), time.Hour)
 	if err != nil {
 		t.Fatalf("session create: %v", err)
 	}
@@ -984,7 +996,7 @@ func TestTwoFA_RequireMiddleware_NoEnrollmentBypass(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	r := router.New()
-	r.Get("/protected", twofa.RequireTwoFA()(protected).(http.HandlerFunc))
+	r.Get("/protected", SessionMiddleware(mgr)(twofa.RequireTwoFA()(protected)).(http.HandlerFunc))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, reqWithSession(http.MethodGet, "/protected", sess.Token, nil))

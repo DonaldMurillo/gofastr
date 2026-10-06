@@ -332,15 +332,12 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 // (after writing the error) when there is no valid, fully-authenticated
 // session, a pending-2FA session cannot initiate a provider link.
 func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
+	// Bound to the context principal when there is one (see
+	// AuthManager.requestSession): a link started under one user must not
+	// land on the account behind another cookie.
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "no session")
-		return "", false
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid session")
 		return "", false
 	}
 	if sess.PendingTwoFactor {
@@ -569,10 +566,11 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 }
 
 // errOAuthEmailCollision means: a local account with this email already
-// exists, the IdP asserts the email is verified, and that account has a
-// real password. Refuse rather than silently link, the user must prove
-// ownership of the local account first (log in with their password) and
-// link the provider from /auth/accounts. This is what stops an IdP emitting
+// exists, the IdP asserts the email is verified, and that account either
+// has a real password or has an address nobody proved. Refuse rather than
+// silently link, the user must prove ownership of the local account first
+// (log in with their password, or claim it with a magic link or a reset)
+// and link the provider from /auth/accounts. This is what stops an IdP emitting
 // a verified-but-attacker-controlled email from taking over an existing
 // password account.
 var errOAuthEmailCollision = errors.New("oauth: email collision with pre-existing account")
@@ -607,13 +605,21 @@ var errOAuthNoLinker = errors.New("oauth: UserStore does not implement OAuthLink
 //     (the user must log in with their password and link from
 //     /auth/accounts, protects a local credential from IdP-email
 //     takeover).
-//     b. existing account is passwordless → AUTO-LINK + LOGIN
-//     (linked=true). Safe migration: the account was created by a prior
-//     OAuth login; a verified email re-binds the same identity.
+//     b. existing account is passwordless but its address is not proven
+//     (EmailVerifiedChecker false or absent) → errOAuthEmailCollision.
+//     It may have been created through an IdP that does not verify
+//     email; the owner claims it with a magic link or a reset first.
+//     c. existing account is passwordless and proven → AUTO-LINK + LOGIN
+//     (linked=true). Safe migration: a verified email re-binds the same
+//     identity.
 //  3. Otherwise (no link, no email match, OR unverified email match):
 //     create a new passwordless user and link the (provider, providerID).
-//     A concurrent create that wins the link PK is authoritative; the
-//     just-created user is left as an orphan (best-effort ignore).
+//     The new user is marked verified only when the IdP asserted the
+//     email verified. A concurrent create that wins the link PK is
+//     authoritative; the just-created user is left as an orphan.
+//
+// Step 1 also marks the account verified when the IdP asserts
+// email_verified for exactly the account's address.
 //
 // CRITICAL: an unverified email NEVER binds to an existing account. It
 // falls through to step 3 as if the email didn't match at all, the core
@@ -630,6 +636,14 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	if found, err := linker.FindByOAuth(ctx, info.Provider, info.ID); err == nil {
 		// Best-effort profile refresh; a failure here does not block login.
 		_ = linkOAuthPreferEnriched(ctx, store, linker, found.GetID(), info)
+		// The linked IdP vouches for the account's own address: record
+		// it, so an account from before email_verified regains the
+		// step-2b auto-link. The address must match exactly (both sides
+		// are canonical); a verified assertion for any other address
+		// proves nothing about this one. Best-effort like the refresh.
+		if info.EmailVerified && found.GetEmail() == info.Email {
+			markVerifiedIfUnproven(ctx, store, found.GetID())
+		}
 		return found, false, nil
 	} else if !errors.Is(err, ErrUserNotFound) {
 		return nil, false, fmt.Errorf("%w: FindByOAuth: %v", errOAuthLookupFailed, err)
@@ -658,6 +672,23 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 			if hasPw {
 				// Refuse. The user must log in with their password and
 				// link the provider from settings.
+				return nil, false, errOAuthEmailCollision
+			}
+			// A passwordless account whose address nobody proved may
+			// belong to whoever signed in through an IdP that does not
+			// verify email. Linking the owner's verified identity into
+			// it would hand the squatter the owner's account. Refuse;
+			// the owner claims it with a magic link or a reset, which
+			// evicts the squatter's link, and then signs in here.
+			proven := false // no checker: nothing says the address was proven
+			if checker, ok := store.(EmailVerifiedChecker); ok {
+				v, verr := checker.IsEmailVerified(ctx, existing.GetID())
+				if verr != nil {
+					return nil, false, fmt.Errorf("%w: IsEmailVerified: %v", errOAuthLookupFailed, verr)
+				}
+				proven = v
+			}
+			if !proven {
 				return nil, false, errOAuthEmailCollision
 			}
 			// AUTO-LINK. Safe migration: a passwordless account was
@@ -711,7 +742,34 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	if oerr != nil {
 		return nil, false, oerr
 	}
+	// The IdP's verified assertion is the mailbox proof for the account
+	// this callback just created. An unverified assertion leaves it
+	// unproven: the address is stored, but the account cannot absorb a
+	// verified login (step 2b) and the mailbox owner claims it with a
+	// magic link or a reset.
+	if info.EmailVerified && owner.GetID() == newUser.GetID() {
+		markVerifiedIfUnproven(ctx, store, owner.GetID())
+	}
 	return owner, true, nil
+}
+
+// markVerifiedIfUnproven records an IdP's verified assertion on the user,
+// best-effort: a failure leaves the account unverified, which only costs
+// the auto-link until a later login records it.
+func markVerifiedIfUnproven(ctx context.Context, store UserStore, userID string) {
+	verifier, ok := store.(EmailVerifier)
+	if !ok {
+		return
+	}
+	if checker, ok := store.(EmailVerifiedChecker); ok {
+		if v, err := checker.IsEmailVerified(ctx, userID); err == nil && v {
+			return
+		}
+	}
+	if err := verifier.MarkEmailVerified(ctx, userID); err != nil {
+		slog.Warn("oauth could not record a verified email",
+			"plugin", "oauth2", "user_hash", hashedIdentifier(userID), "err", err)
+	}
 }
 
 // authoritativeOAuthOwner re-reads the (provider, provider_id) link after a

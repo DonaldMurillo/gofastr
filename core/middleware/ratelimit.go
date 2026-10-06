@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // RateLimitConfig controls the in-memory token-bucket rate limiter.
@@ -35,11 +37,19 @@ type RateLimitConfig struct {
 	StatusCode   int
 	ErrorMessage string
 
-	// TrustProxyHeaders enables reading the client IP from the
-	// leftmost X-Forwarded-For (or X-Real-IP) entry. Only set this
-	// when the origin is behind a reverse proxy you control that
-	// rewrites or appends the header. Otherwise an attacker can
-	// trivially defeat per-IP limiting by sending random XFF values.
+	// TrustProxyHeaders enables reading the client IP from
+	// X-Forwarded-For (or X-Real-IP). Only set this when the origin
+	// is behind a reverse proxy you control that rewrites or appends
+	// the header. Otherwise an attacker can trivially defeat per-IP
+	// limiting by sending random XFF values.
+	//
+	// X-Forwarded-For is read from the RIGHT: the key is the first
+	// hop that is not itself in TrustedProxies, the address your
+	// outermost trusted proxy observed. Entries left of it are
+	// whatever the client sent (an appending proxy keeps them), so
+	// they never pick the bucket. List every proxy tier you run
+	// (CDN ranges included) in TrustedProxies, or the key lands on
+	// your own inner tier and all clients share one bucket.
 	//
 	// SECURITY: TrustProxyHeaders alone is NOT sufficient. The
 	// middleware will only trust the header when r.RemoteAddr (the
@@ -107,8 +117,7 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 	}
 	if cfg.KeyFunc == nil {
 		if cfg.TrustProxyHeaders {
-			trusted := parseTrustedProxies(cfg.TrustedProxies)
-			cfg.KeyFunc = newProxyAwareRateLimitKey(trusted)
+			cfg.KeyFunc = newProxyAwareRateLimitKey(clientip.ParseProxies(cfg.TrustedProxies))
 		} else {
 			cfg.KeyFunc = defaultRateLimitKey
 		}
@@ -337,96 +346,45 @@ func defaultRateLimitKey(r *http.Request) string {
 	return stripPort(r.RemoteAddr)
 }
 
-// newProxyAwareRateLimitKey returns a KeyFunc that trusts the leftmost
-// X-Forwarded-For (then X-Real-IP) entry ONLY when r.RemoteAddr matches
-// one of the configured trusted proxies. The trusted value must also
-// parse as a well-formed public IP: private / loopback / link-local
-// ranges and arbitrary strings are rejected so an attacker sending
-// junk from a trusted hop can't create fresh buckets per request.
+// newProxyAwareRateLimitKey returns a KeyFunc that reads the client from
+// X-Forwarded-For (then X-Real-IP) ONLY when r.RemoteAddr matches one of
+// the configured trusted proxies.
+//
+// X-Forwarded-For is walked from the right (clientip.Forwarded): hops that
+// are themselves trusted proxies are skipped and the key is the first hop
+// no trusted proxy vouches past, the address the outermost trusted proxy
+// observed. Everything left of that hop is client-supplied when the proxy
+// appends, so it never decides the key. The chosen hop must also be a
+// well-formed public IP: private / loopback / link-local ranges are
+// rejected so a misconfigured hop can't mint fresh buckets per request.
 //
 // When the header is not trusted (no proxy match, no value, or value
 // fails validation), the key falls back to r.RemoteAddr so rotating
 // header values from the same TCP source can't bypass the limit.
-func newProxyAwareRateLimitKey(trusted []trustedProxy) func(*http.Request) string {
+func newProxyAwareRateLimitKey(trusted clientip.Proxies) func(*http.Request) string {
 	return func(r *http.Request) string {
 		peer := stripPort(r.RemoteAddr)
-		if !proxyAllowed(peer, trusted) {
+		if trusted.Empty() || !trusted.ContainsAddr(peer) {
 			return peer
 		}
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			candidate := xff
-			for i := 0; i < len(xff); i++ {
-				if xff[i] == ',' {
-					candidate = xff[:i]
-					break
-				}
+		if r.Header.Get("X-Forwarded-For") != "" {
+			if ip, ok := clientip.Forwarded(r.Header, trusted); ok && isTrustablePublicIP(ip) {
+				return ip.String()
 			}
-			candidate = trimSpaces(candidate)
-			if isTrustablePublicIP(candidate) {
-				return candidate
-			}
+			return peer
 		}
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			xri = trimSpaces(xri)
-			if isTrustablePublicIP(xri) {
-				return xri
+			if ip := clientip.ParseHop(xri); isTrustablePublicIP(ip) {
+				return ip.String()
 			}
 		}
 		return peer
 	}
 }
 
-// trustedProxy is either a single IP or a CIDR range. Membership is
-// checked with contains.
-type trustedProxy struct {
-	ip  net.IP
-	net *net.IPNet
-}
-
-func parseTrustedProxies(entries []string) []trustedProxy {
-	out := make([]trustedProxy, 0, len(entries))
-	for _, e := range entries {
-		if e == "" {
-			continue
-		}
-		if _, ipnet, err := net.ParseCIDR(e); err == nil {
-			out = append(out, trustedProxy{net: ipnet})
-			continue
-		}
-		if ip := net.ParseIP(e); ip != nil {
-			out = append(out, trustedProxy{ip: ip})
-		}
-	}
-	return out
-}
-
-func proxyAllowed(peer string, trusted []trustedProxy) bool {
-	if len(trusted) == 0 {
-		return false
-	}
-	ip := net.ParseIP(peer)
-	if ip == nil {
-		return false
-	}
-	for _, t := range trusted {
-		if t.net != nil {
-			if t.net.Contains(ip) {
-				return true
-			}
-			continue
-		}
-		if t.ip != nil && t.ip.Equal(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// isTrustablePublicIP returns true iff s parses as an IP that is
-// neither loopback, link-local, nor in a private RFC1918 / ULA range.
-// Junk strings and private ranges both return false.
-func isTrustablePublicIP(s string) bool {
-	ip := net.ParseIP(s)
+// isTrustablePublicIP returns true iff ip is non-nil and neither
+// loopback, link-local, nor in a private RFC1918 / ULA range.
+func isTrustablePublicIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
@@ -435,18 +393,6 @@ func isTrustablePublicIP(s string) bool {
 		return false
 	}
 	return true
-}
-
-func trimSpaces(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
 }
 
 // stripPort returns the host portion of addr in the canonical form used

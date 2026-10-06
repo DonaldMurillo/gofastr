@@ -218,7 +218,7 @@ func TestEagerLoadScrubsByRequestVersion(t *testing.T) {
 }
 
 // An unresolvable target must FAIL, not load with the scrubs off. Discarding
-// the resolution error left target nil, which makes hiddenColumns(nil) empty
+// the resolution error left target nil, which makes servedColumns(nil) keep every column
 // and drops the soft-delete predicate, both guards silently disabled on the
 // one row set the caller could not vouch for.
 func TestEagerLoadFailsOnUnresolvedTarget(t *testing.T) {
@@ -258,5 +258,63 @@ func TestEagerLoadFailsOnNilTarget(t *testing.T) {
 
 	if _, err := EagerLoad(context.Background(), db, posts, []entity.Relation{rel}, []string{"p1"}, nilTargetRegistry{}); err == nil {
 		t.Fatal("EagerLoad served rows for a target that resolved to no entity")
+	}
+}
+
+// EagerLoad keeps only the columns the target declares (non-Hidden, plus
+// the PK), for every loader shape. A column the table holds but the target
+// does not declare, such as a field removed from the declaration whose
+// column additive migration kept, must not reach the loaded row.
+func TestEagerLoadDropsUndeclaredColumns(t *testing.T) {
+	db := setupDB(t, `
+CREATE TABLE people (id TEXT PRIMARY KEY, name TEXT, ssn TEXT, folder_id TEXT);
+CREATE TABLE notes (id TEXT PRIMARY KEY, person_id TEXT);
+CREATE TABLE note_people (note_id TEXT, person_id TEXT);
+`)
+	seedRows(t, db, "people", []map[string]any{
+		{"id": "u1", "name": "alice", "ssn": "SSN-123", "folder_id": "n1"},
+	})
+	seedRows(t, db, "notes", []map[string]any{{"id": "n1", "person_id": "u1"}})
+	seedRows(t, db, "note_people", []map[string]any{{"note_id": "n1", "person_id": "u1"}})
+
+	people := entity.Define("people", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+	}.WithTimestamps(false))
+	notes := entity.Define("notes", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "person_id", Type: schema.String}},
+	}.WithTimestamps(false))
+	reg := versionedStubRegistry{ents: []*entity.Entity{people, notes}}
+
+	linked := entity.ManyToMany("linked", "people", "note_people", "note_id", "person_id")
+	linked.ForeignKey = "person_id" // EagerLoad validates ForeignKey for every shape
+	rels := []entity.Relation{
+		entity.BelongsTo("person", "people", "person_id"),
+		entity.HasMany("filed", "people", "folder_id"),
+		linked,
+	}
+	got, err := EagerLoad(context.Background(), db, notes, rels, []string{"n1"}, reg)
+	if err != nil {
+		t.Fatalf("EagerLoad: %v", err)
+	}
+	var rows []map[string]any
+	if m, ok := got["n1"]["person"].(map[string]any); ok {
+		rows = append(rows, m)
+	}
+	for _, name := range []string{"filed", "linked"} {
+		ms, _ := got["n1"][name].([]map[string]any)
+		rows = append(rows, ms...)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("loaded %d rows, want 3: %v", len(rows), got["n1"])
+	}
+	for _, row := range rows {
+		if row["name"] != "alice" || row["id"] != "u1" {
+			t.Errorf("declared columns missing: %v", row)
+		}
+		for _, col := range []string{"ssn", "folder_id"} {
+			if _, leaked := row[col]; leaked {
+				t.Errorf("SECURITY: EagerLoad served undeclared column %q: %v", col, row)
+			}
+		}
 	}
 }
