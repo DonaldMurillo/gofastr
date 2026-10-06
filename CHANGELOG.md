@@ -743,8 +743,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `appUI.List`/`appUI.Record`/`appUI.Create` builders, `app.go` builds the
   app's one UI from the new owned `extensions.go` seam, and the dashboard
   stat and chart blocks read through it. An entity detail screen sits at
-  `<list route>/{id}` (enforced at validate time) and opens as a drawer
-  over its list.
+  `<list route>/{id}` under one of the entity's list screens (enforced at
+  validate time) and opens as a drawer over it. That list is the
+  entity's home: the create screen hangs off it, and a list on any other
+  screen, such as a dashboard's recent rows, links its records there.
 - **BREAKING: filter operators must suit the column type.** `like`
   works only on String, Text, Enum and UUID columns, and `gt`, `gte`,
   `lt` and `lte` are refused on Bool and JSON, with a 400 naming the

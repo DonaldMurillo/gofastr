@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -168,6 +169,7 @@ type BlueprintBlock struct {
 	EmptyText string
 	Mode      string // "create", "edit" for entity_form; "table", "cards" for entity_list
 	Create    bool   // entity_list: show "New" + mount a create screen at <list>/create
+	Bulk      bool   // entity_list: row selection, the bulk bar and Export CSV
 	Props     map[string]any
 	Children  []BlueprintBlock
 	Actions   []BlueprintAction
@@ -504,7 +506,60 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 		}
 		bp.Helpers = stubs
 	}
+	normalizeStatFilters(&bp)
 	return bp, nil
+}
+
+// normalizeStatFilters rewrites a stat_card source.filter authored in the
+// legacy `column=value` spelling into the query DSL the emitted
+// appUI.StatValue parses (`column = "value"`). entityui.StatValue hands
+// the string to dsl.ParsePredicate, which refuses bare words; the
+// blueprint's filter spelling predates that engine. Both spellings carry
+// the same equality, and a filter already written in the DSL (spaces,
+// quotes) passes through untouched. Normalizing at decode (not at emit)
+// keeps pack exact: parse(yml) and parse(pack(yml)) both see the
+// normalized form, so the round-trip invariant holds without a second
+// translation on the way back.
+func normalizeStatFilters(bp *Blueprint) {
+	var walk func(blocks []BlueprintBlock)
+	walk = func(blocks []BlueprintBlock) {
+		for i := range blocks {
+			walk(blocks[i].Children)
+			if !strings.EqualFold(strings.TrimSpace(blocks[i].Kind), "stat_card") {
+				continue
+			}
+			if src, ok := blocks[i].Props["source"].(map[string]any); ok {
+				if f, ok := src["filter"].(string); ok {
+					if dsl, changed := statFilterDSL(f); changed {
+						src["filter"] = dsl
+					}
+				}
+			}
+		}
+	}
+	for i := range bp.Screens {
+		walk(bp.Screens[i].Body)
+	}
+}
+
+// statFilterWord matches one bare word of the legacy filter spelling:
+// a column name or an enum-ish value.
+var statFilterWord = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// statFilterDSL converts `column=value` to `column = "value"` when the
+// filter is exactly that shape: one "=", no spaces, no quotes, bare
+// words on both sides. Anything else is DSL already and returns
+// unchanged.
+func statFilterDSL(f string) (string, bool) {
+	f = strings.TrimSpace(f)
+	if f == "" || strings.ContainsAny(f, ` "`) || strings.Count(f, "=") != 1 {
+		return f, false
+	}
+	col, val, ok := strings.Cut(f, "=")
+	if !ok || !statFilterWord.MatchString(col) || !statFilterWord.MatchString(val) {
+		return f, false
+	}
+	return col + ` = "` + val + `"`, true
 }
 
 func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
@@ -2177,7 +2232,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err := refuseReplacedBlockKeys(m, kind, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -2202,6 +2257,7 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 			EmptyText: stringValue(m["empty_text"]),
 			Mode:      stringValue(m["mode"]),
 			Create:    boolValue(m["create"]),
+			Bulk:      boolValue(m["bulk"]),
 			Props:     mapValue(m["props"]),
 			Children:  children,
 			Actions:   actions,
@@ -2347,10 +2403,11 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 }
 
 // validateDetailRoutes holds every entity_detail screen to the route shape
-// entityui links records at: <list route>/{id}. The list's record links
-// point there, so a detail screen anywhere else renders fine but is
-// unreachable from its own list. An entity with no list screen keeps only
-// the {id} requirement its own screen needs.
+// entityui links records at: <list route>/{id} under one of the entity's
+// list screens, which becomes its home (blueprintEntityListScreen). Every
+// list's record links point there, so a detail screen anywhere else
+// renders fine but is unreachable. An entity with no list screen keeps
+// only the {id} requirement its own screen needs.
 func validateDetailRoutes(bp Blueprint) error {
 	var errs schemaErrors
 	for _, s := range bp.Screens {
@@ -2362,16 +2419,17 @@ func validateDetailRoutes(bp Blueprint) error {
 			base := strings.TrimRight(s.Route, "/")
 			base = strings.TrimSuffix(base, "/{id}")
 			base = strings.TrimSuffix(base, "/:id")
-			var listRoute string
+			var listRoutes []string
+			underList := false
 			for _, ls := range bp.Screens {
-				for _, lb := range ls.Body {
-					if isEntityListBlock(lb) && strings.Trim(lb.Entity, "/") == entity {
-						listRoute = strings.TrimRight(ls.Route, "/")
-					}
+				if found, _ := entityListOn(ls.Body, entity); found {
+					route := strings.TrimRight(ls.Route, "/")
+					listRoutes = append(listRoutes, route)
+					underList = underList || route == base
 				}
 			}
-			if listRoute != "" && base != listRoute {
-				errs.add(fmt.Errorf("blueprint: screen %q shows entity %q at route %q, but its list lives at %q: the detail screen must sit at %q/{id}, where the list's record links point", s.Name, entity, s.Route, listRoute, listRoute))
+			if len(listRoutes) > 0 && !underList {
+				errs.add(fmt.Errorf("blueprint: screen %q shows entity %q at route %q, but no list of it lives at %q: the detail screen must sit at %q/{id}, where the list's record links point", s.Name, entity, s.Route, base, listRoutes[0]))
 			}
 		}
 	}
@@ -3241,6 +3299,9 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 	if kind == "" {
 		kind = block.Type
 	}
+	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
+		return fmt.Errorf("blueprint: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
@@ -3632,9 +3693,11 @@ var validHTTPMethods = map[string]bool{
 }
 
 // blueprintSynthesizeCRUDScreens appends the create screen that makes an
-// app-side list writable: <list>/create for every entity_list flagged
-// `create: true`. The synthesized screen renders appUI.Create(entity), it
-// inherits the list screen's layout + access, and it is not added to nav.
+// app-side list writable: <home list>/create for every entity with an
+// entity_list flagged `create: true`, where the home list is the one every
+// list's New links to (blueprintEntityListScreen). The synthesized screen
+// renders appUI.Create(entity), it inherits the home screen's layout +
+// access, and it is not added to nav.
 // The record page holds the edit form, so no edit screen is synthesized.
 func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 	existing := map[string]bool{}
@@ -3656,12 +3719,13 @@ func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 				continue
 			}
 			if isEntityListBlock(b) && b.Create {
+				home := blueprintEntityListScreen(bp, e)
 				singular := singularize(toDisplayName(e))
 				add(BlueprintScreen{
 					Name:   e + "_create",
-					Route:  strings.TrimRight(s.Route, "/") + "/create",
-					Layout: s.Layout,
-					Access: s.Access,
+					Route:  strings.TrimRight(home.Route, "/") + "/create",
+					Layout: home.Layout,
+					Access: home.Access,
 					Title:  "New " + singular,
 					Body:   []BlueprintBlock{{Kind: "entity_create", Entity: e}},
 				})
@@ -3983,7 +4047,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 		for _, b := range s.Body {
 			e := strings.Trim(b.Entity, "/")
 			if isEntityListBlock(b) && b.Create {
-				createOf[e] = s.Route
+				createOf[e] = blueprintEntityListScreen(bp, e).Route
 			}
 			if isEntityDetailBlock(b) {
 				detailOf[e] = s.Route
@@ -6072,27 +6136,65 @@ func blueprintCreateExpr(bp Blueprint, block BlueprintBlock) string {
 	return fmt.Sprintf("appUI.Create(%q).RenderCtx(ctx)", entity)
 }
 
-// blueprintEntityListScreen returns the first screen (declaration order)
-// holding an entity_list of entity, or nil. The synthesized create screen
-// and the detail screen's drawer intercept both hang off it.
+// blueprintEntityListScreen returns the entity's home list screen, or nil
+// when no screen lists it. Its record links, the synthesized create screen
+// and the detail screen's drawer all hang off it, and a list on any other
+// screen (a dashboard's recent rows) links there too. The home is the list
+// screen the detail screen sits under (<route>/{id}), else the first list
+// screen with create: true, else the first list screen, in declaration
+// order: a dashboard declared before the entity's own screen never wins.
 func blueprintEntityListScreen(bp Blueprint, entity string) *BlueprintScreen {
+	var lists []int
 	for i := range bp.Screens {
-		var found bool
-		var walk func([]BlueprintBlock)
-		walk = func(blocks []BlueprintBlock) {
-			for _, b := range blocks {
-				if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
-					found = true
-				}
-				walk(b.Children)
+		if found, _ := entityListOn(bp.Screens[i].Body, entity); found {
+			lists = append(lists, i)
+		}
+	}
+	if len(lists) == 0 {
+		return nil
+	}
+	if base, ok := blueprintDetailBase(bp, entity); ok {
+		for _, i := range lists {
+			if strings.TrimRight(bp.Screens[i].Route, "/") == base {
+				return &bp.Screens[i]
 			}
 		}
-		walk(bp.Screens[i].Body)
-		if found {
+	}
+	for _, i := range lists {
+		if _, create := entityListOn(bp.Screens[i].Body, entity); create {
 			return &bp.Screens[i]
 		}
 	}
-	return nil
+	return &bp.Screens[lists[0]]
+}
+
+// entityListOn reports whether blocks hold an entity_list of entity at
+// any nesting depth, and whether one of them sets create: true.
+func entityListOn(blocks []BlueprintBlock, entity string) (found, create bool) {
+	for _, b := range blocks {
+		if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
+			found = true
+			create = create || b.Create
+		}
+		f, c := entityListOn(b.Children, entity)
+		found, create = found || f, create || c
+	}
+	return found, create
+}
+
+// blueprintDetailBase returns the route the entity's first detail screen
+// sits under: its route minus the trailing /{id}.
+func blueprintDetailBase(bp Blueprint, entity string) (string, bool) {
+	for _, s := range bp.Screens {
+		for _, b := range s.Body {
+			if isEntityDetailBlock(b) && strings.Trim(b.Entity, "/") == entity {
+				base := strings.TrimRight(s.Route, "/")
+				base = strings.TrimSuffix(base, "/{id}")
+				return strings.TrimSuffix(base, "/:id"), true
+			}
+		}
+	}
+	return "", false
 }
 
 // blueprintEntityListExpr emits the appUI.List builder for one entity_list
@@ -6125,6 +6227,9 @@ func blueprintEntityListExpr(bp Blueprint, screen BlueprintScreen, block Bluepri
 	if !block.Create {
 		expr += ".NoCreate()"
 	}
+	if block.Bulk {
+		expr += ".Bulk()"
+	}
 	if block.Text != "" {
 		// A list under an earlier <h1> (a dashboard's page header) is a
 		// section of that page, so its title drops to level 2. No layout
@@ -6137,6 +6242,14 @@ func blueprintEntityListExpr(bp Blueprint, screen BlueprintScreen, block Bluepri
 	}
 	if block.EmptyText != "" {
 		expr += fmt.Sprintf(".Empty(%q)", block.EmptyText)
+	}
+	// Off the entity's home screen the rows still link to the home list,
+	// where the detail and create screens sit; the default base is the
+	// current path, which has neither.
+	if home := blueprintEntityListScreen(bp, entity); home != nil {
+		if base := strings.TrimRight(home.Route, "/"); base != "" && base != strings.TrimRight(screen.Route, "/") {
+			expr += fmt.Sprintf(".Base(%q)", base)
+		}
 	}
 	// The builder is a component; the screen's stack takes HTML.
 	return expr + ".RenderCtx(ctx)"

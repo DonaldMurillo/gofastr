@@ -420,6 +420,7 @@ func blockToMap(b BlueprintBlock) map[string]any {
 	putStrs(m, "fields", b.Fields)
 	putInt(m, "limit", b.Limit)
 	putBool(m, "create", b.Create)
+	putBool(m, "bulk", b.Bulk)
 	putStr(m, "empty_text", b.EmptyText)
 	putStr(m, "class", b.Class)
 	putStr(m, "href", b.Href)
@@ -981,7 +982,7 @@ var (
 	entityOrder    = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
+	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
 	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
 	indexOrder     = []string{"name", "columns", "unique"}
 	navOrder       = []string{"label", "href", "icon", "role", "items"}
@@ -3045,8 +3046,8 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 
 // reverseEntityUI turns one appUI.List/Record/Create builder chain back
 // into its BlueprintBlock: Columns→fields, PageSize→limit, As→mode,
-// Heading→text, Empty→empty_text, and a list without NoCreate is
-// create:true (the builder's default). Key, Base, Delete and Duplicate
+// Heading→text, Empty→empty_text, Bulk→bulk, and a list without NoCreate
+// is create:true (the builder's default). Key, Base, Delete and Duplicate
 // are structural and do not round-trip. Returns false for anything that is
 // not an appUI chain.
 func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
@@ -3115,6 +3116,8 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 			}
 		case "NoCreate":
 			noCreate = true
+		case "Bulk":
+			b.Bulk = true
 		case "Heading":
 			if len(c.Args) >= 1 {
 				b.Text = astString(c.Args[0])
@@ -3123,9 +3126,10 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 			if len(c.Args) == 1 {
 				b.EmptyText = astString(c.Args[0])
 			}
-		case "Key", "Base", "Delete", "Duplicate", "RenderCtx":
+		case "Key", "Base", "Delete", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
 			// structural: no blueprint key (RenderCtx turns the builder
-			// into the HTML the screen's stack takes)
+			// into the HTML the screen's stack takes; Actions, Related and
+			// RelatedAt are app-side extensions pack does not declare)
 		default:
 			return BlueprintBlock{}, false
 		}
@@ -3185,9 +3189,12 @@ func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
 	c := cfgOf(call, 0)
 	p := map[string]any{}
 	putStr(p, "label", astString(c["Label"]))
-	// Value: statValue(ctx, entity, agg, field, filter, format).
-	if vc, ok := c["Value"].(*ast.CallExpr); ok && callSel(vc) == "" {
-		if id, ok := vc.Fun.(*ast.Ident); ok && id.Name == "statValue" && len(vc.Args) == 6 {
+	// Value: statValue(ctx, entity, agg, field, filter, format) — the
+	// app-local helper a hand-maintained app kept — or the generator's
+	// appUI.StatValue spelling; both take the same six args.
+	if vc, ok := c["Value"].(*ast.CallExpr); ok && len(vc.Args) == 6 {
+		bare, _ := vc.Fun.(*ast.Ident)
+		if (bare != nil && bare.Name == "statValue" && callSel(vc) == "") || callSel(vc) == "appUI.StatValue" {
 			src := map[string]any{}
 			putStr(src, "entity", astString(vc.Args[1]))
 			putStr(src, "agg", astString(vc.Args[2]))

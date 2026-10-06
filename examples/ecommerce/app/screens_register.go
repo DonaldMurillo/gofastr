@@ -24,7 +24,7 @@ var screenRegistrars []screenRegistrar
 // mountGenerated mounts every generated screen with site, in declaration
 // order. This file never holds a screen or entity name: add a screen by
 // dropping in a new screen_<name>.go that appends to screenRegistrars in
-// init(). Entity resource wiring (appResources) lives in the per-entity
+// init(). Entity screens render through the appUI builders, so the wiring
 // screen_<entity>_crud.go files, never here.
 func mountGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	sort.SliceStable(screenRegistrars, func(i, j int) bool {

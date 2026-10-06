@@ -16,7 +16,7 @@ Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
 owned Go into an idiomatic, module-root layout by default: a flat
 `package main` at the root (`main.go`, `app.go`, `screens_register.go`, one
-`screen_<name>.go` per screen, and, when needed, a thin `resource.go` or
+`screen_<name>.go` per screen, and, when needed, a thin `extensions.go` or
 `stubs.go`) plus the `entities/` package (set `--out=<dir>` or
 `app.output_dir` to scaffold into a subpackage instead).
 `generate` is one-shot: it refuses to overwrite an existing project
@@ -376,15 +376,14 @@ aggregated `screens.go`:
   call, and an `init()` that appends one
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
 - `screen_<entity>_crud.go`: one per entity with CRUD screens (or referenced
-  by a data source): that entity's list/detail/create screens, their mount
-  funcs, **and** its `appResources["<entity>"] = resource.Config{...}` wiring
-  inside the primary mount func (it needs `fwApp`). An entity's resource
-  wiring lives here, never in `app.go` or the shared engine.
+  by a data source): that entity's list/detail/create screens and their
+  mount funcs, each drawing through `appUI` (`appUI.List("<entity>")`,
+  `appUI.Record`, `appUI.Create`).
 
 `app.go` still owns layouts, nav, theme, `authPolicy`/`guestPolicy`, auth,
 toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
 assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
-and names no screen type or `appResources` entry. The generated screen order is
+and names no screen type. The generated screen order is
 recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 [Packing](#packing-gofastr-pack-lossy-appblueprint-snapshot).
 
@@ -417,10 +416,10 @@ pieces without editing any owned file. If you removed one of those calls,
 Only the new files are written: `entities/<name>.go` for new entities,
 `screen_<name>.go` for new authored screens, and `screen_<entity>_crud.go` for
 an entity that gains CRUD screens.
-The shared `resource.go` seam is skipped like every existing owned file. A new
-entity's `resource.Config` assignment is contained in its new
-`screen_<entity>_crud.go`, so `--add` extends the registry without rewriting an
-engine or central config file.
+The shared `extensions.go` seam (the `appExtensions` value `appUI` is built
+from) is skipped like every existing owned file. A new entity's screens live
+in their own new `screen_<entity>_crud.go`, so `--add` extends the app
+without rewriting a shared file.
 
 **Entity order continuity.** `--add` reads the existing `entities/` directory
 and assigns the new entities declaration orders that continue after the
@@ -656,23 +655,30 @@ partial and keeps the shell).
 - `entity_list` renders `appUI.List("<entity>")` with: `fields:` →
   `.Columns(...)`, `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
   `mode: cards` (or `table`) → `.As(...)`, `create: false` → `.NoCreate()`,
-  and a `text:` heading (level 2 when a block ahead of it on the screen
+  `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
+  refused on any other block kind), and a `text:` heading (level 2 when a block ahead of it on the screen
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
   params stay apart, and two blocks for the same entity on one screen are
   refused at validate time.
+- An entity listed on several screens has one **home list**: the list
+  screen its detail screen sits under, else the first one with
+  `create: true`, else the first one declared. A list on any other screen
+  (a dashboard's recent rows) gets `.Base(<home route>)`, so its record
+  links and New reach the home's detail and create screens instead of
+  `<dashboard>/<id>`.
 - `entity_detail` renders `appUI.Record("<entity>", id).Delete().Duplicate()`
   from the screen's `{id}` route param. The record page holds the edit
   form and a button per declared move, so there is no `/<detail>/edit`
-  screen any more. When the entity also has a list screen whose route is
-  the detail route minus `/{id}` (enforced at validate time, since
-  entityui links records at `<base>/<id>`), the detail screen registers as
-  a **drawer over the list** (`app.InterceptFrom`): navigating to the
+  screen any more. When the entity has list screens, one of them must
+  sit at the detail route minus `/{id}` (enforced at validate time, since
+  entityui links records at `<base>/<id>`), and the detail screen
+  registers as a **drawer over that list** (`app.InterceptFrom`): navigating to the
   record from the list slides it over, while a hard load or a shared link
   renders the full page.
 - `create: true` on a list synthesizes the create screen at
-  **`<list>/create`** (not `/new`), rendering
-  `appUI.Create("<entity>").Base(<list route>)`. It inherits the list
+  **`<home list>/create`** (not `/new`), rendering
+  `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
   screen's `layout` + `access` and is not added to `nav`.
 - `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<entity>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
@@ -1519,11 +1525,11 @@ portability rules are built into that template:
   per-entity `owner_field`, `access`, or `multi_tenant` gate the
   generated CRUD and MCP endpoints; that's why the unscoped-PII check fires
   even with auth enabled.
-- **Copying the resource engine into a generated app.** Keep the generated
-  `resource.Config` values and app-specific hooks, but import
-  `framework/ui/resource` for rendering, filtering, formatting, relations, and
-  mutations. A private engine copy does not receive fixes when GoFastr is
-  upgraded.
+- **Copying an entity-screen engine into a generated app.** The screens
+  draw through `appUI` (`framework/entityui`, built in `extensions.go`):
+  keep the generated builders and your `appExtensions` hooks there, and
+  resist forking the drawing into the screen files. A private copy does
+  not receive fixes when GoFastr is upgraded.
 - **Writing flow-style inline maps.** `core/yaml` rejects
   `{name: x, type: relation}`; every map must be indented
   `key: value` lines. Anchors, aliases, block scalars, and tabs are

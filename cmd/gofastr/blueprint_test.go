@@ -278,6 +278,19 @@ screens:
 			want: `unsupported block type "chart"`,
 		},
 		{
+			name: "bulk only on entity list",
+			yml: `
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: heading
+        text: Hi
+        bulk: true
+`,
+			want: `bulk applies only to an entity_list block`,
+		},
+		{
 			name: "entity list unknown entity",
 			yml: `
 entities:
