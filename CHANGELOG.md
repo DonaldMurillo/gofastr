@@ -665,6 +665,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `CanDeleteRecordScoped`** answer, as booleans about one record, the
   gates `PUT` and `DELETE /<entity>/{id}` run: session, owner, tenant,
   then the permission asked about the record.
+- **`ui.ToggleConfig.LabelHidden`** keeps a Checkbox or Radio's label as
+  its accessible name and hides the text, for a control whose meaning its
+  surroundings show, such as a table's select column.
 
 ### Changed
 
