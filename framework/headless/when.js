@@ -58,8 +58,13 @@
   // whenValue reads the watched field's value the way the form would
   // submit it: the checked radio's value, a checkbox's value when
   // checked and the empty string when not, and any other control's
-  // value.
+  // value. A bool field's pair, a hidden "false" then the "true"
+  // checkbox, is one value the way the rpc serializer submits it: the
+  // box's when checked, the hidden one's when not.
   function whenValue(fields) {
+    if (fields.length === 2 && fields[0].type === 'hidden' && fields[1].type === 'checkbox') {
+      return fields[1].checked ? fields[1].value : fields[0].value;
+    }
     for (let i = 0; i < fields.length; i++) {
       const el = fields[i];
       if (el.type === 'radio') {

@@ -29,6 +29,32 @@ func setSelectValue(t *testing.T, ctx context.Context, id, val string) {
 	}
 }
 
+// A bool field renders a hidden "false" before its "true" checkbox (the
+// pair the form submits as one value). The box decides the condition,
+// and unchecked the hidden "false" is the value, as the form submits it.
+func TestE2E_WhenFollowsBoolPair(t *testing.T) {
+	page := string(Form(FormProps{Action: "/x"}, nil,
+		Input(InputProps{Type: "hidden", Name: "rush", Value: "false"}, nil),
+		Choice(ChoiceProps{Type: "checkbox", Name: "rush", Value: "true", Label: "Rush", ID: "rush"}, nil),
+		ConditionalField(ConditionalFieldProps{When: "rush", Values: []string{"true"}}, nil,
+			Input(InputProps{Name: "by", ID: "rush-by"}, nil)),
+		ConditionalField(ConditionalFieldProps{When: "rush", Values: []string{"false"}}, nil,
+			Input(InputProps{Name: "slot", ID: "slow-slot"}, nil)),
+	))
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	const regions = `document.querySelectorAll('[data-hui-when]')`
+	if !pollTrue(ctx, regions+`.length === 2 && `+regions+`[0].hidden && !`+regions+`[1].hidden`) {
+		t.Fatal(`unchecked, the field's value is "false": the true region must hide and the false region show`)
+	}
+	if err := chromedp.Run(ctx, chromedp.Click("#rush", chromedp.ByID)); err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if !pollTrue(ctx, `!`+regions+`[0].hidden && `+regions+`[1].hidden`) {
+		t.Fatal(`checked, the field's value is "true": the true region must show and the false region hide`)
+	}
+}
+
 // A select controller: the region shows for every listed value — the
 // hostile member included — hides for an unlisted one, and the hidden
 // region's control is disabled so it never submits.
