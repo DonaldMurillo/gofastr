@@ -2,9 +2,11 @@ package entityui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -143,6 +145,14 @@ type ActionContext struct {
 	Entity string
 	IDs    []string
 	Crud   *crud.CrudHandler
+	// Run names the bulk run: the queued job's id, the same on every
+	// retry, or a fresh id for a run inside the request. A queued run
+	// hands each record to Run at least once: a worker that dies after
+	// Run returns but before the outcomes are saved runs those records
+	// again under the same Run. An action with effects outside the
+	// database (mail, a payment, a webhook) keys them on Run and the
+	// record id so the second delivery does nothing.
+	Run string
 }
 
 // InRequestCap is the most records a bulk action runs inside one request,
@@ -155,10 +165,13 @@ const EveryMatchCap = 10000
 // JobRunner runs a bulk action over more than InRequestCap records,
 // outside the request. entityui writes the confirmed selection to the
 // Host's snapshot store and hands Enqueue the job; the runner's worker
-// then calls UI.RunBulkJob with job.ID, as often as it retries. The admin
-// backs it with battery/queue.
+// then calls UI.RunBulkJob with job.ID, as often as it retries, until it
+// returns nil. The admin backs it with battery/queue.
 type JobRunner interface {
-	// Enqueue schedules job. It must not run the job inline.
+	// Enqueue schedules job. It must not run the job inline. Enqueuing a
+	// job twice is safe: RunBulkJob runs a job under a lease and answers
+	// nil once it has finished, so UI.ResumeBulkJobs can hand over again
+	// a job whose first Enqueue is not known to have happened.
 	Enqueue(ctx context.Context, job BulkJob) error
 	// Principal rebuilds the creator's request context as of now from
 	// job.Creator and job.Tenant: the user, their current roles and the
@@ -183,8 +196,16 @@ type BulkJob struct {
 	// FilterHash is a SHA-256 of the scope and list query the selection
 	// came from, for the audit trail.
 	FilterHash string
+	// Key identifies the confirmed run: a SHA-256 of the creator, tenant,
+	// entity, action and the ids. While a job with a Key is queued, a
+	// second confirm of the same run answers that job instead of queuing
+	// another.
+	Key string
 	// Status is "queued", "done" or "stopped"; Store.Job fills it.
 	Status string
+	// Done, Skipped and Failed are a finished job's tally; Store.Job
+	// fills them once Finish has run.
+	Done, Skipped, Failed int
 }
 
 // Bulk job statuses.
@@ -202,23 +223,55 @@ const (
 )
 
 // BulkStore keeps queued bulk runs: the job and the ids its selection
-// resolved to at confirm, each settled once it has run.
+// resolved to at confirm, each settled once it has run. One runner at a
+// time holds a job's lease (Claim); Settle and Finish write only for the
+// runner holding it, so two workers handed the same job never both
+// record it.
 type BulkStore interface {
-	// Create writes the job and its ids in one transaction.
-	Create(ctx context.Context, job BulkJob, ids []string) error
+	// Create writes the job and its ids in one transaction and returns
+	// it. When a queued job with the same Key is held it writes nothing
+	// and returns that job instead.
+	Create(ctx context.Context, job BulkJob, ids []string) (BulkJob, error)
+	// Enqueued records that the JobRunner accepted the job.
+	Enqueued(ctx context.Context, id string) error
 	// Job reads one job; an unknown id is an error.
 	Job(ctx context.Context, id string) (BulkJob, error)
+	// Claim gives runner the job's lease until until, or renews it when
+	// runner holds it. It answers false when the job is not queued or
+	// another runner's lease is still live at now.
+	Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error)
 	// Pending returns up to limit ids not yet settled, in a stable order.
 	Pending(ctx context.Context, id string, limit int) ([]string, error)
 	// Settle records each id's outcome (BulkRowDone, BulkRowSkipped,
-	// BulkRowFailed). A settled id never comes back from Pending.
-	Settle(ctx context.Context, id string, outcomes map[string]string) error
+	// BulkRowFailed) while runner holds the lease, and answers
+	// ErrBulkLeaseLost when it does not. A settled id never comes back
+	// from Pending.
+	Settle(ctx context.Context, id, runner string, outcomes map[string]string) error
 	// Tally counts the job's settled ids by outcome, across every call
 	// that settled any, so a resumed run's summary covers the whole job.
 	Tally(ctx context.Context, id string) (map[string]int, error)
-	// Finish sets the job's status.
-	Finish(ctx context.Context, id, status string) error
+	// Finish, while runner holds the lease, sets the job's final status
+	// (BulkDone or BulkStopped) at at, keeps its tally on the job and
+	// deletes its ids. It answers ErrBulkLeaseLost when runner does not
+	// hold the lease.
+	Finish(ctx context.Context, id, runner, status string, at time.Time) error
+	// Unenqueued lists the queued jobs created before before that no
+	// Enqueued call has marked.
+	Unenqueued(ctx context.Context, before time.Time) ([]BulkJob, error)
+	// Prune deletes the jobs that finished before before, and reports
+	// how many.
+	Prune(ctx context.Context, before time.Time) (int, error)
 }
+
+// ErrBulkLeaseLost answers a Settle or Finish from a runner that no
+// longer holds the job's lease. RunBulkJob returns it and the JobRunner
+// retries; the lease's holder finishes the run.
+var ErrBulkLeaseLost = errors.New("entityui: bulk job lease lost")
+
+// ErrBulkJobBusy is RunBulkJob's answer while another runner holds the
+// job's live lease. The JobRunner retries later; once the job has
+// finished, RunBulkJob answers nil.
+var ErrBulkJobBusy = errors.New("entityui: bulk job held by another runner")
 
 // BulkHost is what a Host implements to back bulk actions: the snapshot
 // store queued runs walk, and the audit rows every run writes. The host

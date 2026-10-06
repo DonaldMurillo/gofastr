@@ -270,7 +270,27 @@ and so does an entity with no REST write routes.
   in order. A retried job resumes at the first record with no outcome,
   and the first outcome recorded for a record is the one kept. The
   summary row counts every outcome the store holds (`BulkStore.Tally`),
-  so a resumed run reports the whole job.
+  so a resumed run reports the whole job, and a queued run writes that
+  row once, when it finishes.
+- **Queued runs are leased.** `RunBulkJob` claims the job for five
+  minutes before each chunk, and every outcome and the finish write are
+  fenced on that claim: a second worker handed the same job runs nothing
+  while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
+  a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
+  that dies holding the lease blocks the job until it expires. Delivery
+  is at least once, so an app `Actions` callback reads
+  `ActionContext.Run`, the job id, to make its own side effects
+  idempotent.
+- **A double submit answers the job already queued.** The job is keyed on
+  the action, its input and the resolved ids; while one with that key is
+  queued, the second confirm gets its id and count and enqueues nothing.
+- **App start resumes and prunes.** A job written but never handed to
+  the runner (the process died in between, or `Enqueue` failed) is
+  handed over again at `App.Start` once it is a minute old
+  (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
+  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
+  schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's
   narrowing (a builder's `View` included) and `_list=<key>`: the file
   holds what the list narrowed to, up

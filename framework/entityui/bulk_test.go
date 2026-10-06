@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -306,12 +308,18 @@ func TestBulkNoBulkIsNotFound(t *testing.T) {
 	}
 }
 
-// memBulk is an in-memory BulkHost + JobRunner for the queued-run tests.
+// memBulk is an in-memory BulkHost + JobRunner for the queued-run tests,
+// with the SQL store's lease and fencing rules.
 type memBulk struct {
 	mu        sync.Mutex
 	jobs      map[string]BulkJob
 	ids       map[string][]string
 	settled   map[string]map[string]string
+	enqueued  map[string]bool
+	created   map[string]time.Time
+	finished  map[string]time.Time
+	holder    map[string]string
+	until     map[string]time.Time
 	queued    []BulkJob
 	audits    []map[string]any
 	principal func(BulkJob) (context.Context, error)
@@ -319,27 +327,53 @@ type memBulk struct {
 	// (counted from 1): a worker that died mid-run.
 	failPending  func(call int) bool
 	pendingCalls int
+	// failEnqueue and failAudit, when set, refuse those calls.
+	failEnqueue error
+	failAudit   error
+	// onSettle, when set, runs before each Settle: a second worker can
+	// take the lease there.
+	onSettle func(id string)
 }
 
 func newMemBulk() *memBulk {
-	return &memBulk{jobs: map[string]BulkJob{}, ids: map[string][]string{}, settled: map[string]map[string]string{}}
+	return &memBulk{
+		jobs: map[string]BulkJob{}, ids: map[string][]string{}, settled: map[string]map[string]string{},
+		enqueued: map[string]bool{}, created: map[string]time.Time{}, finished: map[string]time.Time{},
+		holder: map[string]string{}, until: map[string]time.Time{},
+	}
 }
 
 func (b *memBulk) BulkStore() BulkStore { return b }
 
-func (b *memBulk) AuditEvent(_ context.Context, _, op, id string, detail map[string]any) error {
+func (b *memBulk) AuditEvent(ctx context.Context, _, op, id string, detail map[string]any) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.audits = append(b.audits, map[string]any{"op": op, "id": id, "detail": detail})
+	if b.failAudit != nil {
+		return b.failAudit
+	}
+	b.audits = append(b.audits, map[string]any{"op": op, "id": id, "detail": detail, "actor": userID(ctx)})
 	return nil
 }
 
-func (b *memBulk) Create(_ context.Context, job BulkJob, ids []string) error {
+func (b *memBulk) Create(_ context.Context, job BulkJob, ids []string) (BulkJob, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	for _, j := range b.jobs {
+		if j.Key != "" && j.Key == job.Key && j.Status == BulkQueued {
+			return j, nil
+		}
+	}
 	b.jobs[job.ID] = job
 	b.ids[job.ID] = slices.Clone(ids)
 	b.settled[job.ID] = map[string]string{}
+	b.created[job.ID] = time.Now()
+	return job, nil
+}
+
+func (b *memBulk) Enqueued(_ context.Context, id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.enqueued[id] = true
 	return nil
 }
 
@@ -351,6 +385,20 @@ func (b *memBulk) Job(_ context.Context, id string) (BulkJob, error) {
 		return BulkJob{}, errors.New("no such job")
 	}
 	return j, nil
+}
+
+func (b *memBulk) Claim(_ context.Context, id, runner string, now, until time.Time) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	j, ok := b.jobs[id]
+	if !ok || j.Status != BulkQueued {
+		return false, nil
+	}
+	if h := b.holder[id]; h != "" && h != runner && !b.until[id].Before(now) {
+		return false, nil
+	}
+	b.holder[id], b.until[id] = runner, until
+	return true, nil
 }
 
 func (b *memBulk) Pending(_ context.Context, id string, limit int) ([]string, error) {
@@ -372,9 +420,15 @@ func (b *memBulk) Pending(_ context.Context, id string, limit int) ([]string, er
 	return out, nil
 }
 
-func (b *memBulk) Settle(_ context.Context, id string, outcomes map[string]string) error {
+func (b *memBulk) Settle(_ context.Context, id, runner string, outcomes map[string]string) error {
+	if b.onSettle != nil {
+		b.onSettle(id)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.holder[id] != runner || b.jobs[id].Status != BulkQueued {
+		return ErrBulkLeaseLost
+	}
 	for rid, o := range outcomes {
 		if _, done := b.settled[id][rid]; !done {
 			b.settled[id][rid] = o
@@ -393,18 +447,62 @@ func (b *memBulk) Tally(_ context.Context, id string) (map[string]int, error) {
 	return out, nil
 }
 
-func (b *memBulk) Finish(_ context.Context, id, status string) error {
+func (b *memBulk) Finish(_ context.Context, id, runner, status string, at time.Time) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	j := b.jobs[id]
+	if b.holder[id] != runner || j.Status != BulkQueued {
+		return ErrBulkLeaseLost
+	}
+	for _, o := range b.settled[id] {
+		switch o {
+		case BulkRowDone:
+			j.Done++
+		case BulkRowSkipped:
+			j.Skipped++
+		default:
+			j.Failed++
+		}
+	}
 	j.Status = status
 	b.jobs[id] = j
+	b.finished[id] = at
+	delete(b.ids, id)
+	delete(b.settled, id)
 	return nil
+}
+
+func (b *memBulk) Unenqueued(_ context.Context, before time.Time) ([]BulkJob, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []BulkJob
+	for _, id := range slices.Sorted(maps.Keys(b.jobs)) {
+		if j := b.jobs[id]; j.Status == BulkQueued && !b.enqueued[id] && b.created[id].Before(before) {
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
+
+func (b *memBulk) Prune(_ context.Context, before time.Time) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for id, j := range b.jobs {
+		if j.Status != BulkQueued && b.finished[id].Before(before) {
+			delete(b.jobs, id)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (b *memBulk) Enqueue(_ context.Context, job BulkJob) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.failEnqueue != nil {
+		return b.failEnqueue
+	}
 	b.queued = append(b.queued, job)
 	return nil
 }

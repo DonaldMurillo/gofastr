@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -400,10 +401,10 @@ func (t *bulkTally) add(outcomes map[string]string) {
 // runBulk runs act over ids (already re-read under ctx) and returns each
 // id's outcome. Every record is asked its own write gate first; a refusal
 // is skipped, not failed.
-func (u *UI) runBulk(ctx context.Context, m *meta, act bulkAction, ids []string) map[string]string {
+func (u *UI) runBulk(ctx context.Context, m *meta, act bulkAction, ids []string, run string) map[string]string {
 	out := make(map[string]string, len(ids))
 	if act.kind == bulkRun {
-		u.runAppAction(ctx, m, act, ids, out)
+		u.runAppAction(ctx, m, act, ids, run, out)
 		return out
 	}
 	for _, id := range ids {
@@ -452,7 +453,7 @@ func (u *UI) runOne(ctx context.Context, m *meta, act bulkAction, id string) str
 
 // runAppAction hands an app action the ids its caller may run it on, in
 // one call.
-func (u *UI) runAppAction(ctx context.Context, m *meta, act bulkAction, ids []string, out map[string]string) {
+func (u *UI) runAppAction(ctx context.Context, m *meta, act bulkAction, ids []string, run string, out map[string]string) {
 	allowed := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if !mayRun(ctx, m, act, id) {
@@ -465,7 +466,7 @@ func (u *UI) runAppAction(ctx context.Context, m *meta, act bulkAction, ids []st
 		return
 	}
 	outcome := BulkRowDone
-	if !runAction(ctx, m.name, act.app, ActionContext{Entity: m.name, IDs: allowed, Crud: m.ch}) {
+	if !runAction(ctx, m.name, act.app, ActionContext{Entity: m.name, IDs: allowed, Crud: m.ch, Run: run}) {
 		outcome = BulkRowFailed
 	}
 	for _, id := range allowed {
@@ -497,21 +498,23 @@ func (u *UI) bulkHost() BulkHost {
 	return bh
 }
 
-// auditBulk writes the run's summary row: the action, the count and the
-// run's id (the snapshot id of a queued run). A host with no audit log
-// writes nothing.
-func (u *UI) auditBulk(ctx context.Context, m *meta, runID, action string, count int, t bulkTally, status string) {
+// auditBulk writes the run's one summary row: the action, the count, the
+// tallies and the run's id (the snapshot id of a queued run); creator
+// names a queued run's confirming user, whose context may be gone by the
+// time it finishes. A host with no audit log writes nothing.
+func (u *UI) auditBulk(ctx context.Context, m *meta, runID, action, creator string, count int, t bulkTally, status string) error {
 	bh := u.bulkHost()
 	if bh == nil {
-		return
+		return nil
 	}
 	detail := map[string]any{
 		"action": action, "count": count, "status": status,
 		"done": t.done, "skipped": t.skipped, "failed": t.failed,
 	}
-	if err := bh.AuditEvent(ctx, m.name, "bulk", runID, detail); err != nil {
-		slog.ErrorContext(ctx, "entityui: bulk audit row", "entity", m.name, "run", runID, "error", err)
+	if creator != "" {
+		detail["creator"] = creator
 	}
+	return bh.AuditEvent(ctx, m.name, "bulk", runID, detail)
 }
 
 func newRunID() string { return strings.ToLower(rand.Text()) }
@@ -577,10 +580,15 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			return
 		}
 		runID := newRunID()
-		outcomes := u.runBulk(ctx, m, act, ids)
+		outcomes := u.runBulk(ctx, m, act, ids, runID)
 		var t bulkTally
 		t.add(outcomes)
-		u.auditBulk(ctx, m, runID, act.key, len(ids), t, BulkDone)
+		// The writes are committed, and each wrote its own audit row
+		// through the CRUD hooks; a summary row that fails is logged,
+		// not answered as a failed run.
+		if err := u.auditBulk(ctx, m, runID, act.key, "", len(ids), t, BulkDone); err != nil {
+			slog.ErrorContext(ctx, "entityui: bulk audit row", "entity", m.name, "run", runID, "error", err)
+		}
 		variant := ui.StatusSuccess
 		if t.failed > 0 {
 			variant = ui.StatusWarning
@@ -593,7 +601,9 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 }
 
 // queueBulk writes a selection over InRequestCap to the snapshot store and
-// hands it to the JobRunner, or refuses naming the cap.
+// hands it to the JobRunner, or refuses naming the cap. A second confirm
+// of a run that is still queued answers the queued job rather than
+// queuing it twice.
 func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act bulkAction, body bulkBody, ids []string) {
 	capMsg := i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)})
 	bh := u.bulkHost()
@@ -606,41 +616,86 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act 
 		writeBulkError(w, http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkNeedsUser, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
 		return
 	}
+	store := bh.BulkStore()
 	sum := sha256.Sum256([]byte(body.Scope + "\x00" + body.Key + "\x00" + body.Query))
 	job := BulkJob{
 		ID: newRunID(), Entity: m.name, Action: act.key, Count: len(ids),
 		Creator: creator, Tenant: tenant.GetTenantID(ctx),
 		FilterHash: hex.EncodeToString(sum[:]), Status: BulkQueued,
 	}
-	if err := bh.BulkStore().Create(ctx, job, ids); err != nil {
+	job.Key = runKey(job, ids)
+	held, err := store.Create(ctx, job, ids)
+	if err != nil {
 		slog.ErrorContext(ctx, "entityui: bulk snapshot", "entity", m.name, "error", err)
 		writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
 		return
 	}
-	if err := u.ext.Jobs.Enqueue(ctx, job); err != nil {
-		slog.ErrorContext(ctx, "entityui: bulk enqueue", "entity", m.name, "job", job.ID, "error", err)
-		if ferr := bh.BulkStore().Finish(ctx, job.ID, BulkStopped); ferr != nil {
-			slog.ErrorContext(ctx, "entityui: bulk finish", "entity", m.name, "job", job.ID, "error", ferr)
+	if held.ID == job.ID {
+		if err := u.ext.Jobs.Enqueue(ctx, job); err != nil {
+			slog.ErrorContext(ctx, "entityui: bulk enqueue", "entity", m.name, "job", job.ID, "error", err)
+			u.abandonJob(ctx, store, m, job)
+			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+			return
 		}
-		writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
-		return
+		// A lost mark leaves the job for ResumeBulkJobs to hand over
+		// again, which is safe: the run is leased.
+		if err := store.Enqueued(ctx, job.ID); err != nil {
+			slog.WarnContext(ctx, "entityui: bulk enqueued mark", "entity", m.name, "job", job.ID, "error", err)
+		}
 	}
-	u.auditBulk(ctx, m, job.ID, act.key, len(ids), bulkTally{}, BulkQueued)
 	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.TVars(ctx, i18nui.KeyEntityBulkQueued, map[string]string{
-		"count": strconv.Itoa(len(ids)), "entity": m.plural(ctx),
+		"count": strconv.Itoa(held.Count), "entity": m.plural(ctx),
 	})})
-	writeBulkJSON(w, http.StatusAccepted, map[string]any{"job": job.ID, "count": len(ids)})
+	writeBulkJSON(w, http.StatusAccepted, map[string]any{"job": held.ID, "count": held.Count})
 }
 
+// abandonJob stops a job the JobRunner refused, so nothing resumes it.
+func (u *UI) abandonJob(ctx context.Context, store BulkStore, m *meta, job BulkJob) {
+	runner := newRunID()
+	now := u.now()
+	ok, err := store.Claim(ctx, job.ID, runner, now, now.Add(bulkLease))
+	if err == nil && ok {
+		err = store.Finish(ctx, job.ID, runner, BulkStopped, now)
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "entityui: bulk stop", "entity", m.name, "job", job.ID, "error", err)
+	}
+}
+
+// runKey is BulkJob.Key: the creator, tenant, entity, action and ids,
+// each length-prefixed.
+func runKey(job BulkJob, ids []string) string {
+	h := sha256.New()
+	for _, part := range []string{job.Creator, job.Tenant, job.Entity, job.Action, matchDigest(ids)} {
+		fmt.Fprintf(h, "%d:%s,", len(part), part)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// bulkLease is how long one RunBulkJob call holds a job between chunks.
+// Each chunk renews it, so it only runs out when the runner has died or
+// one chunk outlasts it; then another runner takes the job over.
+const bulkLease = 5 * time.Minute
+
 // RunBulkJob runs the queued bulk job id, the JobRunner worker's call. It
-// walks the snapshot's unsettled ids in chunks of InRequestCap. Before
-// each chunk it rebuilds the creator's context (JobRunner.Principal) and
-// finds the action again under it: a creator who is gone, or who lost the
-// role the action needs, stops the run. Each chunk is re-read under that
+// takes the job's lease, then walks the snapshot's unsettled ids in
+// chunks of InRequestCap, renewing the lease before each. Before each
+// chunk it rebuilds the creator's context (JobRunner.Principal) and finds
+// the action again under it: a creator who is gone, or who lost the role
+// the action needs, stops the run. Each chunk is re-read under that
 // context, so a row the creator can no longer see is skipped, and each
-// record is asked its write gate before its write. A retried call skips
-// the rows already settled. A finished or stopped job answers nil.
-func (u *UI) RunBulkJob(ctx context.Context, id string) error {
+// record is asked its write gate before its write.
+//
+// A retried call skips the rows already settled, and a finished or
+// stopped job answers nil. While another runner holds a live lease it
+// answers ErrBulkJobBusy, and after losing the lease mid-run
+// ErrBulkLeaseLost; the JobRunner retries both. A runner that dies after
+// a chunk ran but before its outcomes were saved leaves those records to
+// run again (ActionContext.Run names the run for an app action that must
+// not repeat an effect). The run's one audit row is written before the
+// job is finished, so a failed write leaves the job queued for the retry
+// to write again rather than finished without one.
+func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 	bh := u.bulkHost()
 	if u.ext.Jobs == nil || bh == nil || bh.BulkStore() == nil {
 		return fmt.Errorf("entityui: RunBulkJob needs Extensions.Jobs and a host that keeps snapshots")
@@ -657,57 +712,138 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	// finish settles the job's status and writes its summary row, counted
-	// from the store so the chunks an earlier call ran are in it.
-	finish := func(cctx context.Context, status string) error {
+	runner := newRunID()
+	held := false
+	// A call that fails while holding the lease hands it back (renewed to
+	// end now), so the JobRunner's retry need not wait it out. A runner
+	// that dies keeps it until it runs out.
+	defer func() {
+		if err != nil && held && !errors.Is(err, ErrBulkLeaseLost) {
+			now := u.now()
+			if _, rerr := store.Claim(context.WithoutCancel(ctx), id, runner, now, now); rerr != nil {
+				slog.WarnContext(ctx, "entityui: bulk lease release", "entity", m.name, "job", id, "error", rerr)
+			}
+		}
+	}()
+	// finish writes the summary row under actor (the creator's rebuilt
+	// context when there is one), then closes the job.
+	finish := func(actor context.Context, status string) error {
 		counts, err := store.Tally(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := store.Finish(ctx, id, status); err != nil {
+		t := bulkTally{done: counts[BulkRowDone], skipped: counts[BulkRowSkipped], failed: counts[BulkRowFailed]}
+		if err := u.auditBulk(actor, m, id, job.Action, job.Creator, job.Count, t, status); err != nil {
+			return fmt.Errorf("entityui: bulk audit row: %w", err)
+		}
+		return store.Finish(ctx, id, runner, status, u.now())
+	}
+	for {
+		now := u.now()
+		held, err = store.Claim(ctx, id, runner, now, now.Add(bulkLease))
+		if err != nil {
 			return err
 		}
-		t := bulkTally{done: counts[BulkRowDone], skipped: counts[BulkRowSkipped], failed: counts[BulkRowFailed]}
-		u.auditBulk(cctx, m, id, job.Action, job.Count, t, status)
-		return nil
-	}
-	stop := func(cctx context.Context) error { return finish(cctx, BulkStopped) }
-	for {
+		if !held {
+			cur, err := store.Job(ctx, id)
+			if err != nil {
+				return err
+			}
+			if cur.Status != BulkQueued {
+				return nil
+			}
+			return ErrBulkJobBusy
+		}
 		ids, err := store.Pending(ctx, id, InRequestCap)
 		if err != nil {
 			return err
 		}
+		cctx, perr := u.ext.Jobs.Principal(ctx, job)
 		if len(ids) == 0 {
-			return finish(ctx, BulkDone)
+			if perr != nil {
+				cctx = ctx
+			}
+			return finish(cctx, BulkDone)
 		}
-		cctx, err := u.ext.Jobs.Principal(ctx, job)
-		if err != nil {
-			slog.WarnContext(ctx, "entityui: bulk job stopped: creator context", "entity", m.name, "job", id, "error", err)
-			return stop(ctx)
+		if perr != nil {
+			slog.WarnContext(ctx, "entityui: bulk job stopped: creator context", "entity", m.name, "job", id, "error", perr)
+			return finish(ctx, BulkStopped)
 		}
 		if !bulkOn(m) || !canRead(cctx, m.ch) {
-			return stop(cctx)
+			return finish(cctx, BulkStopped)
 		}
 		act, ok := findBulkAction(u.bulkActions(cctx, m), job.Action)
 		if !ok {
 			slog.WarnContext(ctx, "entityui: bulk job stopped: action no longer offered", "entity", m.name, "job", id)
-			return stop(cctx)
+			return finish(cctx, BulkStopped)
 		}
 		visible, err := u.visibleIDs(cctx, m, ids)
 		if err != nil {
 			return err
 		}
-		outcomes := u.runBulk(cctx, m, act, visible)
+		outcomes := u.runBulk(cctx, m, act, visible, id)
 		for _, rid := range ids {
 			if _, ran := outcomes[rid]; !ran {
 				outcomes[rid] = BulkRowSkipped
 			}
 		}
-		if err := store.Settle(ctx, id, outcomes); err != nil {
+		if err := store.Settle(ctx, id, runner, outcomes); err != nil {
 			return err
 		}
 	}
 }
+
+// ResumeBulkJobs hands the JobRunner every queued job whose Enqueue is not
+// known to have happened (the process died between writing the snapshot
+// and enqueuing it), created before grace ago, and reports how many.
+// App.EntityUI runs it at start; a host that runs for long calls it on a
+// schedule. Enqueuing a job twice is safe.
+func (u *UI) ResumeBulkJobs(ctx context.Context, grace time.Duration) (int, error) {
+	bh := u.bulkHost()
+	if u.ext.Jobs == nil || bh == nil || bh.BulkStore() == nil {
+		return 0, fmt.Errorf("entityui: ResumeBulkJobs needs Extensions.Jobs and a host that keeps snapshots")
+	}
+	if grace < 0 {
+		return 0, fmt.Errorf("entityui: ResumeBulkJobs: grace %v is negative", grace)
+	}
+	store := bh.BulkStore()
+	jobs, err := store.Unenqueued(ctx, u.now().Add(-grace))
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, job := range jobs {
+		if err := u.ext.Jobs.Enqueue(ctx, job); err != nil {
+			return n, fmt.Errorf("entityui: resume bulk job %s: %w", job.ID, err)
+		}
+		if err := store.Enqueued(ctx, job.ID); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// PruneBulkJobs deletes the jobs that finished more than keep ago, and
+// reports how many. A finished job's ids are already gone (Finish deletes
+// them); this drops the job row with its tally. App.EntityUI runs it at
+// start with BulkRetention; a host that runs for long calls it on a
+// schedule.
+func (u *UI) PruneBulkJobs(ctx context.Context, keep time.Duration) (int, error) {
+	bh := u.bulkHost()
+	if bh == nil || bh.BulkStore() == nil {
+		return 0, fmt.Errorf("entityui: PruneBulkJobs needs a host that keeps snapshots")
+	}
+	if keep < 0 {
+		return 0, fmt.Errorf("entityui: PruneBulkJobs: keep %v is negative", keep)
+	}
+	return bh.BulkStore().Prune(ctx, u.now().Add(-keep))
+}
+
+// BulkRetention is how long a finished bulk job's row (its creator,
+// action, filter hash and tally) is kept before PruneBulkJobs deletes it.
+// The audit log keeps the run's summary row on its own terms.
+const BulkRetention = 30 * 24 * time.Hour
 
 // userID is the caller's user id, "" when the request carries none that
 // can be named again later.

@@ -704,7 +704,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofastr_bulk_jobs` and `gofastr_bulk_items` (it panics without
   `App.DB`). Every run writes one audit row with op `bulk` under
   `WithAuditLog`, counted from the store (`BulkStore.Tally`) so a resumed
-  run reports the whole job. The export holds what the list narrowed to,
+  run reports the whole job. A queued run leases its job and fences every
+  write on the lease, so a second worker runs nothing and a lapsed one
+  writes nothing; app actions read `ActionContext.Run` to stay
+  idempotent under at-least-once delivery. A repeated confirm answers the
+  job already queued, and `App.Start` re-hands jobs a crash left
+  unenqueued and deletes finished jobs past `BulkRetention` (30 days).
+  The export holds what the list narrowed to,
   leaves out `NoQuery`, omitted and JSON fields, and quotes cells a
   spreadsheet would run as formulas; a `Where`-pinned list draws none.
   An entity registered after `App.EntityUI` gets both routes too. Only

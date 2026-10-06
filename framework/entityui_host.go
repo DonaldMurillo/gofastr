@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -26,8 +27,11 @@ import (
 // POST <api>/_bulk and GET <api>/_export.csv, for the entities registered
 // before the call and for every one registered after it. With ext.Jobs set it also
 // creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
-// gofastr_bulk_items), which needs a database. A second call panics: the
-// routes belong to one UI, so share the one it returned.
+// gofastr_bulk_items), which needs a database, and at App.Start re-hands
+// the JobRunner any job a crash left unenqueued and deletes finished jobs
+// older than entityui.BulkRetention (UI.ResumeBulkJobs and
+// UI.PruneBulkJobs; an app that runs for long schedules both). A second
+// call panics: the routes belong to one UI, so share the one it returned.
 func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	if a.entityUI != nil {
 		panic("framework: EntityUI was already called on this app; its bulk and export routes belong to that UI, so pass the *entityui.UI it returned instead of building a second")
@@ -51,7 +55,32 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	for _, e := range a.Registry.AllSorted() {
 		a.mountEntityUIRoutes(e)
 	}
+	if ext.Jobs != nil {
+		a.OnStart(func(ctx context.Context) error {
+			resumeAndPruneBulkJobs(ctx, u)
+			return nil
+		})
+	}
 	return u
+}
+
+// bulkResumeGrace is how old an unenqueued job must be before a start
+// hands it over again: younger ones may belong to a confirm still between
+// writing its snapshot and enqueuing it.
+const bulkResumeGrace = time.Minute
+
+// resumeAndPruneBulkJobs hands over the jobs a crash left unenqueued and
+// drops finished jobs past entityui.BulkRetention. A failure is logged,
+// not fatal: the app serves without it, and the next start tries again.
+func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
+	if n, err := u.ResumeBulkJobs(ctx, bulkResumeGrace); err != nil {
+		slog.ErrorContext(ctx, "framework: EntityUI: resume bulk jobs", "resumed", n, "error", err)
+	} else if n > 0 {
+		slog.InfoContext(ctx, "framework: EntityUI: resumed bulk jobs", "count", n)
+	}
+	if _, err := u.PruneBulkJobs(ctx, entityui.BulkRetention); err != nil {
+		slog.ErrorContext(ctx, "framework: EntityUI: prune bulk jobs", "error", err)
+	}
 }
 
 // mountEntityUIRoutes mounts e's bulk and export routes once EntityUI has
