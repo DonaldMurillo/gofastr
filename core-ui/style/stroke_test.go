@@ -47,9 +47,11 @@ func TestBadStrokeIsRefused(t *testing.T) {
 
 // A theme.go written before strokes existed has no Strokes field. Its
 // init runs AutoFillNames, and a named zero would validate and erase
-// every border; unset strokes must stay unset so the kit's fallback
-// widths keep drawing.
-func TestUnsetStrokesFallBack(t *testing.T) {
+// every border, so an unset stroke stays unnamed; the emitter then
+// writes the default width, so a var(--stroke-*) with no fallback (a
+// style.Use utility, an owned sheet) still resolves, and the token map
+// lists and edits it.
+func TestUnsetStrokesEmitDefaults(t *testing.T) {
 	th := DefaultTheme()
 	th.Strokes = StrokeSet{}
 	AutoFillNames(&th)
@@ -59,9 +61,31 @@ func TestUnsetStrokesFallBack(t *testing.T) {
 	if err := th.Validate(); err != nil {
 		t.Fatalf("a theme without strokes must validate: %v", err)
 	}
-	if css := th.CSSCustomProperties(); strings.Contains(css, "--stroke-") {
-		t.Errorf("unset strokes were emitted:\n%s", css)
+	css := th.CSSCustomProperties()
+	for _, want := range []string{"--stroke-thin: 1px;", "--stroke-thick: 2px;", "--stroke-focus: 2px;", "--stroke-focus-offset: 2px;"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("an unset stroke did not emit its default %s:\n%s", want, css)
+		}
 	}
+	if got := ThemeToTokens(th)["stroke-thin"]; got != "1px" {
+		t.Errorf("ThemeToTokens[stroke-thin] = %q, want the default 1px", got)
+	}
+	edited, err := ApplyTokens(th, map[string]string{"stroke-thin": "3px"})
+	if err != nil {
+		t.Fatalf("ApplyTokens on a theme without strokes: %v", err)
+	}
+	if edited.Strokes.Thin.Value != "3px" || edited.Strokes.Thick.Value != "2px" {
+		t.Errorf("edited strokes = %+v, want thin 3px and the other defaults", edited.Strokes)
+	}
+	if th.Strokes != (StrokeSet{}) {
+		t.Errorf("ApplyTokens wrote through to its base: %+v", th.Strokes)
+	}
+	// A stroke the theme sets keeps its value beside the defaults.
+	th.Strokes.Thick = Stroke{Name: "thick", Value: "4px"}
+	if css := th.CSSCustomProperties(); !strings.Contains(css, "--stroke-thick: 4px;") || !strings.Contains(css, "--stroke-thin: 1px;") {
+		t.Errorf("a set stroke beside unset ones:\n%s", css)
+	}
+	th.Strokes = StrokeSet{}
 	th.Strokes.Thin = Stroke{Value: "3px"}
 	AutoFillNames(&th)
 	if th.Strokes.Thin.Name != "thin" {

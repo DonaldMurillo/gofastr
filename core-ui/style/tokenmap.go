@@ -118,6 +118,10 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 	setters := make(map[string]tokenSetter, 96)
 	lightColorNames := make(map[string]bool)
 	lightCodeNames := make(map[string]bool)
+	// An unset optional slot takes its default first, so its key has a
+	// setter: a theme.go written before strokes existed can still have
+	// them edited.
+	fillOptionalDefaults(&result)
 	collectSetters(reflect.ValueOf(&result).Elem(), setters, lightColorNames, lightCodeNames)
 
 	// Deterministic ordering: sort keys so map iteration order never decides

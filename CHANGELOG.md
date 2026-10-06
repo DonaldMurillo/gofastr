@@ -16,9 +16,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   stacking layers `--z-*`, so a theme alone can redraw the kit: thick
   borders, square corners and hard shadows need no component CSS. A
   value is `"0"` or a non-negative px/rem/em length. The set is
-  optional: an unset stroke is not emitted and the kit draws its
-  default width, so a `theme.go` written before strokes existed keeps
-  its borders. Strokes reach `ApplyTokens`, `theme edit`'s write-back,
+  optional: an unset stroke emits the default width, so a `theme.go`
+  written before strokes existed keeps its borders and every
+  `var(--stroke-*)` reader resolves. Strokes reach `ApplyTokens` (an
+  unset stroke there takes its default, so it can be edited),
+  `theme edit`'s write-back,
   `.tokens.css` (`--stroke-*`, `syntax: "<length>"`), the plugin
   host's token bridge and the GOFASTR1807/1808 checks
   (`border-width`, `outline-width`, `outline-offset` and

@@ -277,8 +277,8 @@ func autofillTokens(v reflect.Value, path []string) {
 		}
 		return
 	}
-	// Stroke is optional the same way: a fully-unset stroke stays zero
-	// so it is skipped and the kit's fallback width applies.
+	// Stroke is optional too: a fully-unset stroke stays zero here, and
+	// the emitter and token map give it the default theme's width.
 	if v.Type() == reflect.TypeFor[Stroke]() {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&

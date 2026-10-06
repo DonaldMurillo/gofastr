@@ -361,6 +361,7 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	if v.Kind() != reflect.Struct {
 		return
 	}
+	v = withOptionalDefaults(v)
 	if key, val, ok := tokenPair(v); ok {
 		*out = append(*out, tokenKV{key, val})
 		return
