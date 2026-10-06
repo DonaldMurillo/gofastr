@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -37,7 +38,34 @@ var (
 	// stamp. One value written onto many rows is a move per row, so run
 	// RunTransition per record instead.
 	ErrBulkStateWrite = errors.New("crud: a bulk update cannot change the state field or a stamp; run the move per record")
+	// ErrReentrantMove: RunTransition was called, from a hook, on the
+	// record whose update or move is running that hook (409 on the route).
+	// Run the move after the write commits.
+	ErrReentrantMove = errors.New("crud: a move cannot run on a record while a write of that record is in flight")
 )
+
+// recordWrite is the chain of records whose update or move is running on
+// ctx. inTx leaves it in place, so a hook's nested RunTransition sees it.
+type recordWrite struct {
+	entity, id string
+	parent     *recordWrite
+}
+
+type recordWriteKey struct{}
+
+func withRecordWrite(ctx context.Context, entity, id string) context.Context {
+	parent, _ := ctx.Value(recordWriteKey{}).(*recordWrite)
+	return context.WithValue(ctx, recordWriteKey{}, &recordWrite{entity: entity, id: id, parent: parent})
+}
+
+func recordWriteInFlight(ctx context.Context, entity, id string) bool {
+	for w, _ := ctx.Value(recordWriteKey{}).(*recordWrite); w != nil; w = w.parent {
+		if w.entity == entity && w.id == id {
+			return true
+		}
+	}
+	return false
+}
 
 // StateError refuses a write that changes the state field or a stamp
 // outside a move. It answers 422 and names the moves open from the
@@ -48,6 +76,7 @@ type StateError struct {
 	Moves   []string // the non-system moves open from Current
 	Initial []string // on a create: the values it may set
 	create  bool
+	hidden  bool // the caller's ReadScope hides the record: no state named
 }
 
 func (e *StateError) Error() string { return e.message() }
@@ -58,6 +87,9 @@ func (e *StateError) message() string {
 			return fmt.Sprintf("%s is set by a move, not on create", e.Field)
 		}
 		return fmt.Sprintf("a new record starts at %s", strings.Join(e.Initial, " or "))
+	}
+	if e.hidden {
+		return fmt.Sprintf("%s changes only through a move", e.Field)
 	}
 	if len(e.Moves) == 0 {
 		return fmt.Sprintf("%s changes only through a move, and none is open from %q", e.Field, e.Current)
@@ -72,9 +104,13 @@ type TransitionConflictError struct {
 	Key     string
 	Current string
 	Moves   []string
+	hidden  bool // the caller's ReadScope hides the record: no state named
 }
 
 func (e *TransitionConflictError) Error() string {
+	if e.hidden {
+		return fmt.Sprintf("move %q is not open", e.Key)
+	}
 	if len(e.Moves) == 0 {
 		return fmt.Sprintf("move %q is not open from %q, and no move is", e.Key, e.Current)
 	}
@@ -260,7 +296,9 @@ func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id
 		return withAuditOperation(ctx, ch.Entity.GetName(), id, "state_override"), nil
 	}
 	current, _ := stored[ch.convertKey(st.Field)].(string)
-	return ctx, &StateError{Field: changed[0], Current: current, Moves: openMoves(st, current)}
+	e := &StateError{Field: changed[0]}
+	e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, current)
+	return ctx, e
 }
 
 // checkStateUpsert is the state check for UpsertOne, run after its
@@ -282,10 +320,18 @@ func (ch *CrudHandler) checkStateUpsert(ctx context.Context, r *http.Request, bo
 }
 
 // upsertSetsGuarded reports whether UpsertOne's DO UPDATE SET may name
-// col: not a guarded column, unless a state override releases it.
-func (ch *CrudHandler) upsertSetsGuarded(ctx context.Context, col string) bool {
+// col. A guarded column enters it only when the caller sent it (an omitted
+// one carries the insert arm's Default, which is not the stored state) and
+// a state override that allowStateOverride passes releases it. The reason
+// gate is checked here as well as in checkStateUpsert: a row committed
+// after that check read it as absent takes the insert arm's value, and an
+// initial value passes the create check without a reason.
+func (ch *CrudHandler) upsertSetsGuarded(ctx context.Context, col string, sent bool) bool {
 	st := ch.enforcedStates()
-	return st == nil || hasStateOverride(ctx) || !slices.Contains(st.Guarded(), col)
+	if st == nil || !slices.Contains(st.Guarded(), col) {
+		return true
+	}
+	return sent && hasStateOverride(ctx) && ch.allowStateOverride(ctx) == nil
 }
 
 // checkStateBulk refuses a TypedQuery.UpdateAll body that names a guarded
@@ -422,6 +468,9 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 	if !ok {
 		return nil, ErrUnknownTransition
 	}
+	if recordWriteInFlight(ctx, ch.Entity.GetName(), id) {
+		return nil, ErrReentrantMove
+	}
 	if ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
 		if err := ch.requireOwnerContext(ctx); err != nil {
 			return nil, err
@@ -434,25 +483,64 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 		if !ch.itemPermitted(ctx, opUpdate, id) {
 			return nil, &transitionDeniedError{perm: ch.permissionForOp(opUpdate)}
 		}
-		if t.Permission != "" && !access.CanResource(ctx, access.Permission(t.Permission), access.Ref{Type: ch.Entity.GetName(), ID: id}) {
+		if t.Permission != "" && !access.CanResourceExact(ctx, access.Permission(t.Permission), access.Ref{Type: ch.Entity.GetName(), ID: id}) {
 			return nil, &transitionDeniedError{perm: t.Permission}
 		}
 	}
 	req := syntheticRequest(ctx, http.MethodPatch, "/")
 	var result map[string]any
-	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-		res, err := ch.doTransition(ctx, req, id, st, t)
-		if err != nil {
-			return err
+	run := func() error {
+		return ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+			res, err := ch.doTransition(ctx, req, id, st, t)
+			if err != nil {
+				return err
+			}
+			result = res
+			return nil
+		})
+	}
+	err := run()
+	// SQLite refuses a deferred transaction's write with SQLITE_BUSY when
+	// another connection committed after its read, where Postgres would
+	// match zero rows. A move that began its own transaction restarts, and
+	// the restart's read names the winner's state as a conflict. Inside a
+	// caller's transaction the caller owns the retry.
+	if _, ambient := db.TxFromContext(ctx); !ambient {
+		for attempt := 1; attempt <= moveBusyRetries && isSQLiteBusy(err); attempt++ {
+			if !busyBackoff(ctx, attempt) {
+				return nil, err
+			}
+			err = run()
 		}
-		result = res
-		return nil
-	})
+	}
 	if err != nil {
 		return nil, err
 	}
 	ch.EmitEvent(ctx, event.EntityUpdated, result)
 	return result, nil
+}
+
+// moveBusyRetries bounds RunTransition's restarts on SQLITE_BUSY.
+const moveBusyRetries = 5
+
+// busyBackoff waits before restart attempt n (5ms, 10ms, ...) and reports
+// false when ctx ends first.
+func busyBackoff(ctx context.Context, n int) bool {
+	t := time.NewTimer(time.Duration(n) * 5 * time.Millisecond)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// isSQLiteBusy reports whether err is SQLite refusing a write lock:
+// SQLITE_BUSY (5) or its extended BUSY_SNAPSHOT (517), which modernc and
+// mattn both spell "database is locked".
+func isSQLiteBusy(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "database is locked") || strings.Contains(err.Error(), "SQLITE_BUSY"))
 }
 
 // transitionDeniedError is RunTransition's permission refusal (403 on
@@ -476,11 +564,14 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	}
 	current, _ := pre[ch.convertKey(st.Field)].(string)
 	if !slices.Contains(t.From, current) {
-		return nil, &TransitionConflictError{Key: t.Key, Current: current, Moves: openMoves(st, current)}
+		e := &TransitionConflictError{Key: t.Key}
+		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, current)
+		return nil, e
 	}
 	ctx = WithAuditPreImage(ctx, pre)
 	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "transition:"+t.Key)
 	ctx = context.WithValue(ctx, transitionKey{}, t.Key)
+	ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)
 
 	writes := map[string]any{st.Field: t.To}
 	if t.Stamp != "" {
@@ -528,7 +619,9 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 			return nil, rerr
 		}
 		cur, _ := now[ch.convertKey(st.Field)].(string)
-		return nil, &TransitionConflictError{Key: t.Key, Current: cur, Moves: openMoves(st, cur)}
+		e := &TransitionConflictError{Key: t.Key}
+		e.Current, e.Moves, e.hidden = ch.refusalState(ctx, id, st, cur)
+		return nil, e
 	}
 	if err != nil {
 		return nil, fmt.Errorf("transition %s: %w", t.Key, err)
@@ -561,6 +654,18 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 		return nil, errNotFound
 	}
 	return row, err
+}
+
+// refusalState is the stored state and open moves a refusal of a write
+// to record id names: both, when the caller's ReadScope admits the record,
+// and neither (hidden) when it hides it or the check fails, so a caller who
+// may write but not read a record learns nothing of its state from a 409
+// or 422.
+func (ch *CrudHandler) refusalState(ctx context.Context, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
+	if hidden, err := ch.readScopeHidesRow(ctx, map[string]any{ch.PrimaryKey: id}); hidden || err != nil {
+		return "", nil, true
+	}
+	return current, openMoves(st, current), false
 }
 
 // stampValue is the server's current UTC date for a Date stamp, or the

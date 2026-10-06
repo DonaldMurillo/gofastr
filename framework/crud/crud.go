@@ -1272,6 +1272,10 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusForbidden, tde.Error())
 		return
 	}
+	if errors.Is(err, ErrReentrantMove) {
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
 	if errors.Is(err, ErrUnknownTransition) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return

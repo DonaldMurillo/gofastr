@@ -6,12 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -114,6 +116,32 @@ func TestRunTransitionHappyPath(t *testing.T) {
 	}
 }
 
+// A Timestamp stamp gets the server's current instant, bound the way
+// updated_at is, not a date.
+func TestRunTransitionTimestampStamp(t *testing.T) {
+	ch, db := statesWorld(t, func(c *entity.EntityConfig) {
+		for i := range c.Fields {
+			if c.Fields[i].Name == "paid_on" {
+				c.Fields[i].Type = schema.Timestamp
+			}
+		}
+	})
+	seedStateInvoice(t, db, "i1", "open", nil)
+	before := time.Now().UTC().Add(-time.Second)
+	if _, err := ch.RunTransition(context.Background(), "i1", "pay"); err != nil {
+		t.Fatalf("RunTransition pay: %v", err)
+	}
+	after := time.Now().UTC().Add(time.Second)
+	_, paidOn := readStateInvoice(t, db, "i1")
+	at, err := time.Parse(time.RFC3339Nano, paidOn.String)
+	if err != nil {
+		t.Fatalf("paid_on = %q, want an RFC 3339 instant: %v", paidOn.String, err)
+	}
+	if at.Before(before) || at.After(after) {
+		t.Fatalf("paid_on = %v, want between %v and %v", at, before, after)
+	}
+}
+
 // ============================================================================
 // Conflicts and unknown keys
 // ============================================================================
@@ -193,6 +221,37 @@ func statesPermittedWorld(t *testing.T) (*CrudHandler, *sql.DB) {
 		c.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Update: "invoices:write"}}
 		c.States.Transitions[1].Permission = "invoices:pay"
 	})
+}
+
+// A move's Permission is held by name: a role granted the Wildcard passes
+// the entity's update permission but not the move's own, while a Decider
+// that allows the move about this record still does.
+func TestRunTransitionWildcardNoMove(t *testing.T) {
+	ch, db := statesPermittedWorld(t)
+	seedStateInvoice(t, db, "i1", "open", nil)
+
+	policy := access.NewRolePolicy()
+	if err := policy.Grant("root", access.Wildcard); err != nil {
+		t.Fatal(err)
+	}
+	root := access.WithRoles(access.WithPolicy(ctxWithUser("u1"), policy), []string{"root"})
+	_, err := ch.RunTransition(root, "i1", "pay")
+	if err == nil || !strings.Contains(err.Error(), "missing permission invoices:pay") {
+		t.Fatalf("wildcard move: err = %v, want a denial naming invoices:pay", err)
+	}
+	if status, _ := readStateInvoice(t, db, "i1"); status != "open" {
+		t.Fatalf("wildcard move changed the row to %q", status)
+	}
+
+	allow := access.WithDecider(root, func(_ context.Context, _ []string, p access.Permission, ref access.Ref) access.Decision {
+		if p == "invoices:pay" && ref.ID == "i1" {
+			return access.DecisionAllow
+		}
+		return access.DecisionAbstain
+	})
+	if _, err := ch.RunTransition(allow, "i1", "pay"); err != nil {
+		t.Fatalf("decider-allowed move: %v", err)
+	}
 }
 
 func TestRunTransitionPermissionDenied(t *testing.T) {
@@ -466,5 +525,159 @@ func TestMCPTransitionTools(t *testing.T) {
 	}
 	if !paidOn.Valid {
 		t.Fatal("tool move did not stamp paid_on")
+	}
+}
+
+// ============================================================================
+// Re-entrant moves
+// ============================================================================
+
+// A hook cannot move the record whose write is running it: the nested move
+// would either break the outer statement's From pin (rolling everything
+// back) or leave the outer write answering a state it no longer holds. A
+// move of another record from the same hook still runs.
+func TestRunTransitionRefusesReentry(t *testing.T) {
+	ch, db := statesWorld(t)
+	seedStateInvoice(t, db, "i1", "open", nil)
+	seedStateInvoice(t, db, "i2", "draft", nil)
+	var same, other, fromEdit error
+	editing := false
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.AfterUpdate, func(ctx context.Context, _ any) error {
+		if TransitionFromContext(ctx) == "pay" {
+			_, same = ch.RunTransition(ctx, "i1", "void")
+			_, other = ch.RunTransition(ctx, "i2", "issue")
+		}
+		return nil
+	})
+	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(ctx context.Context, _ any) error {
+		if editing {
+			editing = false
+			_, fromEdit = ch.RunTransition(ctx, "i1", "void")
+		}
+		return nil
+	})
+
+	row, err := ch.RunTransition(context.Background(), "i1", "pay")
+	if err != nil {
+		t.Fatalf("outer move: %v", err)
+	}
+	if !errors.Is(same, ErrReentrantMove) {
+		t.Fatalf("nested move of the same record = %v, want ErrReentrantMove", same)
+	}
+	if other != nil {
+		t.Fatalf("nested move of another record = %v, want nil", other)
+	}
+	if row["status"] != "paid" {
+		t.Fatalf("outer move answered %v, want paid", row["status"])
+	}
+	if s, _ := readStateInvoice(t, db, "i1"); s != "paid" {
+		t.Fatalf("i1 stored %q, want paid", s)
+	}
+	if s, _ := readStateInvoice(t, db, "i2"); s != "open" {
+		t.Fatalf("i2 stored %q, want open", s)
+	}
+
+	editing = true
+	if _, err := ch.UpdateOne(context.Background(), "i1", map[string]any{"amount": 9}); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if !errors.Is(fromEdit, ErrReentrantMove) {
+		t.Fatalf("move from an edit's hook of the same record = %v, want ErrReentrantMove", fromEdit)
+	}
+	if s, _ := readStateInvoice(t, db, "i1"); s != "paid" {
+		t.Fatalf("i1 stored %q after the edit, want paid", s)
+	}
+}
+
+// A refusal names the stored state and the open moves only to a caller
+// whose ReadScope admits the record: one the scope hides answers the same
+// 409/422 with neither, so a write-capable caller cannot read a hidden
+// record's state through a refused move or edit.
+func TestStateRefusalHidesFromReadScope(t *testing.T) {
+	ch, db := statesWorld(t, func(c *entity.EntityConfig) {
+		c.Exposure.ReadScope = &entity.ReadScopeConfig{
+			Filter: []entity.RowPredicate{{Field: "status", Op: "in", Values: []string{"draft", "open"}}},
+		}
+	})
+	seedStateInvoice(t, db, "hidden", "paid", "2026-01-02")
+	seedStateInvoice(t, db, "shown", "open", nil)
+	ctx := context.Background()
+
+	_, err := ch.RunTransition(ctx, "hidden", "issue")
+	tce, ok := errors.AsType[*TransitionConflictError](err)
+	if !ok {
+		t.Fatalf("move on a hidden record = %v, want TransitionConflictError", err)
+	}
+	if tce.Current != "" || tce.Moves != nil || strings.Contains(tce.Error(), "from") {
+		t.Fatalf("hidden record's conflict names its state: %+v %q", tce, tce.Error())
+	}
+	_, err = ch.UpdateOne(ctx, "hidden", map[string]any{"status": "draft"})
+	se := stateErr(t, err)
+	if se.Current != "" || se.Moves != nil || strings.Contains(se.Error(), "from") {
+		t.Fatalf("hidden record's state error names its state: %+v %q", se, se.Error())
+	}
+
+	_, err = ch.RunTransition(ctx, "shown", "issue")
+	if tce, ok := errors.AsType[*TransitionConflictError](err); !ok || tce.Current != "open" || len(tce.Moves) == 0 {
+		t.Fatalf("visible record's conflict = %v, want current open with moves", err)
+	}
+}
+
+// Two moves of one record on two SQLite connections: the loser's deferred
+// transaction read the old state, and the winner committed before it
+// wrote, so SQLite refuses the loser's write with SQLITE_BUSY rather than
+// matching zero rows. RunTransition restarts a move it began itself on
+// BUSY, and the restart reads the winner's state: a typed conflict (409),
+// never a database error (500).
+func TestRunTransitionSQLiteBusyConflict(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(2)
+	for _, stmt := range []string{"PRAGMA journal_mode = WAL", "PRAGMA busy_timeout = 2000", statesInvoiceDDL} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	cfg := entity.EntityConfig{
+		Name: "invoices", Table: "invoices",
+		Fields: statesInvoiceFields(), States: statesInvoiceStates(),
+		Exposure: &entity.ExposureConfig{Public: true},
+	}.WithTimestamps(true)
+	ent := entity.Define(cfg.Table, cfg)
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	seedStateInvoice(t, db, "i1", "open", nil)
+
+	raced := false
+	var winner error
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(ctx context.Context, _ any) error {
+		if TransitionFromContext(ctx) != "pay" || raced {
+			return nil
+		}
+		raced = true
+		// The winner runs to commit on the other connection while the
+		// loser's transaction holds its read of "open".
+		_, winner = ch.RunTransition(context.Background(), "i1", "void")
+		return nil
+	})
+
+	_, err = ch.RunTransition(context.Background(), "i1", "pay")
+	if winner != nil {
+		t.Fatalf("winning move: %v", winner)
+	}
+	tce, ok := errors.AsType[*TransitionConflictError](err)
+	if !ok {
+		t.Fatalf("losing move = %v (%T), want *TransitionConflictError", err, err)
+	}
+	if tce.Current != "void" {
+		t.Fatalf("conflict current = %q, want the winner's void", tce.Current)
+	}
+	if s, paidOn := readStateInvoice(t, db, "i1"); s != "void" || paidOn.Valid {
+		t.Fatalf("stored %q paid_on %v, want void and no stamp", s, paidOn)
 	}
 }
