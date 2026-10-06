@@ -28,8 +28,11 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 			"page":   ids,
 			"key":    map[string]any{"type": "string", "description": "The list's key, which namespaces its query parameters"},
 			"query":  map[string]any{"type": "string", "description": "The list's query string, for scope every"},
+			"match":  map[string]any{"type": "string", "description": "For scope every: the digest of the ids the list offered, from the bar's match field. The run is refused (409) when the query now matches any other set"},
 		},
 		"required": []string{"action", "scope"},
+		"if":       map[string]any{"properties": map[string]any{"scope": map[string]any{"const": "every"}}, "required": []string{"scope"}},
+		"then":     map[string]any{"required": []string{"match"}},
 	}, true)
 	bulkOp.AddResponse(200, "Ran in the request", objectSchemaWith(map[string]any{
 		"run":     map[string]any{"type": "string"},
@@ -44,7 +47,9 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	bulkOp.AddResponse(400, "Invalid request body", errorRef)
 	bulkOp.AddResponse(403, "Forbidden, or an action not offered to this caller", errorRef)
 	bulkOp.AddResponse(404, entityName+" has no bulk actions", errorRef)
+	bulkOp.AddResponse(409, "Every match no longer matches the rows the list offered", errorRef)
 	bulkOp.AddResponse(413, "Request body too large", errorRef)
+	bulkOp.AddResponse(415, "A body that is not JSON", errorRef)
 	bulkOp.AddResponse(422, "Nothing selected, a scope or filter the list refuses, or over a cap", errorRef)
 	exportOp := openapi.NewOperation()
 	exportOp.Summary = "Export " + entityName + " as CSV"

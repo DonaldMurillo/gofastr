@@ -272,7 +272,7 @@ func TestBulkEveryMatchFollowsQuery(t *testing.T) {
 	rows := invoiceRows()
 	rows["invoices"] = append(rows["invoices"], map[string]any{"id": "inv-2", "number": "INV-2", "status": "paid"})
 	x := newTestUI(t, invoiceEntities(), rows, withAPI(map[string]string{"invoices": "/api/invoices"}))
-	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=status+%3D+%22draft%22`, "count": "1"})
+	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=status+%3D+%22draft%22`, "match": matchDigest([]string{"inv-1"})})
 	if code != http.StatusOK {
 		t.Fatalf("status %d: %v", code, out)
 	}
@@ -285,7 +285,7 @@ func TestBulkEveryMatchFollowsQuery(t *testing.T) {
 // widening to every row.
 func TestBulkEveryMatchBadFilterRefused(t *testing.T) {
 	x := newTestUI(t, invoiceEntities(), invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
-	code, _ := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=token+%3D+%22x%22`, "count": "1"})
+	code, _ := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=token+%3D+%22x%22`, "match": "x"})
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422 for a filter on a NoQuery field", code)
 	}
@@ -457,7 +457,7 @@ func TestBulkQueuedRunsUnderCreator(t *testing.T) {
 		}
 		return bulkCtx("u1", policy, "clerk"), nil
 	}
-	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"})
+	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))})
 	if code != http.StatusAccepted {
 		t.Fatalf("status %d: %v, want 202", code, out)
 	}
@@ -490,7 +490,7 @@ func TestBulkQueuedStopsWhenRoleRevoked(t *testing.T) {
 		}
 		return bulkCtx("u1", policy), nil
 	}
-	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"})
+	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))})
 	if code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
@@ -516,7 +516,7 @@ func TestBulkQueuedStopsWhenRoleRevoked(t *testing.T) {
 func TestBulkQueuedStopsWithoutPrincipal(t *testing.T) {
 	x, mb, policy := newQueuedUI(t, 150)
 	mb.principal = func(BulkJob) (context.Context, error) { return nil, errors.New("user deleted") }
-	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"}); code != http.StatusAccepted {
+	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "match": matchDigest(invoiceIDs(t, x))}); code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	if err := x.ui.RunBulkJob(context.Background(), mb.queued[0].ID); err != nil {

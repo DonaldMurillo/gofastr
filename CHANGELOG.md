@@ -695,7 +695,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   sits behind its group's middleware. The server re-reads every posted id
   through the scoped handler, rebuilds "every match" from the list's own
   narrowing (at most `EveryMatchCap`, 10,000) and refuses it with 409 when
-  the match is not the count the bar offered, and asks each record's
+  the matching ids are not the set the bar offered (it carries their
+  digest), even at the same size, and asks each record's
   update or delete gate before the write, counting a refusal as skipped.
   The bulk route takes JSON only (415 otherwise). Up to
   `InRequestCap` (100) records run in the request; past it the run needs

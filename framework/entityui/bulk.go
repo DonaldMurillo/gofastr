@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,9 +40,12 @@ import (
 //     scope hides, drops out before anything runs;
 //   - every match rebuilds the list's narrowing (view, search, filter,
 //     facets) from the query and reads the matching ids, at most
-//     EveryMatchCap. A page's .Where pins are not in the query: they shape
-//     what a page shows, and a caller who drops them still acts only on
-//     rows the API lets them write.
+//     EveryMatchCap. The run goes ahead only when those ids are the ones
+//     the screen offered (the bar carries a digest of them), so a row
+//     that entered the list after it drew is never touched. A page's
+//     .Where pins are not in the query: they shape what a page shows, and
+//     a caller who drops them still acts only on rows the API lets them
+//     write.
 //
 // Each record is then asked its write gate (CanUpdateRecordScoped or
 // CanDeleteRecordScoped, the routes' per-record Decider question) before
@@ -220,7 +224,7 @@ type bulkBody struct {
 	Page   stringList `json:"page"`
 	Key    string     `json:"key"`
 	Query  string     `json:"query"`
-	Count  string     `json:"count"`
+	Match  string     `json:"match"`
 }
 
 // bulkRefusal is a refusal the caller can act on, drawn from the catalog.
@@ -284,30 +288,46 @@ func (u *UI) visibleIDs(ctx context.Context, m *meta, ids []string) ([]string, e
 
 // everyMatch reads the ids of every row the list's query matches, the
 // narrowing the screen applied, at most EveryMatchCap. The body carries
-// the count the screen offered; a match of any other size is refused
-// (409), so a list that changed underneath, or a query that is not the
-// screen's, never runs over rows the caller did not see counted.
+// the digest of the ids the screen offered (matchDigest); any other set
+// is refused (409), so a list that changed underneath, even to the same
+// size, or a query that is not the screen's, never runs over rows the
+// caller did not confirm.
 func (u *UI) everyMatch(ctx context.Context, m *meta, body bulkBody) ([]string, error) {
 	q, err := url.ParseQuery(body.Query)
-	if err != nil {
+	if err != nil || body.Match == "" {
 		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 	}
-	want, err := strconv.Atoi(body.Count)
-	if err != nil || want < 1 {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
-	}
-	rows, err := u.matchRows(ctx, m, body.Key, q, []string{m.pk})
+	ids, err := u.matchIDs(ctx, m, body.Key, q)
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) != want {
+	if matchDigest(ids) != body.Match {
 		return nil, refuse(http.StatusConflict, i18nui.T(ctx, i18nui.KeyEntityBulkStale))
 	}
-	out := make([]string, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, cell(rowValue(row, m.pk)))
+	return ids, nil
+}
+
+// matchIDs is matchRows reduced to the primary keys.
+func (u *UI) matchIDs(ctx context.Context, m *meta, key string, q url.Values) ([]string, error) {
+	rows, err := u.matchRows(ctx, m, key, q, []string{m.pk})
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, cell(rowValue(row, m.pk)))
+	}
+	return ids, nil
+}
+
+// matchDigest binds an every-match selection to its rows: the hex SHA-256
+// of the sorted ids, each length-prefixed so no two id sets share one.
+func matchDigest(ids []string) string {
+	h := sha256.New()
+	for _, id := range slices.Sorted(slices.Values(ids)) {
+		fmt.Fprintf(h, "%d:%s,", len(id), id)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // matchRows reads every row the list keyed key matches under the query

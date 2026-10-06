@@ -254,10 +254,11 @@ and so does an entity with no REST write routes.
   through the scoped CRUD handler under the caller's context, so an id
   from another owner or tenant drops out. "Every match" rebuilds the
   list's view (a builder's `View` included), search, filter and facets
-  from the posted query, up to `EveryMatchCap`, and the bar posts the
-  count it offered: a match of any other size is refused with 409, so a
-  list that changed since it was drawn never runs over rows the caller
-  did not see counted. Each record then passes its own update or delete
+  from the posted query, up to `EveryMatchCap`, and the bar posts a
+  digest of the ids it offered (`match`): any other set is refused with
+  409, even one of the same size, so a row that entered the list after
+  it was drawn is never touched. A list past the cap is not offered
+  every match. Each record then passes its own update or delete
   gate before the write; a refused record counts as skipped.
 - **Every run writes one audit row** (`op: "bulk"`) with the action, the
   count and the done, skipped and failed tallies, when the app has

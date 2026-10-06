@@ -25,6 +25,21 @@ func TestBulkPathsOnlyForMounted(t *testing.T) {
 	if got := propEnum(body["properties"].(map[string]any)["scope"]); len(got) != 3 {
 		t.Errorf("bulk scope enum = %v, want selected/page/every", got)
 	}
+	// A client built from the spec can encode every scope: every match
+	// needs the digest the bar carries.
+	if _, ok := body["properties"].(map[string]any)["match"]; !ok {
+		t.Error("bulk body has no match property, so a typed client cannot send scope every")
+	}
+	then, _ := body["then"].(map[string]any)
+	if req, _ := then["required"].([]string); len(req) != 1 || req[0] != "match" {
+		t.Errorf("scope every does not require match: if/then = %v / %v", body["if"], body["then"])
+	}
+	responses, _ := bulk["responses"].(map[int]map[string]any)
+	for _, code := range []int{409, 415} {
+		if _, ok := responses[code]; !ok {
+			t.Errorf("bulk responses lack %d: %v", code, responses)
+		}
+	}
 	export := getMap(t, getMap(t, paths, "/notes/_export.csv"), "get")
 	if export["operationId"] != "export_notes" {
 		t.Errorf("export operationId = %v, want export_notes", export["operationId"])
