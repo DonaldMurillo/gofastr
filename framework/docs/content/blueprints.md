@@ -899,10 +899,13 @@ validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 that computes a live metric server-side:
 `source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
 optional `filter: status=active`) for a `stat_card`, and
-`source: {entity: customers, group_by: status}` for a chart. For the chart
-kinds `source` (with both `entity` and `group_by`, targeting a declared
-entity) is **required**: validation rejects a chart without one rather
-than letting the block silently vanish from the page. A chart with a
+`source: {entity: customers, group_by: status}` for a chart. `agg` is
+`count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
+`int`, `float` or `decimal` field; validation refuses anything else rather
+than rendering "—". For the chart kinds `source` (with both `entity` and
+`group_by`, targeting a declared entity) is **required**: validation
+rejects a chart without one rather than letting the block silently vanish
+from the page. A chart with a
 `title` renders inside a `ui.Card` with that heading. A chart or `card`
 block with no titled `section` or `card` above it emits
 `HeadingLevel: 2`, so its title follows the page's h1 without skipping a

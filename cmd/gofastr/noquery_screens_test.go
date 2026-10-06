@@ -46,11 +46,10 @@ screens:
 	return validateBlueprint(bp)
 }
 
-// group_by is the chart's LABEL. groupCounts reads rows raw, because the
-// dashboard aggregates are meant to compute over stored values, and prints
-// each distinct value as a bar or slice caption, so a masked column renders
-// verbatim on the page while the API masks it. Not an oracle: the whole
-// value set, on whatever route the screen sits on.
+// group_by is the chart's LABEL. groupCounts prints each distinct stored
+// value as a bar or slice caption, so a masked column renders verbatim on
+// the page while the API masks it. Not an oracle: the whole value set, on
+// whatever route the screen sits on.
 func TestChartGroupByRefusesMaskedColumn(t *testing.T) {
 	for _, kind := range []string{"bar_chart", "pie_chart", "line_chart"} {
 		err := r5Blueprint(t, `      - kind: `+kind+`
@@ -96,6 +95,30 @@ func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 `)
 	if err == nil {
 		t.Fatal("stat_card agg:sum over a no_query column was accepted")
+	}
+}
+
+// agg is StatValue's exact spelling, and a sum totals a numeric field:
+// anything else renders "—" at runtime, so generation refuses it.
+func TestStatCardAggIsExact(t *testing.T) {
+	stat := func(agg, field string) error {
+		return r5Blueprint(t, `      - kind: stat_card
+        props:
+          source:
+            entity: cards
+            agg: "`+agg+`"
+            field: `+field+`
+`)
+	}
+	for _, c := range [][2]string{{"SUM", "amount"}, {"avg", "amount"}, {" sum", "amount"}, {"sum", "label"}, {"sum", "created_at"}} {
+		if err := stat(c[0], c[1]); err == nil {
+			t.Errorf("stat_card agg %q field %q was accepted", c[0], c[1])
+		}
+	}
+	for _, c := range [][2]string{{"sum", "amount"}, {"count", "label"}, {"", "label"}} {
+		if err := stat(c[0], c[1]); err != nil {
+			t.Errorf("stat_card agg %q field %q: %v", c[0], c[1], err)
+		}
 	}
 }
 

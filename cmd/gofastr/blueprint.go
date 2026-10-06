@@ -3438,10 +3438,8 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
-		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
-		// rows raw (no WithReadHooks; the dashboard aggregates are meant to
-		// compute over stored values) and prints each distinct value as a bar
-		// or slice label. Pointed at a masked column that renders the stored
+		// group_by is the chart's LABEL, not an aggregate: groupCounts
+		// prints each distinct stored value as a bar or slice label. Pointed at a masked column that renders the stored
 		// value verbatim on the page while the API masks it: the full value
 		// set, not the one-bit oracle the stat_card filter guard below closes.
 		// Masking groupCounts instead would collapse every row into a single
@@ -3490,16 +3488,23 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 					break
 				}
 			}
-			// agg: sum reads the same raw rows and renders the total of the
-			// named column. At one row that total IS the stored value, so the
-			// masked-column bar applies here too.
-			if agg, _ := src["agg"].(string); strings.EqualFold(strings.TrimSpace(agg), "sum") {
-				if f, _ := src["field"].(string); f != "" {
-					if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
-						"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
-						return err
-					}
+			// agg is StatValue's exact spelling: count (or empty) or sum. sum
+			// renders the total of a numeric column. At one row that total IS
+			// the stored value, so the masked-column bar applies here too.
+			agg, _ := src["agg"].(string)
+			switch agg {
+			case "", "count":
+			case "sum":
+				f, _ := src["field"].(string)
+				if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
+					"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
+					return err
 				}
+				if col, _ := blueprintColumn(decl, f); col == nil || !blueprintNumericType(col.Type) {
+					return fmt.Errorf("blueprint: screen %q stat_card sums source.field %q, which is not an int, float or decimal field", screenName, f)
+				}
+			default:
+				return fmt.Errorf("blueprint: screen %q stat_card source agg %q is not count or sum", screenName, agg)
 			}
 		}
 	case "stack", "cluster", "grid", "stat_grid":
@@ -5928,6 +5933,15 @@ func blueprintColumn(decl framework.EntityDeclaration, name string) (found *fram
 		return nil, true
 	}
 	return nil, false
+}
+
+// blueprintNumericType reports a declared field type a sum can total.
+func blueprintNumericType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "int", "integer", "float", "number", "decimal":
+		return true
+	}
+	return false
 }
 
 // requireGroupableColumn refuses a screen column whose stored values would be

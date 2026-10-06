@@ -52,10 +52,16 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   `?prefill_<field>=<value>` prefills one field — the convention a
   `Where`-pinned list's New link uses, the Related tab's among them. A
   bare `?<field>=` is some other param and prefills nothing.
-- **Stats and charts**: `appUI.StatValue` (a count or sum, `where` in the
-  query DSL), `GroupBars`, `GroupSlices` and `LineChart` (rows per value
-  of a field). A dashboard block reads an entity without a screen of its
-  own.
+- **Stats and charts**: `appUI.StatValue` (agg `count` or empty, or
+  `sum` of an int, float or decimal field; `where` in the query DSL),
+  `GroupBars`, `GroupSlices` and `LineChart` (rows per value of a field,
+  in value order, an enum's in its declared order). The database computes
+  each over every match (`crud.SumAll`, `GroupCountAll`), so a sum is
+  whole and rounded once, from the database's total. Any other agg
+  prints "—". On an entity with `AfterList` hooks the stat totals the
+  masked rows instead, and past 100,000 rows prints "—" rather than part
+  of them; a field with more than 100 values draws no chart. Each logs
+  why. A dashboard block reads an entity without a screen of its own.
 
 ## How it reads the entity
 

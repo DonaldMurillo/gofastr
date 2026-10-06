@@ -693,6 +693,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   another entity (relation labels, pickers, facets, related lists, stats)
   passes that entity's own read gate. See
   `framework/docs/content/entityui.md`.
+- **`crud.SumAll` and `crud.GroupCountAll`.** The database totals a
+  numeric field, or counts rows per stored value, over every match under
+  the same owner, tenant, read, soft-delete and `BeforeList` scopes as
+  `ListAll`. A decimal sums as `NUMERIC` on Postgres. Under
+  `WithReadHooks` an entity with `AfterList` hooks refuses both with
+  `crud.ErrAggregateMasked`. `StatValue` and the chart helpers compute
+  through them: a sum covers every row and rounds once, an agg other
+  than `count` or `sum` prints "—" (the blueprint refuses it, and a sum
+  of a non-numeric field), and an `AfterList`-hooked entity totals its
+  masked rows up to 100,000, printing "—" past that.
 - **Bulk actions and CSV export on entity lists.** `.Bulk()` adds a
   select column, a bulk bar and an Export CSV link; `bulk: true` on a
   blueprint `entity_list` emits it. `App.EntityUI` mounts

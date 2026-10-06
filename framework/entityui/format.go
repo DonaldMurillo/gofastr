@@ -85,11 +85,13 @@ func formatDate(raw any, layout string) string {
 // formatNumber prints a float without trailing zeros on whole values and
 // with thousands grouping.
 func formatNumber(f float64, decimals int) string {
-	neg := f < 0
-	if neg {
-		f = -f
-	}
-	s := strconv.FormatFloat(f, 'f', decimals, 64)
+	return groupDigits(strconv.FormatFloat(f, 'f', decimals, 64))
+}
+
+// groupDigits puts thousands separators into a plain decimal string
+// ("-1234567.50" reads "-1,234,567.50").
+func groupDigits(s string) string {
+	s, neg := strings.CutPrefix(s, "-")
 	whole, frac, _ := strings.Cut(s, ".")
 	var grp []string
 	for len(whole) > 3 {
