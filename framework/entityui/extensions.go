@@ -54,7 +54,10 @@ type InputContext struct {
 	Placeholder string
 }
 
-// CellContext is what a Kind's Cell and Detail receive.
+// CellContext is what a Kind's Cell and Detail receive. Row and Value
+// come from the read after its hooks, so a masked column stays masked; a
+// relation whose target the caller may not read draws muted and never
+// reaches the callback.
 type CellContext struct {
 	Ctx    context.Context
 	Entity string

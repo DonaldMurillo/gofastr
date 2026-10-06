@@ -428,10 +428,21 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 // nothing about it is submitted.
 func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label string) render.HTML {
 	if k, ok := fb.kind(f); ok && (k.Detail != nil || k.Cell != nil) {
-		if k.Detail != nil {
-			return k.Detail(CellContext{Ctx: ctx, Entity: fb.m.name, Field: f, Value: fb.value(f), Row: fb.row})
+		// A display callback gets what the read-only value would show:
+		// the hooked row, and no foreign key the caller may not read.
+		// Only an editable input gets the raw row.
+		row, val := fb.row, fb.value(f)
+		if !fb.create && fb.displayRow != nil {
+			row, val = fb.displayRow, formValueText(f, rowValue(fb.displayRow, f.Name))
 		}
-		return k.Cell(CellContext{Ctx: ctx, Entity: fb.m.name, Field: f, Value: fb.value(f), Row: fb.row})
+		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
+			return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: muted()}}})
+		}
+		cc := CellContext{Ctx: ctx, Entity: fb.m.name, Field: f, Value: val, Row: row}
+		if k.Detail != nil {
+			return k.Detail(cc)
+		}
+		return k.Cell(cc)
 	}
 	var value render.HTML
 	if fb.create {

@@ -163,6 +163,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
   built in; an app kind of the same name replaces a built-in one.
+  `Cell` and `Detail` get the row after the read hooks, so a column a hook
+  masks stays masked in them, and a relation whose target the caller may
+  not read draws muted without calling them. Only `Input` gets the stored
+  value, since a form prefills from it.
 - **Views** bind a func to a `Display.Views` key, for a filter that
   depends on who is looking, the tenant or the clock. The URL carries the
   key (`?view=overdue`), never the predicate. The func's predicate passes
