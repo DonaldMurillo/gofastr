@@ -55,9 +55,9 @@ func (r Radius) String() string { return r.CSS() }
 // Stroke is a line-width token: a border, a divider, a focus outline
 // and its offset. Value is a non-negative CSS length ("1px", "0.125rem")
 // or "0", which is a real width (a borderless theme). The set is
-// optional, like CodeColor: a token left fully zero is not emitted and
-// the kit's var() fallback draws the default width, so a theme written
-// before strokes existed keeps its borders.
+// optional: a token left fully zero emits the default theme's width, so
+// a theme written before strokes existed keeps its borders and every
+// var(--stroke-*) reader resolves.
 type Stroke struct {
 	Name  string
 	Value string

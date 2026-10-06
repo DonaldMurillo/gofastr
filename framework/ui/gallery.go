@@ -238,8 +238,8 @@ func galleryCSS(_ style.Theme) string {
   list-style: none;
   margin: 0;
   padding: 0;
-  --ui-gallery-cols: 3;
-  --ui-gallery-min: 9.5rem;
+  --_gallery-cols: var(--ui-gallery-cols, 3);
+  --_gallery-min: var(--ui-gallery-min, 9.5rem);
   /* Knob: --ui-gallery-gap, over the md layout gap step. The root
      resolves it into a private property rather than setting the knob
      itself, so a theme's value on :root reaches it and a Gap preset
@@ -259,13 +259,13 @@ func galleryCSS(_ style.Theme) string {
   text-decoration: none;
   color: inherit;
   cursor: zoom-in;
-  transition: border-color var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Knobs: --ui-gallery-item-hover-shadow / -active-shadow and
    --ui-gallery-item-hover-translate / -active-translate over the
    shared --ui-press-* knobs. */
 [data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
   box-shadow: var(--ui-gallery-item-hover-shadow, var(--ui-press-hover-shadow, none));
   translate: var(--ui-gallery-item-hover-translate, var(--ui-press-hover-translate, none));
 }
@@ -322,7 +322,7 @@ func galleryCSS(_ style.Theme) string {
    media queries. */
 [data-cui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--_gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--_gallery-min), calc((100% - (var(--_gallery-cols) - 1) * var(--_gallery-gap)) / var(--_gallery-cols)))), 1fr));
   gap: var(--_gallery-gap);
 }
 
@@ -346,8 +346,8 @@ func galleryCSS(_ style.Theme) string {
    browser drops columns as the container narrows — same responsive contract
    as the grid variant. */
 .fui-gallery--masonry {
-  column-width: var(--ui-gallery-min);
-  column-count: var(--ui-gallery-cols);
+  column-width: var(--_gallery-min);
+  column-count: var(--_gallery-cols);
   column-gap: var(--_gallery-gap);
   display: block;
 }
@@ -373,7 +373,7 @@ func galleryCSS(_ style.Theme) string {
   background: linear-gradient(to top, var(--ui-scrim, rgba(0,0,0,0.7)), transparent);
   font-size: var(--text-sm, 0.875rem);
   opacity: 0;
-  transition: opacity var(--duration-fast, 150ms) ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* The caption is the anchor's sibling in the primitive's markup, so
    the row (the li) carries the hover/focus-within surface. */

@@ -277,20 +277,20 @@ func markdownCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: var(--tracking-snug, -0.01em); margin-block: 0 0.5em; }
 [data-cui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: var(--tracking-snug, -0.01em);  margin-block: 2.6em 0.55em; }
-[data-cui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
-[data-cui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
+[data-cui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: calc(var(--font-weight-semibold, 600) + 50); margin-block: 1.9em 0.45em; }
+[data-cui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: calc(var(--font-weight-semibold, 600) + 50); margin-block: 1.5em 0.35em; }
 /* A heading straight after another heading shouldn't double the gap. */
 [data-cui-comp="ui-markdown"] h2 + h3,
 [data-cui-comp="ui-markdown"] h3 + h4 { margin-block-start: 0.9em; }
 [data-cui-comp="ui-markdown"] > :first-child:is(h1,h2,h3,h4) { margin-block-start: 0; }
 
 [data-cui-comp="ui-markdown"] a {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;
 }
-[data-cui-comp="ui-markdown"] strong { font-weight: 650; color: var(--color-text, #18181B); }
+[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #18181B); }
 
 /* Lists — hang the marker, give items room, tighten nested levels. */
 [data-cui-comp="ui-markdown"] ul,
@@ -370,7 +370,7 @@ func markdownCSS(_ style.Theme) string {
   vertical-align: top;
 }
 [data-cui-comp="ui-markdown"] thead th {
-  font-weight: 650;
+  font-weight: calc(var(--font-weight-semibold, 600) + 50);
   color: var(--color-text, #18181B);
   border-block-end-width: var(--stroke-thick, 2px);
 }

@@ -76,16 +76,28 @@ notes:
     breaking: true
     hits: edit
     find:
-      strings:
-        match: '(?:^|[^-a-z])(?:outline-offset|outline-width|column-rule-width|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-width)\s*:\s*[12]px\s*(?:;|\}|!|$)'
-    guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
+      css:
+        declarations:
+          - properties: [outline-offset, outline-width, column-rule-width, border-width, border-top-width, border-right-width, border-bottom-width, border-left-width, border-inline-width, border-block-width, border-inline-start-width, border-inline-end-width, border-block-start-width, border-block-end-width]
+            value: '^\+?0*[12](?:\.0*)?px$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
   - change: "the owned-style check (gofastr gen styles, gofastr verify) reads line-height, letter-spacing and opacity against the new --leading-*, --tracking-* and --opacity-* tokens: a .style.css declaration whose value is one of theirs, such as line-height: 1.6 or letter-spacing: -0.01em, which the sitefooter and siteheader sheets the blueprint wrote carry, is a GOFASTR1807 error and stops that sheet's Go being generated"
     breaking: true
     hits: edit
     find:
-      strings:
-        match: '(?:^|[^-a-z])(?:line-height\s*:\s*1\.[2456]|letter-spacing\s*:\s*(?:-0\.0[123]|0\.0[48])em|opacity\s*:\s*0?\.[256])\s*(?:;|\}|!|$)'
-    guidance: "The hit is the checked CSS constant in <name>_style.gen.go; fix its <name>.style.css source. Write line-height 1.2 / 1.4 / 1.5 / 1.6 as var(--leading-tight) / var(--leading-snug) / var(--leading-normal) / var(--leading-relaxed), letter-spacing -0.03em / -0.02em / -0.01em / 0.04em / 0.08em as var(--tracking-tighter) / var(--tracking-tight) / var(--tracking-snug) / var(--tracking-wide) / var(--tracking-wider), and opacity 0.2 / 0.5 / 0.6 as var(--opacity-faint) / var(--opacity-disabled) / var(--opacity-muted), then re-run gofastr gen styles. Other values pass the check."
+      css:
+        declarations:
+          - properties: [line-height]
+            value: '^\+?0*1\.[2456]0*$'
+            glob: "**/*.style.css"
+          - properties: [letter-spacing]
+            value: '^(?:-0*\.0[123]|\+?0*\.0[48])0*em$'
+            glob: "**/*.style.css"
+          - properties: [opacity]
+            value: '^\+?0*\.[256]0*$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write line-height 1.2 / 1.4 / 1.5 / 1.6 as var(--leading-tight) / var(--leading-snug) / var(--leading-normal) / var(--leading-relaxed), letter-spacing -0.03em / -0.02em / -0.01em / 0.04em / 0.08em as var(--tracking-tighter) / var(--tracking-tight) / var(--tracking-snug) / var(--tracking-wide) / var(--tracking-wider), and opacity 0.2 / 0.5 / 0.6 as var(--opacity-faint) / var(--opacity-disabled) / var(--opacity-muted), then re-run gofastr gen styles. Other values pass the check."
   - change: "EntityUserStore records email_verified (FALSE for every existing row). A magic link or a completed password reset on an unverified account claims it: OAuth links, API tokens and sessions are removed, and a magic link also clears the password. OAuth auto-links a new provider only into a verified account (409 otherwise). A magic link on an existing account answers 500 when the user store does not implement EmailVerifiedChecker"
     breaking: true
     hits: review
@@ -170,3 +182,25 @@ notes:
       uses:
         - gofastr/battery/auth.UserEntityConfig
     guidance: "Expose what clients need from such an entity through a custom route or a projection entity; in-process reads (ListAll, GetOne, EagerLoad) are unaffected."
+  - change: "style.DefaultTheme() and theme.Default() are reskinned to neutral zinc (primary #18181B, was indigo #4F46E5; radii 6/8/10/14px, were 4/8/12/16), and three tokens change role as well as shade: --color-secondary is a light fill #F4F4F5 under a near-black --color-secondary-fg (was grey #6B7280 under white), --color-border-strong is #D4D4D8 (was #A1A1AA), a hover edge rather than a 3:1 control edge, and --color-accent is blue #2563EB (was violet #7C3AED in style.DefaultTheme(), cyan #0891B2 in theme.Default())"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core-ui/style.DefaultTheme
+        - gofastr/framework/ui/theme.Default
+      strings:
+        properties: [--color-secondary, --color-secondary-fg]
+      css:
+        properties: [--color-secondary, --color-secondary-fg]
+    guidance: "A theme built on these defaults draws the new look: check its pages, and set the old values on the theme where the brand needs them. Text or an icon drawn in var(--color-secondary) is now near-invisible on a white page: draw it in var(--color-text-muted), or put var(--color-secondary-fg) on a var(--color-secondary) fill. A control border drawn in var(--color-border-strong) falls below 3:1: move it to var(--color-text-subtle); a hover edge needs nothing. Look at var(--color-accent) only where the old violet or cyan hue mattered."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads padding-inline, padding-block, margin-inline, margin-block and their -start and -end sides against the --spacing-* tokens, and reads a number the way the browser does (16.0px is 16px, .6 is 0.6): a .style.css declaration such as padding-inline: 16px is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      css:
+        declarations:
+          - properties: [padding-inline, padding-block, padding-inline-start, padding-inline-end, padding-block-start, padding-block-end, margin-inline, margin-block, margin-inline-start, margin-inline-end, margin-block-start, margin-block-end]
+            value: '^\+?0*(?:2|4|8|16|24|32|48)(?:\.0*)?px$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write 2 / 4 / 8 / 16 / 24 / 32 / 48px as var(--spacing-xs) / var(--spacing-sm) / var(--spacing-md) / var(--spacing-lg) / var(--spacing-xl) / var(--spacing-2xl) / var(--spacing-3xl), then re-run gofastr gen styles. A two-value shorthand (padding-inline: 8px 16px) passes the check."

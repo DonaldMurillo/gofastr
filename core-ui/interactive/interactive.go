@@ -345,7 +345,7 @@ func revealCSS(_ style.Theme) string {
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="fade-up"].cui-hidden{transform:translateY(24px)}` +
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-left"].cui-hidden{transform:translateX(24px)}` +
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-right"].cui-hidden{transform:translateX(-24px)}` +
-		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
+		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s var(--easing-ease-in-out, ease),transform .6s var(--easing-ease-in-out, ease)}` +
 		`@media (prefers-reduced-motion:reduce){[data-cui-comp="cui-reveal"].cui-hidden{opacity:1;transform:none}[data-cui-comp="cui-reveal"].cui-revealed{transition:none}}`
 }
 

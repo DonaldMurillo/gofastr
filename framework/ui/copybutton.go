@@ -261,7 +261,7 @@ func copyButtonCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color var(--duration-fast, 150ms) ease, border-color var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Hover keeps the theme's own surface pair: surface-soft is defined by every
    theme in both schemes, so text set to --color-text stays readable (a rule

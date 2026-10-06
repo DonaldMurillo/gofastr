@@ -143,7 +143,7 @@ func adminCSS(_ style.Theme) string {
   display: inline-flex; align-items: center; justify-content: center;
   inline-size: var(--ui-admin-filter-clear-size, 1.4rem); block-size: var(--ui-admin-filter-clear-size, 1.4rem); border-radius: var(--radii-full, 9999px);
   color: var(--color-text-muted, #a8a8ad); text-decoration: none; line-height: 1;
-  transition: background var(--duration-fast, 150ms) ease, color var(--duration-fast, 150ms) ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .admin-filter__clear:hover { background: var(--color-border, #2a2b2e); color: var(--color-text, #f2f2f3); }
 

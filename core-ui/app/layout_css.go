@@ -67,7 +67,7 @@ func InterceptOverlayCSS() string {
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  [data-cui-intercept-overlay] > * { animation: cui-intercept-in var(--duration-overlay-enter, 200ms) ease-out; }
+  [data-cui-intercept-overlay] > * { animation: cui-intercept-in var(--duration-overlay-enter, 200ms) var(--easing-ease-out, ease-out); }
   @keyframes cui-intercept-in {
     from { transform: translateY(8px); opacity: var(--opacity-muted, 0.6); }
     to   { transform: none; opacity: 1; }

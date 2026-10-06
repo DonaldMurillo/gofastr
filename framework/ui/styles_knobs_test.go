@@ -101,7 +101,7 @@ func TestButtonStatesKeepOwnShadow(t *testing.T) {
 		}
 	}
 	base := ruleBody(t, css, ".fui-button")
-	for _, want := range []string{"translate var(--duration-fast, 150ms) ease", "box-shadow var(--duration-fast, 150ms) ease"} {
+	for _, want := range []string{"translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease)", "box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease)"} {
 		if !strings.Contains(base, want) {
 			t.Errorf("button transition must ease %q, got:\n%s", want, base)
 		}

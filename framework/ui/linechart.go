@@ -314,7 +314,7 @@ func lineChartCSS(_ style.Theme) string {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.fui-line-chart__line--primary { stroke: var(--color-primary, #4F46E5); }
+.fui-line-chart__line--primary { stroke: var(--color-primary, #18181B); }
 .fui-line-chart__line--info    { stroke: var(--color-info, #3B82F6); }
 .fui-line-chart__line--success { stroke: var(--color-success, #16A34A); }
 .fui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
@@ -326,7 +326,7 @@ func lineChartCSS(_ style.Theme) string {
   opacity: var(--opacity-muted, 0.6);
 }
 [data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: var(--opacity-faint, 0.2); stroke: none; }
-.fui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
+.fui-line-chart__area--primary { fill: var(--color-primary, #18181B); }
 .fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
 .fui-line-chart__area--success { fill: var(--color-success, #16A34A); }
 .fui-line-chart__area--warning { fill: var(--color-warning, #D97706); }
@@ -341,7 +341,7 @@ func lineChartCSS(_ style.Theme) string {
   fill: var(--color-text, #18181B);
   font-weight: var(--font-weight-medium);
 }
-.fui-line-chart__legend-swatch--primary { fill: var(--color-primary, #4F46E5); }
+.fui-line-chart__legend-swatch--primary { fill: var(--color-primary, #18181B); }
 .fui-line-chart__legend-swatch--info    { fill: var(--color-info, #3B82F6); }
 .fui-line-chart__legend-swatch--success { fill: var(--color-success, #16A34A); }
 .fui-line-chart__legend-swatch--warning { fill: var(--color-warning, #D97706); }

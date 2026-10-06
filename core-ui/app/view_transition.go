@@ -171,7 +171,7 @@ func (tr Transition) animCSS(name string) string {
 		suffix := map[bool]string{true: "-in", false: "-out"}[newSnap]
 		pseudo := map[bool]string{true: "::view-transition-new", false: "::view-transition-old"}[newSnap]
 		if a.kind == 'f' {
-			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s ease both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
+			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s var(--easing-ease-in-out, ease) both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
 			if newSnap {
 				if a.seq {
 					// Hold 0 through the midpoint: the old snapshot is
@@ -199,7 +199,7 @@ func (tr Transition) animCSS(name string) string {
 		// eye reads as direction without leaving the region.
 		off := map[Side]string{Left: "calc(-1 * var(--spacing-xl, 24px))", Right: "var(--spacing-xl, 24px)"}[a.side]
 		if newSnap {
-			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s ease both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
+			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s var(--easing-ease-in-out, ease) both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
 			if a.seq {
 				fmt.Fprintf(&b, "@keyframes %s%s { 0%%, 50%% { transform: translateX(%s); opacity: 0; } }\n", name, suffix, off)
 			} else {
@@ -215,7 +215,7 @@ func (tr Transition) animCSS(name string) string {
 			}
 			return
 		}
-		fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s ease both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
+		fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s var(--easing-ease-in-out, ease) both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
 		outOff := map[Side]string{Left: "var(--spacing-xl, 24px)", Right: "calc(-1 * var(--spacing-xl, 24px))"}[a.side]
 		if a.seq {
 			fmt.Fprintf(&b, "@keyframes %s%s { 50%%, to { transform: translateX(%s); opacity: 0; } }\n", name, suffix, outOff)
@@ -284,16 +284,16 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 	switch preset {
 	case "fade":
 		return `/* gofastr view-transition preset "fade" (root) */
-::view-transition-old(root) { animation: cui-vt-fade-out var(--duration-fast, 150ms) ease both; }
-::view-transition-new(root) { animation: cui-vt-fade-in var(--duration-fast, 150ms) ease both; }
+::view-transition-old(root) { animation: cui-vt-fade-out var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both; }
+::view-transition-new(root) { animation: cui-vt-fade-in var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both; }
 @keyframes cui-vt-fade-out { to { opacity: 0; } }
 @keyframes cui-vt-fade-in { from { opacity: 0; } }
 `, nil
 	case "slide":
 		return `/* gofastr view-transition preset "slide" (root); forward = new page
    from the right, back = new page from the left. */
-::view-transition-old(root) { animation: cui-vt-slide-out var(--duration-normal, 250ms) ease both; }
-::view-transition-new(root) { animation: cui-vt-slide-in var(--duration-normal, 250ms) ease both; }
+::view-transition-old(root) { animation: cui-vt-slide-out var(--duration-normal, 250ms) var(--easing-ease-in-out, ease) both; }
+::view-transition-new(root) { animation: cui-vt-slide-in var(--duration-normal, 250ms) var(--easing-ease-in-out, ease) both; }
 :root:active-view-transition-type(back) ::view-transition-old(root) { animation-name: cui-vt-slide-out-b; }
 :root:active-view-transition-type(back) ::view-transition-new(root) { animation-name: cui-vt-slide-in-b; }
 @keyframes cui-vt-slide-in { from { transform: translateX(100%); } }

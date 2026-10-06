@@ -12,7 +12,7 @@ import (
 // judges a value whole, so `border: 1px solid …` and
 // `transition: color 150ms ease` passed it, and a theme that set
 // --stroke-thin to 3px or --radii-full to 0 never reached those
-// declarations: 997 of them were found before the stroke tokens.
+// declarations.
 func TestBareThemeLiteralsAreReported(t *testing.T) {
 	for _, tc := range []struct {
 		css, want string
@@ -29,6 +29,10 @@ func TestBareThemeLiteralsAreReported(t *testing.T) {
 		{".a { animation: spin 120ms ease-out; }", "--duration-"},
 		{".a { z-index: 9999; }", "--z-"},
 		{".a { border-width: calc(1px + 1px); }", "--stroke-"},
+		{".a { transition: color var(--duration-fast, 150ms) ease; }", "--easing-"},
+		{".a { transition-timing-function: ease-in-out; }", "--easing-"},
+		{".a { animation: pop var(--duration-fast, 150ms) cubic-bezier(0.2, 0, 0, 1); }", "--easing-"},
+		{".a { transition-delay: 80ms; }", "--duration-"},
 	} {
 		ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `"+tc.css+"`\n")
 		found := countRule(t, ds, contracts.RuleBareThemeLiteral)
@@ -63,9 +67,12 @@ func TestBareThemeLiteralQuietCases(t *testing.T) {
 		".a { border-radius: var(--radii-md, 8px) var(--radii-md, 8px) 0 0; }",
 		".a { border-radius: calc(var(--radii-sm, 6px) / 3); }",
 		".a { border-radius: calc(var(--radii-md, 8px) - 2px); }",
-		".a { transition: color var(--duration-fast, 150ms) ease; }",
+		".a { transition: color var(--duration-fast, 150ms) var(--easing-ease-out, ease); }",
 		".a { animation: spin 1s linear infinite; }",
+		".a { animation: blink 1s steps(2, start) infinite; }",
+		".a { animation: ease-pulse 1s linear infinite; }",
 		".a { animation-delay: 120ms; }",
+		".a { transition-delay: 0s; transition-delay: 600ms; }",
 		".a { z-index: 2; }",
 		".a { z-index: var(--z-modal, 300); }",
 		".a { inline-size: 1px; block-size: 1px; margin: -1px; }",
@@ -80,6 +87,10 @@ func TestBareThemeLiteralQuietCases(t *testing.T) {
 		".a { line-height: 1; line-height: 0; line-height: var(--leading-snug, 1.4); }",
 		".a { letter-spacing: 0; letter-spacing: var(--tracking-wide, 0.04em); }",
 		".a { opacity: 0; opacity: 1; opacity: var(--opacity-muted, 0.6); }",
+		".a { font-weight: var(--font-weight-semibold, 600); font-weight: inherit; font-weight: bolder; }",
+		".a { font-weight: calc(var(--font-weight-semibold, 600) + 50); }",
+		".a { font: inherit; font: var(--text-sm, 0.875rem)/var(--leading-snug, 1.4) var(--font-body); }",
+		".a { font: 1em/1 monospace; }",
 		".a { color: var(--color-text, #111); background: transparent; fill: currentColor; }",
 		"@media (max-width: 640px) { .a { display: none; } }",
 	} {
@@ -126,6 +137,16 @@ func TestBareScaleLiteralsAreReported(t *testing.T) {
 		{".a { text-shadow: 0 1px 0 oklch(0.2 0 0); }", "--color-"},
 		{".a { border-radius: 0.5rem; }", "--radii-"},
 		{".a { border-radius: 62.5rem; }", "--radii-full"},
+		{".a { font-weight: 600; }", "--font-weight-"},
+		{".a { font-weight: 650; }", "--font-weight-"},
+		{".a { font-weight: bold; }", "--font-weight-"},
+		{".a { font: 13px/1.4 system-ui; }", "--text-"},
+		{".a { font: 13px system-ui; }", "--text-"},
+		{".a { font: 600 var(--text-sm, 0.875rem) var(--font-body); }", "--font-weight-"},
+		{".a { font: var(--text-sm, 0.875rem)/1.4 var(--font-body); }", "--leading-"},
+		{".a { grid-gap: 12px; }", "--spacing-"},
+		{".a { scroll-margin-top: 24px; }", "--spacing-"},
+		{".a { scroll-padding-inline: 1rem; }", "--spacing-"},
 	} {
 		ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `"+tc.css+"`\n")
 		found := countRule(t, ds, contracts.RuleBareThemeLiteral)

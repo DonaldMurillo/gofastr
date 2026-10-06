@@ -92,7 +92,8 @@ parts reads as one system:
   `TextSubtle` and the two focus strokes, not per component.
 - **Every look value is a variable.** Borders, dividers and inset
   rings read `--stroke-thin` and emphasised borders `--stroke-thick`;
-  pill shapes read `--radii-full`, transitions `--duration-*`, stacking
+  pill shapes read `--radii-full`, transitions `--duration-*` and
+  `--easing-*`, weights `--font-weight-*`, stacking
   layers `--z-*`, gaps and padding `--spacing-*`, type `--text-*`,
   `--leading-*` and `--tracking-*`, fades `--opacity-*`, elevation
   `--shadow-*`. What no global token covers (a checkbox's box, a

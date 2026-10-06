@@ -26,7 +26,10 @@ var (
 	reBareEm       = regexp.MustCompile(`(?:^|[\s,(])(-?\d*\.?\d+)(px|rem|em)\b`)
 	reBareNumber   = regexp.MustCompile(`^\s*(\d*\.?\d+)\s*(?:!important)?\s*$`)
 	reBareColor    = regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\(|\b(?:white|black)\b`)
-	reSpacingProp  = regexp.MustCompile(`^(?:padding|margin)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$|^(?:row-|column-)?gap$`)
+	reSpacingProp  = regexp.MustCompile(`^(?:padding|margin|scroll-(?:margin|padding))(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$|^(?:grid-)?(?:row-|column-)?gap$`)
+	reFontSize     = regexp.MustCompile(`(?:^|\s)(-?\d*\.?\d+)(px|rem)\b`)
+	reFontLeading  = regexp.MustCompile(`/\s*(\d*\.?\d+)(px|rem|em|%)?(?:\s|$)`)
+	reFontWeight   = regexp.MustCompile(`^(?:[1-9]\d{0,2}|1000|bold|normal)$`)
 	rePositionProp = regexp.MustCompile(`^(?:top|right|bottom|left|inset(?:-(?:inline|block)(?:-(?:start|end))?)?)$`)
 	reSizeProp     = regexp.MustCompile(`^(?:(?:min|max)-)?(?:width|height|inline-size|block-size)$|^flex-basis$`)
 	reColorProp    = regexp.MustCompile(`^(?:color|background(?:-color|-image)?|(?:border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-)?color|outline(?:-color)?|fill|stroke|caret-color|accent-color|text-decoration(?:-color)?|column-rule(?:-color)?|text-shadow|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?)$`)
@@ -100,6 +103,37 @@ func lengthOver1(v string) (string, bool) {
 	return "", false
 }
 
+// valueWords splits a var()-stripped value on whitespace and commas, a
+// trailing !important dropped.
+func valueWords(v string) []string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimSpace(strings.TrimSuffix(v, "!important"))
+	return strings.FieldsFunc(v, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == ',' })
+}
+
+const weightWant = "--font-weight-normal / --font-weight-medium / --font-weight-semibold / --font-weight-bold " +
+	"(an off-step weight is calc(var(--font-weight-semibold, 600) + 50))"
+
+// fontShorthand judges the font shorthand's size, line height and
+// weight: `font: 13px/1.4 system-ui` reaches none of --text-*,
+// --leading-* or --font-weight-*.
+func fontShorthand(v string) (lit, want string, ok bool) {
+	if m := reFontSize.FindStringSubmatch(v); m != nil {
+		return m[1] + m[2], "--text-* (font: var(--text-sm, 0.875rem)/var(--leading-snug, 1.4) var(--font-body))", true
+	}
+	if m := reFontLeading.FindStringSubmatch(v); m != nil {
+		if m[2] != "" || (m[1] != "0" && m[1] != "1") {
+			return "/" + m[1] + m[2], "--leading-* (font: var(--text-sm, 0.875rem)/var(--leading-snug, 1.4) var(--font-body))", true
+		}
+	}
+	for _, w := range valueWords(v) {
+		if w != "normal" && reFontWeight.MatchString(w) {
+			return w, weightWant, true
+		}
+	}
+	return "", "", false
+}
+
 // scaleLiteral judges the typography, spacing, size, colour, opacity
 // and shadow quantities: the ones the theme's scale tokens and the
 // --ui-* knobs own. Lengths in em, %, ch and viewport units are
@@ -121,6 +155,14 @@ func scaleLiteral(prop, v string) (lit, want string, ok bool) {
 	case prop == "font-size":
 		if m := reBareLen.FindStringSubmatch(v); m != nil {
 			return m[1] + m[2], "--text-* (an off-step size is calc(var(--text-sm, 0.875rem) * n))", true
+		}
+	case prop == "font":
+		if lit, want, hit := fontShorthand(v); hit {
+			return lit, want, true
+		}
+	case prop == "font-weight":
+		if w := valueWords(v); len(w) == 1 && reFontWeight.MatchString(w[0]) {
+			return w[0], weightWant, true
 		}
 	case prop == "line-height":
 		if m := reBareNumber.FindStringSubmatch(v); m != nil && m[1] != "0" && m[1] != "1" {
@@ -205,7 +247,8 @@ func bareThemeLiteral(prop, value string, scale bool) (lit, want string, ok bool
 				return m[1] + m[2], "--radii-sm / --radii-md / --radii-lg / --radii-xl (an off-step radius is a calc() over one)", true
 			}
 		}
-	case prop == "transition", prop == "transition-duration", prop == "animation", prop == "animation-duration":
+	case prop == "transition", prop == "transition-duration", prop == "transition-delay",
+		prop == "animation", prop == "animation-duration":
 		for _, m := range reBareTime.FindAllStringSubmatch(v, -1) {
 			n, err := strconv.ParseFloat(m[1], 64)
 			if err != nil {
@@ -218,12 +261,37 @@ func bareThemeLiteral(prop, value string, scale bool) (lit, want string, ok bool
 				return m[1] + m[2], "--duration-fast / --duration-normal / --duration-slow", true
 			}
 		}
+		if lit, hit := bareEasing(v); hit {
+			return lit, easingWant, true
+		}
+	case prop == "transition-timing-function", prop == "animation-timing-function":
+		if lit, hit := bareEasing(v); hit {
+			return lit, easingWant, true
+		}
 	case prop == "z-index":
 		if n, err := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "!important"))); err == nil && n > 10 {
 			return strconv.Itoa(n), "--z-dropdown / --z-sticky / --z-modal / --z-popover / --z-toast", true
 		}
 	}
 	return "", "", false
+}
+
+const easingWant = "--easing-ease-out / --easing-ease-in / --easing-ease-in-out / --easing-spring " +
+	"(linear and steps() pass)"
+
+// bareEasing reports the first timing function in v a theme's
+// --easing-* tokens own: an ease keyword or a cubic-bezier(). linear
+// and steps() are mechanical (a spinner, a caret blink) and pass.
+func bareEasing(v string) (string, bool) {
+	for _, w := range valueWords(v) {
+		switch {
+		case w == "ease", w == "ease-in", w == "ease-out", w == "ease-in-out":
+			return w, true
+		case strings.HasPrefix(w, "cubic-bezier("):
+			return "cubic-bezier()", true
+		}
+	}
+	return "", false
 }
 
 // checkBareThemeLiterals reports one GOFASTR1823 per declaration on a

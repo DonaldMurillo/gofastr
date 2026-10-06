@@ -214,16 +214,16 @@ func fileUploadCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-align: center;
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               background var(--duration-fast, 150ms) ease;
   min-block-size: calc(var(--spacing-touch-target, 44px) * 2);
 }
 .fui-upload__zone:hover,
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
 }
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  background: color-mix(in oklab, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF) 90%);
+  background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
 .fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
   border-color: var(--color-danger, #DC2626);

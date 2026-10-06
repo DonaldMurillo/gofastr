@@ -16,9 +16,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   stacking layers `--z-*`, so a theme alone can redraw the kit: thick
   borders, square corners and hard shadows need no component CSS. A
   value is `"0"` or a non-negative px/rem/em length. The set is
-  optional: an unset stroke is not emitted and the kit draws its
-  default width, so a `theme.go` written before strokes existed keeps
-  its borders. Strokes reach `ApplyTokens`, `theme edit`'s write-back,
+  optional: an unset stroke emits the default width, so a `theme.go`
+  written before strokes existed keeps its borders and every
+  `var(--stroke-*)` reader resolves. Strokes reach `ApplyTokens` (an
+  unset stroke there takes its default, so it can be edited),
+  `theme edit`'s write-back,
   `.tokens.css` (`--stroke-*`, `syntax: "<length>"`), the plugin
   host's token bridge and the GOFASTR1807/1808 checks
   (`border-width`, `outline-width`, `outline-offset` and
@@ -74,7 +76,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/dev` held to the stroke, radius, motion and layer arms
   only. The new groups reach `.tokens.css` (`--leading-*`,
   `--tracking-*`, `--opacity-*`), the plugin host's token bridge and the
-  GOFASTR1807/1808 checks.
+  GOFASTR1807/1808 checks; an unset slot in one of them emits the
+  default theme's value, so a `var(--leading-*)` with no fallback still
+  resolves. GOFASTR1807 reads a number the way the browser does (`.6`,
+  `1.60` and `-.01em` are `0.6`, `1.6` and `-0.01em`) and checks
+  `padding-inline`, `padding-block`, `margin-inline`, `margin-block` and
+  their start and end sides against `--spacing-*`. GOFASTR1823 also
+  refuses an ease keyword or `cubic-bezier()` (read `--easing-*`;
+  `linear` and `steps()` pass), a numeric, `bold` or `normal` font
+  weight (`--font-weight-*`), the `font` shorthand's literal size, line
+  height and weight, a transition delay up to 500ms, and `grid-gap` and
+  scroll margins and paddings. The kit's transitions read
+  `var(--easing-ease-in-out, ease)` (or the matching named curve), so the
+  default theme draws them on `cubic-bezier(0.4, 0, 0.2, 1)` instead of
+  CSS's `ease`. `--ui-spinner-size`, `--ui-gallery-cols`,
+  `--ui-gallery-min`, `--ui-rating-glyph` and `--ui-rating-cell` reach
+  the component from a theme: each component used to set the knob on
+  its own root, which beat the theme's value on every instance.
 - **`ui.ThemePicker` switches the whole page between themes.** Register
   each extra theme with `style.RegisterThemeOverride` and list it in
   `ThemePickerConfig.Themes`; the picker draws as `ui.ThemeToggle`'s
@@ -96,9 +114,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets
-  it: a number that animates in is read, not operated.
+  it: a number that animates in is read, not operated. Display with a
+  `Name` panics, since a figure is not a form field, and a value past
+  2^53-1, which a JavaScript number would round, renders unanimated.
 - **`resource.Config.HeadingLevel` and `WithHeadingLevel`** set the list
-  title's heading level, 2 to 5 (any other value renders 1). The
+  title's heading level, 1 to 5 (0 means 1; any other value panics at
+  render rather than print a second `<h1>`). The
   blueprint generator sets 2 on an entity list that a block ahead of it
   on the screen already gives an `<h1>` (a dashboard's page header), so
   the page keeps exactly one.

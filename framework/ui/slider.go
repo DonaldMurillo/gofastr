@@ -110,7 +110,7 @@ func sliderCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   min-inline-size: 3ch;
   text-align: end;
 }
@@ -147,7 +147,7 @@ func sliderCSS(_ style.Theme) string {
   box-shadow: var(--shadow-sm);
   margin-top: calc((var(--ui-slider-track-height, 6px) - var(--ui-slider-thumb-size, 20px)) / 2);
   cursor: pointer;
-  transition: transform var(--duration-fast, 150ms) ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);

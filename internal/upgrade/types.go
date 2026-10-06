@@ -200,11 +200,26 @@ type CSSMatch struct {
 	// compared with whitespace normalized around combinators. For a
 	// change that retires a selector shape while its classes stay.
 	Selectors []string
+	// Declarations: a declaration of a standard property whose value
+	// matches a regex. For a change that refuses a value the property
+	// still takes (outline-offset: 2px once a token owns that step).
+	Declarations []CSSDeclaration
+}
+
+// CSSDeclaration matches a declaration whose property is one of
+// Properties (standard names, never a --x custom property) and whose
+// value, whitespace collapsed to single spaces and !important dropped,
+// matches Value. A non-empty Glob limits it to the stylesheets whose
+// root-relative slash path matches ("**/*.style.css": owned sheets).
+type CSSDeclaration struct {
+	Properties []string
+	Value      *regexp.Regexp
+	Glob       string
 }
 
 // Empty reports whether m has no matcher.
 func (m CSSMatch) Empty() bool {
-	return len(m.Classes) == 0 && len(m.Properties) == 0 && len(m.Selectors) == 0
+	return len(m.Classes) == 0 && len(m.Properties) == 0 && len(m.Selectors) == 0 && len(m.Declarations) == 0
 }
 
 // ConfigMatch matches gofastr.yml. Key is a dotted path from the

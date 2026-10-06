@@ -280,7 +280,7 @@ const skeletonPresetsCSS = `
     var(--color-border, #E5E7EB) 100%
   );
   background-size: 200% 100%;
-  animation: fui-skeleton-shimmer 1.4s ease-in-out infinite;
+  animation: fui-skeleton-shimmer 1.4s var(--easing-ease-in-out, ease-in-out) infinite;
   border-radius: var(--radii-full, 9999px);
   block-size: var(--ui-skeleton-bar-height, 0.85rem);
   inline-size: 100%;

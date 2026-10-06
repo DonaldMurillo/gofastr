@@ -163,7 +163,7 @@ func cardCSS(t style.Theme) string {
   background: transparent;
 }
 [data-cui-comp="ui-card"].fui-card--interactive {
-  transition: border-color var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               box-shadow var(--duration-fast, 150ms) ease,
               translate var(--duration-fast, 150ms) ease;
   cursor: pointer;
@@ -369,7 +369,7 @@ func toggleCSS(_ style.Theme) string {
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   cursor: inherit;
-  transition: background-color var(--duration-fast, 150ms) ease,
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               border-color var(--duration-fast, 150ms) ease;
 }
 .fui-choice__text {
@@ -403,8 +403,8 @@ func toggleCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-sm) - 2px);
 }
 .fui-choice--checkbox .fui-choice__input:checked {
-  background-color: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   background-image:
     linear-gradient(to top right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px)),
     linear-gradient(to bottom right, transparent calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% - 1px), var(--color-primary-fg, #FFFFFF) calc(50% + 1px), transparent calc(50% + 1px));
@@ -418,8 +418,8 @@ func toggleCSS(_ style.Theme) string {
   border-radius: 50%;
 }
 .fui-choice--radio .fui-choice__input:checked {
-  border-color: var(--color-primary, #4F46E5);
-  background-image: radial-gradient(circle at center, var(--color-primary, #4F46E5) 0 5px, transparent 5.5px);
+  border-color: var(--color-primary, #18181B);
+  background-image: radial-gradient(circle at center, var(--color-primary, #18181B) 0 5px, transparent 5.5px);
 }
 
 /* ─── Switch: the track IS the input; the thumb is a positioned
@@ -449,12 +449,12 @@ func toggleCSS(_ style.Theme) string {
   background-size: 1.125rem 1.125rem;
   background-position: left 0.0625rem center;
   cursor: inherit;
-  transition: background-color var(--duration-fast, 150ms) ease,
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               background-position var(--duration-fast, 150ms) ease;
 }
 .fui-switch__input:checked {
-  background-color: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   background-position: right 0.0625rem center;
 }
 .fui-switch__text {
@@ -564,7 +564,7 @@ func tooltipCSS(_ style.Theme) string {
   white-space: nowrap;
   max-inline-size: var(--ui-tooltip-pop-max-width, 240px);
   z-index: var(--z-popover);
-  transition: opacity var(--duration-fast, 150ms) ease,
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);
 }
@@ -663,7 +663,7 @@ func tagCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease, box-shadow var(--duration-fast, 150ms) ease, translate var(--duration-fast, 150ms) ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Knobs: --ui-tag-hover-shadow / -active-shadow and
    --ui-tag-hover-translate / -active-translate over the shared
@@ -716,18 +716,18 @@ func spinnerCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm, 4px);
-  --ui-spinner-size: 1.5rem;
+  --_spinner-size: var(--ui-spinner-size, 1.5rem);
 }
 [data-cui-comp="ui-spinner"].fui-spinner--sm { --ui-spinner-size: 1rem; }
 [data-cui-comp="ui-spinner"].fui-spinner--lg { --ui-spinner-size: 2.5rem; }
 :where([data-cui-comp="ui-spinner"]).fui-spinner--inline { display: inline-flex; }
 [data-cui-comp="ui-spinner"] .fui-spinner__ring {
   display: inline-block;
-  inline-size: var(--ui-spinner-size);
-  block-size:  var(--ui-spinner-size);
+  inline-size: var(--_spinner-size);
+  block-size:  var(--_spinner-size);
   border-radius: 50%;
   border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
-  border-top-color: var(--color-primary, #4F46E5);
+  border-top-color: var(--color-primary, #18181B);
   animation: fui-spinner-rotate var(--duration-slow, 400ms) linear infinite;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dots {
@@ -737,11 +737,11 @@ func spinnerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot {
   display: inline-block;
-  inline-size: calc(var(--ui-spinner-size) * 0.28);
-  block-size:  calc(var(--ui-spinner-size) * 0.28);
+  inline-size: calc(var(--_spinner-size) * 0.28);
+  block-size:  calc(var(--_spinner-size) * 0.28);
   border-radius: 50%;
-  background: var(--color-primary, #4F46E5);
-  animation: fui-spinner-pulse 1.2s ease-in-out infinite both;
+  background: var(--color-primary, #18181B);
+  animation: fui-spinner-pulse 1.2s var(--easing-ease-in-out, ease-in-out) infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot:nth-child(1) { animation-delay: -0.32s; }
 [data-cui-comp="ui-spinner"] .fui-spinner__dot:nth-child(2) { animation-delay: -0.16s; }
@@ -750,15 +750,15 @@ func spinnerCSS(_ style.Theme) string {
 [data-cui-comp="ui-spinner"] .fui-spinner__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: calc(var(--ui-spinner-size) * 0.08);
-  inline-size: var(--ui-spinner-size);
-  block-size:  var(--ui-spinner-size);
+  gap: calc(var(--_spinner-size) * 0.08);
+  inline-size: var(--_spinner-size);
+  block-size:  var(--_spinner-size);
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell {
   display: block;
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   border-radius: calc(var(--radii-sm, 6px) / 3);
-  animation: fui-spinner-grid 1.3s ease-in-out infinite both;
+  animation: fui-spinner-grid 1.3s var(--easing-ease-in-out, ease-in-out) infinite both;
 }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell:nth-child(1) { animation-delay: 0.0s; }
 [data-cui-comp="ui-spinner"] .fui-spinner__cell:nth-child(2) { animation-delay: 0.1s; }
