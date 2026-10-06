@@ -298,16 +298,8 @@ func (x Extensions) check(reg entity.Registry) error {
 		}
 	}
 	for _, e := range reg.AllSorted() {
-		d := e.Config.Display
-		if d == nil {
-			continue
-		}
-		for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
-			if in := d.Fields[f].Input; in != "" {
-				if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
-					return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
-				}
-			}
+		if err := x.checkInputs(e); err != nil {
+			return err
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(x.Entities)) {
@@ -322,21 +314,59 @@ func (x Extensions) check(reg entity.Registry) error {
 	// Every Where-less view needs a registered Filter, on every entity,
 	// extended or not.
 	for _, e := range reg.AllSorted() {
-		d := e.Config.Display
-		if d == nil {
-			continue
+		if err := x.checkViews(e); err != nil {
+			return err
 		}
-		ext := x.Entities[e.GetName()]
-		for _, v := range d.Views {
-			if v.Where != "" {
-				continue
-			}
-			if vf, ok := ext.Views[v.Key]; !ok || vf.Filter == nil {
-				return fmt.Errorf("entityui: entity %q view %q has no where and no registered filter func", e.GetName(), v.Key)
+	}
+	return nil
+}
+
+// checkInputs refuses a FieldDisplay.Input on e naming no kind.
+func (x Extensions) checkInputs(e *entity.Entity) error {
+	d := e.Config.Display
+	if d == nil {
+		return nil
+	}
+	for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
+		if in := d.Fields[f].Input; in != "" {
+			if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
+				return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
 			}
 		}
 	}
 	return nil
+}
+
+// checkViews refuses a view on e with neither a Where nor a registered
+// Filter.
+func (x Extensions) checkViews(e *entity.Entity) error {
+	d := e.Config.Display
+	if d == nil {
+		return nil
+	}
+	ext := x.Entities[e.GetName()]
+	for _, v := range d.Views {
+		if v.Where != "" {
+			continue
+		}
+		if vf, ok := ext.Views[v.Key]; !ok || vf.Filter == nil {
+			return fmt.Errorf("entityui: entity %q view %q has no where and no registered filter func", e.GetName(), v.Key)
+		}
+	}
+	return nil
+}
+
+// CheckEntity runs New's checks on an entity registered after it: every
+// FieldDisplay.Input names a kind, and every view has a Where or a
+// registered Filter. Extensions.Entities can only name entities that
+// existed at New, so a later entity's views all need a Where. The host
+// calls it before registering the entity and refuses the entity on an
+// error.
+func (u *UI) CheckEntity(e *entity.Entity) error {
+	if err := u.ext.checkInputs(e); err != nil {
+		return err
+	}
+	return u.ext.checkViews(e)
 }
 
 func (x Extension) check(e *entity.Entity) error {

@@ -2376,6 +2376,13 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	if err := validateDisplayQueries(ent); err != nil {
 		return err
 	}
+	// An entity registered after EntityUI gets the checks EntityUI ran
+	// on the ones before it.
+	if a.entityUI != nil {
+		if err := a.entityUI.CheckEntity(ent); err != nil {
+			return err
+		}
+	}
 	// A queryable field whose name is another's plus an operator suffix
 	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
 	// filter, not an error; refuse it at the same gate.

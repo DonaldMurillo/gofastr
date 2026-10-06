@@ -22,6 +22,7 @@ import (
 // tabs and actions. Call it once. It checks every name ext uses and panics
 // at boot on a bad one, naming it, the way App.Entity refuses a bad
 // declaration, so ext can only name entities registered before the call.
+// An entity registered after it gets the same checks at App.Entity.
 //
 // It mounts the bulk bar's routes beside each entity's write routes:
 // POST <api>/_bulk and GET <api>/_export.csv, for the entities registered

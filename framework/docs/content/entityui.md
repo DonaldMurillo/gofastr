@@ -27,7 +27,11 @@ appUI := fwApp.EntityUI(entityui.Extensions{})
 
 `App.EntityUI` checks every name the extensions use against the registered
 entities and panics at boot on a bad one, naming it, the way `App.Entity`
-refuses a bad declaration. Builders are components: return them from a
+refuses a bad declaration. An entity registered after `App.EntityUI` gets
+the same checks at `App.Entity` (`UI.CheckEntity`): an input naming no kind
+panics there, and so does a view with no `Where`, since
+`Extensions.Entities` could not name the entity to register its filter.
+Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
 ## What it draws
