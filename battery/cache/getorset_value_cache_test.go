@@ -59,7 +59,9 @@ func (c valueCache) Clear(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.values = map[string][]byte{}
+	for key := range c.values {
+		delete(c.values, key)
+	}
 	return nil
 }
 
