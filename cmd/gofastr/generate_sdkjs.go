@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -39,6 +40,11 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		// access is identical for every legitimate name (`client.posts` still
 		// resolves) and admits no name that is not a string.
 		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q);", jsResourceProp(ent), ent.Table))
+		// One binding per move, same quoting rule: the key is data, never
+		// an identifier, in the emitted statements.
+		for _, t := range crud.RoutableTransitions(decl.States) {
+			resourceProps = append(resourceProps, fmt.Sprintf("    this[%q][%q] = (id) => this[%q].transition(id, %q);", jsResourceProp(ent), t.Key, jsResourceProp(ent), t.Key))
+		}
 	}
 
 	// Client class last in the .js so Resource is already defined; the d.ts
@@ -64,8 +70,12 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 	dts.WriteString("export declare class Client {\n")
 	dts.WriteString("  constructor(opts: { baseURL: string; token?: string; fetch?: typeof fetch });\n")
 	dts.WriteString("  baseURL: string;\n  token: string;\n")
-	for _, ent := range spec.Entities {
-		dts.WriteString(fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>;\n", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct))
+	for i, ent := range spec.Entities {
+		prop := fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct)
+		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
+			prop += fmt.Sprintf(" & %sMoves", ent.Struct)
+		}
+		dts.WriteString(prop + ";\n")
 	}
 	dts.WriteString(`  /**
    * Raw escape hatch under the typed resources: same base URL, auth header,
@@ -119,9 +129,12 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 
 	// Input: create/update payload. Required declaration fields are
 	// non-optional so tsc catches a missing title at compile time.
+	// With enforced States, stamps leave Input and the state field leaves
+	// Patch, matching the Go client and the OpenAPI request schemas.
+	stamps, state := statesWriteDrops(decl.States)
 	fmt.Fprintf(dts, "export interface %sInput {\n", ent.Struct)
 	for _, fd := range decl.Fields {
-		if fd.Name == "id" || fd.Hidden {
+		if fd.Name == "id" || fd.Hidden || stamps[fd.Name] {
 			continue
 		}
 		opt := "?"
@@ -135,7 +148,11 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	// Patch: JS objects are presence-faithful (an omitted key is simply not
 	// sent), so PATCH is just an all-optional Input, no pointer dance like
 	// the Go SDK needs.
-	fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
+	if state != "" {
+		fmt.Fprintf(dts, "export type %sPatch = Partial<Omit<%sInput, %q>>;\n\n", ent.Struct, ent.Struct, toCamelJSON(state))
+	} else {
+		fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
+	}
 
 	// Snake-case field-name constant, so filter/sort params never require
 	// guessing the server-side column casing.
@@ -169,6 +186,26 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	}
 	js.WriteString("});\n\n")
 	dts.WriteString("}>;\n\n")
+
+	// One named method per non-system move, the JS twin of the Go SDK's
+	// <Key><Struct> methods. Emitted only when there is a move; the
+	// Client's property line intersects it onto Resource.
+	if moves := crud.RoutableTransitions(decl.States); len(moves) > 0 {
+		fmt.Fprintf(dts, "export interface %sMoves {\n", ent.Struct)
+		for _, t := range moves {
+			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: string): Promise<%s>;\n",
+				decl.States.Field, strings.Join(t.From, "|"), t.To, stampNote(t.Stamp), t.Key, ent.Struct)
+		}
+		dts.WriteString("}\n\n")
+	}
+}
+
+// stampNote renders a move's stamp for a doc comment; empty when none.
+func stampNote(stamp string) string {
+	if stamp == "" {
+		return ""
+	}
+	return ", stamps " + stamp
 }
 
 // tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a
@@ -358,6 +395,18 @@ class Resource {
   }
 
   /**
+   * Runs one state move: POST /<table>/<id>/transitions/<key>. The
+   * server writes the state field and any stamp; the request sends an
+   * empty JSON body because the route requires the content type (its
+   * cross-site-form gate). Each generated client also binds the move
+   * keys as named methods (api.invoices.pay(id)).
+   */
+  async transition(id, key) {
+    const out = await this.client.do("POST", this._path("/" + encodeURIComponent(id) + "/transitions/" + encodeURIComponent(key)), {});
+    return out && out.data !== undefined ? out.data : out;
+  }
+
+  /**
    * Subscribes to the entity's live SSE feed (entity.created / updated /
    * deleted). onEvent receives (event, data) with data already JSON-parsed.
    * Resolves when the stream ends; abort via {signal}. Uses fetch streaming
@@ -544,6 +593,8 @@ export declare class Resource<T, TInput, TPatch> {
     onEvent: (event: string, data: unknown) => void | Promise<void>,
     opts?: { signal?: AbortSignal },
   ): Promise<void>;
+  /** Runs one state move; generated clients also bind each move key as a named method. */
+  transition(id: string, key: string): Promise<T>;
 }
 
 `

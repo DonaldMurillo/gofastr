@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
@@ -579,6 +580,15 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		{"DELETE", base + "/_batch", "Atomic batch delete ({\"ids\": […]})"},
 		{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"},
 	}
+	// One route per non-system move, the same set the transition route
+	// and the SDKs' generated methods serve. System moves have no route.
+	for _, t := range crud.RoutableTransitions(cfg.States) {
+		desc := "State move " + t.Key + ": " + cfg.States.Field + " " + strings.Join(t.From, "|") + " → " + t.To
+		if t.Stamp != "" {
+			desc += ", stamps " + t.Stamp
+		}
+		ops = append(ops, op{"POST", base + "/{id}/transitions/" + t.Key, desc})
+	}
 	for _, ep := range cfg.Endpoints {
 		path := ep.Path
 		if !strings.HasPrefix(path, "/") {
@@ -595,7 +605,8 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		rows = append(rows, ui.Row{Cells: map[string]render.HTML{
 			"method": ui.Tag(ui.TagConfig{Label: o.method, Variant: methodVariant(o.method)}),
 			"path":   code(o.path),
-			"desc":   text(o.desc),
+
+			"desc": text(o.desc),
 		}})
 	}
 	return ui.DataTable(ui.DataTableConfig{

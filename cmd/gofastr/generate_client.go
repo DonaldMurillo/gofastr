@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
 // renderClient builds gen/client/client.go, a standalone Go client for
@@ -156,6 +157,12 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 	return c.doJSON(ctx, method, path, body, out)
 }
 
+// moveBody is the empty JSON body every transition POST sends: a move
+// carries no payload, but its route requires the JSON content type (its
+// cross-site-form gate), which doJSON only sets on a non-nil body.
+var moveBody = map[string]any{}
+
+
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
 // successes still carry Data, but Committed=false on the envelope means
@@ -263,10 +270,32 @@ func goPatchPointerTypeForField(value string) string {
 	return "*" + goTypeForField(value)
 }
 
+// statesWriteDrops names the fields an enforced States block keeps out of
+// the typed write shapes: every stamp, and the state field. Advisory or
+// absent States drop nothing.
+func statesWriteDrops(st *framework.StatesConfig) (stamps map[string]bool, state string) {
+	if st == nil || st.Advisory {
+		return nil, ""
+	}
+	stamps = map[string]bool{}
+	for _, col := range st.Guarded()[1:] {
+		stamps[col] = true
+	}
+	return stamps, st.Field
+}
+
 // renderClientEntity emits the struct definitions and the five CRUD methods
 // for one entity. Kept inline (no template) so the output stays readable
 // when debugging generated code.
+//
+// With enforced States the write shapes match the OpenAPI request
+// schemas: stamps leave every write shape (the server sets them, and a
+// create carrying one is refused), and the state field leaves the patch
+// shapes (it changes only through a move). Input keeps the state field:
+// a create may start at an initial value, and a PUT writing the stored
+// value back passes.
 func renderClientEntity(decl framework.EntityDeclaration) string {
+	stamps, state := statesWriteDrops(decl.States)
 	struct_ := toCamelCase(decl.Name)
 	table := decl.Table
 	if table == "" {
@@ -304,7 +333,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	// addressing, and including it in the body invites mismatch bugs.
 	sb.WriteString(fmt.Sprintf("type %sInput struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden {
+		if field.Name == "id" || field.Hidden || stamps[field.Name] {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -321,7 +350,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	// to fields present in the JSON body, so this is the faithful mapping.
 	sb.WriteString(fmt.Sprintf("type %sPatch struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden {
+		if field.Name == "id" || field.Hidden || stamps[field.Name] || field.Name == state {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -420,7 +449,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 	sb.WriteString(fmt.Sprintf("type %sBatchPatch struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden {
+		if field.Name == "id" || field.Hidden || stamps[field.Name] || field.Name == state {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -457,10 +486,34 @@ func (c *Client) BatchDelete%s(ctx context.Context, ids []string) (BatchResponse
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) Watch%s(ctx context.Context, fn func(event string, data []byte) error) error {
+
 	return c.watchSSE(ctx, "/%s/_events", fn)
 }
 
 `, struct_, struct_, route))
+
+	// One method per non-system move: the route and the MCP tools serve
+	// the same set, Advisory entities included. System moves have no
+	// route and appear nowhere.
+	for _, t := range crud.RoutableTransitions(decl.States) {
+		what := fmt.Sprintf("%s: %s → %s", decl.States.Field, strings.Join(t.From, "|"), t.To)
+		if t.Stamp != "" {
+			what += ", stamps " + t.Stamp
+		}
+		fmt.Fprintf(&sb, `// %[1]s%[2]s runs the %[3]q move on the record at id (%[4]s).
+// The server writes the state and any stamp; the request sends an empty
+// JSON body (the route requires the content type).
+func (c *Client) %[1]s%[2]s(ctx context.Context, id string) (%[2]s, error) {
+	var out %[2]s
+	path := "/%[5]s/"+url.PathEscape(id)+"/transitions/"+url.PathEscape(%[3]q)
+	if err := c.doSingleJSON(ctx, http.MethodPost, path, moveBody, &out); err != nil {
+		return %[2]s{}, err
+	}
+	return out, nil
+}
+
+`, toCamelCase(t.Key), struct_, t.Key, what, route)
+	}
 
 	return sb.String()
 }
