@@ -68,6 +68,16 @@ type SessionUserPurger interface {
 	DeleteByUser(ctx context.Context, userID string) (int, error)
 }
 
+// SessionPendingPurger is the optional SessionStore extension that removes
+// a user's sessions still waiting on a 2FA challenge. /auth/2fa/disable
+// calls it: a pending session left behind sits inert while the factor is
+// off, then completes with the next factor the user enrolls, a login that
+// never proved the factor it ends up holding. Both built-in stores
+// implement it. Returns the number of sessions removed.
+type SessionPendingPurger interface {
+	DeletePendingByUser(ctx context.Context, userID string) (int, error)
+}
+
 // SessionPendingMarker is the SessionStore extension that lets
 // CorePlugin's login handler mark a freshly-minted session as awaiting
 // a 2FA challenge. It is optional only for deployments without 2FA:
@@ -196,6 +206,14 @@ func (m *MemorySessionStore) DeleteByUser(_ context.Context, userID string) (int
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return purgeMatching(m.sessions, func(s *Session) bool { return s.UserID == userID }), nil
+}
+
+// DeletePendingByUser removes userID's sessions that are still waiting on
+// a 2FA challenge. Implements SessionPendingPurger.
+func (m *MemorySessionStore) DeletePendingByUser(_ context.Context, userID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return purgeMatching(m.sessions, func(s *Session) bool { return s.UserID == userID && s.PendingTwoFactor }), nil
 }
 
 // MarkTwoFactorVerified flips TwoFactorVerified=true and clears

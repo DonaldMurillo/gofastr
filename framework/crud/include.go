@@ -1009,7 +1009,7 @@ func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*Includ
 			continue
 		}
 		target := &CrudHandler{Entity: node.Target, DB: ch.DB, Registry: ch.Registry}
-		if !target.canReadEntityGate(ctx) {
+		if !target.relationReachable(ctx, "read") || !target.canReadEntityGate(ctx) {
 			return &includeForbiddenError{Entity: node.Target.GetName()}
 		}
 		if err := ch.checkIncludeReadable(ctx, node.Children); err != nil {

@@ -48,9 +48,9 @@ const DefaultTimestampTolerance = 5 * time.Minute
 // disable the replay check. Use [DefaultTimestampTolerance] for the
 // suggested default.
 //
-// An empty secret always rejects.
+// An empty or whitespace-only secret always rejects.
 func VerifyTimestamped(secret, header string, body []byte, tolerance time.Duration) bool {
-	if secret == "" || header == "" {
+	if strings.TrimSpace(secret) == "" || header == "" {
 		return false
 	}
 	if tolerance <= 0 {

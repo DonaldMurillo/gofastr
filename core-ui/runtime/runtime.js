@@ -401,7 +401,8 @@
       const resp = await fetch('/__gofastr/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, params, session, componentId }),
+        // page: the owning screen's Policy reads this page's route params.
+        body: JSON.stringify({ action, params, session, componentId, page: location.pathname }),
       });
       if (resp.ok) {
         const result = await resp.json();

@@ -48,10 +48,9 @@ type RateLimitStore interface {
 //	})
 //
 // The schema is created lazily on first use, hosts never hand-roll the
-// DDL. Concurrent replicas may overshoot MaxAttempts by at most the
-// number of simultaneously in-flight requests (the count-then-insert is
-// not serialized); that error is bounded and far smaller than the
-// MaxAttempts × replicas budget the in-process limiter degrades to.
+// DDL. Admission holds exactly under concurrency, across any number of
+// replicas: Allow records the attempt before it counts (see Allow), so a
+// burst on one key admits at most MaxAttempts callers.
 type SQLRateLimitStore struct {
 	db    *sql.DB
 	table string
@@ -119,6 +118,27 @@ func (s *SQLRateLimitStore) ensureSchemaOnce(ctx context.Context) error {
 
 // Allow implements RateLimitStore with the same sliding-window +
 // block semantics as the in-process limiter.
+//
+// The admission decision is insert-then-count. Each caller commits its
+// own attempt row first and only then counts the key's in-window rows.
+// Every statement is autocommit, so a caller's COUNT runs after its own
+// INSERT committed: order the committed inserts, and the k-th one sees at
+// least k rows. At most MaxAttempts callers can therefore see a count of
+// MaxAttempts or less, however many arrive at once and on however many
+// replicas. A caller that sees more is denied and writes the block.
+//
+// The earlier count-then-insert read the quota and acted on it in
+// separate statements, so a concurrent burst all read the same
+// pre-insert count and all got in (19 to 34 admissions out of 50 against
+// MaxAttempts=10 on Postgres). Insert-then-count needs no transaction,
+// advisory lock or dialect-specific UPSERT, so the same SQL holds on
+// SQLite and Postgres. A denied caller's row stays behind; it predates
+// the block it triggered and is cleared when that block expires.
+//
+// The bound is one-sided. When every insert of an over-budget burst
+// commits before any of its counts run, every caller sees the whole
+// burst and none is admitted. That only happens to a key that is past
+// its budget and about to be blocked anyway, and it errs toward denial.
 func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimiterConfig) (bool, time.Duration, error) {
 	if err := s.ensureSchemaOnce(ctx); err != nil {
 		return false, 0, err
@@ -167,33 +187,39 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	case nowMs < blockedUntilMs:
 		return false, time.Duration(blockedUntilMs-nowMs) * time.Millisecond, nil
 	default:
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1", blocks), key); err != nil {
+		// Clear only the block that was read and the attempts it covered.
+		// A concurrent caller may already have written a fresh block or
+		// recorded a post-expiry attempt; deleting by key alone would
+		// erase those and hand the burst a second budget.
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1 AND blocked_until_ms = $2", blocks), key, blockedUntilMs); err != nil {
 			return false, 0, err
 		}
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1", attempts), key); err != nil {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1 AND attempted_at_ms < $2", attempts), key, blockedUntilMs); err != nil {
 			return false, 0, err
 		}
 	}
 
-	// Prune this key's out-of-window attempts, then count the rest.
+	// Prune this key's out-of-window attempts.
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1 AND attempted_at_ms <= $2", attempts), key, cutoffMs); err != nil {
 		return false, 0, err
 	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE rl_key = $1", attempts), key).Scan(&n); err != nil {
+
+	// Record first, count second. The doc comment explains why this order
+	// is what makes the decision atomic per key.
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (rl_key, attempted_at_ms) VALUES ($1, $2)", attempts), key, nowMs); err != nil {
 		return false, 0, err
 	}
-	if n >= cfg.MaxAttempts {
+	var n int
+	if err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE rl_key = $1 AND attempted_at_ms > $2", attempts), key, cutoffMs).Scan(&n); err != nil {
+		return false, 0, err
+	}
+	if n > cfg.MaxAttempts {
 		blockedMs := now.Add(cfg.BlockDuration).UnixMilli()
 		upsert := fmt.Sprintf("INSERT INTO %s (rl_key, blocked_until_ms) VALUES ($1, $2) ON CONFLICT (rl_key) DO UPDATE SET blocked_until_ms = excluded.blocked_until_ms", blocks)
 		if _, err := s.db.ExecContext(ctx, upsert, key, blockedMs); err != nil {
 			return false, 0, err
 		}
 		return false, cfg.BlockDuration, nil
-	}
-
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (rl_key, attempted_at_ms) VALUES ($1, $2)", attempts), key, nowMs); err != nil {
-		return false, 0, err
 	}
 	return true, 0, nil
 }

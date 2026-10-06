@@ -272,6 +272,18 @@ paths that skip hooks entirely; by design, not accident:
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`) | AfterList/AfterGet, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user. |
 | `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
 
+**Upsert and key-deriving hooks.** A `BeforeCreate` hook may derive or
+normalize the primary key that `UpsertOne` conflicts on (a slug from the
+title, a lowercased natural key). The upsert checks ownership, tenant and
+soft-delete against the key as the hooks left it, and the
+`ON CONFLICT DO UPDATE` itself only updates a row whose owner and tenant
+match the caller's and that is not soft-deleted, so a row another session
+commits mid-upsert is refused too. A refusal returns the same errors as a
+direct collision (`upsert: target row belongs to a different owner or
+tenant`, or the soft-delete one) and leaves the row untouched. `UpsertOne`
+also applies the belongs_to write check `CreateOne` and `UpdateOne` apply:
+an FK naming a parent the caller cannot read fails as not found.
+
 **Redaction implication.** A hook that masks a column protects every HTTP
 path that returns the row: List, Get, keyset pages, `?include=` children,
 `_events` deliveries, and create/update response bodies. Register it on

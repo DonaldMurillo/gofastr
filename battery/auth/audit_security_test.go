@@ -85,6 +85,7 @@ func TestVerifyEmailAuditsMutation(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/auth/verify-email?token="+tok, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: session})
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

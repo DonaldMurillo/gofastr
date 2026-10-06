@@ -655,6 +655,44 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 			writeAuthError(w, http.StatusInternalServerError, "failed to create user")
 			return
 		}
+		// The redeemed token proved the mailbox. A failure leaves the
+		// account unverified and the next magic link claims it, which
+		// is a no-op on an account nothing else has touched.
+		if verifier, ok := userStore.(EmailVerifier); ok {
+			if err := verifier.MarkEmailVerified(r.Context(), user.GetID()); err != nil {
+				writeAuthError(w, http.StatusInternalServerError, "failed to mark email verified")
+				return
+			}
+		}
+	} else {
+		// The address may have been registered by someone who never
+		// proved it, with a password and sessions of their own. The
+		// redeemed token is the mailbox owner's proof, so an unverified
+		// account is claimed: everything the registrant attached is
+		// evicted before the owner's session is minted. A store that
+		// cannot say whether the address was proven is refused rather
+		// than guessed at either way: "verified" signs the owner into
+		// the squatter's live account, "unverified" wipes a real
+		// owner's password on every magic link.
+		checker, ok := userStore.(EmailVerifiedChecker)
+		if !ok {
+			writeAuthError(w, http.StatusInternalServerError,
+				"user store does not implement EmailVerifiedChecker")
+			return
+		}
+		verified, err := checker.IsEmailVerified(r.Context(), user.GetID())
+		if err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+			return
+		}
+		if !verified {
+			if err := p.mgr.claimAccount(r.Context(), user.GetID(), "magic_link", remoteHost(r), true); err != nil {
+				slog.Warn("magic-link account claim failed",
+					"plugin", "magic-link", "user_hash", hashedIdentifier(user.GetID()), "err", err)
+				writeAuthError(w, http.StatusInternalServerError, "account claim failed")
+				return
+			}
+		}
 	}
 
 	// Mint through the manager, not SessionStore().Create: MintSession is

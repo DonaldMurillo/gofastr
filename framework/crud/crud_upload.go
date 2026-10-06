@@ -439,22 +439,12 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 // Only http(s) URLs, relative paths within the upload tree, and bare
 // filenames survive.
 func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
-	for _, f := range ch.Entity.GetFields() {
-		switch f.Type {
-		case schema.Image, schema.File:
-		default:
-			continue
-		}
-		raw, ok := body[f.Name]
-		if !ok {
-			continue
-		}
-		s, ok := raw.(string)
-		if !ok || s == "" {
-			continue
-		}
-		if !isSafeMediaURL(s) {
-			return &ValidationError{fields: map[string][]string{f.Name: {"unsafe URL or path"}}}
+	// bodyMediaRefs covers the field itself and every storage_ref in its
+	// `<field>_variants` column: the renditions render into the same
+	// <img srcset> and reach the same storage delete as the original.
+	for _, m := range ch.bodyMediaRefs(body) {
+		if !isSafeMediaURL(m.ref) {
+			return &ValidationError{fields: map[string][]string{m.field: {"unsafe URL or path"}}}
 		}
 	}
 	return nil

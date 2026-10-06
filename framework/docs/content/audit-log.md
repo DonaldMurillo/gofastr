@@ -183,6 +183,7 @@ deployments.
 | `2fa.enrolled` | 2FA enrollment verified (secret enabled + backup codes issued). |
 | `2fa.challenge_succeeded` | 2FA challenge passed (`method=totp` or `method=backup_code`). |
 | `2fa.challenge_failed` | 2FA challenge rejected. |
+| `2fa.challenge_locked` | A pending session spent its per-session challenge budget and was deleted; the user signs in again. |
 | `2fa.disabled` | 2FA turned off. |
 | `2fa.backup_codes_regenerated` | Backup codes refreshed. |
 | `password.reset_requested` | Forgot-password requested. Fires for **known and unknown** emails (empty `UserID` for unknown), so account probing is visible. `known=true/false`. |
@@ -192,6 +193,7 @@ deployments.
 | `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`), the account-takeover defence. |
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
+| `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, and it is now verified. |
 
 Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
 when unknown, since the column is NOT NULL), and a `diff` JSON of

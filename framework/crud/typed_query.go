@@ -348,6 +348,12 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if err := q.handler.validateMediaURLs(body); err != nil {
 		return 0, err
 	}
+	// One value written onto many rows cannot be "this row's current
+	// key" for all of them, so a storage key here needs WithUploadedKeys
+	// or WithServerWrites (media_provenance.go).
+	if err := q.handler.checkMediaProvenance(ctx, body, nil); err != nil {
+		return 0, err
+	}
 
 	// Same integer-exactness gate as the HTTP update path: a host map
 	// carrying a float64 (decoded elsewhere from JSON) must not silently

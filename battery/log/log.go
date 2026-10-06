@@ -47,7 +47,9 @@ type Config struct {
 	// `X-Forwarded-For` / `X-Real-IP` headers in the access log's
 	// `remote` field. Off by default because those headers are
 	// trivially spoofable by direct clients; turn on only when the app
-	// sits behind a trusted proxy that overwrites them.
+	// sits behind a trusted proxy that overwrites or appends to them.
+	// The rightmost X-Forwarded-For entry (the hop that proxy wrote) is
+	// logged, never the client-supplied entries to its left.
 	//
 	// Even when off the raw value is still emitted as `forwarded_for`
 	// so operators can correlate without trusting it.

@@ -274,14 +274,14 @@ func TestEntitySessionStore_Cleanup(t *testing.T) {
 
 func TestUserEntityFields(t *testing.T) {
 	fields := UserEntityFields()
-	if len(fields) != 4 {
-		t.Fatalf("expected 4 fields (email, password_hash, roles, password_set), got %d", len(fields))
+	if len(fields) != 5 {
+		t.Fatalf("expected 5 fields (email, password_hash, roles, password_set, email_verified), got %d", len(fields))
 	}
 	names := make(map[string]bool)
 	for _, f := range fields {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"email", "password_hash", "roles", "password_set"} {
+	for _, want := range []string{"email", "password_hash", "roles", "password_set", "email_verified"} {
 		if !names[want] {
 			t.Fatalf("missing expected field %q", want)
 		}
@@ -360,7 +360,7 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	userID := "user-x"
+	userID := seedUserID(t, mgr, "x@example.com")
 	secret := GenerateSecret()
 	if err := twofa.store.SetTwoFA(context.Background(), userID, &TwoFAState{
 		Enabled: true, Secret: secret, Verified: true,
@@ -375,9 +375,9 @@ func TestEntitySessionStore_RequireTwoFA_EndToEnd(t *testing.T) {
 
 	r := router.New()
 	mgr.RegisterRoutes(r)
-	r.Get("/protected", twofa.RequireTwoFA()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/protected", SessionMiddleware(mgr)(twofa.RequireTwoFA()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})).(http.HandlerFunc))
+	}))).(http.HandlerFunc))
 
 	// Submit valid TOTP via /2fa/challenge
 	step := uint64(time.Now().Unix()) / 30

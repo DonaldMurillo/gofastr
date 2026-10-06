@@ -121,6 +121,11 @@ func TestResolveOAuth_VerifiedEmailAndPasswordless_AutoLinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	// A prior verified login proved the address; an unproven account is
+	// refused (TestOAuthUnverifiedPrecreateNoMerge).
+	if err := store.MarkEmailVerified(ctx, existing.GetID()); err != nil {
+		t.Fatalf("mark verified: %v", err)
+	}
 	plugin, _ := newResolveManager(t, store)
 
 	info := &OAuth2UserInfo{
