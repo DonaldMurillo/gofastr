@@ -139,12 +139,18 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		`{flag: "title-like", param: "title_like"`,
 		`{flag: "title-ne", param: "title_ne"`,
 		`{flag: "views-ne", param: "views_ne"`,
+		// Text columns are ordered too: the server accepts ?title_gt=,
+		// so the flag ships (the old hardcoded Comparable list hid an
+		// operator the parser accepts).
+		`{flag: "title-gt", param: "title_gt"`,
 	} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("posts.go filter table missing %q", w)
 		}
 	}
-	for _, absent := range []string{`{flag: "q"`, `{flag: "trashed"`, `{flag: "title-gt"`, `{flag: "published-gt"`} {
+	// A Bool column refuses every ordered and LIKE operator: none of
+	// those flags may ship for `published`.
+	for _, absent := range []string{`{flag: "q"`, `{flag: "trashed"`, `{flag: "published-gt"`, `{flag: "published-like"`, `{flag: "published-lt"`} {
 		if strings.Contains(posts, absent) {
 			t.Errorf("posts.go should not have %q", absent)
 		}

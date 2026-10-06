@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 	"github.com/DonaldMurillo/gofastr/framework/sdkdocs/internal/docpage"
@@ -644,7 +645,13 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	origin := s.entityOrigin(e)
 	structName := upperFirst(casing.ToCamel(cfg.Name))
 	prop := casing.ToCamel(cfg.Table)
-	filterField := exampleFilterField(cfg)
+	// The example filter is picked from the one type predicate every
+	// filter surface applies (filter.OpSuitsType): a `_gte` snippet on
+	// a column whose type refuses range operators (Bool, JSON) is a
+	// request the server answers 400, published as the canonical
+	// example. When no queryable column accepts a range comparison the
+	// snippets show plain equality.
+	filterField, filterOp := exampleFilter(cfg)
 	// A versioned entity shares the page with its siblings; the tab
 	// widget name must stay unique per section.
 	tabsName := "sdk-ent-" + cfg.Table
@@ -661,7 +668,7 @@ created, err := c.Create%s(ctx, client.%sInput{ /* … */ })
 _ = c.Watch%s(ctx, func(event string, data []byte) error {
 	fmt.Println(event)
 	return nil
-})`, filterField+"_gte", filterField, structName, structName, structName, structName)
+})`, filterField+filterOp, filterField, structName, structName, structName, structName)
 
 	tsCode := fmt.Sprintf(`const page = await api.%s.list({
   sort: "-%s",
@@ -670,10 +677,10 @@ _ = c.Watch%s(ctx, func(event string, data []byte) error {
 
 const created = await api.%s.create({ /* … */ });
 await api.%s.watch((event) => console.log(event), { signal });`,
-		prop, filterField, filterField+"_gte", prop, prop)
+		prop, filterField, filterField+filterOp, prop, prop)
 
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
-  "%s/%s?%s_gte=10&sort=-%s"`, origin, cfg.Table, filterField, filterField)
+  "%s/%s?%s%s=10&sort=-%s"`, origin, cfg.Table, filterField, filterOp, filterField)
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: tabsName},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},
@@ -682,11 +689,15 @@ await api.%s.watch((event) => console.log(event), { signal });`,
 	)
 }
 
-// exampleFilterField picks a plausible filterable column for the examples:
-// preferably numeric/temporal (so a _gte comparison reads sensibly), else
-// the first visible non-auto field, else created_at.
-func exampleFilterField(cfg entity.EntityConfig) string {
-	first := ""
+// exampleFilter picks the example filter column and its operator
+// suffix: a queryable, non-auto, non-relation number or date first (a
+// _gte comparison reads best on one), else the first such field whose
+// type accepts a range comparison (filter.OpSuitsType — the one
+// predicate every filter surface applies), else the first such field
+// with "" (equality suits every type), else created_at, else the
+// primary key.
+func exampleFilter(cfg entity.EntityConfig) (field, op string) {
+	first, anyGte := "", ""
 	for _, f := range cfg.Fields {
 		// NoQuery skipped alongside Hidden: this example exists to show a
 		// filter that works, and the parser answers a NoQuery column with a
@@ -695,32 +706,40 @@ func exampleFilterField(cfg entity.EntityConfig) string {
 		if f.Hidden || f.NoQuery || f.AutoGenerate != schema.AutoNone || f.Type == schema.Relation {
 			continue
 		}
+		// A number or date reads best as the _gte example; any other
+		// type that accepts a range comparison is next best (the
 		switch f.Type {
 		case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
-			return f.Name
+			return f.Name, "_gte"
 		default:
-			// Only ordered types make a useful range-filter example; the
-			// rest fall through to the first-column fallback below.
+			// Every other type falls through: the predicate below
+			// decides whether it still carries the range example.
+		}
+		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
+			anyGte = f.Name
 		}
 		if first == "" {
 			first = f.Name
 		}
 	}
+	if anyGte != "" {
+		return anyGte, "_gte"
+	}
 	if first != "" {
-		return first
+		return first, ""
 	}
 	// Fall back to created_at only when the entity actually has it. An entity
 	// built WithTimestamps(false) whose every other column is Hidden, NoQuery,
-	// auto-generated, or a relation has no filterable column at all, and
+	// auto-generated, or a relation has no filterable column of its own, and
 	// naming a column that does not exist publishes three examples (Go, TS,
 	// curl) that every reader copies into a 400. The primary key is always
 	// present and always filterable, so it is the honest last resort.
 	for _, f := range cfg.Fields {
 		if f.Name == "created_at" && !f.Hidden && !f.NoQuery {
-			return "created_at"
+			return "created_at", ""
 		}
 	}
-	return "id"
+	return "id", ""
 }
 
 // upperFirst turns casing.ToCamel's lowerCamel wire form into the
