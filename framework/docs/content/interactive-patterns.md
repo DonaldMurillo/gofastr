@@ -878,9 +878,11 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   body off each control's **`name`**, not its `id`. `curl` testing hides the
   mismatch; only a real browser exposes it. Same section, rule 2.
 - **Turning in-page state changes into routes.** Sort, paginate,
-  expand, tab-switch: these are islands (RPC swaps one fragment), not
-  navigations. Adding a route (or `location.href = …`) for them is the
-  architecture's named failure mode #1.
+  expand, tab-switch stay on their route: an embedded region is an island
+  (RPC swaps one fragment), and a list screen's own sort and page live in
+  its query string as intercepted navigations. Adding a new route (or
+  `location.href = …`) for them is the architecture's named failure
+  mode #1.
 - **Re-implementing pagination/sort/filter math in JS.** The server
   owns that logic; the client's job is to fire the RPC and swap the
   returned HTML. Duplicated math drifts from the server's the first
