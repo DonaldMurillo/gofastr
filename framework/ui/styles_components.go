@@ -1211,6 +1211,9 @@ func dataTableCSS(_ style.Theme) string {
     align-items: baseline;
     justify-content: space-between;
     gap: var(--spacing-md, 8px);
+    /* The row rhythm's block-size is a minimum in table layout but an
+       exact height on a flex box: a card cell grows to its content. */
+    block-size: auto;
     padding-block: var(--spacing-sm, 4px);
     padding-inline: 0;
     border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #F4F4F5);
@@ -1233,6 +1236,12 @@ func dataTableCSS(_ style.Theme) string {
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
     justify-content: flex-end;
+  }
+  /* The empty row's one spanning cell holds the empty state, which
+     fills the card rather than aligning to its end. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td[colspan] {
+    display: block;
+    text-align: start;
   }
 }`
 }

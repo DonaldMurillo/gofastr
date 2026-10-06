@@ -952,6 +952,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A `DataTable` in cards mode no longer clips its cells.** The table's
+  52px row height is a minimum in table layout but an exact height once
+  a cell becomes a flex box, so a cell taller than that (an empty state,
+  wrapped text) overflowed and the scroll wrapper cut it off. Card cells
+  now grow to their content, and the empty state fills its card instead
+  of sitting at the end.
 - **`EnsureAuditTable` adds missing columns on SQLite.** An audit table
   created before `tenant_id` existed kept running without it: SQLite has
   no `ADD COLUMN IF NOT EXISTS`, and the fallback's probe reported the
