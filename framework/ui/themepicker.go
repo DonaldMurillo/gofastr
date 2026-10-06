@@ -89,15 +89,21 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 		rootAttrs["id"] = cfg.ID
 	}
 
-	// Every option ships unchecked: the stored choice lives in the
-	// browser, and headless-navigation's arrival pass checks one.
+	// Default ships checked and is the one Tab stop, the first-visit
+	// state; the stored choice lives in the browser, and
+	// headless-navigation's arrival pass re-checks from it.
 	option := func(label, class string) render.HTML {
+		checked, tab := "false", "-1"
+		if class == "" {
+			checked, tab = "true", "0"
+		}
 		return render.Tag("button", map[string]string{
 			"type":                "button",
 			"class":               "fui-theme-toggle__option",
 			"data-cui-internal":   "",
 			"data-hui-theme-pick": class,
-			"aria-checked":        "false",
+			"aria-checked":        checked,
+			"tabindex":            tab,
 			"role":                "radio",
 		}, render.Text(label))
 	}

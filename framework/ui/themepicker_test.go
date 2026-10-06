@@ -26,15 +26,17 @@ func TestThemePickerRendersOneOptionPerTheme(t *testing.T) {
 		`aria-label="Theme"`,
 		`id="tp"`,
 		`data-test="hook"`,
-		`data-hui-theme-pick="" role="radio" type="button">Default</button>`,
-		`data-hui-theme-pick="` + ref.Class() + `" role="radio" type="button">Brutal</button>`,
+		`data-hui-theme-pick="" role="radio" tabindex="0" type="button">Default</button>`,
+		`data-hui-theme-pick="` + ref.Class() + `" role="radio" tabindex="-1" type="button">Brutal</button>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("picker lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, `aria-checked="true"`) {
-		t.Errorf("an option ships checked; the stored choice lives in the browser:\n%s", out)
+	// Default is the first-visit state; the runtime re-checks from the
+	// stored choice. TestThemeRadiosSSRCheckFirstVisit pins each option.
+	if n := strings.Count(out, `aria-checked="true"`); n != 1 {
+		t.Errorf("%d options ship checked, want Default alone:\n%s", n, out)
 	}
 	if strings.Contains(out, "evil") {
 		t.Errorf("ExtraAttrs overrode a hook the component owns:\n%s", out)
