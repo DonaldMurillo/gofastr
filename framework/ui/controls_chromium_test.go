@@ -73,18 +73,33 @@ func TestSegmentedWidthHoldsOnSelect(t *testing.T) {
 
 // Hard rule 9: a ThemePicker in a 375px site header shrank with the
 // row, and the pill's rounded overflow clipped its last label
-// ("Bruta"). The pill keeps its labels' width.
+// ("Bruta") out of reach. Options keep their labels' width, and the
+// pill, held to its row, scrolls its track so the last one shows in
+// full at the end.
 func TestThemePillKeepsLabelsInNarrowRow(t *testing.T) {
 	th := theme.Default()
 	page := render.HTML(`<div style="display:flex;width:90px">`) +
 		ThemeToggle(ThemeToggleConfig{Variant: ThemeTogglePill}) + render.HTML(`</div>`)
 	m := geometryOf(t, themeToggleStyle.Entry().CSSFor(th), page, `(() => {
 		const opts = [...document.querySelectorAll('.fui-theme-toggle__option')];
-		const pill = document.querySelector('.fui-theme-toggle--pill').getBoundingClientRect();
-		return {clipped: opts.filter(o => o.getBoundingClientRect().right > pill.right + 0.5 || o.scrollWidth > o.clientWidth).length};
+		const pill = document.querySelector('.fui-theme-toggle--pill');
+		pill.scrollLeft = pill.scrollWidth;
+		const r = pill.getBoundingClientRect();
+		const inner = r.left + pill.clientLeft + pill.clientWidth;
+		const last = opts[opts.length - 1].getBoundingClientRect();
+		return {squeezed: opts.filter(o => o.scrollWidth > o.clientWidth).length,
+			lastHidden: last.right > inner + 0.5 ? 1 : 0,
+			// A script scrolls an overflow:hidden box too; a user cannot.
+			userScroll: ['auto', 'scroll'].includes(getComputedStyle(pill).overflowX) ? 1 : 0};
 	})()`)
-	if m["clipped"] != 0 {
-		t.Errorf("%v pill option(s) clipped in a 90px flex row; the pill must keep its labels' width", m["clipped"])
+	if m["squeezed"] != 0 {
+		t.Errorf("%v pill option(s) squeezed below their label in a 90px flex row", m["squeezed"])
+	}
+	if m["lastHidden"] != 0 {
+		t.Error("the last pill option stays clipped with the track scrolled to its end")
+	}
+	if m["userScroll"] != 1 {
+		t.Error("the pill clips its overflow without letting a user scroll the track")
 	}
 }
 
