@@ -156,3 +156,15 @@ notes:
       uses:
         - gofastr/battery/auth.UserEntityConfig
     guidance: "Expose what clients need from such an entity through a custom route or a projection entity; in-process reads (ListAll, GetOne, EagerLoad) are unaffected."
+  - change: "style.DefaultTheme() and theme.Default() are reskinned to neutral zinc (primary #18181B, was indigo #4F46E5; radii 6/8/10/14px, were 4/8/12/16), and three tokens change role as well as shade: --color-secondary is a light fill #F4F4F5 under a near-black --color-secondary-fg (was grey #6B7280 under white), --color-border-strong is #D4D4D8 (was #A1A1AA), a hover edge rather than a 3:1 control edge, and --color-accent is blue #2563EB (was violet #7C3AED in style.DefaultTheme(), cyan #0891B2 in theme.Default())"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core-ui/style.DefaultTheme
+        - gofastr/framework/ui/theme.Default
+      strings:
+        properties: [--color-secondary, --color-secondary-fg]
+      css:
+        properties: [--color-secondary, --color-secondary-fg]
+    guidance: "A theme built on these defaults draws the new look: check its pages, and set the old values on the theme where the brand needs them. Text or an icon drawn in var(--color-secondary) is now near-invisible on a white page: draw it in var(--color-text-muted), or put var(--color-secondary-fg) on a var(--color-secondary) fill. A control border drawn in var(--color-border-strong) falls below 3:1: move it to var(--color-text-subtle); a hover edge needs nothing. Look at var(--color-accent) only where the old violet or cyan hue mattered."
