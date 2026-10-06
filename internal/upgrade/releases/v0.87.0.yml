@@ -204,6 +204,13 @@ notes:
             value: '^\+?0*(?:2|4|8|16|24|32|48)(?:\.0*)?px$'
             glob: "**/*.style.css"
     guidance: "The hit is a line of an owned <name>.style.css sheet. Write 2 / 4 / 8 / 16 / 24 / 32 / 48px as var(--spacing-xs) / var(--spacing-sm) / var(--spacing-md) / var(--spacing-lg) / var(--spacing-xl) / var(--spacing-2xl) / var(--spacing-3xl), then re-run gofastr gen styles. A two-value shorthand (padding-inline: 8px 16px) passes the check."
+  - change: "i18nui.LabelForField is removed; i18nui.FieldLabel(ctx, tr, entity, field, display) replaces it and reads the catalog key entity.<entity>.fields.<field>.label, so the old entity.<entity>.field.<field> key no longer translates a field label"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/i18nui.LabelForField
+    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, ent.Config.Display), passing nil for display where the entity has none, and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
   - change: "a filter operator must suit the field's type: like (?field_like=, like in ?where=) works only on a String, Text, Enum or UUID column and gt / lt / gte / lte are refused on a Bool column, on flat params, ?where=, relation filters (?rel.field_like=), include-scoped filters and Go-built predicates alike"
     breaking: true
     nodetect: "the operators arrive in request query strings and stored client links, which no source scan can find"

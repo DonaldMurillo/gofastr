@@ -1059,12 +1059,21 @@ GET /api/tickets?status=open&priority_gte=2&assignee_in=me,you&sort=-created_at
 | Suffix   | Operator                                   |
 | -------- | ------------------------------------------ |
 | _(none)_ | `=` (equals)                               |
+| `_ne`    | `!=` (not equals)                          |
 | `_gt`    | `>`                                        |
 | `_gte`   | `>=`                                       |
 | `_lt`    | `<`                                        |
 | `_lte`   | `<=`                                       |
 | `_like`  | literal `contains` (`LIKE '%value%'`)      |
 | `_in`    | `IN (…)`, comma-separated, capped at 1000 |
+
+`_ne` follows `=`'s NULL semantics rather than SQL three-valued intuition:
+a row whose column is NULL matches neither `=` nor `!=`, and no
+`OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
+`ne`/`in` leaf) when you want "everything except these".
+
+`_like` on a number, date or Bool column, or `_gt`/`_gte`/`_lt`/`_lte`
+on a Bool, is a 400: see "Operators must suit the field's type" below.
 
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
@@ -1139,8 +1148,19 @@ $3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
 defaults to `eq`; use `"values":[...]` or a comma string with
 `op:"in"`) or a **group** (`{"and":[...]}` / `{"or":[...]}`).
 
-Operators are the same set as the flat params: `eq, gt, lt, gte, lte,
-like, in`.
+Operators are the same set as the flat params: `eq, ne, gt, lt, gte, lte,
+like, in` — `ne` is the `!=` twin of `_ne` above, NULL semantics included.
+
+**Operators must suit the field's type.** `like` works only on a
+String, Text, Enum or UUID column, and the ordered comparisons (`gt`,
+`lt`, `gte`, `lte`) are refused on Bool: SQL orders `false < true`, but
+no caller means that. `eq`, `ne` and `in` suit every type. The rule is
+`filter.CheckOpType`, and every filter surface applies it: the flat
+`?field_<op>=` params, `?where=`, Go-built predicates
+(`filter.ValidatePredicate` below), the filter DSL, relation filters
+(`?author.active_like=`, `crud.NestedFilter`) and include-scoped
+filters. A refusal is a 400 naming the operator, the key sent and the
+column type.
 
 **Safety.** Every field is validated against the entity's schema
 (Hidden fields rejected; the same value-disclosure-oracle rationale as
@@ -1151,6 +1171,215 @@ tree compiles to **one** parenthesized WHERE clause, so it AND-composes
 with owner, tenant, and soft-delete scopes exactly like `?q=`: a user
 OR-group can never widen past those scopes. `?where=` combines (AND)
 with any flat `?field_op=` params on the same request.
+
+## Predicates in Go (`ParsePredicate`, `ValidatePredicate`)
+
+Server code builds the same trees the URL surfaces parse. `dsl.ParsePredicate`
+turns filter text — a list view's `Where`, the admin's filter chips and
+query box, the `?filter=` URL parameter — into a `*filter.Predicate` that
+has already been validated against the entity's fields:
+
+```go
+pred, err := dsl.ParsePredicate(`status in ["open", "past_due"] and amount >= 10000`, fields)
+```
+
+The grammar is small and strict: comparisons with `=`, `!=`, `<`, `>`,
+`<=`, `>=`, a literal-substring `contains`, and `in` over a bracketed
+list, combined with `and`/`or` and parentheses. Keywords are
+case-insensitive; `and` binds tighter than `or`. Values are
+double-quoted strings (escaping `\"` and `\\`), bare numbers, and
+`true`/`false`. Blank text returns a nil predicate; input over 8 KiB is
+refused; errors name the byte offset and quote only a short scrubbed
+excerpt. `dsl.ParseSort` is the sibling for a view's `Sort`
+(`amount DESC, number ASC`), returning `filter.ParsedSort` values under
+the same field rules as `?sort=`. Both live in
+[the query DSL page](query-dsl.md).
+
+`filter.ValidatePredicate(p, fields)` is the check both URL parsing and
+`ParsePredicate` already ran, exposed for trees built in Go (a view func
+that depends on who is looking, say). It runs every `?where=` check over
+the tree: each leaf field exists and is neither Hidden nor NoQuery, the
+operator is known and suits the field's type, an `in` leaf carries 1 to
+1000 values, and the tree stays within the depth (8) and node (64)
+bounds. Wire aliases resolve to columns and Bool leaves get their
+coercion marker set, in place. Field names in a predicate are spliced
+into SQL by `BuildPredicate` (values are bound placeholders), so this
+check is what keeps a hand-built tree safe to compile.
+
+Pass a validated tree to the in-process list through
+`crud.ListOptions.Where`. It is ANDed with everything the list already
+applies — flat filters, nested filters, search, owner, tenant,
+soft-delete and read scopes — as one parenthesized clause, so an `or`
+inside it cannot widen past a scope. The tree is validated again inside
+`ListAll`/`CountAll`, because a caller may have built it by hand; a
+refusal names the offending leaf. `ListOptions.Fields` narrows the
+columns a list reads to the named subset plus `id` (always included);
+unknown and Hidden names are refused, never silently dropped (a NoQuery
+column may be read: NoQuery keeps it out of filters and sorts only),
+and masking hooks still run on whatever came back. `CountAll` applies
+both identically, so a page count matches its rows.
+
+## Restoring and purging soft-deleted rows
+
+For a `soft_delete: true` entity, the in-process handler offers the pair
+the admin's Deleted view is built on:
+
+```go
+err := handler.RestoreOne(ctx, id) // clears deleted_at, like an update
+err := handler.PurgeOne(ctx, id)   // hard-deletes the trashed row
+```
+
+`RestoreOne` behaves like an update: it asks the entity's update
+permission and any installed Decider about the one record, runs the
+`BeforeUpdate`/`AfterUpdate` hooks, writes an audit row with the
+operation `restore`, and emits `entity.updated`. `PurgeOne` mirrors the
+delete path (`BeforeDelete`/`AfterDelete`, audit operation `purge`,
+`entity.deleted`). Both answer `crud.ErrNoSoftDelete` on an entity
+without soft delete, and `crud.ErrNotSoftDeleted` when the row is not
+soft-deleted — purge never skips the soft delete, so a live row cannot be
+hard-deleted past the retention window soft delete exists for.
+
+Visibility follows the write scopes: a row the caller cannot see under
+owner and tenant scoping answers the same not-found error a read of that
+id gives, so another owner's id discloses nothing. Both are in-process
+only (no HTTP routes); `crud.WithServerWrites` skips the permission
+question the way it does for every other trusted write, while owner and
+tenant context stay required.
+
+## Screen hints (`Display`)
+
+`EntityConfig.Display` tells the admin and the generated screens how to draw
+the entity: its names, the columns a list opens with, named views, where
+fields sit on the record, the sidebar placement, and per-field hints. It is
+a pointer config like `Scope` and `Exposure`: nil means every default, and
+the framework copies it deeply at registration, so editing the value you
+passed afterwards changes nothing the app checked or serves.
+
+Display changes how a screen draws, never what the API accepts: a field's
+own `Hidden`, `ReadOnly` and `NoQuery` keep their meaning and screens honour
+them first. A label change is also invisible to generated clients — `Display`
+is not part of the SDK schema hash, so relabelling never reports as drift.
+
+```go
+app.Entity("invoices", framework.EntityConfig{
+    Fields: []schema.Field{ /* … */ },
+    Display: &framework.DisplayConfig{
+        Singular:   "Invoice",
+        Plural:     "Invoices",
+        TitleField: "number",               // names a record in lists, drawers, breadcrumbs
+        Columns:    []string{"number", "amount", "status"},
+        Nav:        &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1},
+        Views: []framework.ListView{
+            {Key: "open", Where: `status = "open"`, Sort: "due_on ASC"},
+        },
+        Facets:    []string{"status"},      // one-click filters: Enum, Bool or Relation fields
+        PageSizes: []int{10, 25, 50},       // each within Pagination.MaxListLimit
+        NoBulk:    true,                    // NoDuplicate turns off one action the same way
+    },
+})
+```
+
+The same block in a JSON entity declaration (`entity.EntityDeclaration`),
+under the entity with snake_case keys. `display` has no flat shorthand:
+every key lives under it, and an unknown key is a decode error.
+
+```json
+{
+  "name": "invoices",
+  "fields": [
+    {"name": "number", "type": "string", "required": true},
+    {"name": "status", "type": "enum", "values": ["draft", "open", "paid"]},
+    {"name": "issued_on", "type": "date"},
+    {"name": "due_on", "type": "date"},
+    {"name": "paid_on", "type": "date"}
+  ],
+  "display": {
+    "singular": "Invoice",
+    "title_field": "number",
+    "columns": ["number", "status"],
+    "nav": {"group": "billing", "icon": "receipt", "order": 1},
+    "views": [{"key": "open", "where": "status = \"open\"", "sort": "due_on ASC"}],
+    "facets": ["status"],
+    "card": {"title": "number", "badge": "status", "meta": ["status"]},
+    "fields": {
+      "number": {"placeholder": "INV-0001"},
+      "status": {"locked": true}
+    },
+    "form": {
+      "main": [
+        {"row": ["number"]},
+        {"section": "dates", "help": "When the invoice moves",
+         "items": [{"row": ["issued_on", "due_on"]}, "paid_on"]}
+      ],
+      "side": ["status"]
+    },
+    "page_sizes": [10, 25]
+  }
+}
+```
+
+### Every setting
+
+| Setting | What it does |
+| --- | --- |
+| `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name title-cased is |
+| `Description` | One line under the list heading |
+| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden` |
+| `Columns` | The columns a list opens with, before the viewer picks their own |
+| `Nav` | Sidebar placement: `Group` (a key), `Icon`, `Order`, `Hide`. `Hide` drops the entity from nav and the dashboard; it never changes what the admin exposes |
+| `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (how rows are drawn), and `Default` (at most one view may set it) |
+| `Facets` | Enum, Bool or Relation fields offered as one-click filters |
+| `Form` | Where fields sit on the record: `Main` and `Side` columns of `FormItem`s |
+| `Card` | The fields a card shows when a list is drawn as cards: `Title`, `Subtitle`, `Badge`, `Meta` |
+| `Fields` | Per-field hints keyed by field name: `Label`, `Help`, `Placeholder`, `Locked` (drawn read-only on screens; the API may still write it), `Omit` (left out of forms and columns; the API still returns it), `ShowWhen` (`field = value` or `field in [...]` on an editable Enum or Bool field) |
+| `PageSizes` | The page-size menu; every entry is positive and within `Pagination.MaxListLimit` when that is set |
+| `NoDuplicate`, `NoBulk` | Turn off the Duplicate row action, or every bulk action, for this entity |
+
+A `FormItem` is exactly one of: a bare field name (YAML: `"status"`,
+`{"field": …}` is refused), a `Row` of one to three distinct fields, or a
+`Section` — a key, optional `Help` and `Collapsed`, and its own `Items`,
+which take the same three shapes again. Sections nest at most two deep.
+Fields the form leaves out are appended at the end of `Main` in schema
+order (minus the auto-generated system fields), so adding a field never
+makes it vanish.
+
+### The boot check
+
+Registration (`Registry.Register` → `Entity.Validate`) refuses the entity
+when any name Display holds is wrong, so a typo or a stale name after a
+rename fails the app at boot instead of rendering a blank column per
+request:
+
+- **Fields.** Every name in `Columns`, `TitleField`, `Facets`, `Card`,
+  `Form` (items, rows, nested sections) and the keys of `Fields` must
+  exist and not be `Hidden`.
+- **Facet types.** A facet must be an Enum, Bool or Relation field, and
+  not `NoQuery`.
+- **Keys.** View keys, form section keys and the nav group are lowercase
+  ASCII slugs (`^[a-z][a-z0-9_]*$`, no dots), unique within their list, and
+  not `all` or `deleted` (the screens own those). At most one view sets
+  `Default`.
+- **The form.** Each item sets exactly one of field, row or section; a row
+  holds one to three distinct fields; only a section carries `Items`,
+  `Help` and `Collapsed`, and holds at least one item; sections nest at
+  most two deep; a field appears once across `Main` and `Side`.
+- **`Omit`.** Refused on a Required field with no `Default` and no
+  auto-generation: no form could create the record.
+- **`PageSizes`.** Every entry is positive and within
+  `Pagination.MaxListLimit` when that is set.
+- **`Sort`.** A comma-separated list of `<field> ASC` or `<field> DESC`
+  (either case), each field existing and neither `Hidden` nor `NoQuery`:
+  `amount DESC, number ASC`.
+
+A view's `Where` and a field's `ShowWhen` are parsed with the query DSL
+when `App.Entity` registers the entity (`framework/entity` cannot import
+the DSL), and a bad one fails registration the same way: a `Where` naming
+an unknown, Hidden or NoQuery field, or a `ShowWhen` that is anything but
+`field = value` or `field in [...]` over an editable Enum or Bool field
+whose values it names. The
+translation keys Display's names produce (`entity.<entity>.*`,
+`nav.groups.<key>`) are listed on the
+[Internationalization](i18n.md) page.
 
 ## Code Generation
 

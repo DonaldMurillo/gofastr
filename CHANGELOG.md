@@ -8,6 +8,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`EntityConfig.Display` carries an entity's screen hints.** One
+  block holds what admin and generated screens read: singular and plural
+  names, list columns, named views (a DSL `Where` and a `Sort`), facets,
+  the record form (main and side columns, rows, sections), card fields,
+  nav placement, per-field `Label`, `Help`, `Placeholder`, `Locked`,
+  `Omit` and `ShowWhen`, page sizes, and `NoDuplicate` / `NoBulk`. nil
+  means every default. `App.Entity` checks every name when the entity
+  registers and refuses, naming the offender: unknown or Hidden fields,
+  NoQuery fields in facets or sorts, bad or reserved keys (`all`,
+  `deleted`), duplicate view or section keys, empty sections, a sort that
+  is not `<field> ASC|DESC` terms, `Omit` on a Required field with no
+  default, page sizes above `Pagination.MaxListLimit`, a view `Where` the
+  query DSL refuses, and a `ShowWhen` that is anything but one
+  `field = value` or `field in [...]` term over an editable Enum or Bool
+  field whose values it names. The config is deep-copied at
+  registration and decodes strictly from JSON. Changing it never changes
+  the SDK schema hash.
+- **`framework/i18nui` translates the display names**: `EntitySingular`,
+  `EntityPlural`, `EntityDescription`, `FieldLabel`, `FieldHelp`,
+  `FieldValueLabel`, `ViewLabel`, `TransitionLabel`, `SectionLabel` and
+  `NavGroupLabel` read `entity.<entity>.*` and `nav.groups.<key>`
+  catalog keys, then the Display value, then the key title-cased.
 - **Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`.**
   `ParsePredicate(text, fields)` parses `status in ["open", "past_due"]
   and due_on < "2026-10-01"` into a `*filter.Predicate` that has passed
@@ -538,6 +560,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`filter.CheckOpType`): flat `?field_<op>=` params, `?where=`,
   Go-built predicates, relation filters and include-scoped filters. A
   client that sent `?count_like=5` sends `?count=5` or `?count_in=`.
+- **BREAKING: `i18nui.LabelForField` is removed.** Call
+  `i18nui.FieldLabel(ctx, tr, entity, field, display)`, which reads the
+  catalog key `entity.<entity>.fields.<field>.label`. The old
+  `entity.<entity>.field.<field>` key no longer translates; move those
+  catalog entries. `gofastr upgrade` lists the callers.
 - **BREAKING: owned sheets read line height, letter spacing and opacity
   from the new tokens.** The owned-style check (`gofastr gen styles`,
   `gofastr verify`) compares `line-height`, `letter-spacing` and

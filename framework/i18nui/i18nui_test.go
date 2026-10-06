@@ -77,13 +77,13 @@ func TestValidationErrorCtxLocale(t *testing.T) {
 	}
 }
 
-func TestLabelForFieldCtxLocale(t *testing.T) {
+func TestFieldLabelCtxLocale(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	cat.Set("fr", "entity.user.field.email", i18n.Message{Text: "Courriel"})
+	cat.Set("fr", "entity.user.fields.email.label", i18n.Message{Text: "Courriel"})
 	tr := i18n.NewTranslator(cat, "en")
 	ctxFr := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	if got := LabelForField(ctxFr, tr, "user", "email"); got != "Courriel" {
-		t.Fatalf("LabelForField fr = %q, want Courriel", got)
+	if got := FieldLabel(ctxFr, tr, "user", "email", ""); got != "Courriel" {
+		t.Fatalf("FieldLabel fr = %q, want Courriel", got)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestValidationErrorBracesInValue(t *testing.T) {
 	}
 }
 
-func TestLabelForFieldNoTranslator(t *testing.T) {
+func TestFieldLabelNoTranslator(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
 		field, want string
@@ -204,15 +204,15 @@ func TestLabelForFieldNoTranslator(t *testing.T) {
 		{"user-id", "User Id"},
 	}
 	for _, tt := range tests {
-		got := LabelForField(ctx, nil, "user", tt.field)
+		got := FieldLabel(ctx, nil, "user", tt.field, "")
 		if got != tt.want {
-			t.Errorf("LabelForField(nil, %q, %q) = %q, want %q", "user", tt.field, got, tt.want)
+			t.Errorf("FieldLabel(nil, %q, %q) = %q, want %q", "user", tt.field, got, tt.want)
 		}
 	}
 }
 
-func TestLabelForFieldSnakeCase(t *testing.T) {
-	got := LabelForField(context.Background(), nil, "order", "shipping_address_line_1")
+func TestFieldLabelSnakeCase(t *testing.T) {
+	got := FieldLabel(context.Background(), nil, "order", "shipping_address_line_1", "")
 	if !strings.Contains(got, "Shipping") {
 		t.Fatalf("expected humanized label for shipping_address_line_1, got %q", got)
 	}

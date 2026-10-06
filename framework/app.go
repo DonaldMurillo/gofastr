@@ -2281,6 +2281,9 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // A check that only exists at commit time reintroduces the partial
 // registration this split exists to prevent.
 func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
+	if err := validateDisplayQueries(ent); err != nil {
+		return err
+	}
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
 	// by an existing route, by a CRUD route this same call is about to
 	// mount, or by a sibling endpoint on this same declaration, would
