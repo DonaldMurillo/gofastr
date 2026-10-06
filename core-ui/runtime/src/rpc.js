@@ -144,6 +144,7 @@
     const closeOnSuccess = node.hasAttribute('data-cui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-cui-rpc-reset') && node.tagName === 'FORM';
     const errToast = node.getAttribute('data-cui-rpc-error-toast');
+    const successToast = node.getAttribute('data-cui-rpc-success-toast');
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
@@ -339,7 +340,14 @@
           NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
-
+      // A success toast fires BEFORE the navigate below: the stack lives
+      // outside the swapped region, so the toast outlives the navigation
+      // its RPC triggered — a save that lands on the record page still
+      // says "Saved". _toastOrFallback keeps it reachable when the
+      // feedback module cannot load.
+      if (successToast !== null) {
+        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000 });
+      }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
       if (navigatePath) {
         try { NS.navigate(navigatePath, { force: true }); }

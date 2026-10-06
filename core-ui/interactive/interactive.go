@@ -41,6 +41,8 @@ type Action struct {
 	effects []Effect
 	// errorToast is the data-cui-rpc-error-toast title; nil = no error toast.
 	errorToast *string
+	// successToast is the data-cui-rpc-success-toast title; nil = none.
+	successToast *string
 }
 
 // Post creates a POST action. Panics if path does not start with "/".
@@ -117,6 +119,21 @@ func (a Action) WithConfirm(message string) Action {
 // Maps to data-cui-rpc-error-toast="title".
 func (a Action) OnErrorToast(title string) Action {
 	a.errorToast = &title
+	return a
+}
+
+// OnSuccessToast shows a success toast titled title on a 2xx answer, before
+// any OnSuccess(Navigate) runs. The toast rides the stack outside the
+// swapped region, so it survives the navigation that follows it — the save
+// that lands the reader back on the record page still says "Saved".
+//
+//	interactive.Post("/api/orders").
+//	    OnSuccessToast("Order created.").
+//	    OnSuccess(interactive.Navigate("/orders"))
+
+// Maps to data-cui-rpc-success-toast="title".
+func (a Action) OnSuccessToast(title string) Action {
+	a.successToast = &title
 	return a
 }
 
@@ -622,6 +639,9 @@ func (a Action) attrs() map[string]string {
 	}
 	if a.errorToast != nil {
 		m["data-cui-rpc-error-toast"] = *a.errorToast
+	}
+	if a.successToast != nil {
+		m["data-cui-rpc-success-toast"] = *a.successToast
 	}
 	for _, e := range a.effects {
 		maps.Copy(m, e.rpcAttrs())
