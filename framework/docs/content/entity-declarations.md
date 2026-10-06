@@ -1201,8 +1201,10 @@ that depends on who is looking, say). It runs every `?where=` check over
 the tree: each leaf field exists and is neither Hidden nor NoQuery, the
 operator is known and suits the field's type, an `in` leaf carries 1 to
 1000 values, and the tree stays within the depth (8) and node (64)
-bounds. Wire aliases resolve to columns and Bool leaves get their
-coercion marker set, in place. Field names in a predicate are spliced
+bounds. It never writes to the input — the tree may be shared across
+goroutines — and returns a resolved deep copy: wire aliases resolved to
+columns, Bool leaves carrying their coercion marker. That copy is the
+tree to hand `BuildPredicate`. Field names in a predicate are spliced
 into SQL by `BuildPredicate` (values are bound placeholders), so this
 check is what keeps a hand-built tree safe to compile.
 
@@ -1320,14 +1322,12 @@ every key lives under it, and an unknown key is a decode error.
 
 ### Every setting
 
-| Setting | What it does |
+| `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
-| `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name title-cased is |
 | `Description` | One line under the list heading |
 | `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden` |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
-| `Nav` | Sidebar placement: `Group` (a key), `Icon`, `Order`, `Hide`. `Hide` drops the entity from nav and the dashboard; it never changes what the admin exposes |
-| `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (how rows are drawn), and `Default` (at most one view may set it) |
+| `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |
 | `Form` | Where fields sit on the record: `Main` and `Side` columns of `FormItem`s |
 | `Card` | The fields a card shows when a list is drawn as cards: `Title`, `Subtitle`, `Badge`, `Meta` |
@@ -1353,6 +1353,8 @@ request:
 - **Fields.** Every name in `Columns`, `TitleField`, `Facets`, `Card`,
   `Form` (items, rows, nested sections) and the keys of `Fields` must
   exist and not be `Hidden`.
+- **Duplicates.** `Columns`, `Facets` and `PageSizes` are menus; a
+  repeated entry is refused, naming the duplicate.
 - **Facet types.** A facet must be an Enum, Bool or Relation field, and
   not `NoQuery`.
 - **Keys.** View keys, form section keys and the nav group are lowercase
@@ -1365,18 +1367,19 @@ request:
   most two deep; a field appears once across `Main` and `Side`.
 - **`Omit`.** Refused on a Required field with no `Default` and no
   auto-generation: no form could create the record.
-- **`PageSizes`.** Every entry is positive and within
+- **`PageSizes`.** Every entry is positive, appears once, and is within
   `Pagination.MaxListLimit` when that is set.
-- **`Sort`.** A comma-separated list of `<field> ASC` or `<field> DESC`
-  (either case), each field existing and neither `Hidden` nor `NoQuery`:
-  `amount DESC, number ASC`.
+- **`As`.** A view's `As` is `"table"` (or empty, the same thing) or
+  `"cards"`; anything else is refused.
 
-A view's `Where` and a field's `ShowWhen` are parsed with the query DSL
-when `App.Entity` registers the entity (`framework/entity` cannot import
-the DSL), and a bad one fails registration the same way: a `Where` naming
-an unknown, Hidden or NoQuery field, or a `ShowWhen` that is anything but
-`field = value` or `field in [...]` over an editable Enum or Bool field
-whose values it names. The
+A view's `Where` and `Sort` and a field's `ShowWhen` are parsed with the
+query DSL when the app registers the entity — `App.Entity` and
+`GroupEntity` both run the check (`framework/entity` cannot import the
+DSL) — and a bad one fails registration the same way: a `Where` naming
+an unknown, Hidden or NoQuery field; a `Sort` outside the `?sort=`
+grammar (`amount DESC, number ASC`; a direction defaults to ASC); or a
+`ShowWhen` that is anything but `field = value` or `field in [...]`
+over an editable Enum or Bool field whose values it names. The
 translation keys Display's names produce (`entity.<entity>.*`,
 `nav.groups.<key>`) are listed on the
 [Internationalization](i18n.md) page.

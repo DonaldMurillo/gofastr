@@ -245,7 +245,7 @@ var adapterHooks = map[string]string{
 	"data-hui-theme-pick":          "one page-theme option naming its override class, rendered by ui.ThemePicker",
 	"data-hui-network-retry":       "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
 	"data-hui-copy-toast":          "the toast-on-copy config, rendered by ui.CopyButton on the button",
-	"data-hui-leave-guard":         "the leave-guard mark a form carries for this package's headless-leaveguard module; the forms that render it are the record screens (framework/entityui) and kit forms, no headless primitive owns a whole form",
+	"data-hui-leave-guard":         "the leave-guard mark a form carries for this package's headless-leaveguard module; the forms that render it are the record screens and kit forms, no headless primitive owns a whole form",
 	"data-hui-leave-guard-message": "the leave guard's ask words, rendered beside the mark by the same record-screen form builder",
 }
 

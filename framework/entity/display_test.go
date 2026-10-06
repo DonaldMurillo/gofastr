@@ -102,7 +102,9 @@ func TestDisplayNamesUnknownFieldRefused(t *testing.T) {
 		{"card meta", func(d *DisplayConfig) { d.Card.Meta[1] = "due" }, `card.meta[1] names field "due", which the entity does not declare`},
 		{"form field", func(d *DisplayConfig) { d.Form.Side[0] = FormItem{Field: "stats"} }, `form side[0] names field "stats", which the entity does not declare`},
 		{"form row member", func(d *DisplayConfig) { d.Form.Main[0].Row[1] = "amont" }, `form main[0] row names field "amont", which the entity does not declare`},
-		{"view sort field", func(d *DisplayConfig) { d.Views[0].Sort = "due ASC" }, `view "open" sort names field "due", which the entity does not declare`},
+		// A view's Sort is no longer checked here: it is a DSL string,
+		// parsed with dsl.ParseSort when the app registers the entity
+		// (framework/display_check.go), the same grammar ?sort= parses.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := displayEntityErr(t, tc.mutate)
@@ -127,7 +129,6 @@ func TestDisplayNamesHiddenFieldRefused(t *testing.T) {
 		{"field hint key", func(d *DisplayConfig) { d.Fields["secret"] = FieldDisplay{Label: "No"} }},
 		{"card badge", func(d *DisplayConfig) { d.Card.Badge = "secret" }},
 		{"form side field", func(d *DisplayConfig) { d.Form.Side[0] = FormItem{Field: "secret"} }},
-		{"view sort field", func(d *DisplayConfig) { d.Views[0].Sort = "secret ASC" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := displayEntityErr(t, tc.mutate)
@@ -220,48 +221,59 @@ func TestDisplayAtMostOneDefaultView(t *testing.T) {
 	}
 }
 
-// Where is parsed at App.Start; Sort's shape needs no DSL and is checked
-// here: "<field> ASC|DESC" with an existing, non-Hidden field.
-func TestDisplayViewSortShapeChecked(t *testing.T) {
-	for _, sort := range []string{"due_on", "due_on UP", "due_on ASC extra", "due_on ASC,", "amount DESC, due_on"} {
-		err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].Sort = sort })
-		if err == nil || !strings.Contains(err.Error(), `must read "<field> ASC|DESC", comma-separated`) {
-			t.Fatalf("sort %q accepted: %v", sort, err)
+// A facet filters on the field, so it may not name a NoQuery field. (A
+// view's Sort is a DSL string: its NoQuery refusal moved to
+// dsl.ParseSort at registration, framework/display_check.go.)
+func TestDisplayRefusesNoQueryFacet(t *testing.T) {
+	fields := displayFields()
+	for i := range fields {
+		if fields[i].Name == "recurring" {
+			fields[i].NoQuery = true
 		}
 	}
-	// The direction word is case-insensitive; an empty sort clears it.
-	if err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].Sort = "due_on desc" }); err != nil {
-		t.Fatalf("lowercase desc refused: %v", err)
-	}
-	if err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].Sort = "" }); err != nil {
-		t.Fatalf("empty sort refused: %v", err)
-	}
-	if err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].Sort = "amount DESC, number ASC" }); err != nil {
-		t.Fatalf("two-key sort refused: %v", err)
+	d := displayFixture()
+	d.Facets = append(d.Facets, "recurring")
+	err := Define("invoices", EntityConfig{Fields: fields, Display: d}).Validate()
+	if err == nil || !strings.Contains(err.Error(), "which is NoQuery") {
+		t.Fatalf("NoQuery facet accepted: %v", err)
 	}
 }
 
-// A facet filters and a sort orders, so neither may name a NoQuery field.
-func TestDisplayRefusesNoQueryFacetSort(t *testing.T) {
-	define := func(mutate func(d *DisplayConfig)) error {
-		fields := displayFields()
-		for i := range fields {
-			if fields[i].Name == "recurring" {
-				fields[i].NoQuery = true
-			}
+// Columns, Facets and PageSizes are menus; a repeated entry is a typo
+// that would render a duplicated column, chip or size, and the refusal
+// names the duplicate.
+func TestDisplayRefusesDuplicateColumns(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) { d.Columns = append(d.Columns, d.Columns[0]) })
+	if err == nil || !strings.Contains(err.Error(), `columns list "number" more than once`) {
+		t.Fatalf("duplicate column accepted: %v", err)
+	}
+}
+
+func TestDisplayRefusesDuplicateFacets(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) { d.Facets = append(d.Facets, d.Facets[0]) })
+	if err == nil || !strings.Contains(err.Error(), `facets list "status" more than once`) {
+		t.Fatalf("duplicate facet accepted: %v", err)
+	}
+}
+
+func TestDisplayRefusesDuplicatePageSizes(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) { d.PageSizes = append(d.PageSizes, d.PageSizes[0]) })
+	if err == nil || !strings.Contains(err.Error(), `page_sizes list 10 more than once`) {
+		t.Fatalf("duplicate page size accepted: %v", err)
+	}
+}
+
+// As documents how a view's rows are drawn: "table" (the default when
+// empty) or "cards". Anything else is a typo no screen would match.
+func TestDisplayViewAsMustBeTableOrCards(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].As = "gallery" })
+	if err == nil || !strings.Contains(err.Error(), `view "open" as "gallery" must be "table" or "cards"`) {
+		t.Fatalf("unknown As accepted: %v", err)
+	}
+	for _, as := range []string{"", "table", "cards"} {
+		if err := displayEntityErr(t, func(d *DisplayConfig) { d.Views[0].As = as }); err != nil {
+			t.Fatalf("As %q refused: %v", as, err)
 		}
-		d := displayFixture()
-		d.Facets = []string{"status"}
-		mutate(d)
-		return Define("invoices", EntityConfig{Fields: fields, Display: d}).Validate()
-	}
-	err := define(func(d *DisplayConfig) { d.Views[0].Sort = "recurring ASC" })
-	if err == nil || !strings.Contains(err.Error(), "which is NoQuery") {
-		t.Fatalf("NoQuery sort accepted: %v", err)
-	}
-	err = define(func(d *DisplayConfig) { d.Facets = append(d.Facets, "recurring") })
-	if err == nil || !strings.Contains(err.Error(), "which is NoQuery") {
-		t.Fatalf("NoQuery facet accepted: %v", err)
 	}
 }
 

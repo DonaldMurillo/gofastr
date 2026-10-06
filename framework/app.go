@@ -1413,6 +1413,11 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// entity's operations under the version's tag instead of the bare name.
 	e.OpenAPITag = g.OpenAPITag()
 
+	// The same Display boot check App.Entity runs: a bad view Where or
+	// ShowWhen refuses the registration here, not at first screen render.
+	if err := validateDisplayQueries(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
 	if a.DB != nil {
 		e.SetDB(a.DB)
 	}

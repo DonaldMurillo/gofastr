@@ -13,9 +13,12 @@ import (
 
 // validateDisplayQueries parses the query strings an entity's Display
 // holds, the half of the Display boot check framework/entity cannot run
-// because it cannot import the DSL: every view's Where, and every field's
-// ShowWhen. A bad one refuses the registration, naming the entity and the
-// offender, the same way entity.Validate refuses a bad field name.
+// because it cannot import the DSL: every view's Where and Sort, and
+// every field's ShowWhen. A bad one refuses the registration, naming
+// the entity and the offender, the same way entity.Validate refuses a
+// bad field name. Sort goes through dsl.ParseSort — the same grammar
+// ?sort= parses — so a view's sort and a caller's sort can never
+// disagree about what a term means.
 func validateDisplayQueries(ent *entity.Entity) error {
 	d := ent.Config.Display
 	if d == nil {
@@ -23,11 +26,15 @@ func validateDisplayQueries(ent *entity.Entity) error {
 	}
 	fields := ent.Config.Fields
 	for _, v := range d.Views {
-		if v.Where == "" {
-			continue
+		if v.Where != "" {
+			if _, err := dsl.ParsePredicate(v.Where, fields); err != nil {
+				return fmt.Errorf("display view %q where: %w", v.Key, err)
+			}
 		}
-		if _, err := dsl.ParsePredicate(v.Where, fields); err != nil {
-			return fmt.Errorf("display view %q where: %w", v.Key, err)
+		if v.Sort != "" {
+			if _, err := dsl.ParseSort(v.Sort, fields); err != nil {
+				return fmt.Errorf("display view %q sort: %w", v.Key, err)
+			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(d.Fields)) {
