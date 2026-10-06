@@ -1229,6 +1229,12 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
+	// Ahead of the hook arm: a hook that hands back a reentrant move's
+	// refusal fails its write with the conflict, not a 400.
+	if errors.Is(err, ErrReentrantMove) {
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
@@ -1270,10 +1276,6 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	}
 	if tde, ok := errors.AsType[*transitionDeniedError](err); ok {
 		writeJSONError(w, http.StatusForbidden, tde.Error())
-		return
-	}
-	if errors.Is(err, ErrReentrantMove) {
-		writeJSONError(w, http.StatusConflict, "conflict")
 		return
 	}
 	if errors.Is(err, ErrUnknownTransition) {

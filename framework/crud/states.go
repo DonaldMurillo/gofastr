@@ -13,7 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
-	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -489,58 +488,19 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 	}
 	req := syntheticRequest(ctx, http.MethodPatch, "/")
 	var result map[string]any
-	run := func() error {
-		return ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-			res, err := ch.doTransition(ctx, req, id, st, t)
-			if err != nil {
-				return err
-			}
-			result = res
-			return nil
-		})
-	}
-	err := run()
-	// SQLite refuses a deferred transaction's write with SQLITE_BUSY when
-	// another connection committed after its read, where Postgres would
-	// match zero rows. A move that began its own transaction restarts, and
-	// the restart's read names the winner's state as a conflict. Inside a
-	// caller's transaction the caller owns the retry.
-	if _, ambient := db.TxFromContext(ctx); !ambient {
-		for attempt := 1; attempt <= moveBusyRetries && isSQLiteBusy(err); attempt++ {
-			if !busyBackoff(ctx, attempt) {
-				return nil, err
-			}
-			err = run()
+	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
+		res, err := ch.doTransition(ctx, req, id, st, t)
+		if err != nil {
+			return err
 		}
-	}
+		result = res
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 	ch.EmitEvent(ctx, event.EntityUpdated, result)
 	return result, nil
-}
-
-// moveBusyRetries bounds RunTransition's restarts on SQLITE_BUSY.
-const moveBusyRetries = 5
-
-// busyBackoff waits before restart attempt n (5ms, 10ms, ...) and reports
-// false when ctx ends first.
-func busyBackoff(ctx context.Context, n int) bool {
-	t := time.NewTimer(time.Duration(n) * 5 * time.Millisecond)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
-	}
-}
-
-// isSQLiteBusy reports whether err is SQLite refusing a write lock:
-// SQLITE_BUSY (5) or its extended BUSY_SNAPSHOT (517), which modernc and
-// mattn both spell "database is locked".
-func isSQLiteBusy(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "database is locked") || strings.Contains(err.Error(), "SQLITE_BUSY"))
 }
 
 // transitionDeniedError is RunTransition's permission refusal (403 on
@@ -554,6 +514,17 @@ func (e *transitionDeniedError) Error() string {
 // doTransition runs the move inside the caller's transaction; see
 // RunTransition for the steps.
 func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id string, st *entity.StatesConfig, t entity.Transition) (map[string]any, error) {
+	// Take the write lock before the read. SQLite's deferred transaction
+	// otherwise reads under a snapshot and refuses the later UPDATE with
+	// SQLITE_BUSY when any other connection committed in between, after
+	// the BeforeUpdate hooks ran. A statement that writes no row takes the
+	// lock (waiting out the busy timeout), so the read below sees the
+	// latest commit and a racing move answers a conflict. On Postgres it
+	// is a no-op; the conditional UPDATE already serializes there.
+	lock := "UPDATE " + query.QuoteIdent(ch.Entity.GetTable()) + " SET " + query.QuoteIdent(st.Field) + " = " + query.QuoteIdent(st.Field) + " WHERE 1 = 0"
+	if _, err := ch.DB.ExecContext(ctx, lock); err != nil {
+		return nil, err
+	}
 	cols := ch.visibleFields()
 	if !slices.Contains(cols, st.Field) {
 		cols = append(slices.Clone(cols), st.Field)

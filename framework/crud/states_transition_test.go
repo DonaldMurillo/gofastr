@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -590,6 +591,31 @@ func TestRunTransitionRefusesReentry(t *testing.T) {
 	}
 }
 
+// A hook that hands back the reentrant refusal fails its write with 409,
+// from a BeforeUpdate hook as from an AfterUpdate one, and the record
+// keeps its state.
+func TestReentrantMoveRouteIs409(t *testing.T) {
+	for name, phase := range map[string]hook.HookType{"before": hook.BeforeUpdate, "after": hook.AfterUpdate} {
+		t.Run(name, func(t *testing.T) {
+			ch, db := statesWorld(t)
+			seedStateInvoice(t, db, "i1", "open", nil)
+			ch.Hooks = hook.NewHookRegistry()
+			ch.Hooks.RegisterHook(phase, func(ctx context.Context, _ any) error {
+				_, err := ch.RunTransition(ctx, "i1", "void")
+				return err
+			})
+			rr := httptest.NewRecorder()
+			statesRouter(ch).ServeHTTP(rr, transitionRequest(http.MethodPost, "/invoices/i1/transitions/pay"))
+			if rr.Code != http.StatusConflict {
+				t.Fatalf("status %d (%s), want 409", rr.Code, rr.Body.String())
+			}
+			if s, _ := readStateInvoice(t, db, "i1"); s != "open" {
+				t.Fatalf("i1 stored %q, want open", s)
+			}
+		})
+	}
+}
+
 // A refusal names the stored state and the open moves only to a caller
 // whose ReadScope admits the record: one the scope hides answers the same
 // 409/422 with neither, so a write-capable caller cannot read a hidden
@@ -624,12 +650,12 @@ func TestStateRefusalHidesFromReadScope(t *testing.T) {
 	}
 }
 
-// Two moves of one record on two SQLite connections: the loser's deferred
-// transaction read the old state, and the winner committed before it
-// wrote, so SQLite refuses the loser's write with SQLITE_BUSY rather than
-// matching zero rows. RunTransition restarts a move it began itself on
-// BUSY, and the restart reads the winner's state: a typed conflict (409),
-// never a database error (500).
+// Two payments of one record race on two SQLite connections. A deferred
+// transaction that read the old state would have SQLite refuse its later
+// write with SQLITE_BUSY, after its hooks ran. The move takes the write
+// lock before it reads, so the loser waits, reads the winner's state, and
+// answers a typed conflict (409) without running a hook, never a database
+// error (500).
 func TestRunTransitionSQLiteBusyConflict(t *testing.T) {
 	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "race.db"))
 	if err != nil {
@@ -652,32 +678,43 @@ func TestRunTransitionSQLiteBusyConflict(t *testing.T) {
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	seedStateInvoice(t, db, "i1", "open", nil)
 
-	raced := false
-	var winner error
+	// Each move's BeforeUpdate holds its transaction open for a moment, so
+	// the two overlap.
+	var mu sync.Mutex
+	calls := 0
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(ctx context.Context, _ any) error {
-		if TransitionFromContext(ctx) != "pay" || raced {
-			return nil
-		}
-		raced = true
-		// The winner runs to commit on the other connection while the
-		// loser's transaction holds its read of "open".
-		_, winner = ch.RunTransition(context.Background(), "i1", "void")
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
 		return nil
 	})
 
-	_, err = ch.RunTransition(context.Background(), "i1", "pay")
-	if winner != nil {
-		t.Fatalf("winning move: %v", winner)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() {
+			_, errs[i] = ch.RunTransition(context.Background(), "i1", "pay")
+		})
 	}
-	tce, ok := errors.AsType[*TransitionConflictError](err)
+	wg.Wait()
+
+	lost := errs[0]
+	if lost == nil {
+		lost = errs[1]
+	}
+	if errs[0] != nil && errs[1] != nil {
+		t.Fatalf("both payments failed: %v / %v", errs[0], errs[1])
+	}
+	tce, ok := errors.AsType[*TransitionConflictError](lost)
 	if !ok {
-		t.Fatalf("losing move = %v (%T), want *TransitionConflictError", err, err)
+		t.Fatalf("losing payment = %v (%T), want *TransitionConflictError", lost, lost)
 	}
-	if tce.Current != "void" {
-		t.Fatalf("conflict current = %q, want the winner's void", tce.Current)
+	if tce.Current != "paid" {
+		t.Fatalf("conflict current = %q, want paid", tce.Current)
 	}
-	if s, paidOn := readStateInvoice(t, db, "i1"); s != "void" || paidOn.Valid {
-		t.Fatalf("stored %q paid_on %v, want void and no stamp", s, paidOn)
+	if calls != 1 {
+		t.Fatalf("BeforeUpdate ran %d times, want once: the loser's hooks must not run", calls)
 	}
 }
