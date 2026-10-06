@@ -220,6 +220,10 @@ type App struct {
 	fieldImageDerivers  map[string]map[string]file.ImageDeriver // entity -> field -> override
 	stripUploadMetadata bool                                    // WithStripUploadMetadata: strip EXIF/XMP from stored originals
 
+	// auditTable is the audit log's table once WithAuditLog ran; "" when
+	// the app keeps no audit log. entityui's Activity tab reads it.
+	auditTable string
+
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
 

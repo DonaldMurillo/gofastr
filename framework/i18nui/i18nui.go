@@ -11,6 +11,8 @@ package i18nui
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -785,7 +787,7 @@ func titleCase(slug string) string {
 // TestAllKeysCoversAllPackageConstants test cross-checks against the
 // Defaults map so stale entries here are caught at test time.
 func AllKeys() []Key {
-	return []Key{
+	keys := []Key{
 		KeyPaginationPrevious, KeyPaginationNext, KeyPaginationPage,
 		KeyPaginationOf, KeyPaginationShowing, KeyPaginationResults,
 		KeyPaginationLabel,
@@ -862,6 +864,11 @@ func AllKeys() []Key {
 		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,
 		KeyHuiMultiSelectRemoveLabel,
 	}
+	// The entity screens keep their keys in one block per area.
+	for _, block := range entityKeyBlocks {
+		keys = append(keys, slices.Sorted(maps.Keys(block))...)
+	}
+	return keys
 }
 
 // humanize converts snake_case or camelCase to "Title Case".

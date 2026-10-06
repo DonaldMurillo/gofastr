@@ -431,6 +431,23 @@ func TestDisplayShowWhenRefusedOnRequiredNoDefault(t *testing.T) {
 	// is the positive case.
 }
 
+func TestDisplayInputMustBeAKey(t *testing.T) {
+	for _, kind := range []string{"Money", "a b", "../x"} {
+		err := displayEntityErr(t, func(d *DisplayConfig) {
+			d.Fields["memo"] = FieldDisplay{Input: kind}
+		})
+		if err == nil || !strings.Contains(err.Error(), "fields[memo].input") {
+			t.Fatalf("input %q accepted: %v", kind, err)
+		}
+	}
+	err := displayEntityErr(t, func(d *DisplayConfig) {
+		d.Fields["memo"] = FieldDisplay{Input: "markdown"}
+	})
+	if err != nil {
+		t.Fatalf("input markdown refused: %v", err)
+	}
+}
+
 func TestDisplayPageSizesPositiveAndCapped(t *testing.T) {
 	for _, size := range []int{0, -5} {
 		err := displayEntityErr(t, func(d *DisplayConfig) { d.PageSizes = []int{10, size} })
