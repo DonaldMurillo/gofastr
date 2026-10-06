@@ -9,9 +9,10 @@ beside each screen. entityui draws no islands, and the only routes it
 adds are two JSON endpoints per entity, mounted by `App.EntityUI` beside
 the CRUD routes (see "Bulk actions and export").
 
-One `*entityui.UI` serves one app. Build it once after every entity is
-registered; a second `App.EntityUI` call panics, so the admin battery and
-the app's screens share the one the app built:
+One `*entityui.UI` serves one app. Build it once, after the entities its
+`Extensions` name are registered (an entity registered later still gets
+its bulk and export routes); a second `App.EntityUI` call panics, so the
+admin battery and the app's screens share the one the app built:
 
 ```go
 <!-- gofastr:compile
@@ -45,7 +46,8 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   posting a create to the entity's REST base. `?duplicate=<id>` prefills
   from that record minus what a create may not set;
   `?prefill_<field>=<value>` prefills one field — the convention a
-  `Where`-pinned list's New link uses, the Related tab's among them.
+  `Where`-pinned list's New link uses, the Related tab's among them. A
+  bare `?<field>=` is some other param and prefills nothing.
 - **Stats and charts**: `appUI.StatValue` (a count or sum, `where` in the
   query DSL), `GroupBars`, `GroupSlices` and `LineChart` (rows per value
   of a field). A dashboard block reads an entity without a screen of its
@@ -163,7 +165,9 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   `filter.ValidatePredicate` before it reaches SQL, every time — field
   names are spliced into WHERE clauses, so a func's own tree gets the
   same validation URL input gets. `Show` hides the view from callers it
-  does not apply to; a hidden default view falls back to All. A view with
+  does not apply to; a hidden default view falls back to All. When a list
+  falls to a view with no `?view=` (a `Default` view, or the builder's
+  `View`), its All tab links `?view=all`, the reserved key. A view with
   neither a `Where` nor a registered func fails at boot, and so does a
   func registered for a key no view declares.
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
@@ -198,9 +202,16 @@ JSON API applies live in the builders themselves:
   related list draws its notice, never its rows. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
 
-A builder never allows a write the API refuses: buttons follow the
-entity's exposure, and an entity with no REST write routes renders
-read-only — values, moves and deletes gone, nothing submittable.
+A builder never draws a write the API would refuse the caller. New,
+Duplicate and the create screen need the entity's create access
+(`CanCreateScoped`); the edit form and the state moves need update
+access to the record (`CanUpdateRecordScoped`), and a move also its own
+`Permission` by name; Delete needs delete access to the record
+(`CanDeleteRecordScoped`). A caller who lacks one sees the record's
+values without that control, and the create screen draws the
+not-available notice. An entity with no REST write routes renders
+read-only for everyone: values, moves and deletes gone, nothing
+submittable.
 
 ## State in the URL, writes as form RPCs
 
@@ -232,16 +243,22 @@ and so does an entity with no REST write routes.
   action (Delete, set an enum or bool field, a state move, or an app
   `Actions` entry with `Bulk`) and a scope: the checked rows, the page's
   rows, or every match of the list's query. The bar offers only the
-  actions the caller's collection gates allow, and asks before it posts.
+  actions the caller's collection gates allow (a move or an app action
+  also needs its `Permission` by name), and asks before it posts. The
+  route takes JSON only and answers 415 to anything else, so a
+  cross-site form cannot post it.
   Cards have no checkboxes, so they offer no "selected" scope; "every
   match" appears only when the count is known, the list is not pinned by
   `Where`, and more rows match than the page shows.
 - **The server resolves the selection itself.** Posted ids are re-read
   through the scoped CRUD handler under the caller's context, so an id
   from another owner or tenant drops out. "Every match" rebuilds the
-  list's view, search, filter and facets from the posted query, up to
-  `EveryMatchCap`. Each record then passes its own update or delete gate
-  before the write; a refused record counts as skipped.
+  list's view (a builder's `View` included), search, filter and facets
+  from the posted query, up to `EveryMatchCap`, and the bar posts the
+  count it offered: a match of any other size is refused with 409, so a
+  list that changed since it was drawn never runs over rows the caller
+  did not see counted. Each record then passes its own update or delete
+  gate before the write; a refused record counts as skipped.
 - **Every run writes one audit row** (`op: "bulk"`) with the action, the
   count and the done, skipped and failed tallies, when the app has
   `WithAuditLog`. The actor is the audit log's actor.
@@ -250,12 +267,17 @@ and so does an entity with no REST write routes.
   `gofastr_bulk_jobs` and `gofastr_bulk_items`: the job records the
   resolved ids at the moment of the request, and `RunBulkJob` walks them
   in order. A retried job resumes at the first record with no outcome,
-  and the first outcome recorded for a record is the one kept.
-- **Export** is `GET <api>/<entity>/_export.csv` with the list's own
-  query and `_list=<key>`: the file holds what the list narrowed to, up
+  and the first outcome recorded for a record is the one kept. The
+  summary row counts every outcome the store holds (`BulkStore.Tally`),
+  so a resumed run reports the whole job.
+- **Export** is `GET <api>/<entity>/_export.csv` with the list's
+  narrowing (a builder's `View` included) and `_list=<key>`: the file
+  holds what the list narrowed to, up
   to `EveryMatchCap`, read through the same scoped handler and read hooks
   the list uses. `NoQuery`, omitted and JSON fields are left out, and a
-  cell a spreadsheet would run as a formula is prefixed with a quote.
+  cell a spreadsheet would run as a formula is prefixed with a quote. A
+  list pinned with `Where` draws no Export link: the route reads the
+  query, and a pin is not in it.
 
 Both routes mount on the router the entity's CRUD routes went on, so an
 entity registered with `App.GroupEntity` keeps its group's prefix and

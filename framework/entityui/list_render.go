@@ -177,6 +177,9 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 		return err
 	}
 	s.view = viewKey
+	// The view this list shows with no ?view= at all (a builder's View or
+	// a Default). When there is one, reaching All takes ?view=all.
+	s.implicitView, _ = viewKeyOf(ctx, m, b, url.Values{})
 	if s.viewPred, err = viewPredicate(ctx, m, viewKey); err != nil {
 		return err
 	}
@@ -228,10 +231,12 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	actions = append(actions, b.actions...)
 	// Export is a read: it rides with bulk, not with the caller's
 	// write actions.
-	if b.bulk && bulkOn(m) {
+	// A Where pin is not in the query the export route reads, so a pinned
+	// list draws none rather than exporting past its pins.
+	if b.bulk && bulkOn(m) && len(b.where) == 0 {
 		actions = append(actions, exportLink(ctx, s))
 	}
-	if b.mayCreate() && m.hasAPI {
+	if b.mayCreate() && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),

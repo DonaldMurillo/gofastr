@@ -676,7 +676,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `title` is named by its first plain `String` column. A record draws its state
   badge, a button per open move (gated by `access.CanResourceExact`, the
   route's own check), and Edit, Related and Activity tabs, with
-  `Related` and `RelatedAt` naming the related lists. `StatValue`,
+  `Related` and `RelatedAt` naming the related lists. New, Duplicate,
+  Delete, the moves and the edit form follow the caller's create, update
+  and delete access, so a screen never draws a write the route refuses.
+  A relation the caller may not read shows the em dash, in pickers and
+  read-only values alike. `StatValue`,
   `GroupBars`, `GroupSlices` and `LineChart` serve dashboards.
   `Extensions` adds field kinds, view funcs, record tabs, actions and
   list or record overrides, every name checked at boot. Every read of
@@ -690,19 +694,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   on the router each entity's CRUD routes use, so a grouped entity's pair
   sits behind its group's middleware. The server re-reads every posted id
   through the scoped handler, rebuilds "every match" from the list's own
-  query (at most `EveryMatchCap`, 10,000), and asks each record's update
-  or delete gate before the write, counting a refusal as skipped. Up to
+  narrowing (at most `EveryMatchCap`, 10,000) and refuses it with 409 when
+  the match is not the count the bar offered, and asks each record's
+  update or delete gate before the write, counting a refusal as skipped.
+  The bulk route takes JSON only (415 otherwise). Up to
   `InRequestCap` (100) records run in the request; past it the run needs
   `Extensions.Jobs`, and `App.EntityUI` then creates the snapshot tables
   `gofastr_bulk_jobs` and `gofastr_bulk_items` (it panics without
   `App.DB`). Every run writes one audit row with op `bulk` under
-  `WithAuditLog`. The export holds what the list narrowed to, leaves out
-  `NoQuery`, omitted and JSON fields, and quotes cells a spreadsheet
-  would run as formulas.
-- **`crud.CrudHandler.CanUpdateRecordScoped` and
-  `CanDeleteRecordScoped`** answer, as booleans about one record, the
-  gates `PUT` and `DELETE /<entity>/{id}` run: session, owner, tenant,
-  then the permission asked about the record.
+  `WithAuditLog`, counted from the store (`BulkStore.Tally`) so a resumed
+  run reports the whole job. The export holds what the list narrowed to,
+  leaves out `NoQuery`, omitted and JSON fields, and quotes cells a
+  spreadsheet would run as formulas; a `Where`-pinned list draws none.
+  An entity registered after `App.EntityUI` gets both routes too.
+- **`crud.CrudHandler.CanUpdateRecordScoped`, `CanDeleteRecordScoped`
+  and `CanCreateScoped`** answer, as booleans, the gates `PUT` and
+  `DELETE /<entity>/{id}` and `POST /<entity>` run: session, owner,
+  tenant, then the permission asked about the record (or the collection,
+  for a create).
 - **`ui.ToggleConfig.LabelHidden`** keeps a Checkbox or Radio's label as
   its accessible name and hides the text, for a control whose meaning its
   surroundings show, such as a table's select column.

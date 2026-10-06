@@ -130,7 +130,7 @@ func (a Action) OnErrorToast(title string) Action {
 //	interactive.Post("/api/orders").
 //	    OnSuccessToast("Order created.").
 //	    OnSuccess(interactive.Navigate("/orders"))
-
+//
 // Maps to data-cui-rpc-success-toast="title".
 func (a Action) OnSuccessToast(title string) Action {
 	a.successToast = &title

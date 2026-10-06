@@ -69,6 +69,31 @@ func TestEntityUIExportRoute(t *testing.T) {
 	})
 }
 
+// An entity registered after EntityUI still gets its bulk and export
+// routes: the screens draw the bar for it, so the routes must answer.
+func TestEntityUILateEntityGetsRoutes(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	app := entityUIAuditApp(t, db, "notes", false)
+	app.EntityUI(entityui.Extensions{})
+	app.Entity("memos", entity.EntityConfig{
+		Table:    "memos",
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{Public: true},
+	}.WithTimestamps(false))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, app.entityMountPath("memos")+"/_export.csv", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("late entity export = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // A second EntityUI on one app panics instead of mounting the routes
 // twice.
 func TestEntityUISecondCallPanics(t *testing.T) {
@@ -125,6 +150,9 @@ func TestSQLBulkStoreRoundTrip(t *testing.T) {
 		var outcome string
 		if err := db.QueryRow(`SELECT outcome FROM gofastr_bulk_items WHERE job_id = 'j1' AND record_id = $1`, ids[0]).Scan(&outcome); err != nil || outcome != entityui.BulkRowDone {
 			t.Fatalf("first outcome = %q, %v; want done kept", outcome, err)
+		}
+		if tally, err := s.Tally(ctx, "j1"); err != nil || len(tally) != 2 || tally[entityui.BulkRowDone] != 1 || tally[entityui.BulkRowSkipped] != 1 {
+			t.Fatalf("tally = %v, %v; want 1 done 1 skipped", tally, err)
 		}
 		rest, err := s.Pending(ctx, "j1", len(ids))
 		if err != nil || len(rest) != len(ids)-2 || rest[0] != ids[2] {

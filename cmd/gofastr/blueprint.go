@@ -2411,11 +2411,7 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 func validateDetailRoutes(bp Blueprint) error {
 	var errs schemaErrors
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
-			if !isEntityDetailBlock(b) {
-				continue
-			}
-			entity := strings.Trim(b.Entity, "/")
+		for _, entity := range entityDetailsOn(s.Body) {
 			base := strings.TrimRight(s.Route, "/")
 			base = strings.TrimSuffix(base, "/{id}")
 			base = strings.TrimSuffix(base, "/:id")
@@ -6168,6 +6164,19 @@ func blueprintEntityListScreen(bp Blueprint, entity string) *BlueprintScreen {
 	return &bp.Screens[lists[0]]
 }
 
+// entityDetailsOn returns the entities blocks show an entity_detail of,
+// at any nesting depth, in block order.
+func entityDetailsOn(blocks []BlueprintBlock) []string {
+	var out []string
+	for _, b := range blocks {
+		if isEntityDetailBlock(b) {
+			out = append(out, strings.Trim(b.Entity, "/"))
+		}
+		out = append(out, entityDetailsOn(b.Children)...)
+	}
+	return out
+}
+
 // entityListOn reports whether blocks hold an entity_list of entity at
 // any nesting depth, and whether one of them sets create: true.
 func entityListOn(blocks []BlueprintBlock, entity string) (found, create bool) {
@@ -6186,12 +6195,10 @@ func entityListOn(blocks []BlueprintBlock, entity string) (found, create bool) {
 // sits under: its route minus the trailing /{id}.
 func blueprintDetailBase(bp Blueprint, entity string) (string, bool) {
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
-			if isEntityDetailBlock(b) && strings.Trim(b.Entity, "/") == entity {
-				base := strings.TrimRight(s.Route, "/")
-				base = strings.TrimSuffix(base, "/{id}")
-				return strings.TrimSuffix(base, "/:id"), true
-			}
+		if slices.Contains(entityDetailsOn(s.Body), entity) {
+			base := strings.TrimRight(s.Route, "/")
+			base = strings.TrimSuffix(base, "/{id}")
+			return strings.TrimSuffix(base, "/:id"), true
 		}
 	}
 	return "", false

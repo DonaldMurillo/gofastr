@@ -645,6 +645,7 @@ func (a *App) recordCrudMount(e *entity.Entity, r *router.Router, rel, full stri
 		a.crudMounts = map[*entity.Entity]crudMount{}
 	}
 	a.crudMounts[e] = crudMount{r: r, rel: rel, full: full}
+	a.mountEntityUIRoutes(e)
 }
 
 // entityCRUDEnabled is THE predicate for "this entity has HTTP CRUD

@@ -67,6 +67,35 @@ func TestWriteGatesAskDeciderPerRecord(t *testing.T) {
 	}
 }
 
+// The create gate asks the create permission and the Decider about the
+// collection, the way POST /projects does.
+func TestCreateGateAsksCreate(t *testing.T) {
+	ch := writeGateHandler(t, entity.EntityConfig{
+		Fields:   []schema.Field{{Name: "name", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Create: "projects:create", Update: "projects:update"}},
+	})
+	policy := access.NewRolePolicy()
+	if err := policy.Grant("maker", "projects:create"); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.Grant("editor", "projects:update"); err != nil {
+		t.Fatal(err)
+	}
+	maker := access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"maker"})
+	if !ch.CanCreateScoped(maker) {
+		t.Fatal("maker refused a create it holds")
+	}
+	if ch.CanCreateScoped(access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"editor"})) {
+		t.Error("editor allowed a create it does not hold")
+	}
+	deny := func(context.Context, []string, access.Permission, access.Ref) access.Decision {
+		return access.DecisionDeny
+	}
+	if ch.CanCreateScoped(access.WithDecider(maker, deny)) {
+		t.Error("create allowed under a denying decider")
+	}
+}
+
 // Owner, tenant and the default session posture refuse the same way the
 // routes' requireScope does.
 func TestWriteGatesRequireScope(t *testing.T) {

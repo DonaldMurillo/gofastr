@@ -124,6 +124,7 @@ entities:
     crud: true
     mcp: true
     owner_field: user_id    # per-user: each signed-in account owns its own customers
+    search_fields: [name]
     properties:
       label: Customers
     # Unique per owner, never across owners: a global UNIQUE on email
@@ -152,6 +153,11 @@ entities:
         type: decimal
         min: 0
         default: "0"
+    display:
+      facets: [status]
+      fields:
+        mrr:
+          label: MRR
 
   - name: subscriptions
     crud: true
@@ -180,6 +186,10 @@ entities:
         type: date
       - name: renews_on
         type: date
+    display:
+      fields:
+        mrr:
+          label: MRR
     relations:
       - type: belongs_to
         name: customer
@@ -189,11 +199,27 @@ entities:
         name: plan
         entity: plans
         foreign_key: plan_id
+    # Advisory as above: the screen transitions named no From.
+    states:
+      field: status
+      advisory: true
+      transitions:
+        - key: activate
+          label: Activate
+          from: [trialing, past_due]
+          to: active
+          variant: primary
+        - key: cancel
+          label: Cancel
+          from: [trialing, active, past_due]
+          to: canceled
+          variant: danger
 
   - name: invoices
     crud: true
     mcp: true
     owner_field: user_id
+    search_fields: [number]
     properties:
       label: Invoices
     indices:
@@ -227,6 +253,26 @@ entities:
         name: customer
         entity: customers
         foreign_key: customer_id
+    # The old screen-level transitions named no From, so the moves stay
+    # advisory until the from-lists below are confirmed; drop advisory:
+    # to let the CRUD handler enforce them.
+    states:
+      field: status
+      advisory: true
+      transitions:
+        - key: mark_paid
+          label: Mark paid
+          from: [draft, open, past_due]
+          to: paid
+          variant: primary
+          stamp: paid_on
+        - key: void
+          label: Void
+          from: [draft, open, past_due]
+          to: void
+          variant: danger
+    display:
+      facets: [status, customer_id]
 
   - name: payments
     crud: true
@@ -482,8 +528,6 @@ screens:
         entity: customers
         text: Customers
         fields: [name, email, company, status, mrr]
-        search: name
-        filters: [status]
         limit: 8
         create: true
         empty_text: No customers yet. Add your first to get started.
@@ -509,10 +553,9 @@ screens:
         entity: invoices
         text: Invoices
         fields: [number, customer_id, amount, status, issued_on, due_on]
-        search: number
-        filters: [status, customer_id]
         limit: 25
         create: true
+        bulk: true
         empty_text: No invoices yet.
 
   - name: invoice_detail
@@ -524,14 +567,6 @@ screens:
     body:
       - kind: entity_detail
         entity: invoices
-        transitions:
-          - label: Mark paid
-            status: paid
-            variant: primary
-            stamp: paid_on
-          - label: Void
-            status: void
-            variant: danger
 
   - name: subscriptions
     route: /app/subscriptions
@@ -557,13 +592,6 @@ screens:
     body:
       - kind: entity_detail
         entity: subscriptions
-        transitions:
-          - label: Activate
-            status: active
-            variant: primary
-          - label: Cancel
-            status: canceled
-            variant: danger
 
 # =============================================================================
 # NAV: marketing header/footer + app sidebar

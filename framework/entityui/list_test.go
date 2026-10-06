@@ -78,6 +78,19 @@ func TestKeyedListsReadOwnParams(t *testing.T) {
 	}
 }
 
+// An unkeyed list claims only its own facet params: a keyed list whose
+// key starts with f_ keeps its state through the unkeyed list's links.
+func TestUnkeyedListKeepsFPrefixedKey(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	html := listHTML(t, x.ui.List("orders"), x.ctx("/page", "?f_x_q=alpha&f_status=open"))
+	if !strings.Contains(html, "f_x_q=alpha") {
+		t.Fatalf("the unkeyed list's links dropped the f_x list's search:\n%s", html)
+	}
+}
+
 // A NoQuery column renders unsortable, and a typed or bookmarked ?sort=
 // on it never reaches the query: the rows keep the default order.
 func TestNoQuerySortIgnored(t *testing.T) {

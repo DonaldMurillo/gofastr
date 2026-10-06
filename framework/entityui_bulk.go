@@ -195,6 +195,27 @@ func (s *sqlBulkStore) Settle(ctx context.Context, id string, outcomes map[strin
 	return tx.Commit()
 }
 
+// Tally counts the job's settled ids by outcome.
+func (s *sqlBulkStore) Tally(ctx context.Context, id string) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
+		`SELECT outcome, COUNT(*) FROM %s WHERE job_id = $1 AND outcome IS NOT NULL GROUP BY outcome`,
+		query.QuoteIdent(bulkItemsTable)), id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var outcome string
+		var n int
+		if err := rows.Scan(&outcome, &n); err != nil {
+			return nil, err
+		}
+		out[outcome] = n
+	}
+	return out, rows.Err()
+}
+
 // Finish sets the job's status.
 func (s *sqlBulkStore) Finish(ctx context.Context, id, status string) error {
 	switch status {

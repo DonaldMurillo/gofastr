@@ -25,6 +25,7 @@ const (
 	KeyEntityBulkFailed       Key = "ui.entity.bulkFailed"       // "The action could not be run."
 	KeyEntityBulkBadScope     Key = "ui.entity.bulkBadScope"     // "Choose which records to apply it to."
 	KeyEntityBulkEveryOverCap Key = "ui.entity.bulkEveryOverCap" // "Every match stops at {cap} records; narrow the list first."
+	KeyEntityBulkStale        Key = "ui.entity.bulkStale"        // "The list changed since it was shown. Reload it and try again."
 )
 
 var entityBulkDefaults = map[Key]string{
@@ -51,4 +52,5 @@ var entityBulkDefaults = map[Key]string{
 	KeyEntityBulkFailed:       "The action could not be run.",
 	KeyEntityBulkBadScope:     "Choose which records to apply it to.",
 	KeyEntityBulkEveryOverCap: "Every match stops at {cap} records; narrow the list first.",
+	KeyEntityBulkStale:        "The list changed since it was shown. Reload it and try again.",
 }

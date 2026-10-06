@@ -207,17 +207,16 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 
 func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, base string) []render.HTML {
 	var out []render.HTML
-	if m.hasAPI && m.states != nil {
+	if m.states != nil && canUpdate(ctx, m, b.id) {
 		current := cell(rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
 			if t.System || !slices.Contains(t.From, current) {
 				continue
 			}
-			// The same exact resource check the transition route runs:
-			// a caller who lacks the move's Permission by name (a
-			// Wildcard role included) never sees its button. The
-			// entity's own update access has no in-process answer, so
-			// those buttons stay drawn and the route refuses them.
+			// The checks the transition route runs: the entity's update
+			// access (above), then the move's Permission by name, so a
+			// caller who lacks it (a Wildcard role included) never sees
+			// its button.
 			if t.Permission != "" && !access.CanResourceExact(ctx, access.Permission(t.Permission), access.Ref{Type: m.name, ID: b.id}) {
 				continue
 			}
@@ -240,14 +239,14 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 	if link := b.copyLink(ctx, m, base); link != "" {
 		out = append(out, link)
 	}
-	if b.dup && !m.d.NoDuplicate {
+	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
 		out = append(out, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.T(ctx, i18nui.KeyEntityDuplicate),
 			Href:    base + "/create?duplicate=" + url.QueryEscape(b.id),
 			Variant: ui.ButtonSecondary,
 		}))
 	}
-	if b.delete && m.hasAPI {
+	if b.delete && canDelete(ctx, m, b.id) {
 		singular := m.singular(ctx)
 		out = append(out, ui.Button(ui.ButtonConfig{
 			Label:   i18nui.T(ctx, i18nui.KeyEntityDelete),

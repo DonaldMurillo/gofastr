@@ -69,7 +69,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 			Header:      ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, header...),
 			Description: desc,
 			Footer:      footer,
-		}, html.Span(html.TextConfig{Class: "fui-card__text", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
+		}, html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
 	}
 	out := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD}, cards...)
 	if known && pagesFor(total, s.limit) > 1 {

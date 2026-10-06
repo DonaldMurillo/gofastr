@@ -2,7 +2,6 @@ package entityui
 
 import (
 	"context"
-	"net/url"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -60,7 +59,8 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	scopes = append(scopes, ui.SelectOption{Value: bulkScopePage, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkPage, map[string]string{
 		"count": strconv.Itoa(len(rows)),
 	})})
-	if known && !s.filterBad && len(b.where) == 0 && total > len(rows) {
+	every := known && !s.filterBad && len(b.where) == 0 && total > len(rows)
+	if every {
 		scopes = append(scopes, ui.SelectOption{Value: bulkScopeEvery, Text: i18nui.TVars(ctx, i18nui.KeyEntityBulkEvery, map[string]string{
 			"count": formatNumber(float64(total), 0),
 		})})
@@ -70,9 +70,14 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	for _, row := range rows {
 		fields = append(fields, hiddenInput("page", cell(rowValue(row, m.pk))))
 	}
+	if every {
+		// The count every match offered: the run refuses when the rows
+		// it would touch are not that many.
+		fields = append(fields, hiddenInput("count", strconv.Itoa(total)))
+	}
 	fields = append(fields,
 		hiddenInput("key", s.key),
-		hiddenInput("query", s.q.Encode()),
+		hiddenInput("query", s.carry().Encode()),
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd},
 			ui.Select(ui.SelectConfig{
 				Name:    "action",
@@ -122,13 +127,11 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 }
 
 // exportLink is the header's Export CSV link: <api>/_export.csv with the
-// list's query and key, so the file holds the rows the list narrowed to.
+// list's narrowing (its view, search, filter and facets, a builder's View
+// included) and key, so the file holds the rows the list narrowed to.
 // It is a download, which the client router leaves to the browser.
 func exportLink(ctx context.Context, s *listState) render.HTML {
-	q := url.Values{}
-	for k, vs := range s.q {
-		q[k] = append([]string(nil), vs...)
-	}
+	q := s.carry()
 	q.Del(exportKeyParam)
 	if s.key != "" {
 		q.Set(exportKeyParam, s.key)
