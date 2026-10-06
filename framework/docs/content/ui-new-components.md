@@ -97,7 +97,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **numberfield**: `framework/ui.NumberField`, typed labelled native number field with explicit min/max/step bounds
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds
 - **formsection**: `framework/ui.FormSection`, grouped fields with a shared heading + description
-- **formframe**: `framework/ui.FormFrame`, record form in two columns — a wide main column beside a narrow side rail (`SideWidth`) that drops under the main one below 48rem of the form's own width, a container query, so a drawer on a wide screen stacks and a full page sits side by side
+- **formframe**: `framework/ui.FormFrame`, record form in two columns — a wide main column beside a narrow side rail (one of three named `SideWidth` sizes, each a modifier class reading a `--ui-form-frame-side-*` token) that drops under the main one below 48rem of the form's own width, a container query, so a drawer on a wide screen stacks and a full page sits side by side
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors
 - **conditionalfield**: `framework/ui.ConditionalField`, form region visible on first paint and hidden by the runtime until the watched field matches — one value (`WhenValue`) or any of a list (`WhenValues`)
 - **formrepeater**: `framework/ui.FormRepeater`, dynamic list of repeating field groups (add / remove rows)

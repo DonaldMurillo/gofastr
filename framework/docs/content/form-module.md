@@ -151,7 +151,11 @@ rail. The frame switches on its OWN width — a container query, not a
 viewport media query — so the same form sits side by side on a full
 page and stacks in a drawer on a wide screen. Below 48rem of the
 frame's width the side column drops under the main one; the rail's
-width is `SideWidth` (default 16rem). Either column may be empty: an
+width is one of three named sizes — `SideWidth:
+ui.FormFrameSideNarrow` (12rem), the default (16rem) and
+`ui.FormFrameSideWide` (22rem) — each a modifier class whose
+registered CSS reads the `--ui-form-frame-side-narrow` / `-wide`
+tokens, so a theme retunes them. Either column may be empty: an
 empty `Side` leaves the main column full width, and an empty `Main`
 leaves the side column full width.
 
