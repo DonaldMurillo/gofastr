@@ -61,6 +61,16 @@ func withAuditOperation(ctx context.Context, entity, id, op string) context.Cont
 	return context.WithValue(ctx, auditOperationKey{}, auditOperation{entity: entity, id: id, op: op})
 }
 
+// withoutAuditOperation drops any override ctx carries. inTx calls it on
+// entry, so the override set inside one write never reaches a write a
+// hook starts from it.
+func withoutAuditOperation(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(auditOperationKey{}).(auditOperation); !ok {
+		return ctx
+	}
+	return context.WithValue(ctx, auditOperationKey{}, auditOperation{})
+}
+
 // AuditOperationFor returns the operation override stamped for exactly
 // this entity and record id, or "" when none matches. Audit hooks
 // consult it for the op column; empty means "use the hook's own
