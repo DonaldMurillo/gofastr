@@ -420,6 +420,11 @@ func New(cfg Config) *Battery {
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "desktop" }
 
+// ReservedEmbedPrefixes reports the bridge prefix. The bridge drives native
+// capabilities on the user's machine for the app's own window; no embed grant
+// from a third-party page may reach it. See framework.EmbedReserving.
+func (b *Battery) ReservedEmbedPrefixes() []string { return []string{bridgePrefix} }
+
 // FromApp fetches the registered desktop battery off an App, the seam
 // plugins use to register capabilities from their own Init.
 func FromApp(app *framework.App) (*Battery, error) {

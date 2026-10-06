@@ -150,6 +150,7 @@ func TestEmailVerification_Flow(t *testing.T) {
 
 	// Verify.
 	verifyReq := httptest.NewRequest(http.MethodGet, "/auth/verify-email?token="+tok, nil)
+	verifyReq.AddCookie(&http.Cookie{Name: "session_id", Value: sessTok})
 	verifyW := httptest.NewRecorder()
 	r.ServeHTTP(verifyW, verifyReq)
 	if verifyW.Code != http.StatusOK {

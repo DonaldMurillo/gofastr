@@ -263,7 +263,9 @@ transport error is logged once. Reliable delivery with backoff is
 that is down. The SSRF posture: push URLs targeting internal hosts
 (loopback, RFC1918, CGNAT, link-local) are refused at registration
 unless `A2AConfig.AllowPrivatePush` is set, redirects are not followed,
-and the client is dial-time guarded.
+and the client is dial-time guarded. The guarded client never routes
+through an `HTTP_PROXY`/`HTTPS_PROXY` proxy, because the dial check
+cannot see the connection a proxy makes.
 
 ## Tasks are not jobs
 

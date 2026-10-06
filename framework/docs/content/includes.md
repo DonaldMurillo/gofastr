@@ -61,10 +61,17 @@ filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_like"|"_in")? "=" value
 
 Every relation named in an `?include=`, nested or top-level, must
 resolve to an entity registered with the framework's `Registry`. The
-target's declaration is what drives the Hidden-column scrub, owner and
+target's declaration is what drives the column allow-list, owner and
 tenant scoping, the soft-delete filter, and the scoped-filter field
 allow-list, so a target the registry cannot resolve is refused with
 **400** rather than loaded without those guards.
+
+An included row carries the columns the target's own read route serves:
+its declared, non-Hidden fields plus its primary key. A column the table
+holds but the resolved target does not declare is left out, whether it
+belongs to another API version sharing the table, to a field removed from
+the declaration (boot migration is additive, so the column and its data
+stay), or to an unmanaged table's extra columns.
 
 `Relation.Entity` is the target's **entity name** (the registry key),
 which is not necessarily its table name. An entity declared with
@@ -111,12 +118,12 @@ parent's. `include=comments(post_id=x)` validates `post_id` on
   reference a target and are simply omitted for rows that don't.
 
 > **Low-level helper:** the HTTP `?include=` path scrubs soft-deleted
-> rows and Hidden columns and scopes related rows to the ctx owner and
+> rows, keeps only the target's declared non-Hidden columns, and scopes related rows to the ctx owner and
 > tenant automatically. The exported `EagerLoad` helper
 > (`framework.EagerLoad`) only does so when you pass the optional
 > `entity.Registry` argument, `EagerLoad(ctx, db, ent, rels, ids, registry)`,
 > which lets it resolve each relation's target to apply the
-> `deleted_at IS NULL` filter, exclude Hidden fields, and AND in the
+> `deleted_at IS NULL` filter, keep only declared non-Hidden columns, and AND in the
 > owner (`OwnerField`) and tenant (`MultiTenant`) predicates from ctx,
 > exactly as the include path does. With no user or tenant in ctx those
 > predicates match nothing, so the helper fails closed. Always pass the registry when
@@ -184,6 +191,15 @@ the entity that failed:
 ```json
 {"code":403,"error":"access denied: include targets entity users, which you may not read","success":false}
 ```
+
+A scope-restricted request (an API token or an embed grant) also needs
+`<target table>:read` for every include target, so a `["customers:read"]`
+token is refused `?include=invoices`. Nested filters apply the same rule to
+every hop. See [auth](auth.md) → "Service accounts & scoped API tokens" for the scope grammar.
+
+A target declared `Exposure.CRUD: false` (`auth.UserEntityConfig()` among them)
+is refused the same way for every caller: opting an entity out of generated
+routes also keeps it out of other entities' includes and nested filters.
 
 The check runs at every depth, so `?include=comments.author` cannot reach a
 gated `author` through a readable `comments`, and it runs before any rows are

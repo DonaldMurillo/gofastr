@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -373,6 +374,10 @@ type App struct {
 	// Optional metrics. When set (via WithMetrics), the metrics middleware
 	// joins the default chain and a Prometheus /metrics endpoint is mounted.
 	metrics *middleware.Metrics
+
+	// debugAuthorize replaces the admin-role check on /.debug/* (see
+	// WithDebugAuthorize). nil means the default.
+	debugAuthorize func(ctx context.Context) bool
 
 	// tracing enables the OpenTelemetry tracing middleware in the default
 	// chain (via WithTracing). Spans no-op until a TracerProvider is wired
@@ -1020,6 +1025,19 @@ func credentialFingerprint(r *http.Request) string {
 func WithMetrics() AppOption {
 	return func(a *App) {
 		a.metrics = middleware.NewMetrics()
+	}
+}
+
+// WithDebugAuthorize decides who may read /.debug/stats and
+// /.debug/goroutineleak (AppConfig.DebugEndpoints). It runs after the
+// authenticated-user check, which still answers 401 for no user, and
+// returns true to allow; false is a 403. Without it the caller must hold
+// the "admin" role, read from the user's GetRoles() []string or from the
+// roles access middleware put on the context. A request carrying an embed
+// grant is refused either way.
+func WithDebugAuthorize(fn func(ctx context.Context) bool) AppOption {
+	return func(a *App) {
+		a.debugAuthorize = fn
 	}
 }
 
@@ -3004,7 +3022,7 @@ func (a *App) Start(addr string) error {
 	a.ensureLifecycleContext()
 
 	a.warnUnresolvableRelations()
-	a.guardDevMCPBind(addr)
+	a.guardDevMCPBind(listenAddrFor(addr))
 
 	abort := func(err error) error {
 		// Read the shutdown state BEFORE draining: the drain below calls
@@ -3439,11 +3457,7 @@ func (a *App) Start(addr string) error {
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
-	listenAddr := addr
-	if listenAddr == "" {
-		listenAddr = ":http"
-	}
-	ln, err := net.Listen("tcp", listenAddr)
+	ln, err := net.Listen("tcp", listenAddrFor(addr))
 	if err != nil {
 		// Bind failure (port in use is the common case), drain like every
 		// earlier start phase does, otherwise the batteries/cron/queue and
@@ -3622,15 +3636,52 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	_, _ = fmt.Fprintln(w)
 }
 
-// registerDebugEndpoints adds /.debug/stats for runtime diagnostics.
-// The endpoint exposes process internals (pid, goroutines, memory) so it
-// requires an authenticated caller, the framework's normal auth chain
-// must set a user in context for the request to succeed.
+// debugAllowed gates /.debug/*: 401 without a user, 403 for an embed grant
+// or a caller WithDebugAuthorize (default: the "admin" role) refuses. A
+// signed-in user is not enough. These endpoints carry the pid, the memory
+// layout and every leaked goroutine's stack, and on most apps anyone can
+// sign up.
+func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
+	ctx := r.Context()
+	if u, ok := handler.GetUser(ctx); !ok || u == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	allowed := false
+	if _, embedded := fembed.GrantFromContext(ctx); !embedded {
+		if a.debugAuthorize != nil {
+			allowed = a.debugAuthorize(ctx)
+		} else {
+			allowed = hasDebugAdminRole(ctx)
+		}
+	}
+	if !allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}
+	return allowed
+}
+
+// hasDebugAdminRole reports whether the caller holds "admin", through the
+// user's GetRoles() (battery/auth's User) or the roles access middleware
+// resolved onto the context.
+func hasDebugAdminRole(ctx context.Context) bool {
+	const role = "admin"
+	if slices.Contains(access.GetRoles(ctx), role) {
+		return true
+	}
+	u, _ := handler.GetUser(ctx)
+	rh, ok := u.(interface{ GetRoles() []string })
+	return ok && slices.Contains(rh.GetRoles(), role)
+}
+
+// registerDebugEndpoints adds /.debug/stats and /.debug/goroutineleak for
+// runtime diagnostics. Both expose process internals, so both sit behind
+// debugAllowed: an authenticated admin, or whoever WithDebugAuthorize
+// admits.
 func (a *App) registerDebugEndpoints() {
 	a.router.Get("/.debug/stats", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if !a.debugAllowed(w, r) {
 			return
 		}
 		var m runtime.MemStats
@@ -3664,8 +3715,7 @@ func (a *App) registerDebugEndpoints() {
 	}))
 	a.router.Get("/.debug/goroutineleak", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if !a.debugAllowed(w, r) {
 			return
 		}
 		p := pprof.Lookup("goroutineleak")
