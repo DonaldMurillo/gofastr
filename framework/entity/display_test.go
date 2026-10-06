@@ -397,6 +397,40 @@ func TestDisplayOmitRefusedOnRequiredNoDefault(t *testing.T) {
 	}
 }
 
+// Locked draws a field read-only and the screens' save path drops a
+// Locked key before the write, so on create the value never submits —
+// the same dead end as Omit for a Required field with no supplied
+// value.
+func TestDisplayLockedRefusedOnRequiredNoDefault(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) {
+		d.Fields["number"] = FieldDisplay{Locked: true}
+	})
+	if err == nil || !strings.Contains(err.Error(), `fields[number] locks a Required field with no Default`) {
+		t.Fatalf("locked on Required accepted: %v", err)
+	}
+	if err := displayEntityErr(t, func(d *DisplayConfig) {
+		d.Fields["memo"] = FieldDisplay{Locked: true}
+	}); err != nil {
+		t.Fatalf("locked on optional field refused: %v", err)
+	}
+}
+
+// ShowWhen hides the field's region while its condition does not hold,
+// and when.js disables a hidden region's controls, so they never
+// submit: a Required field with no supplied value behind a ShowWhen
+// cannot be created from a screen whenever the condition starts false.
+func TestDisplayShowWhenRefusedOnRequiredNoDefault(t *testing.T) {
+	err := displayEntityErr(t, func(d *DisplayConfig) {
+		d.Fields["amount"] = FieldDisplay{ShowWhen: `status = "paid"`}
+	})
+	if err == nil || !strings.Contains(err.Error(), `fields[amount] hides behind show_when on a Required field with no Default`) {
+		t.Fatalf("show_when on Required accepted: %v", err)
+	}
+	// paid_on is optional in the fixture and already carries a
+	// ShowWhen: the fixture passing TestDisplayConfigPassesTheBootCheck
+	// is the positive case.
+}
+
 func TestDisplayPageSizesPositiveAndCapped(t *testing.T) {
 	for _, size := range []int{0, -5} {
 		err := displayEntityErr(t, func(d *DisplayConfig) { d.PageSizes = []int{10, size} })
@@ -525,7 +559,7 @@ func TestDisplayDeclarationDecodes(t *testing.T) {
 	      "side": ["status"]
 	    },
 	    "card": {"title": "number", "subtitle": "customer_id", "badge": "status", "meta": ["amount"]},
-	    "fields": {"number": {"label": "No", "help": "the number", "placeholder": "INV-1", "locked": true, "show_when": "status = \"paid\""}},
+	    "fields": {"number": {"label": "No", "help": "the number", "placeholder": "INV-1"}, "memo": {"locked": true, "show_when": "status = \"paid\""}},
 	    "page_sizes": [10, 25],
 	    "no_duplicate": true,
 	    "no_bulk": false
@@ -570,9 +604,16 @@ func TestDisplayDeclarationDecodes(t *testing.T) {
 		t.Fatalf("side not decoded: %+v", d.Form.Side)
 	}
 	fd := d.Fields["number"]
-	if fd.Label != "No" || fd.Help != "the number" || fd.Placeholder != "INV-1" || !fd.Locked || fd.Omit ||
-		fd.ShowWhen != `status = "paid"` {
+	if fd.Label != "No" || fd.Help != "the number" || fd.Placeholder != "INV-1" || fd.Locked || fd.Omit ||
+		fd.ShowWhen != "" {
 		t.Fatalf("field hints not decoded: %+v", fd)
+	}
+	// Locked and ShowWhen decode too — on the optional field, where the
+	// boot check takes them (a Required field with no Default cannot be
+	// locked or conditionally hidden; see the refusal tests).
+	hints := d.Fields["memo"]
+	if !hints.Locked || hints.Omit || hints.ShowWhen != `status = "paid"` {
+		t.Fatalf("locked/show_when hints not decoded: %+v", hints)
 	}
 	if d.Card == nil || d.Card.Title != "number" || d.Card.Subtitle != "customer_id" || d.Card.Badge != "status" || len(d.Card.Meta) != 1 {
 		t.Fatalf("card not decoded: %+v", d.Card)

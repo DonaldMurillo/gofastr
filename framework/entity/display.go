@@ -115,8 +115,11 @@ type FieldDisplay struct {
 	Help        string `json:"help,omitempty"`
 	Placeholder string `json:"placeholder,omitempty"`
 
-	// Locked draws the field read-only on screens. The screens' save path
-	// drops a Locked key before the write; the API may still write it.
+	// Locked draws the field read-only on screens. The screens' save
+	// path drops a Locked key before the write; the API may still write
+	// it. Refused at registration on a Required field with no Default:
+	// the value never submits on create, so no form could create the
+	// record.
 	Locked bool `json:"locked,omitempty"`
 
 	// Omit leaves the field out of forms and columns on purpose. Unlike
@@ -127,7 +130,9 @@ type FieldDisplay struct {
 	// ShowWhen shows the field only while `field = value` or
 	// `field in [...]` holds on an editable Enum or Bool field. Parsed
 	// with the query DSL when App.Entity registers the entity; any
-	// other shape is refused there.
+	// other shape is refused there. A hidden region's controls are
+	// disabled, so they never submit — refused at registration on a
+	// Required field with no Default, like Omit.
 	ShowWhen string `json:"show_when,omitempty"`
 }
 
@@ -321,11 +326,27 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 			return err
 		}
 		fd := d.Fields[field]
-		// Omit on a Required field with no supplied value (a Default or an
-		// auto-generation) leaves no way to create the record from a screen.
-		if fd.Omit {
-			if f := byName[field]; f.Required && f.Default == nil && f.AutoGenerate == schema.AutoNone {
-				return fmt.Errorf("entity %q: display fields[%s] omits a Required field with no Default; no form could create the record", name, field)
+		f := byName[field]
+		// A Required field with no supplied value (a Default or an
+		// auto-generation) needs the form to submit it. Three hints
+		// take that away: Omit leaves it off the form entirely;
+		// ShowWhen hides its region while the condition does not hold,
+		// and when.js disables a hidden region's controls, so they
+		// never submit; Locked draws it read-only and the screens'
+		// save path drops a Locked key before the write. Under any of
+		// the three, no screen could create the record.
+		if f.Required && f.Default == nil && f.AutoGenerate == schema.AutoNone {
+			what := ""
+			switch {
+			case fd.Omit:
+				what = "omits"
+			case fd.Locked:
+				what = "locks"
+			case fd.ShowWhen != "":
+				what = "hides behind show_when on"
+			}
+			if what != "" {
+				return fmt.Errorf("entity %q: display fields[%s] %s a Required field with no Default; no form could create the record", name, field, what)
 			}
 		}
 	}
