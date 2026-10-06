@@ -61,11 +61,12 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 		chromedp.Evaluate(`(() => {
 			const sel = '.fui-data-table a[href^="`+basePath+`/"]';
 			const links = [...document.querySelectorAll(sel)];
-			// Skip /new and /edit paths — the table only renders View links,
-			// but guard against any toolbar link that slipped inside.
+			// Skip /create (and the retired /new, /edit) paths — the link
+			// column and row menu render record links, but guard against
+			// the toolbar's New button slipping inside the selector.
 			const view = links.find(a => {
 				const h = a.getAttribute('href') || '';
-				return !h.endsWith('/new') && !h.endsWith('/edit') && !h.includes('/edit/');
+				return !h.endsWith('/create') && !h.endsWith('/new') && !h.endsWith('/edit') && !h.includes('/edit/');
 			});
 			return view ? view.getAttribute('href') : '';
 		})()`, &href),

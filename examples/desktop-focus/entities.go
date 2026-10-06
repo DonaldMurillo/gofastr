@@ -16,12 +16,32 @@ import (
 
 // registerTasksEntity declares the work items. estimate is pomodoros
 // the task is expected to take; completed_pomodoros counts finished
-// work sessions.
+// work sessions. Display is what the screens read: the title names a
+// task, the record page's form edits the fields a user sets, and
+// completed_pomodoros — the engine's counter — draws read-only. user_id
+// is the owner stamp: the API returns it, no screen shows it.
 func registerTasksEntity(app *framework.App) {
 	// The desktop battery installs the local identity middleware (its Init); owner-scoped CRUD answers the window's own requests without battery/auth
 	app.Entity("tasks", framework.EntityConfig{
 		Scope:        &framework.ScopeConfig{OwnerField: "user_id"},
 		SearchFields: []string{"title"},
+		Display: &framework.DisplayConfig{
+			Singular:   "Task",
+			Plural:     "Tasks",
+			TitleField: "title",
+			Columns:    []string{"title", "estimate", "completed_pomodoros", "done"},
+			Form: &framework.EntityForm{
+				Main: []framework.FormItem{
+					{Field: "title"},
+					{Field: "note"},
+					{Row: []string{"estimate", "done"}},
+				},
+			},
+			Fields: map[string]framework.FieldDisplay{
+				"user_id":             {Omit: true},
+				"completed_pomodoros": {Locked: true},
+			},
+		},
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String},
 			{Name: "title", Type: schema.String, Required: true, Max: new(120.0)},

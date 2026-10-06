@@ -99,8 +99,8 @@ func TestSearchSpansTitleAndBody(t *testing.T) {
 	}
 }
 
-// TestScreensRender: the three screens answer with the design system's
-// markup and the copy-link hook.
+// TestScreensRender: the screens answer with the design system's
+// markup.
 func TestScreensRender(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
@@ -114,15 +114,25 @@ func TestScreensRender(t *testing.T) {
 	if strings.Contains(home.Body(), "<style") {
 		t.Fatal("bespoke inline CSS on the list screen")
 	}
+	// Record links hang off the /notes base even at "/".
+	created := ta.Post("/api/notes", map[string]any{"title": "Linked", "body": ""}).AssertStatus(t, http.StatusCreated)
+	var row map[string]any
+	if err := decodeData(created.Body(), &row); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := row["id"].(string)
+	if !strings.Contains(ta.Get("/").Body(), `href="/notes/`+id+`"`) {
+		t.Fatal("the list at / does not link records under /notes")
+	}
 
-	editor := ta.Get("/notes/new").AssertStatus(t, http.StatusOK)
-	for _, want := range []string{"New Note", "Copy link", "data-notes-copy", "form"} {
-		if !strings.Contains(editor.Body(), want) {
-			t.Fatalf("/notes/new missing %q", want)
+	create := ta.Get("/notes/create").AssertStatus(t, http.StatusOK)
+	for _, want := range []string{"New Note", "form", `data-cui-rpc="/api/notes"`, `name="title"`} {
+		if !strings.Contains(create.Body(), want) {
+			t.Fatalf("/notes/create missing %q", want)
 		}
 	}
-	if strings.Contains(editor.Body(), "<script>") {
-		t.Fatal("inline script on the editor screen")
+	if strings.Contains(create.Body(), "<script>") {
+		t.Fatal("inline script on the create screen")
 	}
 
 	// The external script is referenced by its hash-versioned URL, never
@@ -137,30 +147,46 @@ func TestScreensRender(t *testing.T) {
 	}
 }
 
-// TestListIslandEndpointServesTable: the sort/pagination RPC the list
-// island fires at /api/tables/answers with the same table HTML the
-// screen painted (GOFASTR1003's route now has a test). The harness
-// sets no user, so these requests carry the desktop battery's local
-// identity: the single-installation user every anonymous request
-// falls back to, and the owner the rows are scoped to.
-func TestListIslandEndpointServesTable(t *testing.T) {
+// TestListSortsThroughQueryParams: the list's sort and page state rides
+// the screen's own query string (the state the table island used to
+// carry), and the server does the math: ?sort=title&dir=asc and
+// ?dir=desc return the same rows in opposite orders. The harness user
+// owns the rows; the desktop battery's local identity is what an
+// anonymous window request falls back to.
+func TestListSortsThroughQueryParams(t *testing.T) {
 	app, _, _ := newTestApp(t)
-	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "local"})
+	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
 
-	ta.Post("/api/notes", map[string]any{"title": "Island row", "body": ""}).AssertStatus(t, http.StatusCreated)
+	first := decodeID(t, ta.Post("/api/notes", map[string]any{"title": "Beta", "body": ""}).AssertStatus(t, http.StatusCreated))
+	second := decodeID(t, ta.Post("/api/notes", map[string]any{"title": "Alpha", "body": ""}).AssertStatus(t, http.StatusCreated))
 
-	frag := ta.Get("/api/tables/notes").AssertStatus(t, http.StatusOK)
-	if !strings.Contains(frag.Body(), "Island row") {
-		t.Fatalf("island fragment missing the row: %.200s", frag.Body())
+	asc := ta.Get("/notes?sort=title&dir=asc").AssertStatus(t, http.StatusOK).Body()
+	if ia, ib := strings.Index(asc, `href="/notes/`+first+`"`), strings.Index(asc, `href="/notes/`+second+`"`); ia < 0 || ib < 0 || ia < ib {
+		t.Fatalf("?sort=title&dir=asc did not order rows by title (Beta at %d, Alpha at %d)", ia, ib)
 	}
-	screen := ta.Get("/").AssertStatus(t, http.StatusOK)
-	if !strings.Contains(screen.Body(), "Island row") {
-		t.Fatal("list screen missing the row the harness user owns")
+	desc := ta.Get("/notes?sort=title&dir=desc").AssertStatus(t, http.StatusOK).Body()
+	if ia, ib := strings.Index(desc, `href="/notes/`+first+`"`), strings.Index(desc, `href="/notes/`+second+`"`); ia < 0 || ib < 0 || ib < ia {
+		t.Fatalf("?sort=title&dir=desc did not reverse the order (Alpha at %d, Beta at %d)", ib, ia)
 	}
 }
 
-// TestSaveRoundTripThroughFormEndpoint: the editor saves through the
-// entity's REST route and the updated note renders.
+// decodeID unwraps the create envelope's id.
+func decodeID(t *testing.T, res *framework.TestResponse) string {
+	t.Helper()
+	var row map[string]any
+	if err := decodeData(res.Body(), &row); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := row["id"].(string)
+	if id == "" {
+		t.Fatalf("create returned no id: %s", res.Body())
+	}
+	return id
+}
+
+// TestSaveRoundTripThroughFormEndpoint: a save through the entity's
+// REST route renders on the record page, whose Edit tab holds the
+// editor form prefilled from the stored row.
 func TestSaveRoundTripThroughFormEndpoint(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
@@ -179,26 +205,27 @@ func TestSaveRoundTripThroughFormEndpoint(t *testing.T) {
 
 	detail := ta.Get("/notes/"+id).AssertStatus(t, http.StatusOK)
 	if !strings.Contains(detail.Body(), "First, edited") {
-		t.Fatal("detail screen does not reflect the saved title")
+		t.Fatal("record page does not reflect the saved title")
 	}
 	// The window title follows the open note: ScreenTitle feeds
 	// document.title.
 	if !strings.Contains(detail.Body(), "<title>First, edited") {
 		t.Fatalf("page title does not follow the note: %.200s", detail.Body())
 	}
-	// The detail page carries the engine's Edit action, and the editor
-	// lives at /{id}/edit so its Cancel (BasePath/{id}) lands on the
-	// detail page instead of on itself.
-	if !strings.Contains(detail.Body(), `href="/notes/`+id+`/edit"`) {
-		t.Fatal("detail screen has no Edit action")
+	// The Edit tab is the record page's default tab, so the editor
+	// form is on the page: prefilled with the stored title, and
+	// posting its save to the note's own REST route.
+	body := detail.Body()
+	for _, want := range []string{
+		`value="First, edited"`,
+		`data-cui-rpc="/api/notes/` + id + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("record page's edit form missing %q", want)
+		}
 	}
-	editScreen := ta.Get("/notes/"+id+"/edit").AssertStatus(t, http.StatusOK)
-	if !strings.Contains(editScreen.Body(), "First, edited") {
-		t.Fatal("editor screen does not prefill the saved title")
-	}
-	if !strings.Contains(editScreen.Body(), `href="/notes/`+id+`"`) {
-		t.Fatal("editor Cancel does not point at the detail page")
-	}
+	// The separate editor route is gone; the page IS the editor.
+	ta.Get("/notes/"+id+"/edit").AssertStatus(t, http.StatusNotFound)
 }
 
 // TestSettingsScreenRendersDeclaredPreferences: /settings is the

@@ -340,7 +340,6 @@ func (c *Client) BatchDeletePlans(ctx context.Context, ids []string) (BatchRespo
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchPlans(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/plans/_events", fn)
 }
 
@@ -466,7 +465,6 @@ func (c *Client) BatchDeleteCustomers(ctx context.Context, ids []string) (BatchR
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchCustomers(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/customers/_events", fn)
 }
 
@@ -596,7 +594,6 @@ func (c *Client) BatchDeleteSubscriptions(ctx context.Context, ids []string) (Ba
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchSubscriptions(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/subscriptions/_events", fn)
 }
 
@@ -754,7 +751,6 @@ func (c *Client) BatchDeleteInvoices(ctx context.Context, ids []string) (BatchRe
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchInvoices(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/invoices/_events", fn)
 }
 
@@ -904,6 +900,5 @@ func (c *Client) BatchDeletePayments(ctx context.Context, ids []string) (BatchRe
 // ctx cancels, the stream ends, or fn returns an error. data is the full
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchPayments(ctx context.Context, fn func(event string, data []byte) error) error {
-
 	return c.watchSSE(ctx, "/payments/_events", fn)
 }

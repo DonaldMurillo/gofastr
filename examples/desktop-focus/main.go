@@ -192,7 +192,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
 			{Title: "File", Children: []desktop.MenuItem{
-				{Title: "New task", Key: "cmd+n", Navigate: "/tasks/new"},
+				{Title: "New task", Key: "cmd+n", Navigate: "/tasks/create"},
 				{Title: "Start / Pause", Key: "cmd+shift+s", Handler: func(ctx context.Context) error {
 					return toggleTimer(ctx, eng)
 				}},

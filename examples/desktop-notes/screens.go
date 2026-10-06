@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
@@ -13,75 +12,49 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
-// The screens. All markup comes from framework/ui components through
-// framework/ui/resource's List/Form engine: the example ships zero CSS
-// and zero hand-rolled structural markup (hard rules 7 and 8).
+// The screens. The entity's list, record and create pages come from
+// the entityui builders, which draw framework/ui components from the
+// entity's Display: the example ships zero CSS and zero hand-rolled
+// structural markup (hard rules 7 and 8). List state (search, sort,
+// page, view) rides the page's own query string; saves are form RPCs
+// to the entity's REST routes.
 
-// notesListResource is the resource engine config behind the list
-// screen. BasePath is /notes (row links, the New button, and the
-// search form target); the list screen itself is also registered at
-// "/" so the window opens on it.
-func notesListResource(app *framework.App) resource.Config {
-	return resource.Config{
-		Entity:   "notes",
-		Title:    "Notes",
-		Singular: "Note",
-		BasePath: "/notes",
-		APIPath:  "/api/notes",
-		Crud:     searchAcrossFields{src: app.MustCrudHandler("notes")},
-		Fields: []resource.Field{
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "updated_at", Label: "Updated", Type: "timestamp"},
-		},
-	}.WithSearch("title").WithCreate().WithEdit().WithIsland("/api/tables/notes")
-}
-
-// notesFormResource is the editor's config: only the fields the form
-// edits. The submit goes through the runtime's form intercept to the
-// entity's REST route (POST /api/notes, PUT /api/notes/{id}).
-func notesFormResource(src resource.DataSource) resource.Config {
-	return resource.Config{
-		Entity:   "notes",
-		Title:    "Notes",
-		Singular: "Note",
-		BasePath: "/notes",
-		APIPath:  "/api/notes",
-		Crud:     src,
-		Fields: []resource.Field{
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "body", Label: "Body", Type: "text"},
-		},
-	}
-}
+// notesUI is the app's entity screen set, built once in buildSite
+// after the entity registers. App.EntityUI checks every name the
+// builders read against the declaration.
+var notesUI *entityui.UI
 
 // notesListScreen is "/" (and "/notes", the search form's target): the
-// notes table with its search box, New button, and island
-// sort/pagination.
+// notes table with its search box, view tabs and New button. The
+// builder draws it all from the entity's Display.
 type notesListScreen struct {
 	component.ContextOnly
-	res resource.Config
 }
 
 func (s *notesListScreen) ScreenTitle() string       { return "Notes" }
 func (s *notesListScreen) ScreenDescription() string { return "Local-first notes" }
 
 func (s *notesListScreen) RenderCtx(ctx context.Context) render.HTML {
-	return s.res.List(ctx)
+	// Base keeps record links and the New button on /notes even when
+	// the list renders at "/".
+	return notesUI.List("notes").Base("/notes").RenderCtx(ctx)
 }
 
-// noteDetailScreen is "/notes/{id}": the resource engine's detail view
-// with its Edit and Delete actions. It exists because the engine's
-// edit form points its Cancel (and its post-save navigation) at
-// BasePath/{id}; registering the editor there made Cancel land on the
-// page it was already on, which read as a dead button.
+// noteDetailScreen is "/notes/{id}": the record page. Its Edit tab
+// holds the editor form, so there is no separate edit route. Load
+// resolves the open note's title so the page <title>, and through the
+// page script the window title, follows the note; the lookup goes
+// through the owner-scoped CRUD handler, so a foreign id renders "Not
+// found", never another user's title.
 type noteDetailScreen struct {
 	component.ContextOnly
-	res   resource.Config
+	ch    *crud.CrudHandler
 	id    string
 	title string
 }
@@ -90,7 +63,7 @@ func (s *noteDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
 
 func (s *noteDetailScreen) Load(ctx context.Context) error {
 	s.title = "Note"
-	row, err := s.res.Crud.GetOne(ctx, s.id, nil)
+	row, err := s.ch.GetOne(ctx, s.id, nil)
 	if err != nil || row == nil {
 		return nil
 	}
@@ -110,59 +83,22 @@ func (s *noteDetailScreen) ScreenTitle() string       { return s.title }
 func (s *noteDetailScreen) ScreenDescription() string { return "A note" }
 
 func (s *noteDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return s.res.Detail(ctx, s.id)
+	// Delete is the one record action the notes app turns on; the
+	// header's copy link and back come with the page.
+	return notesUI.Record("notes", s.id).Base("/notes").Delete().RenderCtx(ctx)
 }
 
-// noteEditorScreen is "/notes/new" (create) and "/notes/{id}/edit" (edit).
-// Load resolves the open note's title so the page <title>, and through
-// the page script the window title, follows the note; the lookup goes
-// through the owner-scoped DataSource, so a foreign id renders "Not
-// found", never another user's title.
-type noteEditorScreen struct {
+// noteCreateScreen is "/notes/create": the create form, posting to the
+// entity's REST route and navigating back to the list on success.
+type noteCreateScreen struct {
 	component.ContextOnly
-	src   resource.DataSource
-	id    string
-	title string
 }
 
-func (s *noteEditorScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *noteCreateScreen) ScreenTitle() string       { return "New note" }
+func (s *noteCreateScreen) ScreenDescription() string { return "Create a note" }
 
-func (s *noteEditorScreen) Load(ctx context.Context) error {
-	if s.id == "" {
-		s.title = "New note"
-		return nil
-	}
-	row, err := s.src.GetOne(ctx, s.id, nil)
-	s.title = "Note"
-	if err != nil || row == nil {
-		return nil
-	}
-	if v, present := row["title"]; present {
-		t, ok := v.(string)
-		if !ok {
-			return fmt.Errorf("desktop-notes: title column is %T, want string", v)
-		}
-		if t != "" {
-			s.title = t
-		}
-	}
-	return nil
-}
-
-func (s *noteEditorScreen) ScreenTitle() string       { return s.title }
-func (s *noteEditorScreen) ScreenDescription() string { return "Edit a note" }
-
-func (s *noteEditorScreen) RenderCtx(ctx context.Context) render.HTML {
-	form := notesFormResource(s.src).Form(ctx, s.id)
-	// Copy link rides along on a plain Button with a data attribute;
-	// static/desktop-notes.js owns the click. The attribute cannot
-	// spoof runtime wiring (SafeCarrierAttrs drops data-cui-*).
-	copyLink := ui.Button(ui.ButtonConfig{
-		Label:      "Copy link",
-		Variant:    ui.ButtonSecondary,
-		ExtraAttrs: map[string]string{"data-notes-copy": ""},
-	})
-	return render.Join(form, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, copyLink))
+func (s *noteCreateScreen) RenderCtx(ctx context.Context) render.HTML {
+	return notesUI.Create("notes").Base("/notes").RenderCtx(ctx)
 }
 
 // The settings screen is not hand-built here: the battery's
@@ -206,7 +142,7 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 		Method:      "POST",
 		SubmitLabel: "Add note",
 		Ctx:         ctx,
-		// The same entity route the editor form uses; on success the
+		// The same entity route the record form uses; on success the
 		// form resets, ready for the next note.
 		ExtraAttrs: interactive.Post("/api/notes").OnSuccess(interactive.ResetForm()).Attrs(),
 	}, ui.FormField(ui.FormFieldConfig{
@@ -224,23 +160,21 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Card(ui.CardConfig{Header: header}, form)
 }
 
-// buildSite assembles the UI app and its screens. The island endpoint
-// behind the list's sort/pagination is registered on the app router:
-// the same table HTML the screen painted, fetched by RPC and swapped
-// in place. IslandPolicy stays nil (signed-in callers only), which the
-// desktop local identity (or a harness user) satisfies.
+// buildSite assembles the UI app and its screens. The entity screen
+// set is built here, after the entity registered: every list, record
+// and create page reads through it, so no per-screen routes or
+// handlers remain beyond the pages themselves.
 func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-notes")
 	layout := containerLayout("app")
 
-	list := notesListResource(app)
-	editorSrc := list.Crud
+	notesUI = app.EntityUI(entityui.Extensions{})
+	notes := app.MustCrudHandler("notes")
 
-	site.Register("/", &notesListScreen{res: list}, layout)
-	site.Register("/notes", &notesListScreen{res: list}, layout)
-	site.Register("/notes/new", &noteEditorScreen{src: editorSrc}, layout)
-	site.Register("/notes/{id}", &noteDetailScreen{res: list}, layout)
-	site.Register("/notes/{id}/edit", &noteEditorScreen{src: editorSrc}, layout)
+	site.Register("/", &notesListScreen{}, layout)
+	site.Register("/notes", &notesListScreen{}, layout)
+	site.Register("/notes/create", &noteCreateScreen{}, layout)
+	site.Register("/notes/{id}", &noteDetailScreen{ch: notes}, layout)
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less, transparent widget layout, never in
 	// the app layout with its header and padded column.
@@ -249,10 +183,6 @@ func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	// preference, saved through the battery's own route. There is no
 	// /settings/{id}; the post-save landing is /settings itself.
 	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), layout)
-
-	app.Router().HandleFunc("GET", "/api/tables/notes", func(w http.ResponseWriter, r *http.Request) {
-		list.TableHandler()(w, r)
-	})
 	return site, nil
 }
 

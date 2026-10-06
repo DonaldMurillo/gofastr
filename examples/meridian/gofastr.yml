@@ -155,6 +155,9 @@ entities:
         default: "0"
     display:
       facets: [status]
+      fields:
+        mrr:
+          label: MRR
 
   - name: subscriptions
     crud: true
@@ -183,6 +186,10 @@ entities:
         type: date
       - name: renews_on
         type: date
+    display:
+      fields:
+        mrr:
+          label: MRR
     relations:
       - type: belongs_to
         name: customer
@@ -548,6 +555,7 @@ screens:
         fields: [number, customer_id, amount, status, issued_on, due_on]
         limit: 25
         create: true
+        bulk: true
         empty_text: No invoices yet.
 
   - name: invoice_detail
