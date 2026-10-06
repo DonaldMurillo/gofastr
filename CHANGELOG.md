@@ -24,6 +24,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every owner, tenant and soft-delete scope, so an `or` in it cannot
   widen past them. `Fields` projects the listed columns (unknown and
   Hidden refused, `id` always included).
+- **`CrudHandler.RestoreOne` and `CrudHandler.PurgeOne`** for
+  soft-delete entities, in-process only. Both ask the update or delete
+  permission and the resource Decider about the one record, run the
+  update or delete hooks, emit the entity event and write an audit row
+  with operation `restore` or `purge`. Purge refuses a live row
+  (`crud.ErrNotSoftDeleted`), so it never skips the soft delete; a row
+  the caller cannot see answers not found. Only the CRUD handler names
+  an audit operation; app code cannot write one.
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
