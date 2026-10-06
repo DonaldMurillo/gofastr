@@ -671,6 +671,7 @@ var kitComponents = []kitComponent{
 	{name: "OptimizedImage", fn: OptimizedImage, prep: prepSet("Width", 100, "Height", 100)},
 	{name: "PageHeader", fn: PageHeader},
 	{name: "Pagination", fn: Pagination, prep: prepSet("Pages", 3, "Page", 1)},
+	{name: "PaletteResults", fn: PaletteResults},
 	{name: "PaneHost", fn: PaneHost, required: []string{"Primary"}},
 	{name: "PasswordInput", fn: PasswordInput},
 	{name: "PieChart", fn: PieChart},

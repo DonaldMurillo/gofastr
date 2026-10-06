@@ -747,6 +747,43 @@ own runtime modules for client-side behavior.
 | Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
 | Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |
 
+### Command palette
+
+`ui.CommandPalette` returns a trigger and a modal component. The
+trigger is a link to `FallbackHref` that opens the modal with script
+and binds `Shortcut` (default `Meta+K`). By default it is visually
+hidden, for chrome that draws its own search button. Set
+`Trigger: ui.PaletteTriggerField` to draw a search field instead: a
+magnifier, `TriggerText` (default: the placeholder) and the shortcut's
+keycaps (`⌘K`). Below 48rem it shrinks to a 44px icon button. The knob
+`--ui-cmd-trigger-width` (default 16rem) sets the field's width.
+
+A palette with `RPCPath` searches on the server. The endpoint reads `q`
+from the form body and answers option rows built by
+`ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
+palette's `Name`. Each row navigates to its command's `Href` on pick;
+an href that is not a safe link (a `javascript:` URL) renders no
+navigation. With no commands it answers one disabled row reading
+`empty`, or the localized "No matches" when `empty` is `""`.
+
+```go
+trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+    Name: "admin-palette", RPCPath: "/admin/_palette",
+    FallbackHref: "/admin/search", Trigger: ui.PaletteTriggerField,
+})
+
+func search(w http.ResponseWriter, r *http.Request) {
+    r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+    if err := r.ParseForm(); err != nil {
+        http.Error(w, "bad form", http.StatusBadRequest)
+        return
+    }
+    cmds := find(r.Context(), r.FormValue("q")) // []ui.PaletteCommand
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    w.Write([]byte(ui.PaletteResults(r.Context(), "admin-palette", cmds, "")))
+}
+```
+
 ---
 
 ## Using the interactive package

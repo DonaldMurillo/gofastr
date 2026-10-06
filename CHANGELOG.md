@@ -8,6 +8,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.CommandPalette` can draw a visible search field.**
+  `Trigger: ui.PaletteTriggerField` renders the trigger as a field with
+  a magnifier, `TriggerText` and the shortcut's keycaps, and as a 44px
+  icon button on phones. The default stays the visually hidden link.
+  `ui.PaletteResults` renders the option rows a palette's search
+  endpoint answers, dropping any href that is not a safe link. The
+  palette sheet now styles its option rows, including the active row.
 - **`EntityConfig.States` gives an entity a state machine.** The config
   names the Enum field holding the state, the values a create may start
   at, and the named moves that change it. Unless `Advisory` is set, the
