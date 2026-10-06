@@ -113,6 +113,9 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		}
 	}
 	for _, t := range crud.RoutableTransitions(m.states) {
+		if !holdsExact(ctx, m, t.Permission) {
+			continue
+		}
 		name := t.Label
 		if name == "" {
 			name = t.Key
@@ -123,7 +126,7 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		})
 	}
 	for _, a := range m.ext.Actions {
-		if !a.Bulk {
+		if !a.Bulk || !holdsExact(ctx, m, a.Permission) {
 			continue
 		}
 		label := a.Label
@@ -133,6 +136,13 @@ func (u *UI) bulkActions(ctx context.Context, m *meta) []bulkAction {
 		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: label, perm: a.Permission, app: a})
 	}
 	return out
+}
+
+// holdsExact reports whether ctx holds perm by name on the entity ("" is
+// held by everyone): the collection-level form of the per-record check
+// mayRun repeats, so the bar offers no action every record would skip.
+func holdsExact(ctx context.Context, m *meta, perm string) bool {
+	return perm == "" || access.CanResourceExact(ctx, access.Permission(perm), access.Ref{Type: m.name})
 }
 
 // bulkSettable reports a field "set a field" may write: an enum or bool
@@ -210,6 +220,7 @@ type bulkBody struct {
 	Page   stringList `json:"page"`
 	Key    string     `json:"key"`
 	Query  string     `json:"query"`
+	Count  string     `json:"count"`
 }
 
 // bulkRefusal is a refusal the caller can act on, drawn from the catalog.
@@ -233,7 +244,7 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 	case bulkScopePage:
 		ids = body.Page
 	case bulkScopeEvery:
-		return u.everyMatch(ctx, m, body.Key, body.Query)
+		return u.everyMatch(ctx, m, body)
 	default:
 		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 	}
@@ -272,15 +283,25 @@ func (u *UI) visibleIDs(ctx context.Context, m *meta, ids []string) ([]string, e
 }
 
 // everyMatch reads the ids of every row the list's query matches, the
-// narrowing the screen applied, at most EveryMatchCap.
-func (u *UI) everyMatch(ctx context.Context, m *meta, key, query string) ([]string, error) {
-	q, err := url.ParseQuery(query)
+// narrowing the screen applied, at most EveryMatchCap. The body carries
+// the count the screen offered; a match of any other size is refused
+// (409), so a list that changed underneath, or a query that is not the
+// screen's, never runs over rows the caller did not see counted.
+func (u *UI) everyMatch(ctx context.Context, m *meta, body bulkBody) ([]string, error) {
+	q, err := url.ParseQuery(body.Query)
 	if err != nil {
 		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 	}
-	rows, err := u.matchRows(ctx, m, key, q, []string{m.pk})
+	want, err := strconv.Atoi(body.Count)
+	if err != nil || want < 1 {
+		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
+	}
+	rows, err := u.matchRows(ctx, m, body.Key, q, []string{m.pk})
 	if err != nil {
 		return nil, err
+	}
+	if len(rows) != want {
+		return nil, refuse(http.StatusConflict, i18nui.T(ctx, i18nui.KeyEntityBulkStale))
 	}
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -493,6 +514,12 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18nui.WithTranslator(ctx, m.tr)
 		}
+		// JSON only: a cross-site form can send text/plain with no
+		// preflight, and the strict decoder would read it all the same.
+		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
+			writeBulkError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, bulkBodyLimit)
 		var body bulkBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
@@ -610,25 +637,28 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	var t bulkTally
-	stop := func(cctx context.Context) error {
-		if err := store.Finish(ctx, id, BulkStopped); err != nil {
+	// finish settles the job's status and writes its summary row, counted
+	// from the store so the chunks an earlier call ran are in it.
+	finish := func(cctx context.Context, status string) error {
+		counts, err := store.Tally(ctx, id)
+		if err != nil {
 			return err
 		}
-		u.auditBulk(cctx, m, id, job.Action, job.Count, t, BulkStopped)
+		if err := store.Finish(ctx, id, status); err != nil {
+			return err
+		}
+		t := bulkTally{done: counts[BulkRowDone], skipped: counts[BulkRowSkipped], failed: counts[BulkRowFailed]}
+		u.auditBulk(cctx, m, id, job.Action, job.Count, t, status)
 		return nil
 	}
+	stop := func(cctx context.Context) error { return finish(cctx, BulkStopped) }
 	for {
 		ids, err := store.Pending(ctx, id, InRequestCap)
 		if err != nil {
 			return err
 		}
 		if len(ids) == 0 {
-			if err := store.Finish(ctx, id, BulkDone); err != nil {
-				return err
-			}
-			u.auditBulk(ctx, m, id, job.Action, job.Count, t, BulkDone)
-			return nil
+			return finish(ctx, BulkDone)
 		}
 		cctx, err := u.ext.Jobs.Principal(ctx, job)
 		if err != nil {
@@ -656,7 +686,6 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) error {
 		if err := store.Settle(ctx, id, outcomes); err != nil {
 			return err
 		}
-		t.add(outcomes)
 	}
 }
 

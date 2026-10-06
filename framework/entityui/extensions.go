@@ -213,6 +213,9 @@ type BulkStore interface {
 	// Settle records each id's outcome (BulkRowDone, BulkRowSkipped,
 	// BulkRowFailed). A settled id never comes back from Pending.
 	Settle(ctx context.Context, id string, outcomes map[string]string) error
+	// Tally counts the job's settled ids by outcome, across every call
+	// that settled any, so a resumed run's summary covers the whole job.
+	Tally(ctx context.Context, id string) (map[string]int, error)
 	// Finish sets the job's status.
 	Finish(ctx context.Context, id, status string) error
 }

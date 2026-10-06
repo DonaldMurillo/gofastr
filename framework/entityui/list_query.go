@@ -42,12 +42,15 @@ type listState struct {
 	path string // the page's own path, for sort/page/view links
 	base string // the record-link base, b.Base or the page path
 
-	view      string // "" = All
-	viewPred  *filter.Predicate
-	viewSorts []filter.ParsedSort
-	as        string // "table" | "cards"
-	columns   []string
-	pins      []listWhere // the builder's Where pins: context, never a column or facet
+	view string // "" = All
+	// implicitView is the view shown with no ?view= param, "" when that
+	// is All.
+	implicitView string
+	viewPred     *filter.Predicate
+	viewSorts    []filter.ParsedSort
+	as           string // "table" | "cards"
+	columns      []string
+	pins         []listWhere // the builder's Where pins: context, never a column or facet
 
 	search     string
 	filterText string
@@ -341,8 +344,12 @@ func (s *listState) carry(exclude ...string) url.Values {
 	if v := s.filterText; v != "" && !drop[s.p.filter] {
 		out.Set(s.p.filter, v)
 	}
-	if s.view != "" && !drop[s.p.view] {
-		out.Set(s.p.view, s.view)
+	if !drop[s.p.view] {
+		if s.view != "" {
+			out.Set(s.p.view, s.view)
+		} else if s.implicitView != "" {
+			out.Set(s.p.view, allView)
+		}
 	}
 	for _, name := range s.activeFacets() {
 		if p := s.facetParam(name); !drop[p] {
@@ -358,7 +365,15 @@ func (s *listState) ownsParam(name string) bool {
 	case s.p.sort, s.p.dir, s.p.page, s.p.q, s.p.filter, s.p.view:
 		return true
 	}
-	return strings.HasPrefix(name, param(s.key, "f_"))
+	// A facet param names one of this entity's fields: an unkeyed list's
+	// "f_" prefix would otherwise claim a keyed list's params whose key
+	// starts with f_.
+	field, ok := strings.CutPrefix(name, param(s.key, "f_"))
+	if !ok {
+		return false
+	}
+	_, own := s.m.byName[field]
+	return own
 }
 
 // listHref renders path plus query.

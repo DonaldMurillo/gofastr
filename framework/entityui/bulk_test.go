@@ -203,8 +203,8 @@ func TestBulkActionPermissionExact(t *testing.T) {
 	}
 	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), ext, withAPI(map[string]string{"invoices": "/api/invoices"}))
 	code, out := postBulk(t, x, bulkCtx("u1", policy, "root"), map[string]any{"action": "run:remind", "scope": "selected", "ids": "inv-1"})
-	if code != http.StatusOK || out["skipped"] != float64(1) || len(ran) != 0 {
-		t.Fatalf("Wildcard: status %d %v ran=%v, want the record skipped", code, out, ran)
+	if code != http.StatusForbidden || len(ran) != 0 {
+		t.Fatalf("Wildcard: status %d %v ran=%v, want the action refused", code, out, ran)
 	}
 	code, out = postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "run:remind", "scope": "selected", "ids": "inv-1"})
 	if code != http.StatusOK || out["done"] != float64(1) || !slices.Equal(ran, []string{"inv-1"}) {
@@ -272,7 +272,7 @@ func TestBulkEveryMatchFollowsQuery(t *testing.T) {
 	rows := invoiceRows()
 	rows["invoices"] = append(rows["invoices"], map[string]any{"id": "inv-2", "number": "INV-2", "status": "paid"})
 	x := newTestUI(t, invoiceEntities(), rows, withAPI(map[string]string{"invoices": "/api/invoices"}))
-	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=status+%3D+%22draft%22`})
+	code, out := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=status+%3D+%22draft%22`, "count": "1"})
 	if code != http.StatusOK {
 		t.Fatalf("status %d: %v", code, out)
 	}
@@ -285,7 +285,7 @@ func TestBulkEveryMatchFollowsQuery(t *testing.T) {
 // widening to every row.
 func TestBulkEveryMatchBadFilterRefused(t *testing.T) {
 	x := newTestUI(t, invoiceEntities(), invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
-	code, _ := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=token+%3D+%22x%22`})
+	code, _ := postBulk(t, x, bulkCtx("u1", nil), map[string]any{"action": "delete", "scope": "every", "query": `filter=token+%3D+%22x%22`, "count": "1"})
 	if code != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422 for a filter on a NoQuery field", code)
 	}
@@ -315,6 +315,10 @@ type memBulk struct {
 	queued    []BulkJob
 	audits    []map[string]any
 	principal func(BulkJob) (context.Context, error)
+	// failPending, when set, fails the Pending call it answers true for
+	// (counted from 1): a worker that died mid-run.
+	failPending  func(call int) bool
+	pendingCalls int
 }
 
 func newMemBulk() *memBulk {
@@ -352,6 +356,10 @@ func (b *memBulk) Job(_ context.Context, id string) (BulkJob, error) {
 func (b *memBulk) Pending(_ context.Context, id string, limit int) ([]string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.pendingCalls++
+	if b.failPending != nil && b.failPending(b.pendingCalls) {
+		return nil, errors.New("worker died")
+	}
 	var out []string
 	for _, rid := range b.ids[id] {
 		if _, done := b.settled[id][rid]; !done {
@@ -368,9 +376,21 @@ func (b *memBulk) Settle(_ context.Context, id string, outcomes map[string]strin
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for rid, o := range outcomes {
-		b.settled[id][rid] = o
+		if _, done := b.settled[id][rid]; !done {
+			b.settled[id][rid] = o
+		}
 	}
 	return nil
+}
+
+func (b *memBulk) Tally(_ context.Context, id string) (map[string]int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := map[string]int{}
+	for _, o := range b.settled[id] {
+		out[o]++
+	}
+	return out, nil
 }
 
 func (b *memBulk) Finish(_ context.Context, id, status string) error {
@@ -437,7 +457,7 @@ func TestBulkQueuedRunsUnderCreator(t *testing.T) {
 		}
 		return bulkCtx("u1", policy, "clerk"), nil
 	}
-	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every"})
+	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"})
 	if code != http.StatusAccepted {
 		t.Fatalf("status %d: %v, want 202", code, out)
 	}
@@ -470,7 +490,7 @@ func TestBulkQueuedStopsWhenRoleRevoked(t *testing.T) {
 		}
 		return bulkCtx("u1", policy), nil
 	}
-	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every"})
+	code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"})
 	if code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
@@ -496,7 +516,7 @@ func TestBulkQueuedStopsWhenRoleRevoked(t *testing.T) {
 func TestBulkQueuedStopsWithoutPrincipal(t *testing.T) {
 	x, mb, policy := newQueuedUI(t, 150)
 	mb.principal = func(BulkJob) (context.Context, error) { return nil, errors.New("user deleted") }
-	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every"}); code != http.StatusAccepted {
+	if code, out := postBulk(t, x, bulkCtx("u1", policy, "clerk"), map[string]any{"action": "delete", "scope": "every", "count": "151"}); code != http.StatusAccepted {
 		t.Fatalf("status %d: %v", code, out)
 	}
 	if err := x.ui.RunBulkJob(context.Background(), mb.queued[0].ID); err != nil {

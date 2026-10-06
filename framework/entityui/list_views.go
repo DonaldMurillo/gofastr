@@ -20,6 +20,10 @@ import (
 // someone's bookmark, not a configuration bug. A builder naming an
 // unknown view is a configuration bug and fails the slot. A default
 // view hidden from this caller by its Show falls back to All.
+// allView is the reserved view key (entity.reservedDisplayKeys) that
+// names All when the list would otherwise fall to a default view.
+const allView = "all"
+
 func viewKeyOf(ctx context.Context, m *meta, b *ListBuilder, q url.Values) (string, error) {
 	if key := q.Get(param(b.key, "view")); key != "" {
 		if declaredAndViewable(ctx, m, key) {
@@ -133,9 +137,13 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 // drops sort and page — a view carries its own default order, and every
 // view starts on page one.
 func viewTabs(ctx context.Context, s *listState) render.HTML {
+	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+	if s.implicitView != "" {
+		allQ.Set(s.p.view, allView)
+	}
 	items := []ui.TabNavItem{{
 		Text:    i18nui.T(ctx, i18nui.KeyEntityViewAll),
-		Href:    listHref(s.path, s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)),
+		Href:    listHref(s.path, allQ),
 		Current: s.view == "",
 	}}
 	for _, v := range s.m.d.Views {

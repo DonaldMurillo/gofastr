@@ -96,8 +96,8 @@ func TestBulkCardsHaveNoSelectedScope(t *testing.T) {
 // namespaced params.
 func TestBulkExportCarriesKey(t *testing.T) {
 	x := ownedInvoices(t, Extensions{})
-	html := listHTML(t, x.ui.List("invoices").Bulk().Key("inv"), x.userCtx("/invoices", "?inv_q=A", "u1"))
-	if !strings.Contains(html, `href="/api/invoices/_export.csv?_list=inv&amp;inv_q=A"`) {
+	html := listHTML(t, x.ui.List("invoices").Bulk().Key("inv"), x.userCtx("/invoices", "?inv_filter=status+%3D+%22draft%22", "u1"))
+	if !strings.Contains(html, `href="/api/invoices/_export.csv?_list=inv&amp;inv_filter=status+%3D+%22draft%22"`) {
 		t.Errorf("export link lost the key or the query:\n%s", html)
 	}
 	if !strings.Contains(html, `id="eui-inv-bulk"`) {
