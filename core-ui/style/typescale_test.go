@@ -59,20 +59,38 @@ func TestBadTypeScaleValuesRefused(t *testing.T) {
 	}
 }
 
-// A theme.go written before these groups existed leaves them zero; they
-// must stay unnamed and unemitted so the kit's fallbacks draw.
-func TestUnsetTypeScaleFallsBack(t *testing.T) {
+// A theme.go written before these groups existed leaves them zero. They
+// stay unnamed and validate, and the emitter and token map give each
+// unset slot the default theme's value, so a var(--leading-*) with no
+// fallback still resolves.
+func TestUnsetTypeScaleEmitsDefaults(t *testing.T) {
 	th := DefaultTheme()
 	th.Leading, th.Tracking, th.Opacities = LeadingSet{}, TrackingSet{}, OpacitySet{}
 	AutoFillNames(&th)
+	if th.Leading.Tight.Name != "" {
+		t.Errorf("AutoFillNames named an unset line height %q", th.Leading.Tight.Name)
+	}
 	if err := th.Validate(); err != nil {
 		t.Fatalf("a theme without the groups must validate: %v", err)
 	}
 	css := th.CSSCustomProperties()
-	for _, prefix := range []string{"--leading-", "--tracking-", "--opacity-"} {
-		if strings.Contains(css, prefix) {
-			t.Errorf("unset %s tokens were emitted", prefix)
+	for _, want := range []string{"--leading-tight: 1.2;", "--tracking-snug: -0.01em;", "--opacity-muted: 0.6;"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("an unset slot did not emit its default %s", want)
 		}
+	}
+	if got := ThemeToTokens(th)["opacity-faint"]; got != "0.2" {
+		t.Errorf("ThemeToTokens[opacity-faint] = %q, want the default 0.2", got)
+	}
+	edited, err := ApplyTokens(th, map[string]string{"leading-snug": "1.3"})
+	if err != nil {
+		t.Fatalf("ApplyTokens on a theme without the groups: %v", err)
+	}
+	if edited.Leading.Snug.Value != "1.3" || edited.Leading.Relaxed.Value != "1.6" {
+		t.Errorf("edited leading = %+v, want snug 1.3 and the other defaults", edited.Leading)
+	}
+	if th.Leading != (LeadingSet{}) {
+		t.Errorf("ApplyTokens wrote through to its base: %+v", th.Leading)
 	}
 	th.Leading.Snug = LineHeight{Value: "1.3"}
 	th.Tracking.Wide = LetterSpacing{Value: "0.1em"}

@@ -13,7 +13,10 @@ import (
 var optionalSetDefaults = sync.OnceValue(func() map[reflect.Type]reflect.Value {
 	d := DefaultTheme()
 	return map[reflect.Type]reflect.Value{
-		reflect.TypeFor[StrokeSet](): reflect.ValueOf(d.Strokes),
+		reflect.TypeFor[StrokeSet]():   reflect.ValueOf(d.Strokes),
+		reflect.TypeFor[LeadingSet]():  reflect.ValueOf(d.Leading),
+		reflect.TypeFor[TrackingSet](): reflect.ValueOf(d.Tracking),
+		reflect.TypeFor[OpacitySet]():  reflect.ValueOf(d.Opacities),
 	}
 })
 
