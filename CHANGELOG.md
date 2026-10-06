@@ -661,6 +661,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr blueprint` warns on a single-column unique field in an
   owner-scoped entity.** Under owner scoping one user's row blocks every
   other user's create, and the 409 reveals that the value exists.
+- **`crud.CrudHandler.CanUpdateRecordScoped` and
+  `CanDeleteRecordScoped`** answer, as booleans about one record, the
+  gates `PUT` and `DELETE /<entity>/{id}` run: session, owner, tenant,
+  then the permission asked about the record.
 
 ### Changed
 

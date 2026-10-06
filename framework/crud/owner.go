@@ -49,10 +49,8 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 // caller while GET /api/<entity> answers 401.
 //
 // Prefer CanReadScoped, or CanReadRecordScoped for a single record. Those are
-// what framework/ui/resource gates on, including its island handler. CanRead
-// survives there only as the compatibility fallback for a custom DataSource
-// written before CanReadScoped existed, load-bearing, not dead. Reach for it
-// directly only when you specifically want the RBAC question in isolation.
+// what framework/entityui gates its screens on. Reach for CanRead directly
+// only when you specifically want the RBAC question in isolation.
 func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	perm := ch.permissionForOp(opRead)
 	if perm == "" {
@@ -88,10 +86,10 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 // exactly what generated list screens did.
 //
 // Use this from any surface that renders the same rows outside the CRUD routes
-// (a server-rendered table, an island fragment, a report). See
-// framework/ui/resource.
+// (a server-rendered table, a report, a dashboard aggregate). See
+// framework/entityui.
 func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
-	return ch.canReadScopedRecord(ctx, "")
+	return ch.canScopedRecord(ctx, opRead, "")
 }
 
 // CanReadRecordScoped is CanReadScoped for ONE record.
@@ -106,35 +104,7 @@ func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 // Pass the record id for a detail or edit view. With no decider installed this
 // answers exactly what CanReadScoped answers.
 func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool {
-	return ch.canReadScopedRecord(ctx, id)
-}
-
-func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool {
-	cfg := ch.Entity.Config
-	// Baseline session requirement, the boolean mirror of requireAuthenticated.
-	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
-		if _, ok := handler.GetUser(ctx); !ok {
-			return false
-		}
-	}
-	// Deliberately NOT requireOwnerContext: that honours owner.AllowCrossOwner,
-	// and the HTTP route's RequireOwner does not. The divergence used to be
-	// unreachable trivia; three rendering surfaces now trust this boolean, so a
-	// host applying the exported marker to a request context would make screens
-	// render rows the REST route refuses. Answer the stricter of the two.
-	if field := cfg.Scope.OwnerField; field != "" {
-		if _, ok := owner.Get(ctx); !ok {
-			return false
-		}
-	}
-	if err := ch.requireTenantContext(ctx); err != nil {
-		return false
-	}
-	perm := ch.permissionForOp(opRead)
-	if perm == "" {
-		return true
-	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.canScopedRecord(ctx, opRead, id)
 }
 
 // canCascadeWrite reports whether a cascade write from a parent may create or
