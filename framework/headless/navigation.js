@@ -109,8 +109,13 @@
   // ThemePicker class that no option names any more draws the app's
   // own theme, so Default is the honest answer). The checked option is
   // the group's one Tab stop; with nothing checked it is the first.
+  const RADIO_SEL = {
+    'data-hui-theme-pick': '[data-hui-theme-pick]',
+    'data-hui-theme-option': '[data-hui-theme-option]',
+  };
+
   function markRadios(group, attr, value) {
-    const opts = Array.prototype.slice.call(group.querySelectorAll('[' + attr + ']'));
+    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
     let hit = opts.find(function (o) { return o.getAttribute(attr) === value; });
     if (!hit) hit = opts.find(function (o) { return o.getAttribute(attr) === ''; });
     for (const o of opts) {
@@ -248,7 +253,7 @@
     const group = opt && opt.closest('[data-hui-theme-picker],[data-hui-theme-toggle][role="radiogroup"]');
     if (!group) return;
     const attr = opt.hasAttribute('data-hui-theme-pick') ? 'data-hui-theme-pick' : 'data-hui-theme-option';
-    const opts = Array.prototype.slice.call(group.querySelectorAll('[' + attr + ']'));
+    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
     const i = opts.indexOf(opt);
     let j;
     switch (e.key) {
