@@ -316,30 +316,11 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 	rec := Record{ID: b.id, Values: row}
-	for _, xt := range m.ext.Tabs {
+	// Extension tabs, then the builder's own. A panicking, erroring or
+	// empty tab fails that tab alone, never the page.
+	for _, xt := range slices.Concat(m.ext.Tabs, b.tabs) {
 		key, build := xt.Key, xt.Build
 		label := xt.Label
-		if label == "" {
-			label = key
-		}
-		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
-			// A panicking, erroring or empty extension tab fails that
-			// tab alone, never the page.
-			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {
-				c, err := build(TabContext{Ctx: ctx, UI: b.ui, Entity: m.name, Record: rec})
-				if err != nil {
-					return "", err
-				}
-				if c == nil {
-					return "", fmt.Errorf("tab body is nil")
-				}
-				return renderComponent(ctx, c), nil
-			}), nil
-		}})
-	}
-	for _, bt := range b.tabs {
-		key, build := bt.Key, bt.Build
-		label := bt.Label
 		if label == "" {
 			label = key
 		}
