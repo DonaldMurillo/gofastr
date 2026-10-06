@@ -42,6 +42,10 @@ const interceptStackRoutes = `[{"path":"/list"},` +
 // (a list inside a drawer keeps the drawer when its query changes) and
 // a close control.
 func interceptOverlayBody(path, query string) string {
+	if path == "/rec/a" && strings.HasPrefix(query, "page=") {
+		n := strings.TrimPrefix(query, "page=")
+		return `<div id="rec-a-page-` + n + `"><p>PAGE ` + n + `</p>` + interceptPager + `</div>`
+	}
 	if path == "/rec/a" && query == "sort=name" {
 		return `<div id="rec-a-sorted"><p>REC-A-SORTED</p>` +
 			`<a id="sorted-to-rel" href="/rel/r1">related</a>` +
@@ -52,7 +56,7 @@ func interceptOverlayBody(path, query string) string {
 		return `<div id="rec-a"><p>REC-A</p>` +
 			`<input id="rec-note" value="" aria-label="note">` +
 			`<a id="a-to-rel" href="/rel/r1">related</a>` +
-			`<a id="a-sort" href="/rec/a?sort=name">sort</a>` +
+			`<a id="a-sort" href="/rec/a?sort=name">sort</a>` + interceptPager +
 			`<button id="a-close" type="button" data-cui-intercept-close>Close</button></div>`
 	case "/rel/r1":
 		return `<div id="rel-r1"><p>REL-R1</p>` +
@@ -68,6 +72,23 @@ func interceptOverlayBody(path, query string) string {
 			`<a id="x-to-beyond" href="/beyond/b1">beyond</a></div>`
 	}
 	return `<div id="overlay-` + strings.Trim(path, "/") + `"></div>`
+}
+
+// interceptPager is the record pane's own pager: query-only links that
+// re-render the pane in place. page=slow answers after a delay, so a
+// test can close the pane while that refetch is in flight.
+const interceptPager = `<a id="pg-2" href="/rec/a?page=2">2</a>` +
+	`<a id="pg-3" href="/rec/a?page=3">3</a>` +
+	`<a id="pg-4" href="/rec/a?page=4">4</a>` +
+	`<a id="pg-slow" href="/rec/a?page=slow">slow</a>`
+
+// interceptOverlayAs is the presentation the server picks per path: the
+// deep record is a sheet, so a stack mixes them.
+func interceptOverlayAs(path string) string {
+	if path == "/deep/d1" {
+		return "sheet"
+	}
+	return "drawer"
 }
 
 // interceptFullPage is the canonical full-page render: the routes
@@ -132,7 +153,10 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 			s.mu.Lock()
 			s.froms = append(s.froms, r.Header.Get("X-Gofastr-From"))
 			s.mu.Unlock()
-			w.Header().Set("X-Gofastr-Overlay", "drawer")
+			if r.URL.RawQuery == "page=slow" {
+				time.Sleep(800 * time.Millisecond)
+			}
+			w.Header().Set("X-Gofastr-Overlay", interceptOverlayAs(r.URL.Path))
 			fmt.Fprint(w, interceptOverlayBody(r.URL.Path, r.URL.RawQuery))
 		case r.Header.Get("X-Gofastr-Navigate") == "1":
 			w.Header().Set("X-Gofastr-Partial", "true")
@@ -173,6 +197,7 @@ const stackStateJS = `(function () {
         ids: Array.from(k.querySelectorAll('[id]')).map(function (e) { return e.id; }),
         inert: k.hasAttribute('inert'),
         ariaHidden: k.getAttribute('aria-hidden'),
+        as: k.getAttribute('data-cui-intercept-as') || '',
       };
     }),
     main: document.querySelector('main') ? document.querySelector('main').id : '',
@@ -184,6 +209,7 @@ type stackLayer struct {
 	IDs        []string `json:"ids"`
 	Inert      bool     `json:"inert"`
 	AriaHidden string   `json:"ariaHidden"`
+	As         string   `json:"as"`
 }
 
 type stackSnapshot struct {
@@ -600,5 +626,177 @@ func TestInterceptStacksWithoutLinkFocus(t *testing.T) {
 	snap := readStack(ctx)
 	if len(snap.Layers) != 2 || snap.Main != "list-main" {
 		t.Fatalf("want 2 layers over the list, got %d layers, main %q (%s)", len(snap.Layers), snap.Main, snap.URL)
+	}
+}
+
+// interceptOpenRecord loads the list and opens the record pane over it.
+func interceptOpenRecord(t *testing.T) (*interceptStackServer, context.Context) {
+	t.Helper()
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	stackTo(t, ctx, 1)
+	if !interceptWait(ctx, `!!document.getElementById('pg-2')`) {
+		t.Fatal("the record pane never mounted")
+	}
+	return s, ctx
+}
+
+// interceptPage clicks the pane's pager link to page n and waits for
+// that render.
+func interceptPage(t *testing.T, ctx context.Context, n string) {
+	t.Helper()
+	if err := chromedp.Run(ctx, chromedp.Click("#pg-"+n, chromedp.ByID)); err != nil {
+		t.Fatalf("click page %s: %v", n, err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('rec-a-page-`+n+`')`) {
+		t.Fatalf("page %s never rendered in the pane", n)
+	}
+}
+
+// interceptHistory moves history by delta and waits for the URL.
+func interceptHistory(t *testing.T, ctx context.Context, delta int, url string) {
+	t.Helper()
+	if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`history.go(%d)`, delta), nil)); err != nil {
+		t.Fatalf("go(%d): %v", delta, err)
+	}
+	if !interceptWait(ctx, `location.pathname + location.search === '`+url+`'`) {
+		t.Fatalf("go(%d) never reached %s", delta, url)
+	}
+}
+
+// interceptEscClosesToList presses Esc and asserts the stack closed onto
+// the list it opened from: the URL, no overlay, the list still mounted.
+func interceptEscClosesToList(t *testing.T, ctx context.Context) {
+	t.Helper()
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))`, nil)); err != nil {
+		t.Fatalf("esc: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/list' && !document.getElementById('cui-intercept')`) {
+		snap := readStack(ctx)
+		t.Fatalf("Esc must close the pane onto /list; at %s with %d layers, main %q", snap.URL, len(snap.Layers), snap.Main)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if snap := readStack(ctx); snap.URL != "/list" || len(snap.Layers) != 0 || snap.Main != "list-main" {
+		t.Errorf("after Esc: at %s with %d layers, main %q; want /list, 0 layers, the list", snap.URL, len(snap.Layers), snap.Main)
+	}
+}
+
+// A refetch still in flight when its pane closes is dropped: it must not
+// bring the overlay back or push the closed pane's URL.
+func TestInterceptCloseDropsInFlightQuery(t *testing.T) {
+	_, ctx := interceptOpenRecord(t)
+	if err := chromedp.Run(ctx, chromedp.Click("#pg-slow", chromedp.ByID)); err != nil {
+		t.Fatalf("click slow page: %v", err)
+	}
+	interceptEscClosesToList(t, ctx)
+	time.Sleep(1200 * time.Millisecond) // past the slow answer
+	if snap := readStack(ctx); snap.URL != "/list" || len(snap.Layers) != 0 {
+		t.Errorf("the late answer revived the closed pane: at %s with %d layers", snap.URL, len(snap.Layers))
+	}
+	var host bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`!!document.getElementById('cui-intercept')`, &host)); err != nil {
+		t.Fatal(err)
+	}
+	if host {
+		t.Error("the late answer re-created the overlay host (an empty scrim over the page)")
+	}
+}
+
+// A pane visiting one URL twice still knows which entry it is on:
+// Forward onto the second visit, then Esc, closes exactly the pane's
+// entries.
+func TestInterceptPaneRevisitClosesExactly(t *testing.T) {
+	_, ctx := interceptOpenRecord(t)
+	interceptPage(t, ctx, "2")
+	interceptPage(t, ctx, "3")
+	interceptPage(t, ctx, "2")
+	interceptHistory(t, ctx, -2, "/rec/a?page=2")
+	interceptHistory(t, ctx, 1, "/rec/a?page=3")
+	interceptHistory(t, ctx, 1, "/rec/a?page=2")
+	if !interceptWait(ctx, `!!document.getElementById('rec-a-page-2')`) {
+		t.Fatal("Forward never re-rendered page 2 in the pane")
+	}
+	interceptEscClosesToList(t, ctx)
+}
+
+// A query move after Back replaces the entries ahead, as the browser
+// does; the pane forgets them, so Esc still closes exactly its own.
+func TestInterceptQueryAfterBackDropsAhead(t *testing.T) {
+	_, ctx := interceptOpenRecord(t)
+	interceptPage(t, ctx, "2")
+	interceptPage(t, ctx, "3")
+	interceptHistory(t, ctx, -1, "/rec/a?page=2")
+	if !interceptWait(ctx, `!!document.getElementById('rec-a-page-2')`) {
+		t.Fatal("Back never re-rendered page 2 in the pane")
+	}
+	interceptPage(t, ctx, "4")
+	interceptEscClosesToList(t, ctx)
+}
+
+// Back past two layers hands focus to the control that opened the lower
+// of them, which is in the layer left showing.
+func TestInterceptBackTwoRestoresFocus(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	stackTo(t, ctx, 3)
+	if !interceptWait(ctx, `!!document.getElementById('deep-d1')`) {
+		t.Fatal("layer 3 never mounted")
+	}
+	interceptHistory(t, ctx, -2, "/rec/a")
+	if !interceptWait(ctx, `document.querySelectorAll('#cui-intercept > *').length === 1`) {
+		t.Fatal("Back two never closed two layers")
+	}
+	if snap := readStack(ctx); snap.Focus != "a-to-rel" {
+		t.Errorf("focus = %q, want a-to-rel (the control that opened layer 2)", snap.Focus)
+	}
+}
+
+// Back from the only layer onto the list hands focus back to the link
+// that opened it.
+func TestInterceptBackToListRestoresFocus(t *testing.T) {
+	_, ctx := interceptOpenRecord(t)
+	interceptHistory(t, ctx, -1, "/list")
+	if !interceptWait(ctx, `!document.getElementById('cui-intercept')`) {
+		t.Fatal("Back never closed the pane")
+	}
+	if snap := readStack(ctx); snap.Focus != "to-a" {
+		t.Errorf("focus = %q, want to-a (the link that opened the pane)", snap.Focus)
+	}
+}
+
+// Each layer wears the presentation the server chose for it: a sheet
+// opened over two drawers leaves the drawers as drawers.
+func TestInterceptLayersKeepOwnPresentation(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	stackTo(t, ctx, 3)
+	if !interceptWait(ctx, `!!document.getElementById('deep-d1')`) {
+		t.Fatal("layer 3 never mounted")
+	}
+	snap := readStack(ctx)
+	var got []string
+	for _, l := range snap.Layers {
+		got = append(got, l.As)
+	}
+	if strings.Join(got, ",") != "drawer,drawer,sheet" {
+		t.Errorf("layer presentations = %v, want [drawer drawer sheet]", got)
 	}
 }
