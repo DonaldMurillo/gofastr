@@ -158,3 +158,16 @@ func TestCollapsibleNameGroupsSections(t *testing.T) {
 		t.Errorf("details root missing name=\"faq\":\n%s", root)
 	}
 }
+
+// A closed Collapsible that holds an invalid control reveals its
+// content: the record form's 422 lands client-side (aria-invalid beside
+// the field), and a collapsed section would hide the words the save was
+// refused on. The rule rides the component's own sheet, keyed on
+// :has([aria-invalid="true"]) against :not([open]) — the same :has
+// dependence the kit's SegmentedControl and Carousel already ship.
+func TestCollapsibleRevealsInvalidContent(t *testing.T) {
+	css := collapsibleCSS(style.Theme{})
+	if !strings.Contains(css, `[data-cui-comp="fui-collapsible"]:not([open]):has([aria-invalid="true"]) > *:not(summary){display:block}`) {
+		t.Errorf("a closed section holding an invalid control must reveal its content:\n%s", css)
+	}
+}

@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestTextAreaRequiresName(t *testing.T) {
@@ -119,5 +121,18 @@ func TestTextAreaExtraAttrsCannotOverrideOwned(t *testing.T) {
 		if !strings.Contains(ta, want) {
 			t.Errorf("textarea missing %q:\n%s", want, ta)
 		}
+	}
+}
+
+// The mono variant rides TextArea's Class (the field root), and the
+// sheet reaches the control as a descendant: JSON and code fields draw
+// in the mono token without any app-side CSS.
+func TestTextAreaMonoVariant(t *testing.T) {
+	ta := TextArea(TextAreaConfig{Name: "cfg", Label: "Config", Rows: 6, Class: "fui-textarea--mono"})
+	if !strings.Contains(string(ta), `fui-textarea--mono`) {
+		t.Fatalf("variant class missing on the field root:\n%s", ta)
+	}
+	if !strings.Contains(textAreaCSS(style.Theme{}), `.fui-textarea--mono .fui-textarea {`) {
+		t.Fatal("the sheet must scope the mono family through the field root")
 	}
 }

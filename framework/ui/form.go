@@ -108,6 +108,12 @@ type FormConfig struct {
 	// contract silently rendered a plain form that posts natively).
 	// Everything else is decoration and passes through.
 	ExtraAttrs html.Attrs
+
+	// LeaveGuard, when non-empty, marks the form's unsaved edits as
+	// discardable-only-with-asking: while the form is changed, a link
+	// away, Back, a drawer's Escape and a reload all ask first, with
+	// these words. Empty omits the guard. See headless.FormProps.
+	LeaveGuard string
 }
 
 // Form renders a complete <form> with an optional error summary above
@@ -200,6 +206,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		Errors:     errorsHTML,
 		Actions:    actions,
 		NoValidate: cfg.NoValidate,
+		LeaveGuard: cfg.LeaveGuard,
 		Request:    request,
 		ID:         cfg.ID,
 		ExtraAttrs: plain,

@@ -144,6 +144,13 @@ func textAreaCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
+.fui-textarea--mono .fui-textarea {
+  /* JSON and code: the mono token every code-ish component reads.
+     The variant class rides the FIELD root (TextArea's Class), so it
+     reaches the control as a descendant. */
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+  tab-size: 2;
+}
 .fui-textarea:disabled {
   opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;

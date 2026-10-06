@@ -721,6 +721,7 @@ var kitComponents = []kitComponent{
 	{name: "Sticky", fn: Sticky},
 	{name: "Switch", fn: Switch},
 	{name: "TableOfContents", fn: TableOfContents},
+	{name: "TabNav", fn: TabNav},
 	{name: "Tabs", fn: Tabs, prep: prepZero("Slice")},
 	{name: "Tag", fn: Tag},
 	{name: "TagInput", fn: TagInput},
