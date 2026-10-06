@@ -668,6 +668,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ToggleConfig.LabelHidden`** keeps a Checkbox or Radio's label as
   its accessible name and hides the text, for a control whose meaning its
   surroundings show, such as a table's select column.
+- **`i18nui.EntityNoun`** returns an entity's name for use inside a
+  sentence ("11 customers"): a catalog entry as written, else the Display
+  or derived name with plain words lowercased and acronyms kept.
 - **`ui.MenuConfig.IconOnly`** draws the trigger as a "more" icon (new in
   `ui.Icon`) with the label kept as its accessible name, for a table row's
   action menu. **`ui.MenuItem.Do`** takes a built `*interactive.Action`,
@@ -678,6 +681,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a row that mixes either with another action.
 - **`--ui-page-header-section-title-size`** sizes an h2 `PageHeader`
   title, so a host that scales page titles leaves sections a step below.
+- **`i18nui.RelationLabel`** is `FieldLabel` for a Relation field: its
+  fallback drops a trailing `_id`.
 
 ### Changed
 

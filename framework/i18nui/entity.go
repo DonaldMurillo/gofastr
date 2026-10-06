@@ -55,7 +55,7 @@ var entityDefaults = map[Key]string{
 
 // entityKeyBlocks are the entity screens' Defaults blocks, one per area.
 // AllKeys lists every key they hold; init merges them into Defaults.
-var entityKeyBlocks = []map[Key]string{entityDefaults, entityListDefaults, entityRecordDefaults}
+var entityKeyBlocks = []map[Key]string{entityDefaults, entityListDefaults, entityRecordDefaults, entityBulkDefaults}
 
 func init() {
 	for _, block := range entityKeyBlocks {
