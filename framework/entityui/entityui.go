@@ -109,6 +109,35 @@ func New(h Host, ext Extensions) (*UI, error) {
 	return &UI{host: h, ext: ext.clone()}, nil
 }
 
+// WithAPIPath returns a UI that draws the same screens with the same
+// Extensions but points every write (save, delete, moves, bulk, export)
+// at path(e) instead of the entity's REST routes. A back office uses it
+// to send writes through routes it gates itself, the way battery/admin
+// mounts the CRUD handler's write routes behind its own gate. path
+// answers false for an entity whose screens should draw read-only.
+// Reads are unchanged: they run in process under the caller's context.
+func (u *UI) WithAPIPath(path func(e *entity.Entity) (string, bool)) *UI {
+	h := apiPathHost{Host: u.host, path: path}
+	if bh, ok := u.host.(BulkHost); ok {
+		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext}
+	}
+	return &UI{host: h, ext: u.ext}
+}
+
+// apiPathHost is a Host whose write routes live elsewhere.
+type apiPathHost struct {
+	Host
+	path func(e *entity.Entity) (string, bool)
+}
+
+func (h apiPathHost) APIPath(e *entity.Entity) (string, bool) { return h.path(e) }
+
+// apiPathBulkHost keeps the wrapped host's bulk backing.
+type apiPathBulkHost struct {
+	apiPathHost
+	BulkHost
+}
+
 // entityFor resolves a builder's entity name.
 func (u *UI) entityFor(name string) (*entity.Entity, error) {
 	e, err := u.host.Registry().Get(name)
