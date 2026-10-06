@@ -144,12 +144,15 @@ written as a literal:
 |---|---|
 | border, outline and inset-ring widths, outline offset | `--stroke-*` |
 | border radius (px or rem) | `--radii-*` |
-| transition or animation duration up to 500ms | `--duration-*` |
+| transition duration or delay, or animation duration, up to 500ms | `--duration-*` |
+| `ease`, `ease-in`, `ease-out`, `ease-in-out` or `cubic-bezier()` in a transition or animation | `--easing-*` |
 | z-index above 10 | `--z-*` |
-| padding, margin, gap | `--spacing-*`; an off-step value is `calc(var(--spacing-sm, 4px) * n)` |
+| padding, margin, gap, `grid-gap`, scroll margin and padding | `--spacing-*`; an off-step value is `calc(var(--spacing-sm, 4px) * n)` |
 | top, right, bottom, left, inset | `--spacing-*` or a `--ui-<component>-<part>` knob |
 | width, height, inline-size, block-size, their min/max, flex-basis | a `--ui-<component>-<part>` knob or a `--size-*` token |
 | font size | `--text-*` |
+| font weight (a number, `bold` or `normal`) | `--font-weight-*`; an off-step weight is `calc(var(--font-weight-semibold, 600) + 50)` |
+| the `font` shorthand's size, `/line-height` and weight | `--text-*`, `--leading-*`, `--font-weight-*` |
 | line height (a number other than 0 and 1, or a length) | `--leading-*` |
 | letter spacing | `--tracking-*` |
 | opacity between 0 and 1 | `--opacity-*` or a knob |
@@ -162,8 +165,9 @@ Write the token or knob with today's value as the fallback,
 `var()` fallback or inside a `calc()` that reads a token
 (`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero, 1px hairlines
 and visually hidden boxes, `em`, `%`, `ch` and viewport lengths,
-`line-height` 0 and 1, `opacity` 0 and 1, local stacking orders, loop
-periods over 500ms and `animation-delay`. `@media` conditions are never
+`line-height` 0 and 1, `opacity` 0 and 1, `linear` and `steps()`
+timing, local stacking orders, loop periods over 500ms and
+`animation-delay` (a loop's stagger). `@media` conditions are never
 read (`var()` is invalid there). Dev tooling under `framework/dev/` is
 held to the width, radius, motion and layer rows only: its chrome is not
 an app theme's.

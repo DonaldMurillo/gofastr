@@ -33,8 +33,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the kit that way: a bare border, outline or ring width, outline
   offset, px radius, duration up to 500ms or z-index above 10 in
   design-system CSS is an error, with a literal inside a `var()`
-  fallback or a token-reading `calc()` allowed. The contract catalog
-  holds 78 rules.
+  fallback or a token-reading `calc()` allowed.
 - **The whole kit is themeable from one `:root` block.** Three optional
   token groups join `Strokes`: `Theme.Leading` (`--leading-tight` 1.2,
   `--leading-snug` 1.4, `--leading-normal` 1.5, `--leading-relaxed`
@@ -76,7 +75,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/dev` held to the stroke, radius, motion and layer arms
   only. The new groups reach `.tokens.css` (`--leading-*`,
   `--tracking-*`, `--opacity-*`), the plugin host's token bridge and the
-  GOFASTR1807/1808 checks.
+  GOFASTR1807/1808 checks; an unset slot in one of them emits the
+  default theme's value, so a `var(--leading-*)` with no fallback still
+  resolves. GOFASTR1807 reads a number the way the browser does (`.6`,
+  `1.60` and `-.01em` are `0.6`, `1.6` and `-0.01em`) and checks
+  `padding-inline`, `padding-block`, `margin-inline`, `margin-block` and
+  their start and end sides against `--spacing-*`. GOFASTR1823 also
+  refuses an ease keyword or `cubic-bezier()` (read `--easing-*`;
+  `linear` and `steps()` pass), a numeric, `bold` or `normal` font
+  weight (`--font-weight-*`), the `font` shorthand's literal size, line
+  height and weight, a transition delay up to 500ms, and `grid-gap` and
+  scroll margins and paddings. The kit's transitions read
+  `var(--easing-ease-in-out, ease)` (or the matching named curve), so the
+  default theme draws them on `cubic-bezier(0.4, 0, 0.2, 1)` instead of
+  CSS's `ease`. `--ui-spinner-size`, `--ui-gallery-cols`,
+  `--ui-gallery-min`, `--ui-rating-glyph` and `--ui-rating-cell` reach
+  the component from a theme: each component used to set the knob on
+  its own root, which beat the theme's value on every instance.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets

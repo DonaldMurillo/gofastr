@@ -1241,14 +1241,16 @@ func renderingRules() []Rule {
 		ID: RuleBareThemeLiteral, Slug: "rendering/bare-theme-literal",
 		Title: "A look value written as a literal in kit CSS, where no theme can reach it", Capability: CapRendering, Severity: SeverityError,
 		Summary: "Design-system CSS writes a value a theme owns as a bare literal: a border, outline or inset-ring width, " +
-			"an outline offset, a border radius, a transition or animation duration up to 500ms, a z-index above 10, a " +
-			"padding, margin or gap, a position offset, a width or height, a font size, line height or letter spacing, " +
-			"an opacity between 0 and 1, a box shadow, or a colour (hex, rgb(), hsl(), oklch(), white, black). Each one " +
-			"reads a token (--stroke-*, --radii-*, --duration-*, --z-*, --spacing-*, --text-*, --leading-*, --tracking-*, " +
-			"--opacity-*, --shadow-*, --color-*) or a --ui-<component>-<part> knob, with the old value as the fallback. " +
-			"Literals inside a var() fallback or a calc() that reads a token, zero, 1px hairlines and visually hidden boxes, " +
-			"em, %, ch and viewport lengths, line-height 0 and 1, opacity 0 and 1, local stacking orders, loop periods over " +
-			"500ms and animation-delay pass. Dev tooling (framework/dev) is held to the width, radius, motion and layer " +
+			"an outline offset, a border radius, a transition duration or delay or an animation duration up to 500ms, an " +
+			"ease keyword or cubic-bezier() timing function, a z-index above 10, a padding, margin, gap or scroll margin, " +
+			"a position offset, a width or height, a font size, weight, line height or letter spacing (the font shorthand " +
+			"included), an opacity between 0 and 1, a box shadow, or a colour (hex, rgb(), hsl(), oklch(), white, black). " +
+			"Each one reads a token (--stroke-*, --radii-*, --duration-*, --easing-*, --z-*, --spacing-*, --text-*, " +
+			"--font-weight-*, --leading-*, --tracking-*, --opacity-*, --shadow-*, --color-*) or a --ui-<component>-<part> " +
+			"knob, with the old value as the fallback. Literals inside a var() fallback or a calc() that reads a token, " +
+			"zero, 1px hairlines and visually hidden boxes, em, %, ch and viewport lengths, line-height 0 and 1, opacity 0 " +
+			"and 1, linear and steps() timing, local stacking orders, loop periods over 500ms and animation-delay (a loop's " +
+			"stagger) pass. Dev tooling (framework/dev) is held to the width, radius, motion and layer " +
 			"arms only: its chrome is not an app theme's.",
 		Why: "GOFASTR1807 judges a value whole, so `border: 1px solid var(--color-border)` and `transition: color 150ms ease` " +
 			"passed it: no token value equals the shorthand, and a `padding: 6px` or `width: 18px` matches no token at all. " +
@@ -1257,13 +1259,16 @@ func renderingRules() []Rule {
 		Fix: "Read the token or knob with today's value as the fallback: `var(--stroke-thin, 1px) solid`, " +
 			"`border-radius: var(--radii-full, 9999px)`, `var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`, " +
 			"`padding: var(--spacing-md, 8px)`, `width: var(--ui-checkbox-box-size, 18px)`, `line-height: var(--leading-snug, 1.4)`, " +
-			"`box-shadow: var(--shadow-md)`, `color: var(--ui-gallery-caption-fg, white)`. An off-step value is a calc() over " +
-			"a token (`calc(var(--spacing-sm, 4px) * 1.5)`), and geometry that follows a size is a calc() over its knobs, " +
+			"`box-shadow: var(--shadow-md)`, `color: var(--ui-gallery-caption-fg, white)`, " +
+			"`transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease)`, " +
+			"`font: var(--text-sm, 0.875rem)/var(--leading-snug, 1.4) var(--font-body)`. An off-step value is a calc() over " +
+			"a token (`calc(var(--spacing-sm, 4px) * 1.5)`, `calc(var(--font-weight-semibold, 600) + 50)`), and geometry that follows a size is a calc() over its knobs, " +
 			"so both still move with the theme.",
 		Doc: "theming",
 		Examples: []Example{{
 			Bad: "border: 1px solid var(--color-border); transition: color 150ms ease; padding: 6px 12px; width: 18px;",
-			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); transition: color var(--duration-fast, 150ms) ease; " +
+			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); " +
+				"transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease); " +
 				"padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3); width: var(--ui-checkbox-box-size, 18px);",
 		}},
 	}}
