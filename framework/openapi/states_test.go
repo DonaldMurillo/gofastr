@@ -128,6 +128,32 @@ func TestStatesDocumentTransitionOperations(t *testing.T) {
 	if _, has := responses[422]; has {
 		t.Error("pay documents 422; the route never answers it")
 	}
+	// The operation declares the body the route demands: no payload, but
+	// a REQUIRED application/json request body shaped as the empty object,
+	// so a generated client posts {} instead of learning the 415 the hard
+	// way (the route refuses any request without the JSON content type).
+	reqBody, ok := post["requestBody"].(map[string]any)
+	if !ok {
+		t.Fatalf("pay has no requestBody (%T); the route 415s without Content-Type: application/json, so the spec must declare one", post["requestBody"])
+	}
+	if reqBody["required"] != true {
+		t.Errorf("pay requestBody required = %v, want true", reqBody["required"])
+	}
+	content, ok := reqBody["content"].(map[string]any)
+	if !ok {
+		t.Fatalf("pay requestBody content is %T", reqBody["content"])
+	}
+	jsonMedia, ok := content["application/json"].(map[string]any)
+	if !ok {
+		t.Fatal("pay requestBody does not declare application/json")
+	}
+	schema, ok := jsonMedia["schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("pay requestBody schema is %T", jsonMedia["schema"])
+	}
+	if schema["type"] != "object" || schema["maxProperties"] != 0 || schema["additionalProperties"] != false {
+		t.Errorf("pay requestBody schema = %v, want the empty object (type object, maxProperties 0, additionalProperties false)", schema)
+	}
 	if _, has := paths["/invoices/{id}/transitions/{key}"]; has {
 		t.Error("spec documents a {key} wildcard; each move is its own literal path")
 	}

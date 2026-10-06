@@ -171,6 +171,38 @@ func TestAuditStateOverrideOpAndReason(t *testing.T) {
 	})
 }
 
+// An override upsert that lands on an existing row is audited as the
+// override it is, with its reason, not as a create.
+func TestAuditStateOverrideUpsertOp(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := statesAuditApp(t, db)
+		handler, err := app.CrudHandler("invoices")
+		if err != nil {
+			t.Fatal(err)
+		}
+		created, err := handler.CreateOne(context.Background(), map[string]any{"number": "INV-1", "status": "open"})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		id := created["id"].(string)
+		ctx := crud.WithStateOverride(context.Background(), "ledger repair")
+		if _, err := handler.UpsertOne(ctx, map[string]any{"id": id, "number": "INV-1", "status": "void"}); err != nil {
+			t.Fatalf("override upsert: %v", err)
+		}
+
+		rows := readAuditStateRows(t, db)
+		if len(rows) != 2 {
+			t.Fatalf("expected 2 audit rows, got %d (%+v)", len(rows), rows)
+		}
+		if rows[1]["op"] != "state_override" || rows[1]["record_id"] != id {
+			t.Fatalf("override upsert row = %+v, want op state_override on %s", rows[1], id)
+		}
+		if rows[1]["reason"] != "ledger repair" {
+			t.Fatalf("override upsert row reason = %v", rows[1]["reason"])
+		}
+	})
+}
+
 // EnsureAuditTable widens a table created with the old column set (no
 // tenant_id, no reason) so an existing audit table needs no manual
 // migration.
@@ -295,6 +327,56 @@ func TestWithAuditLogMarksAudited(t *testing.T) {
 		app.WithAuditLog(AuditConfig{})
 		if !ent.Audited() {
 			t.Fatal("WithAuditLog did not mark the entity audited")
+		}
+	})
+}
+
+// Every version of a grouped entity shares the name-keyed audit hooks, so
+// WithAuditLog marks every version audited, not only the one Registry.All
+// picks: an override on /v2 lands in the same trail as one on /v1.
+func TestWithAuditLogMarksEveryVersion(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		for _, v := range []string{"/v1", "/v2"} {
+			app.GroupEntity(app.Group(v), "invoices", entity.EntityConfig{
+				Table:    "invoices",
+				Exposure: &entity.ExposureConfig{Public: true},
+				Fields:   statesAuditFields(),
+				States:   statesAuditStates(),
+			}.WithTimestamps(false))
+		}
+		app.WithAuditLog(AuditConfig{})
+		n := 0
+		for _, ent := range app.Registry.AllSorted() {
+			if ent.GetName() != "invoices" {
+				continue
+			}
+			n++
+			if !ent.Audited() {
+				t.Fatalf("version %q not marked audited", ent.Version)
+			}
+		}
+		if n != 2 {
+			t.Fatalf("registered %d invoices versions, want 2", n)
+		}
+	})
+}
+
+// Two replicas booting on one old audit table both read reason as missing
+// and both add it. The second add meets a column that is already there and
+// must pass: a stale catalog read is not a failed migration.
+func TestAuditColumnsStaleCatalog(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		if err := EnsureAuditTable(db, "audit_race"); err != nil {
+			t.Fatal(err)
+		}
+		dialect := migrate.DetectDialect(db)
+		stale := map[string]string{"id": "TEXT", "entity": "TEXT"}
+		if err := addAuditColumns(db, "audit_race", dialect, stale); err != nil {
+			t.Fatalf("second replica's add on a stale catalog: %v", err)
+		}
+		if err := EnsureAuditTable(db, "audit_race"); err != nil {
+			t.Fatalf("re-run: %v", err)
 		}
 	})
 }

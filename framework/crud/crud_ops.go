@@ -209,6 +209,10 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
 	}
+	// A hook cannot move this record mid-write (RunTransition).
+	if ch.Entity != nil {
+		ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)
+	}
 
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {

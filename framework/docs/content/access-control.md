@@ -649,6 +649,12 @@ type Decider func(ctx context.Context, roles []string, capability Permission, re
 logic in the hot path. The resource-aware path is a separate entrypoint you opt
 into; with no decider installed, `CanResource` answers byte-identically to `Can`.
 
+`access.CanResourceExact(ctx, capability, resource)` asks the `Decider` the
+same way, but on abstain passes only when the caller's roles hold `capability`
+by name: a role granted the Wildcard does not satisfy it. A state move's
+`Permission` is checked this way, so a superuser role does not pick up every
+narrow capability an app declares.
+
 The seam binds **every** permission gate, not only resource-scoped ones:
 `access.RequirePermission` consults it too, passing the zero `Ref` (a
 route gate holds no record), so `DecisionDeny` fails the route closed

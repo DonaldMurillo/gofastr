@@ -154,6 +154,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// WithServerWrites(ctx).
 		var cols []string
 		var vals []any
+		// sent holds the columns the body carried, before a Default fills
+		// an omitted one: DO UPDATE SET may name a guarded column only when
+		// the caller sent it.
+		sent := map[string]bool{}
 		for _, f := range ch.Entity.GetFields() {
 			if f.AutoGenerate == schema.AutoIncrement {
 				// Omit when no real pk was supplied: the DB assigns it
@@ -190,6 +194,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 			}
 			val, ok := body[f.Name]
+			sent[f.Name] = ok
 			if !ok {
 				if f.Default != nil {
 					val = f.Default
@@ -217,9 +222,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			if isAutoField(ch.Entity, c) {
 				continue
 			}
-			// A stored state stays put on conflict: the insert arm's value
-			// may be the Default, which is not this row's state.
-			if !ch.upsertSetsGuarded(ctx, c) {
+			// A stored state stays put on conflict unless the caller sent
+			// the column under a state override (states.go).
+			if !ch.upsertSetsGuarded(ctx, c, sent[c]) {
 				continue
 			}
 			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))

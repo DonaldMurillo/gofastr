@@ -110,6 +110,18 @@ func TestTypedClientRendersTransitionMethods(t *testing.T) {
 	if strings.Contains(out, "MarkOverdue") {
 		t.Error("typed client has a method for the System move; system moves appear nowhere")
 	}
+	if !strings.Contains(out, "var moveBody = map[string]any{}") {
+		t.Error("typed client with moves does not declare moveBody")
+	}
+}
+
+// A client with no routable move carries no moveBody: nothing would use it.
+func TestTypedClientNoMovesNoMoveBody(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].States = nil
+	if out := renderClient(decls); strings.Contains(out, "moveBody") {
+		t.Error("typed client without moves declares moveBody")
+	}
 }
 
 // The JS SDK binds each move as a quoted property over the shared
@@ -233,16 +245,43 @@ func (r staticRegistry) Get(name string) (*entity.Entity, error) {
 	return nil, fmt.Errorf("entity not found: %s", name)
 }
 
+// The CLI prints a move's summary raw in its help, so state values that
+// carry terminal escapes (ESC, a C1 CSI, a bidi override, a newline)
+// reach it with those bytes dropped.
+func TestCLIMoveSummaryDropsControlBytes(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].Fields[2].Values = []string{"draft", "open\x1b[2J", "paid\u009b31m", "void‮\n"}
+	decls[0].States.Initial = []string{"draft"}
+	decls[0].States.Transitions = []framework.Transition{
+		{Key: "pay", From: []string{"open\x1b[2J"}, To: "paid\u009b31m"},
+		{Key: "void", From: []string{"draft"}, To: "void‮\n"},
+	}
+	spec, err := buildCLISpec(decls, cliOptions{binary: "myapp"}, "example.com/app/entities/client")
+	if err != nil {
+		t.Fatalf("buildCLISpec: %v", err)
+	}
+	got := map[string]string{}
+	for _, tr := range spec.Entities[0].Transitions {
+		got[tr.Key] = tr.Summary
+	}
+	if got["pay"] != "move status from open[2J to paid31m" || got["void"] != "move status from draft to void" {
+		t.Fatalf("summaries = %q", got)
+	}
+}
+
 // The generators refuse what the server's boot check would have refused:
-// a key outside the slug grammar, or one colliding with a verb's command
-// or generated function name (hand-written declarations never passed
-// entity.Define).
+// a key outside the move-key grammar, a duplicate, or one colliding with
+// any generated surface's own name (hand-written declarations never passed
+// entity.Define; validateDeclarationStates re-runs the one boot check).
 func TestGeneratorsRefuseBadTransitionKeys(t *testing.T) {
 	cases := map[string][]framework.Transition{
-		"uppercase key":  {{Key: "Pay", From: []string{"draft"}, To: "paid"}},
-		"verb key":       {{Key: "patch", From: []string{"draft"}, To: "paid"}},
-		"batch verb key": {{Key: "batch_update", From: []string{"draft"}, To: "paid"}},
-		"duplicate key":  {{Key: "pay", From: []string{"draft"}, To: "paid"}, {Key: "pay", From: []string{"draft"}, To: "void"}},
+		"uppercase key":         {{Key: "Pay", From: []string{"draft"}, To: "paid"}},
+		"double underscore key": {{Key: "mark__paid", From: []string{"draft"}, To: "paid"}},
+		"verb key":              {{Key: "patch", From: []string{"draft"}, To: "paid"}},
+		"batch verb key":        {{Key: "batch_update", From: []string{"draft"}, To: "paid"}},
+		"duplicate key":         {{Key: "pay", From: []string{"draft"}, To: "paid"}, {Key: "pay", From: []string{"draft"}, To: "void"}},
+		"js member key":         {{Key: "transition", From: []string{"draft"}, To: "paid"}},
+		"openapi id key":        {{Key: "events", From: []string{"draft"}, To: "paid"}},
 	}
 	for name, moves := range cases {
 		decls := statesFixtureDecls()
@@ -254,5 +293,17 @@ func TestGeneratorsRefuseBadTransitionKeys(t *testing.T) {
 		if _, err := buildSDKSpec(decls, &opts); err == nil {
 			t.Errorf("SDK accepted %s", name)
 		}
+	}
+}
+
+// The scaffolded project's typed client is emitted straight from the same
+// declarations, so the states boot check runs on that path too: a move key
+// registration refuses never reaches renderClient, whatever declared it
+// (the blueprint path validates shape, not states).
+func TestRenderGeneratedProjectRefusesBadStates(t *testing.T) {
+	decls := statesFixtureDecls()
+	decls[0].States.Transitions[0].Key = "patch"
+	if _, err := renderGeneratedProject(decls); err == nil || !strings.Contains(err.Error(), `key "patch" is reserved`) {
+		t.Fatalf("renderGeneratedProject accepted a reserved move key: %v", err)
 	}
 }

@@ -78,7 +78,8 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), opDelete, true, true},
 	}
 	// One tool per non-system move, named by its key (the boot check
-	// keeps keys off the five names above), posting to the move's route.
+	// keeps keys off the names above and the other reserved ones),
+	// posting to the move's route.
 	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
 		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(), crud.transitionTool(router, t.Key), opUpdate, true, true})

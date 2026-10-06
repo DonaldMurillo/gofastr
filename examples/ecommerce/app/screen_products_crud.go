@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"net/http"
@@ -21,10 +22,10 @@ func (s *HomeScreen) ScreenDescription() string  { return "E-commerce storefront
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("ShopFront")),
 		html.Paragraph(html.TextConfig{Class: ""}, render.Text("Welcome to our store. Browse our products and categories.")),
-		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithEmpty("No products available yet.").WithIsland("/api/tables/home/products").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithHeadingLevel(2).WithEmpty("No products available yet.").WithIsland("/api/tables/home/products").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }
 
@@ -35,9 +36,9 @@ func (s *ProductsScreen) ScreenDescription() string  { return "Browse our full p
 func (s *ProductsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ProductsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Products")),
-		appResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithEmpty("No products found.").WithIsland("/api/tables/products/products").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithHeadingLevel(2).WithEmpty("No products found.").WithIsland("/api/tables/products/products").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }
 
@@ -52,7 +53,7 @@ func (s *ProductDetailScreen) ScreenDescription() string     { return "View prod
 func (s *ProductDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Product Details")),
 		appResources["products"].Detail(ctx, s.id),
 	)
@@ -69,7 +70,7 @@ func (s *ProductsEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{
 func (s *ProductsEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *ProductsEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["products"].Form(ctx, s.id),
 	)
 }
@@ -128,10 +129,10 @@ func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	fwApp.Router().HandleFunc("GET", "/api/tables/home/products", func(w http.ResponseWriter, r *http.Request) {
-		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithEmpty("No products available yet.").WithIsland("/api/tables/home/products").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
+		appResources["products"].WithColumns("name", "price", "status").WithLimit(8).WithHeading("Featured Products").WithHeadingLevel(2).WithEmpty("No products available yet.").WithIsland("/api/tables/home/products").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
 	})
 	fwApp.Router().HandleFunc("GET", "/api/tables/products/products", func(w http.ResponseWriter, r *http.Request) {
-		appResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithEmpty("No products found.").WithIsland("/api/tables/products/products").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
+		appResources["products"].WithColumns("name", "price", "status", "stock").WithLimit(20).WithHeading("Product Catalog").WithHeadingLevel(2).WithEmpty("No products found.").WithIsland("/api/tables/products/products").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
 	})
 	site.Register("/", &HomeScreen{}, appLayout)
 }

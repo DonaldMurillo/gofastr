@@ -1242,6 +1242,17 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: code generation does not support endpoints: endpoints require Go handlers and must be wired in code (use app.Entity with EntityConfig.Endpoints)", decl.Name)
 		}
 	}
+	// renderClient emits move methods and their doc comments straight from
+	// these declarations, so its input must have passed the states boot check
+	// (the reserved-name and grammar refusals live there, one implementation
+	// in framework/entity): the Config() call above checks shape, not states,
+	// and a hand-edited declaration could carry a key or an enum value no
+	// emitter may render.
+	for _, decl := range decls {
+		if err := validateDeclarationStates(decl); err != nil {
+			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+	}
 	files := []generatedFile{
 		{name: "register.go", content: renderRegisterSeam()},
 		// Event helpers are entity-independent: one fixed seam file instead
@@ -1260,6 +1271,9 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 		files = append(files, generatedFile{name: entityFileName(decl.Name), content: content})
+	}
+	if err := refuseDuplicateDecls(files); err != nil {
+		return nil, err
 	}
 	return files, nil
 }

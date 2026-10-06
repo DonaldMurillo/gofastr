@@ -233,7 +233,7 @@ the spec, and agent tools from one declaration
 (`app.Entity` in Go, or an `entities:` entry in a blueprint).
 Declarations are optional: `core/` routes and hand-written screens run
 without them. A declaration grows the same way it starts, with fields,
-enums, relations, and soft delete:
+enums, relations, soft delete, and a state machine on the status:
 
 ```go
 app.Entity("posts", framework.EntityConfig{
@@ -244,6 +244,13 @@ app.Entity("posts", framework.EntityConfig{
         {Name: "status", Type: schema.Enum,
             Values: []string{"draft", "published"}, Default: "draft"},
         {Name: "author_id", Type: schema.Relation, To: "users"},
+    },
+    States: &framework.StatesConfig{
+        Field:   "status",
+        Initial: []string{"draft"},
+        Transitions: []framework.Transition{
+            {Key: "publish", From: []string{"draft"}, To: "published"},
+        },
     },
     Exposure: &framework.ExposureConfig{MCP: true},
 })
@@ -263,7 +270,8 @@ app.Entity("posts", framework.EntityConfig{
 | FK constraints   | BelongsTo relations emit `FOREIGN KEY` clauses; `AutoMigrate` topo-sorts tables |
 | Transactions     | `Create/Update/Delete` + hooks share one tx; `TxFromContext(ctx)` exposes it    |
 | OpenAPI 3        | `/openapi.json` plus a spec-viewer page at `/api/docs/`                         |
-| MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`       |
+| MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`, `posts_publish` |
+| State moves      | `POST /posts/{id}/transitions/publish`: the status changes only through a move, on every write path; one call per move in each client ([states](framework/docs/content/states.md)) |
 | Soft delete      | `deleted_at` column + automatic filter                                          |
 | Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
 | Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |

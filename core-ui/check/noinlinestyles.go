@@ -211,6 +211,8 @@ func valueLooksLikeString(e ast.Expr) bool {
 			return false
 		}
 		return true
+	case *ast.ParenExpr:
+		return valueLooksLikeString(v.X)
 	case *ast.BinaryExpr:
 		return valueLooksLikeString(v.X) || valueLooksLikeString(v.Y)
 	case *ast.CallExpr:

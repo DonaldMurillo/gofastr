@@ -614,6 +614,56 @@ func TestStateUpsertKeepsStoredStatus(t *testing.T) {
 	}
 }
 
+// Under WithStateOverride an upsert that omits the state field leaves the
+// stored state alone: only a guarded column the caller sent may enter DO
+// UPDATE SET, so the insert arm's Default never resets a stored state,
+// with or without a reason.
+func TestStateOverrideUpsertKeepsOmitted(t *testing.T) {
+	for _, reason := range []string{"", "ledger import"} {
+		ch, db := statesWorld(t)
+		ch.Entity.MarkAudited()
+		seedStateInvoice(t, db, "i1", "paid", "2026-01-02")
+
+		if _, err := ch.UpsertOne(WithStateOverride(context.Background(), reason), map[string]any{
+			"id": "i1", "number": "renamed",
+		}); err != nil {
+			t.Fatalf("reason %q: upsert without status: %v", reason, err)
+		}
+		status, paidOn := readStateInvoice(t, db, "i1")
+		if status != "paid" || paidOn.String != "2026-01-02" {
+			t.Fatalf("reason %q: stored status %q paid_on %q, want paid 2026-01-02", reason, status, paidOn.String)
+		}
+	}
+}
+
+// DO UPDATE SET names a guarded column only when the caller sent it under
+// an override that has a reason and an audit log. Without the reason gate a
+// row committed between the state check and the INSERT takes the insert
+// arm's initial value, which passes the create check reason-free.
+func TestStateOverrideUpsertSetGate(t *testing.T) {
+	ch, _ := statesWorld(t)
+	ch.Entity.MarkAudited()
+	reasoned := WithStateOverride(context.Background(), "repair")
+	if !ch.upsertSetsGuarded(reasoned, "status", true) {
+		t.Fatal("a sent status under a reasoned override must be settable")
+	}
+	for _, c := range []struct {
+		ctx  context.Context
+		sent bool
+	}{
+		{WithStateOverride(context.Background(), ""), true},
+		{reasoned, false},
+		{context.Background(), true},
+	} {
+		if ch.upsertSetsGuarded(c.ctx, "status", c.sent) {
+			t.Fatalf("status settable for sent=%v reason=%q", c.sent, StateOverrideReason(c.ctx))
+		}
+	}
+	if !ch.upsertSetsGuarded(context.Background(), "number", false) {
+		t.Fatal("an unguarded column is always settable")
+	}
+}
+
 // ============================================================================
 // TypedQuery.UpdateAll
 // ============================================================================

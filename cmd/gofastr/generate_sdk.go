@@ -513,11 +513,11 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		}
 		propOwners[jsResourceProp(ent)] = decl.Name
 		structOwners[ent.Struct] = decl.Name
-		// Transition keys land in identifier slots in both targets (Go
-		// method names, d.ts members) and in route literals; the entity
-		// boot check never ran over a hand-written declaration, so the
-		// emitter refuses the same grammar here.
-		if err := validateTransitionKeys(decl.States); err != nil {
+		// Transition keys land in identifier slots in both targets (Go method
+		// names, d.ts members) and in route literals; the entity boot check
+		// never ran over a hand-written declaration, so the generators re-run
+		// it here (one implementation, framework/entity's own).
+		if err := validateDeclarationStates(decl); err != nil {
 			return sdkSpec{}, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 		spec.Decls = append(spec.Decls, decl)
@@ -635,6 +635,9 @@ func sdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 // client.go is gofmt'd here so the zipped bytes match the written tree.
 func renderSDKGoFiles(spec sdkSpec) ([]generatedFile, error) {
 	clientSrc := "// " + spec.Header() + "\n// Regenerate: gofastr generate sdk\n\n" + renderClient(spec.Decls)
+	if err := refuseDuplicateDecls([]generatedFile{{name: "client.go", content: clientSrc}}); err != nil {
+		return nil, err
+	}
 	formatted, err := format.Source([]byte(clientSrc))
 	if err != nil {
 		return nil, fmt.Errorf("generated client.go does not parse: %w", err)

@@ -58,7 +58,11 @@ every tenant's rows in one table. It is `NULL` for writes with no tenant
 in context (single-tenant apps, system/async writes). The `tenant_id` and
 `reason` columns are added idempotently: an `audit_log` table created by
 an older binary gets each missing nullable column on the next
-`EnsureAuditTable`, with existing rows left untouched. See
+`EnsureAuditTable`, with existing rows left untouched. Replicas booting
+together on one old table all succeed: Postgres adds with `ADD COLUMN IF
+NOT EXISTS`, and on SQLite a failed add passes once the catalog shows the
+column. A database role that may not `ALTER` the table fails at boot; add
+`reason TEXT` with a migration role first. See
 [multi-tenant](multi-tenant.md) for the tenant-scoped query pattern.
 
 `restore` and `purge` come from the soft-delete operations
@@ -120,8 +124,9 @@ transaction, so:
 - `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
 - a state move (`RunTransition`) → `op = 'transition:<key>'`, both images
   in `diff`, inside the move's transaction
-- an update under `crud.WithStateOverride` → `op = 'state_override'`,
-  with the override's reason in the `reason` column
+- an update under `crud.WithStateOverride`, or an `UpsertOne` under it
+  that lands on an existing row → `op = 'state_override'`, with the
+  override's reason in the `reason` column
 
 `Before*` hooks are not audited; the audit only records committed
 changes (modulo transactional behaviour above).

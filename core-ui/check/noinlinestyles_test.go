@@ -200,3 +200,33 @@ func mark() { forbidden["style"] = true }
 		t.Errorf("a bool-valued style key is metadata, not an emission: %s", res.Error())
 	}
 }
+
+// Parentheses change no value: a wrapped string on either arm still
+// ships the attribute, and a wrapped bool is still metadata.
+func TestLintNoInlineStyles_SeesThroughParens(t *testing.T) {
+	dir := writeStyleFixture(t, `
+var forbidden = map[string]bool{}
+
+func mark() { forbidden["style"] = (true) }
+
+func frame(w string) map[string]string {
+	attrs := map[string]string{}
+	attrs["style"] = (computeStyle(w))
+	return attrs
+}
+
+func card(w string) map[string]string {
+	return map[string]string{"style": ("--x: " + w)}
+}
+
+func computeStyle(w string) string { return w }
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := res.Error()
+	if got := strings.Count(msg, "forbidden"); got != 2 {
+		t.Fatalf("want the index and composite arms to fire once each and the bool to stay quiet; got %d:\n%s", got, msg)
+	}
+}
