@@ -18,7 +18,7 @@ func (s *ProductNewScreen) ScreenDescription() string  { return "Create a new pr
 func (s *ProductNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ProductNewScreen) Render() render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Add New Product")),
 		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: "New Product"}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: "Create", ExtraAttrs: html.MergeAttrs(html.Attrs{"data-entity-form": "products", "data-entity-mode": "create"}, interactive.Post("/api/products").OnSuccess(interactive.ResetForm()).Attrs())}, ui.FormField(ui.FormFieldConfig{Label: "Name", For: "field-name", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "name"})

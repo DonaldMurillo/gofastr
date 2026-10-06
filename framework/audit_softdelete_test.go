@@ -156,3 +156,46 @@ func TestAudit_RestoreNestedWriteKeepsOwnOp(t *testing.T) {
 		}
 	})
 }
+
+// The same keying leaves one hole the entity check cannot close: an
+// AfterUpdate hook that updates the record being restored names the same
+// entity and id, so the override matched and the hook's ordinary update
+// was audited as a second "restore". Every write entry now starts clean:
+// the override answers only for the write that set it.
+func TestAudit_RestoreSameRecordUpdateIsUpdate(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app, posts := auditSoftDeleteApp(t, db)
+		post, err := posts.CreateOne(context.Background(), map[string]any{"title": "hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		postID, _ := post["id"].(string)
+		if err := posts.DeleteOne(context.Background(), postID); err != nil {
+			t.Fatal(err)
+		}
+
+		touched := false
+		app.HookRegistry("posts").RegisterHook(hook.AfterUpdate, func(ctx context.Context, _ any) error {
+			if touched {
+				return nil
+			}
+			touched = true
+			_, err := posts.UpdateOne(ctx, postID, map[string]any{"title": "touched"})
+			return err
+		})
+
+		if err := posts.RestoreOne(context.Background(), postID); err != nil {
+			t.Fatalf("RestoreOne: %v", err)
+		}
+
+		count := map[string]int{}
+		for _, r := range readAuditRows(t, db) {
+			if r["record_id"].(string) == postID {
+				count[r["op"].(string)]++
+			}
+		}
+		if count["restore"] != 1 || count["update"] != 1 {
+			t.Fatalf("audit ops for the post = %v, want one restore and one update", count)
+		}
+	})
+}
