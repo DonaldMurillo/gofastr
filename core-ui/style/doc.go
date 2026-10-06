@@ -86,7 +86,7 @@
 //	Spacing:     XS, SM, MD, LG, XL, XXL, XXXL  (pixels)
 //	Radii:       None, SM, MD, LG, XL, Full     (pixels, 0 allowed)
 //	Strokes:     Thin, Thick, Focus, FocusOffset (CSS lengths; optional,
-//	             unset strokes fall back to the kit's widths)
+//	             unset strokes emit the default widths)
 //	Fonts:       Body, Heading, Mono            (font-family stacks)
 //	Breakpoints: SM, MD, LG, XL, XXL            (pixels)
 //	Shadows:     None, XS, SM, MD, LG, XL       (box-shadow values)

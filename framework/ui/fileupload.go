@@ -220,10 +220,10 @@ func fileUploadCSS(_ style.Theme) string {
 }
 .fui-upload__zone:hover,
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
 }
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  background: color-mix(in oklab, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF) 90%);
+  background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
 .fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
   border-color: var(--color-danger, #DC2626);

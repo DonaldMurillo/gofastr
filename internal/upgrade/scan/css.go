@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -16,6 +17,75 @@ func (e *engine) cssFile(rel, src string) {
 	e.cssClasses(rel, toks)
 	e.cssProperties(rel, toks)
 	e.cssSelectors(rel, toks)
+	e.cssDeclarations(rel, toks)
+}
+
+// cssDeclarations matches a declaration by property name and value. A
+// declaration starts right after "{" or ";" with an ident and a ":";
+// its value runs to the next ";" or "}", whitespace collapsed and a
+// trailing !important dropped. A "{" before either end means the run
+// was a nested rule's selector (a:hover {), which is dropped.
+func (e *engine) cssDeclarations(rel string, toks []ownstyle.Token) {
+	for i, t := range toks {
+		if t.Type != ownstyle.TokenIdent {
+			continue
+		}
+		if p := prevSignificant(toks, i); p < 0 || (toks[p].Type != ownstyle.TokenOpenCurly && toks[p].Type != ownstyle.TokenSemicolon) {
+			continue
+		}
+		colon := nextSignificant(toks, i)
+		if colon < 0 || toks[colon].Type != ownstyle.TokenColon {
+			continue
+		}
+		value, ok := declarationValue(toks, colon+1)
+		if !ok {
+			continue
+		}
+		name := cssUnescape(t.Text)
+		for _, n := range e.cssNotes {
+			for _, d := range n.Find.CSS.Declarations {
+				if slices.Contains(d.Properties, name) && d.Value.MatchString(value) {
+					e.add(n, Hit{File: rel, Line: t.Line, Col: t.Col, Why: "css " + name + ": " + value})
+				}
+			}
+		}
+	}
+}
+
+// declarationValue reads a declaration value from toks[from:]: the
+// significant tokens up to ";" or "}", one space wherever whitespace or
+// a comment stood, with a trailing !important removed. ok is false when
+// a "{" comes first.
+func declarationValue(toks []ownstyle.Token, from int) (string, bool) {
+	var b strings.Builder
+	space := false
+	for _, t := range toks[from:] {
+		switch t.Type {
+		case ownstyle.TokenSemicolon, ownstyle.TokenCloseCurly:
+			return cutImportant(strings.TrimSpace(b.String())), true
+		case ownstyle.TokenOpenCurly:
+			return "", false
+		case ownstyle.TokenWhitespace, ownstyle.TokenComment:
+			space = b.Len() > 0
+			continue
+		}
+		if space {
+			b.WriteByte(' ')
+			space = false
+		}
+		b.WriteString(t.Text)
+	}
+	return "", false
+}
+
+// cutImportant strips a trailing "!important" (any case, any space
+// after the "!") from a collapsed value.
+func cutImportant(v string) string {
+	i := strings.LastIndexByte(v, '!')
+	if i < 0 || !strings.EqualFold(strings.TrimSpace(v[i+1:]), "important") {
+		return v
+	}
+	return strings.TrimSpace(v[:i])
 }
 
 // cssClasses matches ".name" class selectors (BEM forms count) in

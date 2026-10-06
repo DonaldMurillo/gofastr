@@ -285,7 +285,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] > :first-child:is(h1,h2,h3,h4) { margin-block-start: 0; }
 
 [data-cui-comp="ui-markdown"] a {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;

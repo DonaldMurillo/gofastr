@@ -337,7 +337,7 @@ func codeBlockCSS(_ style.Theme) string {
    same visual spot. Colours derive from the theme's status tokens
    through overridable knobs. */
 [data-cui-comp="ui-code-block"] .fui-code-block__line--highlight {
-  background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #4F46E5) 14%, transparent));
+  background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #18181B) 14%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
@@ -1322,7 +1322,7 @@ func skipLinkCSS(_ style.Theme) string {
   width: auto;
   height: auto;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #fff);
   border-radius: var(--radii-md, 8px);
   font-weight: var(--font-weight-semibold);
@@ -1432,7 +1432,7 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
   background: transparent;
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #fff);
 }`
 }
@@ -1453,7 +1453,7 @@ func backToTopCSS(_ style.Theme) string {
   width: var(--ui-back-to-top-size, 2.75rem);
   height: var(--ui-back-to-top-size, 2.75rem);
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #fff);
   box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));
   opacity: 0;
@@ -1545,7 +1545,7 @@ func backToTopCSS(_ style.Theme) string {
 }
 .fui-back-to-top--secondary:hover {
   background: var(--color-surface-soft, #f3f4f6);
-  border-color: var(--color-border-strong, #d1d5db);
+  border-color: var(--color-border-strong, #D4D4D8);
 }
 .fui-back-to-top--ghost {
   background: transparent;

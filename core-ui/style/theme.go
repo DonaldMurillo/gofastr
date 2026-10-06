@@ -316,9 +316,9 @@ func autofillTokens(v reflect.Value, path []string) {
 		}
 		return
 	}
-	// Stroke, LineHeight, LetterSpacing and Opacity are optional the
-	// same way: a fully-unset token stays zero so it is skipped and
-	// the kit's fallback value applies.
+	// Stroke, LineHeight, LetterSpacing and Opacity are optional too: a
+	// fully-unset token stays zero here, and the emitter and token map
+	// give it the default theme's value.
 	if isOptionalStringToken(v.Type()) {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&

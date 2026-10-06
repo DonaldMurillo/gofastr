@@ -12,7 +12,7 @@ import (
 // judges a value whole, so `border: 1px solid …` and
 // `transition: color 150ms ease` passed it, and a theme that set
 // --stroke-thin to 3px or --radii-full to 0 never reached those
-// declarations: 997 of them were found before the stroke tokens.
+// declarations.
 func TestBareThemeLiteralsAreReported(t *testing.T) {
 	for _, tc := range []struct {
 		css, want string

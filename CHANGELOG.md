@@ -16,9 +16,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   stacking layers `--z-*`, so a theme alone can redraw the kit: thick
   borders, square corners and hard shadows need no component CSS. A
   value is `"0"` or a non-negative px/rem/em length. The set is
-  optional: an unset stroke is not emitted and the kit draws its
-  default width, so a `theme.go` written before strokes existed keeps
-  its borders. Strokes reach `ApplyTokens`, `theme edit`'s write-back,
+  optional: an unset stroke emits the default width, so a `theme.go`
+  written before strokes existed keeps its borders and every
+  `var(--stroke-*)` reader resolves. Strokes reach `ApplyTokens` (an
+  unset stroke there takes its default, so it can be edited),
+  `theme edit`'s write-back,
   `.tokens.css` (`--stroke-*`, `syntax: "<length>"`), the plugin
   host's token bridge and the GOFASTR1807/1808 checks
   (`border-width`, `outline-width`, `outline-offset` and
@@ -78,9 +80,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`headless.CounterProps.Display`** renders a counter's value alone,
   with no step buttons, no group role and no live region, so the tick-up
   animation is not read out frame by frame. `ui.AnimatedCounter` sets
-  it: a number that animates in is read, not operated.
+  it: a number that animates in is read, not operated. Display with a
+  `Name` panics, since a figure is not a form field, and a value past
+  2^53-1, which a JavaScript number would round, renders unanimated.
 - **`resource.Config.HeadingLevel` and `WithHeadingLevel`** set the list
-  title's heading level, 2 to 5 (any other value renders 1). The
+  title's heading level, 1 to 5 (0 means 1; any other value panics at
+  render rather than print a second `<h1>`). The
   blueprint generator sets 2 on an entity list that a block ahead of it
   on the screen already gives an `<h1>` (a dashboard's page header), so
   the page keeps exactly one.

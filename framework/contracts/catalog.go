@@ -1253,8 +1253,7 @@ func renderingRules() []Rule {
 		Why: "GOFASTR1807 judges a value whole, so `border: 1px solid var(--color-border)` and `transition: color 150ms ease` " +
 			"passed it: no token value equals the shorthand, and a `padding: 6px` or `width: 18px` matches no token at all. " +
 			"A theme that sets --stroke-thin to 3px, every radius to 0, a tighter spacing scale or a larger control size " +
-			"then reaches none of those declarations, and the kit cannot be restyled by one theme block alone. Before the " +
-			"stroke tokens there were 997 such literals across 90 kit files.",
+			"then reaches none of those declarations, and the kit cannot be restyled by one theme block alone.",
 		Fix: "Read the token or knob with today's value as the fallback: `var(--stroke-thin, 1px) solid`, " +
 			"`border-radius: var(--radii-full, 9999px)`, `var(--duration-fast, 150ms)`, `z-index: var(--z-dropdown, 100)`, " +
 			"`padding: var(--spacing-md, 8px)`, `width: var(--ui-checkbox-box-size, 18px)`, `line-height: var(--leading-snug, 1.4)`, " +

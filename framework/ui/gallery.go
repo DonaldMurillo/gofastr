@@ -265,7 +265,7 @@ func galleryCSS(_ style.Theme) string {
    --ui-gallery-item-hover-translate / -active-translate over the
    shared --ui-press-* knobs. */
 [data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
   box-shadow: var(--ui-gallery-item-hover-shadow, var(--ui-press-hover-shadow, none));
   translate: var(--ui-gallery-item-hover-translate, var(--ui-press-hover-translate, none));
 }

@@ -320,7 +320,7 @@ func carouselCSS(_ style.Theme) string {
   transition: background var(--duration-fast, 150ms) ease, transform var(--duration-fast, 150ms) ease;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot[aria-current="true"]::after {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   transform: translate(-50%, -50%) scale(1.2);
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__dot:focus-visible {

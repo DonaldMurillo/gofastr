@@ -110,7 +110,7 @@ func sliderCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   min-inline-size: 3ch;
   text-align: end;
 }
