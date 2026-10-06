@@ -126,8 +126,9 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 
 // relationDisplay names a foreign key by its record's title: one read
 // of that one row through the related entity's own handler and read
-// gate. A gated or missing target renders the id the API would return,
-// never a label it refused.
+// gate. A target the caller may not read renders muted, never its label
+// and never the raw foreign key; a readable target the read did not
+// return renders the id.
 func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v any) render.HTML {
 	id := cell(v)
 	if id == "" {
@@ -135,11 +136,11 @@ func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v an
 	}
 	other, err := fb.b.ui.entityFor(f.To)
 	if err != nil {
-		return render.Text(id)
+		return muted()
 	}
 	om, err := fb.b.ui.meta(other.GetName())
-	if err != nil || !canRead(ctx, om.ch) {
-		return render.Text(id)
+	if err != nil || !canReadRecord(ctx, om.ch, id) {
+		return muted()
 	}
 	fields := []string{om.pk}
 	if tf := om.titleField(); tf != "" && tf != om.pk {
