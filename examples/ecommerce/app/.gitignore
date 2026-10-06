@@ -4,3 +4,9 @@
 # Local build artifacts (axe-coverage manifest, dev state). Regenerated
 # by go test / the gofastr CLI; never ship or commit them.
 .gofastr/
+# gofastr build output.
+bin/
+# The default SQLite database and the WAL/SHM files beside it.
+*.db
+*.db-shm
+*.db-wal
