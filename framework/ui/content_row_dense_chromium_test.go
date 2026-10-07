@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
@@ -68,29 +69,36 @@ func TestContentRowDenseOnFinePointer(t *testing.T) {
 		Row, Head, Button, Search, Overlay float64
 		CompactRow, CompactHead            float64
 	}
-	measure := func(url string, opts ...chromedp.Action) sizes {
+	// A CI runner's headless Chrome has no pointing device and answers
+	// pointer: none, so the mouse browser pins a fine pointer that hovers
+	// (Blink's pointer type 4 is fine, hover type 2 is hover).
+	mouseBrowser := []chromedptest.Option{chromedptest.AllocatorOptions(chromedp.Flag("blink-settings",
+		"primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2"))}
+	measure := func(url string, browser []chromedptest.Option, opts ...chromedp.Action) sizes {
 		t.Helper()
 		var got sizes
-		ctx := moduleTestCtxURL(t, url, opts...)
-		if err := chromedp.Run(ctx, chromedp.Evaluate(probe, &got)); err != nil {
+		ctx := chromedptest.Context(t, browser...)
+		acts := append(append([]chromedp.Action{}, opts...),
+			chromedp.Navigate(url), chromedp.WaitVisible(`#ready`, chromedp.ByID), chromedp.Evaluate(probe, &got))
+		if err := chromedp.Run(ctx, acts...); err != nil {
 			t.Fatalf("probe: %v", err)
 		}
 		return got
 	}
 	mouse := chromedp.EmulateViewport(1000, 600)
 
-	got := measure(dense.URL, mouse)
+	got := measure(dense.URL, mouseBrowser, mouse)
 	if !got.Fine {
 		t.Fatalf("the desktop context reports no fine pointer, so the check proves nothing: %+v", got)
 	}
 	if want := (sizes{Fine: true, Row: 44, Head: 36, Button: 36, Search: 36, Overlay: 36, CompactRow: 44, CompactHead: 36}); got != want {
 		t.Errorf("a dense page on a mouse = %+v, want rows 44 and 36px controls, outside the row too", got)
 	}
-	got = measure(plain.URL, mouse)
+	got = measure(plain.URL, mouseBrowser, mouse)
 	if want := (sizes{Fine: true, Row: 52, Head: 44, Button: 44, Search: 44, Overlay: 44, CompactRow: 44, CompactHead: 36}); got != want {
 		t.Errorf("a plain page = %+v, want rows 52 and 44px controls, and the compact frame at its own height", got)
 	}
-	got = measure(dense.URL, chromedp.EmulateViewport(390, 800), emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(5))
+	got = measure(dense.URL, nil, chromedp.EmulateViewport(390, 800), emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(5))
 	if got.Fine {
 		t.Fatalf("touch emulation still reports a fine pointer: %+v", got)
 	}

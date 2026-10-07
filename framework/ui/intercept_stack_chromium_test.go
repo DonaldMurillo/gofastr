@@ -72,6 +72,10 @@ type interceptStackBoxes struct {
 	Layers []interceptLayerBox
 }
 
+// drawerDefaultW is the bottom drawer's default width at viewport vw:
+// half the viewport, between 480px and 720px.
+func drawerDefaultW(vw float64) float64 { return min(max(vw/2, 480), 720) }
+
 // interceptStackBrowser serves interceptStackPage(as...) under the
 // overlay CSS and the theme, and opens it at 1280x800 with reduced
 // motion: the enter animation is a translate, so without it the boxes
@@ -134,8 +138,8 @@ func TestInterceptDrawersStackOverlapped(t *testing.T) {
 			t.Errorf("layer %d is %.0fpx wide, want one 32px step under layer %d's %.0fpx", i+1, l.W, i, got.Layers[i-1].W)
 		}
 	}
-	if got.Layers[0].W != 480 {
-		t.Errorf("the bottom drawer is %.0fpx wide, want the 480px default", got.Layers[0].W)
+	if want := drawerDefaultW(got.VW); got.Layers[0].W != want {
+		t.Errorf("the bottom drawer is %.0fpx wide, want the %.0fpx default", got.Layers[0].W, want)
 	}
 
 	// Pixels: sample each layer's visible strip (between its own inline
@@ -216,8 +220,8 @@ func TestInterceptMixedStackDocksEachLayer(t *testing.T) {
 		t.Fatalf("want 3 layers, got %d", len(got.Layers))
 	}
 	d := got.Layers[0]
-	if d.R != got.VW || d.T != 0 || d.B != got.VH || d.W != 480 {
-		t.Errorf("the drawer under the sheets is not docked full-height at the inline end, 480px wide: %+v", d)
+	if d.R != got.VW || d.T != 0 || d.B != got.VH || d.W != drawerDefaultW(got.VW) {
+		t.Errorf("the drawer under the sheets is not docked full-height at the inline end at the default width: %+v", d)
 	}
 	for i, l := range got.Layers[1:] {
 		if l.L != 0 || l.W != got.VW || l.B != got.VH || l.T <= 0 {
