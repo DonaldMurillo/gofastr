@@ -1586,8 +1586,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **A panic in a battery or plugin `Init`, a start, ready or seed hook
   logs its stack.** The error said to set `GOTRACEBACK=all`, which
   prints nothing for a recovered panic, so the panic could not be
-  traced. The stack now goes to the log at error level; the error and
-  the log still name only the panic value's type.
+  traced. The stack now goes to the App's logger (`WithLogger`) at
+  error level; the error and the log still name only the panic value's
+  type.
 - **`query.UpdateBuilder` binds its args in placeholder order.** The SQL
   numbers every SET placeholder before the WHERE's, but a `Set` called
   after a `Where` appended its value after the WHERE args, so the

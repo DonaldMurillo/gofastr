@@ -83,6 +83,18 @@ type BatteryManager struct {
 	// a concurrent App.Shutdown walks it in StopAll (the race the seed
 	// wiring test drives on purpose). Every reader takes a snapshot.
 	mu sync.RWMutex
+
+	// logger is the owning App's Logger, where a recovered start or stop
+	// panic logs its stack; nil outside an App.
+	logger func() *slog.Logger
+}
+
+// log is the owning App's logger, or nil (slog.Default) outside one.
+func (bm *BatteryManager) log() *slog.Logger {
+	if bm.logger == nil {
+		return nil
+	}
+	return bm.logger()
 }
 
 // NewBatteryManager creates a new BatteryManager.
@@ -249,7 +261,7 @@ func (bm *BatteryManager) InitAll(app *App) error {
 				app.modules.clearCurrent()
 			}
 		}
-		if err := callModuleSafe("battery", name, "init", func() error { return entry.battery.Init(app) }); err != nil {
+		if err := callModuleSafe(app.logger.Load(), "battery", name, "init", func() error { return entry.battery.Init(app) }); err != nil {
 			return err
 		}
 		entry.initialized = true
@@ -268,10 +280,10 @@ func (bm *BatteryManager) InitAll(app *App) error {
 // anywhere), so every drive site funnels through this one guard instead of
 // each manager carrying its own copy. It replaces the former
 // initBatterySafe, initPluginSafe, startBatterySafe, and stopBatterySafe.
-func callModuleSafe(kind, name, phase string, call func() error) (err error) {
+func callModuleSafe(log *slog.Logger, kind, name, phase string, call func() error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = recoveredPanic(fmt.Sprintf("%s %q %s", kind, name, phase), fmt.Sprintf("%T", v))
+			err = recoveredPanic(log, fmt.Sprintf("%s %q %s", kind, name, phase), fmt.Sprintf("%T", v))
 		}
 	}()
 	if e := call(); e != nil {
@@ -281,14 +293,18 @@ func callModuleSafe(kind, name, phase string, call func() error) (err error) {
 }
 
 // recoveredPanic turns a recovered panic into an error and logs the
-// panicking goroutine's stack. Call it from the deferred function that
+// panicking goroutine's stack to log, the App's logger (slog.Default
+// when there is none). Call it from the deferred function that
 // recovered, while the stack still holds the panicking frames:
 // GOTRACEBACK prints nothing for a panic that was recovered, so the
 // logged stack is the only record of where it happened. The caller
 // passes the value's type name (%T), never the value, so a
 // panic(config) leaks no secret and panicked-on bytes forge no log line.
-func recoveredPanic(what, panicType string) error {
-	slog.Error("framework: recovered panic", "in", what, "panic_type", panicType, "stack", string(debug.Stack()))
+func recoveredPanic(log *slog.Logger, what, panicType string) error {
+	if log == nil {
+		log = slog.Default()
+	}
+	log.Error("framework: recovered panic", "in", what, "panic_type", panicType, "stack", string(debug.Stack()))
 	return fmt.Errorf("%s panicked (panic type %s); its stack is logged", what, panicType)
 }
 
@@ -299,7 +315,7 @@ func recoveredPanic(what, panicType string) error {
 func (bm *BatteryManager) StartAll(ctx context.Context) error {
 	for _, name := range bm.resolved() {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := callModuleSafe("battery", name, "start", func() error { return lc.OnStart(ctx) }); err != nil {
+			if err := callModuleSafe(bm.log(), "battery", name, "start", func() error { return lc.OnStart(ctx) }); err != nil {
 				return err
 			}
 		}
@@ -317,7 +333,7 @@ func (bm *BatteryManager) StopAll(ctx context.Context) error {
 	var errs []error
 	for _, name := range slices.Backward(bm.resolved()) {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := callModuleSafe("battery", name, "stop", func() error { return lc.OnStop(ctx) }); err != nil {
+			if err := callModuleSafe(bm.log(), "battery", name, "stop", func() error { return lc.OnStop(ctx) }); err != nil {
 				errs = append(errs, err)
 			}
 		}

@@ -56,7 +56,7 @@ func (a *App) runSeedHooks() error {
 func (a *App) runSeedHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = recoveredPanic("seed hook", fmt.Sprintf("%T", v))
+			err = recoveredPanic(a.Logger(), "seed hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)

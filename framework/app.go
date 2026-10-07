@@ -1707,6 +1707,8 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// A recovered battery start or stop panic logs where the App logs.
+	a.Batteries.logger = a.Logger
 
 	for _, opt := range opts {
 		opt(a)
@@ -2871,7 +2873,7 @@ func (a *App) runStartHooks() error {
 func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = recoveredPanic("start hook", fmt.Sprintf("%T", v))
+			err = recoveredPanic(a.Logger(), "start hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)
@@ -3641,7 +3643,7 @@ func (a *App) Start(addr string) error {
 func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = recoveredPanic("ready hook", fmt.Sprintf("%T", v))
+			err = recoveredPanic(a.Logger(), "ready hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	fn(addr)
