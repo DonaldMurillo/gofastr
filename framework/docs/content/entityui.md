@@ -395,6 +395,12 @@ _ = list.RenderCtx(ctx)
   or bulk selection, and a one-line empty state when there are none.
   Sort and pager stay, keyed as ever.
 
+- **A preview** (`.Top(n)`) shows the first `n` rows in the view's own
+  order, with no pager, sort controls or row menu (each row still links
+  to its record), ignoring the URL's page and sort params. It is for a
+  list whose full form lives on another screen: the admin's Needs
+  attention panel draws `.Embedded().Top(5)` lists linking to theirs.
+
 - **The query box** (`.QueryBox()`) is where the reader types the
   filter: a labelled text field named the list's `filter` param,
   prefilled with the active filter text, helped by the entity's

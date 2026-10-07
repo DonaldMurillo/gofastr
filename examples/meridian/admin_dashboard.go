@@ -11,3 +11,10 @@ var adminMetrics = []admin.Metric{
 	{Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
 		Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount", Where: `status = "past_due"`, Format: "money"}},
 }
+
+// adminAttention is the Needs attention panel beside the recent
+// activity: the rows someone has to chase.
+var adminAttention = []admin.Watch{
+	{Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount", "due_on"}},
+	{Entity: "subscriptions", View: "past_due", Columns: []string{"customer_id", "plan_id", "mrr"}},
+}

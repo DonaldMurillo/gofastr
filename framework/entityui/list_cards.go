@@ -65,7 +65,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		var footer render.HTML
 		if s.deletedView {
 			footer = b.deletedActions(ctx, s, row)
-		} else if !noLinks {
+		} else if !noLinks && !b.top {
 			footer = b.rowActions(ctx, s, row, i)
 		}
 		cards = append(cards, ui.Card(ui.CardConfig{
@@ -75,7 +75,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		}, html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
 	}
 	out := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD}, cards...)
-	if known && pagesFor(total, s.limit) > 1 {
+	if known && pagesFor(total, s.limit) > 1 && !b.top {
 		out = render.Join(out, ui.Pagination(ui.PaginationConfig{
 			Pages:     pagesFor(total, s.limit),
 			Page:      page,

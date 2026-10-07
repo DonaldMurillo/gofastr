@@ -181,6 +181,20 @@ admin.New(admin.Config{
               Where: `status = "past_due"`, Format: "money"}},
   },
   ```
+- **Attention** is the Needs attention panel beside the recent activity.
+  Each `Watch` names an entity and one of its declared list views
+  (`View`); the panel previews the first `Rows` rows (5 by default, at
+  most 20) of every watched view that has any, with `Columns` replacing
+  the list's columns, a link to the full view, and no pager or sorting.
+  A view with no rows draws nothing; with none left the panel says
+  "Nothing needs attention." Boot fails on an unknown entity, view or
+  column.
+
+  ```go
+  Attention: []admin.Watch{
+      {Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount"}},
+  },
+  ```
 - Build failures are contained: an error, a panic or a nil component
   draws a generic notice in the shell and logs `app slot failed` with
   the slot name, never what the page read.

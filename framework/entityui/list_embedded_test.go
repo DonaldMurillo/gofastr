@@ -89,3 +89,34 @@ func TestPageListIsNotEmbedded(t *testing.T) {
 		}
 	}
 }
+
+// Top previews a list: its first rows, the full count in the heading,
+// and neither a pager nor a sort control, since the full list lives
+// elsewhere.
+func TestTopPreviewsFirstRows(t *testing.T) {
+	x := newInvoiceUI(t)
+	seedInvoiceRows(t, x, "g", 5, "1.00")
+	ctx := x.userCtx("/dash", "", "u1")
+	paged := listHTML(t, x.ui.List("invoices").Base("/inv").Key("w").Embedded().PageSize(2), ctx)
+	for _, want := range []string{"w_page=2", "w_sort=", "Actions for INV-1"} {
+		if !strings.Contains(paged, want) {
+			t.Fatalf("the control lacks %q:\n%s", want, paged)
+		}
+	}
+	top := listHTML(t, x.ui.List("invoices").Base("/inv").Key("w").Embedded().Top(2),
+		x.userCtx("/dash", "?w_page=3&w_sort=number&w_dir=desc", "u1"))
+	for _, gone := range []string{"w_page=", "w_sort=", "Actions for"} {
+		if strings.Contains(top, gone) {
+			t.Errorf("the preview drew %q:\n%s", gone, top)
+		}
+	}
+	if n := strings.Count(top, "<tr"); n != 3 {
+		t.Errorf("the preview drew %d table rows, want a header and 2:\n%s", n, top)
+	}
+	if !strings.Contains(top, `href="/inv/inv-1"`) {
+		t.Errorf("the preview ignored the URL's page or sort, or dropped the record link:\n%s", top)
+	}
+	if !strings.Contains(top, `<span class="fui-muted" data-cui-comp="ui-muted">6</span>`) {
+		t.Errorf("the heading lacks the full count:\n%s", top)
+	}
+}

@@ -114,7 +114,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		return "", fmt.Errorf("entityui: entity %q: As(%q) must be \"table\" or \"cards\"", m.name, b.as)
 	}
 
-	s.resolveSort()
+	s.resolveSort(b)
 	s.resolvePage(b)
 
 	where, err := s.predicate(b)

@@ -15,6 +15,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   outstanding"). Each polls on its own. Boot refuses a metric that
   could only draw "—"; `entityui.UI.CheckStat` is the check. Meridian
   shows MRR, active customers and past-due invoices.
+- **Admin Needs attention panel**: `admin.Config.Attention` lists
+  `admin.Watch` entries (an entity and one of its list views); the
+  dashboard previews the first rows of each watched view that has any,
+  beside the recent activity, linking to the full view. Underneath:
+  `ListBuilder.Top(n)`, a list preview with no pager, sorting or row
+  menu, and `--ui-page-header-subsection-title-size`, which sizes an h3
+  or deeper `PageHeader` title a step under an h2. Meridian watches its
+  past-due invoices and subscriptions.
 - **The admin sidebar counts each entity's records.** The figure ends
   the row, counted under the list's read gate, and re-renders on every
   client navigation, so a create shows on the next click.

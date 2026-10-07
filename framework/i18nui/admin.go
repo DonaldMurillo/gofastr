@@ -66,6 +66,11 @@ const (
 	KeyAdminNoActivity   Key = "ui.admin.noActivity"   // "No activity yet."
 	KeyAdminViewAll      Key = "ui.admin.viewAll"      // "View all"
 
+	// The Needs attention panel and one watched view's heading in it.
+	KeyAdminAttention      Key = "ui.admin.attention"      // "Needs attention"
+	KeyAdminAttentionClear Key = "ui.admin.attentionClear" // "Nothing needs attention."
+	KeyAdminAttentionList  Key = "ui.admin.attentionList"  // "{entity} · {view}"
+
 	// One recent-activity line and its parts: who did what to which
 	// record, and how long ago.
 	KeyAdminActivityLine      Key = "ui.admin.activityLine"      // "{actor} {verb} {record}"
@@ -245,6 +250,9 @@ var adminDefaults = map[Key]string{
 	KeyAdminRecent:            "Recent activity",
 	KeyAdminNoActivity:        "No activity yet.",
 	KeyAdminViewAll:           "View all",
+	KeyAdminAttention:         "Needs attention",
+	KeyAdminAttentionClear:    "Nothing needs attention.",
+	KeyAdminAttentionList:     "{entity} · {view}",
 	KeyAdminActivityLine:      "{actor} {verb} {record}",
 	KeyAdminVerbCreate:        "created",
 	KeyAdminVerbUpdate:        "updated",

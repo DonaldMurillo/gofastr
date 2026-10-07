@@ -36,6 +36,7 @@ type ListBuilder struct {
 	saved    bool
 	counts   bool
 	embedded bool
+	top      bool
 	actions  []render.HTML
 }
 
@@ -148,6 +149,12 @@ func (b *ListBuilder) TabCounts() *ListBuilder { b.counts = true; return b }
 // rows with no view tabs, search or filters, and a one-line empty
 // state when there are none. Sort and pager stay, keyed as ever.
 func (b *ListBuilder) Embedded() *ListBuilder { b.embedded = true; return b }
+
+// Top previews the list: its first n rows in the view's own order, with
+// no pager, no sort controls and no row menu (each row still links to
+// its record), and the URL's page and sort params ignored. It is for a list whose full form lives on another screen,
+// such as a dashboard panel linking to it.
+func (b *ListBuilder) Top(n int) *ListBuilder { b.pageSize = n; b.top = true; return b }
 
 // mayCreate reports whether the list offers New: on unless NoCreate or
 // NoLinks turned it off.

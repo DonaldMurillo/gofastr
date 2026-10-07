@@ -21,10 +21,10 @@ func ordersConfig() entity.EntityConfig {
 	}.WithTimestamps(false)
 }
 
-func ordersEnv(t *testing.T, metrics []Metric) *env {
+func ordersEnv(t *testing.T, cfg Config) *env {
 	t.Helper()
 	x := setup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
-		Config{Entities: []string{"orders"}, Metrics: metrics}, nil)
+		cfg, nil)
 	for _, row := range [][3]string{{"a", "10.50", "open"}, {"b", "20.00", "late"}, {"c", "5.25", "late"}, {"d", "99", "paid"}} {
 		if _, err := x.db.Exec(`INSERT INTO orders (id, ref, amount, status) VALUES (?, ?, ?, ?)`, row[0], row[0], row[1], row[2]); err != nil {
 			t.Fatal(err)
@@ -36,11 +36,11 @@ func ordersEnv(t *testing.T, metrics []Metric) *env {
 // The strip draws each figure, its detail and its link to the view,
 // above the entity cards, and polls each figure on its own route.
 func TestMetricsStripDrawsAndPolls(t *testing.T) {
-	x := ordersEnv(t, []Metric{
+	x := ordersEnv(t, Config{Entities: []string{"orders"}, Metrics: []Metric{
 		{Label: "Open orders", Entity: "orders", Where: `status = "open"`},
 		{Label: "Late", Entity: "orders", Where: `status = "late"`, View: "late", Icon: "clock",
 			Detail: &Metric{Label: "owed", Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money"}},
-	})
+	}})
 	dash := get(x.as(theAdmin), "/admin").Body.String()
 	for _, want := range []string{
 		"Open orders", "Late", "$25.25 owed",
@@ -85,6 +85,42 @@ func TestMetricsRefuseWhatCannotCompute(t *testing.T) {
 			Config{Entities: []string{"orders"}, Metrics: []Metric{m}}, nil)
 		if err == nil {
 			t.Errorf("%s: the metric was accepted", name)
+		}
+	}
+}
+
+// Needs attention previews each watched view that has rows, linking to
+// the full view, and says so when none has any.
+func TestAttentionPreviewsWatchedViews(t *testing.T) {
+	x := ordersEnv(t, Config{Entities: []string{"orders"}, Attention: []Watch{{Entity: "orders", View: "late", Columns: []string{"ref", "amount"}}}})
+	dash := get(x.as(theAdmin), "/admin").Body.String()
+	for _, want := range []string{"Needs attention", `href="/admin/entities/orders?view=late"`, `href="/admin/entities/orders/b"`, `href="/admin/entities/orders/c"`} {
+		if !strings.Contains(dash, want) {
+			t.Errorf("the dashboard lacks %q:\n%s", want, dash)
+		}
+	}
+	if strings.Contains(dash, `href="/admin/entities/orders/a"`) {
+		t.Errorf("the panel listed a row outside the view")
+	}
+	if _, err := x.db.Exec(`UPDATE orders SET status = 'paid'`); err != nil {
+		t.Fatal(err)
+	}
+	dash = get(x.as(theAdmin), "/admin").Body.String()
+	if !strings.Contains(dash, "Nothing needs attention.") || strings.Contains(dash, `href="/admin/entities/orders?view=late"`) {
+		t.Errorf("an empty watch still drew, or the panel did not say it is clear:\n%s", dash)
+	}
+	for name, w := range map[string]Watch{
+		"unexposed":      {Entity: "ghosts", View: "late"},
+		"no view":        {Entity: "orders"},
+		"unknown view":   {Entity: "orders", View: "overdue"},
+		"unknown column": {Entity: "orders", View: "late", Columns: []string{"nope"}},
+		"negative rows":  {Entity: "orders", View: "late", Rows: -1},
+		"too many rows":  {Entity: "orders", View: "late", Rows: 21},
+	} {
+		_, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
+			Config{Entities: []string{"orders"}, Attention: []Watch{w}}, nil)
+		if err == nil {
+			t.Errorf("%s: the watch was accepted", name)
 		}
 	}
 }

@@ -176,9 +176,9 @@ func (s *listState) sortable(col string) bool {
 
 // resolveSort reads ?sort= and ?dir=, refusing anything but a shown,
 // queryable column; with none, the view's declared Sort is the order.
-func (s *listState) resolveSort() {
+func (s *listState) resolveSort(b *ListBuilder) {
 	col := s.q.Get(s.p.sort)
-	if col != "" && s.sortable(col) {
+	if col != "" && s.sortable(col) && !b.top {
 		s.sortField = col
 		s.sortDesc = s.q.Get(s.p.dir) == "desc"
 		s.sorts = []filter.ParsedSort{{Field: col, Desc: s.sortDesc}}
@@ -207,7 +207,7 @@ func (s *listState) resolvePage(b *ListBuilder) {
 	}
 	s.limit = limit
 	page := 1
-	if n, err := strconv.Atoi(s.q.Get(s.p.page)); err == nil && n > 1 {
+	if n, err := strconv.Atoi(s.q.Get(s.p.page)); err == nil && n > 1 && !b.top {
 		page = n
 	}
 	s.page = page

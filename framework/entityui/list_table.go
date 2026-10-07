@@ -26,7 +26,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	}
 	for _, name := range s.columns {
 		f, _ := s.m.field(name)
-		col := ui.Column{Key: name, Header: s.m.label(ctx, name), Sortable: s.sortable(name)}
+		col := ui.Column{Key: name, Header: s.m.label(ctx, name), Sortable: s.sortable(name) && !b.top}
 		if numericField(f) {
 			col.Align = "end"
 		}
@@ -37,7 +37,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	// The trash view keeps the actions column — its rows carry the
 	// restore and purge forms — while drawing no record link.
 	noLinks := b.noLinks || s.deletedView
-	if !noLinks || s.deletedView {
+	if (!noLinks && !b.top) || s.deletedView {
 		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end", Fit: true})
 	}
 
@@ -61,7 +61,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		}
 		if s.deletedView {
 			cells["_a"] = b.deletedActions(ctx, s, row)
-		} else if !noLinks {
+		} else if !noLinks && !b.top {
 			cells["_a"] = b.rowActions(ctx, s, row, i)
 		}
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
@@ -80,7 +80,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		Empty:      b.emptyState(ctx, s),
 		Ctx:        ctx,
 	}
-	if known && pagesFor(total, s.limit) > 1 {
+	if known && pagesFor(total, s.limit) > 1 && !b.top {
 		dt.Pagination = &ui.PaginationConfig{
 			Pages:     pagesFor(total, s.limit),
 			Page:      page,

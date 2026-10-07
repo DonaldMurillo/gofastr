@@ -170,6 +170,10 @@ type Config struct {
 	// in order: counts and sums over exposed entities.
 	Metrics []Metric
 
+	// Attention are the list views the dashboard's Needs attention panel
+	// previews, beside the recent activity.
+	Attention []Watch
+
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
@@ -375,6 +379,11 @@ func (b *Battery) checkConfig() error {
 	for i, m := range b.cfg.Metrics {
 		if err := b.checkMetric(m, ""); err != nil {
 			return fmt.Errorf("admin: Metrics[%d]: %w", i, err)
+		}
+	}
+	for i, w := range b.cfg.Attention {
+		if err := b.checkWatch(w); err != nil {
+			return fmt.Errorf("admin: Attention[%d] %w", i, err)
 		}
 	}
 	for i, l := range b.cfg.Links {

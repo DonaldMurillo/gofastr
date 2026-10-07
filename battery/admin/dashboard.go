@@ -47,6 +47,9 @@ func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) rend
 	if b.db != nil {
 		ops = append(ops, b.recentCard(ctx))
 	}
+	if len(b.cfg.Attention) > 0 {
+		ops = append(ops, b.attentionCard(ctx))
+	}
 	if len(ops) > 0 {
 		parts = append(parts, ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapLG}, ops...))
 	}
