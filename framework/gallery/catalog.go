@@ -411,6 +411,9 @@ var Catalog = []Entry{
 	{"sidebardrawertrigger", "SidebarDrawerTrigger", "Navigation", "The sidebar's drawer toggle on its own — the relocated hamburger a header row carries at narrow widths (the component hides itself at >= md, exactly as in a real shell).", func() render.HTML {
 		return ui.SidebarDrawerTrigger(SidebarShowcaseConfig)
 	}},
+	{"sidebarbrand", "SidebarBrand", "Navigation", "The product mark at a sidebar's head: a logo tile (or the name's initial), the name, and a muted line under it.", func() render.HTML {
+		return ui.SidebarBrand(ui.SidebarBrandConfig{Name: "Meridian", Sub: "Back office"})
+	}},
 	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
 		// The items are explicit and the headings they name render in
 		// the same demo, so every link resolves and the no-script
@@ -803,6 +806,16 @@ var Catalog = []Entry{
 		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See the DataTable docs for the full island-RPC wiring pattern."),
 		)
+	}},
+	{"selection", "Selection", "Data", "A bar that acts on the checked rows below it; it shows only while a row is checked, with no script.", func() render.HTML {
+		row := func(id, label string) render.HTML {
+			return ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "demo-sel-" + id, Value: id, Label: label, ExtraAttrs: html.Attrs{"form": "demo-selection-bar"}})
+		}
+		return ui.Selection(ui.SelectionConfig{
+			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "#", Method: "POST", HideSubmit: true},
+				ui.Button(ui.ButtonConfig{Label: "Archive selected", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, Type: "button"})),
+			Body: ui.Stack(ui.StackConfig{}, row("a", "INV-1041"), row("b", "INV-1042"), row("c", "INV-1043")),
+		})
 	}},
 	{"jsonviewer", "JSONViewer", "Data", "Pretty-printed expandable JSON.", func() render.HTML {
 		return ui.JSONViewer(ui.JSONViewerConfig{
@@ -1459,6 +1472,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel: same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary}), "site-demo-drawer")
+	}},
+	{"drawerbar", "DrawerBar", "Overlays", "The bar across the top of an intercepted drawer: close, the layer's path in mono, copy link, then actions.", func() render.HTML {
+		return ui.DrawerBar(ui.DrawerBarConfig{
+			Path:    "/admin/entities/invoices/inv-1042",
+			CopyURL: "https://example.com/admin/entities/invoices/inv-1042",
+			Actions: []render.HTML{ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeSmall})},
+		})
 	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
