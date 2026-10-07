@@ -26,7 +26,12 @@ const (
 
 	// The query box: the filter typed by hand.
 	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
-	KeyEntityQueryBoxHelp  Key = "ui.entity.queryBoxHelp"  // "Filter by these fields: {fields}"
+	// The help is three sentences: how to write a filter, an example
+	// from the entity's own fields (left out when none fits) and the
+	// fields it may name.
+	KeyEntityQueryBoxHelp    Key = "ui.entity.queryBoxHelp"    // "Compare a field with =, !=, <, >, <=, >=, contains or in [...]. …"
+	KeyEntityQueryBoxExample Key = "ui.entity.queryBoxExample" // "Example: {example}"
+	KeyEntityQueryBoxFields  Key = "ui.entity.queryBoxFields"  // "Fields: {fields}"
 
 	// The columns menu.
 	KeyEntityColumns Key = "ui.entity.columns" // "Columns"
@@ -80,8 +85,10 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidTitle: "Filter not applied",
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
-	KeyEntityQueryBoxField: "Filter expression",
-	KeyEntityQueryBoxHelp:  "Filter by these fields: {fields}",
+	KeyEntityQueryBoxField:   "Filter expression",
+	KeyEntityQueryBoxHelp:    "Compare a field with =, !=, <, >, <=, >=, contains or in [...]. Quote text, and join with and, or and parentheses.",
+	KeyEntityQueryBoxExample: "Example: {example}",
+	KeyEntityQueryBoxFields:  "Fields: {fields}",
 
 	KeyEntityColumns: "Columns",
 

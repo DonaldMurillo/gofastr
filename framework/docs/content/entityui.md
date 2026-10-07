@@ -450,9 +450,15 @@ _ = list.RenderCtx(ctx)
 
 - **The query box** (`.QueryBox()`) is where the reader types the
   filter: a labelled text field named the list's `filter` param,
-  prefilled with the active filter text, helped by the entity's
-  queryable field names, inside the Filters dropdown of the toolbar
-  form, which round-trips the state it does not own. The server parses the text with the same parser the
+  prefilled with the active filter text, inside the Filters dropdown of
+  the toolbar form, which round-trips the state it does not own. Its
+  help says how to write a filter (`=`, `!=`, `<`, `>`, `<=`, `>=`,
+  `contains`, `in [...]`, quoted text, `and`, `or` and parentheses),
+  gives an example built from the entity's own fields, also the
+  placeholder (`status = "open" and amount > 100`: an enum against its
+  first value, a number against 100, a text field's `contains`, a
+  boolean's `true`; never the id, a relation or a date), and names the
+  queryable fields. The server parses the text with the same parser the
   chips use, so both stay in sync; text that fails to parse, or names a
   Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
   warning and lists without it — never an error page, never SQL.

@@ -1,10 +1,13 @@
 package entityui
 
 import (
+	"html"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -49,6 +52,68 @@ func TestQueryBoxFiltersAndRoundTrips(t *testing.T) {
 	// The chip still reads the same param, so both stay in sync.
 	if !strings.Contains(filtered, `status = &quot;open&quot;`) {
 		t.Errorf("the filter chip is not in sync with the box:\n%s", filtered)
+	}
+}
+
+// The box says how to write a filter: the operators, how to join and
+// quote, and an example built from the entity's own fields that the
+// parser accepts as written.
+func TestQueryBoxExplainsSyntax(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").QueryBox()
+	page := html.UnescapeString(listHTML(t, b, x.ctx("/orders", "")))
+	const example = `status = "open" and amount > 100`
+	for _, want := range []string{
+		`placeholder="` + example + `"`,
+		"Example: " + example,
+		"!=", ">=", "contains", "in [", "parentheses",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the query box help is missing %q:\n%s", want, page)
+		}
+	}
+	got := listHTML(t, b, x.ctx("/orders", "?filter="+url.QueryEscape(example)))
+	if strings.Contains(got, "Filter not applied") {
+		t.Errorf("the example does not parse:\n%s", got)
+	}
+
+	// An entity with text fields only gets a contains example that
+	// parses too, never one naming the id.
+	notes := newTestUI(t,
+		map[string]entity.EntityConfig{"notes": {
+			Fields:   fields(schema.Field{Name: "id", Type: schema.String}, schema.Field{Name: "title", Type: schema.String}),
+			Exposure: &entity.ExposureConfig{Public: true},
+		}},
+		map[string][]map[string]any{"notes": {{"id": "n1", "title": "a note"}}},
+	)
+	nb := notes.ui.List("notes").QueryBox()
+	page = html.UnescapeString(listHTML(t, nb, notes.ctx("/notes", "")))
+	const plain = `title contains "a"`
+	if !strings.Contains(page, `placeholder="`+plain+`"`) {
+		t.Errorf("want the %q example:\n%s", plain, page)
+	}
+	got = listHTML(t, nb, notes.ctx("/notes", "?filter="+url.QueryEscape(plain)))
+	if strings.Contains(got, "Filter not applied") || !strings.Contains(got, "a note") {
+		t.Errorf("the text-only example does not parse:\n%s", got)
+	}
+}
+
+// An enum whose first value the quotes would have to escape is left out
+// of the example, as are a relation and a date; nothing left, no example.
+func TestQueryExampleSkipsUnquotable(t *testing.T) {
+	got := queryExample([]schema.Field{
+		{Name: "kind", Type: schema.Enum, Values: []string{`say "hi"`, "plain"}},
+		{Name: "owner_id", Type: schema.Relation},
+		{Name: "active", Type: schema.Bool},
+	})
+	if got != "active = true" {
+		t.Errorf("queryExample = %q, want %q", got, "active = true")
+	}
+	if got := queryExample([]schema.Field{{Name: "due", Type: schema.Date}}); got != "" {
+		t.Errorf("a date-only entity got the example %q", got)
 	}
 }
 
