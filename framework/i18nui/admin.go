@@ -139,6 +139,7 @@ const (
 	KeyAdminRevokeLabel       Key = "ui.admin.revokeLabel"       // "Revoke {permission} from {role}"
 	KeyAdminUndeclared        Key = "ui.admin.undeclared"        // "Not declared"
 	KeyAdminSaveRoles         Key = "ui.admin.saveRoles"         // "Save roles"
+	KeyAdminEditRoles         Key = "ui.admin.editRoles"         // "Edit roles"
 	KeyAdminGranted           Key = "ui.admin.granted"           // "Permission granted."
 	KeyAdminRevoked           Key = "ui.admin.revoked"           // "Permission revoked."
 	KeyAdminRolesSaved        Key = "ui.admin.rolesSaved"        // "Roles saved."
@@ -278,6 +279,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminRevokeLabel:       "Revoke {permission} from {role}",
 	KeyAdminUndeclared:        "Not declared",
 	KeyAdminSaveRoles:         "Save roles",
+	KeyAdminEditRoles:         "Edit roles",
 	KeyAdminGranted:           "Permission granted.",
 	KeyAdminRevoked:           "Permission revoked.",
 	KeyAdminRolesSaved:        "Roles saved.",

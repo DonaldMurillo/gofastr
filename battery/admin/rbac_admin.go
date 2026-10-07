@@ -153,9 +153,10 @@ func permissionInput(ctx context.Context, caps []access.Permission, suffix strin
 // usersPageSize is the User roles page's default page of users.
 const usersPageSize = 50
 
-// renderUsers draws the User roles page: each user, the roles they hold
-// (with their origin when EffectiveRoles resolves more), and a form
-// that sets their direct roles.
+// renderUsers draws the User roles page: each user and the roles they
+// hold (with their origin when EffectiveRoles resolves more), and at
+// the row's end an Edit roles dropdown whose form sets their direct
+// roles. The roles show once; the form lives behind the row's action.
 func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.HTML {
 	r := appui.RequestFromContext(ctx)
 	opts := listUsersOpts(r)
@@ -180,7 +181,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	cols := []ui.Column{
 		{Key: "user", Header: i18nui.T(ctx, i18nui.KeyAdminColUser)},
 		{Key: "roles", Header: i18nui.T(ctx, i18nui.KeyAdminColRoles)},
-		{Key: "set", Header: i18nui.T(ctx, i18nui.KeyAdminSaveRoles)},
+		{Key: "set", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end"},
 	}
 	rows := make([]ui.Row, len(users))
 	for i, u := range users {
@@ -200,11 +201,17 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		rows[i] = ui.Row{ID: u.GetID(), Cells: map[string]render.HTML{
 			"user":  render.Text(u.GetEmail()),
 			"roles": heldCell,
-			"set": b.opForm(ctx, opSpec{
-				path: b.cfg.PathPrefix + "/rbac/_assign", page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminSaveRoles), variant: ui.ButtonSecondary, small: true,
-				fields: map[string]string{"user_id": u.GetID()},
-				body:   []render.HTML{rolesInput(ctx, u.GetID(), direct, known)},
+			"set": ui.Dropdown(ui.DropdownConfig{
+				ID:    "admin-roles-edit-" + u.GetID(),
+				Label: i18nui.T(ctx, i18nui.KeyAdminEditRoles),
+				Align: ui.DropdownEnd,
+				Content: b.opForm(ctx, opSpec{
+					path: b.cfg.PathPrefix + "/rbac/_assign", page: page,
+					label: i18nui.T(ctx, i18nui.KeyAdminSaveRoles), variant: ui.ButtonPrimary,
+					fields:  map[string]string{"user_id": u.GetID()},
+					body:    []render.HTML{rolesInput(ctx, u.GetID(), direct, known)},
+					stacked: true,
+				}),
 			}),
 		}}
 	}

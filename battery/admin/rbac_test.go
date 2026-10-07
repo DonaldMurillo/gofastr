@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -200,6 +201,12 @@ func TestUsersPageListsRoles(t *testing.T) {
 	}
 	if len(asked) == 0 {
 		t.Error("EffectiveRoles was never asked")
+	}
+	// The form sits behind the row's Edit roles dropdown, so the held
+	// roles show once.
+	edit := regexp.MustCompile(`<details[^>]*id="admin-roles-edit-[^"]+"[^>]*>\s*<summary[^>]*>[\s\S]*?Edit roles[\s\S]*?action="/admin/rbac/_assign"`)
+	if !edit.MatchString(body) {
+		t.Error("the roles form is not inside an Edit roles dropdown")
 	}
 	plain := newRBACEnv(t, Config{})
 	if body := get(plain.as(theAdmin), "/admin/rbac/users").Body.String(); strings.Contains(body, "(direct)") {

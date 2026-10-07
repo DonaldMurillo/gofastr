@@ -335,6 +335,8 @@ app.RegisterBattery(admin.New(admin.Config{
 When the policy declares capabilities, the grant form offers them as a
 select and marks granted permissions the app does not declare. Under
 `StrictCapabilities` a grant of an undeclared permission is refused.
+The User roles page lists each user's roles once, as tags; the row's
+Edit roles dropdown holds the form that replaces them.
 
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`). A caller may grant or revoke only a permission its

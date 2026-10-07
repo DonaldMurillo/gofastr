@@ -250,6 +250,7 @@ type opSpec struct {
 	confirm    string
 	fields     map[string]string // hidden fields, sorted by name
 	body       []render.HTML     // visible fields before the button
+	stacked    bool              // fields over the button, for a panel
 }
 
 // opForm draws an opSpec.
@@ -275,11 +276,15 @@ func (b *Battery) opForm(ctx context.Context, op opSpec) render.HTML {
 		btn.Size = ui.ButtonSizeSmall
 	}
 	children = append(children, ui.Button(btn))
+	layout := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd}, children...)
+	if op.stacked {
+		layout = ui.Stack(ui.StackConfig{Gap: ui.GapMD}, children...)
+	}
 	return ui.Form(ui.FormConfig{
 		Action:     op.path,
 		Method:     "POST",
 		Ctx:        ctx,
 		HideSubmit: true,
 		ExtraAttrs: rpc.Attrs(),
-	}, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd}, children...))
+	}, layout)
 }
