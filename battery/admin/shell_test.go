@@ -40,6 +40,7 @@ func TestShellFrame(t *testing.T) {
 	for _, want := range []string{
 		"Acme", `href="/admin/entities/posts"`, `href="/admin/queue"`, `href="/admin/audit"`,
 		`aria-current="page"`, `href="/admin/search"`, "/logout",
+		"fui-content-row--dense",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the shell lacks %q", want)

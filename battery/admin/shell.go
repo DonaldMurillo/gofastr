@@ -193,7 +193,7 @@ func (b *Battery) layout() *appui.Layout {
 				NavLabel:     i18nui.T(ctx, i18nui.KeyAdminSidebar),
 				Toolbar:      toolbar,
 				ToolbarLabel: i18nui.T(ctx, i18nui.KeyAdminToolbar),
-				Sticky:       true, PhoneNavFlush: true,
+				Sticky:       true, PhoneNavFlush: true, Dense: true,
 			}, l.Primary()))
 	})
 }

@@ -165,7 +165,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   desktop.** On a fine pointer the frame takes the compact density:
   36px controls, 44px table rows and a smaller gap, with the
   `--spacing-touch-target` token at 36px so every control sized from it
-  follows. A touch screen keeps 44px targets.
+  follows. A touch screen keeps 44px targets. The admin shell sets it.
   A DataTable's rows, header, select boxes and sort links, pagination
   and the theme toggle now read the density height instead of the
   fixed touch target.
