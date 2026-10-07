@@ -164,6 +164,7 @@
 //	Themed:               wraps a subtree in a registered theme override
 //	ThemePicker:          whole-page switch between registered theme overrides
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
+//	Thumbnail:            square lazily loaded image preview (sm/md/lg)
 //	Timeline:             vertical event rail
 //	TimePicker:           styled native <input type=time>
 //	ToggleAction:         three-state commit/untoggle button with mutex groups

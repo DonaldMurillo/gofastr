@@ -791,9 +791,11 @@ func statCardCSS(_ style.Theme) string {
 [data-cui-comp="ui-stat-card"] .fui-stat-card__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--spacing-md, 8px);
-  margin-block-end: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__head > .fui-stat-card__label {
+  flex: 1;
+  min-inline-size: 0;
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__icon {
   display: inline-flex;

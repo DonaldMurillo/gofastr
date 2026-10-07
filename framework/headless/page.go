@@ -318,18 +318,6 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 			trendAttrs["class"] = cls
 		}
 	}
-	var kids []render.HTML
-	if p.Icon != "" || p.Action != "" {
-		// The head holds the caller's icon and action, so neither it nor
-		// the icon's span is marked internal: content passed in stays in
-		// its owner's reach.
-		var head []render.HTML
-		if p.Icon != "" {
-			head = append(head, b.El("span", PartIcon, html.Attrs{"aria-hidden": "true"}, p.Icon))
-		}
-		head = append(head, p.Action)
-		kids = append(kids, b.El("div", PartHeader, nil, head...))
-	}
 	label := render.Text(p.Label)
 	if p.Href != "" {
 		href := urlsafe.CleanAnchor(p.Href)
@@ -338,10 +326,23 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 		}
 		label = b.El("a", PartStatLink, html.Attrs{"href": href}, label)
 	}
-	kids = append(kids,
-		b.El("p", PartLabel, Internal(nil), label),
-		b.El("p", PartStatValue, Internal(nil), render.Text(p.Value)),
-	)
+	labelEl := b.El("p", PartLabel, Internal(nil), label)
+	var kids []render.HTML
+	if p.Icon != "" || p.Action != "" {
+		// The head is one row: icon, label, action, in reading order. It
+		// holds the caller's icon and action, so neither it nor the
+		// icon's span is marked internal: content passed in stays in its
+		// owner's reach.
+		var head []render.HTML
+		if p.Icon != "" {
+			head = append(head, b.El("span", PartIcon, html.Attrs{"aria-hidden": "true"}, p.Icon))
+		}
+		head = append(head, labelEl, p.Action)
+		kids = append(kids, b.El("div", PartHeader, nil, head...))
+	} else {
+		kids = append(kids, labelEl)
+	}
+	kids = append(kids, b.El("p", PartStatValue, Internal(nil), render.Text(p.Value)))
 	if p.Trend != "" {
 		kids = append(kids, b.El("p", PartStatTrend, Internal(trendAttrs), render.Text(p.Trend)))
 	}

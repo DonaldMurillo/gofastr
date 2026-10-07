@@ -731,6 +731,7 @@ var kitComponents = []kitComponent{
 	{name: "TerminalOut", fn: TerminalOut},
 	{name: "TextArea", fn: TextArea},
 	{name: "TextField", fn: TextField},
+	{name: "Thumbnail", fn: Thumbnail},
 	{name: "ThemePicker", fn: ThemePicker, prep: prepSet("Themes", []ThemeChoice{{Label: "Alt", Theme: style.RegisterThemeOverride(theme.Default())}})},
 	// The pill: it renders the kit's own option buttons, which the
 	// default icon variant never reaches (its two glyphs are constants

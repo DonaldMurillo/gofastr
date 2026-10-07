@@ -564,11 +564,15 @@ func TestStatCardLinksLabelAndHoldsAction(t *testing.T) {
 	mustContain(t, h, `<a class="fui-stat-card__link" href="/admin/entities/invoices">Invoices</a>`)
 	mustContain(t, h, `<span aria-hidden="true" class="fui-stat-card__icon">`)
 	mustContain(t, h, `href="/admin/entities/invoices/create"`)
-	// The head (icon, action) comes before the label, so the action is
-	// never inside the label's link.
-	if strings.Index(string(h), "/create") > strings.Index(string(h), `fui-stat-card__link`) {
-		t.Fatalf("the action must sit in the head, before the label:\n%s", h)
+	// The head is one row, icon then label then action, and the label's
+	// paragraph closes before the action opens: the action is never
+	// inside the label's link.
+	s := string(h)
+	head, label, action := strings.Index(s, `fui-stat-card__head`), strings.Index(s, `Invoices</a></p>`), strings.Index(s, "/create")
+	if head < 0 || head > label || label > action {
+		t.Fatalf("want head, then the closed label, then the action:\n%s", h)
 	}
+	mustContain(t, h, `New</a></div><p class="fui-stat-card__value"`)
 }
 
 func TestStatCardRefusesUnsafeHref(t *testing.T) {

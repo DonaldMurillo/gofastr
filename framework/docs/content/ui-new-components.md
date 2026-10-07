@@ -61,6 +61,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **shortcuthint**: `framework/ui.ShortcutHint`, OS-aware chord chips (⌘ on Mac / Ctrl elsewhere)
 - **avatar**: `framework/ui.Avatar`, circular avatar with image → initials fallback (sm/md/lg/xl)
 - **avatargroup**: `framework/ui.AvatarGroup`, readable 10% overlap, compact corner presence dots, and an adaptive-surface overflow chip
+- **thumbnail**: `framework/ui.Thumbnail`, a square lazily loaded image preview (sm 2rem / md 4rem / lg 8rem, `object-fit: cover`); a `Src` the image URL policy refuses draws nothing, so the caller draws its own empty mark
 - **icon**: `framework/ui.Icon`, inline-SVG primitive backed by `RegisterIcon`; built-ins cover chevrons, close, menu, more, search, the status family and a navigation set (home, user, users, file, receipt, card, box, layers, activity, shield, key, lock, sliders, chart, calendar, clock, plus, list, grid, database, inbox, folder, tag, mail, bell, globe, repeat, cpu, star), `currentColor` stroke, `AriaLabel` flips to `role="img"`
 - **link**: `framework/ui.Link`, typed anchor with external-link affordances + unsafe-scheme href sanitizing
 - **muted**: `framework/ui.Muted`, subdued inline `<span>` for secondary text

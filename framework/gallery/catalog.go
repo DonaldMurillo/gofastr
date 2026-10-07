@@ -864,6 +864,17 @@ const page = await api.posts.list({ limit: 25 });`},
 			Max:     4,
 		})
 	}},
+	{"thumbnail", "Thumbnail", "Data", "Square image preview for a table cell or a record's photo field.", func() render.HTML {
+		src, err := demoMockup(160, 160).PNG().DataURL()
+		if err != nil {
+			return html.Div(html.DivConfig{Class: "fact"}, render.Text("Demo image could not be encoded."))
+		}
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Small", Size: ui.ThumbnailSM}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Medium"}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
+		)
+	}},
 	{"statcard", "StatCard", "Data", "Metric tile with trend.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			ui.StatCard(ui.StatCardConfig{Label: "Active users", Value: "12,483", Trend: "+8.2%", Direction: ui.TrendUp}),

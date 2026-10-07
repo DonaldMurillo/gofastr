@@ -772,6 +772,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   embed scopes, the session gate, a move's own `Permission` and the state
   override permission still apply. Set it only from server code, never
   from request data.
+- **`ui.Thumbnail`** draws a square, lazily loaded image preview in three
+  sizes (`ThumbnailSM`, the default `ThumbnailMD`, `ThumbnailLG`). A
+  source `urlsafe.ImageSource` refuses draws nothing.
+- **`ui.StatCardConfig.Href`, `.Icon` and `.Action`** link a stat's label
+  to what it counts, draw a registered icon in the card's head and hold
+  a control there, outside the link.
+- **A navigation icon set in `ui.Icon`**: `home`, `user`, `users`, `file`,
+  `receipt`, `card`, `box`, `layers`, `activity`, `shield`, `key`, `lock`,
+  `sliders`, `chart`, `calendar`, `clock`, `plus`, `list`, `grid`,
+  `database`, `inbox`, `folder`, `tag`, `mail`, `bell`, `globe`, `repeat`,
+  `cpu` and `star`, for an entity's `Display.Nav.Icon`, sidebar links and
+  dashboard cards.
 
 ### Changed
 
