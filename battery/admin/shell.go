@@ -250,6 +250,7 @@ func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
 		Items:                 items,
 		CurrentPath:           path,
 		Variant:               ui.SidebarCollapsible,
+		SectionLabels:         true,
 		DrawerName:            navDrawer,
 		DrawerTitle:           b.title(ctx),
 		Prepend:               brand{b: b},
@@ -353,14 +354,11 @@ type brand struct {
 }
 
 func (s brand) RenderCtx(ctx context.Context) render.HTML {
-	title := s.b.title(ctx)
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
-		ui.Avatar(ui.AvatarConfig{Name: title, Src: s.b.cfg.Logo, Size: ui.AvatarSm}),
-		ui.Stack(ui.StackConfig{Gap: ui.GapNone},
-			render.Text(title),
-			ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminBrandSub))),
-		),
-	)
+	return ui.SidebarBrand(ui.SidebarBrandConfig{
+		Name: s.b.title(ctx),
+		Sub:  i18nui.T(ctx, i18nui.KeyAdminBrandSub),
+		Logo: s.b.cfg.Logo,
+	})
 }
 
 // ----- toolbar -----------------------------------------------------------------
@@ -387,11 +385,10 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 			ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out})
 	}
 	return ui.Menu(ui.MenuConfig{
-		Label:       i18nui.T(ctx, i18nui.KeyAdminAccount),
-		TriggerHTML: ui.Avatar(ui.AvatarConfig{Name: name, Size: ui.AvatarSm}),
-		IconOnly:    true,
-		Items:       items,
-		Position:    ui.MenuBottomEnd,
+		Label:    i18nui.T(ctx, i18nui.KeyAdminAccount),
+		Avatar:   &ui.AvatarConfig{Name: name},
+		Items:    items,
+		Position: ui.MenuBottomEnd,
 	})
 }
 
