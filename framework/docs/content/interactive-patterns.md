@@ -274,18 +274,43 @@ never re-renders the visible page. Selector rules and scope are in
 ### Confirm (pre-flight confirmation dialog)
 
 `Action.WithConfirm(message)` gates the action behind a **pre-flight**
-`window.confirm` dialog. The gate runs *before* the request is dispatched.
-Cancelling aborts it, so the RPC never fires. Use for destructive actions
-(delete, revoke, bulk operations).
+confirmation. The gate runs *before* the request is dispatched: the runtime
+opens the kit's confirm dialog, and cancelling (the Cancel button, Escape or
+a click on the backdrop) aborts, so the RPC never fires.
 
 ```go
-interactive.OnClick(deleteBtn,
-    interactive.Delete("/api/items/42").
-        WithConfirm("Delete this item? This cannot be undone."),
+interactive.OnClick(publishBtn,
+    interactive.Post("/api/items/42/publish").
+        WithConfirm("Publish this item to every customer?"),
 )
 ```
 
 Attribute injected: `data-cui-confirm="message"`.
+
+For a destructive action (delete, revoke, purge), spell the dialog in full
+with `Action.WithConfirmDialog`: a title, the message, the accept button's
+label, and `Danger`, which draws the accept button in the danger variant.
+
+```go
+interactive.Delete("/api/invoices/42").
+    WithConfirmDialog(interactive.Confirm{
+        Title:   "Delete this invoice?",
+        Message: "This cannot be undone.",
+        Accept:  "Delete",
+        Danger:  true,
+    })
+```
+
+Attributes injected: `data-cui-confirm`, `data-cui-confirm-title`,
+`data-cui-confirm-accept` and `data-cui-confirm-tone="danger"`. An empty
+`Title` or `Accept` keeps the dialog's own ("Are you sure?", "Confirm");
+an empty `Message` panics.
+
+The dialog is `framework/ui`'s, registered as a template the host renders
+once per page, so it wears the theme in light and dark with no CSS of
+yours. Cancel takes focus when it opens: Enter on an open confirm never
+answers yes. A page with no kit imported falls back to `window.confirm`,
+so the gate never opens.
 
 The runtime honors the attribute on any form submit (native POST, SPA, or
 RPC) and on RPC triggers; on a form, a submit button's message takes
@@ -296,12 +321,9 @@ emits `data-cui-confirm` alongside the item's RPC wiring (ignored on
 non-RPC items — the gate covers form submits and RPC triggers, and a
 plain menu link is neither).
 
-`window.confirm` is native, unthemed, and **blocks browser automation**
-(headless tests can't dismiss it without a dialog handler). For a
-design-system-styled confirmation that matches the rest of your app and is
-drivable by tests, use [`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction)
-instead. Native confirm remains the lightweight default; the themed dialog is
-the opt-in upgrade.
+A confirmation that needs more than a title and a sentence (a form field,
+a list of what goes) is a modal of its own:
+[`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction).
 
 ### OnErrorToast (say why a request was refused)
 
@@ -644,10 +666,10 @@ check that it uses `{id}`, not `:id`.
 
 ## Themed confirmation (`ui.ConfirmAction`)
 
-`Action.WithConfirm` (above) uses native `window.confirm`, fine for
-admin/internal tools but unthemed and unautomatable. For a destructive
-action in an app your users interact with directly, `framework/ui.ConfirmAction` renders a
-design-system **alertdialog** instead: a modal that matches your theme
+`Action.WithConfirm` and `WithConfirmDialog` (above) ask in the kit's
+confirm dialog, which holds a title, one sentence and two buttons. When the
+confirmation needs more, `framework/ui.ConfirmAction` renders a widget
+**alertdialog** with a body of its own: a modal that matches your theme
 (light + dark, via tokens, zero bespoke CSS), traps focus, closes on Escape,
 and is drivable by tests.
 

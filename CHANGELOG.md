@@ -24,6 +24,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.AvatarConfig.Square`** rounds the avatar to the medium radius
   instead of a circle, and the `--ui-avatar-bg` / `--ui-avatar-fg`
   knobs recolour its initials surface.
+- **`interactive.Action.WithConfirmDialog(interactive.Confirm{...})`**
+  words the confirm dialog: `Title`, `Message`, the `Accept` button's
+  label, and `Danger`, which draws the accept button in the danger
+  variant. It writes `data-cui-confirm-title`, `-accept` and
+  `-tone="danger"` beside `data-cui-confirm`; an empty `Message`
+  panics. `preset.ConfirmTemplate` names the dialog a kit registers,
+  `framework/ui` registers one, and the host emits it once per page.
+  The entity screens' delete, purge, bulk, status-override and
+  saved-view deletes and the admin battery's queue and module
+  operations use it, with new i18n title keys (`ui.entity.deleteTitle`,
+  `purgeTitle`, `bulkTitle`, `overrideTitle`, `savedDeleteTitle`,
+  `ui.dialog.confirmTitle`).
 - **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
   window scrolls the page while the nav column sticks to the top, one
   viewport tall with its own overflow scroll, and the `Toolbar` row
@@ -892,6 +904,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **`data-cui-confirm` asks in the kit's dialog, not `window.confirm`.**
+  The runtime's `confirm` module opens a themed `<dialog>` with Cancel
+  focused; Escape and a backdrop click answer no. A form submit is held
+  while it is open and sent again with the same submitter on an accept.
+  A page without the kit's template, or a browser without
+  `showModal`, still asks with `window.confirm`. Tests that stubbed
+  `window.confirm` on a kit page now click the dialog's buttons
+  (`[data-cui-confirm-part="accept"]`). The entity confirm messages
+  lost the question their new titles ask: `ui.entity.deleteConfirm`
+  reads "This cannot be undone.", and the purge, bulk, override and
+  saved-view messages changed the same way.
 - **The collapsible sidebar's toggle sits at the foot of the column**,
   a sticky row with the `panel-left` icon and a "Collapse" label
   (`SidebarConfig.CollapseText`, i18n key `ui.sidebar.collapseText`)
