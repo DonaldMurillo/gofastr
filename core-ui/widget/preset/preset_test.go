@@ -130,6 +130,24 @@ func TestToastSlotRendersTheRegisteredTemplate(t *testing.T) {
 	}
 }
 
+// The confirm dialog ships only when a kit registered one, inside the
+// inert template the runtime clones; with none, the page carries
+// nothing and the runtime falls back to window.confirm.
+func TestConfirmTemplateWrapsTheRegisteredDialog(t *testing.T) {
+	registry.IsolateForTest(t)
+	if got := ConfirmTemplateHTML(context.Background()); got != "" {
+		t.Fatalf("with no dialog registered the page carries %q", got)
+	}
+	registry.RegisterTemplate(ConfirmTemplate, func(context.Context) render.HTML {
+		return render.HTML(`<dialog class="kit-confirm"></dialog>`)
+	})
+	got := string(ConfirmTemplateHTML(context.Background()))
+	want := `<template data-cui-confirm-dialog=""><dialog class="kit-confirm"></dialog></template>`
+	if got != want {
+		t.Fatalf("the registered dialog:\n got %s\nwant %s", got, want)
+	}
+}
+
 func TestIsToastStackRecognisesOnlyThisPackagesStack(t *testing.T) {
 	stack := ToastStack("ts").Build()
 	if !IsToastStack(&stack) {
