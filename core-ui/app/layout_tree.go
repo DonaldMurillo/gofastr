@@ -165,6 +165,10 @@ type AreaSpec struct {
 	// outlet's (2026-09-26, DESIGN-layout-outlets.md Open). nil (or
 	// nil Show) keeps the busy dim only, as before.
 	Loading *Loading
+	// Inline renders the area's cell as a span instead of a div, so
+	// the area can sit inside phrasing content: a row count inside a
+	// nav link, a figure inside a heading.
+	Inline bool
 }
 
 // OutletFallback is what an outlet shows when no candidate fills it.
@@ -515,6 +519,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	}
 	attrs := html.Attrs{"data-cui-area": addr}
 	var ld *Loading
+	inline := false
 	if t.spec != nil {
 		for _, a := range t.spec.Areas {
 			if a.Name != name {
@@ -523,7 +528,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 			for k, v := range t.vtCellAttrs(a.Transition, a.Name) {
 				attrs[k] = v
 			}
-			ld = a.Loading
+			ld, inline = a.Loading, a.Inline
 			break
 		}
 	}
@@ -532,10 +537,11 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	// innerHTML, so a child template would not survive the first
 	// navigation it exists for (2026-09-26, "Areas take loading
 	// content").
-	return render.Join(
-		html.Div(html.DivConfig{ExtraAttrs: attrs}, area),
-		loadingTemplate(t.ctx, addr, ld),
-	)
+	cell := html.Div(html.DivConfig{ExtraAttrs: attrs}, area)
+	if inline {
+		cell = html.Span(html.TextConfig{ExtraAttrs: attrs}, area)
+	}
+	return render.Join(cell, loadingTemplate(t.ctx, addr, ld))
 }
 
 // containedArea runs an area fn under the same panic-to-error

@@ -238,6 +238,11 @@ The fn receives the resolved `app.Match` (`m.Path()`, `m.Param("id")`,
 is readable. Areas are not filled by screens: nothing targets them, and
 every build runs on every render.
 
+An area's cell is a `div`. `AreaSpec{Inline: true}` makes it a `span`,
+so the area fits inside phrasing content: the admin gives each sidebar
+link's record count its own inline area (`ui.SidebarItem.Count`), and
+the count follows every navigation while the sidebar stays put.
+
 **The mistake it prevents:** reading the match once in the static chrome
 — the first navigation leaves stale breadcrumbs and a stale
 current-article mark forever.
