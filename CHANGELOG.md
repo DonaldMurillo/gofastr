@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`POST /auth/password`**: the core auth plugin takes a signed-in
+  user's password change, `{"current_password", "password"}` and an
+  optional `confirm_password`. It needs
+  the interactive session (not an API token or embed grant) with its
+  second factor passed, spends the login limiters on the current-password
+  check, and answers a fixable refusal with 422 and per-field errors. A
+  change revokes the user's other sessions and outstanding reset links
+  and re-issues the caller's session; API tokens stay.
 - **entityui `money` field kind**: `Display.Fields[f].Input: "money"` on an
   Int, Float or Decimal draws a number input behind the currency symbol
   and prints the value as an amount in list cells and read-only fields.

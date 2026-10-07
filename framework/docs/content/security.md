@@ -335,7 +335,7 @@ Cache-Control on the path fires it.
 ## OpenAPI coverage for auth endpoints
 
 Auth endpoints registered by `AuthManager.RegisterRoutes` (login,
-register, logout, /auth/me, /auth/2fa/*, /auth/oauth/*, magic-link,
+register, logout, /auth/me, /auth/password, /auth/2fa/*, /auth/oauth/*, magic-link,
 verify-email, forgot-password, reset-password, /auth/accounts,
 /auth/unlink/{provider}) are **not** currently part of the
 auto-generated OpenAPI spec.
