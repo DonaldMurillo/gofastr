@@ -1115,6 +1115,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   prints nothing for a recovered panic, so the panic could not be
   traced. The stack now goes to the log at error level; the error and
   the log still name only the panic value's type.
+- **`query.UpdateBuilder` binds its args in placeholder order.** The SQL
+  numbers every SET placeholder before the WHERE's, but a `Set` called
+  after a `Where` appended its value after the WHERE args, so the
+  statement bound the wrong value to each slot. `Build` now lists every SET value, then every
+  WHERE arg.
 - **A `DataTable` in cards mode no longer clips its cells.** The table's
   52px row height is a minimum in table layout but an exact height once
   a cell becomes a flex box, so a cell taller than that (an empty state,
