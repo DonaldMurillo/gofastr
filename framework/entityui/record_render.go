@@ -217,18 +217,28 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 		actions = append(actions, saveButton(ctx, m, false))
 	}
 	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
-	return render.Join(drawerBar(ctx), ui.PageHeader(cfg))
+	var prev, next string
+	if b.steps && inDrawer(ctx) {
+		prev, next = b.ui.neighbours(ctx, m, base, b.id)
+	}
+	return render.Join(drawerBar(ctx, prev, next), ui.PageHeader(cfg))
 }
 
-// drawerBar is the intercepted drawer's bar: close, the path, copy
-// link, open as page. The full page draws none; its breadcrumbs place
-// it.
-func drawerBar(ctx context.Context) render.HTML {
-	if as, ok := appui.OverlayFromContext(ctx); !ok || as != appui.ScreenDrawer {
+// inDrawer reports whether the record renders as an intercepted drawer.
+func inDrawer(ctx context.Context) bool {
+	as, ok := appui.OverlayFromContext(ctx)
+	return ok && as == appui.ScreenDrawer
+}
+
+// drawerBar is the intercepted drawer's bar: close, the path, the
+// previous and next record when either is given, copy link, open as
+// page. The full page draws none; its breadcrumbs place it.
+func drawerBar(ctx context.Context, prev, next string) render.HTML {
+	if !inDrawer(ctx) {
 		return ""
 	}
 	p := currentURLPath(ctx)
-	return ui.DrawerBar(ui.DrawerBarConfig{Path: p, CopyURL: absoluteURL(ctx), PageURL: p, Ctx: ctx})
+	return ui.DrawerBar(ui.DrawerBarConfig{Path: p, CopyURL: absoluteURL(ctx), PageURL: p, Prev: prev, Next: next, Ctx: ctx})
 }
 
 // saveButton is the form's submit, drawn in the header: it names the
@@ -367,15 +377,15 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 }
 
 // menu is the header's icon-only menu named for the record, the list
-// row menu's shape: Copy link, Duplicate where turned on, and Delete as
-// a confirmed RPC that lands on the list. The moves and app actions stay
-// buttons beside it, so the header row fits a phone. Nothing to offer
-// draws nothing.
+// row menu's shape: Copy link, Duplicate where turned on, the danger
+// moves and actions behind their confirms, and Delete as a confirmed
+// RPC that lands on the list. The other moves and app actions stay
+// buttons beside it. Nothing to offer draws nothing.
 func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, danger []ui.MenuItem) render.HTML {
 	// A drawer's bar carries the copy link; the full page's menu does.
 	var span render.HTML
 	var items []ui.MenuItem
-	if drawerBar(ctx) == "" {
+	if !inDrawer(ctx) {
 		span, items = b.copyLink(ctx)
 	}
 	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {

@@ -96,7 +96,7 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		Title: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 	}
 	if !m.hasAPI {
-		return render.Join(drawerBar(ctx), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
+		return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
 	}
 	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		ui.LinkButton(ui.LinkButtonConfig{
@@ -104,7 +104,7 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		}),
 		saveButton(ctx, m, true),
 	)
-	return render.Join(drawerBar(ctx), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
+	return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
 }
 
 // uniqueBlank names the fields a duplicate leaves blank because the

@@ -965,7 +965,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   counts, the Related count read through each entity's own gate and
   scope. A Details column beside the form holds the id with a copy
   button, the timestamps and each move's stamp. In a drawer the record
-  wears `ui.DrawerBar` and its menu drops copy link. Under
+  wears `ui.DrawerBar` and its menu drops copy link. With `Steps()` (on
+  in the admin) a drawer over the record's own list steps to the
+  previous and next row in the list's order, under the view, saved
+  view, search, filter, facets and sort it was opened from, read as the
+  caller; a sort the list refuses, such as a masked field's, is refused
+  here too. Under
   `WithRecordPath` a relation select draws an open button to the record
   it holds, when the caller's own read of that entity returns the row.
   An app action

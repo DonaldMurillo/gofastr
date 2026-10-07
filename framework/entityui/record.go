@@ -31,6 +31,7 @@ type RecordBuilder struct {
 	override bool
 	delete   bool
 	dup      bool
+	steps    bool
 	prefill  map[string]string
 }
 

@@ -1,7 +1,11 @@
 package admin
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -34,6 +38,31 @@ func TestEntityScreensOpenAsDrawers(t *testing.T) {
 	for p, seen := range want {
 		if !seen {
 			t.Errorf("no screen at %s", p)
+		}
+	}
+}
+
+// A record's drawer over its list steps to the list's neighbours, in the
+// list's order, each step a link that swaps into the same drawer.
+func TestRecordDrawerSteps(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	for _, p := range [][2]string{{"p1", "Alpha"}, {"p2", "Bravo"}, {"p3", "Charlie"}} {
+		x.insert("posts", map[string]any{"id": p[0], "title": p[1], "status": "draft"})
+	}
+	posts, err := x.app.Registry.Get("posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := x.b.entityBase(posts)
+	req := httptest.NewRequest(http.MethodGet, list+"/p2", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.Header.Set("X-Gofastr-Intercept", "1")
+	req.Header.Set("X-Gofastr-From", list+"?sort=title&dir=desc")
+	body := serve(x.as(theAdmin), req).Body.String()
+	for label, want := range map[string]string{"Previous": list + "/p3", "Next": list + "/p1"} {
+		tag := regexp.MustCompile(`<a[^>]*aria-label="` + label + ` record"[^>]*>`).FindString(body)
+		if !strings.Contains(tag, `href="`+want+`"`) || !strings.Contains(tag, "data-cui-intercept-swap") {
+			t.Errorf("%s step = %q, want a swap link to %s", label, tag, want)
 		}
 	}
 }

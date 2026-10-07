@@ -77,7 +77,14 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
   `ui.DrawerBar` (close, its path, copy link, open as page) and its menu drops Copy
-  link. With `WithRecordPath`, a relation select holding a value draws
+  link. With `Steps()`, a drawer over the record's own list (the
+  builder's `Base`) adds previous and next record to the bar, in the
+  order the list shows its rows under the query it was opened from:
+  view, saved view, search, filter, facets and sort, read as the caller.
+  The query arrives from the client, so it is parsed the way the list
+  parses its own URL, and a sort the list refuses (a masked field's) is
+  refused here too. A record past the first `EveryMatchCap` rows, or
+  outside the list, draws no steps. With `WithRecordPath`, a relation select holding a value draws
   an open button beside it, linking to that record, when the caller's
   own read of the related entity returns the row.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
@@ -199,8 +206,8 @@ The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Duplicate()`
-and `Prefill(values)`.
+`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Duplicate()`,
+`Steps()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
