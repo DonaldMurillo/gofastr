@@ -193,6 +193,13 @@ type SidebarItem struct {
 	// manually.
 	MatchPath string
 
+	// Count is drawn after a link's label, small and muted at the
+	// row's end: the rows behind the link, an unread total. Hand in
+	// render.Text("12"), or a route area cell (app.AreaSpec Inline)
+	// so the figure follows client navigations while the sidebar
+	// stays put. Links only; the collapsed rail hides it.
+	Count render.HTML
+
 	// Open forces a group to render expanded on first paint regardless
 	// of active-state rules — for hosts whose contract pins certain
 	// sections open by default (metacollector's My Inventory group).
@@ -348,6 +355,7 @@ func sidebarClasses(variant SidebarVariant) headless.Classes {
 		headless.PartIcon:                  "fui-sidebar__icon",
 		headless.Part("icon--fallback"):    "fui-sidebar__icon--fallback",
 		headless.PartText:                  "fui-sidebar__label",
+		headless.PartSidebarCount:          "fui-sidebar__count",
 		headless.PartFooter:                "fui-sidebar__footer",
 	}
 }
@@ -640,7 +648,7 @@ func sidebarNavItems(cfg SidebarConfig) []headless.SidebarItem {
 		out := make([]headless.SidebarItem, 0, len(items))
 		for _, it := range items {
 			mapped := headless.SidebarItem{
-				Label: it.Label, Href: it.Href, Icon: it.Icon,
+				Label: it.Label, Href: it.Href, Icon: it.Icon, Count: it.Count,
 				// MatchPath rides the leaf as data-cui-match-prefix so
 				// the runtime's active-link sweep keeps the item lit on
 				// sub-paths after a client navigation (the server owns
@@ -976,6 +984,19 @@ func sidebarCSS(_ style.Theme) string {
   flex-shrink: 0;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
+  display: none;
+}
+/* A link's count sits at the row's end, small and muted, in tabular
+   figures so the column of counts lines up. */
+[data-cui-comp="ui-sidebar"] .fui-sidebar__count {
+  margin-inline-start: auto;
+  padding-inline-start: var(--spacing-sm, 4px);
+  color: var(--color-text-subtle, #71717A);
+  font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__count,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__count {
   display: none;
 }
 /* Knobs: --ui-sidebar-width (220px) is the expanded inline column's

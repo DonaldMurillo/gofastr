@@ -320,6 +320,11 @@ Three more knobs round out the contract surface:
   at boot with `context.Background()` gives every phone user the
   anonymous footer. The drawer's name, variant and header brand come
   from `build(context.Background())` at mount time.
+- `Count` ends a link's row in a small muted figure (`render.Text("12")`);
+  the collapsed rail hides it. In a kept shell, hand in an inline route
+  area (`app.AreaSpec{Inline: true}`, `l.RouteArea`) so the figure
+  re-renders with each client navigation; a plain value keeps the
+  figure the page loaded with.
 - `MatchPath` rides the rendered link as `data-cui-match-prefix` (the
   value, not the href, is the prefix): the server marks the item
   current on first paint, and the runtime's active-link sweep keeps it

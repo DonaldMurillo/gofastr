@@ -31,6 +31,7 @@ const (
 	PartSidebarItem        Part = "sidebar-item"
 	PartSidebarNav         Part = "sidebar-nav"
 	PartSidebarPrepend     Part = "sidebar-prepend"
+	PartSidebarCount       Part = "sidebar-count"
 )
 
 // SidebarItem is one nav entry: a link, or a group with children.
@@ -55,6 +56,11 @@ type SidebarItem struct {
 	// prefix. The caller resolves the active state for first paint;
 	// this is the same rule, handed to the client.
 	MatchPrefix string
+	// Count is optional content after the label: the rows behind the
+	// link, an unread total. It is the caller's (a route area cell
+	// keeps it current across client navigations). Inert on groups,
+	// as Open is on leaves.
+	Count render.HTML
 	// Children make this entry a group. Mutually exclusive with Href.
 	Children []SidebarItem
 }
@@ -337,7 +343,7 @@ func sidebarRegion(b Box, p SidebarProps) render.HTML {
 // own row, so a caller's icon anywhere in there must stay reachable.
 func sidebarItemsHaveOwnContent(items []SidebarItem) bool {
 	for _, it := range items {
-		if it.Icon != "" {
+		if it.Icon != "" || (len(it.Children) == 0 && it.Count != "") {
 			return true
 		}
 		if len(it.Children) > 0 && sidebarItemsHaveOwnContent(it.Children) {
@@ -416,6 +422,9 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 	if len(it.Children) > 0 && it.Href != "" {
 		panic("headless: Sidebar item with Children cannot also set Href — a group parent is a disclosure, not a link; put the section's overview page in the group's first child link instead")
 	}
+	// The caller's content in this entry's control: its glyph, and a
+	// leaf's count.
+	callerContent := it.Icon != "" || (len(it.Children) == 0 && it.Count != "")
 	itemAttrs := html.Attrs(nil)
 	if depth > 0 {
 		// The sub-item variant rides the item part's own class slot,
@@ -434,17 +443,21 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 	if it.Icon != "" {
 		icon = b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), it.Icon)
 	} else if v := b.Classes.Variant(PartIcon, "fallback"); v != "" {
-		icon = b.El("span", PartIcon, Attrs(map[string]string{
-			"aria-hidden": "true", "class": v,
-		}), render.Text(sidebarInitial(it.Label)))
+		fallback := Attrs(map[string]string{"aria-hidden": "true", "class": v})
+		if callerContent {
+			// A count beside it keeps the control unmarked, so the
+			// fallback glyph, the component's own, marks itself.
+			fallback = Internal(fallback)
+		}
+		icon = b.El("span", PartIcon, fallback, render.Text(sidebarInitial(it.Label)))
 	}
-	// The icon is the caller's; the label beside it is always the
-	// component's own. With no icon at all, the control that carries
-	// them (the button/summary/anchor below) holds nothing of the
-	// caller's, so the mark moves to it — but only when mark says a
-	// sibling DOES have one.
+	// The icon and the count are the caller's; the label beside them
+	// is always the component's own. With neither, the control that
+	// carries them (the button/summary/anchor below) holds nothing of
+	// the caller's, so the mark moves to it — but only when mark says
+	// a sibling DOES have caller content.
 	textOwn, controlMark := html.Attrs(nil), html.Attrs(nil)
-	if it.Icon != "" {
+	if callerContent {
 		textOwn = Internal(nil)
 	} else if mark {
 		controlMark = Internal(nil)
@@ -524,10 +537,15 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 		// navigations into sub-paths.
 		own["data-cui-match-prefix"] = scrubControlBytes(it.MatchPrefix)
 	}
+	var count render.HTML
+	if it.Count != "" {
+		count = b.El("span", PartSidebarCount, nil, it.Count)
+	}
 	return b.El("li", PartSidebarItem, itemAttrs,
 		b.El("a", PartControl, Merge(own, controlMark),
 			icon,
-			b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))))
+			b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label))),
+			count))
 }
 
 // sidebarInitial takes a label's first rune, uppercased — the glyph a

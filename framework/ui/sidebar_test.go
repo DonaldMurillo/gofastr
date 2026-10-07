@@ -12,6 +12,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+func TestSidebarCountEndsTheRow(t *testing.T) {
+	out := string(component.RenderComponent(ui.Sidebar(ui.SidebarConfig{
+		Items: []ui.SidebarItem{{Label: "Invoices", Href: "/invoices", Count: render.Text("12")}},
+	})))
+	if !strings.Contains(out, `Invoices</span><span class="fui-sidebar__count">12</span></a>`) {
+		t.Errorf("the count must follow the label inside the link, under the count class:\n%s", out)
+	}
+}
+
 func TestSidebarRendersInlineAndHamburger(t *testing.T) {
 	c := ui.Sidebar(ui.SidebarConfig{
 		Title: "App",
