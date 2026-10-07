@@ -98,6 +98,16 @@ entities:
       delete: plans:admin
     properties:
       label: Plans
+    display:
+      title_field: name
+      description: What a customer can subscribe to.
+      nav:
+        group: catalog
+        icon: box
+        order: 1
+      fields:
+        price:
+          input: money
     fields:
       - name: name
         type: string
@@ -154,10 +164,27 @@ entities:
         min: 0
         default: "0"
     display:
+      title_field: name
+      description: Every account that pays you.
+      nav:
+        group: billing
+        icon: users
+        order: 1
+      columns: [name, email, company, status, mrr]
+      views:
+        - key: active
+          label: Active
+          where: 'status = "active"'
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
       facets: [status]
       fields:
+        email:
+          input: email
         mrr:
           label: MRR
+          input: money
 
   - name: subscriptions
     crud: true
@@ -187,9 +214,26 @@ entities:
       - name: renews_on
         type: date
     display:
+      description: Who is on which plan, and what they bring in.
+      nav:
+        group: billing
+        icon: repeat
+        order: 2
+      views:
+        - key: active
+          label: Active
+          where: 'status = "active"'
+        - key: trialing
+          label: Trialing
+          where: 'status = "trialing"'
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
+      facets: [status]
       fields:
         mrr:
           label: MRR
+          input: money
     relations:
       - type: belongs_to
         name: customer
@@ -272,7 +316,26 @@ entities:
           to: void
           variant: danger
     display:
+      title_field: number
+      description: Every invoice issued, paid or not.
+      nav:
+        group: billing
+        icon: receipt
+        order: 3
+      columns: [number, customer_id, amount, status, issued_on, due_on]
+      views:
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
+          sort: due_on ASC
+        - key: open
+          label: Open
+          where: 'status = "open"'
+          sort: due_on ASC
       facets: [status, customer_id]
+      fields:
+        amount:
+          input: money
 
   - name: payments
     crud: true
@@ -283,6 +346,20 @@ entities:
     soft_delete: true
     properties:
       label: Payments
+    display:
+      description: Money in, and the attempts that failed.
+      nav:
+        group: billing
+        icon: card
+        order: 4
+      views:
+        - key: failed
+          label: Failed
+          where: 'status = "failed"'
+      facets: [status, method]
+      fields:
+        amount:
+          input: money
     fields:
       - name: invoice_id
         type: relation
