@@ -874,8 +874,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   columns and nav from each entity's `Display`. The admin ships no CSS:
   `Config.Theme` and `Config.FontFaceCSS` are removed and the shell takes
   the app's theme through the UI host. `Config.EntityListLimit` (the
-  list's page sizes come from `Display.PageSizes`), `Config.Secret` and
-  `Battery.RegisterRoutes` are removed. New: a dashboard with a polled
+  list's page sizes come from `Display.PageSizes`), `Config.Secret`,
+  `Battery.RegisterRoutes` and `SortDirOf` are removed. New: a dashboard with a polled
   count card per entity, failed jobs and recent activity; a command
   palette searching pages, entities and records (`SearchFields`);
   `Config.Pages`, `Cards`, `Links` and `Commands` for the app's own admin
