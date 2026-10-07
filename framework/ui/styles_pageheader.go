@@ -79,6 +79,13 @@ func pageHeaderCSS(t style.Theme) string {
 		Rule("h2.fui-page-header__title").
 		Set("font-size", "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))").
 		End().
+		// An h3 or deeper title is a section inside a section (a
+		// dashboard panel's list): another step down, read from
+		// --ui-page-header-subsection-title-size.
+		Rule(":is(h3, h4, h5, h6).fui-page-header__title").
+		Set("font-size", "var(--ui-page-header-subsection-title-size, var(--text-base, 1rem))",
+			"letter-spacing", "normal").
+		End().
 		Rule(".fui-page-header__actions").
 		Set(
 			"display", "flex",
