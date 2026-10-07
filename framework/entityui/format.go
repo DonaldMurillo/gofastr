@@ -129,15 +129,21 @@ func decimal(val string) string {
 	return formatNumber(f, 2)
 }
 
-// enumVariant picks a badge colour for common status words; anything else
-// is neutral information.
+// enumVariant picks a badge colour for common status words: settled is
+// success, in flight is information, needing attention is a warning, a
+// failure is danger, and a closed or unstarted record is neutral.
+// Anything else is neutral information.
 func enumVariant(v string) ui.StatusVariant {
 	switch strings.ToLower(v) {
 	case "active", "paid", "succeeded", "completed", "done", "published", "approved":
 		return ui.StatusSuccess
-	case "open", "past_due", "pending", "trialing", "draft", "review":
+	case "open", "trialing", "running", "review":
+		return ui.StatusInfo
+	case "past_due", "pending", "refunded":
 		return ui.StatusWarning
-	case "canceled", "cancelled", "void", "failed", "refunded", "inactive", "archived", "rejected":
+	case "failed", "rejected":
+		return ui.StatusDanger
+	case "canceled", "cancelled", "void", "draft", "inactive", "archived":
 		return ui.StatusNeutral
 	}
 	return ui.StatusInfo

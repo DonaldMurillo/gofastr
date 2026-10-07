@@ -83,6 +83,9 @@ type UI struct {
 	ext  Extensions
 	// views keeps saved list views, nil when the app keeps none.
 	views SavedViewStore
+	// recordPath is the base of an entity's record screens, nil when
+	// the UI links no relation to its record.
+	recordPath func(e *entity.Entity) (string, bool)
 	// now is the clock queued runs lease and finish by.
 	now func() time.Time
 }
@@ -122,10 +125,27 @@ func New(h Host, ext Extensions) (*UI, error) {
 // Reads are unchanged: they run in process under the caller's context.
 func (u *UI) WithAPIPath(path func(e *entity.Entity) (string, bool)) *UI {
 	h := apiPathHost{Host: u.host, path: path}
+	c := *u
+	c.host = h
 	if bh, ok := u.host.(BulkHost); ok {
-		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext, views: u.views, now: u.now}
+		c.host = apiPathBulkHost{apiPathHost: h, BulkHost: bh}
 	}
-	return &UI{host: h, ext: u.ext, views: u.views, now: u.now}
+	return &c
+}
+
+// WithRecordPath returns a UI whose list cells link a relation's title
+// to the related record, at path(e) + "/" + id, as a chip. path answers
+// false for an entity whose records have no screen here, and the cell
+// stays text. A link is drawn only for a title the caller's own read
+// of the related entity returned, and the record screen behind it runs
+// its own read gate. A nil path returns the UI unchanged.
+func (u *UI) WithRecordPath(path func(e *entity.Entity) (string, bool)) *UI {
+	if path == nil {
+		return u
+	}
+	c := *u
+	c.recordPath = path
+	return &c
 }
 
 // WithSavedViews returns a UI whose lists can keep named saved views in

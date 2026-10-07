@@ -31,6 +31,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.StatusBadgeConfig.Dot`** draws a filled circle in the badge's
   tone before its label, the status-column shape;
   `--ui-badge-dot-size` sizes it. An entityui enum cell uses it.
+- **`entityui.UI.WithRecordPath`** links a list's relation cells to the
+  related record: the title becomes a chip pointing at
+  `path(e) + "/" + id`, drawn only for a title the caller's own read
+  returned. The admin links the entities it exposes.
 - **`ui.Column.Fit`** shrinks a DataTable column to its content, a
   checkbox or a row menu, so the other columns take the spare width.
 - **`ui.Column.SelectAll`** (and `headless.Column.SelectAll`) draws a

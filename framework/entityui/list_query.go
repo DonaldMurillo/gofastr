@@ -46,6 +46,9 @@ type listState struct {
 	q    url.Values
 	path string // the page's own path, for sort/page/view links
 	base string // the record-link base, b.Base or the page path
+	// relBase is each relation column's related-record base, set when
+	// the UI has a record path for the related entity.
+	relBase map[string]string
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that

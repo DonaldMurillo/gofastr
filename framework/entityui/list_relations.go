@@ -75,6 +75,20 @@ func (u *UI) resolveLabels(ctx context.Context, m *meta, col string, ids []strin
 	return titleMap(tm, rows)
 }
 
+// relatedBase is the base of a relation column's related-record screens,
+// when the UI has a record path for that entity and the caller may read
+// it.
+func (u *UI) relatedBase(ctx context.Context, m *meta, col string) (string, bool) {
+	if u.recordPath == nil {
+		return "", false
+	}
+	target, _, ok := u.relationTarget(ctx, m, col)
+	if !ok {
+		return "", false
+	}
+	return u.recordPath(target)
+}
+
 // relationFacetOptions lists a relation facet's options: the related
 // entity's records labelled by its title field, capped. A refused
 // relation shows no options, so the facet is not drawn.

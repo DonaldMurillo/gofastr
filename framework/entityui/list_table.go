@@ -148,6 +148,12 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 			}
 		}
 		out[name] = u.resolveLabels(ctx, s.m, name, ids)
+		if base, ok := u.relatedBase(ctx, s.m, name); ok {
+			if s.relBase == nil {
+				s.relBase = map[string]string{}
+			}
+			s.relBase[name] = base
+		}
 	}
 	return out
 }
@@ -177,6 +183,11 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 			return muted()
 		}
 		if t, ok := labels.title(name, val); ok {
+			// A title the caller read links to its record where the UI
+			// knows the related entity's screens.
+			if base, ok := s.relBase[name]; ok {
+				return ui.Tag(ui.TagConfig{Label: t, Href: base + "/" + url.PathEscape(val)})
+			}
 			return render.Text(t)
 		}
 		// The id names a record of an entity the caller may read, but the
@@ -194,7 +205,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		if val == "" {
 			return muted()
 		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: m.valueLabel(ctx, name, val), Variant: enumVariant(val)})
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: m.valueLabel(ctx, name, val), Variant: enumVariant(val), Dot: true})
 	default:
 		// Textual shapes draw below the empty check.
 	}

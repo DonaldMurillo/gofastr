@@ -179,6 +179,15 @@ draws that entity read-only. A back office uses it to send writes through
 routes it gates itself: `battery/admin` mounts the CRUD handler's write
 routes under `/admin/api/<entity>` this way. Reads are unchanged.
 
+`appUI.WithRecordPath(path)` returns a UI whose list cells draw a
+relation's title as a chip linking to `path(e) + "/" + id`, the related
+record's screen. A link is drawn only for a title the caller's own read
+of the related entity returned; a refused relation stays muted, an id
+the read did not return stays text, and `path` answering false leaves
+that entity's titles as text. The admin points it at
+`/admin/entities/<entity>` for the entities it exposes. An enum cell
+draws its badge with a dot.
+
 ## Extensions
 
 `Extensions` is the code an app registers next to its screens: the entity
