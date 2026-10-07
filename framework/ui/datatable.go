@@ -55,7 +55,8 @@ type Column struct {
 	// SelectAll makes the header a checkbox that checks or clears the
 	// row checkboxes named SelectAll in this table, and shows mixed
 	// when only some are checked. Header, when set, is its accessible
-	// name. A select-all column cannot sort.
+	// name. A select-all column cannot sort. An empty table draws no
+	// box: there is nothing to select.
 	SelectAll string
 }
 
@@ -277,7 +278,11 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		if c.Fit {
 			variant = strings.TrimPrefix(variant+"-fit", "-")
 		}
-		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, SelectAll: c.SelectAll, Variant: variant}
+		selectAll := c.SelectAll
+		if len(cfg.Rows) == 0 {
+			selectAll = ""
+		}
+		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, SelectAll: selectAll, Variant: variant}
 	}
 	rows := make([]headless.Row, len(cfg.Rows))
 	for i, r := range cfg.Rows {

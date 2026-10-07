@@ -89,7 +89,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   checkbox or a row menu, so the other columns take the spare width.
 - **`ui.Column.SelectAll`** (and `headless.Column.SelectAll`) draws a
   header checkbox that checks and clears its own table's row boxes of
-  that name and shows mixed when only some are checked. A checkbox in
+  that name and shows mixed when only some are checked. An empty
+  `ui.DataTable` draws no box. A checkbox in
   the indeterminate state now draws filled with a bar. An entityui bulk
   list uses it for its select column.
 - **`ui.ClusterConfig.Shrink`**: the row narrows below its content and
