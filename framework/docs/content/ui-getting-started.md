@@ -375,6 +375,31 @@ to the control that opened it. A link that changes only the drawer's
 own query (`?sort=…&page=…`) re-renders inside the drawer instead of
 navigating the page under it.
 
+A screen can open over more than one page. Patterns after the
+presentation are more origins (`Intercept.AlsoFrom`); a create form that
+opens over its list and over the customer whose Related tab adds to it:
+
+```go
+site.Register("/invoices/create", &CreateInvoice{}, nil,
+    app.InterceptFrom("/invoices", app.ScreenDrawer, "/customers/{id}"))
+```
+
+Inside an overlay render, `app.OverlayOriginFromContext(ctx)` returns
+the path of the page the drawer opened over ("" on the full page). Make
+it the form's success navigation and the save returns there: the drawer
+closes, the page under it re-renders with the new row, and Back walks
+history as it was before the drawer opened. A save whose navigation
+names the drawer's own path keeps the drawer and refreshes it. Any other
+destination navigates as usual.
+
+```go
+dest := "/invoices"
+if o := app.OverlayOriginFromContext(ctx); o != "" {
+    dest = o
+}
+attrs := interactive.Post("/api/invoices").OnSuccess(interactive.Navigate(dest)).Attrs()
+```
+
 Put `data-hui-leave-guard` on a form whose unsaved edits should ask
 before the user leaves them (the record form is the usual case): while
 the form is changed, following a link away from it, going Back past

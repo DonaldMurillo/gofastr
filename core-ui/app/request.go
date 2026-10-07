@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // requestContextKey is the unexported type used to store the active
@@ -28,6 +29,32 @@ func withOverlay(ctx context.Context, as ScreenType) context.Context {
 func OverlayFromContext(ctx context.Context) (ScreenType, bool) {
 	as, ok := ctx.Value(overlayContextKey{}).(ScreenType)
 	return as, ok
+}
+
+// overlayOriginContextKey carries the path an overlay opened over.
+type overlayOriginContextKey struct{}
+
+// withOverlayOrigin records the origin's path, query and fragment cut
+// off. Anything but a rooted local path (a protocol-relative
+// "//host", a backslash a browser reads as one) records nothing.
+func withOverlayOrigin(ctx context.Context, origin string) context.Context {
+	if i := strings.IndexAny(origin, "?#"); i >= 0 {
+		origin = origin[:i]
+	}
+	if !strings.HasPrefix(origin, "/") || strings.HasPrefix(origin, "//") || strings.Contains(origin, `\`) {
+		return ctx
+	}
+	return context.WithValue(ctx, overlayOriginContextKey{}, origin)
+}
+
+// OverlayOriginFromContext returns the path of the page an intercepted
+// overlay opened over (the list, or the record whose Related tab added
+// to it), or "" on any other render. A form in the overlay navigates
+// there on success, and the runtime answers that by closing the overlay
+// and refreshing the page under it instead of leaving it.
+func OverlayOriginFromContext(ctx context.Context) string {
+	s, _ := ctx.Value(overlayOriginContextKey{}).(string)
+	return s
 }
 
 // WithRequest returns a new context that carries r. The host should

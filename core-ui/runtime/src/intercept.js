@@ -3,7 +3,7 @@
 // A detail screen that presents as an overlay when you reach it from
 // inside the app, and as its own full page when you land on it directly.
 // Registered server-side with app.InterceptFrom("/products",
-// app.ScreenDrawer); the route manifest carries {from, as} per route and
+// app.ScreenDrawer); the route manifest carries {from, also, as} per route and
 // core loads this module only when at least one route declares it.
 //
 // The rules that keep this honest:
@@ -93,6 +93,9 @@
   const routeFor = (path) => routes().find((r) => r.path && matchRoute(r.path, path));
   const pathOf = (u) => u.split('?')[0].split('#')[0];
   const top = () => layers[layers.length - 1];
+  // Does the route's intercept open over the origin route o? Its from
+  // pattern, or any of its also patterns.
+  const fromOK = (target, o) => o.path === target.intercept.from || (target.intercept.also || []).includes(o.path);
 
   // Every history write here is a RAW pushState on purpose: currentPath
   // must stay on the page UNDER the stack, so popstate diffs inside the
@@ -280,7 +283,7 @@
   // move will discard.
   function decide(path, anchor) {
     const cont = document.getElementById(OVERLAY_ID);
-    const target = routeFor(path);
+    const target = routeFor(pathOf(path));
     if (layers.length && cont) {
       const t = top();
       const inPane = !!(anchor && cont.contains(anchor));
@@ -289,13 +292,13 @@
       const origin = inPane ? t.url : underPath;
       if (!target || !target.intercept) return null;
       const o = routeFor(pathOf(origin));
-      if (!o || o.path !== target.intercept.from) return null;
+      if (!o || !fromOK(target, o)) return null;
       if (!NS._originOK?.(path)) return null;
       return { kind: layers.length >= MAX_LAYERS ? 'refuse' : 'open', origin };
     }
     if (!target || !target.intercept) return null;
     const o = routeFor(location.pathname);
-    if (!o || o.path !== target.intercept.from) return null;
+    if (!o || !fromOK(target, o)) return null;
     if (!NS._originOK?.(path)) return null;
     return { kind: 'open', origin: location.pathname + location.search };
   }
@@ -342,6 +345,53 @@
         mountLayer(res, path, hash, d.origin, trigger);
       })
       .catch(() => { if (e === epoch) fallbackNav(path, hash); });
+    return true;
+  };
+
+  // The rpc module asks this before a success navigation (a save that
+  // names where to go next) made by node. When node sits in the top
+  // layer and the destination's path is a layer's own (the top one, or
+  // one under it) or the page under the stack, the stack returns there
+  // instead of leaving: the layers above it close, their history entries
+  // consumed in one move, and it re-renders in place with what the save
+  // changed. A create opened over a record lands back on the record, a
+  // save in a record pane keeps the pane. The leave guard asks first
+  // about what the move discards. true = handled; anywhere else is a
+  // real navigation, as before.
+  NS._interceptReturn = function (path, node) {
+    const t = top();
+    if (!t || !node || !t.el.contains(node)) return false;
+    const p = pathOf(path);
+    let i = layers.length - 1;
+    while (i >= 0 && pathOf(layers[i].url) !== p) i--;
+    if (i < 0 && pathOf(underPath) !== p) return false;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el))) return true;
+    const e = ++epoch;
+    let focus = null;
+    while (layers.length > i + 1) {
+      const shut = layers.pop();
+      focus = shut.restoreFocus;
+      shut.el.remove();
+    }
+    const lay = top();
+    const back = t.p0 + t.cur - (lay ? lay.p0 + lay.cur : 0);
+    if (back) {
+      // The popstate this move fires is the return arriving, not a move.
+      repair = { k: lay?.key, i: lay?.cur };
+      history.go(-back);
+    }
+    settleAfterDrop(focus);
+    if (!lay) {
+      NS.refresh?.();
+      return true;
+    }
+    fetchOverlay(lay.url, lay.fromURL)
+      .then((res) => {
+        if (e !== epoch) return;
+        if (!res) { fallbackNav(lay.url, ''); return; }
+        swap(lay, res);
+      })
+      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
     return true;
   };
 

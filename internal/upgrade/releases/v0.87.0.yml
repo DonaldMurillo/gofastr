@@ -284,3 +284,10 @@ notes:
       strings:
         match: '/admin/admin.css'
     guidance: "Build the app with framework.NewUIHostApp(uihost.New(site), ...) or mount a uihost.New host before app.RegisterBattery(admin.New(cfg)); without one, Init fails with \"admin: every admin page renders through the app's UI host\". The admin draws with the host's theme and ships no stylesheet: remove links to /admin/admin.css and any CSS written against the old admin markup."
+  - change: "app.App.RenderOverlayResult takes the origin the overlay opens over, between the path and the presentation, so the screen can read it with app.OverlayOriginFromContext"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/app.App.RenderOverlayResult
+    guidance: "Pass the location the overlay opens over as the third argument: a.RenderOverlayResult(ctx, path, r.Header.Get(\"X-Gofastr-From\"), as) in a host, or \"\" where there is none (a test). The screen reads its path with app.OverlayOriginFromContext(ctx)."

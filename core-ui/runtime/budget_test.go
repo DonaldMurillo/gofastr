@@ -1118,7 +1118,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// beside rpc: the dispatch is part of the RPC response effects
 		// this module already owns, and a demand module loaded after the
 		// navigate would render into a page that already swapped.
-		"rpc": 3195,
+		// 3210 measured (3208 + 2) after the success navigate asks the
+		// intercept module first (2026-10-07, the stacked create): a save
+		// in a drawer that names the page under it returns there instead
+		// of leaving the stack. The question needs the node that saved,
+		// which only this module holds at the navigate.
+		"rpc": 3210,
 	}
 	const coreOverride = 0
 

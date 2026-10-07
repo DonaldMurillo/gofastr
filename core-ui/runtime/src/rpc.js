@@ -349,7 +349,9 @@
         NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000 });
       }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
-      if (navigatePath) {
+      // A save inside an intercept layer returns to the layer (or the
+      // page under the stack) it names instead of leaving the stack.
+      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
         try { NS.navigate(navigatePath, { force: true }); }
         catch (_) {}
       }

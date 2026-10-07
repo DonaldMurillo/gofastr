@@ -370,6 +370,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   only the drawer's own query (sort, page, filter) re-renders the
   drawer, one history entry per click, instead of navigating the page
   under it.
+- **A screen intercepts from more than one origin, and a save in a
+  drawer returns to the page under it.** `app.InterceptFrom(from, as,
+  also...)` takes more origin patterns (`Intercept.AlsoFrom`, `also` in
+  the route manifest). `app.OverlayOriginFromContext(ctx)` gives an
+  overlay render the path of the page it opened over. A form in a drawer
+  whose success navigation names that page, or the drawer's own path,
+  closes the layers above it and re-renders it in place instead of
+  leaving the stack, so the new row shows and Back walks history as it
+  was before the drawer opened.
 - **`data-hui-leave-guard` on a form asks before its unsaved edits are
   lost**: to a link, Back or Forward, a drawer's Escape or close
   control, or a reload. It asks only when the move discards the form,
@@ -1097,6 +1106,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **BREAKING: `app.App.RenderOverlayResult(ctx, path, origin, as)`** takes
+  the location the overlay opens over, which the screen reads with
+  `app.OverlayOriginFromContext`. A host passes the request's
+  `X-Gofastr-From`; a test with no origin passes `""`.
 - **Toasts rise in the bottom-right corner.** `preset.ToastStack`, and
   so the stack `framework/uihost` mounts, defaults to
   `widget.BottomRight` instead of top-right, where a toast covered a
@@ -1461,6 +1474,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A link with a query opens its intercepting route as a drawer.** The
+  runtime matched the route against the path with its query attached,
+  so `/invoices/create?prefill_customer_id=7` never matched
+  `/invoices/create` and loaded as a full page.
 - **A keyboard chord reaches the top layer's control.** A
   `data-hui-shortcut-click` or `-focus` target inside an `inert`
   subtree (the page under an open drawer, a lower drawer) is skipped,

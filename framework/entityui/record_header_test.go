@@ -163,7 +163,7 @@ func TestRecordDrawerBar(t *testing.T) {
 	a.Register("/rec/invoices/:id", &recordScreen{x: x}, nil, app.InterceptFrom("/rec/invoices", app.ScreenDrawer))
 	ctx := x.userCtx("/rec/invoices/inv-1", "", "u1")
 
-	drawer, err := a.RenderOverlayResult(ctx, "/rec/invoices/inv-1", app.ScreenDrawer)
+	drawer, err := a.RenderOverlayResult(ctx, "/rec/invoices/inv-1", "", app.ScreenDrawer)
 	if err != nil {
 		t.Fatal(err)
 	}

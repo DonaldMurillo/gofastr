@@ -398,8 +398,9 @@ type routeInfoJSON struct {
 // string form ("drawer"/"sheet"), not the Go enum's number: the
 // manifest is a wire format and must not encode iota positions.
 type interceptJSON struct {
-	From string `json:"from"`
-	As   string `json:"as"`
+	From string   `json:"from"`
+	Also []string `json:"also,omitempty"`
+	As   string   `json:"as"`
 }
 
 // Option configures a UIHost.
@@ -1238,6 +1239,7 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 		if r.Intercept != nil {
 			infos[i].Intercept = &interceptJSON{
 				From: r.Intercept.From,
+				Also: r.Intercept.AlsoFrom,
 				As:   r.Intercept.As.String(),
 			}
 		}
@@ -2891,7 +2893,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	var res app.RenderResult
 	var err error
 	if overlay != nil {
-		res, err = ds.App.RenderOverlayResult(ctx, path, overlay.As)
+		res, err = ds.App.RenderOverlayResult(ctx, path, r.Header.Get("X-Gofastr-From"), overlay.As)
 	} else if from := r.Header.Get("X-Gofastr-From"); from != "" {
 		// Subtree partial: the client names the route it is navigating
 		// FROM; the server renders only the layout layers the two routes

@@ -80,7 +80,7 @@
     // enter any cache.
     if (target.intercept) {
       const origin = routeFor(location.pathname);
-      if (origin && origin.path === target.intercept.from) return;
+      if (origin && (origin.path === target.intercept.from || (target.intercept.also || []).includes(origin.path))) return;
     }
     inFlight.add(path);
     // X-Gofastr-Defer (spike/layout-parts): the prefetch fetches the

@@ -45,6 +45,7 @@ func TestInterceptFromRejectsBadInput(t *testing.T) {
 	}{
 		{"relative from", func() { InterceptFrom("products", ScreenDrawer) }},
 		{"empty from", func() { InterceptFrom("", ScreenDrawer) }},
+		{"relative also", func() { InterceptFrom("/products", ScreenDrawer, "/brands/:id", "brands") }},
 		{"page is not an overlay", func() { InterceptFrom("/products", ScreenPage) }},
 		{"dialog is not an overlay", func() { InterceptFrom("/products", ScreenDialog) }},
 	}
@@ -101,7 +102,7 @@ func TestOverlayRenderMatchesCanonicalContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("partial: %v", err)
 	}
-	overlay, err := a.RenderOverlayResult(ctx, "/products/42", ScreenDrawer)
+	overlay, err := a.RenderOverlayResult(ctx, "/products/42", "", ScreenDrawer)
 	if err != nil {
 		t.Fatalf("overlay: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestOverlayRenderKnowsItsPresentation(t *testing.T) {
 		t.Errorf("the canonical render reads as an overlay: %s", page.HTML)
 	}
 	for _, as := range []ScreenType{ScreenDrawer, ScreenSheet} {
-		got, err := a.RenderOverlayResult(ctx, "/products/42", as)
+		got, err := a.RenderOverlayResult(ctx, "/products/42", "", as)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,5 +171,61 @@ func TestRegisterAppliesScreenOptions(t *testing.T) {
 	// It stays a page registration: the canonical render is unchanged.
 	if scr.Type != ScreenPage {
 		t.Fatalf("intercepting screen must stay a page, got %v", scr.Type)
+	}
+}
+
+type ixCreate struct{ component.ContextOnly }
+
+func (s *ixCreate) RenderCtx(ctx context.Context) render.HTML {
+	return render.Text("CREATE FROM [" + OverlayOriginFromContext(ctx) + "]")
+}
+
+func ixCreateApp(t *testing.T) *App {
+	t.Helper()
+	a := ixApp(t)
+	a.Register("/new-product", &ixCreate{}, nil, InterceptFrom("/products", ScreenDrawer, "/products/:id"))
+	return a
+}
+
+// A create screen opens over its list and over a related record: every
+// pattern it names is an origin, and nothing else is.
+func TestInterceptForAlsoFrom(t *testing.T) {
+	a := ixCreateApp(t)
+	for _, tc := range []struct {
+		origin string
+		want   bool
+	}{
+		{"/products", true},
+		{"/products/9?tab=related", true},
+		{"/nowhere", false},
+		{"", false},
+	} {
+		if _, ok := a.Router.InterceptFor("/new-product", tc.origin); ok != tc.want {
+			t.Errorf("InterceptFor(new, %q) = %v, want %v", tc.origin, ok, tc.want)
+		}
+	}
+}
+
+// The overlay render knows the page it opened over, by path alone, so a
+// form in it can return there. A protocol-relative origin is no path.
+func TestOverlayKnowsItsOrigin(t *testing.T) {
+	a := ixCreateApp(t)
+	ctx := context.Background()
+	for origin, want := range map[string]string{
+		"/products/9?tab=related#x": "CREATE FROM [/products/9]",
+		"//evil.example/products":   "CREATE FROM []",
+		`/\evil.example`:            "CREATE FROM []",
+	} {
+		res, err := a.RenderOverlayResult(ctx, "/new-product", origin, ScreenDrawer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(res.HTML), want) {
+			t.Errorf("origin %q rendered %s, want %q", origin, res.HTML, want)
+		}
+	}
+	page, err := a.RenderPartialResult(ctx, "/new-product")
+	if err != nil || !strings.Contains(string(page.HTML), "CREATE FROM []") {
+		t.Errorf("a page render has an overlay origin: %s %v", page.HTML, err)
 	}
 }

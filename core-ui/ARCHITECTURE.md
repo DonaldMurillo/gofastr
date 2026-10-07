@@ -662,7 +662,7 @@ the viewport between 480px and 720px; each layer's inset is
 `--cui-intercept-pad`, which chrome reads to bleed to the layer's edges.
 
 Costs stay off pages that don't use it. The route manifest carries
-`intercept: {from, as}` per route; core loads the `intercept` demand
+`intercept: {from, also, as}` per route; core loads the `intercept` demand
 module only when some entry has one, and the UI host injects
 `app.InterceptOverlayCSS()` under the same condition.
 
@@ -707,6 +707,32 @@ form in a layer carrying `data-hui-leave-guard` asks before any of
 these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
+
+**More than one origin.** `Intercept.AlsoFrom` names more patterns the
+overlay opens over, beside `From`: a create screen opens over its list
+and over each related record whose Related tab adds to it. The manifest
+carries them as `also`, and the server and the runtime accept any of
+them. The route check matches the link's path alone, so a target with a
+query (`/invoices/create?prefill_customer_id=7`) intercepts like one
+without.
+
+**Returning.** An overlay render knows the page it opened over:
+`app.OverlayOriginFromContext(ctx)` returns that location's path (the
+query and fragment cut off; anything but a rooted local path returns
+""), and "" in a canonical render. A form in the overlay names it as
+its success navigation, and the rpc module asks the intercept module
+first (`__gofastr._interceptReturn(path, node)`). When the saving node
+sits in the top layer and the destination's path is a layer's own (the
+top one or one under it) or the page under the stack, the stack RETURNS
+there instead of leaving: the layers above it close, their history
+entries consumed in one `history.go`, and it re-renders in place at its
+current URL (a layer refetches its overlay variant, the page under the
+stack refreshes through `__gofastr.refresh()`), so the saved row shows
+and Back walks the stack as it was before the open. A save in a record
+pane that names the record keeps the pane and refreshes it. The leave
+guard asks about what the move discards: the layer re-rendered and
+every layer above it, or the whole document when the page under the
+stack refreshes. Any other destination is a real navigation, as before.
 
 Choosing between the three overlay tools: an intercept is for a detail
 with its own canonical page; a widget deep link

@@ -1271,13 +1271,14 @@ func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, Pa
 
 // RenderOverlayResult renders the screen at path as an intercepted
 // overlay, the same component, the same Load, wrapped in `as` instead
-// of the screen's own type.
+// of the screen's own type. origin is the location the overlay opens
+// over; the screen reads its path with OverlayOriginFromContext.
 //
 // Callers must have already asked Router.InterceptFor whether this
 // navigation is entitled to an overlay. This function does not
 // re-authorize; it renders what it is told.
-func (a *App) RenderOverlayResult(ctx context.Context, path string, as ScreenType) (RenderResult, error) {
-	return a.renderPartial(ctx, path, &as)
+func (a *App) RenderOverlayResult(ctx context.Context, path, origin string, as ScreenType) (RenderResult, error) {
+	return a.renderPartial(withOverlayOrigin(ctx, origin), path, &as)
 }
 
 // ErrScreenPanicked reports that a screen's Load or Render panicked
