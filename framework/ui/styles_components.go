@@ -1115,6 +1115,14 @@ func dataTableCSS(_ style.Theme) string {
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
   padding-block: var(--spacing-sm, 4px);
   block-size: calc(var(--spacing-touch-target) + 2 * var(--spacing-sm, 4px));
+  white-space: nowrap;
+}
+/* A cell holds its value on one line, so a wide table scrolls in its
+   box instead of breaking a date at its hyphens. Column.Wrap opts a
+   prose column out, inside a minimum width. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-wrap {
+  white-space: normal;
+  min-inline-size: var(--ui-data-table-wrap-width, 16rem);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
@@ -1224,6 +1232,8 @@ func dataTableCSS(_ style.Theme) string {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: block;
     inline-size: 100%;
+    /* A card is as wide as the phone: its values wrap. */
+    white-space: normal;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via

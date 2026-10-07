@@ -233,6 +233,25 @@ func TestSearchNarrows(t *testing.T) {
 
 // The cards presentation draws a grid of cards from the title field and
 // the first columns when Display.Card is unset.
+// A long-text column wraps in its cells; every other cell holds one
+// line and the table scrolls.
+func TestListLongTextColumnWraps(t *testing.T) {
+	cfg := ordersConfig()
+	x := newTestUI(t, map[string]entity.EntityConfig{"orders": cfg}, map[string][]map[string]any{"orders": ordersRows()})
+	if html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); strings.Contains(html, "is-wrap") {
+		t.Fatalf("a String column wraps:\n%s", html)
+	}
+	for i, f := range cfg.Fields {
+		if f.Name == "memo" {
+			cfg.Fields[i].Type = schema.Text
+		}
+	}
+	x = newTestUI(t, map[string]entity.EntityConfig{"orders": cfg}, map[string][]map[string]any{"orders": ordersRows()})
+	if html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); strings.Count(html, `class="is-wrap"`) != 2 {
+		t.Errorf("the long-text column's two cells do not wrap:\n%s", html)
+	}
+}
+
 func TestCardsPresentation(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},

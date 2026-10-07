@@ -58,6 +58,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   CSS with no script; a browser without `:has()` shows it always. The
   entity list's bulk bar uses it, so a list nobody is selecting from
   no longer carries an action form above its table.
+- **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
+  prose. Every other cell now holds its value on one line, so a table
+  wider than its box scrolls inside it instead of breaking a date at its
+  hyphens (the admin audit log's times took four lines on a phone). The
+  entity list wraps its long-text (`schema.Text`) columns.
 - **`ui.LinkTitle`** is a link variant for a record's name where it
   heads a row or card: the text colour, semibold, underlined on hover.
   The entity list's table and cards link each record through it.

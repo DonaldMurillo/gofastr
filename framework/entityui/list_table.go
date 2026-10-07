@@ -30,6 +30,8 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		if numericField(f) {
 			col.Align = "end"
 		}
+		// Long text wraps; every other cell holds one line.
+		col.Wrap = f.Type == schema.Text
 		cols = append(cols, col)
 	}
 	// The trash view keeps the actions column — its rows carry the

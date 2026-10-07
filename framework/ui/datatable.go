@@ -39,6 +39,13 @@ type Column struct {
 	// markup as the column's variant, so the class map names the
 	// alignment class for the header and the cell.
 	Align string
+
+	// Wrap lets the column's cells wrap, for prose such as a note or a
+	// description. Every other cell holds its value on one line, so a
+	// table wider than its box scrolls sideways rather than breaking a
+	// date at its hyphens. A wrapping cell keeps
+	// --ui-data-table-wrap-width (16rem) as its minimum width.
+	Wrap bool
 }
 
 // Row is a single rendered table row. Cells map column Key → HTML.
@@ -195,10 +202,15 @@ var dataTableClasses = headless.Classes{
 	headless.PartSort:    "fui-data-table__sort",
 	headless.PartStatus:  "fui-visually-hidden",
 
-	"header--center": "is-align-center",
-	"header--end":    "is-align-end",
-	"cell--center":   "is-align-center",
-	"cell--end":      "is-align-end",
+	"header--center":      "is-align-center",
+	"header--end":         "is-align-end",
+	"header--center-wrap": "is-align-center",
+	"header--end-wrap":    "is-align-end",
+	"cell--center":        "is-align-center",
+	"cell--end":           "is-align-end",
+	"cell--wrap":          "is-wrap",
+	"cell--center-wrap":   "is-align-center is-wrap",
+	"cell--end-wrap":      "is-align-end is-wrap",
 }
 
 // DataTable renders the table: the headless primitive's structure,
@@ -234,6 +246,9 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		switch c.Align {
 		case "center", "end":
 			variant = c.Align
+		}
+		if c.Wrap {
+			variant = strings.TrimPrefix(variant+"-wrap", "-")
 		}
 		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, Variant: variant}
 	}
