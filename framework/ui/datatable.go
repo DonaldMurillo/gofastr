@@ -211,6 +211,7 @@ var dataTableClasses = headless.Classes{
 	headless.PartTable:   "fui-data-table__table",
 	headless.PartCaption: "fui-data-table__caption",
 	headless.PartSort:    "fui-data-table__sort",
+	headless.PartEmpty:   "fui-data-table__empty",
 	headless.PartStatus:  "fui-visually-hidden",
 	// The select-all header draws the kit's checkbox.
 	headless.PartTableSelect: "fui-choice--checkbox fui-data-table__select",

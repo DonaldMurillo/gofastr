@@ -1246,6 +1246,16 @@ func dataTableCSS(_ style.Theme) string {
 /* A cell holds its value on one line, so a wide table scrolls in its
    box instead of breaking a date at its hyphens. Column.Wrap opts a
    prose column out, inside a minimum width. */
+/* An empty result keeps its head, which can outgrow a narrow column.
+   The empty state stays in view at the scroll region's width instead
+   of scrolling off with the head, and wraps. */
+[data-cui-comp="ui-data-table"].is-empty .fui-data-table__scroll { container-type: inline-size; }
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.fui-data-table__empty { white-space: normal; }
+[data-cui-comp="ui-data-table"] .fui-data-table__empty > * {
+  position: sticky;
+  inset-inline-start: var(--spacing-lg, 16px);
+  max-inline-size: calc(100cqi - 2 * var(--spacing-lg, 16px));
+}
 [data-cui-comp="ui-data-table"] .fui-data-table__table td.is-wrap {
   white-space: normal;
   min-inline-size: var(--ui-data-table-wrap-width, 16rem);

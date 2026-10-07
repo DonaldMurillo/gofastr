@@ -1560,6 +1560,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **An empty `ui.DataTable` keeps its empty state in view on a phone.**
+  The empty state sat in a cell spanning the head, so when the columns
+  outgrew a narrow screen it scrolled sideways with them and its text
+  was cut off on one line. It now stays at the visible width and
+  wraps.
 - **Choosing a `ui.Menu` command row closes the menu.** Only link rows
   closed it, so Delete and the other button rows left the panel open
   behind their confirm dialog and after their request. A command row
