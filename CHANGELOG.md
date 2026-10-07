@@ -159,6 +159,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   for a copy control inside a line of text.
 - **`ui.FormConfig.Wide`** lifts the form's readable-measure cap, so a
   `ui.FormFrame` body splits into its side column.
+- **`ui.SelectConfig.Action`** draws a control after the select on its
+  row, such as a link to the chosen record. The new `"arrow-up-right"`
+  icon draws one.
 - **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
   prose. Every other cell now holds its value on one line, so a table
   wider than its box scrolls inside it instead of breaking a date at its
@@ -894,7 +897,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   counts, the Related count read through each entity's own gate and
   scope. A Details column beside the form holds the id with a copy
   button, the timestamps and each move's stamp. In a drawer the record
-  wears `ui.DrawerBar` and its menu drops copy link. An app action
+  wears `ui.DrawerBar` and its menu drops copy link. Under
+  `WithRecordPath` a relation select draws an open button to the record
+  it holds, when the caller's own read of that entity returns the row.
+  An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.
   New, Duplicate,

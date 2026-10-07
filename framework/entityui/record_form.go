@@ -731,6 +731,39 @@ func (fb *formBuilder) relationSelect(ctx context.Context, f schema.Field, label
 	return ui.Select(ui.SelectConfig{
 		Name: f.Name, Label: label, ID: id, Options: opts, Help: help,
 		Required: f.Required && !fb.masked[f.Name],
+		Action:   fb.relationOpen(ctx, f, cur),
+	})
+}
+
+// relationOpen links to the record a relation names, beside its
+// select: only for a stored value, an entity the UI has record screens
+// for, and a record the caller's own scoped, hooked read returns — the
+// gate alone passes a row another owner holds.
+func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur string) render.HTML {
+	if cur == "" {
+		return ""
+	}
+	base, ok := fb.b.ui.relatedBase(ctx, fb.m, f.Name)
+	if !ok || !fb.relationReadable(ctx, f, cur) {
+		return ""
+	}
+	other, err := fb.b.ui.entityFor(f.To)
+	if err != nil {
+		return ""
+	}
+	om, err := fb.b.ui.meta(other.GetName())
+	if err != nil {
+		return ""
+	}
+	if row, err := om.ch.GetOne(crud.WithReadHooks(ctx), cur, nil); err != nil || row == nil {
+		return ""
+	}
+	return ui.LinkButton(ui.LinkButtonConfig{
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityOpen, map[string]string{"entity": om.singular(ctx)}),
+		Href:     base + "/" + url.PathEscape(cur),
+		Variant:  ui.ButtonSecondary,
+		Icon:     "arrow-up-right",
+		IconOnly: true,
 	})
 }
 

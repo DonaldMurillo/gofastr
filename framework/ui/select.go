@@ -45,6 +45,10 @@ type SelectConfig struct {
 	Error string
 	ID    string
 	Class string
+	// Action is a control drawn after the select on its row: a link to
+	// the chosen record, an add button. It is the caller's markup and
+	// stays reachable by an owned style sheet.
+	Action render.HTML
 	// ExtraAttrs forwards additional attributes to the <select>
 	// element (a relation's data-rel-entity among them). Keys the
 	// component owns are dropped: class and id (use Class / ID),
@@ -96,7 +100,11 @@ func Select(cfg SelectConfig) render.HTML {
 		// field whose marker fetches the field sheet. Field sees the
 		// control as slot content; it is this component's own, so it
 		// is marked here.
-		return headless.Own(sel)
+		sel = headless.Own(sel)
+		if cfg.Action == "" {
+			return sel
+		}
+		return render.Tag("div", map[string]string{"class": "fui-select__row"}, sel, cfg.Action)
 	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,
@@ -147,5 +155,13 @@ func selectCSS(_ style.Theme) string {
   cursor: not-allowed;
 }
 /* Phones keep text-base so iOS does not zoom into the focused control. */
-@media (max-width: 767.98px) { .fui-select { font-size: var(--text-base, 1rem); } }`
+@media (max-width: 767.98px) { .fui-select { font-size: var(--text-base, 1rem); } }
+/* An Action sits after the select on one row; the select takes the
+   rest of it. */
+.fui-select__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+}
+.fui-select__row > .fui-select { flex: 1; min-inline-size: 0; }`
 }

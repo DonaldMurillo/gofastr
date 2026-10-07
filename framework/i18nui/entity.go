@@ -26,6 +26,7 @@ const (
 	KeyEntityDeleted        Key = "ui.entity.deleted"        // "{entity} deleted"
 	KeyEntityDuplicate      Key = "ui.entity.duplicate"      // "Duplicate"
 	KeyEntityCopyLink       Key = "ui.entity.copyLink"       // "Copy link"
+	KeyEntityOpen           Key = "ui.entity.open"           // "Open {entity}"
 	KeyEntitySelect         Key = "ui.entity.select"         // "— Select —"
 	KeyEntityYes            Key = "ui.entity.yes"            // "Yes"
 	KeyEntityNo             Key = "ui.entity.no"             // "No"
@@ -49,6 +50,7 @@ var entityDefaults = map[Key]string{
 	KeyEntityDeleted:        "{entity} deleted",
 	KeyEntityDuplicate:      "Duplicate",
 	KeyEntityCopyLink:       "Copy link",
+	KeyEntityOpen:           "Open {entity}",
 	KeyEntitySelect:         "— Select —",
 	KeyEntityYes:            "Yes",
 	KeyEntityNo:             "No",

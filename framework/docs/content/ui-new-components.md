@@ -89,7 +89,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **textarea**: `framework/ui.TextArea`, multi-line input with typed Autogrow and Monospace (the mono font token, for JSON and code)
 - **colorpicker**: `framework/ui.ColorPicker`, styled native `<input type=color>`
 - **timepicker**: `framework/ui.TimePicker`, styled native `<input type=time>`
-- **select**: `framework/ui.Select`, labelled native `<select>` with help, error, placeholder, and required marker
+- **select**: `framework/ui.Select`, labelled native `<select>` with help, error, placeholder, and required marker; `Action` draws a control after the select on its row (an open-record link)
 - **taginput**: `framework/ui.TagInput`, free-form chips, Enter/comma to commit, Backspace to remove
 - **multiselect**: `framework/ui.MultiSelect`, checkbox group inside a disclosure with a chips strip above; submits as a plain form (the field name repeats per checked option, no script needed), the chips are the enhancement the `headless-multiselect` module rebuilds from the checkboxes' own state
 - **form**: `framework/ui.Form`, opinionated `<form>` wrapper with submit + error summary; `Wide` lifts the readable-measure cap so a FormFrame body can split into its side column
@@ -208,7 +208,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **statusbadge**: `framework/ui.StatusBadge`, small inline pill conveying state (success / warning / danger / info / neutral); `Dot` draws a filled circle in the label's tone before the word, the status-column shape, sized by `--ui-badge-dot-size` (0.375rem)
 - **filtertoolbar**: `framework/ui.FilterToolbar`, the filter/sort control strip above a list (facet `<select>` or radio-pill groups + search + sort + Apply/Reset), a single URL-driven GET form; wraps → stacks responsively so nothing clips on mobile. `Dropdown: true` moves everything but the search into a Filters dropdown, `Extra` adds controls of the same form, `Applied` adds to the Filters badge, and `Tools` draws links and link menus at the row's end
 - **filterchipbar**: `framework/ui.FilterChipBar`, `role=toolbar` of removable filter chips; a chip's × POSTs its `DismissBody` to `DismissPath` and the bar swaps in the response (the × is a link to `DismissPath` without script)
-- **copybutton**: `framework/ui.CopyButton`, clipboard button with SR-announced confirmation; `IconOnly` with `Icon` draws a registered icon (`"copy"`, `"link"`) in place of the glyph; `Inline` draws it quiet (no border or fill until hover, a 24px target) for a copy control inside a line of text
+- **copybutton**: `framework/ui.CopyButton`, clipboard button with SR-announced confirmation; `IconOnly` with `Icon` draws a registered icon (`"copy"`, `"link"`, `"arrow-up-right"`) in place of the glyph; `Inline` draws it quiet (no border or fill until hover, a 24px target) for a copy control inside a line of text
 - **drawerbar**: `framework/ui.DrawerBar`, the bar across the top of an intercepted drawer: a close button (`data-cui-intercept-close`), the layer's path in mono, a copy-link button when `CopyURL` is set, then `Actions`. It sticks to the layer's top edge while the layer scrolls. Draw it when `app.OverlayFromContext` reports a drawer
 - **toolbar**: `framework/ui.Toolbar`, `role=toolbar` wrapper for grouped actions
 

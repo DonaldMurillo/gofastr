@@ -64,7 +64,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
   `ui.DrawerBar` (close, its path, copy link) and its menu drops Copy
-  link.
+  link. With `WithRecordPath`, a relation select holding a value draws
+  an open button beside it, linking to that record, when the caller's
+  own read of the related entity returns the row.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills

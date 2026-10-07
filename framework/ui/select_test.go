@@ -107,6 +107,28 @@ func TestSelectExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 }
 
+// Action draws the caller's control after the select on one row, left
+// reachable (no internal mark); with no Action there is no row.
+func TestSelectActionSitsOnTheRow(t *testing.T) {
+	h := string(Select(SelectConfig{
+		Name: "owner", Label: "Owner",
+		Options: []SelectOption{{Value: "1", Text: "One"}},
+		Action:  `<a href="/users/1" id="open">Open</a>`,
+	}))
+	row := strings.Index(h, `<div class="fui-select__row">`)
+	sel := strings.Index(h, "<select")
+	act := strings.Index(h, `<a href="/users/1" id="open">`)
+	if row < 0 || sel < row || act < sel {
+		t.Fatalf("the action is not after the select on its row:\n%s", h)
+	}
+	if !strings.Contains(selectCSS(style.Theme{}), ".fui-select__row") {
+		t.Fatal("selectCSS does not lay out the row")
+	}
+	if plain := requiredSelect(); strings.Contains(plain, "fui-select__row") {
+		t.Fatalf("a select with no action drew the row:\n%s", plain)
+	}
+}
+
 // Help and error are both visible when both are set, the error first,
 // and both ids ride the control's described-by — the field family's
 // contract, which Select inherits from headless.Field.
