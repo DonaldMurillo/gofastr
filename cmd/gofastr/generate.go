@@ -1536,6 +1536,9 @@ func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
 		if d.Nav.Hide {
 			parts = append(parts, "Hide: true")
 		}
+		if d.Nav.HideCount {
+			parts = append(parts, "HideCount: true")
+		}
 		sb.WriteString(strings.Join(parts, ", "))
 		sb.WriteString("}")
 	}

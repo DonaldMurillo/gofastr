@@ -39,18 +39,17 @@ const statGroupCap = 100
 // "—": a stat sits beside content the caller can see, and must not
 // announce what it cannot.
 func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, format string) string {
+	if agg == "" || agg == "count" {
+		if n, ok := u.Count(ctx, entityName, where); ok {
+			return n
+		}
+		return "—"
+	}
 	m, opts, ok := u.statRead(ctx, entityName, where)
 	if !ok {
 		return "—"
 	}
 	switch agg {
-	case "", "count":
-		n, err := m.ch.CountAll(crud.WithReadHooks(ctx), opts)
-		if err != nil {
-			slog.WarnContext(ctx, "entityui: stat", "entity", entityName, "error", err)
-			return "—"
-		}
-		return formatNumber(float64(n), 0)
 	case "sum":
 		total, ok := u.statSum(ctx, m, field, opts)
 		if !ok {
@@ -72,6 +71,25 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		slog.WarnContext(ctx, "entityui: stat agg is not count or sum", "entity", entityName, "agg", agg)
 		return "—"
 	}
+}
+
+// Count is how many records of the entity the caller can read that
+// match where (filter text in the query DSL; "" for all), formatted
+// with digit grouping, under the same read gate, scope and read hooks
+// as the entity's list. It reports false when the read is refused, the
+// filter is bad or the query fails, so a nav count or a badge draws
+// nothing rather than a figure the caller may not see.
+func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool) {
+	m, opts, ok := u.statRead(ctx, entityName, where)
+	if !ok {
+		return "", false
+	}
+	n, err := m.ch.CountAll(crud.WithReadHooks(ctx), opts)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: count", "entity", entityName, "error", err)
+		return "", false
+	}
+	return formatNumber(float64(n), 0), true
 }
 
 // LastUpdated is when the newest record the caller can read was last

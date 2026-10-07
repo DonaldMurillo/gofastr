@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **The admin sidebar counts each entity's records.** The figure ends
+  the row, counted under the list's read gate, and re-renders on every
+  client navigation, so a create shows on the next click.
+  `EntityNav.HideCount` (`hide_count`) drops it for a table too large
+  to count per click. Underneath: `ui.SidebarItem.Count` (and
+  `headless.SidebarItem.Count`), `app.AreaSpec.Inline` for a route area
+  that renders a `span`, and `entityui.UI.Count`, which reports false
+  where `StatValue` prints "—".
 - **Admin account settings**: `<PathPrefix>/account`, linked from the
   account menu, shows the signed-in user's profile (email with its
   verified state, roles), the theme choice, and, with `Config.Auth`, a

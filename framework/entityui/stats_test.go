@@ -59,6 +59,24 @@ func TestStatUnknownAggIsRefused(t *testing.T) {
 	}
 }
 
+// Count is the list's count, and draws nothing when it cannot answer.
+func TestCountReportsWhatItCannotRead(t *testing.T) {
+	x := newInvoiceUI(t)
+	seedInvoiceRows(t, x, "c", 1233, "1.00")
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", ""); !ok || got != "1,234" {
+		t.Fatalf("count = %q %v, want 1,234", got, ok)
+	}
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", `status = "draft"`); !ok || got != "1" {
+		t.Fatalf("draft count = %q %v, want 1", got, ok)
+	}
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", `nope = 1`); ok {
+		t.Fatalf("a bad filter counted %q", got)
+	}
+	if got, ok := x.ui.Count(x.ctx("/dash", ""), "invoices", ""); ok {
+		t.Fatalf("SECURITY: an anonymous caller read a count: %q", got)
+	}
+}
+
 // AfterList hooks mask rows after the query, so a total the database
 // computed would count what they hide. The stat totals the masked rows
 // instead, and past the row cap draws nothing rather than part of them.

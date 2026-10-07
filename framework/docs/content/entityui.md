@@ -89,6 +89,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
   why. A dashboard block reads an entity without a screen of its own.
+  `appUI.Count(ctx, entity, where)` is the count alone, formatted, and
+  reports false where `StatValue` would print "—", so a nav row or a
+  badge draws nothing instead.
   `appUI.LastUpdated` is when the newest record the caller can read was
   written (the greatest `updated_at` in scope); it reports false on an
   entity without timestamps, a refused read or no rows.

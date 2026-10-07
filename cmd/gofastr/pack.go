@@ -490,6 +490,7 @@ func displayToMap(d *fwentity.DisplayConfig) map[string]any {
 		putStr(nav, "icon", d.Nav.Icon)
 		putInt(nav, "order", d.Nav.Order)
 		putBool(nav, "hide", d.Nav.Hide)
+		putBool(nav, "hide_count", d.Nav.HideCount)
 		m["nav"] = nav
 	}
 	if len(d.Views) > 0 {
@@ -1436,6 +1437,7 @@ func packDisplayFromExpr(e ast.Expr) *fwentity.DisplayConfig {
 		n := fieldVals(v)
 		nav := &fwentity.EntityNav{
 			Group: astString(n["Group"]), Icon: astString(n["Icon"]), Hide: astBool(n["Hide"]),
+			HideCount: astBool(n["HideCount"]),
 		}
 		if order, ok := astInt(n["Order"]); ok {
 			nav.Order = order

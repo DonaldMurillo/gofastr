@@ -172,8 +172,20 @@ func (b *Battery) layout() *appui.Layout {
 	// The trail swaps in one frame: its root ("Meridian") is the same on
 	// every page, and any fade would blink it.
 	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "crumbs", Transition: appui.Instant()}}}
+	// Each entity row's count is an inline route area: the sidebar
+	// stays put across client navigations, and the count re-renders
+	// with every one, so a create shows in it on the next click.
+	for _, e := range b.ents {
+		if countsInNav(e) {
+			spec.Areas = append(spec.Areas, appui.AreaSpec{Name: navCountArea(e), Transition: appui.Instant(), Inline: true})
+		}
+	}
 	return appui.NewLayout("gofastr-admin", spec, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
-		cfg := b.sidebar(ctx)
+		cfg := b.sidebarWith(ctx, func(e *entity.Entity) render.HTML {
+			return l.RouteArea(navCountArea(e), func(ctx context.Context, _ appui.Match) render.HTML {
+				return b.navCount(ctx, e)
+			})
+		})
 		nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
 		crumbs := l.RouteArea("crumbs", func(ctx context.Context, m appui.Match) render.HTML {
 			return b.crumbs(ctx, m.Path())
@@ -228,11 +240,22 @@ type navItem struct {
 	label string
 	href  string
 	icon  string
+	count render.HTML
 }
 
-// sidebar builds the sidebar for the request in ctx. The drawer and the
-// inline column call the same function, so the two never differ.
+// sidebar builds the phone drawer's sidebar for the request in ctx: the
+// inline column's, without counts. The drawer is a widget outside the
+// layout, so a count there would keep the figure of the page it loaded
+// with; it draws none rather than a stale one.
 func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
+	return b.sidebarWith(ctx, nil)
+}
+
+// sidebarWith builds the sidebar for the request in ctx, the count of
+// each counted entity row from count (nil draws none). The drawer and
+// the inline column both build through it, so the two never differ in
+// anything else.
+func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) render.HTML) ui.SidebarConfig {
 	path := ""
 	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
 		path = r.URL.Path
@@ -242,7 +265,7 @@ func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
 		Href:  b.cfg.PathPrefix,
 		Icon:  ui.Icon("home", ui.IconConfig{}),
 	}}
-	items = append(items, b.navGroups(ctx)...)
+	items = append(items, b.navGroups(ctx, count)...)
 	if ops := b.opsItems(ctx); len(ops) > 0 {
 		items = append(items, ui.SidebarItem{Label: i18nui.T(ctx, i18nui.KeyAdminSystemNav), Children: ops, Open: true})
 	}
@@ -262,8 +285,9 @@ func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
 // navGroups are the entity, page and link entries under their nav
 // groups. Groups keep the order they first appear in (entities in the
 // order the admin exposes them, then pages, then links); entries sort by
-// Order, then label.
-func (b *Battery) navGroups(ctx context.Context) []ui.SidebarItem {
+// Order, then label. An entity row carries count's figure when the
+// entity is counted and count is non-nil.
+func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) render.HTML) []ui.SidebarItem {
 	var all []navItem
 	for _, e := range b.ents {
 		n := navOf(e)
@@ -273,6 +297,9 @@ func (b *Battery) navGroups(ctx context.Context) []ui.SidebarItem {
 		it := navItem{label: b.plural(ctx, e), href: b.entityBase(e)}
 		if n != nil {
 			it.group, it.order, it.icon = n.Group, n.Order, n.Icon
+		}
+		if count != nil && countsInNav(e) {
+			it.count = count(e)
 		}
 		all = append(all, it)
 	}
@@ -302,7 +329,7 @@ func (b *Battery) navGroups(ctx context.Context) []ui.SidebarItem {
 		})
 		children := make([]ui.SidebarItem, len(entries))
 		for i, it := range entries {
-			children[i] = ui.SidebarItem{Label: it.label, Href: it.href, MatchPath: it.href, Icon: navIcon(it.icon)}
+			children[i] = ui.SidebarItem{Label: it.label, Href: it.href, MatchPath: it.href, Icon: navIcon(it.icon), Count: it.count}
 		}
 		label := i18nui.T(ctx, i18nui.KeyAdminEntities)
 		if g != "" {
@@ -340,6 +367,30 @@ func navIcon(name string) render.HTML {
 }
 
 // navOf returns an entity's nav placement, or nil.
+// countsInNav reports whether the entity's nav row shows a count: it is
+// in the nav and its Nav does not set HideCount.
+func countsInNav(e *entity.Entity) bool {
+	n := navOf(e)
+	return n == nil || (!n.Hide && !n.HideCount)
+}
+
+// navCountArea names the layout area holding the entity's nav count.
+func navCountArea(e *entity.Entity) string { return "count-" + e.GetName() }
+
+// navCount is the entity row's count: the records the caller can read,
+// under the same elevated read the entity's list draws with. A refused
+// or failed count draws nothing.
+func (b *Battery) navCount(ctx context.Context, e *entity.Entity) render.HTML {
+	if !b.authorized(ctx) {
+		return ""
+	}
+	n, ok := b.ui.Count(b.elevate(ctx), e.GetName(), "")
+	if !ok {
+		return ""
+	}
+	return render.Text(n)
+}
+
 func navOf(e *entity.Entity) *entity.EntityNav {
 	if e.Config.Display == nil {
 		return nil

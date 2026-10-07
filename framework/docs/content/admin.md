@@ -71,6 +71,14 @@ entry. `Config.PathPrefix` moves everything off `/admin`.
 
 ### Entity screens
 
+Each entity's sidebar row ends in how many records the admin can read,
+counted the way the list's "All" tab counts. The count is a route area
+of the shell layout, so it re-renders on every client navigation while
+the sidebar stays put: a record created in a drawer shows in it on the
+next click. A table too large to count per click sets
+`EntityNav{HideCount: true}` (`hide_count` in a declaration). The phone
+nav drawer, which no navigation re-renders, draws no counts.
+
 The list, record and create screens are `entityui` screens, so they
 carry everything the entity declares: its `Display` names, fields and
 nav group, its `States` transitions, relations (a Related tab on the

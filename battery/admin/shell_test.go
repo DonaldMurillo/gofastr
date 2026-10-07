@@ -3,7 +3,9 @@ package admin
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,6 +53,50 @@ func TestShellFrame(t *testing.T) {
 	}
 	if strings.Contains(body, "<style") {
 		t.Error("the admin shipped a style block")
+	}
+}
+
+// An entity's nav row counts the records the admin reads, in a route
+// area so a client navigation brings the new figure; HideCount drops
+// it, and the phone drawer, which no navigation re-renders, draws none.
+func TestNavRowsCountRecords(t *testing.T) {
+	notes := notesConfig()
+	notes.Display = &entity.DisplayConfig{Nav: &entity.EntityNav{HideCount: true}}
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig(), "notes": notes},
+		Config{Entities: []string{"posts", "notes"}}, nil)
+	x.insert("posts", map[string]any{"id": "p1", "title": "One", "status": "draft"})
+	x.insert("posts", map[string]any{"id": "p2", "title": "Two", "status": "draft"})
+	x.insert("notes", map[string]any{"id": "n1", "text": "hidden count"})
+
+	row := regexp.MustCompile(`href="/admin/entities/posts"[^>]*>.*?</a>`)
+	link := row.FindString(get(x.as(theAdmin), "/admin").Body.String())
+	if !regexp.MustCompile(`<span class="fui-sidebar__count"><span data-cui-area="[^"]*~count-posts"[^>]*>2</span></span></a>$`).MatchString(link) {
+		t.Errorf("the posts row must end in its count area holding 2:\n%s", link)
+	}
+	body := get(x.as(theAdmin), "/admin").Body.String()
+	if strings.Contains(body, "~count-notes") {
+		t.Error("HideCount still drew the notes count")
+	}
+
+	x.insert("posts", map[string]any{"id": "p3", "title": "Three", "status": "draft"})
+	req := httptest.NewRequest(http.MethodGet, "/admin/entities/posts", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.Header.Set("X-Gofastr-From", "/admin")
+	req.Header.Set("X-Gofastr-Fills", "2")
+	nav := serve(x.as(theAdmin), req).Body.String()
+	if !regexp.MustCompile(`data-cui-fill="[^"]*~count-posts"[^>]*>3</template>`).MatchString(nav) {
+		t.Errorf("a client navigation must carry the posts count, now 3, as a fill:\n%s", nav)
+	}
+
+	if drawer := get(x.as(theAdmin), "/core-ui/widget/admin-nav/chrome").Body.String(); strings.Contains(drawer, "fui-sidebar__count") {
+		t.Error("the phone drawer drew a count no navigation refreshes")
+	}
+
+	// The count reads elevated, so it asks the gate itself rather than
+	// trusting the layout to run only behind it.
+	posts := x.b.ents[slices.IndexFunc(x.b.ents, func(e *entity.Entity) bool { return e.GetName() == "posts" })]
+	if got := x.b.navCount(handler.SetUser(context.Background(), aReader), posts); got != "" {
+		t.Errorf("SECURITY: a reader outside the gate got the elevated count %q", got)
 	}
 }
 

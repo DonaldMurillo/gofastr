@@ -55,12 +55,15 @@ type DisplayConfig struct {
 // group, with an icon, in an order. Group is a key — a lowercase ASCII
 // slug, never `all` or `deleted` — translated as nav.groups.<group>. Hide
 // drops the entity from nav and the dashboard; it never changes what the
-// admin exposes.
+// admin exposes. An entity's nav row shows how many records the viewer
+// can read, recounted on every navigation; HideCount drops the count
+// for a table too large to count per click. Pages ignore it.
 type EntityNav struct {
-	Group string `json:"group,omitempty"`
-	Icon  string `json:"icon,omitempty"`
-	Order int    `json:"order,omitempty"`
-	Hide  bool   `json:"hide,omitempty"`
+	Group     string `json:"group,omitempty"`
+	Icon      string `json:"icon,omitempty"`
+	Order     int    `json:"order,omitempty"`
+	Hide      bool   `json:"hide,omitempty"`
+	HideCount bool   `json:"hide_count,omitempty"`
 }
 
 // ListView is a named starting point for a list: a DSL Where and Sort, an

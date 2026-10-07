@@ -1312,7 +1312,7 @@ app.Entity("invoices", framework.EntityConfig{
         Plural:     "Invoices",
         TitleField: "number",               // names a record in lists, drawers, breadcrumbs
         Columns:    []string{"number", "amount", "status"},
-        Nav:        &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1},
+        Nav:        &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1}, // HideCount drops the row's record count
         Views: []framework.ListView{
             {Key: "open", Where: `status = "open"`, Sort: "due_on ASC"},
         },
