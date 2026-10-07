@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // noCapCtx is u1 signed in with a policy that grants nothing relevant.
@@ -206,6 +208,40 @@ func TestOverrideSuccessOneAuditRow(t *testing.T) {
 	if len(w.from) != 1 || w.from[0]["status"] != "paid" {
 		t.Fatalf("the audited row does not carry the new value: %v", w.from)
 	}
+}
+
+// A write crud refuses answers what crud meant, never a 500: a caller
+// who holds the capability but not the entity's update permission gets
+// 403, and a hook's refusal gets 400.
+func TestOverrideWriteRefusalStatus(t *testing.T) {
+	gated := func(ents map[string]entity.EntityConfig) {
+		inv := ents["invoices"]
+		inv.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: "invoices:read", Update: "invoices:update"}}
+		ents["invoices"] = inv
+	}
+	w := newOverrideWorld(t, gated)
+	policy := overridePolicy(t, "invoices:override_state", "invoices:read")
+	policy.Register("invoices:update")
+	rec := postOverride(t, w, overrideCtx(policy, "boss"), "application/json", `{"state":"paid","reason":"no update grant"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("SECURITY: no update permission: status %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	assertInvoiceUntouched(t, w)
+	if body := string(w.x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Override().RenderCtx(overrideCtx(policy, "boss"))); strings.Contains(body, "Override status") {
+		t.Fatal("the form drew for a caller who may not update the record")
+	}
+
+	w = newOverrideWorld(t, nil)
+	ch, err := w.x.host.Crud(mustEntity(t, w.x, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(context.Context, any) error { return errors.New("closed period") })
+	rec = postOverride(t, w, overrideCtx(overridePolicy(t, "invoices:override_state"), "boss"), "application/json", `{"state":"paid","reason":"hook says no"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("hook refusal: status %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	assertInvoiceUntouched(t, w)
 }
 
 // assertInvoiceUntouched pins the guard tests' other half: nothing

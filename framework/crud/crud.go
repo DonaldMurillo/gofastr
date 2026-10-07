@@ -45,6 +45,15 @@ type beforeHookError struct{ err error }
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
 
+// IsHookRefusal reports whether err is a BeforeCreate, BeforeUpdate or
+// BeforeDelete hook's rejection, the error the HTTP handlers answer 400.
+// An in-process caller that serves its own HTTP answer uses it to tell a
+// refusal from a failure.
+func IsHookRefusal(err error) bool {
+	_, ok := errors.AsType[*beforeHookError](err)
+	return ok
+}
+
 // tenantMissingError signals a Create attempt against a MultiTenant
 // entity with no tenant in the request context. Surfaces as 400 in
 // the HTTP handler so an orphan row can never be written.

@@ -831,11 +831,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`entityui.RecordBuilder.Override()` and `UI.OverrideHandler` set a
   record's status outside its declared moves.** The form draws only for
   an entity with enforced `States`, on an app with an audit log, for a
-  caller holding `<entity>:override_state` itself (a wildcard grant and
-  `crud.WithElevation` do not count). The handler checks the capability
-  again, reads the record under the caller's scope, requires a reason of
-  at most 500 characters, and writes through `crud.WithStateOverride`,
-  so the audit row records `state_override` and the reason.
+  caller who may update the record and holds `<entity>:override_state`
+  itself (a wildcard grant and `crud.WithElevation` do not count). The
+  handler checks the capability again, reads the record under the
+  caller's scope and read permission, refuses a caller without the
+  update permission, requires a reason of at most 500 characters, and
+  writes through `crud.WithStateOverride`, so the audit row records
+  `state_override` and the reason. A refused write answers 403, 404,
+  422 or 400 as the JSON API does.
+- **`crud.IsHookRefusal(err)`** reports a Before hook's rejection, the
+  error the HTTP handlers answer 400, so in-process code serving its own
+  answer can tell a refusal from a failure.
 - **The admin's audit log filters by actor, entity, operation and date
   range** through the page's query string (`actor`, `entity`, `op`,
   `from`, `to`). Each value is validated and bound as a placeholder; an

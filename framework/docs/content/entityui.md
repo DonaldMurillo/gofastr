@@ -393,20 +393,25 @@ could not.
 disclosure below the tabs, for setting the state field outside the
 declared moves (a bad import, a support case). It is drawn only for an
 entity with enforced `States` on an app that keeps an audit log, and
-only for a caller holding `<entity>:override_state`, checked with
-`access.CanResourceExact`: a `Wildcard` grant does not satisfy it, and
-neither does `crud.WithElevation`. The form takes a state and a
+only for a caller who may update the record and also holds
+`<entity>:override_state`, checked with `access.CanResourceExact`: a
+`Wildcard` grant does not satisfy it, and neither does
+`crud.WithElevation`. The capability adds to the update permission; it
+does not replace it. The form takes a state and a
 required reason (at most 500 characters) and asks before it posts.
 
 It posts to `<write base>/{id}/_override`, served by
 `UI.OverrideHandler(entity)`, which the host mounts beside its other
 write routes. The handler takes POST only, refuses cross-site posts,
 caps the body, checks the capability before reading anything, reads the
-record under the caller's context (another owner's id answers 404),
-validates the state and the reason, and writes with `crud.UpdateOne`
-under `crud.WithStateOverride`. The audit row (`state_override`, with
-the reason) comes from crud. An entity no audit log records answers
-409; the write never falls back to an unaudited one. A form RPC gets a
+record under the caller's context and the entity's read permission
+(another owner's id answers 404), refuses a caller the update
+permission refuses (403), validates the state and the reason, and
+writes with `crud.UpdateOne` under `crud.WithStateOverride`. The audit
+row (`state_override`, with the reason) comes from crud. An entity no
+audit log records answers 409; the write never falls back to an
+unaudited one. A write crud refuses answers what the JSON API would: 403,
+404, 422 for invalid values, 400 for a hook's refusal. A form RPC gets a
 status and a toast; a plain form post gets a 303 to the form's `back`
 path, which must be a same-origin relative path.
 

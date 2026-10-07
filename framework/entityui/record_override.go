@@ -56,16 +56,16 @@ func overrideCapability(m *meta) access.Permission {
 }
 
 // mayOverride is every gate the form needs: the builder turned it on,
-// the entity declares enforced states, the app keeps an audit log, and
-// the caller holds the capability exactly — a Wildcard grant does not
-// satisfy it, and neither does a back office's elevation (the screen
-// hands the form the caller's own context; CanResourceExact consults
-// neither).
+// the entity declares enforced states, the app keeps an audit log, the
+// caller may update the record, and the caller holds the capability
+// exactly — a Wildcard grant does not satisfy it, and neither does a
+// back office's elevation (CanResourceExact consults neither).
 func (b *RecordBuilder) mayOverride(ctx context.Context, m *meta, id string) bool {
 	if !b.override || !hasEnforcedStates(m) || b.ui.host.Audit() == nil {
 		return false
 	}
-	return access.CanResourceExact(ctx, overrideCapability(m), access.Ref{Type: m.name, ID: id})
+	return access.CanResourceExact(ctx, overrideCapability(m), access.Ref{Type: m.name, ID: id}) &&
+		m.ch.CanUpdateRecordScoped(ctx, id)
 }
 
 // hasEnforcedStates reports whether m declares states the CRUD handler
@@ -153,7 +153,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 //     read scope does not reach answers 404, the same as a missing id,
 //     and nothing changes;
 //   - validates the target state against the field's declared values and
-//     the reason (non-blank, at most OverrideReasonMax bytes), and writes
+//     the reason (non-blank, at most OverrideReasonMax characters), and writes
 //     with crud.UpdateOne under crud.WithStateOverride in the caller's
 //     context, so the CRUD gates and the audit row ("state_override"
 //     with the reason) come from crud itself. An entity no audit log
@@ -219,10 +219,22 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 				return
 			}
 		}
-		// The read runs under the caller's context: another owner's id
-		// and a missing id answer the same 404, and nothing changes.
+		// The read runs under the caller's context: another owner's id,
+		// a record the entity's read permission refuses and a missing id
+		// answer the same 404, and nothing changes. The in-process read
+		// and write apply scope only, so the entity's own permissions are
+		// asked here: the capability adds to update, it does not replace
+		// it.
+		if !m.ch.CanReadRecordScoped(ctx, id) {
+			writeBulkError(w, http.StatusNotFound, "not found")
+			return
+		}
 		if _, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil); err != nil {
 			writeBulkError(w, http.StatusNotFound, "not found")
+			return
+		}
+		if !m.ch.CanUpdateRecordScoped(ctx, id) {
+			writeOverrideError(w, r, ctx, http.StatusForbidden, i18nui.TVars(ctx, i18nui.KeyEntityOverrideDenied, map[string]string{"entity": m.singular(ctx)}))
 			return
 		}
 		if !slices.Contains(stateValues(m), state) {
@@ -308,15 +320,35 @@ func writeOverrideError(w http.ResponseWriter, r *http.Request, ctx context.Cont
 
 // writeOverrideRefusal maps crud's refusals to answers. The unaudited
 // refusal is a 409: the operator turned the audit log off, or the entity
-// never had one, and the override's only trail is the audit row.
+// never had one, and the override's only trail is the audit row. A
+// refused write answers what the JSON API would (403, 404, 422, 400 for
+// a hook); only a failure is a 500.
 func writeOverrideRefusal(w http.ResponseWriter, r *http.Request, ctx context.Context, m *meta, err error) {
 	switch {
 	case errors.Is(err, crud.ErrStateOverrideUnaudited):
 		writeOverrideError(w, r, ctx, http.StatusConflict, i18nui.T(ctx, i18nui.KeyEntityOverrideNoAudit))
 	case errors.Is(err, crud.ErrStateOverrideNoReason):
 		writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideBlank))
+	case errors.Is(err, crud.ErrForbidden):
+		writeOverrideError(w, r, ctx, http.StatusForbidden, i18nui.TVars(ctx, i18nui.KeyEntityOverrideDenied, map[string]string{"entity": m.singular(ctx)}))
+	case crud.IsNotFound(err):
+		writeBulkError(w, http.StatusNotFound, "not found")
+	case isWriteInvalid(err):
+		writeOverrideError(w, r, ctx, http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
+	case crud.IsHookRefusal(err):
+		writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
 	default:
 		slog.ErrorContext(ctx, "entityui: state override", "entity", m.name, "error", err)
 		writeOverrideError(w, r, ctx, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
 	}
+}
+
+// isWriteInvalid reports whether err is crud refusing the written values:
+// a field's validation or a state rule.
+func isWriteInvalid(err error) bool {
+	if _, ok := errors.AsType[*crud.ValidationError](err); ok {
+		return true
+	}
+	_, ok := errors.AsType[*crud.StateError](err)
+	return ok
 }

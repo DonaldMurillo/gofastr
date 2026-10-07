@@ -24,6 +24,10 @@ Hooks run in registration order. The first error stops execution and
 returns to the caller. For `Before*` hooks the error cancels the
 operation. For `After*` hooks the error rolls back the transaction.
 
+A Before hook that returns an error refuses the write: the HTTP handlers
+answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
+`DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass
