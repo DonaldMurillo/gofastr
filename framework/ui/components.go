@@ -632,8 +632,12 @@ const (
 type StatusBadgeConfig struct {
 	Label   string        // required visible text
 	Variant StatusVariant // defaults to Neutral
-	ID      string
-	Class   string
+	// Dot draws a filled circle in the badge's tone before the label,
+	// the shape a status column reads at a glance. Decoration: the
+	// label stays the whole of what a screen reader hears.
+	Dot   bool
+	ID    string
+	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the pill's root <span>.
@@ -654,7 +658,11 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 		v = StatusNeutral
 	}
 	checkStatusVariant("StatusBadge", v)
-	cls := joinNonEmpty("fui-badge--"+string(v), cfg.Class)
+	cls := "fui-badge--" + string(v)
+	if cfg.Dot {
+		cls += " fui-badge--dot"
+	}
+	cls = joinNonEmpty(cls, cfg.Class)
 	return statusBadgeStyle.WrapHTML(headless.Badge(headless.BadgeProps{
 		Label:      cfg.Label,
 		ID:         cfg.ID,

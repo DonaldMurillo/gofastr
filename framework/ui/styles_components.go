@@ -626,7 +626,8 @@ func formSectionCSS(_ style.Theme) string {
 func statusBadgeCSS(t style.Theme) string {
 	// Knobs: --ui-badge-line-height (1rem) pins the pill's line box so
 	// xs padding keeps it a pill at any body leading; --ui-badge-case
-	// (none) sets its letter case.
+	// (none) sets its letter case; --ui-badge-dot-size (0.375rem) sizes
+	// a Dot badge's circle.
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -644,6 +645,19 @@ func statusBadgeCSS(t style.Theme) string {
      the reading. Narrow columns must give the badge room, not fold
      it (a detail-list value column, a table cell). */
   white-space: nowrap;
+}
+/* Dot: a filled circle in the label's tone before the word, the
+   status-column shape. --ui-badge-dot-size (0.375rem) sizes it. */
+[data-cui-comp="ui-badge"].fui-badge--dot {
+  gap: var(--spacing-sm, 4px);
+}
+[data-cui-comp="ui-badge"].fui-badge--dot::before {
+  content: "";
+  flex: none;
+  inline-size: var(--ui-badge-dot-size, 0.375rem);
+  block-size: var(--ui-badge-dot-size, 0.375rem);
+  border-radius: 50%;
+  background: currentColor;
 }
 [data-cui-comp="ui-badge"].fui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);

@@ -28,6 +28,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `--ui-section-overline-*` knobs tune it.
 - **`ui.GridConfig.Fill`** keeps the row's empty columns (`auto-fill`), so
   a lone card, or a short last row, keeps a column's width.
+- **`ui.StatusBadgeConfig.Dot`** draws a filled circle in the badge's
+  tone before its label, the status-column shape;
+  `--ui-badge-dot-size` sizes it. An entityui enum cell uses it.
 - **`ui.Column.Fit`** shrinks a DataTable column to its content, a
   checkbox or a row menu, so the other columns take the spare width.
 - **`ui.Column.SelectAll`** (and `headless.Column.SelectAll`) draws a
