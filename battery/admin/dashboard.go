@@ -78,8 +78,8 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 		if g != "" {
 			label = i18nui.NavGroupLabel(ctx, nil, g, "")
 		}
-		out = append(out, ui.Section(ui.SectionConfig{Heading: label, Compact: true},
-			ui.Grid(ui.GridConfig{Min: "14rem"}, byGroup[g]...)))
+		out = append(out, ui.Section(ui.SectionConfig{Heading: label, Compact: true, Overline: true},
+			ui.Grid(ui.GridConfig{Min: "14rem", Fill: true}, byGroup[g]...)))
 	}
 	return out
 }
@@ -94,12 +94,16 @@ func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML 
 }
 
 // entityStat is the card itself: the plural, the count read in the
-// caller's scope, a link to the list and, when the caller may create
-// one, New.
+// caller's scope, when the newest of those records was written, a link
+// to the list and, when the caller may create one, New.
 func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML {
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
 	count := countText(ctx, b.ui.StatValue(cctx, e.GetName(), "count", "", "", ""))
+	updated := ""
+	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
+		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ago(ctx, time.Now(), t)})
+	}
 	icon := ""
 	if n := navOf(e); n != nil {
 		icon = n.Icon
@@ -107,6 +111,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	return ui.StatCard(ui.StatCardConfig{
 		Label: b.plural(ctx, e),
 		Value: count,
+		Trend: updated,
 		Href:  b.entityBase(e),
 		Icon:  icon,
 		Action: ui.LinkButton(ui.LinkButtonConfig{
@@ -123,7 +128,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 // with Replay.
 func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 	title := i18nui.T(ctx, i18nui.KeyAdminFailedJobs)
-	all := ui.Link(ui.LinkConfig{Href: b.cfg.PathPrefix + "/queue?status=failed", Text: i18nui.T(ctx, i18nui.KeyAdminViewAll)})
+	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminQueue), b.cfg.PathPrefix+"/queue?status=failed")
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows)
 	if err != nil {
 		b.logger().Error("admin: list failed jobs", "error", err)
@@ -139,7 +144,7 @@ func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 	if len(jobs) > 0 {
 		body = b.jobsTable(ctx, jobs, b.cfg.PathPrefix, replay, 3)
 	}
-	cfg := ui.CardConfig{Heading: title, HeadingLevel: 2, Footer: all}
+	cfg := ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}
 	if count != "" {
 		cfg.Description = count
 	}
@@ -149,7 +154,7 @@ func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 // recentCard is the newest audit rows, scoped as the Audit log page is.
 func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	title := i18nui.T(ctx, i18nui.KeyAdminRecent)
-	all := ui.Link(ui.LinkConfig{Href: b.cfg.PathPrefix + "/audit", Text: i18nui.T(ctx, i18nui.KeyAdminViewAll)})
+	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminAudit), b.cfg.PathPrefix+"/audit")
 	rows, err := b.queryAudit(ctx, dashboardRows)
 	if err != nil {
 		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
@@ -172,9 +177,35 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 			}),
 			Meta:    ago(ctx, now, r.CreatedAt),
 			Variant: timelineVariant(r.Op),
+			Icon:    opIcon(r.Op),
 		}
 	}
-	return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2, Footer: all}, ui.Timeline(ui.TimelineConfig{Events: events}))
+	return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}, ui.Timeline(ui.TimelineConfig{Events: events}))
+}
+
+// headerLink is a dashboard card's way to its full page, at the end of
+// the card's header.
+func headerLink(label, href string) render.HTML {
+	return ui.LinkButton(ui.LinkButtonConfig{Label: label, Href: href, Variant: ui.ButtonGhost, Size: ui.ButtonSizeSmall})
+}
+
+// opIcon is the icon an audit operation's activity marker draws.
+func opIcon(op string) string {
+	switch op {
+	case "create":
+		return "plus"
+	case "update":
+		return "pencil"
+	case "delete", "purge":
+		return "trash"
+	case "restore":
+		return "rotate-ccw"
+	case "transition", "override", "replay":
+		return "repeat"
+	case "grant", "revoke":
+		return "shield"
+	}
+	return "activity"
 }
 
 // timelineVariant tints an audit operation's dot.

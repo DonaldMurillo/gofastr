@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -210,7 +211,7 @@ func TestEntityRecordTitleInCrumbs(t *testing.T) {
 }
 
 func TestEntityCountReadsAndFormats(t *testing.T) {
-	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig().WithTimestamps(true)}, Config{Entities: []string{"posts"}}, nil)
 	for _, id := range []string{"p1", "p2", "p3"} {
 		x.insert("posts", map[string]any{"id": id, "title": id, "status": "draft"})
 	}
@@ -221,6 +222,14 @@ func TestEntityCountReadsAndFormats(t *testing.T) {
 	dash := get(x.as(theAdmin), "/admin").Body.String()
 	if !strings.Contains(dash, `data-cui-poll-src="/admin/_count/posts"`) || !strings.Contains(dash, `href="/admin/entities/posts/create"`) {
 		t.Fatal("the dashboard card does not poll its count or offer New")
+	}
+	if strings.Contains(rr.Body.String(), "Updated") {
+		t.Fatalf("rows with no updated_at drew a date:\n%s", rr.Body.String())
+	}
+	two := time.Now().UTC().Add(-2*time.Hour - time.Minute).Format("2006-01-02 15:04:05")
+	x.insert("posts", map[string]any{"id": "p4", "title": "p4", "status": "draft", "updated_at": two})
+	if body := get(x.as(theAdmin), "/admin/_count/posts").Body.String(); !strings.Contains(body, "Updated 2h ago") {
+		t.Fatalf("the card lacks its newest write's age:\n%s", body)
 	}
 	ctx := context.Background()
 	if got := countText(ctx, "12,345"); got != "10k+" {

@@ -81,6 +81,7 @@ const (
 	KeyAdminAgoMinutes        Key = "ui.admin.agoMinutes"        // "{n}m ago"
 	KeyAdminAgoHours          Key = "ui.admin.agoHours"          // "{n}h ago"
 	KeyAdminAgoDays           Key = "ui.admin.agoDays"           // "{n}d ago"
+	KeyAdminUpdatedAgo        Key = "ui.admin.updatedAgo"        // "Updated {ago}"
 )
 
 // Table columns on the ops pages.
@@ -257,6 +258,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminAgoMinutes:        "{n}m ago",
 	KeyAdminAgoHours:          "{n}h ago",
 	KeyAdminAgoDays:           "{n}d ago",
+	KeyAdminUpdatedAgo:        "Updated {ago}",
 	KeyAdminColID:             "ID",
 	KeyAdminColType:           "Type",
 	KeyAdminColAttempts:       "Attempts",

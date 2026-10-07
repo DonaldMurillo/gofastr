@@ -54,7 +54,7 @@ not register fails boot.
 
 | Route | Page |
 |---|---|
-| `GET /admin` | Dashboard: a count card per entity, failed jobs, recent activity, the app's cards |
+| `GET /admin` | Dashboard: a count card per entity with when its newest record was written, failed jobs, recent activity, the app's cards |
 | `GET /admin/search?q=` | Search results: the palette's scriptless twin |
 | `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
 | `GET /admin/entities/<name>` | Entity list |

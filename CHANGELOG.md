@@ -1062,7 +1062,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   through the UI host. `Config.EntityListLimit` (the list's page sizes
   come from `Display.PageSizes`), `Config.Secret`,
   `Battery.RegisterRoutes` and `SortDirOf` are removed. New: a dashboard with a polled
-  count card per entity, failed jobs and recent activity; a command
+  count card per entity (with when its newest record was written),
+  failed jobs and recent activity marked by each operation's icon; a command
   palette searching pages, entities and records (`SearchFields`);
   `Config.Pages`, `Cards`, `Links` and `Commands` for the app's own admin
   pages, dashboard cards, sidebar links and palette entries;
