@@ -1134,19 +1134,23 @@ func dataTableCSS(_ style.Theme) string {
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
   caption-side: top;
 }
+/* A cell's height counts its inset and rule: content-box sizing would
+   add them on top of the row height. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th,
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
+  box-sizing: border-box;
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
 }
-/* Body rows are a fixed 52px rhythm: a 44px row action (View, Edit)
-   fits inside the 4px inset instead of stretching its row to 68px, and
-   a text-only row lands on the same height. */
+/* Body rows are the control height plus a 4px inset (52px at the
+   comfortable density, 44px at the compact one): a row action (View,
+   Edit) fits inside the inset instead of stretching its row, and a
+   text-only row lands on the same height. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
   padding-block: var(--spacing-sm, 4px);
-  block-size: calc(var(--spacing-touch-target) + 2 * var(--spacing-sm, 4px));
+  block-size: calc(var(--fui-density-control-h, var(--spacing-touch-target)) + 2 * var(--spacing-sm, 4px));
   white-space: nowrap;
 }
 /* A cell holds its value on one line, so a wide table scrolls in its
@@ -1159,10 +1163,10 @@ func dataTableCSS(_ style.Theme) string {
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }
-/* A table cell's height is a minimum: the header row holds the 44px
-   tap row whether or not a column sorts. */
+/* A table cell's height is a minimum: the header row holds the
+   control height whether or not a column sorts. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th {
-  block-size: var(--spacing-touch-target);
+  block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   padding-block: 0;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
@@ -1187,7 +1191,7 @@ func dataTableCSS(_ style.Theme) string {
 [data-cui-comp="ui-data-table"] .fui-data-table__select {
   display: inline-flex;
   align-items: center;
-  min-block-size: var(--spacing-touch-target);
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   vertical-align: middle;
   cursor: pointer;
 }
@@ -1195,11 +1199,11 @@ func dataTableCSS(_ style.Theme) string {
 [data-cui-comp="ui-data-table"] .fui-data-table__sort {
   display: inline-flex;
   align-items: center;
-  /* Token-scaled tap target. Sort headers are the most-tapped
-     element in a data table on mobile. Both axes — short column
+  /* The density's control height on both axes. Sort headers are the
+     most-tapped element in a data table on mobile, and short column
      labels like "Email" (38px wide) failed the 44px width floor. */
-  min-block-size: var(--spacing-touch-target);
-  min-inline-size: var(--spacing-touch-target);
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target));
   gap: var(--spacing-sm, 0.25rem);
   box-sizing: border-box;
   background: transparent;
@@ -1367,9 +1371,9 @@ func paginationCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
-  min-inline-size: var(--spacing-touch-target);
-  min-block-size: var(--spacing-touch-target);
+  /* The density's control height (44px comfortable, WCAG 2.5.5). */
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target));
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   padding: 0 calc(var(--spacing-sm, 4px) * 3);
   border-radius: var(--radii-md);
   border: var(--stroke-thin, 1px) solid transparent;
@@ -1458,8 +1462,8 @@ func themeToggleCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
   padding: var(--spacing-xs, 2px);
-  min-block-size: var(--spacing-touch-target, 44px);
-  min-inline-size: var(--spacing-touch-target, 44px);
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -373,7 +373,10 @@ func toggleCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   cursor: pointer;
   /* Token-scaled touch target; the label wrap is the accessible
-     target (WCAG 2.5.8), the row keeps the comfortable height. */
+     target (WCAG 2.5.8), the row keeps the comfortable height. The
+     height counts the inset: a checkbox in a table row is the target's
+     height, not 8px more. */
+  box-sizing: border-box;
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
 }

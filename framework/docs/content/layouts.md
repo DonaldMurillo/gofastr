@@ -767,6 +767,15 @@ breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,
 `ui.SidebarDrawerTrigger`, the app bar hosts), so an empty column
 draws no rule.
+`Dense: true` gives the frame the compact density on a fine pointer (a
+mouse or trackpad): buttons, fields, the toolbar's controls and table
+rows take the 36px control height (44px table rows), the smaller gap,
+and the small step as the `--ui-control-padding-y` inset. The row also
+sets `--spacing-touch-target` to 36px, so search fields, checkboxes,
+menus and icon buttons sized from that token follow. A touch
+screen keeps the theme's density, so a phone holds its 44px targets.
+It is for operator consoles (the admin sets it); a `ui.Themed` scope
+inside the row redeclares its own density.
 List/detail panes (`ui.ListDetail`) fill whatever column the row's
 build gives them, so the frame decides their width. A sidebar and an
 aside are two fixed columns beside that content: with both present the

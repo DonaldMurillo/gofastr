@@ -161,6 +161,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   viewport tall with its own overflow scroll, and the `Toolbar` row
   sticks at every width. The admin shell uses it, so its sidebar and
   top bar no longer scroll away.
+- **`ui.ContentRowConfig.Dense` tightens an operator console on a
+  desktop.** On a fine pointer the frame takes the compact density:
+  36px controls, 44px table rows and a smaller gap, with the
+  `--spacing-touch-target` token at 36px so every control sized from it
+  follows. A touch screen keeps 44px targets.
+  A DataTable's rows, header, select boxes and sort links, pagination
+  and the theme toggle now read the density height instead of the
+  fixed touch target.
 - **`app.Instant()` swaps a layout region in one frame** while the
   rest of the page runs its view transition: no fade, no group morph.
   The admin's breadcrumb trail uses it, so its root no longer blinks on
@@ -1380,6 +1388,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A DataTable's body rows are 52px, as their rule says.** A cell's
+  4px inset sat on top of the row height, so every row drew 60px; the
+  cells now count it inside.
+- **A checkbox or radio row is 44px tall**, its inset inside the touch
+  target instead of 8px on top of it, so a table row holding one keeps
+  the row height.
+- **A `ui.SearchInput` is as tall as the buttons beside it.** Its frame
+  holds the control height with the border inside; it drew 2px taller.
 - **A DataTable sort header's label sits level with the values under
   it**, at the start edge and the end edge, instead of one padding
   further in.

@@ -97,6 +97,15 @@ type ContentRowConfig struct {
 	// trigger the page header hosts): the stacked column renders empty
 	// on phones and an empty band must not draw a line.
 	PhoneNavFlush bool
+	// Dense gives the row the compact density on a fine pointer (a
+	// mouse or trackpad): controls, toolbar fields and table rows take
+	// the 36px control height and the tighter gap that the theme's
+	// compact density sets, and the --spacing-touch-target token drops
+	// to the same 36px, so every control sized from it (search fields,
+	// checkboxes, menus) follows. A touch screen keeps the theme's values,
+	// so a phone holds its 44px targets. Set it on an operator console
+	// (the admin's frame); a site's content row leaves it off.
+	Dense bool
 	// Class appends to the row root's class list.
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
@@ -128,6 +137,9 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	}
 	if cfg.PhoneNavFlush {
 		cls += " fui-content-row--phone-nav-flush"
+	}
+	if cfg.Dense {
+		cls += " fui-content-row--dense"
 	}
 	if cfg.Breakpoint == StackBelowLG {
 		cls += " fui-content-row--stack-below-lg"
@@ -200,6 +212,22 @@ func contentRowCSS(_ style.Theme) string {
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
+/* Dense: the row is a density boundary on a fine pointer, declaring
+   the compact option values the way a theme boundary does; descendants
+   read them by inheritance, and a Themed scope inside redeclares its
+   own. A mouse needs no 44px touch target, so the row lowers that
+   token too: every control sized from it (search fields, checkboxes,
+   menus, icon buttons) tightens with the density-sized ones. The
+   control padding knob drops to the small step so a button's 10px
+   default inset cannot push it past the control height. */
+@media (pointer: fine) {
+  .fui-content-row--dense {
+    --spacing-touch-target: ` + compactControlHeight + `;
+    --fui-density-control-h: ` + compactControlHeight + `;
+    --fui-density-gap: ` + compactGap + `;
+    --ui-control-padding-y: var(--spacing-sm, 4px);
+  }
+}
 /* Sticky: the toolbar row stays at the top of the window at every
    width, painted over the content that scrolls beneath it. */
 .fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
