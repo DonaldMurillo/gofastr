@@ -12,8 +12,8 @@ import (
 )
 
 // RecordBuilder draws one record: header, move buttons, tabs (Edit,
-// Related, extension tabs, and Activity where turned on) and the form
-// from Display.Form. Create draws the same form empty.
+// Related, extension tabs, and Activity and API where turned on) and
+// the form from Display.Form. Create draws the same form empty.
 type RecordBuilder struct {
 	component.ContextOnly
 	ui     *UI
@@ -26,6 +26,8 @@ type RecordBuilder struct {
 	tabs     []Tab
 	related  []relatedList
 	activity bool
+	apiTab   bool
+	override bool
 	delete   bool
 	dup      bool
 	prefill  map[string]string
@@ -149,6 +151,20 @@ type relatedList struct {
 // Activity turns on the Activity tab: this record's audit rows. Off by
 // default on app pages, and never drawn when the app keeps no audit log.
 func (b *RecordBuilder) Activity() *RecordBuilder { b.activity = true; return b }
+
+// API turns on the API tab: the record as the JSON API's GET returns
+// it, the entity's own REST path with the methods its exposure allows,
+// its MCP tool names, and a link to the API's entity index. Off by
+// default. The tab reads nothing the record screen could not.
+func (b *RecordBuilder) API() *RecordBuilder { b.apiTab = true; return b }
+
+// Override turns on the status override: a form, inside a disclosure,
+// that writes the state field directly through crud.WithStateOverride
+// for a caller holding <entity>:override_state exactly (a Wildcard
+// grant and a back office's elevation never satisfy it). Off by
+// default, and drawn only for an entity with enforced states on an app
+// that keeps an audit log; UI.OverrideHandler serves its posts.
+func (b *RecordBuilder) Override() *RecordBuilder { b.override = true; return b }
 
 // Delete and Duplicate turn on those record actions.
 func (b *RecordBuilder) Delete() *RecordBuilder    { b.delete = true; return b }

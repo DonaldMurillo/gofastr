@@ -40,12 +40,17 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   its columns from `Display.Columns`, a title cell that links to the
   record, view tabs, facets, a search box over `SearchFields`, filter
   chips, sort headers and a pager. The row menu offers Open, Duplicate
-  and Delete where the builder turns them on.
+  and Delete where the builder turns them on. Four more controls are
+  off by default on app pages and on in the admin: the query box
+  (`.QueryBox()`), the columns menu (`.ColumnsMenu()`), the trash view
+  (`.Deleted()`) and saved views (`.SavedViews()`) — "Query box,
+  columns menu, trash view, saved views" covers them.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
   record's title and state badge, a button per state move whose `From`
   holds the stored value, and tabs: Edit (the form from `Display.Form`),
   Related (the related entities the page names), any extension tabs, and
-  Activity (the audit trail) where turned on.
+  Activity (the audit trail) and API (the record as the API returns it)
+  where turned on.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills
@@ -125,13 +130,15 @@ caller's scope — a tab listing one invoice's payments; the pinned field leaves
 record links hang off), `Heading(text, level)` and `Empty(text)`,
 `NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
 for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
-and `Actions` for header buttons beside New.
+`QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
+controls below), and `Actions` for header buttons beside New.
 
 The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `Delete()`, `Duplicate()` and `Prefill(values)`.
+`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Duplicate()`
+and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
@@ -266,7 +273,8 @@ submittable.
 ## State in the URL, writes as form RPCs
 
 A list keeps its state in the page's own query string: `sort`, `dir`,
-`page`, `q`, `filter` (DSL text), `view` and `f_<field>` facets, each
+`page`, `q`, `filter` (DSL text), `view`, `cols` (the shown columns, in
+order), `saved` (an open saved view's id) and `f_<field>` facets, each
 prefixed by the list's key when it has one (`due_sort` for
 `.Key("due")`). Sort headers, pager links and view tabs are plain
 anchors the client router intercepts; the toolbar is one GET form whose
@@ -282,6 +290,120 @@ REST routes whose answer re-fetches the page
 runtime's error toast. The edit form's inputs prefill from the unhooked
 read so they round-trip; read-only values show what an `AfterGet`
 redaction shows.
+
+## Query box, columns menu, trash view, saved views
+
+Four list controls are off by default on app pages and on in the admin.
+Each is one builder method, and each keeps its state in the page's own
+query string like the rest of the list.
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var fwApp *framework.App
+var ctx = context.Context(nil)
+-->
+list := fwApp.EntityUI(entityui.Extensions{}).
+	List("invoices").
+	QueryBox().      // the filter typed by hand
+	ColumnsMenu().   // show, hide, reorder, reset
+	Deleted().       // the trash view, ?view=deleted
+	SavedViews()     // the caller's named views, ?saved=<id>
+_ = list.RenderCtx(ctx)
+```
+
+- **The query box** (`.QueryBox()`) is where the reader types the
+  filter: a labelled text field named the list's `filter` param,
+  prefilled with the active filter text, helped by the entity's
+  queryable field names, riding a GET form that round-trips the state
+  it does not own. The server parses the text with the same parser the
+  chips use, so both stay in sync; text that fails to parse, or names a
+  Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
+  warning and lists without it — never an error page, never SQL.
+- **The columns menu** (`.ColumnsMenu()`) holds a GET form with one
+  checkbox per available field plus move-up and move-down links that
+  rewrite the `cols` param, and a Reset link that drops it. Every
+  `cols` name must be a visible, non-omitted field; an unknown,
+  Hidden, omitted or duplicate name makes the whole param ignored —
+  the list's resolved columns stand. The title column carries the
+  record link, so it may not be hidden: a `cols` that leaves it out
+  gets it back, first. Columns change what a row shows, not which rows
+  match, so the page stays; the read asks only for the shown columns.
+- **The trash view** (`.Deleted()`, an entity with `Scope.SoftDelete`
+  only) adds a Deleted tab beside the views: `?view=deleted` lists only
+  soft-deleted rows, under the same owner, tenant and read scope as the
+  live list, with no bulk bar, no New, no row menu and no record link
+  (the record screens read live rows only). Each row offers Restore
+  and Delete permanently, behind a confirm. The two post to the host's
+  write base for the entity — `POST <write base>/<id>/_restore` and
+  `POST <write base>/<id>/_purge` — served by
+  `appUI.RestoreHandler(entity)` and `appUI.PurgeHandler(entity)`,
+  which a host mounts the way it mounts `appUI.BulkHandler(entity)`.
+  The handlers run the CRUD handler's `RestoreOne` / `PurgeOne` under
+  the caller's own context, so permission, the Decider and owner and
+  tenant scope are the write route's own gates; a purge of a live row
+  answers 409 and touches nothing. A form-RPC caller gets a status and
+  a toast; a plain form post gets a 303 back to the Deleted view, along
+  a same-origin relative return path the form carried — never an
+  absolute URL. Cross-site posts are refused, the body is capped and
+  nothing is stored cacheable.
+- **Saved views** (`.SavedViews()`, when the UI carries a store —
+  `appUI.WithSavedViews(store)`) keep a named filter-and-columns state
+  per caller, in a `SavedViewStore` the host backs with a table
+  (`battery/admin` provides it). `?saved=<id>` opens one: its filter
+  and columns apply as if they were the `filter` and `cols` params,
+  with an explicit param in the URL winning, and both are re-parsed
+  and re-checked on every open — a view that no longer applies (or an
+  unknown or foreign id) draws a callout and lists the All view,
+  revealing nothing. The save form ("Save view", a name) and a delete
+  form per view post to `POST <write base>/_views` and
+  `POST <write base>/_views/_delete/{id}`, served by
+  `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
+  and columns against the entity's fields before storing anything;
+  owner and tenant come only from the caller's context, which the
+  store enforces. A list with a saved view open draws no Export link
+  and offers no "every match" bulk scope: the saved narrowing is not
+  in the query those routes read, the same rule a `Where`-pinned list
+  follows.
+
+A saved view's own columns apply even when the columns menu is off:
+they are the saved-view feature's state, not the menu's.
+
+## API tab and status override
+
+`Record("invoices", id).API()` adds the API tab: how to reach this
+record from code. It shows the record as JSON, as the REST read under
+the caller's context returns it (Hidden columns never appear, an
+`AfterGet` mask shows the mask); the entity's own REST path and the
+methods its `Exposure` allows, even on a back office whose
+`UI.WithAPIPath` moved the writes; the MCP tool names while
+`Exposure.MCP` is on (`crud.MCPToolNames`); and a link to `/api/llm.md`.
+The methods come from the declaration, so a read-only `App.View` mount
+still lists the write methods. The tab reads nothing the record screen
+could not.
+
+`Record("invoices", id).Override()` adds a status override: a form in a
+disclosure below the tabs, for setting the state field outside the
+declared moves (a bad import, a support case). It is drawn only for an
+entity with enforced `States` on an app that keeps an audit log, and
+only for a caller holding `<entity>:override_state`, checked with
+`access.CanResourceExact`: a `Wildcard` grant does not satisfy it, and
+neither does `crud.WithElevation`. The form takes a state and a
+required reason (at most 500 characters) and asks before it posts.
+
+It posts to `<write base>/{id}/_override`, served by
+`UI.OverrideHandler(entity)`, which the host mounts beside its other
+write routes. The handler takes POST only, refuses cross-site posts,
+caps the body, checks the capability before reading anything, reads the
+record under the caller's context (another owner's id answers 404),
+validates the state and the reason, and writes with `crud.UpdateOne`
+under `crud.WithStateOverride`. The audit row (`state_override`, with
+the reason) comes from crud. An entity no audit log records answers
+409; the write never falls back to an unaudited one. A form RPC gets a
+status and a toast; a plain form post gets a 303 to the form's `back`
+path, which must be a same-origin relative path.
 
 ## Bulk actions and export
 

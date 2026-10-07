@@ -32,7 +32,10 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		}
 		cols = append(cols, col)
 	}
-	if !b.noLinks {
+	// The trash view keeps the actions column — its rows carry the
+	// restore and purge forms — while drawing no record link.
+	noLinks := b.noLinks || s.deletedView
+	if !noLinks || s.deletedView {
 		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
 	}
 
@@ -46,14 +49,16 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		for _, name := range s.columns {
 			f, _ := s.m.field(name)
 			cells[name] = b.ui.cellHTML(ctx, s, labels, f, row, name)
-			if name == linkCol && !b.noLinks {
+			if name == linkCol && !noLinks {
 				cells[name] = ui.Link(ui.LinkConfig{
 					Href: s.recordHref(id),
 					Text: b.ui.plainText(ctx, s, labels, f, row, name),
 				})
 			}
 		}
-		if !b.noLinks {
+		if s.deletedView {
+			cells["_a"] = b.deletedActions(ctx, s, row)
+		} else if !noLinks {
 			cells["_a"] = b.rowActions(ctx, s, row, i)
 		}
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
@@ -351,7 +356,15 @@ func listIDSafe(key, entity string) string {
 // the builder's text over the default description, one heading level
 // below the list's own.
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
-	desc := b.empty
+	var title, desc string
+	if s.deletedView {
+		// The trash view's own empty state: nothing is deleted, and
+		// there is no New to offer from inside it.
+		title = i18nui.TVars(ctx, i18nui.KeyEntityDeletedEmpty, map[string]string{"entity": s.m.noun(ctx, true)})
+		desc = i18nui.T(ctx, i18nui.KeyEntityDeletedEmptyBody)
+		return ui.EmptyStateConfig{Title: title, Description: desc, HeadingLevel: b.headingLevel() + 1}
+	}
+	desc = b.empty
 	if desc == "" {
 		desc = i18nui.T(ctx, i18nui.KeyEntityEmptyBody)
 	}

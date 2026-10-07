@@ -81,6 +81,8 @@ type AuditEntry struct {
 type UI struct {
 	host Host
 	ext  Extensions
+	// views keeps saved list views, nil when the app keeps none.
+	views SavedViewStore
 	// now is the clock queued runs lease and finish by.
 	now func() time.Time
 }
@@ -121,9 +123,25 @@ func New(h Host, ext Extensions) (*UI, error) {
 func (u *UI) WithAPIPath(path func(e *entity.Entity) (string, bool)) *UI {
 	h := apiPathHost{Host: u.host, path: path}
 	if bh, ok := u.host.(BulkHost); ok {
-		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext, now: u.now}
+		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext, views: u.views, now: u.now}
 	}
-	return &UI{host: h, ext: u.ext, now: u.now}
+	return &UI{host: h, ext: u.ext, views: u.views, now: u.now}
+}
+
+// WithSavedViews returns a UI whose lists can keep named saved views in
+// store (ListBuilder.SavedViews turns a list on). The same host,
+// Extensions and clock ride along — a UI that WithAPIPath rebuilt keeps
+// its write paths, so the save and delete forms still post through
+// them. The store reads the owner and tenant from the caller's context
+// only; nothing about a caller travels from a request into it. A nil
+// store returns the UI unchanged.
+func (u *UI) WithSavedViews(store SavedViewStore) *UI {
+	if store == nil {
+		return u
+	}
+	c := *u
+	c.views = store
+	return &c
 }
 
 // apiPathHost is a Host whose write routes live elsewhere.

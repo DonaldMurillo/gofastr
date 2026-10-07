@@ -30,6 +30,10 @@ type ListBuilder struct {
 	dup      bool
 	bulk     bool
 	noLinks  bool
+	queryBox bool
+	colsMenu bool
+	deleted  bool
+	saved    bool
 	actions  []render.HTML
 }
 
@@ -98,6 +102,35 @@ func (b *ListBuilder) Duplicate() *ListBuilder { b.dup = true; return b }
 // is no row menu and no New. It is for an entity with no screen of its
 // own on this app, such as a Related list of payments on an invoice.
 func (b *ListBuilder) NoLinks() *ListBuilder { b.noLinks = true; return b }
+
+// QueryBox turns on the filter's text box: a control named the list's
+// filter param, prefilled with the active filter text and labelled with
+// the entity's queryable field names, riding the list's GET form so a
+// typed filter narrows the same way the chips do. Off by default on
+// app pages; the admin turns it on.
+func (b *ListBuilder) QueryBox() *ListBuilder { b.queryBox = true; return b }
+
+// ColumnsMenu turns on the columns control: a disclosure holding a GET
+// form that shows, hides, reorders and resets the list's columns
+// through the cols param. A cols value naming anything but a visible,
+// non-omitted field is ignored, never an error page; the title column
+// stays — it carries the record link. Off by default on app pages.
+func (b *ListBuilder) ColumnsMenu() *ListBuilder { b.colsMenu = true; return b }
+
+// Deleted turns on the trash view beside the list's views, for an
+// entity with Scope.SoftDelete (a no-op otherwise): ?view=deleted
+// lists only soft-deleted rows under the same owner, tenant and read
+// scope as the live list, and each row offers Restore and Delete
+// permanently through the host's restore and purge handlers. Off by
+// default on app pages.
+func (b *ListBuilder) Deleted() *ListBuilder { b.deleted = true; return b }
+
+// SavedViews turns on named saved views for this list, when the UI
+// carries a SavedViewStore (UI.WithSavedViews; without one it is a
+// no-op): the caller's views open through ?saved=, and a small form
+// saves the active filter and columns under a name. Off by default on
+// app pages.
+func (b *ListBuilder) SavedViews() *ListBuilder { b.saved = true; return b }
 
 // mayCreate reports whether the list offers New: on unless NoCreate or
 // NoLinks turned it off.

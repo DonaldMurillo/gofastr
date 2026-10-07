@@ -21,6 +21,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 	labels := b.ui.resolveRowLabels(ctx, s, rows, allCols)
 
 	cards := make([]render.HTML, 0, len(rows))
+	noLinks := b.noLinks || s.deletedView
 	for i, row := range rows {
 		id := cell(rowValue(row, s.m.pk))
 		title := ""
@@ -31,7 +32,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 			title = id
 		}
 		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title})}
-		if b.noLinks {
+		if noLinks {
 			header[0] = render.Text(title)
 		}
 		if card.badge != "" {
@@ -62,7 +63,9 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 			}
 		}
 		var footer render.HTML
-		if !b.noLinks {
+		if s.deletedView {
+			footer = b.deletedActions(ctx, s, row)
+		} else if !noLinks {
 			footer = b.rowActions(ctx, s, row, i)
 		}
 		cards = append(cards, ui.Card(ui.CardConfig{

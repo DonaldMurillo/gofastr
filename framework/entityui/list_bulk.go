@@ -22,7 +22,7 @@ type listBulk struct {
 // bulkFor reports the bulk state of the list: on when the builder asked
 // for it, the entity allows it, and the caller has at least one action.
 func (b *ListBuilder) bulkFor(ctx context.Context, s *listState) *listBulk {
-	if !b.bulk || !bulkOn(s.m) {
+	if !b.bulk || !bulkOn(s.m) || s.deletedView {
 		return nil
 	}
 	actions := b.ui.bulkActions(ctx, s.m)
@@ -62,7 +62,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	// The bar carries the digest of the ids every match covers, so the
 	// run refuses any other set. A list past the cap is not offered it.
 	var match string
-	if known && !s.filterBad && len(b.where) == 0 && total > len(rows) {
+	if known && !s.filterBad && len(b.where) == 0 && s.savedID == "" && total > len(rows) {
 		if ids, err := b.ui.matchIDs(ctx, m, s.key, s.carry()); err == nil {
 			match = matchDigest(ids)
 		}

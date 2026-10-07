@@ -26,6 +26,12 @@ const allView = "all"
 
 func viewKeyOf(ctx context.Context, m *meta, b *ListBuilder, q url.Values) (string, error) {
 	if key := q.Get(param(b.key, "view")); key != "" {
+		// The trash view is the screens' own, beside the declared ones.
+		// It narrows nothing here — the read inverts its soft-delete
+		// term — so it resolves before the unknown-view fallback.
+		if key == deletedViewKey && b.deleted && m.e.Config.Scope.SoftDelete {
+			return deletedViewKey, nil
+		}
 		if declaredAndViewable(ctx, m, key) {
 			return key, nil
 		}
@@ -160,6 +166,16 @@ func viewTabs(ctx context.Context, s *listState) render.HTML {
 			Current: s.view == v.Key,
 		})
 	}
+	// The trash view rides beside the declared ones, after them.
+	if s.offeredTab {
+		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+		q.Set(s.p.view, deletedViewKey)
+		items = append(items, ui.TabNavItem{
+			Text:    i18nui.T(ctx, i18nui.KeyEntityViewDeleted),
+			Href:    listHref(s.path, q),
+			Current: s.deletedView,
+		})
+	}
 	if len(items) < 2 {
 		// All alone is not a strip of tabs; it is the list's only shape.
 		return ""
@@ -252,7 +268,9 @@ func predicateText(p *filter.Predicate) string {
 }
 
 // removeFilterHref rebuilds the filter text without term i and returns
-// the same URL with that filter. Removing the last term drops the param.
+// the same URL with that filter. Removing the last term drops the
+// param — or, when the text came from an open saved view, drops the
+// saved param: leaving it would bring the view's filter straight back.
 func removeFilterHref(s *listState, terms []string, i int) string {
 	kept := make([]string, 0, len(terms)-1)
 	for j, t := range terms {
@@ -263,6 +281,10 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 	q := s.carry(s.p.filter, s.p.page)
 	if len(kept) > 0 {
 		q.Set(s.p.filter, strings.Join(kept, " and "))
+		return listHref(s.path, q)
+	}
+	if s.savedID != "" && !s.q.Has(s.p.filter) {
+		q.Del(s.p.saved)
 	}
 	return listHref(s.path, q)
 }

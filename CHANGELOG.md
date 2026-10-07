@@ -795,10 +795,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `database`, `inbox`, `folder`, `tag`, `mail`, `bell`, `globe`, `repeat`,
   `cpu` and `star`, for an entity's `Display.Nav.Icon`, sidebar links and
   dashboard cards.
+- **`entityui` lists have four optional tools: a query box, a columns
+  menu, a trash view and saved views.** They are off on app pages and on
+  in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
+  and parses it with the parser the chips use; a filter that does not
+  parse keeps the "filter did not apply" warning. `ColumnsMenu()` shows,
+  hides and reorders columns through the `cols` query param, and the
+  list reads only the columns it shows. `Deleted()` adds a Deleted tab
+  to an entity with `Scope.SoftDelete`, listing soft-deleted rows under
+  the same owner, tenant and read scope, each with Restore and Delete
+  permanently. `SavedViews()`, on a UI built with
+  `UI.WithSavedViews(store)`, keeps named filter-and-columns sets per
+  caller in a `SavedViewStore`; an opened view is parsed and checked
+  again each time. `UI.RestoreHandler`, `PurgeHandler` and
+  `SavedViewsHandler` serve the writes at `<write base>/<id>/_restore`,
+  `/_purge`, `/_views` and `/_views/_delete/<id>`. A plain form post is
+  answered with a 303 to a return path that must be a same-origin
+  relative path; anything else is a 400.
 - **`crud.ListOptions.Deleted`** lists only soft-deleted rows in
   `ListAll` and `CountAll`, with every other scope applied unchanged. An
   entity without `Scope.SoftDelete` returns `ErrNoSoftDelete` before any
   SQL runs.
+- **`entityui.RecordBuilder.API()` adds an API tab to the record
+  screen.** It shows the record as the REST GET returns it to the
+  caller, the entity's REST base with the methods its exposure allows,
+  the MCP tool names it registers, and a link to `/api/llm.md`.
+  `crud.MCPToolNames` returns those names.
+- **`entityui.RecordBuilder.Override()` and `UI.OverrideHandler` set a
+  record's status outside its declared moves.** The form draws only for
+  an entity with enforced `States`, on an app with an audit log, for a
+  caller holding `<entity>:override_state` itself (a wildcard grant and
+  `crud.WithElevation` do not count). The handler checks the capability
+  again, reads the record under the caller's scope, requires a reason of
+  at most 500 characters, and writes through `crud.WithStateOverride`,
+  so the audit row records `state_override` and the reason.
 
 ### Changed
 

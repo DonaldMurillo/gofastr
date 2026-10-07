@@ -179,7 +179,9 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	if err != nil {
 		return "", err
 	}
-	return render.Join(header, body), nil
+	// The override panel rides below the tabs, not inside one: it is an
+	// operator action on the record, not a view of it.
+	return render.Join(header, body, b.overridePanel(ctx, m, row, base)), nil
 }
 
 // notFound is the one answer for a missing id and an id the caller may
@@ -378,6 +380,11 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	if b.activity && b.ui.host.Audit() != nil {
 		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), build: func() (render.HTML, error) {
 			return b.activityTab(ctx, m), nil
+		}})
+	}
+	if b.apiTab {
+		tabs = append(tabs, tab{key: "api", label: i18nui.T(ctx, i18nui.KeyEntityTabApi), build: func() (render.HTML, error) {
+			return b.apiTabBody(ctx, m, row), nil
 		}})
 	}
 

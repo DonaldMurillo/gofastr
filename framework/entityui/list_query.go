@@ -3,6 +3,7 @@ package entityui
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,8 @@ type listParams struct {
 	q      string
 	filter string
 	view   string
+	cols   string
+	saved  string
 }
 
 func listParamsFor(key string) listParams {
@@ -29,6 +32,8 @@ func listParamsFor(key string) listParams {
 		q:      param(key, "q"),
 		filter: param(key, "filter"),
 		view:   param(key, "view"),
+		cols:   param(key, "cols"),
+		saved:  param(key, "saved"),
 	}
 }
 
@@ -50,6 +55,7 @@ type listState struct {
 	viewSorts    []filter.ParsedSort
 	as           string // "table" | "cards"
 	columns      []string
+	available    []string    // the default resolution the cols param and the menu work from
 	pins         []listWhere // the builder's Where pins: context, never a column or facet
 
 	search     string
@@ -63,6 +69,20 @@ type listState struct {
 
 	page  int
 	limit int
+
+	// The trash view: offeredTab is whether the strip carries it (the
+	// builder asked and the entity soft-deletes); deletedView is whether
+	// this render shows it, ?view=deleted.
+	offeredTab  bool
+	deletedView bool
+
+	// Saved views, on when the builder asked and the UI carries a store.
+	savedOn     bool
+	savedViews  []SavedView // the caller's, for the strip
+	savedID     string      // the open one, "" when none
+	savedName   string
+	savedFilter string // the open view's filter text, when the URL names none
+	savedGone   bool   // the open view no longer applies: callout, All view
 }
 
 // facetParam is a facet field's param name: ?<p>f_<field>=.
@@ -136,6 +156,9 @@ func (s *listState) resolveColumns(b *ListBuilder) error {
 		out = append(out, name)
 	}
 	s.columns = out
+	// The available set the columns menu offers and the cols param and a
+	// saved view are measured against: the default resolution itself.
+	s.available = slices.Clone(out)
 	return nil
 }
 

@@ -84,9 +84,20 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if err := s.resolveColumns(b); err != nil {
 		return "", err
 	}
+	if b.colsMenu {
+		s.applyColsParam()
+	}
+	if err := b.openSaved(ctx, s); err != nil {
+		return "", err
+	}
 	if err := b.narrow(ctx, s); err != nil {
 		return "", err
 	}
+	// The trash view: offered when the builder asked and the entity
+	// soft-deletes, shown when the URL opens it. It keeps every other
+	// scope; the read below inverts only the soft-delete term.
+	s.offeredTab = b.deleted && m.e.Config.Scope.SoftDelete
+	s.deletedView = s.offeredTab && s.view == deletedViewKey
 	s.as = b.as
 	if s.as == "" {
 		for _, v := range m.d.Views {
@@ -114,6 +125,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		Filters: filters,
 		Search:  s.search,
 		Fields:  s.readFields(),
+		Deleted: s.deletedView,
 	}
 	// The count only feeds pagination chrome; a refused count degrades to
 	// unknown totals rather than a failed screen, and only a known total
@@ -143,11 +155,23 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if tabs := viewTabs(ctx, s); tabs != "" {
 		body = append(body, tabs)
 	}
+	if strip := b.savedViewsStrip(ctx, s); strip != "" {
+		body = append(body, strip)
+	}
+	if s.savedGone {
+		body = append(body, savedGoneWarning(ctx))
+	}
 	if s.filterBad {
 		body = append(body, filterWarning(ctx))
 	}
 	if chips := filterChips(ctx, s); chips != "" {
 		body = append(body, chips)
+	}
+	if qb := b.queryBoxForm(ctx, s); qb != "" {
+		body = append(body, qb)
+	}
+	if menu := b.columnsMenu(ctx, s); menu != "" {
+		body = append(body, menu)
 	}
 	if tb := b.toolbar(ctx, s); tb != "" {
 		body = append(body, tb)
@@ -190,9 +214,15 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 	if len(m.e.Config.SearchFields) > 0 {
 		s.search = strings.TrimSpace(s.q.Get(s.p.q))
 	}
-	// The filter text: a parse failure is a warning and an unfiltered
-	// list, never a failed screen — the reader typed it, not the app.
-	if text := strings.TrimSpace(s.q.Get(s.p.filter)); text != "" {
+	// The filter text: the URL's, else an open saved view's (an explicit
+	// param wins, an empty one included — it is the reader clearing the
+	// filter). A parse failure is a warning and an unfiltered list,
+	// never a failed screen — the reader typed it, not the app.
+	text := strings.TrimSpace(s.q.Get(s.p.filter))
+	if !s.q.Has(s.p.filter) && s.savedFilter != "" {
+		text = s.savedFilter
+	}
+	if text != "" {
 		s.filterText = text
 		p, err := dsl.ParsePredicate(text, m.e.GetFields())
 		if err != nil {
@@ -232,11 +262,13 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	// Export is a read: it rides with bulk, not with the caller's
 	// write actions.
 	// A Where pin is not in the query the export route reads, so a pinned
-	// list draws none rather than exporting past its pins.
-	if b.bulk && bulkOn(m) && len(b.where) == 0 {
+	// list draws none rather than exporting past its pins; an open saved
+	// view is the same shape — its filter is not in the query either.
+	if b.bulk && bulkOn(m) && len(b.where) == 0 && s.savedID == "" && !s.deletedView {
 		actions = append(actions, exportLink(ctx, s))
 	}
-	if b.mayCreate() && canCreate(ctx, m) {
+	// The trash view creates nothing: there is no New in it.
+	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),

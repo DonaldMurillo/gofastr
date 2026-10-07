@@ -1,0 +1,99 @@
+package entityui
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+// Saved views' security posture: a view belongs to the caller who made
+// it. Another user can neither open it (it reads as gone, the caller's
+// own rows untouched) nor delete it.
+
+func TestSavedViewForeignIDDoesNotApply(t *testing.T) {
+	x, store := savedUI(t)
+	saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "u1 secret open", Filter: `status = "open"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// u2 opens u1's id.
+	html := listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?saved="+saved.ID, "u2"))
+	if !strings.Contains(html, "This view no longer applies") {
+		t.Errorf("a foreign saved id drew no callout:\n%s", html)
+	}
+	// u1's filter was not applied to u2's rows.
+	if !strings.Contains(html, "zeta") {
+		t.Errorf("SECURITY: u1's saved filter narrowed u2's list:\n%s", html)
+	}
+	// u1's view name is not revealed.
+	if strings.Contains(html, "u1 secret open") {
+		t.Errorf("SECURITY: u1's view name leaked to u2:\n%s", html)
+	}
+}
+
+func TestSavedViewDeleteForeignRefused(t *testing.T) {
+	x, store := savedUI(t)
+	saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "u1 mine", Filter: `status = "open"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postSavedViews(t, x, "u2", "/api/orders/_views/_delete/"+saved.ID, url.Values{"back": {"/orders"}})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("SECURITY: u2 deleting u1's view answered %d, want 404", w.Code)
+	}
+	if _, err := store.Get(asUser(context.Background(), "u1"), "orders", saved.ID); err != nil {
+		t.Errorf("SECURITY: u2's refused delete removed u1's view: %v", err)
+	}
+}
+
+func TestSavedViewHiddenFieldRefusedAtSaveAndGoneAtOpen(t *testing.T) {
+	x, store := savedUI(t)
+	// At save: a filter naming an unknown or Hidden field answers 400.
+	if w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
+		"name": {"Nope"}, "filter": {"nosuchfield = 1"}, "back": {"/orders"},
+	}); w.Code != http.StatusBadRequest {
+		t.Errorf("a filter naming an unknown field answered %d, want 400", w.Code)
+	}
+	// If one reached the store anyway (an older save, a field that
+	// became Hidden since), the open path still refuses it.
+	store.put("u1", SavedView{Entity: "orders", Name: "Old", Filter: "nosuchfield = 1"})
+	html := listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?saved=sv-1", "u1"))
+	if !strings.Contains(html, "This view no longer applies") {
+		t.Errorf("a store-side stale filter opened without the callout:\n%s", html)
+	}
+	if !strings.Contains(html, "zeta") {
+		t.Errorf("the stale filter still narrowed the rows:\n%s", html)
+	}
+}
+
+func TestSavedViewAnonymousCallerNoViews(t *testing.T) {
+	x, _ := savedUI(t)
+	// The strip does not draw for a caller the store would refuse, and
+	// nothing about the anonymous request reaches the store as a user.
+	html := listHTML(t, x.ui.List("orders").SavedViews(), x.ctx("/orders", ""))
+	if strings.Contains(html, "Save view") {
+		t.Errorf("an anonymous caller drew the save form:\n%s", html)
+	}
+}
+
+func TestSavedViewsCrossSiteRefused(t *testing.T) {
+	x, _ := savedUI(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/orders/_views", strings.NewReader(url.Values{
+		"name": {"Evil"}, "filter": {`status = "open"`}, "back": {"/orders"},
+	}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r = withUserRequest(r, "u1")
+	w := httptest.NewRecorder()
+	savedViewsMux(x).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("a cross-site save answered %d, want 403", w.Code)
+	}
+}
