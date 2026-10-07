@@ -372,6 +372,21 @@ The button carries next's `data-cui-rpc*` wiring and nothing else:
 and the runtime drops any such key from the JSON it reads. entityui's
 `Undo()` on a soft delete is built on it.
 
+A server answer offers the same button: `interactive.NewToastAction(label,
+next)` builds it under the same rules, and `ui.ToastTrigger.Action`
+carries it in the `X-Gofastr-Toast` header. entityui's bulk delete
+answers its Undo this way. `ui.AddToast` drops a toast whose action
+carries a control byte, as it does for the title.
+
+```go
+ui.AddToast(w, ui.ToastTrigger{
+    Variant: ui.StatusSuccess, Title: "3 deleted",
+    Action: interactive.NewToastAction("Undo",
+        interactive.Post("/api/notes/_bulk").WithBody(body).
+            OnSuccess(interactive.Navigate("/notes"))),
+})
+```
+
 ### AfterText (one-shot button label swap on success)
 
 `interactive.AfterText(text)` replaces the trigger element's text content

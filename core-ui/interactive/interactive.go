@@ -44,14 +44,35 @@ type Action struct {
 	// successToast is the data-cui-rpc-success-toast title; nil = none.
 	successToast *string
 	// successAction is the data-cui-rpc-success-action payload; nil = none.
-	successAction *toastAction
+	successAction *ToastAction
 }
 
-// toastAction is the success toast's one action as the runtime reads
-// it: the button's label and the RPC attributes it carries.
-type toastAction struct {
+// ToastAction is a toast's one button as the runtime reads it: its
+// label and the RPC attributes it carries. Build it with
+// NewToastAction; a server toast carries it as ui.ToastTrigger.Action.
+type ToastAction struct {
 	Label string            `json:"label"`
 	Attrs map[string]string `json:"attrs"`
+}
+
+// NewToastAction is a toast button labelled label that runs next. The
+// button carries next's RPC wiring and nothing else, so it panics on an
+// empty label, on a next that is no RPC, and on a next carrying any
+// other attribute (a confirm, a signal).
+func NewToastAction(label string, next Action) *ToastAction {
+	if label == "" {
+		panic("interactive: a toast action needs a label")
+	}
+	attrs := next.attrs()
+	if attrs == nil {
+		panic("interactive: a toast action needs an RPC action to run")
+	}
+	for k := range attrs {
+		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
+			panic(fmt.Sprintf("interactive: a toast action carries %s; a toast's button carries RPC wiring only", k))
+		}
+	}
+	return &ToastAction{Label: label, Attrs: attrs}
 }
 
 // Post creates a POST action. Panics if path does not start with "/".
@@ -196,19 +217,7 @@ func (a Action) OnSuccessToast(title string) Action {
 //
 // Maps to data-cui-rpc-success-action='{"label":…,"attrs":{…}}'.
 func (a Action) OnSuccessToastAction(label string, next Action) Action {
-	if label == "" {
-		panic("interactive: OnSuccessToastAction needs a label")
-	}
-	attrs := next.attrs()
-	if attrs == nil {
-		panic("interactive: OnSuccessToastAction needs an RPC action to run")
-	}
-	for k := range attrs {
-		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
-			panic(fmt.Sprintf("interactive: OnSuccessToastAction's action carries %s; a toast's button carries RPC wiring only", k))
-		}
-	}
-	a.successAction = &toastAction{Label: label, Attrs: attrs}
+	a.successAction = NewToastAction(label, next)
 	return a
 }
 

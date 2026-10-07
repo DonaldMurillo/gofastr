@@ -698,7 +698,7 @@ func TestOnSuccessToastEmitsAttr(t *testing.T) {
 func TestSuccessToastActionEmitsAttr(t *testing.T) {
 	attrs := Delete("/api/item/1").OnSuccessToast("Deleted").
 		OnSuccessToastAction("Undo", Post("/api/item/1/_restore").WithBody(`{}`).OnSuccessToast("Restored")).Attrs()
-	var got toastAction
+	var got ToastAction
 	if err := json.Unmarshal([]byte(attrs["data-cui-rpc-success-action"]), &got); err != nil {
 		t.Fatalf("success action is not JSON: %v (%v)", err, attrs)
 	}
