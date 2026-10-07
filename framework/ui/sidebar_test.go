@@ -139,9 +139,17 @@ func TestSidebarCollapsibleAutoMatchesLegacyBytes(t *testing.T) {
 	want := `<button aria-controls="workspace-nav-inline" aria-expanded="true" aria-label="Collapse navigation" ` +
 		`class="fui-sidebar__collapse" data-hui-sidebar-collapse-label="Collapse navigation" ` +
 		`data-hui-sidebar-expand-label="Expand navigation" data-hui-sidebar-toggle="" type="button">` +
-		`<span aria-hidden="true">‹</span></button>`
+		`<span aria-hidden="true"><svg `
 	if !strings.Contains(out, want) {
 		t.Errorf("Auto mode button must match the pinned bytes exactly:\nwant %s\ngot  %s", want, out)
+	}
+	// The toggle is the column's foot row: after the list, with its
+	// visible word inside the accessible name.
+	if i, j := strings.Index(out, "</nav>"), strings.Index(out, "fui-sidebar__collapse"); i < 0 || j < i {
+		t.Errorf("the collapse toggle sits above the list:\n%s", out)
+	}
+	if !strings.Contains(out, `<span class="fui-sidebar__label">Collapse</span></button>`) {
+		t.Errorf("the collapse toggle has no visible word:\n%s", out)
 	}
 }
 

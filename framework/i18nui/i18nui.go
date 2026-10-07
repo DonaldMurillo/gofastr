@@ -284,6 +284,7 @@ const (
 	KeyHuiComboboxResultsLabel      Key = "ui.combobox.resultsLabel"      // "results"                 // "On this page"
 	KeyHuiSidebarCollapse           Key = "ui.sidebar.collapse"           // "Collapse navigation"
 	KeyHuiSidebarExpand             Key = "ui.sidebar.expand"             // "Expand navigation"
+	KeyHuiSidebarCollapseText       Key = "ui.sidebar.collapseText"       // "Collapse"
 	KeyHuiBreadcrumbsLabel          Key = "ui.breadcrumbs.label"          // "Breadcrumb"
 	KeyHuiSortableItemRole          Key = "ui.sortable.itemRole"          // "sortable item"
 	KeyHuiSortableDragLabel         Key = "ui.sortable.dragLabel"         // "Drag %s"
@@ -517,6 +518,7 @@ var Defaults = map[Key]string{
 	KeyHuiComboboxResultsLabel:      "results",
 	KeyHuiSidebarCollapse:           "Collapse navigation",
 	KeyHuiSidebarExpand:             "Expand navigation",
+	KeyHuiSidebarCollapseText:       "Collapse",
 	KeyHuiBreadcrumbsLabel:          "Breadcrumb",
 	KeyHuiSortableItemRole:          "sortable item",
 	KeyHuiSortableDragLabel:         "Drag %s",
@@ -913,7 +915,7 @@ func AllKeys() []Key {
 		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
 		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
 		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
-		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
+		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiSidebarCollapseText, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
 		KeyHuiSortableDragLabel, KeyHuiSortableGrabbed, KeyHuiSortablePosition, KeyHuiSortableMoved,
 		KeyHuiSortableSaved, KeyHuiSortableReverted, KeyHuiSortableCancelled, KeyHuiSortableConflictReverted,
 		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,

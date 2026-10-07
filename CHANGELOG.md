@@ -8,6 +8,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.SidebarConfig.SectionLabels` draws group headers as section
+  labels**: small uppercase muted text over flush links, with a
+  chevron that turns when the group closes and no icon outside the
+  collapsed rail. In the rail an open group shows its links flat, so
+  every page keeps its own icon there. The admin sidebar uses it.
+- **`ui.SidebarBrand`** draws the product mark at a sidebar's head: a
+  square logo tile (the `Logo` image, or the name's initial on the
+  inverted surface), the name and an optional muted `Sub` line.
+  `--ui-sidebar-brand-tile` sizes the tile. The admin brand uses it.
+- **`ui.MenuConfig.Avatar` draws the trigger as an avatar**: round,
+  borderless, 32px, with `Label` kept as its visually hidden name and
+  a 44px box on coarse pointers. It refuses `TriggerHTML`,
+  `TriggerElement` and `IconOnly`. The admin account menu uses it.
+- **`ui.AvatarConfig.Square`** rounds the avatar to the medium radius
+  instead of a circle, and the `--ui-avatar-bg` / `--ui-avatar-fg`
+  knobs recolour its initials surface.
 - **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
   window scrolls the page while the nav column sticks to the top, one
   viewport tall with its own overflow scroll, and the `Toolbar` row
@@ -876,6 +892,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **The collapsible sidebar's toggle sits at the foot of the column**,
+  a sticky row with the `panel-left` icon and a "Collapse" label
+  (`SidebarConfig.CollapseText`, i18n key `ui.sidebar.collapseText`)
+  that the collapsed rail draws as the icon alone. It was a chevron
+  button at the head. Rows are 2.25rem tall under a fine pointer and
+  keep the 44px touch target on a coarse one; `--ui-sidebar-row-height`
+  overrides both.
 
 - **An audit row names the request's user by default.** With
   `AuditConfig.Actor` unset, `WithAuditLog` recorded no actor, so every

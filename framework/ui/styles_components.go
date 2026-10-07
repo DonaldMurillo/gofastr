@@ -835,15 +835,16 @@ func avatarCSS(_ style.Theme) string {
 	//
 	// Knobs: --ui-avatar-size (2.5rem) and its -sm (1.5rem), -lg (3rem),
 	// -xl (4rem) variants square the circle; --ui-avatar-status-min-size
-	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot.
+	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot;
+	// --ui-avatar-bg / --ui-avatar-fg recolor the initials disc.
 	return `[data-cui-comp="ui-avatar"] {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text-muted, #52525B);
+  background: var(--ui-avatar-bg, var(--color-surface-soft, #F4F4F5));
+  color: var(--ui-avatar-fg, var(--color-text-muted, #52525B));
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-xs, 0.75rem);
   flex-shrink: 0;
@@ -852,6 +853,8 @@ func avatarCSS(_ style.Theme) string {
 }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--sm { inline-size: var(--ui-avatar-size-sm, 1.5rem); block-size: var(--ui-avatar-size-sm, 1.5rem); font-size: var(--text-xs, 0.75rem); }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--lg { inline-size: var(--ui-avatar-size-lg, 3rem);   block-size: var(--ui-avatar-size-lg, 3rem);   font-size: var(--text-base, 1rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--square,
+[data-cui-comp="ui-avatar"].fui-avatar--square .fui-avatar__img { border-radius: var(--radii-md, 8px); }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--xl { inline-size: var(--ui-avatar-size-xl, 4rem);   block-size: var(--ui-avatar-size-xl, 4rem);   font-size: var(--text-lg, 1.125rem); }
 [data-cui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;

@@ -197,6 +197,12 @@ type MenuConfig struct {
 	// the menu acts on. Ignored with TriggerHTML or TriggerElement.
 	IconOnly bool
 
+	// Avatar draws the trigger as that avatar alone: round, borderless,
+	// 2rem, with a focus ring (the account menu in an app bar). Label
+	// stays the trigger's accessible name, after the avatar's own name.
+	// Mutually exclusive with TriggerHTML, TriggerElement and IconOnly.
+	Avatar *AvatarConfig
+
 	// TriggerElement replaces the framework-rendered summary with a
 	// caller-owned interactive element: inline HTML for a real <button>
 	// (or <a>). The menu renders a summary-less disclosure holding the
@@ -305,12 +311,22 @@ func Menu(cfg MenuConfig) render.HTML {
 		classes[headless.PartPanel] += " " + cfg.PanelClass
 	}
 	trigger := cfg.TriggerHTML
+	if cfg.Avatar != nil {
+		if trigger != "" || cfg.TriggerElement != "" || cfg.IconOnly {
+			panic("ui: Menu Avatar draws the trigger; drop TriggerHTML, TriggerElement and IconOnly")
+		}
+		classes[headless.PartSummary] += " fui-menu__trigger--avatar"
+		trigger = headless.Own(render.Join(
+			Avatar(*cfg.Avatar),
+			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)),
+		))
+	}
 	if cfg.IconOnly && trigger == "" && cfg.TriggerElement == "" {
 		classes[headless.PartSummary] += " fui-menu__trigger--icon"
-		trigger = render.Join(
+		trigger = headless.Own(render.Join(
 			Icon("more", IconConfig{Size: "18", ExtraAttrs: html.Attrs{"aria-hidden": "true"}}),
 			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)),
-		)
+		))
 	}
 	out := headless.Menu(headless.MenuProps{
 		ID:             cfg.ID,
@@ -419,6 +435,22 @@ func menuCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger--icon:hover {
   color: var(--color-text, #18181B);
+}
+/* Avatar: the avatar is the whole trigger, round, with the ring as the
+   only chrome. A coarse pointer keeps the touch target around it. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar {
+  justify-content: center;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--radii-full, 9999px);
+  background: transparent;
+  box-shadow: none;
+  --ui-avatar-size: 2rem;
+}
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar:hover { background: transparent; box-shadow: none; translate: none; }
+@media (pointer: coarse) {
+  [data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar { min-inline-size: var(--spacing-touch-target, 44px); min-block-size: var(--spacing-touch-target, 44px); }
 }
 /* Knobs: --ui-menu-caret-size (12px) is the trigger caret's square;
    --ui-menu-min-width (12rem) and --ui-menu-max-width (20rem) bound

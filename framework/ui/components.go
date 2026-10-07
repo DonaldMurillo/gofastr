@@ -897,6 +897,10 @@ type AvatarConfig struct {
 	Name string
 	Src  string     // optional image URL; falls back to initials when empty
 	Size AvatarSize // sm | "" (default md) | lg | xl
+	// Square draws a rounded square instead of a circle: a logo or
+	// workspace tile beside a product name, where a circle reads as a
+	// person.
+	Square bool
 
 	// Status draws a presence dot in the lower corner (online / away /
 	// busy / offline). Empty renders no dot.
@@ -924,6 +928,9 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	cls := "fui-avatar"
 	if cfg.Size != AvatarMd {
 		cls += " fui-avatar--" + string(cfg.Size)
+	}
+	if cfg.Square {
+		cls += " fui-avatar--square"
 	}
 	if cfg.Status != AvatarStatusNone {
 		cls += " fui-avatar--has-status"

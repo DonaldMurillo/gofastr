@@ -105,6 +105,14 @@ type SidebarProps struct {
 	// button's initial aria-label.
 	CollapseLabel string
 	ExpandLabel   string
+	// ToggleIcon is the collapse toggle's mark (decorative; the button
+	// is named by its aria-label). Empty draws a "‹" glyph.
+	ToggleIcon render.HTML
+	// ToggleText is the collapse toggle's visible word, drawn after the
+	// mark as a text part. Keep it inside the accessible name
+	// ("Collapse" inside "Collapse navigation") so a speech user can
+	// say what they see. Empty draws the mark alone.
+	ToggleText string
 	// GroupMarkup selects the dialect for groups: "" or "details"
 	// (native details + the disclosure module's persist key) or
 	// "button" (aria-expanded + aria-controls + hidden, which the
@@ -202,7 +210,9 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 	// inline div below), so when nothing inside carries caller content
 	// the mark goes on the wrapper instead of on each part.
 	regionChildren, hasContent := sidebarRegionChildren(b, p, false)
-	inline := []render.HTML{}
+	// The toggle is the column's last row: the list reads first, and
+	// the control that hides it sits at the foot.
+	inline := append([]render.HTML{}, regionChildren...)
 	if hasToggle {
 		collapsed := p.ServerCollapsed != nil && *p.ServerCollapsed
 		label := p.CollapseLabel
@@ -227,11 +237,16 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 			// marked as a whole, so the toggle marks itself.
 			toggleAttrs = Internal(toggleAttrs)
 		}
-		inline = append(inline,
-			b.El("button", PartSidebarToggle, toggleAttrs,
-				render.Tag("span", html.Attrs{"aria-hidden": "true"}, render.Text("‹"))))
+		mark := p.ToggleIcon
+		if mark == "" {
+			mark = render.Text("‹")
+		}
+		face := []render.HTML{render.Tag("span", html.Attrs{"aria-hidden": "true"}, mark)}
+		if p.ToggleText != "" {
+			face = append(face, b.El("span", PartText, nil, render.Text(scrubControlBytes(p.ToggleText))))
+		}
+		inline = append(inline, b.El("button", PartSidebarToggle, toggleAttrs, face...))
 	}
-	inline = append(inline, regionChildren...)
 	inlineOwn := Attrs(map[string]string{"id": inlineID})
 	if !hasContent {
 		// Nothing in the column — no toggle, no title needing its own

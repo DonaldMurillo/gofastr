@@ -130,6 +130,7 @@
 //	ShortcutHint:         OS-aware keyboard chord chips
 //	Sidebar:              responsive primary navigation (inline/drawer)
 //	SidebarBody:          nav content only, for a mirroring drawer slot
+//	SidebarBrand:         logo tile, name and muted sub-line for a sidebar head
 //	SidebarDrawerTrigger: the drawer hamburger standalone, for host chrome
 //	SignalToggle:         role=switch bound to a boolean signal
 //	SignOut:              logout form POSTing the auth sign-out endpoint

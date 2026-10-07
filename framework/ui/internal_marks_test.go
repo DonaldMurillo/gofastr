@@ -659,7 +659,12 @@ var kitComponents = []kitComponent{
 	{name: "ListDetail", fn: ListDetail, prep: prepSet("MobileSinglePane", true)},
 	{name: "ListDetailPlaceholder", fn: ListDetailPlaceholder},
 	{name: "Markdown", fn: Markdown, content: "the rendered document is the caller's prose, which a docs or article owner styles"},
-	{name: "Menu", fn: Menu, prep: prepSet("Href", "", "RPC", "", "Action", nil, "Do", nil, "Copy", nil)},
+	// Avatar draws the trigger and refuses the other trigger fields, so
+	// the fill drops those and checks the avatar trigger.
+	{name: "Menu", fn: Menu, prep: func(args []reflect.Value) {
+		prepSet("Href", "", "RPC", "", "Action", nil, "Do", nil, "Copy", nil)(args)
+		prepZero("TriggerHTML", "TriggerElement", "IconOnly")(args)
+	}},
 	{name: "MetricBand", fn: MetricBand},
 	{name: "MultiSelect", fn: MultiSelect},
 	{name: "Muted", fn: Muted},
@@ -698,6 +703,7 @@ var kitComponents = []kitComponent{
 	{name: "Select", fn: Select},
 	{name: "ShortcutHint", fn: ShortcutHint},
 	{name: "SidebarBody", fn: SidebarBody, prep: prepSet("Href", "")},
+	{name: "SidebarBrand", fn: SidebarBrand},
 	{name: "SidebarDrawerTrigger", fn: SidebarDrawerTrigger},
 	{name: "SignOut", fn: SignOut},
 	{name: "SignalToggle", fn: SignalToggle, prep: prepZero("Slice")},

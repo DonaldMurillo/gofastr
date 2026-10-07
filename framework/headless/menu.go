@@ -221,12 +221,13 @@ func Menu(p MenuProps, s Classes) render.HTML {
 	// The summary is the trigger; the caret says the activation opens a
 	// list. TriggerHTML is the caller's, replacing the summary's whole
 	// content — with none, the label and the caret are both the
-	// component's own, and the mark goes on the summary itself.
+	// component's own, and the mark goes on the summary itself. A
+	// trigger the composer built and Own'd counts as its own too.
 	summaryOwn := Attrs(map[string]string{
 		"aria-haspopup": "menu",
 		"aria-controls": panelID,
 	})
-	if p.TriggerHTML == "" {
+	if p.TriggerHTML == "" || ownedSlot(p.TriggerHTML) {
 		summaryOwn = Internal(summaryOwn)
 	}
 	summary := b.El("summary", PartSummary, summaryOwn, menuTriggerContent(b, p))
