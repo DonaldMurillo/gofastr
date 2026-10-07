@@ -22,6 +22,8 @@ const (
 	KeyEntityDelete         Key = "ui.entity.delete"         // "Delete"
 	KeyEntityDeleteTitle    Key = "ui.entity.deleteTitle"    // "Delete this {entity}?"
 	KeyEntityDeleteConfirm  Key = "ui.entity.deleteConfirm"  // "This cannot be undone."
+	KeyEntityDeleteSoft     Key = "ui.entity.deleteSoft"     // "It can be restored afterwards."
+	KeyEntityUndo           Key = "ui.entity.undo"           // "Undo"
 	KeyEntityDeleteFailed   Key = "ui.entity.deleteFailed"   // "Could not delete this {entity}."
 	KeyEntityDeleted        Key = "ui.entity.deleted"        // "{entity} deleted"
 	KeyEntityDuplicate      Key = "ui.entity.duplicate"      // "Duplicate"
@@ -46,6 +48,8 @@ var entityDefaults = map[Key]string{
 	KeyEntityDelete:         "Delete",
 	KeyEntityDeleteTitle:    "Delete this {entity}?",
 	KeyEntityDeleteConfirm:  "This cannot be undone.",
+	KeyEntityDeleteSoft:     "It can be restored afterwards.",
+	KeyEntityUndo:           "Undo",
 	KeyEntityDeleteFailed:   "Could not delete this {entity}.",
 	KeyEntityDeleted:        "{entity} deleted",
 	KeyEntityDuplicate:      "Duplicate",

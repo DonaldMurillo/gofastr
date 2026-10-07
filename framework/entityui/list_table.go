@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -346,12 +345,7 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 		})
 	}
 	if b.delete && canDelete(ctx, m, id) {
-		del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
-			WithConfirmDialog(deleteConfirm(ctx, m.noun(ctx, false))).
-			OnSuccess(interactive.Navigate(listHref(s.path, s.q))).
-			// A refusal (a row other records still reference) toasts
-			// the server's message instead of ending in silence.
-			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": m.singular(ctx)}))
+		del := deleteAction(ctx, m, id, listHref(s.path, s.q), b.undo)
 		items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
 			Label:  i18nui.T(ctx, i18nui.KeyEntityDelete),
 			Danger: true,

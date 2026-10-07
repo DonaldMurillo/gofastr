@@ -978,7 +978,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   previous and next row in the list's order, under the view, saved
   view, search, filter, facets and sort it was opened from, read as the
   caller; a sort the list refuses, such as a masked field's, is refused
-  here too. Under
+  here too. A row's Delete toasts what went, as the record's does, and
+  on a soft-deleting entity the confirm says the record can be
+  restored. With `Undo()` (on in the admin) that toast carries Undo for
+  a caller who may update the record, restoring it through the host's
+  `_restore` route. Under
   `WithRecordPath` a relation select draws an open button to the record
   it holds, when the caller's own read of that entity returns the row.
   An app action

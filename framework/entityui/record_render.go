@@ -401,12 +401,7 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 		items = append(items, danger...)
 	}
 	if b.delete && canDelete(ctx, m, b.id) {
-		singular := m.singular(ctx)
-		del := interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
-			WithConfirmDialog(deleteConfirm(ctx, m.noun(ctx, false))).
-			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
-			OnSuccess(interactive.Navigate(base)).
-			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular}))
+		del := deleteAction(ctx, m, b.id, base, b.undo)
 		// Delete joins the danger group when there is one.
 		if len(items) > 0 && len(danger) == 0 {
 			items = append(items, ui.MenuItem{Separator: true})
@@ -633,14 +628,41 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 	return walk(f.Side, 0)
 }
 
-// deleteConfirm is the dialog a row's or a record's Delete opens: it
-// names the entity, says the delete is final and answers in the danger
-// variant.
-func deleteConfirm(ctx context.Context, noun string) interactive.Confirm {
-	vars := map[string]string{"entity": noun}
+// deleteAction is a row's or a record's Delete: the confirm, a toast
+// naming what went, and back to back (the list). A refusal (a row other
+// records still reference) toasts the server's message instead of
+// ending in silence. Under undo, on a soft-deleting entity whose record
+// the caller may update, the toast carries Undo: it restores the record
+// and returns to back.
+func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
+	vars := map[string]string{"entity": m.singular(ctx)}
+	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
+		WithConfirmDialog(deleteConfirm(ctx, m)).
+		OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, vars)).
+		OnSuccess(interactive.Navigate(back)).
+		OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, vars))
+	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
+		del = del.OnSuccessToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
+				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityRestored, vars)).
+				OnSuccess(interactive.Navigate(back)).
+				OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+	}
+	return del
+}
+
+// deleteConfirm is the dialog a Delete opens: it names the entity, says
+// whether the delete is final (a soft-deleting entity's record can be
+// restored) and answers in the danger variant.
+func deleteConfirm(ctx context.Context, m *meta) interactive.Confirm {
+	vars := map[string]string{"entity": m.noun(ctx, false)}
+	msg := i18nui.KeyEntityDeleteConfirm
+	if m.e.Config.Scope.SoftDelete {
+		msg = i18nui.KeyEntityDeleteSoft
+	}
 	return interactive.Confirm{
 		Title:   i18nui.TVars(ctx, i18nui.KeyEntityDeleteTitle, vars),
-		Message: i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, vars),
+		Message: i18nui.T(ctx, msg),
 		Accept:  i18nui.T(ctx, i18nui.KeyEntityDelete),
 		Danger:  true,
 	}

@@ -17,10 +17,6 @@ import (
 // handlers answer both the form RPC and a plain post.
 
 func notesConfig() entity.EntityConfig {
-	// WithTimestamps(false): crud's RestoreOne mis-binds its UPDATE's
-	// arguments on an entity with auto timestamps (its Set runs after
-	// its Where, so the id placeholder binds the timestamp), which is
-	// that package's bug to fix; the trash view itself does not care.
 	return entity.EntityConfig{
 		Fields: fields(
 			schema.Field{Name: "name", Type: schema.String, Required: true},
@@ -28,7 +24,7 @@ func notesConfig() entity.EntityConfig {
 		),
 		Exposure: &entity.ExposureConfig{Public: true},
 		Scope:    &entity.ScopeConfig{SoftDelete: true},
-	}.WithTimestamps(false)
+	}
 }
 
 func notesRows() []map[string]any {

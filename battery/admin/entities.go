@@ -158,7 +158,7 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		listPath := b.entityBase(e)
 		related := b.relatedTo(e)
 		list := b.screen(group, base, i18nui.KeyAdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
-			return b.ui.List(name).Base(listPath).Bulk().Delete().Duplicate().
+			return b.ui.List(name).Base(listPath).Bulk().Delete().Undo().Duplicate().
 				QueryBox().ColumnsMenu().Deleted().SavedViews().TabCounts().RenderCtx(ctx)
 		})
 		b.entityTitle(list, e, func(ctx context.Context, _ map[string]string) string { return b.plural(ctx, e) })
@@ -175,7 +175,7 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
 		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
-			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Duplicate().Steps().
+			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().
 				API().Override().RenderCtx(ctx)
 		})
 		b.entityTitle(record, e, func(ctx context.Context, p map[string]string) string {

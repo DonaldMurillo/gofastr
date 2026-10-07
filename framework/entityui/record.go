@@ -30,6 +30,7 @@ type RecordBuilder struct {
 	apiTab   bool
 	override bool
 	delete   bool
+	undo     bool
 	dup      bool
 	steps    bool
 	prefill  map[string]string
@@ -211,6 +212,12 @@ func (b *RecordBuilder) Override() *RecordBuilder { b.override = true; return b 
 // Delete and Duplicate turn on those record actions.
 func (b *RecordBuilder) Delete() *RecordBuilder    { b.delete = true; return b }
 func (b *RecordBuilder) Duplicate() *RecordBuilder { b.dup = true; return b }
+
+// Undo puts Undo on the toast a Delete leaves, for an entity with
+// Scope.SoftDelete (a no-op otherwise) and a caller who may update the
+// record: it restores the record through the host's RestoreHandler and
+// returns to the list. Off by default.
+func (b *RecordBuilder) Undo() *RecordBuilder { b.undo = true; return b }
 
 // Prefill sets starting values on a create form (a foreign key when New
 // is opened from a related list). Fields a create may not set are ignored.

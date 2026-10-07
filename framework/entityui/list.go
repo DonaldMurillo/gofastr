@@ -27,6 +27,7 @@ type ListBuilder struct {
 	empty    string
 	create   bool
 	delete   bool
+	undo     bool
 	dup      bool
 	bulk     bool
 	noLinks  bool
@@ -100,6 +101,12 @@ func (b *ListBuilder) NoCreate() *ListBuilder { b.create = false; return b }
 // off by default on app pages. Each still needs the entity's access.
 func (b *ListBuilder) Delete() *ListBuilder    { b.delete = true; return b }
 func (b *ListBuilder) Duplicate() *ListBuilder { b.dup = true; return b }
+
+// Undo puts Undo on the toast a row's Delete leaves, for an entity with
+// Scope.SoftDelete (a no-op otherwise) and a caller who may update the
+// row: it restores the row through the host's RestoreHandler and
+// re-renders the list as it was. Off by default.
+func (b *ListBuilder) Undo() *ListBuilder { b.undo = true; return b }
 
 // NoLinks draws the rows with no record links: the title is text, there
 // is no row menu and no New. It is for an entity with no screen of its

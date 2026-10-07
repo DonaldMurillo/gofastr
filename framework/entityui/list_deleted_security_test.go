@@ -31,7 +31,6 @@ func ownerNotesUI(t *testing.T) (*testUI, *access.RolePolicy) {
 	cfg.Exposure = &entity.ExposureConfig{Public: true, Access: entity.AccessControl{
 		Update: "notes:update", Delete: "notes:delete",
 	}}
-	cfg = cfg.WithTimestamps(false)
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"notes": cfg},
 		map[string][]map[string]any{"notes": {

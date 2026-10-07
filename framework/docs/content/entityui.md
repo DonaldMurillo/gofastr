@@ -84,7 +84,12 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   The query arrives from the client, so it is parsed the way the list
   parses its own URL, and a sort the list refuses (a masked field's) is
   refused here too. A record past the first `EveryMatchCap` rows, or
-  outside the list, draws no steps. With `WithRecordPath`, a relation select holding a value draws
+  outside the list, draws no steps. Delete asks first, and on an entity
+  with `Scope.SoftDelete` the confirm says the record can be restored.
+  With `Undo()` (on the list builder too), the toast a soft delete
+  leaves carries Undo for ten seconds, for a caller who may update the
+  record: it posts the restore (`<write base>/<id>/_restore`, the trash
+  view's route) and returns to the list. With `WithRecordPath`, a relation select holding a value draws
   an open button beside it, linking to that record, when the caller's
   own read of the related entity returns the row.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
@@ -191,7 +196,7 @@ record links hang off), `Heading(text, level)` (it also names the table,
 as a hidden caption, so two lists on one page are two named regions) and
 `Empty(text)`,
 `NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
-for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
+for an entity with no screen of its own), `Delete`, `Undo`, `Duplicate`, `Bulk`,
 `QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
 controls below), and `Actions` for header buttons beside New.
 
@@ -206,8 +211,8 @@ The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Duplicate()`,
-`Steps()` and `Prefill(values)`.
+`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
+`Duplicate()`, `Steps()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
