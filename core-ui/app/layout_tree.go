@@ -148,9 +148,10 @@ type AreaSpec struct {
 	// Transition is the area cell's view transition; the cell renders
 	// data-cui-vt="<name>" (the author's raw Name, or a generated
 	// vt-<layout>-<area> one) and Layout.TransitionCSS generates the
-	// rules. FadeThrough is the fit for text the root crossfade would
-	// ghost over itself (breadcrumbs); the zero value transitions
-	// nothing (the area rides the root crossfade).
+	// rules. Instant suits a region that keeps most of its pixels
+	// (a breadcrumb trail whose root never changes); FadeThrough suits
+	// text that changes whole and must not ghost over itself; the zero
+	// value transitions nothing (the area rides the root crossfade).
 	Transition Transition
 	// Policy is the area's region guard it
 	// runs in the policy phase, before any Load. A Redirect moves the

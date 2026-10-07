@@ -556,8 +556,10 @@ fwApp.Mount(uihost.New(site)) // the host ships the layout's transition CSS
 Presets: `app.Slide(app.Right, d)` is the master-detail move (the
 back direction mirrors automatically), `app.Crossfade(d)` fades both
 legs, `app.FadeThrough(d)` runs the legs sequentially — for regions
-whose two states carry text that must not ghost over itself
-(breadcrumbs). `Transition{Name: "..."}` assigns a snapshot name without
+whose two states carry text that must not ghost over itself.
+`app.Instant()` swaps the region in one frame while the page
+transitions around it: the fit for a breadcrumb trail, whose root is
+the same on every page and would blink under any fade. `Transition{Name: "..."}` assigns a snapshot name without
 generating keyframes; use a framework preset when the region needs a move.
 The host collects every registered layout's generated
 `Layout.TransitionCSS()` into app.css; there is nothing to wire. app.css

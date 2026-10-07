@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
@@ -169,7 +168,9 @@ func (s *adminScreen) RenderCtx(ctx context.Context) render.HTML {
 
 // layout is the shell: the sidebar beside a toolbar and the page.
 func (b *Battery) layout() *appui.Layout {
-	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "crumbs", Transition: appui.FadeThrough(150 * time.Millisecond)}}}
+	// The trail swaps in one frame: its root ("Meridian") is the same on
+	// every page, and any fade would blink it.
+	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "crumbs", Transition: appui.Instant()}}}
 	return appui.NewLayout("gofastr-admin", spec, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
 		cfg := b.sidebar(ctx)
 		nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))

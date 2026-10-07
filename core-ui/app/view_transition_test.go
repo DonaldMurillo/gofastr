@@ -215,6 +215,33 @@ func TestAreaTransitionMarkerAndCSS(t *testing.T) {
 	}
 }
 
+// An Instant region swaps in one frame while the root crossfades
+// around it: no fade leg and no group morph, and the old snapshot is
+// hidden from the first frame, so a trail's unchanged prefix never
+// blinks and its changed tail never ghosts.
+func TestInstantAreaSwapsInOneFrame(t *testing.T) {
+	shell := app.NewLayout("shell", app.LayoutSpec{
+		Areas: []app.AreaSpec{{Name: "crumbs", Transition: app.Instant()}},
+	}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(l.RouteArea("crumbs", func(ctx context.Context, m app.Match) render.HTML {
+			return render.Text("HOME")
+		}), l.Primary())
+	})
+	css := shell.TransitionCSS()
+	for _, want := range []string{
+		`[data-cui-vt="vt-shell-crumbs"] { view-transition-name: vt-shell-crumbs; }`,
+		`::view-transition-group(vt-shell-crumbs), ::view-transition-new(vt-shell-crumbs) { animation: none; }`,
+		`::view-transition-old(vt-shell-crumbs) { animation: none; opacity: 0; }`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("instant CSS missing %s:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "@keyframes") {
+		t.Errorf("an instant swap generated keyframes:\n%s", css)
+	}
+}
+
 func TestNewLayoutRefusesBadAreaTransitionName(t *testing.T) {
 	defer func() {
 		if recover() == nil {
