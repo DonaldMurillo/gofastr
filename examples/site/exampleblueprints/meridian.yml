@@ -348,6 +348,7 @@ entities:
     properties:
       label: Payments
     display:
+      title_fields: [invoice_id, customer_id]
       description: Money in, and the attempts that failed.
       nav:
         group: billing
