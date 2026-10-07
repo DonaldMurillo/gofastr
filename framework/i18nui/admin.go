@@ -9,6 +9,8 @@ const (
 	KeyAdminTitle        Key = "ui.admin.title"        // "Admin"
 	KeyAdminBrandSub     Key = "ui.admin.brandSub"     // "Back office"
 	KeyAdminNav          Key = "ui.admin.nav"          // "Admin navigation"
+	KeyAdminSidebar      Key = "ui.admin.sidebar"      // "Admin sidebar"
+	KeyAdminToolbar      Key = "ui.admin.toolbar"      // "Admin toolbar"
 	KeyAdminDashboard    Key = "ui.admin.dashboard"    // "Dashboard"
 	KeyAdminOperations   Key = "ui.admin.operations"   // "Operations"
 	KeyAdminEntities     Key = "ui.admin.entities"     // "Entities"
@@ -152,6 +154,8 @@ var adminDefaults = map[Key]string{
 	KeyAdminTitle:             "Admin",
 	KeyAdminBrandSub:          "Back office",
 	KeyAdminNav:               "Admin navigation",
+	KeyAdminSidebar:           "Admin sidebar",
+	KeyAdminToolbar:           "Admin toolbar",
 	KeyAdminDashboard:         "Dashboard",
 	KeyAdminOperations:        "Operations",
 	KeyAdminEntities:          "Entities",

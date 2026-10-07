@@ -189,8 +189,9 @@ func (b *Battery) layout() *appui.Layout {
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 			ui.ContentRow(ui.ContentRowConfig{
 				Sidebar:       nav,
-				NavLabel:      i18nui.T(ctx, i18nui.KeyAdminNav),
+				NavLabel:      i18nui.T(ctx, i18nui.KeyAdminSidebar),
 				Toolbar:       toolbar,
+				ToolbarLabel:  i18nui.T(ctx, i18nui.KeyAdminToolbar),
 				PhoneNavFlush: true,
 			}, l.Primary()))
 	})

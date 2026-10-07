@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -49,6 +50,24 @@ func TestShellFrame(t *testing.T) {
 	}
 	if strings.Contains(body, "<style") {
 		t.Error("the admin shipped a style block")
+	}
+}
+
+// Every landmark the shell draws has its own name (axe landmark-unique),
+// and the toolbar row is one of them (axe region).
+func TestShellLandmarksAreDistinct(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	body := get(x.as(theAdmin), "/admin").Body.String()
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<(nav|section|aside)\b[^>]*aria-label="([^"]*)"`).FindAllStringSubmatch(body, -1) {
+		key := m[1] + "/" + m[2]
+		if seen[key] {
+			t.Errorf("two %s landmarks named %q", m[1], m[2])
+		}
+		seen[key] = true
+	}
+	if !seen["section/Admin toolbar"] {
+		t.Errorf("the toolbar is not a labelled region; landmarks = %v", seen)
 	}
 }
 
