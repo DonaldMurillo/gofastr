@@ -9,9 +9,9 @@ import (
 )
 
 // The columns menu: ?cols= names the shown columns in display order.
-// The menu is a disclosure holding a GET form — one checkbox per
-// available field, move links that rewrite cols, a reset link that
-// drops it — and the read asks only for the shown columns.
+// The menu is a disclosure of checkbox items, each a link that rewrites
+// cols with its field toggled, the title field pinned on, and a reset
+// link that drops cols; the read asks only for the shown columns.
 
 func columnsUI(t *testing.T) *testUI {
 	t.Helper()
@@ -175,4 +175,32 @@ func listResetHref(html string) string {
 		return ""
 	}
 	return rest[:k]
+}
+
+// Unchecking the last column beside the pinned title leaves the title
+// alone: the item links to cols naming only it, and that list draws
+// just the title column.
+func TestColumnsMenuReachesTitleOnly(t *testing.T) {
+	x := columnsUI(t)
+	html := listHTML(t, x.ui.List("orders").ColumnsMenu(), x.ctx("/orders", "?cols=name,status"))
+	if !strings.Contains(html, `href="/orders?cols=name" role="menuitemcheckbox"`) {
+		t.Fatalf("unchecking Status does not link to the title alone:\n%s", html)
+	}
+	html = listHTML(t, x.ui.List("orders").ColumnsMenu(), x.ctx("/orders", "?cols=name"))
+	if colOrder(html, "Name") < 0 || colOrder(html, "Status") >= 0 || colOrder(html, "Amount") >= 0 {
+		t.Errorf("cols=name did not draw the title column alone:\n%s", html)
+	}
+}
+
+// The filter form carries the URL's other params as hidden inputs, every
+// value of a repeated one: another list's cols=a&cols=b on the same page
+// survives a search.
+func TestFilterFormCarriesRepeatedParams(t *testing.T) {
+	x := columnsUI(t)
+	html := listHTML(t, x.ui.List("orders").ColumnsMenu(), x.ctx("/orders", "?tag=a&tag=b"))
+	for _, v := range []string{"a", "b"} {
+		if !strings.Contains(html, `<input data-cui-internal="" name="tag" type="hidden" value="`+v+`">`) {
+			t.Errorf("the filter form dropped tag=%s:\n%s", v, html)
+		}
+	}
 }

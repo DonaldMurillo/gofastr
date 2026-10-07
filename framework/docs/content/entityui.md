@@ -199,7 +199,10 @@ failed page.
 shows, for a breadcrumb or a link drawn outside its screen.
 `appUI.SearchRecords(ctx, entity, q, limit)` answers up to `limit`
 records (at most 20) whose `SearchFields` match `q`, the way the list's
-search box matches, as `entityui.RecordMatch{ID, Title}`. Both read behind the same gates as
+search box matches, as `entityui.RecordMatch{ID, Title}`, in primary-key
+order. The limit counts records the caller may open: a row a Decider
+refuses does not use up a place, and the read pages past refused rows for
+at most five pages of `limit` rows. Both read behind the same gates as
 the screens (scope, sign-in, RBAC, a Decider's per-row answer, the read
 hooks) and answer nothing for a record or entity the caller may not see.
 

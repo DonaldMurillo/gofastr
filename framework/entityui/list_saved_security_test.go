@@ -129,3 +129,29 @@ func TestSavedViewsCrossSiteRefused(t *testing.T) {
 		t.Fatalf("a cross-site save answered %d, want 403", w.Code)
 	}
 }
+
+// An open saved view's filter is not in the query the export and
+// every-match routes read, so the list offers neither: an admin would
+// otherwise export or bulk-run past the view's narrowing. The same list
+// with no view open offers both, so the refusal is the saved view's.
+func TestSavedViewOffersNoExportOrEveryMatch(t *testing.T) {
+	x, store := savedUI(t)
+	saved, err := store.Create(asUser(x.ctx("/orders", ""), "u1"), SavedView{
+		Entity: "orders", Name: "Any amount", Filter: "amount > 0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := func() *ListBuilder { return x.ui.List("orders").SavedViews().Bulk().PageSize(1) }
+	plain := listHTML(t, list(), x.userCtx("/orders", "", "u1"))
+	if !strings.Contains(plain, "_export.csv") || !strings.Contains(plain, `value="every"`) {
+		t.Fatalf("the plain list offers no export or every-match, so the check is vacuous:\n%s", plain)
+	}
+	open := listHTML(t, list(), x.userCtx("/orders", "?saved="+saved.ID, "u1"))
+	if strings.Contains(open, "_export.csv") {
+		t.Errorf("SECURITY: an open saved view drew an Export link:\n%s", open)
+	}
+	if strings.Contains(open, `value="every"`) {
+		t.Errorf("SECURITY: an open saved view offered every match:\n%s", open)
+	}
+}

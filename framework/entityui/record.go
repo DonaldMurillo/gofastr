@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // RecordBuilder draws one record: header, move buttons, tabs (Edit,
@@ -70,12 +71,18 @@ type RecordMatch struct {
 // maxRecordMatches caps one SearchRecords answer.
 const maxRecordMatches = 20
 
+// searchPages bounds how many pages of limit rows one SearchRecords
+// reads looking past rows the caller may not open.
+const searchPages = 5
+
 // SearchRecords finds up to limit records (at most 20) whose
 // SearchFields match q, the way the list's search box does, named as
-// RecordTitle names them. It reads behind the list's gate and each
-// row's own, through the read hooks, and answers nothing for an entity without
-// SearchFields, an empty q, a caller who may not list the entity, an
-// unknown entity and a failed read alike.
+// RecordTitle names them, in primary-key order. It reads behind the
+// list's gate and each row's own, through the read hooks; the limit
+// counts records the caller may open, and the read pages past refused
+// rows for at most searchPages pages of limit rows. It answers nothing
+// for an entity without SearchFields, an empty q, a caller who may not
+// list the entity, an unknown entity and a failed read alike.
 func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int) []RecordMatch {
 	q = strings.TrimSpace(q)
 	m, err := u.meta(entityName)
@@ -83,20 +90,30 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 		return nil
 	}
 	limit = min(max(limit, 1), maxRecordMatches)
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Search: q, Limit: limit})
-	if err != nil {
-		slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
-		return nil
-	}
-	out := make([]RecordMatch, 0, len(rows))
-	for _, row := range rows {
-		// A Decider may allow the list and refuse one row: a match names
-		// only a record whose own screen would open.
-		id := cell(rowValue(row, m.pk))
-		if id == "" || !canReadRecord(ctx, m.ch, id) {
-			continue
+	out := make([]RecordMatch, 0, limit)
+	for page := range searchPages {
+		rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
+			Search: q, Limit: limit, Offset: page * limit, Sorts: []filter.ParsedSort{{Field: m.pk}},
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
+			return nil
 		}
-		out = append(out, RecordMatch{ID: id, Title: m.recordTitle(ctx, row)})
+		for _, row := range rows {
+			// A Decider may allow the list and refuse one row: a match
+			// names only a record whose own screen would open.
+			id := cell(rowValue(row, m.pk))
+			if id == "" || !canReadRecord(ctx, m.ch, id) {
+				continue
+			}
+			out = append(out, RecordMatch{ID: id, Title: m.recordTitle(ctx, row)})
+			if len(out) == limit {
+				return out
+			}
+		}
+		if len(rows) < limit {
+			break
+		}
 	}
 	return out
 }

@@ -433,8 +433,10 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) || (len(extra) > 0 && k == s.p.filter) {
 			continue
 		}
-		if vs := s.q[k]; len(vs) > 0 {
-			hidden = append(hidden, ui.HiddenField{Name: k, Value: vs[0]})
+		// Every value: a repeated param (another list's cols=a&cols=b)
+		// must survive the submit whole.
+		for _, v := range s.q[k] {
+			hidden = append(hidden, ui.HiddenField{Name: k, Value: v})
 		}
 	}
 	// Reset returns to the bare action and would drop every param the
