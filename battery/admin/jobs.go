@@ -48,11 +48,12 @@ const bulkResumeGrace = time.Minute
 // up once the runner is bound.
 var errBulkJobsUnbound = errors.New("admin: BulkJobs is not bound to the entity UI yet; pass it as admin.Config.BulkJobs so Init binds it")
 
-// PrincipalFunc rebuilds one user's request context as of now: the user,
-// their CURRENT roles and the tenant, read fresh, the way a request from
-// them would carry them. RunBulkJob calls it before every chunk; an
-// error stops the run, so a creator who is gone, or whose roles no
-// longer admit the action, runs nothing. See AuthPrincipal for
+// PrincipalFunc rebuilds one user's request context: the user and their
+// CURRENT roles, read fresh, and tenant, the run's own tenant, fixed at
+// confirm. RunBulkJob calls it before every chunk; an error stops the
+// run, so a creator who is gone, or whose roles no longer admit the
+// action, runs nothing. An app that tracks tenant membership returns an
+// error for a user no longer in tenant. See AuthPrincipal for
 // battery/auth.
 type PrincipalFunc func(ctx context.Context, userID, tenant string) (context.Context, error)
 
@@ -203,8 +204,9 @@ func (j *BulkJobs) run(ctx context.Context, job queue.Job) error {
 // error, so the run stops — installs them as the context's user with
 // their CURRENT roles (as the user and via access.WithRoles, so both the
 // User-reading gates and the permission-reading gates see them), and
-// stamps the tenant. The admin adds Config.Policy when the context has
-// no policy of its own.
+// stamps the run's tenant as given: battery/auth has no tenant
+// membership to check it against. The admin adds Config.Policy when the
+// context has no policy of its own.
 func AuthPrincipal(am *auth.AuthManager) PrincipalFunc {
 	return func(ctx context.Context, userID, tenantID string) (context.Context, error) {
 		if am == nil || am.UserStore() == nil {

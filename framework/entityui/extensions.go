@@ -189,10 +189,12 @@ type JobRunner interface {
 	// nil once it has finished, so UI.ResumeBulkJobs can hand over again
 	// a job whose first Enqueue is not known to have happened.
 	Enqueue(ctx context.Context, job BulkJob) error
-	// Principal rebuilds the creator's request context as of now from
-	// job.Creator and job.Tenant: the user, their current roles and the
-	// tenant, read fresh, the way a request from them would carry them.
-	// RunBulkJob calls it before every chunk; an error stops the run.
+	// Principal rebuilds the creator's request context from job.Creator
+	// and job.Tenant: the user and their current roles, read fresh, and
+	// the run's tenant, fixed at confirm because the snapshot's records
+	// belong to it. RunBulkJob calls it before every chunk; an error
+	// stops the run, so a runner that tracks tenant membership refuses a
+	// creator who has left job.Tenant.
 	Principal(ctx context.Context, job BulkJob) (context.Context, error)
 }
 

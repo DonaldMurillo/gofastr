@@ -275,11 +275,16 @@ snapshot and its `Enqueue`. The queue job's payload carries only the job
 id; the confirmed selection lives in the host's snapshot store.
 
 `PrincipalFunc` (the second argument) rebuilds the confirming user's
-request context as of now — the user, their current roles, the tenant —
-before every chunk; an error stops the run, so a creator who is gone
+request context before every chunk: the user and their current roles,
+read fresh, and the run's tenant. The tenant is the one the selection
+was confirmed in and stays fixed for the run, because the snapshot's
+records belong to it. An error stops the run, so a creator who is gone
 runs nothing. `admin.AuthPrincipal(am)` builds one from `battery/auth`,
 loading the user and their current roles through the manager's user
-store. The admin then puts `Config.Policy` on a context that has no
+store; it has no notion of tenant membership and stamps the run's
+tenant as given. An app that does track membership writes its own
+`PrincipalFunc` and returns an error when the user no longer belongs
+to the tenant it is handed. The admin then puts `Config.Policy` on a context that has no
 policy and runs its own gate again: a creator it admits runs elevated,
 as the admin's bulk route does; one whose admin role was revoked runs
 as a plain caller, so the writes pass only that user's own permissions.
