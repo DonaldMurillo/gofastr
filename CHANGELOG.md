@@ -8,6 +8,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Admin dashboard metrics**: `admin.Config.Metrics` draws a strip of
+  figures above the entity cards, each a count or a sum over an exposed
+  entity (`Where` in the query DSL, `Format: "money"`), linked to a list
+  view and optionally carrying a second figure (`Detail`: "$99.00
+  outstanding"). Each polls on its own. Boot refuses a metric that
+  could only draw "—"; `entityui.UI.CheckStat` is the check. Meridian
+  shows MRR, active customers and past-due invoices.
 - **The admin sidebar counts each entity's records.** The figure ends
   the row, counted under the list's read gate, and re-renders on every
   client navigation, so a create shows on the next click.

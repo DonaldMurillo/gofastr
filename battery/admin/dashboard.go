@@ -36,6 +36,9 @@ func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) rend
 		}),
 		resultNotice(ctx),
 	}
+	if strip := b.metricStrip(ctx); strip != "" {
+		parts = append(parts, strip)
+	}
 	parts = append(parts, b.entityCards(ctx)...)
 	var ops []render.HTML
 	if b.cfg.Queue != nil {
@@ -264,6 +267,7 @@ func (b *Battery) mountOps(r *router.Router) {
 		post("/modules/_revoke", b.handleModuleRevoke)
 	}
 	b.mountCards(r)
+	b.mountMetrics(r)
 }
 
 // pathSegment escapes one path segment.

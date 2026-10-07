@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -56,6 +57,41 @@ func TestStatUnknownAggIsRefused(t *testing.T) {
 	}
 	if got := x.ui.StatValue(ctx, "invoices", "sum", "memo", "", ""); got != "—" {
 		t.Errorf("sum of a text field = %q, want the empty placeholder", got)
+	}
+}
+
+// CheckStat refuses at boot every spec StatValue would draw as "—" for
+// a reason no request can change.
+func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(slices.Clone(inv.Fields), schema.Field{Name: "cost", Type: schema.Decimal, NoQuery: true})
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows())
+	for _, ok := range [][5]string{
+		{"invoices", "", "", "", ""},
+		{"invoices", "count", "", `status = "draft"`, ""},
+		{"invoices", "sum", "amount", `status = "draft"`, "money"},
+	} {
+		if err := x.ui.CheckStat(ok[0], ok[1], ok[2], ok[3], ok[4]); err != nil {
+			t.Errorf("CheckStat%q: %v", ok, err)
+		}
+	}
+	for name, bad := range map[string][5]string{
+		"unknown entity":     {"ghosts", "count", "", "", ""},
+		"unknown agg":        {"invoices", "avg", "amount", "", ""},
+		"sum with no field":  {"invoices", "sum", "", "", ""},
+		"sum of text":        {"invoices", "sum", "memo", "", ""},
+		"sum of no field":    {"invoices", "sum", "nope", "", ""},
+		"sum of no-query":    {"invoices", "sum", "cost", "", ""},
+		"count with a field": {"invoices", "count", "amount", "", ""},
+		"bad filter":         {"invoices", "count", "", `nope = 1`, ""},
+		"unknown format":     {"invoices", "sum", "amount", "", "euros"},
+		"money on a count":   {"invoices", "count", "", "", "money"},
+	} {
+		if err := x.ui.CheckStat(bad[0], bad[1], bad[2], bad[3], bad[4]); err == nil {
+			t.Errorf("%s: CheckStat%q passed", name, bad)
+		}
 	}
 }
 

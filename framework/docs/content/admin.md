@@ -163,6 +163,24 @@ admin.New(admin.Config{
   never runs for a refused caller.
 - A **Card** draws on the dashboard. A positive `Poll` redraws it from
   `GET <PathPrefix>/_card/<key>` on that interval (`data-cui-poll`).
+- **Metrics** are the strip at the top of the dashboard, above the
+  entity cards: a count or a sum over an exposed entity, read in the
+  admin's scope under the same 2-second deadline as the entity cards,
+  each polled from `GET <PathPrefix>/_metric/<index>`. `View` links the
+  figure to one of the entity's list views; `Detail` is a second figure
+  under the value, its label after the number. Boot fails on a metric
+  that could only ever draw "—": an unknown entity, agg, field, filter,
+  format, view or icon.
+
+  ```go
+  Metrics: []admin.Metric{
+      {Label: "MRR", Entity: "customers", Agg: "sum", Field: "mrr",
+          Where: `status = "active"`, Format: "money", View: "active"},
+      {Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
+          Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount",
+              Where: `status = "past_due"`, Format: "money"}},
+  },
+  ```
 - Build failures are contained: an error, a panic or a nil component
   draws a generic notice in the shell and logs `app slot failed` with
   the slot name, never what the page read.

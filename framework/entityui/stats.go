@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"slices"
@@ -71,6 +72,45 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		slog.WarnContext(ctx, "entityui: stat agg is not count or sum", "entity", entityName, "agg", agg)
 		return "—"
 	}
+}
+
+// CheckStat reports why StatValue could never compute this spec: an
+// unknown entity or agg, a sum with no visible, queryable Int, Float or
+// Decimal field (or a count given one), a filter that does not parse
+// against the entity's fields, or a format other than "" or "money"
+// ("money" only on a sum). A host checks a configured stat with it at
+// boot, so a typo fails the start rather than drawing "—" forever.
+func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
+	m, err := u.meta(entityName)
+	if err != nil {
+		return err
+	}
+	switch agg {
+	case "", "count":
+		if field != "" {
+			return fmt.Errorf("entityui: a count of %s takes no field (got %q)", entityName, field)
+		}
+		if format != "" {
+			return fmt.Errorf("entityui: a count of %s takes no format (got %q)", entityName, format)
+		}
+	case "sum":
+		f, ok := m.field(field)
+		if !ok || f.Hidden || f.NoQuery {
+			return fmt.Errorf("entityui: sum over %s needs a visible, queryable field (got %q)", entityName, field)
+		}
+		if f.Type != schema.Int && f.Type != schema.Float && f.Type != schema.Decimal {
+			return fmt.Errorf("entityui: sum over %s.%s needs an Int, Float or Decimal field", entityName, field)
+		}
+		if format != "" && format != "money" {
+			return fmt.Errorf("entityui: stat format %q is not \"\" or \"money\"", format)
+		}
+	default:
+		return fmt.Errorf("entityui: stat agg %q is not count or sum", agg)
+	}
+	if _, err := dsl.ParsePredicate(where, m.e.GetFields()); err != nil {
+		return fmt.Errorf("entityui: stat filter on %s: %w", entityName, err)
+	}
+	return nil
 }
 
 // Count is how many records of the entity the caller can read that

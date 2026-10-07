@@ -166,6 +166,10 @@ type Config struct {
 	// Cards are the app's own dashboard cards.
 	Cards []Card
 
+	// Metrics are the figures in the strip at the top of the dashboard,
+	// in order: counts and sums over exposed entities.
+	Metrics []Metric
+
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
@@ -366,6 +370,11 @@ func (b *Battery) checkConfig() error {
 		}
 		if c.Poll < 0 {
 			return fmt.Errorf("admin: Cards[%d] (%s) has a negative Poll", i, c.Key)
+		}
+	}
+	for i, m := range b.cfg.Metrics {
+		if err := b.checkMetric(m, ""); err != nil {
+			return fmt.Errorf("admin: Metrics[%d]: %w", i, err)
 		}
 	}
 	for i, l := range b.cfg.Links {

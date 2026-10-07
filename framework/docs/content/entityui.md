@@ -91,7 +91,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   why. A dashboard block reads an entity without a screen of its own.
   `appUI.Count(ctx, entity, where)` is the count alone, formatted, and
   reports false where `StatValue` would print "—", so a nav row or a
-  badge draws nothing instead.
+  badge draws nothing instead. `appUI.CheckStat(entity, agg, field,
+  where, format)` returns why `StatValue` could never compute a spec,
+  so a host can refuse a configured stat at boot.
   `appUI.LastUpdated` is when the newest record the caller can read was
   written (the greatest `updated_at` in scope); it reports false on an
   entity without timestamps, a refused read or no rows.
