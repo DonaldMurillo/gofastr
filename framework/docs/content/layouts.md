@@ -745,7 +745,9 @@ width and stacks below main on phones. An empty outlet in `Aside` takes
 no space; a later navigation can fill it again.
 
 `ContentRowConfig.Toolbar` places an existing `ui.Toolbar` above main
-beside the sidebar. It does not create another toolbar component.
+beside the sidebar. It does not create another toolbar component. The
+row is a `<section>` landmark named by `ToolbarLabel` ("Toolbar" by
+default), so controls placed there sit inside a landmark.
 `Viewport: true` confines desktop scrolling to main, sidebar and aside.
 Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from

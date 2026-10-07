@@ -782,6 +782,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.StatCardConfig.Href`, `.Icon` and `.Action`** link a stat's label
   to what it counts, draw a registered icon in the card's head and hold
   a control there, outside the link.
+- **`ui.ContentRowConfig.ToolbarLabel`** names the toolbar row, which
+  is now a `<section>` region landmark ("Toolbar" by default), so the
+  controls in it sit inside a landmark.
 - **A navigation icon set in `ui.Icon`**: `home`, `user`, `users`, `file`,
   `receipt`, `card`, `box`, `layers`, `activity`, `shield`, `key`, `lock`,
   `sliders`, `chart`, `calendar`, `clock`, `plus`, `list`, `grid`,

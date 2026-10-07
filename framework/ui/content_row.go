@@ -52,6 +52,11 @@ type ContentRowConfig struct {
 	// ui.Toolbar (or any row) here; the row owns only its placement
 	// and its block-end rule.
 	Toolbar render.HTML
+	// ToolbarLabel names the toolbar row's region landmark. The row
+	// sits outside main and the nav column, so it is a labelled
+	// <section> of its own and controls placed there stay inside a
+	// landmark. Defaults to "Toolbar".
+	ToolbarLabel string
 	// Aside is the optional end column after main: a context aside.
 	// It stacks below main under the breakpoint, and it releases its
 	// width when it holds only an empty outlet, so an unfilled
@@ -127,8 +132,12 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 		body = append(body, html.Nav(html.NavConfig{Label: label, Class: "fui-content-row__nav"}, cfg.Sidebar))
 	}
 	if cfg.Toolbar != "" {
+		label := cfg.ToolbarLabel
+		if label == "" {
+			label = "Toolbar"
+		}
 		body = append(body, html.Div(html.DivConfig{Class: "fui-content-row__workspace"},
-			html.Div(html.DivConfig{Class: "fui-content-row__toolbar"}, cfg.Toolbar),
+			html.Section(html.SectionConfig{Label: label, Class: "fui-content-row__toolbar"}, cfg.Toolbar),
 			render.Join(main...)))
 	} else {
 		body = append(body, main...)
