@@ -43,6 +43,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -1667,7 +1668,10 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		// comment stays for the threat model.
 	}
 
-	out := ds.injectChromeFor(string(page), path, sessionID, boundedPresenceParam(r), comp)
+	// The confirm dialog goes in before the chrome: the head's
+	// component-stylesheet scan must see the markers inside it.
+	out := injectConfirmTemplate(string(page), r)
+	out = ds.injectChromeFor(out, path, sessionID, boundedPresenceParam(r), comp)
 	out = injectSignalSeed(ctx, out)
 	// SSR-inline registered widgets: non-hidden auto-mount widgets
 	// always go in, and a Hidden deep-link widget goes in when the
@@ -1748,6 +1752,22 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		return page
 	}
 	return replaceChromeMarker(page, "</body>", b.String()+"</body>", "widget chrome")
+}
+
+// injectConfirmTemplate emits the kit's confirm dialog
+// (preset.ConfirmTemplateHTML) once per document, just inside </body>,
+// outside every layout shell, so a client navigation that swaps the
+// shell keeps it. Every page carries it, not just pages with a
+// data-cui-confirm control: a page reached by client navigation runs
+// on the first document's body. Its component markers sit inside the
+// inert template, so the head links the dialog's and the buttons'
+// sheets the way it links any rendered component's.
+func injectConfirmTemplate(page string, r *http.Request) string {
+	tpl := preset.ConfirmTemplateHTML(r.Context())
+	if tpl == "" {
+		return page
+	}
+	return replaceChromeMarker(page, "</body>", string(tpl)+"</body>", "confirm dialog")
 }
 
 // replaceChromeMarker replaces the first occurrence of marker in page, the way

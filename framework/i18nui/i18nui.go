@@ -53,6 +53,9 @@ const (
 	KeyDialogClose   Key = "ui.dialog.close"
 	KeyDialogSave    Key = "ui.dialog.save"
 	KeyDialogDelete  Key = "ui.dialog.delete"
+	// KeyDialogConfirmTitle titles the confirm dialog a
+	// data-cui-confirm control opens when it names no title.
+	KeyDialogConfirmTitle Key = "ui.dialog.confirmTitle"
 
 	// Toast
 	KeyToastSuccess Key = "ui.toast.success"
@@ -323,11 +326,12 @@ var Defaults = map[Key]string{
 	KeyEmptyStateTitle: "Nothing here yet",
 	KeyEmptyStateDesc:  "No items to display.",
 
-	KeyDialogConfirm: "Confirm",
-	KeyDialogCancel:  "Cancel",
-	KeyDialogClose:   "Close",
-	KeyDialogSave:    "Save",
-	KeyDialogDelete:  "Delete",
+	KeyDialogConfirm:      "Confirm",
+	KeyDialogCancel:       "Cancel",
+	KeyDialogClose:        "Close",
+	KeyDialogSave:         "Save",
+	KeyDialogDelete:       "Delete",
+	KeyDialogConfirmTitle: "Are you sure?",
 
 	KeyToastSuccess: "Success",
 	KeyToastError:   "Error",
@@ -853,7 +857,7 @@ func AllKeys() []Key {
 		KeyValidationPattern, KeyValidationUnique,
 		KeyEmptyStateTitle, KeyEmptyStateDesc,
 		KeyDialogConfirm, KeyDialogCancel, KeyDialogClose,
-		KeyDialogSave, KeyDialogDelete,
+		KeyDialogSave, KeyDialogDelete, KeyDialogConfirmTitle,
 		KeyToastSuccess, KeyToastError, KeyToastWarning, KeyToastInfo,
 		KeyBannerDismiss,
 		KeyTableSortAsc, KeyTableSortDesc, KeyTableNoSort,
