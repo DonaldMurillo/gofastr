@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,10 @@ var errSavedViewNoUser = errors.New("admin: saved views need a signed-in user")
 type sqlSavedViews struct {
 	db    *sql.DB
 	table string // validated by savedViewsTableRe, quoted into SQL
+	// pg is the dialect, read once here: query.IsPostgres runs a query,
+	// which inside create's transaction would wait on a one-connection
+	// pool forever.
+	pg bool
 }
 
 var _ entityui.SavedViewStore = (*sqlSavedViews)(nil)
@@ -47,10 +52,11 @@ var _ entityui.SavedViewStore = (*sqlSavedViews)(nil)
 // returns the store over it.
 func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedViews, error) {
 	ts := "DATETIME"
-	if query.IsPostgres(db) {
+	pg := query.IsPostgres(db)
+	if pg {
 		ts = "TIMESTAMPTZ"
 	}
-	s := &sqlSavedViews{db: db, table: table}
+	s := &sqlSavedViews{db: db, table: table, pg: pg}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			id         TEXT PRIMARY KEY,
@@ -133,8 +139,9 @@ func (s *sqlSavedViews) Get(ctx context.Context, entity, id string) (entityui.Sa
 }
 
 // Create stores v for the caller and returns it with its ID. The cap
-// check and the insert run in one transaction, so two concurrent
-// creates cannot both slip past the cap; a name the caller already
+// check and the insert run in one transaction, under a per-caller lock
+// on Postgres, so two concurrent creates cannot both slip past the cap;
+// a name the caller already
 // uses for the entity is refused by the unique index and answered
 // ErrSavedViewExists.
 func (s *sqlSavedViews) Create(ctx context.Context, v entityui.SavedView) (entityui.SavedView, error) {
@@ -174,7 +181,11 @@ func (s *sqlSavedViews) Create(ctx context.Context, v entityui.SavedView) (entit
 }
 
 // create writes the row inside one transaction that first counts the
-// caller's views of the entity.
+// caller's views of the entity. Postgres runs READ COMMITTED, where each
+// of two concurrent creates counts the other's insert out, so there the
+// transaction first takes an advisory lock on the caller's views of the
+// entity. SQLite allows one writer at a time: of two creates that both
+// counted, only the first commits.
 func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, owner, ten string) (err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -185,6 +196,12 @@ func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, 
 			_ = tx.Rollback()
 		}
 	}()
+	if s.pg {
+		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+			savedViewLockKey(s.table, owner, ten, v.Entity)); err != nil {
+			return err
+		}
+	}
 	var n int
 	if err = tx.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3`,
@@ -201,6 +218,19 @@ func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, 
 		return err
 	}
 	return tx.Commit()
+}
+
+// savedViewLockKey names one caller's views of one entity for the
+// advisory lock. Each part is length-prefixed, so no owner, tenant or
+// entity spelling can alias another caller's key.
+func savedViewLockKey(parts ...string) string {
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(strconv.Itoa(len(p)))
+		b.WriteByte(':')
+		b.WriteString(p)
+	}
+	return b.String()
 }
 
 // nameHeld reports whether the caller already holds name for entity,

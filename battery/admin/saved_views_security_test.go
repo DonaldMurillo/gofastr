@@ -123,8 +123,8 @@ func TestSavedViewsRefuseNoUser(t *testing.T) {
 	}
 }
 
-// The per-owner-per-entity cap holds; the cap check and the insert are
-// one transaction, so a name created concurrently cannot slip past it.
+// The per-owner-per-entity cap holds, per owner and per entity. The
+// concurrent case is TestSavedViewsCapHoldsUnderConcurrency, on Postgres.
 func TestSavedViewsCapPerOwnerEntity(t *testing.T) {
 	x := newSavedViewsEnv(t)
 	ctx := ownerCtx("u1", "")
