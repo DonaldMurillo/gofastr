@@ -657,6 +657,7 @@ var kitComponents = []kitComponent{
 	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""))},
 	{name: "Carousel", fn: Carousel, required: []string{"Content"}},
 	{name: "Center", fn: Center},
+	{name: "ChangeList", fn: ChangeList},
 	{name: "Checkbox", fn: Checkbox},
 	{name: "CheckboxGroup", fn: CheckboxGroup},
 	{name: "Cluster", fn: Cluster},

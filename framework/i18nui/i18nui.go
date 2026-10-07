@@ -202,6 +202,17 @@ const (
 	KeyCopyLink        Key = "ui.copy.link"
 	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
 
+	// Ago: how long before now, the way an activity feed says it.
+	KeyAgoNow     Key = "ui.ago.now"     // "just now"
+	KeyAgoMinutes Key = "ui.ago.minutes" // "{n}m ago"
+	KeyAgoHours   Key = "ui.ago.hours"   // "{n}h ago"
+	KeyAgoDays    Key = "ui.ago.days"    // "{n}d ago"
+
+	// ChangeList: the visually hidden words before an edit's old and
+	// new value.
+	KeyChangeFrom Key = "ui.change.from" // "from"
+	KeyChangeTo   Key = "ui.change.to"   // "to"
+
 	// ProgressSteps
 	KeyProgressLabel Key = "ui.progress.label"
 
@@ -452,6 +463,14 @@ var Defaults = map[Key]string{
 	KeyCopyToClipboard: "Copy to clipboard",
 	KeyCopyLink:        "Copy link",
 	KeyDrawerOpenPage:  "Open as page",
+
+	KeyAgoNow:     "just now",
+	KeyAgoMinutes: "{n}m ago",
+	KeyAgoHours:   "{n}h ago",
+	KeyAgoDays:    "{n}d ago",
+
+	KeyChangeFrom: "from",
+	KeyChangeTo:   "to",
 
 	KeyProgressLabel: "Progress",
 
@@ -929,6 +948,8 @@ func AllKeys() []Key {
 		KeyPollingLive,
 		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
 		KeyDrawerOpenPage,
+		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
+		KeyChangeFrom, KeyChangeTo,
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,

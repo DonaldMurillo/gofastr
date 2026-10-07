@@ -53,6 +53,7 @@
 //	CodeTabs:             one snippet in several languages behind a zero-JS tab strip
 //	Collapsible:          styled <details> disclosure with summary
 //	Dropdown:             trigger button with a floating panel for a small form or controls
+//	ChangeList:           field-by-field "from → to" list of what an edit changed
 //	ColorField:           colour swatch beside a text input, one control
 //	ColorPicker:          styled native <input type=color>
 //	CommandPalette:       ⌘K modal + combobox composition
