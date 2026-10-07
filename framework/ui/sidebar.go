@@ -1109,7 +1109,7 @@ func sidebarCSS(_ style.Theme) string {
   padding-inline: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__title,
-[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend:not(:has(> [data-cui-comp="ui-sidebar-brand"]:only-child)),
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__footer,
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__sublist {
   display: none;
@@ -1137,6 +1137,14 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--off-canvas .fui-sidebar__inline {
   display: none;
+}
+/* The collapsed rail keeps a Prepend that is only a SidebarBrand (its
+   logo tile heads the rail) and opens each group under a rule, so the
+   rail still reads as groups once their labels are gone. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__item:has(> .fui-sidebar__group, > .fui-sidebar__sublist) {
+  margin-block-start: var(--spacing-sm, 4px);
+  padding-block-start: var(--spacing-sm, 4px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 /* The collapsed rail: an open group's header gives way to its links,
    so every page keeps its own icon in the rail; a closed group keeps

@@ -49,12 +49,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.SidebarConfig.SectionLabels` draws group headers as section
   labels**: small uppercase muted text over flush links, with a
   chevron that turns when the group closes and no icon outside the
-  collapsed rail. In the rail an open group shows its links flat, so
-  every page keeps its own icon there. The admin sidebar uses it.
+  collapsed rail. In the rail an open group shows its links flat under
+  a rule, so every page keeps its own icon there. The admin sidebar
+  uses it, its groups ending in System (queue, audit log, roles).
 - **`ui.SidebarBrand`** draws the product mark at a sidebar's head: a
   square logo tile (the `Logo` image, or the name's initial on the
   inverted surface), the name and an optional muted `Sub` line.
-  `--ui-sidebar-brand-tile` sizes the tile. The admin brand uses it.
+  `--ui-sidebar-brand-tile` sizes the tile. A collapsed rail keeps a
+  `Prepend` that is only a brand, drawn as the tile alone. The admin
+  brand uses it.
 - **`ui.MenuConfig.Avatar` draws the trigger as an avatar**: round,
   borderless, 32px, with `Label` kept as its visually hidden name and
   a 44px box on coarse pointers. It refuses `TriggerHTML`,

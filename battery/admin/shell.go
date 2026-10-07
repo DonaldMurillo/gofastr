@@ -244,7 +244,7 @@ func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
 	}}
 	items = append(items, b.navGroups(ctx)...)
 	if ops := b.opsItems(ctx); len(ops) > 0 {
-		items = append(items, ui.SidebarItem{Label: i18nui.T(ctx, i18nui.KeyAdminOperations), Children: ops, Open: true})
+		items = append(items, ui.SidebarItem{Label: i18nui.T(ctx, i18nui.KeyAdminSystemNav), Children: ops, Open: true})
 	}
 	return ui.SidebarConfig{
 		NavLabel:              i18nui.T(ctx, i18nui.KeyAdminNav),
@@ -313,7 +313,7 @@ func (b *Battery) navGroups(ctx context.Context) []ui.SidebarItem {
 	return out
 }
 
-// opsItems are the Operations group's links, one per page the admin
+// opsItems are the System group's links, one per page the admin
 // has what it needs to draw.
 func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 	var out []ui.SidebarItem

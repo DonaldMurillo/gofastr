@@ -66,5 +66,17 @@ func sidebarBrandCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar-brand"] .fui-sidebar-brand__text { display: flex; flex-direction: column; min-inline-size: 0; line-height: var(--leading-tight, 1.2); }
 [data-cui-comp="ui-sidebar-brand"] .fui-sidebar-brand__name { font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-semibold); color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-cui-comp="ui-sidebar-brand"] .fui-sidebar-brand__sub { font-size: var(--text-xs, 0.75rem); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In a collapsed sidebar rail only the tile shows, centred; the name
+   is clipped, not removed, so assistive tech still reads it. */
+[data-cui-comp="ui-sidebar"][data-collapsed="true"] .fui-sidebar__inline [data-cui-comp="ui-sidebar-brand"] { justify-content: center; }
+[data-cui-comp="ui-sidebar"][data-collapsed="true"] .fui-sidebar__inline [data-cui-comp="ui-sidebar-brand"] .fui-sidebar-brand__text {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
 `
 }

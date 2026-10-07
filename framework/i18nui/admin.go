@@ -12,7 +12,7 @@ const (
 	KeyAdminSidebar      Key = "ui.admin.sidebar"      // "Admin sidebar"
 	KeyAdminToolbar      Key = "ui.admin.toolbar"      // "Admin toolbar"
 	KeyAdminDashboard    Key = "ui.admin.dashboard"    // "Dashboard"
-	KeyAdminOperations   Key = "ui.admin.operations"   // "Operations"
+	KeyAdminSystemNav    Key = "ui.admin.systemNav"    // "System"
 	KeyAdminEntities     Key = "ui.admin.entities"     // "Entities"
 	KeyAdminSearch       Key = "ui.admin.search"       // "Search or jump to…"
 	KeyAdminPaletteNew   Key = "ui.admin.paletteNew"   // "New {entity}"
@@ -203,7 +203,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminSidebar:           "Admin sidebar",
 	KeyAdminToolbar:           "Admin toolbar",
 	KeyAdminDashboard:         "Dashboard",
-	KeyAdminOperations:        "Operations",
+	KeyAdminSystemNav:         "System",
 	KeyAdminEntities:          "Entities",
 	KeyAdminSearch:            "Search or jump to…",
 	KeyAdminPaletteNew:        "New {entity}",

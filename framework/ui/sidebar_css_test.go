@@ -108,11 +108,13 @@ func TestCalloutHiddenAttributeWins(t *testing.T) {
 // footer; Prepend is chrome of the same kind and must hide with them,
 // or a section <select> would poke out of a 64px rail (#405). The
 // selector alone is not the guard: the rule it belongs to has to
-// declare display:none, so a malformed or emptied rule fails here.
+// declare display:none, so a malformed or emptied rule fails here. The
+// collapsed rail spares a Prepend that is only a SidebarBrand
+// (TestCollapsedRailKeepsBrandTile draws both).
 func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
 	for _, state := range []string{
-		`[data-collapsed="true"] .fui-sidebar__prepend,`,
+		`[data-collapsed="true"] .fui-sidebar__prepend:not(:has(> [data-cui-comp="ui-sidebar-brand"]:only-child)),`,
 		`.fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__prepend,`,
 	} {
 		start := strings.Index(css, state)
