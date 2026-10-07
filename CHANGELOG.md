@@ -21,6 +21,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   marker, which becomes a bordered circle with the icon tinted by the
   variant: an activity feed's pencil or plus. `--ui-timeline-icon-size`
   (28px) sizes it; `headless.Event.Icon` carries it.
+- **`entityui.UI.LastUpdated`** reads when the newest record the caller
+  can read was written: the greatest `updated_at` in the caller's scope.
 - **`ui.SectionConfig.Overline`** draws the heading as a group label:
   small, upper case and muted, over a run of cards. The
   `--ui-section-overline-*` knobs tune it.

@@ -69,6 +69,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
   why. A dashboard block reads an entity without a screen of its own.
+  `appUI.LastUpdated` is when the newest record the caller can read was
+  written (the greatest `updated_at` in scope); it reports false on an
+  entity without timestamps, a refused read or no rows.
 
 An `Image` field draws a `ui.Thumbnail`: a small one in a list cell, a
 large one above the URL input on the record. A URL that

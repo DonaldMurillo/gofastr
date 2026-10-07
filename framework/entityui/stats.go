@@ -7,11 +7,13 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -70,6 +72,37 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		slog.WarnContext(ctx, "entityui: stat agg is not count or sum", "entity", entityName, "agg", agg)
 		return "—"
 	}
+}
+
+// LastUpdated is when the newest record the caller can read was last
+// written: the greatest updated_at in the caller's scope, read through
+// the entity's read hooks. It reports false when the entity has no
+// readable, sortable updated_at, the read is refused, no row has one, or
+// the newest value is not a time (a masked column): a stat card then
+// prints no date rather than a wrong one. Rows without a value are left
+// out, so a database that sorts NULL first does not hide the newest.
+func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, bool) {
+	if m, err := u.meta(entityName); err != nil {
+		return time.Time{}, false
+	} else if f, ok := m.field("updated_at"); !ok || f.Hidden || f.NoQuery {
+		return time.Time{}, false
+	}
+	m, opts, ok := u.statRead(ctx, entityName, `updated_at > "1970-01-01T00:00:00Z"`)
+	if !ok {
+		return time.Time{}, false
+	}
+	opts.Fields = []string{"updated_at"}
+	opts.Sorts = []filter.ParsedSort{{Field: "updated_at", Desc: true}}
+	opts.Limit = 1
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: last updated", "entity", entityName, "error", err)
+		return time.Time{}, false
+	}
+	if len(rows) == 0 {
+		return time.Time{}, false
+	}
+	return parseTime(rowValue(rows[0], "updated_at"))
 }
 
 // statSum totals field exactly: the database's SUM, or, when AfterList

@@ -63,11 +63,20 @@ const (
 // formatDate renders a date or timestamp. Drivers hand dates back as
 // time.Time or as one of a few string layouts; anything else prints as is.
 func formatDate(raw any, layout string) string {
-	if t, ok := raw.(time.Time); ok {
-		if t.IsZero() {
-			return ""
-		}
+	if t, ok := raw.(time.Time); ok && t.IsZero() {
+		return ""
+	}
+	if t, ok := parseTime(raw); ok {
 		return t.Format(layout)
+	}
+	return cell(raw)
+}
+
+// parseTime reads a date or timestamp in any of the shapes drivers hand
+// back: a time.Time or one of a few string layouts.
+func parseTime(raw any) (time.Time, bool) {
+	if t, ok := raw.(time.Time); ok {
+		return t, !t.IsZero()
 	}
 	val := cell(raw)
 	for _, l := range []string{
@@ -78,10 +87,10 @@ func formatDate(raw any, layout string) string {
 		time.DateOnly,
 	} {
 		if parsed, err := time.Parse(l, val); err == nil {
-			return parsed.Format(layout)
+			return parsed, true
 		}
 	}
-	return val
+	return time.Time{}, false
 }
 
 // formatNumber prints a float without trailing zeros on whole values and
