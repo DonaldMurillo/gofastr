@@ -1,0 +1,264 @@
+package i18nui
+
+// The admin back office (battery/admin): its shell, dashboard and ops
+// pages. The entity screens it draws use the entity*.go blocks; see
+// entity.go for how the blocks merge into Defaults and AllKeys.
+
+// The shell: brand, sidebar, toolbar, palette and account menu.
+const (
+	KeyAdminTitle        Key = "ui.admin.title"        // "Admin"
+	KeyAdminBrandSub     Key = "ui.admin.brandSub"     // "Back office"
+	KeyAdminNav          Key = "ui.admin.nav"          // "Admin navigation"
+	KeyAdminDashboard    Key = "ui.admin.dashboard"    // "Dashboard"
+	KeyAdminOperations   Key = "ui.admin.operations"   // "Operations"
+	KeyAdminEntities     Key = "ui.admin.entities"     // "Entities"
+	KeyAdminSearch       Key = "ui.admin.search"       // "Search or jump to…"
+	KeyAdminPaletteNew   Key = "ui.admin.paletteNew"   // "New {entity}"
+	KeyAdminPalettePage  Key = "ui.admin.palettePage"  // "Page"
+	KeyAdminPaletteEmpty Key = "ui.admin.paletteEmpty" // "No matches."
+	KeyAdminAccount      Key = "ui.admin.account"      // "Account"
+	KeyAdminSignedInAs   Key = "ui.admin.signedInAs"   // "Signed in as {name}"
+	KeyAdminYourRoles    Key = "ui.admin.yourRoles"    // "Roles: {roles}"
+)
+
+// Answers every admin form shares.
+const (
+	KeyAdminRefused  Key = "ui.admin.refused"  // "You may not do that."
+	KeyAdminFailed   Key = "ui.admin.failed"   // "That did not work. Check the server logs for details."
+	KeyAdminBadInput Key = "ui.admin.badInput" // "Fill in every field the form asks for."
+	KeyAdminDone     Key = "ui.admin.done"     // "Done."
+)
+
+// The dashboard.
+const (
+	KeyAdminDashboardSub Key = "ui.admin.dashboardSub" // "Everything this admin manages, at a glance."
+	KeyAdminCardNew      Key = "ui.admin.cardNew"      // "New"
+	KeyAdminCountMany    Key = "ui.admin.countMany"    // "{count}+"
+	KeyAdminFailedJobs   Key = "ui.admin.failedJobs"   // "Failed jobs"
+	KeyAdminNoFailedJobs Key = "ui.admin.noFailedJobs" // "No failed jobs."
+	KeyAdminRecent       Key = "ui.admin.recent"       // "Recent activity"
+	KeyAdminNoActivity   Key = "ui.admin.noActivity"   // "No activity yet."
+	KeyAdminViewAll      Key = "ui.admin.viewAll"      // "View all"
+)
+
+// Table columns on the ops pages.
+const (
+	KeyAdminColID          Key = "ui.admin.colID"          // "ID"
+	KeyAdminColType        Key = "ui.admin.colType"        // "Type"
+	KeyAdminColAttempts    Key = "ui.admin.colAttempts"    // "Attempts"
+	KeyAdminColPriority    Key = "ui.admin.colPriority"    // "Priority"
+	KeyAdminColCreated     Key = "ui.admin.colCreated"     // "Created"
+	KeyAdminColScheduled   Key = "ui.admin.colScheduled"   // "Scheduled"
+	KeyAdminColActions     Key = "ui.admin.colActions"     // "Actions"
+	KeyAdminColTime        Key = "ui.admin.colTime"        // "Time"
+	KeyAdminColEntity      Key = "ui.admin.colEntity"      // "Entity"
+	KeyAdminColOperation   Key = "ui.admin.colOperation"   // "Operation"
+	KeyAdminColRecord      Key = "ui.admin.colRecord"      // "Record"
+	KeyAdminColActor       Key = "ui.admin.colActor"       // "Actor"
+	KeyAdminColRole        Key = "ui.admin.colRole"        // "Role"
+	KeyAdminColPermissions Key = "ui.admin.colPermissions" // "Permissions"
+	KeyAdminColUser        Key = "ui.admin.colUser"        // "User"
+	KeyAdminColRoles       Key = "ui.admin.colRoles"       // "Roles"
+	KeyAdminColModule      Key = "ui.admin.colModule"      // "Module"
+	KeyAdminColTrust       Key = "ui.admin.colTrust"       // "Trust"
+	KeyAdminColState       Key = "ui.admin.colState"       // "State"
+	KeyAdminColGeneration  Key = "ui.admin.colGeneration"  // "Generation"
+	KeyAdminColRestarts    Key = "ui.admin.colRestarts"    // "Restarts"
+	KeyAdminColRoutes      Key = "ui.admin.colRoutes"      // "Routes / tools"
+	KeyAdminColLastExit    Key = "ui.admin.colLastExit"    // "Last exit"
+)
+
+// The jobs page.
+const (
+	KeyAdminQueue            Key = "ui.admin.queue"            // "Jobs"
+	KeyAdminQueueSub         Key = "ui.admin.queueSub"         // "Background jobs by status."
+	KeyAdminQueueStatus      Key = "ui.admin.queueStatus"      // "Status"
+	KeyAdminQueueAll         Key = "ui.admin.queueAll"         // "All"
+	KeyAdminQueuePending     Key = "ui.admin.queuePending"     // "Pending"
+	KeyAdminQueueClaimed     Key = "ui.admin.queueClaimed"     // "Running"
+	KeyAdminQueueFailed      Key = "ui.admin.queueFailed"      // "Failed"
+	KeyAdminQueueLoadFailed  Key = "ui.admin.queueLoadFailed"  // "Could not load jobs. Check the server logs for details."
+	KeyAdminQueueEmpty       Key = "ui.admin.queueEmpty"       // "No jobs"
+	KeyAdminQueueEmptyDesc   Key = "ui.admin.queueEmptyDesc"   // "No jobs match this filter."
+	KeyAdminReplay           Key = "ui.admin.replay"           // "Replay"
+	KeyAdminReplayAll        Key = "ui.admin.replayAll"        // "Replay all"
+	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job shown here?"
+	KeyAdminReplayed         Key = "ui.admin.replayed"         // "Job queued again."
+	KeyAdminReplayedAll      Key = "ui.admin.replayedAll"      // "Failed jobs queued again."
+)
+
+// The audit log.
+const (
+	KeyAdminAudit           Key = "ui.admin.audit"           // "Audit log"
+	KeyAdminAuditSub        Key = "ui.admin.auditSub"        // "Who changed what, newest first."
+	KeyAdminAuditLoadFailed Key = "ui.admin.auditLoadFailed" // "Could not load audit rows. Check the server logs for details."
+	KeyAdminAuditEmpty      Key = "ui.admin.auditEmpty"      // "No audit entries"
+	KeyAdminAuditEmptyDesc  Key = "ui.admin.auditEmptyDesc"  // "Audit events will appear here."
+	KeyAdminAuditSystem     Key = "ui.admin.auditSystem"     // "System"
+)
+
+// Roles and user roles.
+const (
+	KeyAdminRoles             Key = "ui.admin.roles"             // "Roles"
+	KeyAdminRolesSub          Key = "ui.admin.rolesSub"          // "What each role may do."
+	KeyAdminUserRoles         Key = "ui.admin.userRoles"         // "User roles"
+	KeyAdminUserRolesSub      Key = "ui.admin.userRolesSub"      // "Which roles each user holds."
+	KeyAdminNoRoles           Key = "ui.admin.noRoles"           // "No roles"
+	KeyAdminNoRolesDesc       Key = "ui.admin.noRolesDesc"       // "Define roles in the app's access policy."
+	KeyAdminNoUsers           Key = "ui.admin.noUsers"           // "No users"
+	KeyAdminUsersShown        Key = "ui.admin.usersShown"        // "Showing {shown} of {total} users."
+	KeyAdminUsersLoadFailed   Key = "ui.admin.usersLoadFailed"   // "Could not load users. Check the server logs for details."
+	KeyAdminPermission        Key = "ui.admin.permission"        // "Permission"
+	KeyAdminNewRole           Key = "ui.admin.newRole"           // "New role"
+	KeyAdminAddRole           Key = "ui.admin.addRole"           // "Add a role"
+	KeyAdminGrant             Key = "ui.admin.grant"             // "Grant"
+	KeyAdminRevoke            Key = "ui.admin.revoke"            // "Revoke"
+	KeyAdminRevokeLabel       Key = "ui.admin.revokeLabel"       // "Revoke {permission} from {role}"
+	KeyAdminUndeclared        Key = "ui.admin.undeclared"        // "Not declared"
+	KeyAdminSaveRoles         Key = "ui.admin.saveRoles"         // "Save roles"
+	KeyAdminGranted           Key = "ui.admin.granted"           // "Permission granted."
+	KeyAdminRevoked           Key = "ui.admin.revoked"           // "Permission revoked."
+	KeyAdminRolesSaved        Key = "ui.admin.rolesSaved"        // "Roles saved."
+	KeyAdminGrantRefused      Key = "ui.admin.grantRefused"      // "You can only grant or revoke a permission you hold."
+	KeyAdminAssignRefused     Key = "ui.admin.assignRefused"     // "You cannot assign a role above your own."
+	KeyAdminUnknownCapability Key = "ui.admin.unknownCapability" // "That permission is not one the app declares."
+)
+
+// Process modules.
+const (
+	KeyAdminModules        Key = "ui.admin.modules"        // "Modules"
+	KeyAdminModulesSub     Key = "ui.admin.modulesSub"     // "Process modules and their lifecycle."
+	KeyAdminNoModules      Key = "ui.admin.noModules"      // "No process modules registered."
+	KeyAdminEnable         Key = "ui.admin.enable"         // "Enable"
+	KeyAdminDisable        Key = "ui.admin.disable"        // "Disable"
+	KeyAdminDisableConfirm Key = "ui.admin.disableConfirm" // "Disable {module}? It drains and stops serving."
+	KeyAdminBump           Key = "ui.admin.bump"           // "Bump generation"
+	KeyAdminCapability     Key = "ui.admin.capability"     // "Capability"
+	KeyAdminRevokeConfirm  Key = "ui.admin.revokeConfirm"  // "Revoke this capability from {module}? Its generation bumps and the child restarts."
+	KeyAdminModuleEnabled  Key = "ui.admin.moduleEnabled"  // "Module enabled."
+	KeyAdminModuleDisabled Key = "ui.admin.moduleDisabled" // "Module disabled."
+	KeyAdminModuleBumped   Key = "ui.admin.moduleBumped"   // "Generation bumped."
+	KeyAdminModuleRevoked  Key = "ui.admin.moduleRevoked"  // "Capability revoked."
+	KeyAdminModuleFailed   Key = "ui.admin.moduleFailed"   // "The module did not accept that change. Check the server logs for details."
+	KeyAdminModuleRefused  Key = "ui.admin.moduleRefused"  // "You may not manage process modules."
+	KeyAdminServing        Key = "ui.admin.serving"        // "Serving"
+	KeyAdminServes404      Key = "ui.admin.serves404"      // "Serves 404"
+	KeyAdminServes503      Key = "ui.admin.serves503"      // "Serves 503"
+	KeyAdminCircuitOpen    Key = "ui.admin.circuitOpen"    // "Circuit open"
+	KeyAdminLeaseFailing   Key = "ui.admin.leaseFailing"   // "Lease failing"
+)
+
+var adminDefaults = map[Key]string{
+	KeyAdminTitle:             "Admin",
+	KeyAdminBrandSub:          "Back office",
+	KeyAdminNav:               "Admin navigation",
+	KeyAdminDashboard:         "Dashboard",
+	KeyAdminOperations:        "Operations",
+	KeyAdminEntities:          "Entities",
+	KeyAdminSearch:            "Search or jump to…",
+	KeyAdminPaletteNew:        "New {entity}",
+	KeyAdminPalettePage:       "Page",
+	KeyAdminPaletteEmpty:      "No matches.",
+	KeyAdminAccount:           "Account",
+	KeyAdminSignedInAs:        "Signed in as {name}",
+	KeyAdminYourRoles:         "Roles: {roles}",
+	KeyAdminRefused:           "You may not do that.",
+	KeyAdminFailed:            "That did not work. Check the server logs for details.",
+	KeyAdminBadInput:          "Fill in every field the form asks for.",
+	KeyAdminDone:              "Done.",
+	KeyAdminDashboardSub:      "Everything this admin manages, at a glance.",
+	KeyAdminCardNew:           "New",
+	KeyAdminCountMany:         "{count}+",
+	KeyAdminFailedJobs:        "Failed jobs",
+	KeyAdminNoFailedJobs:      "No failed jobs.",
+	KeyAdminRecent:            "Recent activity",
+	KeyAdminNoActivity:        "No activity yet.",
+	KeyAdminViewAll:           "View all",
+	KeyAdminColID:             "ID",
+	KeyAdminColType:           "Type",
+	KeyAdminColAttempts:       "Attempts",
+	KeyAdminColPriority:       "Priority",
+	KeyAdminColCreated:        "Created",
+	KeyAdminColScheduled:      "Scheduled",
+	KeyAdminColActions:        "Actions",
+	KeyAdminColTime:           "Time",
+	KeyAdminColEntity:         "Entity",
+	KeyAdminColOperation:      "Operation",
+	KeyAdminColRecord:         "Record",
+	KeyAdminColActor:          "Actor",
+	KeyAdminColRole:           "Role",
+	KeyAdminColPermissions:    "Permissions",
+	KeyAdminColUser:           "User",
+	KeyAdminColRoles:          "Roles",
+	KeyAdminColModule:         "Module",
+	KeyAdminColTrust:          "Trust",
+	KeyAdminColState:          "State",
+	KeyAdminColGeneration:     "Generation",
+	KeyAdminColRestarts:       "Restarts",
+	KeyAdminColRoutes:         "Routes / tools",
+	KeyAdminColLastExit:       "Last exit",
+	KeyAdminQueue:             "Jobs",
+	KeyAdminQueueSub:          "Background jobs by status.",
+	KeyAdminQueueStatus:       "Status",
+	KeyAdminQueueAll:          "All",
+	KeyAdminQueuePending:      "Pending",
+	KeyAdminQueueClaimed:      "Running",
+	KeyAdminQueueFailed:       "Failed",
+	KeyAdminQueueLoadFailed:   "Could not load jobs. Check the server logs for details.",
+	KeyAdminQueueEmpty:        "No jobs",
+	KeyAdminQueueEmptyDesc:    "No jobs match this filter.",
+	KeyAdminReplay:            "Replay",
+	KeyAdminReplayAll:         "Replay all",
+	KeyAdminReplayAllConfirm:  "Replay every failed job shown here?",
+	KeyAdminReplayed:          "Job queued again.",
+	KeyAdminReplayedAll:       "Failed jobs queued again.",
+	KeyAdminAudit:             "Audit log",
+	KeyAdminAuditSub:          "Who changed what, newest first.",
+	KeyAdminAuditLoadFailed:   "Could not load audit rows. Check the server logs for details.",
+	KeyAdminAuditEmpty:        "No audit entries",
+	KeyAdminAuditEmptyDesc:    "Audit events will appear here.",
+	KeyAdminAuditSystem:       "System",
+	KeyAdminRoles:             "Roles",
+	KeyAdminRolesSub:          "What each role may do.",
+	KeyAdminUserRoles:         "User roles",
+	KeyAdminUserRolesSub:      "Which roles each user holds.",
+	KeyAdminNoRoles:           "No roles",
+	KeyAdminNoRolesDesc:       "Define roles in the app's access policy.",
+	KeyAdminNoUsers:           "No users",
+	KeyAdminUsersShown:        "Showing {shown} of {total} users.",
+	KeyAdminUsersLoadFailed:   "Could not load users. Check the server logs for details.",
+	KeyAdminPermission:        "Permission",
+	KeyAdminNewRole:           "New role",
+	KeyAdminAddRole:           "Add a role",
+	KeyAdminGrant:             "Grant",
+	KeyAdminRevoke:            "Revoke",
+	KeyAdminRevokeLabel:       "Revoke {permission} from {role}",
+	KeyAdminUndeclared:        "Not declared",
+	KeyAdminSaveRoles:         "Save roles",
+	KeyAdminGranted:           "Permission granted.",
+	KeyAdminRevoked:           "Permission revoked.",
+	KeyAdminRolesSaved:        "Roles saved.",
+	KeyAdminGrantRefused:      "You can only grant or revoke a permission you hold.",
+	KeyAdminAssignRefused:     "You cannot assign a role above your own.",
+	KeyAdminUnknownCapability: "That permission is not one the app declares.",
+	KeyAdminModules:           "Modules",
+	KeyAdminModulesSub:        "Process modules and their lifecycle.",
+	KeyAdminNoModules:         "No process modules registered.",
+	KeyAdminEnable:            "Enable",
+	KeyAdminDisable:           "Disable",
+	KeyAdminDisableConfirm:    "Disable {module}? It drains and stops serving.",
+	KeyAdminBump:              "Bump generation",
+	KeyAdminCapability:        "Capability",
+	KeyAdminRevokeConfirm:     "Revoke this capability from {module}? Its generation bumps and the child restarts.",
+	KeyAdminModuleEnabled:     "Module enabled.",
+	KeyAdminModuleDisabled:    "Module disabled.",
+	KeyAdminModuleBumped:      "Generation bumped.",
+	KeyAdminModuleRevoked:     "Capability revoked.",
+	KeyAdminModuleFailed:      "The module did not accept that change. Check the server logs for details.",
+	KeyAdminModuleRefused:     "You may not manage process modules.",
+	KeyAdminServing:           "Serving",
+	KeyAdminServes404:         "Serves 404",
+	KeyAdminServes503:         "Serves 503",
+	KeyAdminCircuitOpen:       "Circuit open",
+	KeyAdminLeaseFailing:      "Lease failing",
+}
