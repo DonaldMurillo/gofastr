@@ -74,7 +74,9 @@ func TestE2EVisualSurfaces(t *testing.T) {
 		{name: "admin-form", path: "/admin/entities/plans/create"},
 		// Payments soft-delete: the Deleted view lists the binned one.
 		{name: "admin-trash", path: "/admin/entities/payments?view=deleted"},
+		{name: "admin-record", path: "/admin/entities/invoices/" + invoiceID},
 		{name: "admin-record-api", path: "/admin/entities/invoices/" + invoiceID + "?tab=api"},
+		{name: "admin-audit", path: "/admin/audit"},
 	} {
 		captureMeridianSurface(t, browser, base, surface.name, surface.path)
 	}
