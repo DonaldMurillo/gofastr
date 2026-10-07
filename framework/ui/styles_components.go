@@ -1495,6 +1495,8 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   background: var(--color-surface, #fff);
+  padding: var(--ui-theme-toggle-track-inset, 2px);
+  gap: var(--ui-theme-toggle-track-inset, 2px);
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   flex-shrink: 0;
@@ -1502,7 +1504,7 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;
   border-radius: var(--radii-full, 9999px);
-  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
+  padding: 0 var(--ui-theme-toggle-option-pad-inline, 0.75rem);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   min-inline-size: auto;

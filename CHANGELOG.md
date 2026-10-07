@@ -1336,6 +1336,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   form-errors runtime marks the input `aria-invalid`, and the shell
   now takes the danger border from it as it does from a server-rendered
   error. Before, only a field rendered with its error showed red.
+- **The theme pill's options have room**: `ThemeTogglePill` and
+  `ThemePicker` options pad their labels by
+  `--ui-theme-toggle-option-pad-inline` (0.75rem) and the track insets
+  the selected option by `--ui-theme-toggle-track-inset` (2px); the
+  selected "Auto" used to fill its button edge to edge.
 - **An invalid control inside a `ui.InputGroup` marks the whole group.**
   The input drew its own danger ring inside the group, so a `$` prefix
   sat outside the red box; the group now takes the error ring the way it
