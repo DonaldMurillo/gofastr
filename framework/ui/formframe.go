@@ -61,6 +61,13 @@ type FormFrameConfig struct {
 	// attribute the default CSP strips.
 	SideWidth FormFrameSideWidth
 
+	// SidePanel draws the side column as a bordered surface panel, and
+	// while it sits beside the main column it stays in view as a long
+	// main column scrolls past (position: sticky). Stacked under the
+	// fields, in a drawer or on a phone, it is a plain panel in the
+	// flow: pinned there it would cover the fields.
+	SidePanel bool
+
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes to the root element.
@@ -99,6 +106,9 @@ func FormFrame(cfg FormFrameConfig) render.HTML {
 	default:
 		panic("ui: FormFrame unknown SideWidth " + string(cfg.SideWidth) +
 			`. Pick one of: "" (default), narrow, wide`)
+	}
+	if cfg.SidePanel {
+		cls += " fui-form-frame--side-panel"
 	}
 	attrs := html.Attrs{"class": cls}
 	if cfg.ID != "" {
@@ -162,6 +172,19 @@ func formFrameCSS(_ style.Theme) string {
      frame. */
   min-inline-size: 0;
 }
+/* Fields read best at a line length an eye can track: past ~45rem a
+   text input is mostly empty box. The main column stops there and the
+   rest of its track is air before the rail. */
+[data-cui-comp="ui-form-frame"] .fui-form-frame__main {
+  max-inline-size: var(--ui-form-frame-main-max, 45rem);
+}
+/* The panel rail: the record's facts on their own surface. */
+[data-cui-comp="ui-form-frame"].fui-form-frame--side-panel .fui-form-frame__side {
+  padding: var(--spacing-lg, 16px);
+  background: var(--color-surface);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
+  border-radius: var(--radii-lg, 10px);
+}
 /* Named rail widths. The modifier sets the --ui-form-frame-side knob
    on the frame's root, where it outranks a value any ancestor
    declared; each step reads its own token so a theme or page retunes
@@ -183,6 +206,11 @@ func formFrameCSS(_ style.Theme) string {
 @container (min-width: 48rem) {
   [data-cui-comp="ui-form-frame"] .fui-form-frame__columns.fui-form-frame--with-side {
     grid-template-columns: minmax(0, 1fr) var(--ui-form-frame-side, 16rem);
+  }
+  /* Beside the fields the panel stays in view while they scroll. */
+  [data-cui-comp="ui-form-frame"].fui-form-frame--side-panel .fui-form-frame__side {
+    position: sticky;
+    inset-block-start: var(--spacing-lg, 16px);
   }
 }`
 }

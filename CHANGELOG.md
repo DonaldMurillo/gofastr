@@ -383,7 +383,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `FormFrameSideWide` (22rem), each a modifier class whose registered
   CSS reads the `--ui-form-frame-side-narrow` / `-wide` tokens, so a
   theme retunes them and no inline style attribute ships for the
-  default CSP to strip. An unknown name panics at render.
+  default CSP to strip. An unknown name panics at render. The main
+  column stops at a readable 45rem (`--ui-form-frame-main-max`), and
+  `SidePanel` draws the side column as a bordered panel that stays in
+  view beside the fields as they scroll. The record page uses both,
+  on the wide rail.
 - **`ui.ConditionalField.WhenValues`** shows its children while the
   watched field holds any of the listed values
   (`headless.ConditionalFieldProps.Values`, carried as one JSON `data-hui-when-in` attribute).

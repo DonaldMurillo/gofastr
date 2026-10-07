@@ -155,7 +155,12 @@ width is one of three named sizes — `SideWidth:
 ui.FormFrameSideNarrow` (12rem), the default (16rem) and
 `ui.FormFrameSideWide` (22rem) — each a modifier class whose
 registered CSS reads the `--ui-form-frame-side-narrow` / `-wide`
-tokens, so a theme retunes them. Either column may be empty: an
+tokens, so a theme retunes them. The main column stops at 45rem
+(`--ui-form-frame-main-max`): a text input wider than that is mostly
+empty box. `SidePanel: true` draws the side column as a bordered
+surface panel; beside the main column it is sticky, so the record's
+facts stay in view while a long form scrolls, and stacked under it
+(a drawer, a phone) it sits in the flow. Either column may be empty: an
 empty `Side` leaves the main column full width, and an empty `Main`
 leaves the side column full width.
 
