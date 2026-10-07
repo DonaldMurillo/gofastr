@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -72,8 +73,14 @@ func TestAdminTrashRestoresAndPurges(t *testing.T) {
 	if rr := serve(h, jsonReq(http.MethodPost, "/admin/api/posts/p1/_restore", `{}`)); rr.Code != http.StatusOK {
 		t.Fatalf("admin restore = %d %s", rr.Code, rr.Body.String())
 	}
-	if body := get(h, "/admin/entities/posts").Body.String(); !strings.Contains(body, "Binned one") {
+	body := get(h, "/admin/entities/posts").Body.String()
+	if !strings.Contains(body, "Binned one") {
 		t.Fatalf("the restored row is not live:\n%s", body)
+	}
+	// The admin's tabs count their rows: one live, one still trashed.
+	if !regexp.MustCompile(`>All<span [^>]*class="fui-tab-nav__badge"[^>]*>1</span>`).MatchString(body) ||
+		!regexp.MustCompile(`>Deleted<span [^>]*class="fui-tab-nav__badge"[^>]*>1</span>`).MatchString(body) {
+		t.Fatalf("the admin's view tabs carry no counts:\n%s", body)
 	}
 	if rr := serve(h, jsonReq(http.MethodPost, "/admin/api/posts/p2/_purge", `{}`)); rr.Code != http.StatusOK {
 		t.Fatalf("admin purge = %d %s", rr.Code, rr.Body.String())

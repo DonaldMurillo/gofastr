@@ -144,7 +144,7 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		related := b.relatedTo(e)
 		list := b.screen(group, base, i18nui.KeyAdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.ui.List(name).Base(listPath).Bulk().Delete().Duplicate().
-				QueryBox().ColumnsMenu().Deleted().SavedViews().RenderCtx(ctx)
+				QueryBox().ColumnsMenu().Deleted().SavedViews().TabCounts().RenderCtx(ctx)
 		})
 		b.entityTitle(list, e, func(ctx context.Context, _ map[string]string) string { return b.plural(ctx, e) })
 
