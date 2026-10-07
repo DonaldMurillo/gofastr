@@ -991,7 +991,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   on a soft-deleting entity the confirm says the record can be
   restored. With `Undo()` (on in the admin) that toast carries Undo for
   a caller who may update the record, restoring it through the host's
-  `_restore` route. Under
+  `_restore` route; a bulk delete's toast carries Undo for the rows it
+  deleted, through the `_bulk` route's new `deleted` scope, when the ids
+  fit in 2 KiB. A bulk run that went through on every row says what it
+  did ("2 payments deleted") instead of counting outcomes. A server
+  toast takes a button
+  (`ui.ToastTrigger.Action`, built by `interactive.NewToastAction`).
+  Under
   `WithRecordPath` a relation select draws an open button to the record
   it holds, when the caller's own read of that entity returns the row.
   An app action

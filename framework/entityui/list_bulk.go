@@ -81,6 +81,10 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	if every {
 		fields = append(fields, hiddenInput("match", match))
 	}
+	// A soft delete's toast offers Undo, which returns here.
+	if b.undo && m.e.Config.Scope.SoftDelete {
+		fields = append(fields, hiddenInput("undo", "1"), hiddenInput("back", listHref(s.path, s.q)))
+	}
 	fields = append(fields,
 		hiddenInput("key", s.key),
 		hiddenInput("query", s.carry().Encode()),

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -54,6 +55,16 @@ import (
 // records run in the request. A larger selection is written to the
 // snapshot store and queued on Extensions.Jobs (RunBulkJob runs it), or
 // refused naming the cap when there is none.
+//
+// Undo. A bar under ListBuilder.Undo posts undo and its list's path. A
+// delete run in the request on a soft-deleting entity then answers a
+// toast whose Undo button posts the deleted scope: the ids the run
+// deleted that the caller could update before it, restored through the
+// CRUD handler under the caller's own context and read back from the
+// trash under the same scope, at most InRequestCap. Every restore is
+// gated again, so a posted id the caller may not restore is skipped.
+// The ids ride the toast header, so a run whose button would pass
+// undoActionBudget offers no Undo; the Deleted view restores it.
 
 // bulkBodyLimit caps a bulk request body: an action, a scope, a list query
 // and at most a page of ids.
@@ -66,7 +77,20 @@ const (
 	bulkScopePage     = "page"
 	bulkScopeEvery    = "every"
 	bulkScopeRecord   = "record"
+	// bulkScopeDeleted is Undo's scope: soft-deleted ids, for the
+	// restore action only.
+	bulkScopeDeleted = "deleted"
 )
+
+// bulkRestoreKey is the restore action's key, offered on the deleted
+// scope only.
+const bulkRestoreKey = "restore"
+
+// undoActionBudget caps the encoded Undo button a delete's toast header
+// carries: reverse proxies refuse a response whose headers outgrow a
+// few KiB (nginx's default proxy buffer is one 4 KiB page), and the
+// delete has already been written by then.
+const undoActionBudget = 2 << 10
 
 type bulkKind int
 
@@ -75,6 +99,7 @@ const (
 	bulkSet
 	bulkMove
 	bulkRun
+	bulkRestore
 )
 
 // bulkAction is one action the bar offers. key is the option value the
@@ -152,6 +177,15 @@ func recordActions(m *meta) []bulkAction {
 		out = append(out, bulkAction{key: "run:" + a.Key, kind: bulkRun, label: actionLabel(a), perm: a.Permission, app: a})
 	}
 	return out
+}
+
+// restoreActions is the deleted scope's one action, on a soft-deleting
+// entity.
+func restoreActions(ctx context.Context, m *meta) []bulkAction {
+	if !m.e.Config.Scope.SoftDelete {
+		return nil
+	}
+	return []bulkAction{{key: bulkRestoreKey, kind: bulkRestore, label: i18nui.T(ctx, i18nui.KeyEntityRestore)}}
 }
 
 func actionLabel(a Action) string {
@@ -244,6 +278,10 @@ type bulkBody struct {
 	Key    string     `json:"key"`
 	Query  string     `json:"query"`
 	Match  string     `json:"match"`
+	// Undo and Back are the bar's ask for Undo on a delete's toast and
+	// the list it returns to.
+	Undo string `json:"undo"`
+	Back string `json:"back"`
 }
 
 // bulkRefusal is a refusal the caller can act on, drawn from the catalog.
@@ -273,6 +311,12 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 			return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 		}
 		return u.visibleIDs(ctx, m, ids)
+	case bulkScopeDeleted:
+		ids = dedupeIDs(body.IDs)
+		if len(ids) > InRequestCap {
+			return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+		}
+		return u.readIDs(ctx, m, ids, true)
 	default:
 		return nil, refuse(http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityBulkBadScope))
 	}
@@ -289,10 +333,20 @@ func (u *UI) resolveSelection(ctx context.Context, m *meta, body bulkBody) ([]st
 // visibleIDs re-reads ids through the scoped CRUD handler under ctx and
 // returns the ones that come back, in the order given.
 func (u *UI) visibleIDs(ctx context.Context, m *meta, ids []string) ([]string, error) {
+	return u.readIDs(ctx, m, ids, false)
+}
+
+// readIDs is visibleIDs over the live rows, or over the trash when
+// deleted is set.
+func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
-		Where:  &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
-		Fields: []string{m.pk},
-		Limit:  len(ids),
+		Where:   &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
+		Fields:  []string{m.pk},
+		Limit:   len(ids),
+		Deleted: deleted,
 	})
 	if err != nil {
 		return nil, err
@@ -466,6 +520,12 @@ func (u *UI) runOne(ctx context.Context, m *meta, act bulkAction, id string) str
 		if _, conflict := errors.AsType[*crud.TransitionConflictError](err); conflict {
 			return BulkRowSkipped
 		}
+	case bulkRestore:
+		// RestoreOne asks the caller's own update gate and scope.
+		err = m.ch.RestoreOne(ctx, id)
+		if errors.Is(err, crud.ErrForbidden) || crud.IsNotFound(err) || errors.Is(err, crud.ErrNotSoftDeleted) {
+			return BulkRowSkipped
+		}
 	}
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: bulk record failed", "entity", m.name, "action", act.key, "error", err)
@@ -589,8 +649,11 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			return
 		}
 		offered := u.bulkActions
-		if record {
+		switch body.Scope {
+		case bulkScopeRecord:
 			offered = func(_ context.Context, m *meta) []bulkAction { return recordActions(m) }
+		case bulkScopeDeleted:
+			offered = restoreActions
 		}
 		act, ok := findBulkAction(offered(ctx, m), body.Action)
 		if !ok {
@@ -615,6 +678,17 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			return
 		}
 		runID := newRunID()
+		// Undo offers back the ids the caller could update before the
+		// delete, asked while the rows are still live.
+		var restorable map[string]bool
+		if act.kind == bulkDelete && body.Undo == "1" && m.e.Config.Scope.SoftDelete {
+			restorable = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				if canUpdate(ctx, m, id) {
+					restorable[id] = true
+				}
+			}
+		}
 		outcomes := u.runBulk(ctx, m, act, ids, runID)
 		var t bulkTally
 		t.add(outcomes)
@@ -632,11 +706,63 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		if t.failed > 0 {
 			variant = ui.StatusWarning
 		}
-		ui.AddToast(w, ui.ToastTrigger{Variant: variant, TTL: 6000, Title: i18nui.TVars(ctx, i18nui.KeyEntityBulkDone, map[string]string{
-			"done": strconv.Itoa(t.done), "skipped": strconv.Itoa(t.skipped), "failed": strconv.Itoa(t.failed),
-		})})
+		ui.AddToast(w, ui.ToastTrigger{Variant: variant, TTL: 6000, Title: bulkToast(ctx, m, act, t),
+			Action: bulkUndo(ctx, m, ids, outcomes, restorable, body.Back)})
 		writeBulkJSON(w, http.StatusOK, map[string]any{"run": runID, "done": t.done, "skipped": t.skipped, "failed": t.failed})
 	})
+}
+
+// bulkToast is a run's toast title. A run where every record went
+// through says what happened to how many ("2 payments deleted"); one
+// that skipped or failed any, or ran an app action, counts each outcome.
+func bulkToast(ctx context.Context, m *meta, act bulkAction, t bulkTally) string {
+	key := i18nui.KeyEntityBulkUpdated
+	switch act.kind {
+	case bulkDelete:
+		key = i18nui.KeyEntityBulkDeleted
+	case bulkRestore:
+		key = i18nui.KeyEntityBulkRestored
+	case bulkRun:
+		key = ""
+	}
+	if key == "" || t.skipped > 0 || t.failed > 0 {
+		return i18nui.TVars(ctx, i18nui.KeyEntityBulkDone, map[string]string{
+			"done": strconv.Itoa(t.done), "skipped": strconv.Itoa(t.skipped), "failed": strconv.Itoa(t.failed),
+		})
+	}
+	return i18nui.TVars(ctx, key, map[string]string{"count": strconv.Itoa(t.done), "entity": m.noun(ctx, t.done != 1)})
+}
+
+// bulkUndo is a delete's Undo button: a restore of the ids the run
+// deleted among restorable, returning to back. It is nil when nothing
+// is restorable, back is not a path on this origin, or the button would
+// pass undoActionBudget.
+func bulkUndo(ctx context.Context, m *meta, ids []string, outcomes map[string]string, restorable map[string]bool, back string) *interactive.ToastAction {
+	back, ok := scrubBackPath(back)
+	if !ok || len(restorable) == 0 {
+		return nil
+	}
+	var undo []string
+	for _, id := range ids {
+		if outcomes[id] == BulkRowDone && restorable[id] {
+			undo = append(undo, id)
+		}
+	}
+	if len(undo) == 0 {
+		return nil
+	}
+	body, err := json.Marshal(map[string]any{"action": bulkRestoreKey, "scope": bulkScopeDeleted, "ids": undo})
+	if err != nil {
+		return nil
+	}
+	a := interactive.NewToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+		interactive.Post(m.api+"/_bulk").WithBody(string(body)).
+			OnSuccess(interactive.Navigate(back)).
+			OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+	if enc, err := json.Marshal(a); err != nil || len(enc) > undoActionBudget {
+		return nil
+	}
+	return a
 }
 
 // answerRecordAction answers a record action's one outcome: ran (200),

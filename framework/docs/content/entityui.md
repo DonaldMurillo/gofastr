@@ -89,7 +89,8 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   With `Undo()` (on the list builder too), the toast a soft delete
   leaves carries Undo for ten seconds, for a caller who may update the
   record: it posts the restore (`<write base>/<id>/_restore`, the trash
-  view's route) and returns to the list. With `WithRecordPath`, a relation select holding a value draws
+  view's route) and returns to the list. The bulk bar's Delete offers
+  it too (see "Bulk actions and export"). With `WithRecordPath`, a relation select holding a value draws
   an open button beside it, linking to that record, when the caller's
   own read of the related entity returns the row.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
@@ -582,6 +583,18 @@ and so does an entity with no REST write routes.
   it was drawn is never touched. A list past the cap is not offered
   every match. Each record then passes its own update or delete
   gate before the write; a refused record counts as skipped.
+- **Undo.** Under `.Undo()` on a soft-deleting entity the bar also posts
+  `undo` and the list's path, and a delete run in the request answers a
+  toast whose Undo button restores the rows it deleted that the caller
+  could update, then returns to the list. The button posts the
+  `deleted` scope with the action `restore`: the ids are re-read from
+  the trash under the caller's scope, at most `InRequestCap`, and each
+  restore passes the caller's own update gate, so a forged id restores
+  nothing the trash view's Restore would refuse. The ids ride the toast
+  header, so a run whose button would pass 2 KiB offers no Undo (a
+  proxy refuses a response with oversized headers, and the delete has
+  already happened); the Deleted view restores those. A queued run
+  offers none either.
 - **Every run writes one audit row** (`op: "bulk"`) with the action, the
   count and the done, skipped and failed tallies, when the app has
   `WithAuditLog`. The actor is the audit log's actor.

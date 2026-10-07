@@ -16,19 +16,21 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	}}
 	bulkOp := openapi.NewOperation()
 	bulkOp.Summary = "Run a bulk action on " + entityName
-	bulkOp.Description = "The list's bulk bar posts here, and so does a record's action button with scope record and one id. The server re-reads the selection under the caller's scope and asks each record's write gate before writing it; a refused record counts as skipped. Over the in-request cap the run is queued (202) when the app has a job runner, else refused (422). A record action answers 200 when it ran, 403 when the record's gates skipped it and 500 when it failed."
+	bulkOp.Description = "The list's bulk bar posts here, and so does a record's action button with scope record and one id. The server re-reads the selection under the caller's scope and asks each record's write gate before writing it; a refused record counts as skipped. Over the in-request cap the run is queued (202) when the app has a job runner, else refused (422). A record action answers 200 when it ran, 403 when the record's gates skipped it and 500 when it failed. Scope deleted, which a soft delete's Undo posts, restores soft-deleted ids under the caller's own gates, at most the in-request cap."
 	bulkOp.OperationID = "bulk_" + schemaName
 	bulkOp.Tags = []string{tagName}
 	bulkOp.SetRequestBody("application/json", map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"action": map[string]any{"type": "string", "description": "An action key the list's bulk bar offers this caller, or for scope record a run:<key> app action"},
-			"scope":  map[string]any{"type": "string", "enum": []string{"selected", "page", "every", "record"}},
+			"action": map[string]any{"type": "string", "description": "An action key the list's bulk bar offers this caller, for scope record a run:<key> app action, or for scope deleted restore"},
+			"scope":  map[string]any{"type": "string", "enum": []string{"selected", "page", "every", "record", "deleted"}},
 			"ids":    ids,
 			"page":   ids,
 			"key":    map[string]any{"type": "string", "description": "The list's key, which namespaces its query parameters"},
 			"query":  map[string]any{"type": "string", "description": "The list's query string, for scope every"},
 			"match":  map[string]any{"type": "string", "description": "For scope every: the digest of the ids the list offered, from the bar's match field. The run is refused (409) when the query now matches any other set"},
+			"undo":   map[string]any{"type": "string", "description": "1 asks a delete on a soft-deleting entity to answer a toast whose Undo restores the deleted rows"},
+			"back":   map[string]any{"type": "string", "description": "With undo: the list path Undo returns to, a path on this origin"},
 		},
 		"required": []string{"action", "scope"},
 		"if":       map[string]any{"properties": map[string]any{"scope": map[string]any{"const": "every"}}, "required": []string{"scope"}},

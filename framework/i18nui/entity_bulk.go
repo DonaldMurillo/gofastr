@@ -17,6 +17,9 @@ const (
 	KeyEntityBulkMove         Key = "ui.entity.bulkMove"         // "Move: {move}"
 	KeyEntityBulkExport       Key = "ui.entity.bulkExport"       // "Export CSV"
 	KeyEntityBulkDone         Key = "ui.entity.bulkDone"         // "{done} done, {skipped} skipped, {failed} failed"
+	KeyEntityBulkDeleted      Key = "ui.entity.bulkDeleted"      // "{count} {entity} deleted"
+	KeyEntityBulkRestored     Key = "ui.entity.bulkRestored"     // "{count} {entity} restored"
+	KeyEntityBulkUpdated      Key = "ui.entity.bulkUpdated"      // "{count} {entity} updated"
 	KeyEntityBulkQueued       Key = "ui.entity.bulkQueued"       // "{count} {entity} queued"
 	KeyEntityBulkNone         Key = "ui.entity.bulkNone"         // "Nothing selected that you may change."
 	KeyEntityBulkUnknown      Key = "ui.entity.bulkUnknown"      // "That action is not available."
@@ -45,6 +48,9 @@ var entityBulkDefaults = map[Key]string{
 	KeyEntityBulkMove:         "Move: {move}",
 	KeyEntityBulkExport:       "Export CSV",
 	KeyEntityBulkDone:         "{done} done, {skipped} skipped, {failed} failed",
+	KeyEntityBulkDeleted:      "{count} {entity} deleted",
+	KeyEntityBulkRestored:     "{count} {entity} restored",
+	KeyEntityBulkUpdated:      "{count} {entity} updated",
 	KeyEntityBulkQueued:       "{count} {entity} queued",
 	KeyEntityBulkNone:         "Nothing selected that you may change.",
 	KeyEntityBulkUnknown:      "That action is not available.",
