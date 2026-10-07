@@ -232,6 +232,7 @@ func TestInstantAreaSwapsInOneFrame(t *testing.T) {
 		`[data-cui-vt="vt-shell-crumbs"] { view-transition-name: vt-shell-crumbs; }`,
 		`::view-transition-group(vt-shell-crumbs), ::view-transition-new(vt-shell-crumbs) { animation: none; }`,
 		`::view-transition-old(vt-shell-crumbs) { animation: none; opacity: 0; }`,
+		`[data-cui-vt="vt-shell-crumbs"][data-cui-vt][aria-busy="true"] { opacity: 1; transition: none; }`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("instant CSS missing %s:\n%s", want, css)

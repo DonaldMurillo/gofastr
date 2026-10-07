@@ -559,7 +559,7 @@ legs, `app.FadeThrough(d)` runs the legs sequentially — for regions
 whose two states carry text that must not ghost over itself.
 `app.Instant()` swaps the region in one frame while the page
 transitions around it: the fit for a breadcrumb trail, whose root is
-the same on every page and would blink under any fade. `Transition{Name: "..."}` assigns a snapshot name without
+the same on every page and would blink under any fade. Nor does it dim while a slow navigation is in flight, as other busy regions do; it keeps `aria-busy` for screen readers. `Transition{Name: "..."}` assigns a snapshot name without
 generating keyframes; use a framework preset when the region needs a move.
 The host collects every registered layout's generated
 `Layout.TransitionCSS()` into app.css; there is nothing to wire. app.css

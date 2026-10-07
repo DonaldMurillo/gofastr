@@ -180,6 +180,12 @@ func (tr Transition) animCSS(name string) string {
 	if tr.instant {
 		fmt.Fprintf(&b, "::view-transition-group(%s), ::view-transition-new(%s) { animation: none; }\n", name, name)
 		fmt.Fprintf(&b, "::view-transition-old(%s) { animation: none; opacity: 0; }\n", name)
+		// Nor does it dim while the navigation is in flight: the host
+		// dims every busy region, and a dimmed trail blinks the root it
+		// keeps. aria-busy still tells a screen reader. The doubled
+		// attribute outweighs the host's [data-cui-area][aria-busy]
+		// rule, whichever sheet loads last.
+		fmt.Fprintf(&b, "[data-cui-vt=%q][data-cui-vt][aria-busy=\"true\"] { opacity: 1; transition: none; }\n", name)
 		return b.String()
 	}
 	leg := func(a Anim, newSnap bool) {

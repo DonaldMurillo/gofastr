@@ -129,7 +129,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`app.Instant()` swaps a layout region in one frame** while the
   rest of the page runs its view transition: no fade, no group morph.
   The admin's breadcrumb trail uses it, so its root no longer blinks on
-  every navigation.
+  every navigation. The region also skips the busy dim a slow
+  navigation puts on the page's other regions; it keeps `aria-busy`.
 - **`ui.CommandPalette` can draw a visible search field.**
   `Trigger: ui.PaletteTriggerField` renders the trigger as a field with
   a magnifier, `TriggerText` and the shortcut's keycaps, and as a 44px
