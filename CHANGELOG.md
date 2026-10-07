@@ -8,6 +8,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **entityui `money` field kind**: `Display.Fields[f].Input: "money"` on an
+  Int, Float or Decimal draws a number input behind the currency symbol
+  and prints the value as an amount in list cells and read-only fields.
+  `i18nui.KeyEntityCurrency` (`ui.entity.currency`, default `$`) holds the
+  symbol, and the `format: money` stat now reads it too. Registration refuses
+  a built-in kind on a field type it does not fit. Meridian's amounts, MRR
+  and price use it, and the customer email uses the `email` kind.
 - **entityui form inputs carry the field's validators**: `required`,
   `minlength`/`maxlength` from a string's `Min`/`Max`, `min`/`max`
   on numbers, and `pattern` from `Pattern`, wrapped to match anywhere

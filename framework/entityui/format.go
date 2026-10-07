@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -109,7 +111,7 @@ func groupDigits(s string) string {
 }
 
 // decimal prints a Decimal or Float value with two places and grouping.
-// A currency is the app's kind to draw (Extensions.Kinds), not a guess.
+// A currency is drawn only where the field names the money kind.
 func decimal(val string) string {
 	f, err := strconv.ParseFloat(val, 64)
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
@@ -133,3 +135,18 @@ func enumVariant(v string) ui.StatusVariant {
 }
 
 func muted() render.HTML { return ui.EmptyValue() }
+
+// money prints an amount as the catalog's currency symbol and two
+// grouped places: $1,234.00, and -$5.00 for a negative one. Text that
+// is not a number prints as stored.
+func money(ctx context.Context, val string) string {
+	sym := i18nui.T(ctx, i18nui.KeyEntityCurrency)
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		return val
+	}
+	s := decimal(val)
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		return "-" + sym + rest
+	}
+	return sym + s
+}

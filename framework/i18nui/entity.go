@@ -30,6 +30,7 @@ const (
 	KeyEntitySelect         Key = "ui.entity.select"         // "— Select —"
 	KeyEntityYes            Key = "ui.entity.yes"            // "Yes"
 	KeyEntityNo             Key = "ui.entity.no"             // "No"
+	KeyEntityCurrency       Key = "ui.entity.currency"       // "$"
 )
 
 var entityDefaults = map[Key]string{
@@ -53,6 +54,7 @@ var entityDefaults = map[Key]string{
 	KeyEntitySelect:         "— Select —",
 	KeyEntityYes:            "Yes",
 	KeyEntityNo:             "No",
+	KeyEntityCurrency:       "$",
 }
 
 // entityKeyBlocks are the entity screens' and the admin's Defaults blocks,

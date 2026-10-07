@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -16,11 +17,21 @@ import (
 // read-only field uses. An app kind registered under the same name in
 // Extensions.Kinds replaces the built-in.
 
-// builtinKind is the input a built-in kind name draws. email, url and
-// color keep the storage (a String) and change the control; markdown
-// and code draw the monospace text area the kit's mono variant ships.
+// builtinKind is what a built-in kind name draws. email, url and color
+// keep the storage (a String) and change the control; markdown and code
+// draw the monospace text area the kit's mono variant ships; money draws
+// a number input behind the currency symbol and prints its value as an
+// amount in cells and read-only.
 func builtinKind(name string) Kind {
 	switch name {
+	case "money":
+		show := func(cc CellContext) render.HTML {
+			if s := cell(cc.Value); s != "" {
+				return render.Text(money(cc.Ctx, s))
+			}
+			return muted()
+		}
+		return Kind{Input: moneyInput, Cell: show}
 	case "email", "url", "color":
 		t := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
@@ -47,6 +58,35 @@ func builtinKind(name string) Kind {
 	default:
 		return Kind{}
 	}
+}
+
+// moneyInput is the money kind's control: a number input whose step lets
+// the type's precision through, with the currency symbol prepended.
+func moneyInput(ic InputContext) render.HTML {
+	step := map[schema.FieldType]string{schema.Int: "1", schema.Float: "any"}[ic.Field.Type]
+	if step == "" {
+		step = "0.01"
+	}
+	return ui.FormField(ui.FormFieldConfig{
+		Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic), Required: ic.Control.Required,
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.InputGroup(ui.InputGroupConfig{
+				Prepend: render.Text(i18nui.T(ic.Ctx, i18nui.KeyEntityCurrency)),
+				Input: ui.Control(ui.ControlConfig{
+					Field: c, Type: "number", Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
+					Min: bound(ic.Field.Min), Max: bound(ic.Field.Max), Step: step,
+				}),
+			})
+		},
+	})
+}
+
+// bound is a numeric bound as attribute text, empty when unset.
+func bound(b *float64) string {
+	if b == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*b, 'f', -1, 64)
 }
 
 // kindLabel and kindHelp resolve through the InputContext's own ctx:

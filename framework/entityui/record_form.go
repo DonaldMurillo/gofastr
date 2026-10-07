@@ -449,10 +449,11 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
 		}
 		cc := CellContext{Ctx: asCaller(ctx), Entity: fb.m.name, Field: f, Value: val, Row: row}
+		draw := k.Cell
 		if k.Detail != nil {
-			return k.Detail(cc)
+			draw = k.Detail
 		}
-		return k.Cell(cc)
+		return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: draw(cc)}}})
 	}
 	var value render.HTML
 	if fb.create {

@@ -265,15 +265,18 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	return val
 }
 
-// kindCell reports the registered kind that draws this field's cells,
-// when Display.Fields names one and the kind has a Cell. Built-in input
-// kinds (email, url, …) draw no cell of their own.
+// kindCell reports the kind that draws this field's cells, when
+// Display.Fields names one and the kind has a Cell: an app kind, else a
+// built-in one. Of the built-ins only money draws its own cell.
 func (u *UI) kindCell(m *meta, f schema.Field) (Kind, bool) {
 	in := m.hint(f.Name).Input
 	if in == "" {
 		return Kind{}, false
 	}
 	k, ok := u.ext.Kinds[in]
+	if !ok && isBuiltinKind(in) {
+		k, ok = builtinKind(in), true
+	}
 	if !ok || k.Cell == nil {
 		return Kind{}, false
 	}

@@ -218,7 +218,14 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 - **Kinds** draw one field kind: `Input` on forms, `Cell` in list cells
   and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
-  built in; an app kind of the same name replaces a built-in one.
+  built in, and so is `money` for an Int, Float or Decimal: a number input
+  behind the currency symbol, and the value printed as an amount (`$1,234.50`,
+  `-$5.00`) in cells and read-only. The symbol is the
+  `ui.entity.currency` catalog entry (`$` by default), which the
+  `format: money` stat reads too. A built-in kind on a field type it does
+  not fit (`money` on a String) fails registration. An app kind of the
+  same name replaces a built-in one, and its fit is the app's to judge. A
+  locked field drawn by a kind keeps its label above the kind's `Detail`.
   `Cell` and `Detail` get the row after the read hooks, so a column a hook
   masks stays masked in them, and a relation whose target the caller may
   not read draws muted without calling them. Only `Input` gets the stored

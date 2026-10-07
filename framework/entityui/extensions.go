@@ -339,16 +339,28 @@ func (x Extensions) check(reg entity.Registry) error {
 	return nil
 }
 
-// checkInputs refuses a FieldDisplay.Input on e naming no kind.
+// checkInputs refuses a FieldDisplay.Input on e naming no kind, and a
+// built-in kind on a field type it does not fit (money on a String).
 func (x Extensions) checkInputs(e *entity.Entity) error {
 	d := e.Config.Display
 	if d == nil {
 		return nil
 	}
 	for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
-		if in := d.Fields[f].Input; in != "" {
-			if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
-				return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
+		in := d.Fields[f].Input
+		if in == "" {
+			continue
+		}
+		if _, ok := x.Kinds[in]; ok {
+			continue
+		}
+		fits, ok := builtinKinds[in]
+		if !ok {
+			return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
+		}
+		for _, sf := range e.Config.Fields {
+			if sf.Name == f && !slices.Contains(fits, sf.Type) {
+				return fmt.Errorf("entityui: entity %q field %q: input %q does not fit the field's type", e.GetName(), f, in)
 			}
 		}
 	}
