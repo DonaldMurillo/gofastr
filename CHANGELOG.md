@@ -950,6 +950,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **The admin's recent activity reads as sentences.** Each line names
+  the actor by its account's email (through `Config.Auth`), the
+  operation as a verb, and the record by its title, with a relative
+  time: "ada@example.com updated INV-1010 · 5m ago" in place of the
+  record UUID, the raw op and the actor id. The audit page's actor
+  column names the actor the same way.
 - **`data-cui-confirm` asks in the kit's dialog, not `window.confirm`.**
   The runtime's `confirm` module opens a themed `<dialog>` with Cancel
   focused; Escape and a backdrop click answer no. A form submit is held

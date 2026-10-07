@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -161,19 +160,17 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
 			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoActivity), HeadingLevel: 3}))
 	}
+	names := b.actorNames(ctx, rows)
+	now := time.Now()
 	events := make([]ui.TimelineEvent, len(rows))
 	for i, r := range rows {
-		entity := r.Entity
-		if e, ok := b.exposedNamed(r.Entity); ok {
-			entity = b.singular(ctx, e)
-		}
-		actor := i18nui.T(ctx, i18nui.KeyAdminAuditSystem)
-		if r.ActorID.Valid && r.ActorID.String != "" {
-			actor = r.ActorID.String
-		}
 		events[i] = ui.TimelineEvent{
-			Title:   strings.TrimSpace(entity + " " + r.RecordID + " · " + r.Op),
-			Meta:    actor + " · " + r.CreatedAt.UTC().Format("2006-01-02 15:04"),
+			Title: i18nui.TVars(ctx, i18nui.KeyAdminActivityLine, map[string]string{
+				"actor":  actorLabel(ctx, names, r),
+				"verb":   activityVerb(ctx, r.Op),
+				"record": b.activityRecord(ctx, r),
+			}),
+			Meta:    ago(ctx, now, r.CreatedAt),
 			Variant: timelineVariant(r.Op),
 		}
 	}

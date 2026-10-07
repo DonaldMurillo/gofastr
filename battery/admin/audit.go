@@ -243,12 +243,10 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 		{Key: "record", Header: i18nui.T(ctx, i18nui.KeyAdminColRecord)},
 		{Key: "actor", Header: i18nui.T(ctx, i18nui.KeyAdminColActor)},
 	}
+	names := b.actorNames(ctx, rows)
 	data := make([]ui.Row, len(rows))
 	for i, r := range rows {
-		actor := i18nui.T(ctx, i18nui.KeyAdminAuditSystem)
-		if r.ActorID.Valid && r.ActorID.String != "" {
-			actor = r.ActorID.String
-		}
+		actor := actorLabel(ctx, names, r)
 		entity := render.Text(r.Entity)
 		record := html.Code(html.TextConfig{}, render.Text(r.RecordID))
 		if e, ok := b.exposedNamed(r.Entity); ok {

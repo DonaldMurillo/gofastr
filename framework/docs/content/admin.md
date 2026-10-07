@@ -204,6 +204,16 @@ logs the driver error; the page never prints it. `QueueListLimit` and
 `AuditTable` (default `audit_log`) and, when the request carries a
 tenant, only that tenant's rows.
 
+**Naming the actor and the record.** With `Auth` set, the audit page
+and the dashboard's recent activity name each actor by its account's
+email, the account the User roles page lists; an id no account matches,
+or every id without `Auth`, shows as written, and a row with no actor
+reads "System". The dashboard reads each row as a sentence, "ada@…
+updated INV-1010 · 5m ago": a live record of an exposed entity by its
+title, read the way its record screen's breadcrumb is, and a deleted or
+purged one by its entity's singular name. The audit diff is never read
+for this.
+
 **Audit filters.** The audit page carries a GET filter form, so a filter
 lives in the page's own query string and works without script:
 `?actor=<user id>`, `?entity=<exposed entity name>`, `?op=<operation>`,

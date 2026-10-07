@@ -41,6 +41,22 @@ const (
 	KeyAdminRecent       Key = "ui.admin.recent"       // "Recent activity"
 	KeyAdminNoActivity   Key = "ui.admin.noActivity"   // "No activity yet."
 	KeyAdminViewAll      Key = "ui.admin.viewAll"      // "View all"
+
+	// One recent-activity line and its parts: who did what to which
+	// record, and how long ago.
+	KeyAdminActivityLine      Key = "ui.admin.activityLine"      // "{actor} {verb} {record}"
+	KeyAdminVerbCreate        Key = "ui.admin.verbCreate"        // "created"
+	KeyAdminVerbUpdate        Key = "ui.admin.verbUpdate"        // "updated"
+	KeyAdminVerbDelete        Key = "ui.admin.verbDelete"        // "deleted"
+	KeyAdminVerbRestore       Key = "ui.admin.verbRestore"       // "restored"
+	KeyAdminVerbPurge         Key = "ui.admin.verbPurge"         // "purged"
+	KeyAdminVerbBulk          Key = "ui.admin.verbBulk"          // "ran a bulk action on"
+	KeyAdminVerbStateOverride Key = "ui.admin.verbStateOverride" // "overrode the state of"
+	KeyAdminVerbTransition    Key = "ui.admin.verbTransition"    // "changed the state of"
+	KeyAdminAgoNow            Key = "ui.admin.agoNow"            // "just now"
+	KeyAdminAgoMinutes        Key = "ui.admin.agoMinutes"        // "{n}m ago"
+	KeyAdminAgoHours          Key = "ui.admin.agoHours"          // "{n}h ago"
+	KeyAdminAgoDays           Key = "ui.admin.agoDays"           // "{n}d ago"
 )
 
 // Table columns on the ops pages.
@@ -183,6 +199,19 @@ var adminDefaults = map[Key]string{
 	KeyAdminRecent:            "Recent activity",
 	KeyAdminNoActivity:        "No activity yet.",
 	KeyAdminViewAll:           "View all",
+	KeyAdminActivityLine:      "{actor} {verb} {record}",
+	KeyAdminVerbCreate:        "created",
+	KeyAdminVerbUpdate:        "updated",
+	KeyAdminVerbDelete:        "deleted",
+	KeyAdminVerbRestore:       "restored",
+	KeyAdminVerbPurge:         "purged",
+	KeyAdminVerbBulk:          "ran a bulk action on",
+	KeyAdminVerbStateOverride: "overrode the state of",
+	KeyAdminVerbTransition:    "changed the state of",
+	KeyAdminAgoNow:            "just now",
+	KeyAdminAgoMinutes:        "{n}m ago",
+	KeyAdminAgoHours:          "{n}h ago",
+	KeyAdminAgoDays:           "{n}d ago",
 	KeyAdminColID:             "ID",
 	KeyAdminColType:           "Type",
 	KeyAdminColAttempts:       "Attempts",
