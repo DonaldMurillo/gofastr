@@ -149,6 +149,30 @@ func (b *Battery) parentRecords(e *entity.Entity) []string {
 	return out
 }
 
+// relatedRecords lists the record patterns e's record opens as a drawer
+// over, beside its list: the records it belongs to and the records that
+// belong to it, so a relation's open button and a Related tab's row push
+// a panel instead of leaving the drawer. Its own pattern is left out.
+func (b *Battery) relatedRecords(e *entity.Entity) []string {
+	own := b.entityBase(e) + "/:id"
+	var out []string
+	add := func(p string) {
+		if p != own && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	for _, p := range b.parentRecords(e) {
+		add(p)
+	}
+	children := b.relatedTo(e)
+	for _, other := range b.ents {
+		if slices.Contains(children, other.GetName()) {
+			add(b.entityBase(other) + "/:id")
+		}
+	}
+	return out
+}
+
 // mountEntities registers each exposed entity's list, record and create
 // screens, and its write routes.
 func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
@@ -184,7 +208,7 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 			}
 			return b.singular(ctx, e)
 		})
-		record.Intercept = &appui.Intercept{From: listPath, As: appui.ScreenDrawer}
+		record.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.relatedRecords(e), As: appui.ScreenDrawer}
 
 		b.mountEntityAPI(r, e)
 	}

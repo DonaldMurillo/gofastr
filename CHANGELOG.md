@@ -41,6 +41,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `entityui.UI.WithActorName`, `entityui.UI.Changes` and
   `entityui.UI.SnapshotTitle`. A move's audit row (`transition:<key>`)
   now badges and draws like any move.
+- **The admin's related records stack as drawers.** A record opens as a
+  drawer over the record of each exposed entity it belongs to or that
+  belongs to it, so a relation field's open button and a Related tab's
+  row push a panel over the drawer instead of leaving it for the page.
 - **The admin sidebar counts each entity's records.** The figure ends
   the row, counted under the list's read gate, and re-renders on every
   client navigation, so a create shows on the next click.

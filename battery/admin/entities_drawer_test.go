@@ -100,3 +100,44 @@ func TestCreateOpensOverRelatedRecord(t *testing.T) {
 		t.Errorf("post create opens over %v, want only its list", got)
 	}
 }
+
+// A related record opens as a drawer over the record that names it, both
+// ways: a comment's post from the comment, and a post's comment from the
+// post's Related tab. From a screen it is not related to, it is the page.
+func TestRelatedRecordStacksAsDrawer(t *testing.T) {
+	comments := entity.EntityConfig{
+		Table: "comments",
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String, Required: true},
+			{Name: "post_id", Type: schema.Relation, To: "posts"},
+		},
+		Relations: []entity.Relation{entity.BelongsTo("post", "posts", "post_id")},
+	}.WithTimestamps(false)
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig(), "comments": comments},
+		Config{Entities: []string{"posts", "comments"}}, nil)
+	x.insert("posts", map[string]any{"id": "p1", "title": "Alpha", "status": "draft"})
+	x.insert("comments", map[string]any{"id": "c1", "body": "First", "post_id": "p1"})
+	base := func(name string) string {
+		e, err := x.app.Registry.Get(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return x.b.entityBase(e)
+	}
+	drawer := func(path, from string) bool {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-Gofastr-Navigate", "1")
+		req.Header.Set("X-Gofastr-Intercept", "1")
+		req.Header.Set("X-Gofastr-From", from)
+		return strings.Contains(serve(x.as(theAdmin), req).Body.String(), `data-cui-comp="ui-drawer-bar"`)
+	}
+	if !drawer(base("posts")+"/p1", base("comments")+"/c1") {
+		t.Error("a comment's post opened as the page, not a drawer over the comment")
+	}
+	if !drawer(base("comments")+"/c1", base("posts")+"/p1") {
+		t.Error("a post's comment opened as the page, not a drawer over the post")
+	}
+	if drawer(base("posts")+"/p1", "/admin/") {
+		t.Error("a post opened as a drawer over the dashboard")
+	}
+}
