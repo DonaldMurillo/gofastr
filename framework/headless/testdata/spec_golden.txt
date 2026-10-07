@@ -638,6 +638,10 @@ label before value, and the trend's direction carried by its own words — the c
 a card with no trend renders without one, and the label still arrives before the value it names
 <div><p data-cui-internal="">Queued builds</p><p data-cui-internal="">2</p></div>
 
+=== StatCard / linked, with an icon and an action ===
+the label links to what it counts, the icon is hidden from assistive technology, and the action sits in the head outside the link so no interactive element nests in another
+<div><div><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span><button type="button">New</button></div><p data-cui-internal=""><a href="/admin/entities/invoices">Invoices</a></p><p data-cui-internal="">75</p></div>
+
 === StepWizard / the first step ===
 the transition is a plain form POST with wizard_action=next — the no-script page walks the whole flow — and the first step renders no Back because there is nothing to go back to
 <form action="/setup" data-hui-step-wizard="" data-hui-step-wizard-current="0" method="POST"><ol aria-label="Step 1 of 3" data-cui-internal=""><li aria-current="step" data-state="current"><span aria-label="Step 1: Source"><span aria-hidden="true">1</span><span>Source</span></span></li><li data-state="todo"><span aria-label="Step 2: Build"><span aria-hidden="true">2</span><span>Build</span></span></li><li data-state="todo"><span aria-label="Step 3: Deploy"><span aria-hidden="true">3</span><span>Deploy</span></span></li></ol><h2 data-cui-internal="" tabindex="-1">Source</h2><div><input aria-label="Repository" name="repo" type="text"></div><div data-cui-internal=""><button data-hui-step-wizard-action="next" name="wizard_action" type="submit" value="next">Continue</button></div><span data-cui-internal="" data-hui-step-wizard-status="" role="status">Step 1 of 3</span></form>

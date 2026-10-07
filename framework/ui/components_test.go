@@ -558,6 +558,28 @@ func TestStatCardTrendDirection(t *testing.T) {
 	mustContain(t, h, `data-direction="up"`)
 }
 
+func TestStatCardLinksLabelAndHoldsAction(t *testing.T) {
+	h := StatCard(StatCardConfig{Label: "Invoices", Value: "75", Href: "/admin/entities/invoices",
+		Icon: "receipt", Action: LinkButton(LinkButtonConfig{Label: "New", Href: "/admin/entities/invoices/create"})})
+	mustContain(t, h, `<a class="fui-stat-card__link" href="/admin/entities/invoices">Invoices</a>`)
+	mustContain(t, h, `<span aria-hidden="true" class="fui-stat-card__icon">`)
+	mustContain(t, h, `href="/admin/entities/invoices/create"`)
+	// The head (icon, action) comes before the label, so the action is
+	// never inside the label's link.
+	if strings.Index(string(h), "/create") > strings.Index(string(h), `fui-stat-card__link`) {
+		t.Fatalf("the action must sit in the head, before the label:\n%s", h)
+	}
+}
+
+func TestStatCardRefusesUnsafeHref(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a javascript: href rendered")
+		}
+	}()
+	StatCard(StatCardConfig{Label: "x", Value: "1", Href: "javascript:alert(1)"})
+}
+
 // ─── Avatar ───
 func TestAvatarFallsBackToInitials(t *testing.T) {
 	h := Avatar(AvatarConfig{Name: "Donald Murillo"})

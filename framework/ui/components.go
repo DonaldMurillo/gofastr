@@ -791,6 +791,18 @@ type StatCardConfig struct {
 	// Direction colors the trend pill. Defaults to flat.
 	Direction TrendDirection
 
+	// Href links the label to what the number counts (a dashboard
+	// count to its list).
+	Href string
+
+	// Icon names a registered icon (see Icon) drawn in the card's head.
+	// An unknown name draws no icon, as on LinkButton.
+	Icon string
+
+	// Action is a control in the card's head (a LinkButton to create
+	// one more), outside the label's link.
+	Action render.HTML
+
 	ID    string
 	Class string
 
@@ -804,9 +816,12 @@ type StatCardConfig struct {
 // statCardClasses dresses headless.StatCard's parts.
 var statCardClasses = headless.Classes{
 	headless.PartRoot:      "fui-stat-card",
+	headless.PartHeader:    "fui-stat-card__head",
+	headless.PartIcon:      "fui-stat-card__icon",
 	headless.PartLabel:     "fui-stat-card__label",
 	headless.PartStatValue: "fui-stat-card__value",
 	headless.PartStatTrend: "fui-stat-card__trend",
+	headless.PartStatLink:  "fui-stat-card__link",
 
 	headless.Part("stat-trend--up"):   "fui-stat-card__trend--up",
 	headless.Part("stat-trend--down"): "fui-stat-card__trend--down",
@@ -827,11 +842,18 @@ func StatCard(cfg StatCardConfig) render.HTML {
 	if dir == "" {
 		dir = TrendFlat
 	}
+	var icon render.HTML
+	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+		icon = Icon(cfg.Icon, IconConfig{})
+	}
 	return statCardStyle.WrapHTML(headless.StatCard(headless.StatCardProps{
 		Label:      cfg.Label,
 		Value:      cfg.Value,
 		Trend:      cfg.Trend,
 		Direction:  string(dir),
+		Href:       cfg.Href,
+		Icon:       icon,
+		Action:     cfg.Action,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
 		Parts:      rootClassParts(cfg.Class),

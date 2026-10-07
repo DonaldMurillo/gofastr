@@ -788,6 +788,25 @@ func statCardCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
 }
+[data-cui-comp="ui-stat-card"] .fui-stat-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md, 8px);
+  margin-block-end: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__icon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__link {
+  color: inherit;
+  text-decoration: none;
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
 [data-cui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
   font-size: var(--text-3xl);
