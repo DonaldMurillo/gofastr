@@ -22,7 +22,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	linkCol := linkColumn(s)
 	cols := make([]ui.Column, 0, len(s.columns)+2)
 	if lb != nil {
-		cols = append(cols, ui.Column{Key: "_s", Header: ""})
+		cols = append(cols, ui.Column{Key: "_s", SelectAll: "ids", Fit: true})
 	}
 	for _, name := range s.columns {
 		f, _ := s.m.field(name)
@@ -38,7 +38,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	// restore and purge forms — while drawing no record link.
 	noLinks := b.noLinks || s.deletedView
 	if !noLinks || s.deletedView {
-		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end"})
+		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end", Fit: true})
 	}
 
 	uiRows := make([]ui.Row, 0, len(rows))

@@ -18,6 +18,7 @@ func TestBulkListDrawsBarAndSelect(t *testing.T) {
 		`id="eui-invoices-bulk"`,
 		`form="eui-invoices-bulk"`,
 		`name="ids"`,
+		`data-hui-table-select-all="ids"`,
 		`value="a1"`,
 		"Select A-1",
 		`name="page"`,
