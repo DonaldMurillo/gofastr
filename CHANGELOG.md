@@ -1332,6 +1332,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **`ui.PasswordInput` turns red when a submit is refused**: the
+  form-errors runtime marks the input `aria-invalid`, and the shell
+  now takes the danger border from it as it does from a server-rendered
+  error. Before, only a field rendered with its error showed red.
 - **An invalid control inside a `ui.InputGroup` marks the whole group.**
   The input drew its own danger ring inside the group, so a `$` prefix
   sat outside the red box; the group now takes the error ring the way it
