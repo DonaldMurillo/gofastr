@@ -108,7 +108,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	count := countText(ctx, b.ui.StatValue(cctx, e.GetName(), "count", "", "", ""))
 	updated := ""
 	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
-		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ago(ctx, time.Now(), t)})
+		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ui.Ago(ctx, time.Now(), t)})
 	}
 	icon := ""
 	if n := navOf(e); n != nil {
@@ -177,7 +177,7 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	for i, r := range rows {
 		events[i] = ui.TimelineEvent{
 			Lead:    b.activityLead(ctx, names, r),
-			Meta:    ago(ctx, now, r.CreatedAt),
+			Meta:    ui.Ago(ctx, now, r.CreatedAt),
 			Variant: timelineVariant(r.Op),
 			Icon:    opIcon(r.Op),
 		}
@@ -193,7 +193,7 @@ func headerLink(label, href string) render.HTML {
 
 // opIcon is the icon an audit operation's activity marker draws.
 func opIcon(op string) string {
-	switch op {
+	switch opKind(op) {
 	case "create":
 		return "plus"
 	case "update":

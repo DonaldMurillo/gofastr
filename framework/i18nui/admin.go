@@ -82,10 +82,6 @@ const (
 	KeyAdminVerbBulk          Key = "ui.admin.verbBulk"          // "ran a bulk action on"
 	KeyAdminVerbStateOverride Key = "ui.admin.verbStateOverride" // "overrode the state of"
 	KeyAdminVerbTransition    Key = "ui.admin.verbTransition"    // "changed the state of"
-	KeyAdminAgoNow            Key = "ui.admin.agoNow"            // "just now"
-	KeyAdminAgoMinutes        Key = "ui.admin.agoMinutes"        // "{n}m ago"
-	KeyAdminAgoHours          Key = "ui.admin.agoHours"          // "{n}h ago"
-	KeyAdminAgoDays           Key = "ui.admin.agoDays"           // "{n}d ago"
 	KeyAdminUpdatedAgo        Key = "ui.admin.updatedAgo"        // "Updated {ago}"
 )
 
@@ -102,6 +98,7 @@ const (
 	KeyAdminColEntity      Key = "ui.admin.colEntity"      // "Entity"
 	KeyAdminColOperation   Key = "ui.admin.colOperation"   // "Operation"
 	KeyAdminColRecord      Key = "ui.admin.colRecord"      // "Record"
+	KeyAdminColChanges     Key = "ui.admin.colChanges"     // "Changes"
 	KeyAdminColActor       Key = "ui.admin.colActor"       // "Actor"
 	KeyAdminColRole        Key = "ui.admin.colRole"        // "Role"
 	KeyAdminColPermissions Key = "ui.admin.colPermissions" // "Permissions"
@@ -262,10 +259,6 @@ var adminDefaults = map[Key]string{
 	KeyAdminVerbBulk:          "ran a bulk action on",
 	KeyAdminVerbStateOverride: "overrode the state of",
 	KeyAdminVerbTransition:    "changed the state of",
-	KeyAdminAgoNow:            "just now",
-	KeyAdminAgoMinutes:        "{n}m ago",
-	KeyAdminAgoHours:          "{n}h ago",
-	KeyAdminAgoDays:           "{n}d ago",
 	KeyAdminUpdatedAgo:        "Updated {ago}",
 	KeyAdminColID:             "ID",
 	KeyAdminColType:           "Type",
@@ -278,6 +271,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminColEntity:         "Entity",
 	KeyAdminColOperation:      "Operation",
 	KeyAdminColRecord:         "Record",
+	KeyAdminColChanges:        "Changes",
 	KeyAdminColActor:          "Actor",
 	KeyAdminColRole:           "Role",
 	KeyAdminColPermissions:    "Permissions",

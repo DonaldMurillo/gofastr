@@ -3,9 +3,7 @@ package admin
 import (
 	"context"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -18,13 +16,6 @@ import (
 // matches, or any id without Auth, is absent and reads as itself.
 func (b *Battery) actorNames(ctx context.Context, rows []auditRow) map[string]string {
 	names := map[string]string{}
-	if b.cfg.Auth == nil {
-		return names
-	}
-	store := b.cfg.Auth.UserStore()
-	if store == nil {
-		return names
-	}
 	tried := map[string]bool{}
 	for _, r := range rows {
 		id := r.ActorID.String
@@ -32,11 +23,28 @@ func (b *Battery) actorNames(ctx context.Context, rows []auditRow) map[string]st
 			continue
 		}
 		tried[id] = true
-		if u, err := store.FindByID(ctx, id); err == nil && u != nil && u.GetEmail() != "" {
-			names[id] = u.GetEmail()
+		if n := b.actorName(ctx, id); n != "" {
+			names[id] = n
 		}
 	}
 	return names
+}
+
+// actorName is one actor id's account email through Auth, "" when no
+// account matches or there is no Auth. The record Activity tab names its
+// actors with it too.
+func (b *Battery) actorName(ctx context.Context, id string) string {
+	if b.cfg.Auth == nil || id == "" {
+		return ""
+	}
+	store := b.cfg.Auth.UserStore()
+	if store == nil {
+		return ""
+	}
+	if u, err := store.FindByID(ctx, id); err == nil && u != nil {
+		return u.GetEmail()
+	}
+	return ""
 }
 
 // actorLabel names one row's actor: its account's email, its id when no
@@ -118,24 +126,4 @@ func activityVerb(ctx context.Context, op string) string {
 		return i18nui.T(ctx, key)
 	}
 	return op
-}
-
-// ago is how long before now t was: minutes, hours, then days up to a
-// month, and the date past that. A t after now (clock skew) is just now.
-func ago(ctx context.Context, now, t time.Time) string {
-	d := now.Sub(t)
-	n := func(key i18nui.Key, v time.Duration) string {
-		return i18nui.TVars(ctx, key, map[string]string{"n": strconv.FormatInt(int64(v), 10)})
-	}
-	switch {
-	case d < time.Minute:
-		return i18nui.T(ctx, i18nui.KeyAdminAgoNow)
-	case d < time.Hour:
-		return n(i18nui.KeyAdminAgoMinutes, d/time.Minute)
-	case d < 24*time.Hour:
-		return n(i18nui.KeyAdminAgoHours, d/time.Hour)
-	case d < 30*24*time.Hour:
-		return n(i18nui.KeyAdminAgoDays, d/(24*time.Hour))
-	}
-	return t.UTC().Format("2006-01-02")
 }

@@ -29,6 +29,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.TimelineEvent.Lead` (and `headless.Event.Lead`), headline markup
   in place of `Title`, and `i18nui.TVarsHTML`, which fills a translated
   line with markup values in one pass and escapes the text around them.
+- **A record's Activity tab is a timeline, and the audit log shows what
+  changed.** Each entry reads as a sentence, "**ada@example.com** made
+  changes · 2h ago", and lists the fields an edit changed, old value
+  struck through, each drawn the way its list cell is; an update that
+  changed nothing visible reads "saved this invoice". The audit page's
+  Record column names the record by its title ("Invoice · INV-1010"),
+  a deleted one by the title in its stored copy, and a new Changes
+  column lists the fields. Underneath: `ui.ChangeList`, `ui.Ago` (the
+  "5m ago" wording, through `i18nui.KeyAgo*`),
+  `entityui.UI.WithActorName`, `entityui.UI.Changes` and
+  `entityui.UI.SnapshotTitle`. A move's audit row (`transition:<key>`)
+  now badges and draws like any move.
 - **The admin sidebar counts each entity's records.** The figure ends
   the row, counted under the list's read gate, and re-renders on every
   client navigation, so a create shows on the next click.
@@ -931,7 +943,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   its query string, and writes are form RPCs to the REST routes. A list
   draws a table or cards with view tabs, facets, filter chips and a pager,
   and takes `Where` pins, `Base` and `NoLinks`. Each row's actions sit
-  behind one icon-only menu: open, copy link, duplicate and delete. A
+  behind one icon-only menu: open, copy link, duplicate and delete. The
+  list's heading also names its table, as a hidden caption. A
   pinned field leaves the default columns and the facets, and New
   prefills it. A relation field labels as its target (`customer_id`
   reads "Customer"), and an entity with no `TitleField`, `name` or

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 func capturingLogger(buf *bytes.Buffer) *slog.Logger {
@@ -18,28 +19,49 @@ func capturingLogger(buf *bytes.Buffer) *slog.Logger {
 
 func (x *env) seedAudit(id, tenantID, ent, op, record, actor string, at time.Time) {
 	x.t.Helper()
-	var tid any
+	x.seedAuditDiff(id, tenantID, ent, op, record, actor, at, "")
+}
+
+// seedAuditDiff seeds a row with a stored diff, NULL when diff is "".
+func (x *env) seedAuditDiff(id, tenantID, ent, op, record, actor string, at time.Time, diff string) {
+	x.t.Helper()
+	var tid, d any
 	if tenantID != "" {
 		tid = tenantID
 	}
+	if diff != "" {
+		d = diff
+	}
 	if _, err := x.db.Exec(`INSERT INTO audit_log (id, entity, op, record_id, actor_id, tenant_id, created_at, diff)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`, id, ent, op, record, actor, tid, at); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, ent, op, record, actor, tid, at, d); err != nil {
 		x.t.Fatalf("seed audit %s: %v", id, err)
 	}
 }
 
 func TestAuditPageListsRows(t *testing.T) {
 	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	x.insert("posts", map[string]any{"id": "p-42", "title": "Launch notes", "status": "published"})
 	now := time.Now().UTC()
-	x.seedAudit("a1", "", "posts", "update", "p-42", "admin-1", now)
-	x.seedAudit("a2", "", "posts", "delete", "p-43", "", now.Add(time.Second))
+	x.seedAuditDiff("a1", "", "posts", "update", "p-42", "admin-1", now,
+		`{"old":{"title":"Launch notes","status":"draft"},"new":{"title":"Launch notes","status":"published"}}`)
+	x.seedAuditDiff("a2", "", "posts", "delete", "p-43", "", now.Add(time.Second),
+		`{"old":{"title":"Old & gone","status":"draft"}}`)
 	x.seedAudit("a3", "", "billing", "create", "<b>raw</b>", "admin-1", now.Add(2*time.Second))
 	body := get(x.as(theAdmin), "/admin/audit").Body.String()
-	if !strings.Contains(body, `href="/admin/entities/posts/p-42"`) {
-		t.Error("an exposed entity's row does not link its record")
+	if !strings.Contains(body, `href="/admin/entities/posts/p-42"`) || !strings.Contains(body, ">Launch notes</a>") {
+		t.Error("an exposed entity's row does not link its record by title")
 	}
 	if strings.Contains(body, `href="/admin/entities/posts/p-43"`) {
 		t.Error("a deleted record is linked")
+	}
+	if !strings.Contains(body, "Old &amp; gone") {
+		t.Error("a deleted record is not titled from its stored copy")
+	}
+	if !strings.Contains(body, `>Draft</span></del>`) || !strings.Contains(body, `>Published</span></ins>`) {
+		t.Errorf("the row does not list what the update changed:\n%s", body)
+	}
+	if strings.Contains(body, `fui-change-list__label">Title`) {
+		t.Error("an unchanged field is listed as a change")
 	}
 	if !strings.Contains(body, "System") {
 		t.Error("a row with no actor does not read as the system")
@@ -99,5 +121,21 @@ func TestAuditWriteFailureIsLogged(t *testing.T) {
 	}
 	if got := buf.String(); !strings.Contains(got, "audit write failed") || !strings.Contains(got, "editor") {
 		t.Fatalf("the audit failure was not logged: %q", got)
+	}
+}
+
+// A move's operation carries its key ("transition:send"); it badges and
+// draws like any move, not as an unknown operation.
+func TestAuditOpKindFoldsKeyedOps(t *testing.T) {
+	for _, op := range []string{"transition:send", "transition:mark_paid", "state_override"} {
+		if got := opVariant(op); got != ui.StatusInfo {
+			t.Errorf("opVariant(%q) = %v, want info", op, got)
+		}
+		if got := opIcon(op); got != "repeat" {
+			t.Errorf("opIcon(%q) = %q, want repeat", op, got)
+		}
+	}
+	if got := opKind("transitional"); got != "transitional" {
+		t.Errorf("opKind folded an operation that only starts like a move: %q", got)
 	}
 }

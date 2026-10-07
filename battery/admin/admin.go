@@ -290,7 +290,7 @@ func (b *Battery) Init(app *framework.App) error {
 				return b.entityBase(e), true
 			}
 			return "", false
-		})
+		}).WithActorName(b.actorName)
 	}
 	if err := b.checkConfig(); err != nil {
 		return err

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net/url"
@@ -251,29 +252,23 @@ func (b *Battery) queryAuditWhere(ctx context.Context, limit int, f auditFilter)
 func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel int) render.HTML {
 	cols := []ui.Column{
 		{Key: "time", Header: i18nui.T(ctx, i18nui.KeyAdminColTime)},
-		{Key: "entity", Header: i18nui.T(ctx, i18nui.KeyAdminColEntity)},
+		{Key: "actor", Header: i18nui.T(ctx, i18nui.KeyAdminColActor)},
 		{Key: "op", Header: i18nui.T(ctx, i18nui.KeyAdminColOperation)},
 		{Key: "record", Header: i18nui.T(ctx, i18nui.KeyAdminColRecord)},
-		{Key: "actor", Header: i18nui.T(ctx, i18nui.KeyAdminColActor)},
+		{Key: "changes", Header: i18nui.T(ctx, i18nui.KeyAdminColChanges)},
 	}
 	names := b.actorNames(ctx, rows)
+	now := time.Now()
 	data := make([]ui.Row, len(rows))
 	for i, r := range rows {
-		actor := actorLabel(ctx, names, r)
-		entity := render.Text(r.Entity)
-		record := html.Code(html.TextConfig{}, render.Text(r.RecordID))
-		if e, ok := b.exposedNamed(r.Entity); ok {
-			entity = render.Text(b.plural(ctx, e))
-			if r.RecordID != "" && r.Op != "delete" {
-				record = ui.Link(ui.LinkConfig{Href: b.entityBase(e) + "/" + pathSegment(r.RecordID), Text: r.RecordID})
-			}
-		}
+		before, after := auditSides(r)
+		record, changes := b.auditRecord(ctx, r, before, after)
 		data[i] = ui.Row{ID: r.ID, Cells: map[string]render.HTML{
-			"time":   timeCell(r.CreatedAt),
-			"entity": entity,
-			"op":     ui.StatusBadge(ui.StatusBadgeConfig{Label: r.Op, Variant: opVariant(r.Op)}),
-			"record": record,
-			"actor":  render.Text(actor),
+			"time":    agoCell(ctx, now, r.CreatedAt),
+			"actor":   render.Text(actorLabel(ctx, names, r)),
+			"op":      ui.StatusBadge(ui.StatusBadgeConfig{Label: r.Op, Variant: opVariant(r.Op)}),
+			"record":  record,
+			"changes": changes,
 		}}
 	}
 	return ui.DataTable(ui.DataTableConfig{
@@ -291,9 +286,87 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	})
 }
 
+// auditRecord draws one row's record and what it changed. An exposed
+// entity's record reads "Invoice · INV-1010": a live one titled the way
+// the record screen's breadcrumb titles it and linked to that screen, a
+// deleted or purged one titled from the row's stored copy. An entity the
+// admin does not expose shows its table name and the id. The reads run
+// elevated: the audit log is behind the admin gate, and the trail must
+// name records whatever the entity's own read permission says.
+func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map[string]any) (record, changes render.HTML) {
+	e, ok := b.exposedNamed(r.Entity)
+	if !ok || b.ui == nil {
+		id := html.Code(html.TextConfig{}, render.Text(r.RecordID))
+		return render.Join(render.Text(r.Entity+" "), id), ui.EmptyValue()
+	}
+	ectx := b.elevate(ctx)
+	var title render.HTML
+	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" {
+		if t, ok := b.ui.RecordTitle(ectx, e.GetName(), r.RecordID); ok && t != "" {
+			title = ui.Link(ui.LinkConfig{Href: b.entityBase(e) + "/" + pathSegment(r.RecordID), Text: t, Variant: ui.LinkTitle})
+		}
+	}
+	if title == "" {
+		snap := before
+		if snap == nil {
+			snap = after
+		}
+		if t, ok := b.ui.SnapshotTitle(ectx, e.GetName(), snap); ok && snap != nil {
+			title = render.Text(t)
+		} else {
+			title = html.Code(html.TextConfig{}, render.Text(r.RecordID))
+		}
+	}
+	record = render.Join(ui.Muted(render.Text(b.singular(ctx, e)+" · ")), title)
+	changes = b.ui.Changes(ectx, e.GetName(), before, after)
+	if changes == "" {
+		changes = ui.EmptyValue()
+	}
+	return record, changes
+}
+
+// auditSides is a row's stored old and new values, nil where the row
+// stored none or its diff does not parse.
+func auditSides(r auditRow) (before, after map[string]any) {
+	if !r.Diff.Valid {
+		return nil, nil
+	}
+	var d struct {
+		Before map[string]any `json:"old"`
+		After  map[string]any `json:"new"`
+	}
+	if json.Unmarshal([]byte(r.Diff.String), &d) != nil {
+		return nil, nil
+	}
+	return d.Before, d.After
+}
+
+// agoCell is a time as the activity feed says it, "2h ago", with the
+// exact UTC time on hover and in the datetime attribute.
+func agoCell(ctx context.Context, now, t time.Time) render.HTML {
+	if t.IsZero() {
+		return ui.EmptyValue()
+	}
+	u := t.UTC()
+	return html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339), ExtraAttrs: html.Attrs{"title": u.Format("2006-01-02 15:04 UTC")}},
+		render.Text(ui.Ago(ctx, now, t)))
+}
+
+// opKind folds the operations that carry a key onto one name: every
+// "transition:<key>" is a transition, and state_override an override.
+func opKind(op string) string {
+	switch {
+	case strings.HasPrefix(op, "transition:"):
+		return "transition"
+	case op == "state_override":
+		return "override"
+	}
+	return op
+}
+
 // opVariant tints an audit operation's badge.
 func opVariant(op string) ui.StatusVariant {
-	switch op {
+	switch opKind(op) {
 	case "create", "restore", "grant", "enable":
 		return ui.StatusSuccess
 	case "delete", "purge", "revoke", "disable":

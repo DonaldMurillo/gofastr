@@ -279,8 +279,17 @@ updated INV-1010 · 5m ago": the actor in bold, an account by its
 email's local part with the full email on hover; a live record of an
 exposed entity by its title, read the way its record screen's
 breadcrumb is, as a link to that screen; and a deleted or purged one by
-its entity's singular name, unlinked. The audit diff is never read for
-this.
+its entity's singular name, unlinked.
+
+The audit page's columns are Time ("2h ago", the exact UTC time on
+hover), Actor, Operation, Record and Changes. Record reads "Invoice ·
+INV-1010" for an exposed entity: a live record by the title its screen
+shows, linked there, and a deleted or purged one by the title in the
+row's stored copy, unlinked. An entity the admin does not expose shows
+its table name and the id. Changes lists the fields an update changed,
+through `entityui.UI.Changes`, so masked and hidden fields never show.
+Both read elevated: the page is behind the admin gate, and the trail
+names records whatever the entity's own read permission says.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
