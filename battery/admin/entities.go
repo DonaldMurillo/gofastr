@@ -154,6 +154,9 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		b.entityTitle(create, e, func(ctx context.Context, _ map[string]string) string {
 			return i18nui.TVars(ctx, i18nui.KeyAdminPaletteNew, map[string]string{"entity": b.singular(ctx, e)})
 		})
+		// New, like a record, opens as a drawer over the list; a direct
+		// load is the full page.
+		create.Intercept = &appui.Intercept{From: listPath, As: appui.ScreenDrawer}
 
 		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
 			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Duplicate().

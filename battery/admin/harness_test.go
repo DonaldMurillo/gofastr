@@ -86,8 +86,10 @@ type env struct {
 	t   *testing.T
 	db  *sql.DB
 	app *framework.App
-	b   *Battery
-	h   http.Handler // the app router, no user
+	// site is the UI host's app: its screens and route manifest.
+	site *appui.App
+	b    *Battery
+	h    http.Handler // the app router, no user
 }
 
 // setup builds the app with ents, lets prep wire the config against the
@@ -110,7 +112,8 @@ func trySetup(t *testing.T, ents map[string]entity.EntityConfig, cfg Config, pre
 	if err := framework.EnsureAuditTable(db, ""); err != nil {
 		t.Fatalf("audit table: %v", err)
 	}
-	app := framework.NewUIHostApp(uihost.New(appui.NewApp("admin-test")),
+	site := appui.NewApp("admin-test")
+	app := framework.NewUIHostApp(uihost.New(site),
 		framework.WithDB(db), framework.WithoutDefaultMiddleware())
 	for name, c := range ents {
 		app.Entity(name, c)
@@ -119,7 +122,7 @@ func trySetup(t *testing.T, ents map[string]entity.EntityConfig, cfg Config, pre
 		t.Fatalf("migrate: %v", err)
 	}
 	app.WithAuditLog(framework.AuditConfig{})
-	x := &env{t: t, db: db, app: app, h: app.Router()}
+	x := &env{t: t, db: db, app: app, site: site, h: app.Router()}
 	if len(ents) > 0 {
 		cfg.UI = app.EntityUI(entityui.Extensions{})
 	}

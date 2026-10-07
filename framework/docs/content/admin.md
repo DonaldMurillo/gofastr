@@ -58,7 +58,7 @@ not register fails boot.
 | `GET /admin/search?q=` | Search results: the palette's scriptless twin |
 | `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
 | `GET /admin/entities/<name>` | Entity list |
-| `GET /admin/entities/<name>/create` | Create form |
+| `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
 | `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list) |
 | `GET /admin/queue` | Jobs, with `?status=` filter chips (needs `Queue`) |
 | `GET /admin/audit` | Audit log, newest first |
