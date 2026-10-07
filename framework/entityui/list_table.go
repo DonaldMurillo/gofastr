@@ -200,6 +200,13 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		return render.Text(formatDate(rowValue(row, name), dateLayout))
 	case schema.Timestamp:
 		return render.Text(formatDate(rowValue(row, name), timestampLayout))
+	case schema.Image:
+		// A URL the image policy refuses draws the empty mark, never
+		// the stored text.
+		if t := ui.Thumbnail(ui.ThumbnailConfig{Src: val, Alt: m.label(ctx, name), Size: ui.ThumbnailSM}); t != "" {
+			return t
+		}
+		return muted()
 	default:
 		// Everything else prints its value as text.
 	}

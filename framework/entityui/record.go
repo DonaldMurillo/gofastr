@@ -2,6 +2,8 @@ package entityui
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -55,6 +57,46 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 		return "", false
 	}
 	return m.recordTitle(ctx, row), true
+}
+
+// RecordMatch is one record SearchRecords found: its id and its title.
+type RecordMatch struct {
+	ID    string
+	Title string
+}
+
+// maxRecordMatches caps one SearchRecords answer.
+const maxRecordMatches = 20
+
+// SearchRecords finds up to limit records (at most 20) whose
+// SearchFields match q, the way the list's search box does, named as
+// RecordTitle names them. It reads behind the list's gate and each
+// row's own, through the read hooks, and answers nothing for an entity without
+// SearchFields, an empty q, a caller who may not list the entity, an
+// unknown entity and a failed read alike.
+func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int) []RecordMatch {
+	q = strings.TrimSpace(q)
+	m, err := u.meta(entityName)
+	if err != nil || q == "" || len(m.e.Config.SearchFields) == 0 || !canRead(ctx, m.ch) {
+		return nil
+	}
+	limit = min(max(limit, 1), maxRecordMatches)
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Search: q, Limit: limit})
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
+		return nil
+	}
+	out := make([]RecordMatch, 0, len(rows))
+	for _, row := range rows {
+		// A Decider may allow the list and refuse one row: a match names
+		// only a record whose own screen would open.
+		id := cell(rowValue(row, m.pk))
+		if id == "" || !canReadRecord(ctx, m.ch, id) {
+			continue
+		}
+		out = append(out, RecordMatch{ID: id, Title: m.recordTitle(ctx, row)})
+	}
+	return out
 }
 
 // Base is the entity's list path on this app; Back, Cancel and the

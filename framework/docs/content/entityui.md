@@ -46,8 +46,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   holds the stored value, and tabs: Edit (the form from `Display.Form`),
   Related (the related entities the page names), any extension tabs, and
   Activity (the audit trail) where turned on.
-- **A create screen** (`appUI.Create("invoices")`): the same form, empty,
-  posting a create to the entity's REST base. `?duplicate=<id>` prefills
+- **A create screen** (`appUI.Create("invoices")`): the same form,
+  starting at each field's `Default`, posting a create to the entity's
+  REST base. `?duplicate=<id>` prefills
   from that record minus what a create may not set;
   `?prefill_<field>=<value>` prefills one field — the convention a
   `Where`-pinned list's New link uses, the Related tab's among them. A
@@ -62,6 +63,11 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
   why. A dashboard block reads an entity without a screen of its own.
+
+An `Image` field draws a `ui.Thumbnail`: a small one in a list cell, a
+large one above the URL input on the record. A URL that
+`urlsafe.ImageSource` refuses (a `javascript:` or SVG data URI) draws
+no image.
 
 ## How it reads the entity
 
@@ -132,6 +138,23 @@ page keeps one `<h1>`.
 A builder name that is wrong — an unknown entity, a bad `As`, an unknown
 column — fails that slot with a generic message and a log line, never a
 failed page.
+
+## Naming records and pointing writes elsewhere
+
+`appUI.RecordTitle(ctx, entity, id)` answers the name a record's heading
+shows, for a breadcrumb or a link drawn outside its screen.
+`appUI.SearchRecords(ctx, entity, q, limit)` answers up to `limit`
+records (at most 20) whose `SearchFields` match `q`, the way the list's
+search box matches, as `entityui.RecordMatch{ID, Title}`. Both read behind the same gates as
+the screens (scope, sign-in, RBAC, a Decider's per-row answer, the read
+hooks) and answer nothing for a record or entity the caller may not see.
+
+`appUI.WithAPIPath(path)` returns a UI with the same screens and
+Extensions whose writes (save, delete, moves, bulk, export) post to
+`path(e)` instead of the entity's REST routes; `path` answering false
+draws that entity read-only. A back office uses it to send writes through
+routes it gates itself: `battery/admin` mounts the CRUD handler's write
+routes under `/admin/api/<entity>` this way. Reads are unchanged.
 
 ## Extensions
 

@@ -33,7 +33,15 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	if m.hasAPI && !m.ch.CanCreateScoped(ctx) {
 		return accessDenied(ctx, m.plural(ctx))
 	}
+	// A field's declared Default starts the form, so the form shows the
+	// value an omitted field would store; a prefill or a duplicate
+	// overrides it.
 	values := map[string]string{}
+	for _, f := range m.fields {
+		if f.Default != nil && mayCreateSet(m, f) {
+			values[f.Name] = formValueText(f, f.Default)
+		}
+	}
 	if b.prefill != nil {
 		for k, v := range b.prefill {
 			values[k] = v
@@ -602,6 +610,16 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Relation:
 		return fb.relationSelect(ctx, f, label, help, id, val)
+	case schema.Image:
+		// The stored URL stays editable; a preview sits above it.
+		field := ui.TextField(ui.TextFieldConfig{
+			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Help: help, Required: required,
+		})
+		if t := ui.Thumbnail(ui.ThumbnailConfig{Src: val, Alt: label, Size: ui.ThumbnailLG}); t != "" {
+			return ui.Stack(ui.StackConfig{Gap: ui.GapSM}, t, field)
+		}
+		return field
 	case schema.UUID:
 		if fb.create {
 			return ui.TextField(ui.TextFieldConfig{

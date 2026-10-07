@@ -698,8 +698,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Extensions` adds field kinds, view funcs, record tabs, actions and
   list or record overrides, every name checked at boot. Every read of
   another entity (relation labels, pickers, facets, related lists, stats)
-  passes that entity's own read gate. See
-  `framework/docs/content/entityui.md`.
+  passes that entity's own read gate. A create form starts at each
+  field's `Default`, and an `Image` field draws a thumbnail in list cells
+  and above its input. `RecordTitle` and `SearchRecords` name and find
+  records behind the same gates, for breadcrumbs and search outside the
+  screens, and `WithAPIPath` returns a UI whose writes post to routes a
+  back office gates itself. See `framework/docs/content/entityui.md`.
 - **`crud.SumAll` and `crud.GroupCountAll`.** The database totals a
   numeric field, or counts rows per stored value, over every match under
   the same owner, tenant, read, soft-delete and `BeforeList` scopes as
