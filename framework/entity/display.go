@@ -24,9 +24,14 @@ import (
 // package cannot import the query DSL, so App.Entity and GroupEntity parse
 // them when the app registers the entity.
 type DisplayConfig struct {
-	Singular    string   `json:"singular,omitempty"`
-	Plural      string   `json:"plural,omitempty"`
-	TitleField  string   `json:"title_field,omitempty"`
+	Singular string `json:"singular,omitempty"`
+	Plural   string `json:"plural,omitempty"`
+	// TitleFields name a record in lists, drawers, pickers and
+	// breadcrumbs: their values joined with " · ". A Relation field
+	// contributes the related record's own title, so a subscription
+	// titled by customer_id and plan_id reads "Ada Lovelace · Pro". The
+	// first carries the list's record link.
+	TitleFields []string `json:"title_fields,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Columns     []string `json:"columns,omitempty"`
 
@@ -284,10 +289,15 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 		return nil
 	}
 
-	if d.TitleField != "" {
-		if err := checkField("title_field", d.TitleField); err != nil {
+	seenTitles := make(map[string]bool, len(d.TitleFields))
+	for i, tf := range d.TitleFields {
+		if err := checkField(fmt.Sprintf("title_fields[%d]", i), tf); err != nil {
 			return err
 		}
+		if seenTitles[tf] {
+			return fmt.Errorf("entity %q: display title_fields list %q more than once", name, tf)
+		}
+		seenTitles[tf] = true
 	}
 	seenColumns := make(map[string]bool, len(d.Columns))
 	for i, col := range d.Columns {
@@ -518,7 +528,7 @@ func copyDisplayConfig(d *DisplayConfig) *DisplayConfig {
 	out := &DisplayConfig{
 		Singular:    d.Singular,
 		Plural:      d.Plural,
-		TitleField:  d.TitleField,
+		TitleFields: slices.Clone(d.TitleFields),
 		Description: d.Description,
 		Columns:     slices.Clone(d.Columns),
 		Facets:      slices.Clone(d.Facets),

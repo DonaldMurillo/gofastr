@@ -246,7 +246,7 @@ func registerCustomers(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_customers_owner_email", Columns: []string{"user_id", "email"}, Unique: true},
 		},
-		Display:    &framework.DisplayConfig{TitleField: "name", Description: "Every account that pays you.", Columns: []string{"name", "email", "company", "status", "mrr"}, Nav: &framework.EntityNav{Group: "billing", Icon: "users", Order: 1}, Views: []framework.ListView{{Key: "active", Label: "Active", Where: "status = \"active\""}, {Key: "past_due", Label: "Past due", Where: "status = \"past_due\""}}, Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"email": {Input: "email"}, "mrr": {Label: "MRR", Input: "money"}}},
+		Display:    &framework.DisplayConfig{TitleFields: []string{"name"}, Description: "Every account that pays you.", Columns: []string{"name", "email", "company", "status", "mrr"}, Nav: &framework.EntityNav{Group: "billing", Icon: "users", Order: 1}, Views: []framework.ListView{{Key: "active", Label: "Active", Where: "status = \"active\""}, {Key: "past_due", Label: "Past due", Where: "status = \"past_due\""}}, Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"email": {Input: "email"}, "mrr": {Label: "MRR", Input: "money"}}},
 		Properties: map[string]any{"label": "Customers"},
 	})
 	_ = Customers{}

@@ -115,7 +115,7 @@ no image.
 
 `Display` (`entity.DisplayConfig`, spelled `display:` in a blueprint) is
 plain data on the entity; nil means every default falls back to the schema
-itself. It names the record (`Singular`, `Plural`, `TitleField`,
+itself. It names the record (`Singular`, `Plural`, `TitleFields`,
 `Description`), the list (`Columns`, `Views`, `Facets`, `PageSizes`,
 `Card`, `NoDuplicate`, `NoBulk`), the sidebar (`Nav`), the form layout
 (`Form`, with rows, sections and a side rail) and per-field hints
@@ -206,7 +206,9 @@ failed page.
 ## Naming records and pointing writes elsewhere
 
 `appUI.RecordTitle(ctx, entity, id)` answers the name a record's heading
-shows, for a breadcrumb or a link drawn outside its screen.
+shows, for a breadcrumb or a link drawn outside its screen: its
+`TitleFields` joined with " · ", a relation part read as the related
+record's own title.
 `appUI.SearchRecords(ctx, entity, q, limit)` answers up to `limit`
 records (at most 20) whose `SearchFields` match `q`, the way the list's
 search box matches, as `entityui.RecordMatch{ID, Title}`, in primary-key
@@ -218,8 +220,10 @@ hooks) and answer nothing for a record or entity the caller may not see.
 
 `appUI.SnapshotTitle(ctx, entity, row)` names a record from a stored copy
 of its values (an audit row's old or new side) the way `RecordTitle`
-names a live one, reading nothing, so a deleted record keeps its name; a
-masked title field reads as the entity's singular name.
+names a live one, reading only the related records a relation part
+names, so a deleted record keeps its name; a masked title field is left
+out. A list names its page's rows in one batch: each relation part is
+one read for the page, not one per row.
 `appUI.Changes(ctx, entity, before, after)` draws what one edit changed
 as the Activity tab's change list, "" when no field the caller may see
 differs; `before` and `after` are keyed by the API's wire names, the way

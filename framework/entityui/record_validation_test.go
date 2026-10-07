@@ -28,7 +28,7 @@ func contactEntities() map[string]entity.EntityConfig {
 			{Name: "age", Type: schema.Int, Min: fptr(0), Max: fptr(130)},
 		},
 		Display: &entity.DisplayConfig{
-			Singular: "Contact", Plural: "Contacts", TitleField: "code",
+			Singular: "Contact", Plural: "Contacts", TitleFields: []string{"code"},
 			Fields: map[string]entity.FieldDisplay{"email": {Input: "email"}},
 		},
 	}

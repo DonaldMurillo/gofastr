@@ -1308,11 +1308,11 @@ is not part of the SDK schema hash, so relabelling never reports as drift.
 app.Entity("invoices", framework.EntityConfig{
     Fields: []schema.Field{ /* … */ },
     Display: &framework.DisplayConfig{
-        Singular:   "Invoice",
-        Plural:     "Invoices",
-        TitleField: "number",               // names a record in lists, drawers, breadcrumbs
-        Columns:    []string{"number", "amount", "status"},
-        Nav:        &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1}, // HideCount drops the row's record count
+        Singular:    "Invoice",
+        Plural:      "Invoices",
+        TitleFields: []string{"number"},    // names a record in lists, drawers, breadcrumbs
+        Columns:     []string{"number", "amount", "status"},
+        Nav:         &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1}, // HideCount drops the row's record count
         Views: []framework.ListView{
             {Key: "open", Where: `status = "open"`, Sort: "due_on ASC"},
         },
@@ -1339,7 +1339,7 @@ every key lives under it, and an unknown key is a decode error.
   ],
   "display": {
     "singular": "Invoice",
-    "title_field": "number",
+    "title_fields": ["number"],
     "columns": ["number", "status"],
     "nav": {"group": "billing", "icon": "receipt", "order": 1},
     "views": [{"key": "open", "where": "status = \"open\"", "sort": "due_on ASC"}],
@@ -1367,7 +1367,7 @@ every key lives under it, and an unknown key is a decode error.
 | `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
 | `Description` | One line under the list heading |
-| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden`. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
+| `TitleFields` | The fields that name a record in lists, drawers, pickers and breadcrumbs, their values joined with " · "; none may be `Hidden`. A `Relation` field contributes the related record's own title, read through that entity's gate: a subscription titled by `customer_id` and `plan_id` reads "Ada Lovelace · Pro". A relation is followed one hop, and a part the caller may not read or that is `NoQuery` is left out. The first carries the list's record link. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
 | `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |
@@ -1392,11 +1392,11 @@ when any name Display holds is wrong, so a typo or a stale name after a
 rename fails the app at boot instead of rendering a blank column per
 request:
 
-- **Fields.** Every name in `Columns`, `TitleField`, `Facets`, `Card`,
+- **Fields.** Every name in `Columns`, `TitleFields`, `Facets`, `Card`,
   `Form` (items, rows, nested sections) and the keys of `Fields` must
   exist and not be `Hidden`.
-- **Duplicates.** `Columns`, `Facets` and `PageSizes` are menus; a
-  repeated entry is refused, naming the duplicate.
+- **Duplicates.** `TitleFields`, `Columns`, `Facets` and `PageSizes`
+  refuse a repeated entry, naming the duplicate.
 - **Facet types.** A facet must be an Enum, Bool or Relation field, and
   not `NoQuery`.
 - **Keys.** View keys, form section keys and the nav group are lowercase

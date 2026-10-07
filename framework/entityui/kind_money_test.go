@@ -23,7 +23,7 @@ func dealsConfig() entity.EntityConfig {
 		),
 		Exposure: &entity.ExposureConfig{Public: true},
 		Display: &entity.DisplayConfig{
-			TitleField: "name",
+			TitleFields: []string{"name"},
 			Fields: map[string]entity.FieldDisplay{
 				"amount": {Input: "money", Label: "Deal value", Help: "Before tax"},
 				"fee":    {Input: "money", Locked: true},

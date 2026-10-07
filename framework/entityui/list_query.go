@@ -49,6 +49,8 @@ type listState struct {
 	// relBase is each relation column's related-record base, set when
 	// the UI has a record path for the related entity.
 	relBase map[string]string
+	// titles is each page row's title by id, set by pageTitles.
+	titles map[string]string
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that
@@ -262,7 +264,9 @@ func (s *listState) readFields() []string {
 	for _, c := range s.columns {
 		add(c)
 	}
-	add(s.m.titleField())
+	for _, tf := range s.m.titleFields() {
+		add(tf)
+	}
 	if s.m.states != nil {
 		add(s.m.states.Field)
 	}

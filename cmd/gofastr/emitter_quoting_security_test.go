@@ -238,7 +238,7 @@ func irQuotingSites(payload string) []irSite {
 	}
 	display("display.singular", func(d *fwentity.DisplayConfig) { d.Singular = payload })
 	display("display.plural", func(d *fwentity.DisplayConfig) { d.Plural = payload })
-	display("display.title_field", func(d *fwentity.DisplayConfig) { d.TitleField = payload })
+	display("display.title_fields", func(d *fwentity.DisplayConfig) { d.TitleFields = []string{payload} })
 	display("display.description", func(d *fwentity.DisplayConfig) { d.Description = payload })
 	display("display.columns", func(d *fwentity.DisplayConfig) { d.Columns = []string{payload} })
 	display("display.nav_group", func(d *fwentity.DisplayConfig) { d.Nav = &fwentity.EntityNav{Group: payload} })

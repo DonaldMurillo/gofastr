@@ -150,6 +150,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 			Variant: ui.StatusDanger,
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
+	b.ui.pageTitles(ctx, s, rows)
 
 	if b.embedded {
 		return b.embeddedBody(ctx, s, rows, total, known, page), nil

@@ -171,18 +171,12 @@ func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v an
 	if err != nil {
 		return muted()
 	}
-	fields := []string{om.pk}
-	if tf := om.titleField(); tf != "" && tf != om.pk {
-		fields = append(fields, tf)
-	}
 	row, err := om.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
 	if err != nil || row == nil {
 		return render.Text(id)
 	}
-	if tf := om.titleField(); tf != "" {
-		if l := cell(rowValue(row, tf)); l != "" {
-			return render.Text(l)
-		}
+	if t := fb.b.ui.rowTitles(ctx, om, []map[string]any{row}, 0)[0]; t != "" {
+		return render.Text(t)
 	}
 	return render.Text(id)
 }

@@ -75,7 +75,7 @@ func TestRelationFieldLabel(t *testing.T) {
 	}
 }
 
-// With no TitleField and no name or title field, the first plain String
+// With no TitleFields and no name or title field, the first plain String
 // column names a record: never a NoQuery column (a token), never an
 // omitted one, never an enum. An entity with none falls back to "".
 func TestTitleFieldFallback(t *testing.T) {

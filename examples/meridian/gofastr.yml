@@ -99,7 +99,7 @@ entities:
     properties:
       label: Plans
     display:
-      title_field: name
+      title_fields: [name]
       description: What a customer can subscribe to.
       nav:
         group: catalog
@@ -164,7 +164,7 @@ entities:
         min: 0
         default: "0"
     display:
-      title_field: name
+      title_fields: [name]
       description: Every account that pays you.
       nav:
         group: billing
@@ -214,6 +214,7 @@ entities:
       - name: renews_on
         type: date
     display:
+      title_fields: [customer_id, plan_id]
       description: Who is on which plan, and what they bring in.
       nav:
         group: billing
@@ -316,7 +317,7 @@ entities:
           to: void
           variant: danger
     display:
-      title_field: number
+      title_fields: [number]
       description: Every invoice issued, paid or not.
       nav:
         group: billing

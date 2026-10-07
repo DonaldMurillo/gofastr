@@ -130,7 +130,7 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
 		Value:       cell(rowValue(row, s.m.pk)),
-		Label:       i18nui.TVars(ctx, i18nui.KeyEntityBulkSelect, map[string]string{"title": s.m.recordTitle(ctx, row)}),
+		Label:       i18nui.TVars(ctx, i18nui.KeyEntityBulkSelect, map[string]string{"title": s.rowTitle(ctx, row)}),
 		LabelHidden: true,
 		ExtraAttrs:  html.Attrs{"form": lb.form},
 	})

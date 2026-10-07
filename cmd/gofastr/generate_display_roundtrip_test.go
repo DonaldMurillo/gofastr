@@ -72,7 +72,7 @@ entities:
     display:
       singular: Invoice
       plural: Invoices
-      title_field: number
+      title_fields: [number, issued_on]
       description: One billed order.
       columns: [number, amount, status, issued_on]
       nav:

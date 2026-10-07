@@ -69,7 +69,7 @@ func TestSnapshotTitle(t *testing.T) {
 	entities := invoiceEntities()
 	cfg := entities["invoices"]
 	d := *cfg.Display
-	d.TitleField = "token"
+	d.TitleFields = []string{"token"}
 	cfg.Display = &d
 	entities["invoices"] = cfg
 	x = newTestUI(t, entities, invoiceRows())

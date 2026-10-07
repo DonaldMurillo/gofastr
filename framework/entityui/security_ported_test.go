@@ -199,7 +199,7 @@ func invoicesConfig() entity.EntityConfig {
 	return entity.EntityConfig{
 		Fields:   fields(schema.Field{Name: "number", Type: schema.String}),
 		Exposure: &entity.ExposureConfig{Public: true},
-		Display:  &entity.DisplayConfig{Singular: "Invoice", Plural: "Invoices", TitleField: "number"},
+		Display:  &entity.DisplayConfig{Singular: "Invoice", Plural: "Invoices", TitleFields: []string{"number"}},
 	}.WithTimestamps(false)
 }
 

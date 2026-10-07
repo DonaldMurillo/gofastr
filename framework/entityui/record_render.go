@@ -202,7 +202,7 @@ func (m *meta) notFound(ctx context.Context) render.HTML {
 // an intercepted drawer it sits under the drawer's bar: close, the
 // record's path, copy link.
 func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string, save bool) render.HTML {
-	cfg := ui.PageHeaderConfig{Title: m.recordTitle(ctx, row), Subtitle: stampLine(ctx, m, row)}
+	cfg := ui.PageHeaderConfig{Title: b.ui.recordTitle(ctx, m, row), Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
 		if v := cell(rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
@@ -376,7 +376,7 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 		return ""
 	}
 	return render.Join(span, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": m.recordTitle(ctx, row)}),
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": b.ui.recordTitle(ctx, m, row)}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,

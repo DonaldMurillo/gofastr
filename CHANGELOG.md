@@ -325,14 +325,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   caller's own grants, and a Wildcard grant does not satisfy it.
 - **`EntityConfig.Display` carries an entity's screen hints.** One
   block holds what admin and generated screens read: singular and plural
-  names, list columns, named views (a DSL `Where` and a `Sort`), facets,
+  names, the title fields that name a record (joined with " · ", a
+  relation part read as the related record's own title, so a
+  subscription reads "Ada Lovelace · Pro"), list columns, named views (a DSL `Where` and a `Sort`), facets,
   the record form (main and side columns, rows, sections), card fields,
   nav placement, per-field `Label`, `Help`, `Placeholder`, `Locked`,
   `Omit` and `ShowWhen`, page sizes, and `NoDuplicate` / `NoBulk`. nil
   means every default. `App.Entity` and `App.GroupEntity` check every
   name when the entity registers and refuse, naming the offender: unknown
   or Hidden fields, NoQuery fields in facets, bad or reserved keys
-  (`all`, `deleted`), duplicate view, section, column, facet or
+  (`all`, `deleted`), duplicate title-field, view, section, column, facet or
   page-size entries, empty sections, a view `As` other than `table` or
   `cards`, `Omit`, `Locked` or `ShowWhen` on a Required field with no
   default (a locked or hidden-away control never submits, so no form
@@ -947,7 +949,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   list's heading also names its table, as a hidden caption. A
   pinned field leaves the default columns and the facets, and New
   prefills it. A relation field labels as its target (`customer_id`
-  reads "Customer"), and an entity with no `TitleField`, `name` or
+  reads "Customer"), and an entity with no `TitleFields`, `name` or
   `title` is named by its first plain `String` column. A record draws its state
   as the header's badge with a "Created … · Updated …" line, a button
   per open move (gated by `access.CanResourceExact`, the route's own

@@ -50,9 +50,9 @@ func invoiceEntities() map[string]entity.EntityConfig {
 			},
 		},
 		Display: &entity.DisplayConfig{
-			Singular:   "Invoice",
-			Plural:     "Invoices",
-			TitleField: "number",
+			Singular:    "Invoice",
+			Plural:      "Invoices",
+			TitleFields: []string{"number"},
 			Fields: map[string]entity.FieldDisplay{
 				"amount": {Locked: true},
 				"memo":   {Help: "Shown to the customer"},

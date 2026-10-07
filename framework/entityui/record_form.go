@@ -839,25 +839,20 @@ func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) (opt
 	if !canRead(ctx, om.ch) {
 		return nil, true
 	}
-	fields := []string{om.pk}
-	if tf := om.titleField(); tf != "" && tf != om.pk {
-		fields = append(fields, tf)
-	}
-	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Fields: fields, Limit: 100, Sorts: []filter.ParsedSort{{Field: om.pk}}})
+	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Fields: om.readTitleFields(), Limit: 100, Sorts: []filter.ParsedSort{{Field: om.pk}}})
 	if err != nil {
 		return nil, false
 	}
+	titles := fb.b.ui.rowTitles(ctx, om, rows, 0)
 	out := make([]relationOption, 0, len(rows))
-	for _, r := range rows {
+	for i, r := range rows {
 		oid := cell(rowValue(r, om.pk))
 		if oid == "" {
 			continue
 		}
 		label := oid
-		if tf := om.titleField(); tf != "" {
-			if l := cell(rowValue(r, tf)); l != "" {
-				label = l
-			}
+		if titles[i] != "" {
+			label = titles[i]
 		}
 		out = append(out, relationOption{id: oid, label: label})
 	}

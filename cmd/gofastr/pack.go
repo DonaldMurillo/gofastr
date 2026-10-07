@@ -481,7 +481,7 @@ func displayToMap(d *fwentity.DisplayConfig) map[string]any {
 	m := map[string]any{}
 	putStr(m, "singular", d.Singular)
 	putStr(m, "plural", d.Plural)
-	putStr(m, "title_field", d.TitleField)
+	putStrs(m, "title_fields", d.TitleFields)
 	putStr(m, "description", d.Description)
 	putStrs(m, "columns", d.Columns)
 	if d.Nav != nil {
@@ -1417,7 +1417,7 @@ func packDisplayFromExpr(e ast.Expr) *fwentity.DisplayConfig {
 	out := &fwentity.DisplayConfig{
 		Singular:    astString(d["Singular"]),
 		Plural:      astString(d["Plural"]),
-		TitleField:  astString(d["TitleField"]),
+		TitleFields: astStringSlice(d["TitleFields"]),
 		Description: astString(d["Description"]),
 		Columns:     astStringSlice(d["Columns"]),
 		Facets:      astStringSlice(d["Facets"]),
@@ -1557,7 +1557,7 @@ func unwrapPtr(e ast.Expr) ast.Expr {
 // same rule the emitter's only-non-zero-fields output implies: a literal
 // that decodes to all-zero packed as no display block at all.
 func displayIsEmpty(d *fwentity.DisplayConfig) bool {
-	return d.Singular == "" && d.Plural == "" && d.TitleField == "" && d.Description == "" &&
+	return d.Singular == "" && d.Plural == "" && len(d.TitleFields) == 0 && d.Description == "" &&
 		len(d.Columns) == 0 && len(d.Views) == 0 && len(d.Facets) == 0 && len(d.Fields) == 0 &&
 		len(d.PageSizes) == 0 && !d.NoDuplicate && !d.NoBulk &&
 		d.Nav == nil && d.Form == nil && d.Card == nil

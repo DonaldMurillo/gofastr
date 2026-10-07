@@ -237,7 +237,7 @@ func registerPlans(app *framework.App) {
 			MCP:    true,
 			Access: framework.AccessControl{Create: "plans:write", Update: "plans:write", Delete: "plans:admin"},
 		},
-		Display:    &framework.DisplayConfig{TitleField: "name", Description: "What a customer can subscribe to.", Nav: &framework.EntityNav{Group: "catalog", Icon: "box", Order: 1}, Fields: map[string]framework.FieldDisplay{"price": {Input: "money"}}},
+		Display:    &framework.DisplayConfig{TitleFields: []string{"name"}, Description: "What a customer can subscribe to.", Nav: &framework.EntityNav{Group: "catalog", Icon: "box", Order: 1}, Fields: map[string]framework.FieldDisplay{"price": {Input: "money"}}},
 		Properties: map[string]any{"label": "Plans"},
 	})
 	_ = Plans{}

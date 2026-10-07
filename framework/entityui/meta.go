@@ -129,35 +129,35 @@ func (m *meta) locked(f schema.Field) bool {
 // omitted reports a field left out of forms and columns on purpose.
 func (m *meta) omitted(field string) bool { return m.hint(field).Omit }
 
-// titleField is the field naming a record: Display.TitleField, else a
-// visible "name" or "title" field, else the first String column that is
-// not system, omitted or NoQuery (an invoice's number), else "" (the
-// singular names it).
-func (m *meta) titleField() string {
-	if m.d.TitleField != "" {
-		return m.d.TitleField
+// titleFields are the fields naming a record: Display.TitleFields,
+// else a visible "name" or "title" field, else the first String column
+// that is not system, omitted or NoQuery (an invoice's number), else
+// none (the singular names it). rowTitles joins their values.
+func (m *meta) titleFields() []string {
+	if len(m.d.TitleFields) > 0 {
+		return m.d.TitleFields
 	}
 	for _, n := range []string{"name", "title"} {
 		if _, ok := m.byName[n]; ok {
-			return n
+			return []string{n}
 		}
 	}
 	for _, f := range m.fields {
 		if f.Type == schema.String && !f.NoQuery && !m.system(f) && !m.omitted(f.Name) {
-			return f.Name
+			return []string{f.Name}
 		}
 	}
-	return ""
+	return nil
 }
 
-// recordTitle names one row for headings, breadcrumbs and links.
-func (m *meta) recordTitle(ctx context.Context, row map[string]any) string {
-	if tf := m.titleField(); tf != "" {
-		if s := cell(rowValue(row, tf)); s != "" {
-			return s
-		}
+// titleField is the first title field, "" when there is none: the
+// column that carries a list's record link, stays pinned among the
+// columns and titles a card.
+func (m *meta) titleField() string {
+	if tf := m.titleFields(); len(tf) > 0 {
+		return tf[0]
 	}
-	return m.singular(ctx)
+	return ""
 }
 
 // columns are the fields a list shows: Display.Columns, else every

@@ -2,6 +2,7 @@ package entity
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,7 +33,7 @@ func displayFixture() *DisplayConfig {
 	return &DisplayConfig{
 		Singular:    "Invoice",
 		Plural:      "Invoices",
-		TitleField:  "number",
+		TitleFields: []string{"number", "customer_id"},
 		Description: "Money owed for work done",
 		Columns:     []string{"number", "customer_id", "amount", "status", "due_on"},
 		Nav:         &EntityNav{Group: "billing", Icon: "receipt", Order: 1},
@@ -94,7 +95,8 @@ func TestDisplayNamesUnknownFieldRefused(t *testing.T) {
 		mutate func(d *DisplayConfig)
 		want   string
 	}{
-		{"title field", func(d *DisplayConfig) { d.TitleField = "custmer" }, `title_field names field "custmer", which the entity does not declare`},
+		{"title field", func(d *DisplayConfig) { d.TitleFields[1] = "custmer" }, `title_fields[1] names field "custmer", which the entity does not declare`},
+		{"title field twice", func(d *DisplayConfig) { d.TitleFields[1] = "number" }, `title_fields list "number" more than once`},
 		{"column", func(d *DisplayConfig) { d.Columns[2] = "amont" }, `columns[2] names field "amont", which the entity does not declare`},
 		{"facet", func(d *DisplayConfig) { d.Facets[0] = "stats" }, `facets[0] names field "stats", which the entity does not declare`},
 		{"field hint key", func(d *DisplayConfig) { d.Fields["nmber"] = FieldDisplay{Label: "No"} }, `fields[nmber] names field "nmber", which the entity does not declare`},
@@ -123,7 +125,7 @@ func TestDisplayNamesHiddenFieldRefused(t *testing.T) {
 		name   string
 		mutate func(d *DisplayConfig)
 	}{
-		{"title field", func(d *DisplayConfig) { d.TitleField = "secret" }},
+		{"title field", func(d *DisplayConfig) { d.TitleFields[1] = "secret" }},
 		{"column", func(d *DisplayConfig) { d.Columns[0] = "secret" }},
 		{"facet", func(d *DisplayConfig) { d.Facets[0] = "secret" }},
 		{"field hint key", func(d *DisplayConfig) { d.Fields["secret"] = FieldDisplay{Label: "No"} }},
@@ -559,7 +561,7 @@ func TestDisplayDeclarationDecodes(t *testing.T) {
 	  "display": {
 	    "singular": "Invoice",
 	    "plural": "Invoices",
-	    "title_field": "number",
+	    "title_fields": ["number", "customer_id"],
 	    "description": "Money owed",
 	    "columns": ["number", "amount", "status"],
 	    "nav": {"group": "billing", "icon": "receipt", "order": 1, "hide": false},
@@ -590,7 +592,7 @@ func TestDisplayDeclarationDecodes(t *testing.T) {
 	if d == nil {
 		t.Fatal("display not decoded")
 	}
-	if d.Singular != "Invoice" || d.Plural != "Invoices" || d.TitleField != "number" || d.Description != "Money owed" {
+	if d.Singular != "Invoice" || d.Plural != "Invoices" || !slices.Equal(d.TitleFields, []string{"number", "customer_id"}) || d.Description != "Money owed" {
 		t.Fatalf("names not decoded: %+v", d)
 	}
 	if len(d.Columns) != 3 || d.Nav == nil || d.Nav.Group != "billing" || d.Nav.Icon != "receipt" || d.Nav.Order != 1 || d.Nav.Hide {

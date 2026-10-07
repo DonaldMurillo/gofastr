@@ -325,7 +325,7 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 	m := s.m
 	id := cell(rowValue(row, m.pk))
 	href := s.recordHref(id)
-	title := m.recordTitle(ctx, row)
+	title := s.rowTitle(ctx, row)
 
 	// Copy link targets a hidden span holding the URL: the copy module
 	// copies an element's text, so the page carries the link as text.

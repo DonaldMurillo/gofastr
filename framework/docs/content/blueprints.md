@@ -722,7 +722,7 @@ entities:
     display:
       singular: Invoice
       plural: Invoices
-      title_field: number
+      title_fields: [number]
       columns: [number, amount, status]
       facets: [status]
       form:
