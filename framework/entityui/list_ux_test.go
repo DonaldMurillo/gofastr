@@ -42,6 +42,22 @@ func TestListRowMenu(t *testing.T) {
 	}
 }
 
+// A list stays a table at every width: below the breakpoint it scrolls
+// sideways in its own container instead of turning rows into cards.
+func TestListScrollsOnPhones(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	h := listHTML(t, x.ui.List("orders"), x.ctx("/orders", ""))
+	if strings.Contains(h, "responsive-cards") {
+		t.Errorf("the list collapses into cards on phones:\n%s", h)
+	}
+	if !strings.Contains(h, "fui-data-table__scroll") {
+		t.Errorf("the table has no scroll container:\n%s", h)
+	}
+}
+
 // A relation column and its form field label as the record they point
 // at: customer_id reads "Customer", never "Customer Id".
 func TestRelationFieldLabel(t *testing.T) {

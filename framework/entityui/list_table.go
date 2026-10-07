@@ -67,7 +67,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	dt := ui.DataTableConfig{
 		Columns:    cols,
 		Rows:       uiRows,
-		Responsive: ui.ResponsiveCards,
+		Responsive: ui.ResponsiveScroll,
 		SortBy:     s.sortField,
 		SortDir:    ui.SortDir(sortDir(s.sortDesc)),
 		Path:       s.path,
