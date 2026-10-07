@@ -22,6 +22,8 @@ package main
 // (repo convention) before ReadAll/decode, erroring past the cap.
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -39,6 +41,24 @@ import (
 func TestSemanticRemoteRedBodyCapped(t *testing.T) {
 	const bodyTotal = 4 << 20 // peer sends 4 MiB; cap convention is 1 MiB
 	const maxDelivered = 2 << 20
+
+	// The counter counts bytes the peer handed to its socket, not bytes
+	// the CLI read. Linux loopback autotunes socket buffers so far that
+	// a peer writes 2.5 MiB to a reader that reads nothing, so a capped
+	// client that merely lagged on a loaded runner read as uncapped. Small
+	// buffers on both ends keep the gap near 0.1 MiB; the cap under test
+	// stays the production one.
+	saved := remoteHTTPClient
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if tc, ok := c.(*net.TCPConn); ok {
+			_ = tc.SetReadBuffer(smallSocketBuffer)
+		}
+		return c, err
+	}
+	remoteHTTPClient = &http.Client{Timeout: saved.Timeout, Transport: tr}
+	t.Cleanup(func() { remoteHTTPClient = saved })
 
 	t.Run("query", func(t *testing.T) {
 		var delivered atomic.Int64
@@ -95,6 +115,22 @@ func newSemanticRemoteRedPeer(t *testing.T, total int, delivered *atomic.Int64) 
 		}
 	}))
 	srv.Config.WriteTimeout = 5 * time.Second
+	srv.Listener = smallBufferListener{srv.Listener}
 	srv.Start()
 	return srv
+}
+
+// smallSocketBuffer bounds the peer's send and the CLI's receive socket
+// buffers, so bytes parked in the kernel cannot pass for bytes read.
+const smallSocketBuffer = 32 << 10
+
+// smallBufferListener shrinks each accepted connection's send buffer.
+type smallBufferListener struct{ net.Listener }
+
+func (l smallBufferListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetWriteBuffer(smallSocketBuffer)
+	}
+	return c, err
 }
