@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestStringsReplaceAllNoInfiniteLoop(t *testing.T) {
@@ -278,5 +279,24 @@ func TestHumanize(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("humanize(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+// TVarsHTML escapes the translated text, drops markup values into their
+// placeholders in one pass (a value holding "{verb}" stays as written),
+// and leaves an unknown placeholder as text.
+func TestTVarsHTMLEscapesTextNotValues(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", string(KeyAdminActivityLine), i18n.Message{Text: "<i>{actor}</i> a {verb} {record} {nope} {x {verb} <u>"})
+	ctx := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
+	got := TVarsHTML(ctx, KeyAdminActivityLine, map[string]render.HTML{
+		"actor": "<b>{verb}</b>", "verb": render.Text("créé & co"), "record": `<a href="/r/1">INV-1</a>`,
+	})
+	want := `&lt;i&gt;<b>{verb}</b>&lt;/i&gt; a créé &amp; co <a href="/r/1">INV-1</a> {nope} {x créé &amp; co &lt;u&gt;`
+	if string(got) != want {
+		t.Fatalf("TVarsHTML = %q\nwant        %q", got, want)
+	}
+	if got := TVarsHTML(nil, KeyAdminActivityLine, map[string]render.HTML{"actor": "a", "verb": "v", "record": "r"}); got != "a v r" {
+		t.Fatalf("English default = %q", got)
 	}
 }

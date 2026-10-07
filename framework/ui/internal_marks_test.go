@@ -106,6 +106,41 @@ func prepSet(pairs ...any) func([]reflect.Value) {
 	}
 }
 
+// prepInstead zeroes field wherever its markup alternative is filled
+// (a timeline event's Title beside a Lead): the filled run checks the
+// alternative's marks, the empty run the field's own.
+func prepInstead(alt, field string) func([]reflect.Value) {
+	return func(args []reflect.Value) {
+		var walk func(v reflect.Value)
+		walk = func(v reflect.Value) {
+			switch v.Kind() {
+			case reflect.Pointer:
+				if !v.IsNil() {
+					walk(v.Elem())
+				}
+			case reflect.Slice:
+				for i := range v.Len() {
+					walk(v.Index(i))
+				}
+			case reflect.Struct:
+				if a := v.FieldByName(alt); a.IsValid() && !a.IsZero() {
+					if f := v.FieldByName(field); f.IsValid() {
+						f.SetZero()
+					}
+				}
+				for i := range v.NumField() {
+					if v.Type().Field(i).IsExported() {
+						walk(v.Field(i))
+					}
+				}
+			}
+		}
+		for _, a := range args {
+			walk(a)
+		}
+	}
+}
+
 // prepZero zeroes the named top-level fields of the first argument: a
 // filled optional pointer that would override the field the test set.
 func prepZero(names ...string) func([]reflect.Value) {
@@ -758,7 +793,7 @@ var kitComponents = []kitComponent{
 	{name: "ThemeToggle", fn: ThemeToggle, prep: prepSet("Variant", ThemeTogglePill)},
 	{name: "Themed", fn: Themed, prep: func(args []reflect.Value) { args[0].Set(reflect.ValueOf(style.RegisterThemeOverride(theme.Default()))) }},
 	{name: "TimePicker", fn: TimePicker},
-	{name: "Timeline", fn: Timeline},
+	{name: "Timeline", fn: Timeline, prep: prepInstead("Lead", "Title")},
 	{name: "ToggleAction", fn: ToggleAction},
 	{name: "Toolbar", fn: Toolbar},
 	{name: "Tooltip", fn: Tooltip},
@@ -833,7 +868,7 @@ var kitComponents = []kitComponent{
 	{name: "headless.Tag", fn: headless.Tag},
 	{name: "headless.TagInput", fn: headless.TagInput},
 	{name: "headless.Textarea", fn: headless.Textarea},
-	{name: "headless.Timeline", fn: headless.Timeline},
+	{name: "headless.Timeline", fn: headless.Timeline, prep: prepInstead("Lead", "Title")},
 	{name: "headless.Toast", fn: headless.Toast},
 	{name: "headless.ToastStack", fn: headless.ToastStack},
 	{name: "headless.ToastTemplate", fn: headless.ToastTemplate},

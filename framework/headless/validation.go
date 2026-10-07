@@ -142,8 +142,12 @@ const (
 
 // Event is one thing that happened.
 type Event struct {
-	// Title is what happened. Required.
+	// Title is what happened. Exactly one of Title and Lead is set.
 	Title string
+	// Lead is the caller's own headline markup in place of Title: a
+	// bold actor, the record as a link. It is caller content, so the
+	// title and every row around it stay out of the internal mark.
+	Lead render.HTML
 	// Detail is the supporting line.
 	Detail string
 	// When is the human-readable time ("3 days ago", "18:22").
@@ -197,13 +201,14 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	items := make([]render.HTML, 0, len(p.Events))
 	for _, e := range p.Events {
-		if e.Title == "" {
-			panic("headless: Event requires Title")
+		if (e.Title == "") == (e.Lead == "") {
+			panic("headless: Event requires exactly one of Title and Lead")
 		}
 		kids := make([]render.HTML, 0, 4)
-		// A caller's Body or Icon makes the item a slot ancestor; the
-		// mark holding an Icon is one too.
-		slot := e.Body != "" || e.Icon != ""
+		// A caller's Body, Icon or Lead makes the item a slot ancestor;
+		// the mark holding an Icon is one too.
+		lead := e.Lead != ""
+		slot := e.Body != "" || e.Icon != "" || lead
 		markAttrs := internalIf(slot && e.Icon == "", Attrs(map[string]string{"aria-hidden": "true"}))
 		// Tone reaches the class map as the mark's variant, joined to
 		// the mark's own class the way Alert's tone joins its root: a
@@ -229,16 +234,23 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 				body = append(body, b.El("span", PartTimelineTime, internalIf(slot, nil), render.Text(e.When)))
 			}
 		}
-		// The title is marked by the header row when there is one.
-		body = append(body, b.El("p", PartTitle, internalIf(slot && e.Meta == "", nil), render.Text(e.Title)))
+		// The title is marked by the header row when there is one; a
+		// Lead title is the caller's, and never marked.
+		// data-lead tells a styled kit the headline carries its own
+		// emphasis.
+		title, titleAttrs := e.Lead, html.Attrs{"data-lead": ""}
+		if !lead {
+			title, titleAttrs = render.Text(e.Title), nil
+		}
+		body = append(body, b.El("p", PartTitle, internalIf(slot && e.Meta == "" && !lead, titleAttrs), title))
 		if e.Meta != "" {
 			// The meta line and the title share a header row: the meta
 			// qualifies the title, and DOM order keeps the title first
 			// for a reader who hears the event before its attribution.
 			headRow := body[len(body)-1]
-			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(slot, nil),
+			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(slot && !lead, nil),
 				headRow,
-				b.El("span", PartTimelineMeta, nil, render.Text(e.Meta)))
+				b.El("span", PartTimelineMeta, internalIf(lead, nil), render.Text(e.Meta)))
 		}
 		if e.Detail != "" {
 			body = append(body, b.El("p", PartDesc, internalIf(slot, nil), render.Text(e.Detail)))
@@ -246,9 +258,9 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
-		// Without a caller's Body or Icon the whole item is the
+		// Without a caller's Body, Icon or Lead the whole item is the
 		// component's own.
-		kids = append(kids, b.El("div", PartTimelineBody, internalIf(e.Icon != "" && e.Body == "", nil), body...))
+		kids = append(kids, b.El("div", PartTimelineBody, internalIf(e.Icon != "" && e.Body == "" && !lead, nil), body...))
 		items = append(items, b.El("li", PartTimelineItem, internalIf(!slot, nil), kids...))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{

@@ -30,8 +30,13 @@ const (
 
 // TimelineEvent is one entry in the Timeline.
 type TimelineEvent struct {
-	// Title is the event headline (required, e.g. "Deployed v3.2.1").
+	// Title is the event headline (e.g. "Deployed v3.2.1"). Exactly one
+	// of Title and Lead is set.
 	Title string
+	// Lead is a headline the caller draws, in place of Title: an
+	// activity line with a bold actor and the record as a link. It is
+	// markup, so the caller escapes what it interpolates.
+	Lead render.HTML
 	// Meta is the optional right-aligned secondary text (e.g. a time
 	// or actor: "2h ago" / "by dom"), rendered in the header row
 	// after the title.
@@ -88,8 +93,8 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	}
 	events := make([]headless.Event, len(cfg.Events))
 	for i, e := range cfg.Events {
-		if e.Title == "" {
-			panic("ui: Timeline event requires Title")
+		if (e.Title == "") == (e.Lead == "") {
+			panic("ui: Timeline event requires exactly one of Title and Lead")
 		}
 		switch e.Variant {
 		case TimelineNeutral, TimelineSuccess, TimelineWarn, TimelineDanger, TimelineInfo:
@@ -110,6 +115,7 @@ func Timeline(cfg TimelineConfig) render.HTML {
 		}
 		events[i] = headless.Event{
 			Title: e.Title,
+			Lead:  e.Lead,
 			Meta:  e.Meta,
 			Body:  body,
 			Tone:  string(e.Variant),
@@ -205,6 +211,11 @@ func timelineCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
+}
+/* A Lead is a sentence that carries its own emphasis (a bold actor, a
+   linked record): body weight, so the emphasis reads. */
+[data-cui-comp="ui-timeline"] .fui-timeline__title[data-lead] {
+  font-weight: var(--font-weight-normal, 400);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__meta {
   font-size: var(--text-sm, 0.875rem);

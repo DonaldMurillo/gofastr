@@ -38,3 +38,29 @@ func TestTimelineIconLeavesMarkReachable(t *testing.T) {
 	got = Timeline(TimelineProps{Events: []Event{{Title: "Edited"}}}, cls)
 	has(t, got, `<li class="i" data-cui-internal="">`, "an item with no icon or body was not marked whole")
 }
+
+// An event's Lead is the caller's headline: the title holding it and
+// every ancestor stay reachable, while the meta and an empty mark beside
+// it are the component's own. Title and Lead are one or the other.
+func TestTimelineLeadLeavesTitleReachable(t *testing.T) {
+	cls := Classes{PartTimelineItem: "i", PartTimelineMark: "m", PartTimelineBody: "bd",
+		PartTimelineHead: "h", PartTimelineMeta: "mt", PartTitle: "t"}
+	lead := render.HTML(`<b>dom</b> edited <a href="/r/1">INV-1</a>`)
+	got := Timeline(TimelineProps{Events: []Event{{Lead: lead, Meta: "2h ago", Icon: render.HTML("<i>p</i>")}}}, cls)
+	has(t, got, `<li class="i">`, "the item holding a lead was marked")
+	has(t, got, `<div class="bd"><div class="h"><p class="t" data-lead=""><b>dom</b> edited <a href="/r/1">INV-1</a></p><span class="mt" data-cui-internal="">2h ago</span></div>`,
+		"the lead or a row around it was marked, or the meta beside it was not")
+	got = Timeline(TimelineProps{Events: []Event{{Lead: lead}}}, cls)
+	has(t, got, `<span aria-hidden="true" class="m" data-cui-internal=""></span>`, "the empty mark beside a lead was not marked")
+	has(t, got, `<div class="bd"><p class="t" data-lead=""><b>dom</b>`, "the lead's title or its body was marked")
+	for _, e := range []Event{{Title: "x", Lead: lead}, {}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("event %+v was drawn", e)
+				}
+			}()
+			Timeline(TimelineProps{Events: []Event{e}}, cls)
+		}()
+	}
+}

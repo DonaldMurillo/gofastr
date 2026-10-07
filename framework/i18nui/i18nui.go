@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
@@ -616,6 +617,38 @@ func TVars(ctx context.Context, key Key, vars map[string]string) string {
 		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
+}
+
+// TVarsHTML is TVars for a line that carries markup: an activity line
+// with a bold actor and the record as a link. The translated text is
+// escaped and each {name} becomes vars[name] as given, in one pass, so
+// a value holding "{verb}" stays as written. A placeholder vars does not
+// name is left as text. The caller escapes what it builds each value
+// from.
+func TVarsHTML(ctx context.Context, key Key, vars map[string]render.HTML) render.HTML {
+	s := resolve(ctx, key)
+	var b strings.Builder
+	for {
+		open := strings.IndexByte(s, '{')
+		if open < 0 {
+			break
+		}
+		end := strings.IndexByte(s[open:], '}')
+		if end < 0 {
+			break
+		}
+		v, ok := vars[s[open+1:open+end]]
+		if !ok {
+			b.WriteString(string(render.Text(s[:open+1])))
+			s = s[open+1:]
+			continue
+		}
+		b.WriteString(string(render.Text(s[:open])))
+		b.WriteString(string(v))
+		s = s[open+end+1:]
+	}
+	b.WriteString(string(render.Text(s)))
+	return render.HTML(b.String())
 }
 
 // TranslateValidation returns a translated validation error message

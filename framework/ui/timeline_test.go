@@ -162,3 +162,24 @@ func TestTimelineIDLandsOnTheRoot(t *testing.T) {
 		t.Errorf("ID did not land on the root:\n%s", root)
 	}
 }
+
+// Lead is a headline the caller draws (a bold actor, a linked record),
+// in place of Title; setting both is refused.
+func TestTimelineLeadReplacesTitle(t *testing.T) {
+	h := string(Timeline(TimelineConfig{Events: []TimelineEvent{{
+		Lead: render.HTML(`<strong>dom</strong> edited <a href="/r/1">INV-1</a>`), Meta: "2h ago",
+	}}}))
+	if !strings.Contains(h, `<p class="fui-timeline__title" data-lead=""><strong>dom</strong> edited <a href="/r/1">INV-1</a></p>`) {
+		t.Errorf("the lead is not the title:\n%s", h)
+	}
+	// A Lead carries its own emphasis, so it sits at body weight.
+	if !strings.Contains(timelineCSS(style.Theme{}), ".fui-timeline__title[data-lead] {\n  font-weight: var(--font-weight-normal, 400);") {
+		t.Error("a Lead title keeps the title's medium weight")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an event with both Title and Lead should panic")
+		}
+	}()
+	Timeline(TimelineConfig{Events: []TimelineEvent{{Title: "x", Lead: "<b>y</b>"}}})
+}
