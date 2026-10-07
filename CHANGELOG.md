@@ -1103,6 +1103,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `.Mount` still moves it. The dismiss is a 28px ghost icon button
   (`--ui-notification-dismiss-size`) with its 44px tap target kept on a
   pseudo-element, instead of a bare button wearing the browser's border.
+- **A constraint conflict names the field.** A create or update the
+  database refuses on a constraint the entity declares (a `unique`
+  field, a unique column index, a relation's foreign key) answers 409
+  with `fields` in the validation shape, naming the fields the caller
+  sent, so a form shows "is already in use" on the control instead of a
+  bare conflict toast. Columns the caller did not send stay unnamed, a
+  conflict on a `hidden` or `no_query` field the caller sent stays bare,
+  and the driver's text never reaches the body.
 - **An intercepted drawer is wider**: half the viewport between 480px
   and 720px, up from a fixed 480px, so a record's form has room. Themes
   that set `--ui-intercept-drawer-w` keep their width.

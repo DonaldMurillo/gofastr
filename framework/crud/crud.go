@@ -1021,6 +1021,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		// The keys this request's multipart parse saved are the only
 		// storage keys it may write (media_provenance.go).
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
@@ -1040,7 +1041,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConflictFields(err, sent))
 			return
 		}
 
@@ -1116,6 +1117,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
@@ -1132,7 +1134,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConflictFields(err, sent))
 			return
 		}
 
@@ -1306,10 +1308,9 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	if isUniqueViolation(err) {
 		// Map UNIQUE-constraint failures to 409 Conflict so callers can
 		// distinguish duplicate-key errors from a real server fault.
-		// The error message itself is generic, we deliberately don't
-		// echo the violated column to avoid leaking schema details to
-		// an enumeration probe.
-		writeJSONError(w, http.StatusConflict, "conflict")
+		// The driver's text never reaches the body; the declared fields
+		// the caller sent do (conflict_fields.go).
+		writeConflict(w, err, "conflict")
 		return
 	}
 	if isForeignKeyViolation(err) {
@@ -1317,7 +1318,7 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// other rows still point at, is a state conflict the caller can
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
-		writeJSONError(w, http.StatusConflict, "conflict: the record is referenced by, or references, another record")
+		writeConflict(w, err, "conflict: the record is referenced by, or references, another record")
 		return
 	}
 	// Unrecognised error → 500 with a generic message. Returning

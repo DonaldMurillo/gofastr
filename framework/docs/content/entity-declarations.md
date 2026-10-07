@@ -1613,7 +1613,16 @@ A write the database refuses on a constraint answers `409 Conflict`, not
 (a create or update that points at a missing row, or a delete of a row that
 other rows still reference) on SQLite, Postgres and MySQL. The body names
 neither the constraint nor the table; the driver's message goes to the
-server log only.
+server log only. When the refused constraint is one the entity declares
+(a `unique` field, a unique column index, a relation's foreign key) the
+body carries the fields the caller sent in the validation shape, so a
+form shows the refusal on the control:
+`{"error":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]}}`.
+A relation's message is "refers to a record that does not exist". A
+column the caller did not send (the owner column of a per-account
+index) is not named, and a conflict on a `hidden` or `no_query` field
+the caller sent stays bare, so a probe cannot learn which value exists. SQLite's foreign-key refusal names no column, so on
+SQLite it stays bare too.
 A path no route ever owned — `/api/anything/else`, including on apps with
 no DB and therefore no CRUD routes — answers `404` with an RFC 9457
 `application/problem+json` document (`type`/`title`/`status`/`detail`)
