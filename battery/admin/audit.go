@@ -145,16 +145,18 @@ func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTM
 		opOpts = append(opOpts, ui.SelectOption{Value: op, Text: op, Selected: op == f.op})
 	}
 	return ui.Form(ui.FormConfig{
-		Action:      b.cfg.PathPrefix + "/audit",
-		Method:      "GET",
-		SubmitLabel: i18nui.T(ctx, i18nui.KeyFilterApply),
-		Ctx:         ctx,
+		Action:     b.cfg.PathPrefix + "/audit",
+		Method:     "GET",
+		HideSubmit: true,
+		Ctx:        ctx,
 	}, ui.Grid(ui.GridConfig{Min: "12rem"},
 		ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.T(ctx, i18nui.KeyAdminColActor), Value: f.actor}),
 		ui.Select(ui.SelectConfig{Name: "entity", Label: i18nui.T(ctx, i18nui.KeyAdminColEntity), Options: entityOpts}),
 		ui.Select(ui.SelectConfig{Name: "op", Label: i18nui.T(ctx, i18nui.KeyAdminColOperation), Options: opOpts}),
 		ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.T(ctx, i18nui.KeyAdminAuditFrom), Value: dayValue(f.hasFrom, f.from)}),
 		ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.T(ctx, i18nui.KeyAdminAuditTo), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
+	), ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+		ui.Button(ui.ButtonConfig{Label: i18nui.T(ctx, i18nui.KeyFilterApply), Type: "submit", Variant: ui.ButtonPrimary}),
 		ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.T(ctx, i18nui.KeyFilterReset),
 			Href:    b.cfg.PathPrefix + "/audit",
