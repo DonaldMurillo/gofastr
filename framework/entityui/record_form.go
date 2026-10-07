@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strconv"
@@ -545,11 +546,14 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		return ui.TextField(ui.TextFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required,
+			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
+			ExtraAttrs: patternAttr(f.Pattern),
 		})
 	case schema.Text:
 		return ui.TextArea(ui.TextAreaConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
 			Help: help, Required: required,
+			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
 		})
 	case schema.JSON:
 		return ui.TextArea(ui.TextAreaConfig{
@@ -915,6 +919,40 @@ func inputType(f schema.Field) string {
 	default:
 		return "text"
 	}
+}
+
+// minLength and maxLength are a string field's Min and Max as length
+// attributes: 0 (no attribute) when unset, below one, or past what an
+// attribute holds; a fractional bound rounds the way the server's rune
+// count compares. The browser counts UTF-16 units where the server
+// counts runes, so text past the Basic Multilingual Plane reaches
+// maxlength first: the browser can stop an emoji short of the server's
+// limit, never let one past it.
+func minLength(b *float64) int { return lengthAttr(b, math.Ceil) }
+func maxLength(b *float64) int { return lengthAttr(b, math.Floor) }
+
+func lengthAttr(b *float64, round func(float64) float64) int {
+	if b == nil {
+		return 0
+	}
+	n := round(*b)
+	if n < 1 || n > math.MaxInt32 {
+		return 0
+	}
+	return int(n)
+}
+
+// patternAttr carries a field's Pattern to the input. The server's
+// check is an unanchored match (regexp.MatchString) and the browser
+// anchors a pattern attribute to the whole value, so the attribute
+// wraps it to match anywhere; the browser then refuses exactly what
+// the server would. A pattern with inline flags ((?i) and the like) is
+// Go syntax a browser's regex refuses, and stays server-side.
+func patternAttr(p string) html.Attrs {
+	if p == "" || strings.Contains(strings.ReplaceAll(p, "(?:", ""), "(?") {
+		return nil
+	}
+	return html.Attrs{"pattern": `[\s\S]*(?:` + p + `)[\s\S]*`}
 }
 
 func intInputValue(s string) int {

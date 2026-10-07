@@ -25,10 +25,12 @@ func builtinKind(name string) Kind {
 		t := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.FormField(ui.FormFieldConfig{
-				Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic),
+				Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic), Required: ic.Control.Required,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
 						Field: c, Type: t, Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
+						MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
+						ExtraAttrs: patternAttr(ic.Field.Pattern),
 					})
 				},
 			})
@@ -38,6 +40,8 @@ func builtinKind(name string) Kind {
 			return ui.TextArea(ui.TextAreaConfig{
 				Name: ic.Name, Label: kindLabel(ic), ID: kindID(ic), Value: ic.Value,
 				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Monospace: true,
+				Required:  ic.Control.Required,
+				MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
 			})
 		}}
 	default:

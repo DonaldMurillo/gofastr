@@ -52,15 +52,17 @@ type TextAreaConfig struct {
 	Help string
 	// Error overrides Help with an error message + aria-invalid.
 	Error string
-	// MaxLength applies the native maxlength attribute.
+	// MinLength and MaxLength apply the native minlength and
+	// maxlength attributes.
+	MinLength int
 	MaxLength int
 	ID        string
 	Class     string
 	// ExtraAttrs forwards additional attributes to the <textarea>
 	// element. Keys the component owns are dropped: class and id (use
 	// Class / ID), data-cui-* (incl. the autogrow wiring), name, rows,
-	// placeholder, disabled, required, maxlength, aria-invalid, and
-	// aria-describedby.
+	// placeholder, disabled, required, minlength, maxlength,
+	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -81,10 +83,13 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		rows = 3
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"name", "rows", "placeholder", "disabled", "required", "maxlength",
+		"name", "rows", "placeholder", "disabled", "required", "minlength", "maxlength",
 		"aria-invalid", "aria-describedby")
 	if extra == nil {
 		extra = html.Attrs{}
+	}
+	if cfg.MinLength > 0 {
+		extra["minlength"] = strconv.Itoa(cfg.MinLength)
 	}
 	if cfg.MaxLength > 0 {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)

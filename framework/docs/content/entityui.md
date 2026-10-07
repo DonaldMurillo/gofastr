@@ -88,6 +88,17 @@ itself. It names the record (`Singular`, `Plural`, `TitleField`,
 accepts; the field's own `Hidden`, `ReadOnly` and `NoQuery` keep their
 meaning and every screen honours them first.
 
+A form input carries the field's own validators, so the browser refuses a
+bad value before the round trip: `Required` sets `required`; a string's
+`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
+rounds up) and a number's set `min` and `max`; `Pattern` sets
+`pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
+server's check is an unanchored match and the browser anchors the
+attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)
+stays off the input and the server alone checks it. The server still
+validates every write; the attributes only move the first refusal
+earlier.
+
 `States` (`entity.StatesConfig`) gives the record its moves. The state
 field and every stamp render read-only on every screen; a button per
 transition posts the entity's transition route

@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **entityui form inputs carry the field's validators**: `required`,
+  `minlength`/`maxlength` from a string's `Min`/`Max`, `min`/`max`
+  on numbers, and `pattern` from `Pattern`, wrapped to match anywhere
+  the way the server's unanchored check does. The built-in email, url,
+  color, markdown and code kinds carry them too, with the label's
+  required mark. A pattern in Go-only syntax stays server-side.
+- **`ui.TextAreaConfig.MinLength`** applies the native `minlength`
+  attribute beside `MaxLength`.
 - **`ui.SidebarConfig.SectionLabels` draws group headers as section
   labels**: small uppercase muted text over flush links, with a
   chevron that turns when the group closes and no icon outside the
