@@ -34,6 +34,20 @@ func TestDetailListClassBuiltWithoutLeadingSpace(t *testing.T) {
 	}
 }
 
+// Stacked names its variant class and refuses Inline beside it.
+func TestDetailListStackedVariant(t *testing.T) {
+	h := string(DetailList(DetailListConfig{Stacked: true, Items: []DetailItem{{Label: "L", Value: render.Text("V")}}}))
+	if !strings.Contains(h, `class="fui-detail-list fui-detail-list--stacked"`) {
+		t.Fatalf("Stacked lacks its class:\n%s", h)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("Inline beside Stacked did not panic")
+		}
+	}()
+	DetailList(DetailListConfig{Inline: true, Stacked: true, Items: []DetailItem{{Label: "L"}}})
+}
+
 // DetailList's label column reads the --ui-detail-list-label-track
 // knob and keeps the page default without it.
 func TestDetailListLabelTrackKnob(t *testing.T) {

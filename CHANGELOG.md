@@ -58,6 +58,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   CSS with no script; a browser without `:has()` shows it always. The
   entity list's bulk bar uses it, so a list nobody is selecting from
   no longer carries an action form above its table.
+- **`ui.DetailListConfig.Stacked`** draws a read-only value inside a
+  form: the label above like a field's, the value in a control's box on
+  the soft surface. The entity record form draws its locked, state and
+  stamp fields this way, so they line up with the inputs around them
+  instead of jutting out as a two-column row.
 - **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
   prose. Every other cell now holds its value on one line, so a table
   wider than its box scrolls inside it instead of breaking a date at its

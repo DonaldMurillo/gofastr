@@ -433,7 +433,8 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 }
 
 // readOnly draws a locked field as a value, never a disabled input:
-// nothing about it is submitted.
+// nothing about it is submitted. The stacked list sits where an input
+// would, label above and the value boxed like a control.
 func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label string) render.HTML {
 	if k, ok := fb.kind(f); ok && (k.Detail != nil || k.Cell != nil) {
 		// A display callback gets what the read-only value would show:
@@ -444,7 +445,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 			row, val = fb.displayRow, formValueText(f, rowValue(fb.displayRow, f.Name))
 		}
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
-			return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: muted()}}})
+			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
 		}
 		cc := CellContext{Ctx: asCaller(ctx), Entity: fb.m.name, Field: f, Value: val, Row: row}
 		if k.Detail != nil {
@@ -465,7 +466,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 	if value == "" {
 		value = muted()
 	}
-	return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: value}}})
+	return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: value}}})
 }
 
 // maskedControl draws a hook-masked column as write-only: the value

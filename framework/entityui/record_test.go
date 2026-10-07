@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -204,6 +205,11 @@ func TestRecordLockedStateStampSubmitNothing(t *testing.T) {
 	}
 	if !strings.Contains(body, "120.00") {
 		t.Fatalf("the locked amount renders its value:\n%s", body)
+	}
+	// It sits in the form's column the way an input does.
+	locked := regexp.MustCompile(`<dl class="fui-detail-list fui-detail-list--stacked"[^>]*>\s*<div[^>]*>\s*<dt[^>]*>Amount</dt>`)
+	if !locked.MatchString(body) {
+		t.Fatalf("the locked amount is not a stacked value:\n%s", body)
 	}
 }
 

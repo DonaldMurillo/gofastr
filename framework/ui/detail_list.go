@@ -30,6 +30,12 @@ type DetailListConfig struct {
 	// Inline keeps short label/value pairs on one line in narrow panes.
 	// Long values wrap within their column instead of moving below the label.
 	Inline bool
+	// Stacked draws each pair the way a form field sits: the label
+	// above, the value in a box with a control's height, padding and
+	// radius on the soft surface, so a read-only value in a form lines
+	// up with the inputs around it and reads as locked. It drops the
+	// row rules and the measure cap. Stacked and Inline are exclusive.
+	Stacked bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <dl>. Keys the
@@ -67,9 +73,15 @@ func DetailList(cfg DetailListConfig) render.HTML {
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
+	if cfg.Inline && cfg.Stacked {
+		panic("ui: DetailList Inline and Stacked are exclusive")
+	}
 	class := ""
-	if cfg.Inline {
+	switch {
+	case cfg.Inline:
 		class = "fui-detail-list--inline"
+	case cfg.Stacked:
+		class = "fui-detail-list--stacked"
 	}
 	if cfg.Class != "" {
 		class = strings.TrimSpace(class + " " + cfg.Class)
@@ -127,5 +139,34 @@ func detailListCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--spacing-sm); }
 [data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__value { min-inline-size: 0; overflow-wrap: anywhere; }
+/* Stacked: a form field's anatomy, the value boxed like a control. */
+[data-cui-comp="ui-detail-list"].fui-detail-list--stacked {
+  --ui-detail-list-max-width: none;
+  gap: var(--spacing-lg, 16px);
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--fui-density-gap, var(--spacing-sm, 4px));
+  padding: 0;
+  border-bottom: none;
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, #18181B);
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__value {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
+  border-radius: var(--fui-field-radius, var(--radii-md, 8px));
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-normal, 400);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
 `
 }
