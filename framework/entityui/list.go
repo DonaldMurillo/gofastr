@@ -34,6 +34,7 @@ type ListBuilder struct {
 	colsMenu bool
 	deleted  bool
 	saved    bool
+	counts   bool
 	actions  []render.HTML
 }
 
@@ -131,6 +132,14 @@ func (b *ListBuilder) Deleted() *ListBuilder { b.deleted = true; return b }
 // saves the active filter and columns under a name. Off by default on
 // app pages.
 func (b *ListBuilder) SavedViews() *ListBuilder { b.saved = true; return b }
+
+// TabCounts shows each view tab's row count: the rows that tab's link
+// lists, under the page's search, facets, filter, Where pins and read
+// scope. The header then carries the entity's description, when it has
+// one, in place of the count. One COUNT per tab per render; a refused
+// count leaves its tab bare. Off by default on app pages; the admin
+// turns it on.
+func (b *ListBuilder) TabCounts() *ListBuilder { b.counts = true; return b }
 
 // mayCreate reports whether the list offers New: on unless NoCreate or
 // NoLinks turned it off.

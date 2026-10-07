@@ -950,9 +950,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `database`, `inbox`, `folder`, `tag`, `mail`, `bell`, `globe`, `repeat`,
   `cpu` and `star`, for an entity's `Display.Nav.Icon`, sidebar links and
   dashboard cards.
-- **`entityui` lists have four optional tools: a query box, a columns
-  menu, a trash view and saved views.** They are off on app pages and on
-  in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
+- **`entityui` lists have five optional tools: a query box, a columns
+  menu, a trash view, saved views and tab counts.** They are off on app
+  pages and on in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
   and parses it with the parser the chips use; a filter that does not
   parse keeps the "filter did not apply" warning. `ColumnsMenu()` shows
   and hides columns through the `cols` query param, a menu of checkbox
@@ -970,7 +970,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the tab row's end once the filter or the columns differ from the
   open view, and the open saved view's Delete beside it. Active
   filters show as chips under the toolbar, each removing its own
-  filter, with a "Clear all".
+  filter, with a "Clear all". `TabCounts()` puts a row count on each
+  view tab, the rows that tab's link lists under the page's search,
+  facets, filter and read scope, and the header then shows the
+  entity's description in place of its count.
   `UI.RestoreHandler`, `PurgeHandler` and
   `SavedViewsHandler` serve the writes at `<write base>/<id>/_restore`,
   `/_purge`, `/_views` and `/_views/_delete/<id>`. A plain form post is

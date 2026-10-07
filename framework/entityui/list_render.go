@@ -153,8 +153,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 
 	lb := b.bulkFor(ctx, s)
 	var body []render.HTML
-	body = append(body, b.header(ctx, s, total, known))
-	if tabs := b.viewTabs(ctx, s); tabs != "" {
+	tabs := b.viewTabs(ctx, s, total, known)
+	body = append(body, b.header(ctx, s, total, known, b.counts && tabs != ""))
+	if tabs != "" {
 		body = append(body, tabs)
 	}
 	if s.savedGone {
@@ -242,15 +243,18 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 }
 
 // header draws the list's page header: the plural (or the builder's
-// heading), the description, a count subtitle and the actions.
-func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known bool) render.HTML {
+// heading), a count subtitle and the actions. The description stands in
+// for the count when the count is unknown, and when the view tabs carry
+// the counts.
+func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known, tabsCounted bool) render.HTML {
 	m := s.m
 	title := b.heading
 	if title == "" {
 		title = m.plural(ctx)
 	}
+	desc := m.description(ctx)
 	subtitle := ""
-	if known {
+	if known && (desc == "" || !tabsCounted) {
 		if total == 1 {
 			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.noun(ctx, false)})
 		} else {
@@ -259,7 +263,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 				"entity": m.noun(ctx, true),
 			})
 		}
-	} else if desc := m.description(ctx); desc != "" {
+	} else {
 		subtitle = desc
 	}
 	var actions []render.HTML
@@ -278,6 +282,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonPrimary,
+			Icon:    "plus",
 		}))
 	}
 	return ui.PageHeader(ui.PageHeaderConfig{

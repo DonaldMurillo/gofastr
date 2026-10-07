@@ -3,10 +3,12 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -143,51 +145,93 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 // save/delete view tools at its end. Each tab is a link: a declared one
 // swaps the view param and drops sort, page and any open saved view —
 // a view carries its own default order, and every view starts on page
-// one; a saved one opens that view.
-func (b *ListBuilder) viewTabs(ctx context.Context, s *listState) render.HTML {
+// one; a saved one opens that view. With TabCounts each tab carries the
+// count of what its link lists; the open tab reuses the page's total.
+func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, known bool) render.HTML {
 	builtIn := s.savedID == ""
+	// A built-in tab's link keeps the URL's filter param and drops the
+	// open saved view, and with it the saved view's filter.
+	urlFilter := s.filterPred
+	if !s.q.Has(s.p.filter) {
+		urlFilter = nil
+	}
+	count := func(current bool, view, filt *filter.Predicate, deleted bool) string {
+		switch {
+		case !b.counts:
+			return ""
+		case current && known:
+			return formatNumber(float64(total), 0)
+		case current:
+			return ""
+		}
+		return b.tabCount(ctx, s, view, filt, deleted)
+	}
 	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 	if s.implicitView != "" {
 		allQ.Set(s.p.view, allView)
 	}
+	allCurrent := builtIn && s.view == ""
 	items := []ui.TabNavItem{{
 		Text:    i18nui.T(ctx, i18nui.KeyEntityViewAll),
 		Href:    listHref(s.path, allQ),
-		Current: builtIn && s.view == "",
+		Current: allCurrent,
+		Badge:   count(allCurrent, nil, urlFilter, false),
 	}}
 	for _, v := range s.m.d.Views {
 		if !viewable(ctx, s.m, v.Key) {
 			continue
 		}
-		items = append(items, ui.TabNavItem{
+		current := builtIn && s.view == v.Key
+		item := ui.TabNavItem{
 			Text: i18nui.ViewLabel(ctx, s.m.tr, s.m.name, v.Key, v.Label),
 			Href: func() string {
 				q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 				q.Set(s.p.view, v.Key)
 				return listHref(s.path, q)
 			}(),
-			Current: builtIn && s.view == v.Key,
-		})
+			Current: current,
+		}
+		// A view whose predicate fails here failed the open list already
+		// when it was the open one; another tab only goes bare.
+		if pred, err := viewPredicate(ctx, s.m, v.Key); err == nil {
+			item.Badge = count(current, pred, urlFilter, false)
+		}
+		items = append(items, item)
 	}
 	if savedViewsOn(ctx, s) {
 		for _, v := range s.savedViews {
 			q := s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page)
 			q.Set(s.p.saved, v.ID)
-			items = append(items, ui.TabNavItem{
+			current := v.ID == s.savedID
+			item := ui.TabNavItem{
 				Text:    v.Name,
 				Href:    listHref(s.path, q),
-				Current: v.ID == s.savedID,
-			})
+				Current: current,
+			}
+			// A saved view's link keeps the open view and swaps in its
+			// own filter; one that no longer parses opens as All.
+			var filt *filter.Predicate
+			ok := true
+			if v.Filter != "" {
+				p, err := dsl.ParsePredicate(v.Filter, s.m.e.GetFields())
+				filt, ok = p, err == nil
+			}
+			if ok {
+				item.Badge = count(current, s.viewPred, filt, s.deletedView)
+			}
+			items = append(items, item)
 		}
 	}
 	// The trash view rides after the others.
 	if s.offeredTab {
 		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 		q.Set(s.p.view, deletedViewKey)
+		current := builtIn && s.deletedView
 		items = append(items, ui.TabNavItem{
 			Text:    i18nui.T(ctx, i18nui.KeyEntityViewDeleted),
 			Href:    listHref(s.path, q),
-			Current: builtIn && s.deletedView,
+			Current: current,
+			Badge:   count(current, nil, urlFilter, true),
 		})
 	}
 	end := b.viewTools(ctx, s)
@@ -200,6 +244,27 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState) render.HTML {
 		Items: items,
 		End:   end,
 	})
+}
+
+// tabCount counts the rows one tab lists: its view and filter with the
+// page's pins, search and facets, under the same read scope as the
+// list. A refused count is a bare tab, never a failed strip.
+func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *filter.Predicate, deleted bool) string {
+	where, err := s.narrowed(b, view, filt)
+	if err != nil {
+		return ""
+	}
+	n, err := s.m.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
+		Where:   where,
+		Filters: s.facetFilters(),
+		Search:  s.search,
+		Deleted: deleted,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: tab count", "entity", s.m.name, "error", err)
+		return ""
+	}
+	return formatNumber(float64(n), 0)
 }
 
 // filterChips draws what narrows the list: a chip per facet set

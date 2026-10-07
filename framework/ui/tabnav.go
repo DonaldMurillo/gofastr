@@ -140,7 +140,7 @@ func tabNavCSS(_ style.Theme) string {
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link {
   display: inline-flex;
   align-items: baseline;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-block-end: var(--stroke-thick, 2px) solid transparent;
   margin-block-end: calc(-1 * var(--stroke-thin, 1px));

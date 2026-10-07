@@ -271,12 +271,18 @@ func (s *listState) readFields() []string {
 // the tree as ONE parenthesized clause beside the owner, tenant,
 // soft-delete and read scopes, so nothing here can widen past them.
 func (s *listState) predicate(b *ListBuilder) (*filter.Predicate, error) {
+	return s.narrowed(b, s.viewPred, s.filterPred)
+}
+
+// narrowed ANDs a view's predicate and a filter's with the builder's
+// Where pins: the list's own predicate, or a view tab's.
+func (s *listState) narrowed(b *ListBuilder, view, filt *filter.Predicate) (*filter.Predicate, error) {
 	var children []*filter.Predicate
-	if s.viewPred != nil {
-		children = append(children, s.viewPred)
+	if view != nil {
+		children = append(children, view)
 	}
-	if s.filterPred != nil {
-		children = append(children, s.filterPred)
+	if filt != nil {
+		children = append(children, filt)
 	}
 	for _, w := range b.where {
 		f, ok := s.m.field(w.field)

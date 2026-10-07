@@ -150,6 +150,7 @@ func exportLink(ctx context.Context, s *listState) render.HTML {
 		Label:      i18nui.T(ctx, i18nui.KeyEntityBulkExport),
 		Href:       listHref(s.m.api+"/_export.csv", q),
 		Variant:    ui.ButtonSecondary,
+		Icon:       "download",
 		ExtraAttrs: html.Attrs{"download": ""},
 	})
 }

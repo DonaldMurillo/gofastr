@@ -40,11 +40,12 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   its columns from `Display.Columns`, a title cell that links to the
   record, view tabs, facets, a search box over `SearchFields`, filter
   chips, sort headers and a pager. The row menu offers Open, Duplicate
-  and Delete where the builder turns them on. Four more controls are
+  and Delete where the builder turns them on. Five more controls are
   off by default on app pages and on in the admin: the query box
   (`.QueryBox()`), the columns menu (`.ColumnsMenu()`), the trash view
-  (`.Deleted()`) and saved views (`.SavedViews()`) — "Query box,
-  columns menu, trash view, saved views" covers them.
+  (`.Deleted()`), saved views (`.SavedViews()`) and tab counts
+  (`.TabCounts()`) — "Query box, columns menu, trash view, saved
+  views, tab counts" covers them.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
   record's title and state badge, a button per state move whose `From`
   holds the stored value, one icon-only menu named for the record (Copy
@@ -342,7 +343,8 @@ list := fwApp.EntityUI(entityui.Extensions{}).
 	QueryBox().      // the filter typed by hand
 	ColumnsMenu().   // show, hide, reset
 	Deleted().       // the trash view, ?view=deleted
-	SavedViews()     // the caller's named views, ?saved=<id>
+	SavedViews().    // the caller's named views, ?saved=<id>
+	TabCounts()      // a row count on each view tab
 _ = list.RenderCtx(ctx)
 ```
 
@@ -383,6 +385,15 @@ _ = list.RenderCtx(ctx)
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and
   nothing is stored cacheable.
+- **Tab counts** (`.TabCounts()`) put a row count on each view tab:
+  the rows that tab's link would list, under the page's search, facets,
+  filter, `Where` pins and the caller's read scope (owner, tenant,
+  read hooks). A saved view's tab counts its own filter, a Deleted tab
+  the trashed rows. The open tab reuses the page's own count; every
+  other tab is one COUNT. A refused count leaves its tab bare. With
+  the counts on the tabs, the page header shows the entity's
+  `Display.Description` in place of the "N invoices" line, when it has
+  one.
 - **Saved views** (`.SavedViews()`, when the UI carries a store —
   `appUI.WithSavedViews(store)`) keep a named filter-and-columns state
   per caller, in a `SavedViewStore` the host backs with a table
