@@ -105,7 +105,11 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		),
 	)
 	rpc := interactive.Post(m.api + "/_bulk").
-		WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityBulkConfirm, map[string]string{"entity": m.plural(ctx)})).
+		WithConfirmDialog(interactive.Confirm{
+			Title:   i18nui.TVars(ctx, i18nui.KeyEntityBulkTitle, map[string]string{"entity": m.noun(ctx, true)}),
+			Message: i18nui.T(ctx, i18nui.KeyEntityBulkConfirm),
+			Accept:  i18nui.T(ctx, i18nui.KeyEntityBulkApply),
+		}).
 		OnSuccess(interactive.Navigate(listHref(s.path, s.q)))
 	attrs := rpc.Attrs()
 	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyEntityBulkBar)

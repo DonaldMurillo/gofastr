@@ -32,7 +32,8 @@ const (
 	KeyEntityDeletedEmptyBody Key = "ui.entity.deletedEmptyBody" // "Rows you delete will appear here until they are restored or deleted permanently."
 	KeyEntityRestore          Key = "ui.entity.restore"          // "Restore"
 	KeyEntityPurge            Key = "ui.entity.purge"            // "Delete permanently"
-	KeyEntityPurgeConfirm     Key = "ui.entity.purgeConfirm"     // "Delete this {entity} permanently? This cannot be undone."
+	KeyEntityPurgeTitle       Key = "ui.entity.purgeTitle"       // "Delete this {entity} permanently?"
+	KeyEntityPurgeConfirm     Key = "ui.entity.purgeConfirm"     // "It leaves the trash and cannot be restored."
 	KeyEntityRestored         Key = "ui.entity.restored"         // "{entity} restored"
 	KeyEntityPurged           Key = "ui.entity.purged"           // "{entity} deleted permanently"
 	KeyEntityRestoreFailed    Key = "ui.entity.restoreFailed"    // "Could not restore."
@@ -45,7 +46,8 @@ const (
 	KeyEntitySavedName          Key = "ui.entity.savedName"          // "View name"
 	KeyEntitySavedSave          Key = "ui.entity.savedSave"          // "Save view"
 	KeyEntitySavedDelete        Key = "ui.entity.savedDelete"        // "Delete view"
-	KeyEntitySavedDeleteConfirm Key = "ui.entity.savedDeleteConfirm" // "Delete this saved view?"
+	KeyEntitySavedDeleteTitle   Key = "ui.entity.savedDeleteTitle"   // "Delete this saved view?"
+	KeyEntitySavedDeleteConfirm Key = "ui.entity.savedDeleteConfirm" // "The view's filters and columns go; the records stay."
 	KeyEntitySavedSaved         Key = "ui.entity.savedSaved"         // "View saved."
 	KeyEntitySavedDeleted       Key = "ui.entity.savedDeleted"       // "View deleted."
 	KeyEntitySavedBadFilter     Key = "ui.entity.savedBadFilter"     // "The filter does not apply to this list."
@@ -79,7 +81,8 @@ var entityListDefaults = map[Key]string{
 	KeyEntityDeletedEmptyBody: "Rows you delete will appear here until they are restored or deleted permanently.",
 	KeyEntityRestore:          "Restore",
 	KeyEntityPurge:            "Delete permanently",
-	KeyEntityPurgeConfirm:     "Delete this {entity} permanently? This cannot be undone.",
+	KeyEntityPurgeTitle:       "Delete this {entity} permanently?",
+	KeyEntityPurgeConfirm:     "It leaves the trash and cannot be restored.",
 	KeyEntityRestored:         "{entity} restored",
 	KeyEntityPurged:           "{entity} deleted permanently",
 	KeyEntityRestoreFailed:    "Could not restore.",
@@ -91,7 +94,8 @@ var entityListDefaults = map[Key]string{
 	KeyEntitySavedName:          "View name",
 	KeyEntitySavedSave:          "Save view",
 	KeyEntitySavedDelete:        "Delete view",
-	KeyEntitySavedDeleteConfirm: "Delete this saved view?",
+	KeyEntitySavedDeleteTitle:   "Delete this saved view?",
+	KeyEntitySavedDeleteConfirm: "The view's filters and columns go; the records stay.",
 	KeyEntitySavedSaved:         "View saved.",
 	KeyEntitySavedDeleted:       "View deleted.",
 	KeyEntitySavedBadFilter:     "The filter does not apply to this list.",

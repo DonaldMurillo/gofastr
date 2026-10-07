@@ -306,7 +306,7 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 	if b.delete && canDelete(ctx, m, b.id) {
 		singular := m.singular(ctx)
 		del := interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
-			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": singular})).
+			WithConfirmDialog(deleteConfirm(ctx, m.noun(ctx, false))).
 			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
 			OnSuccess(interactive.Navigate(base)).
 			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular}))
@@ -520,4 +520,17 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 		return err
 	}
 	return walk(f.Side, 0)
+}
+
+// deleteConfirm is the dialog a row's or a record's Delete opens: it
+// names the entity, says the delete is final and answers in the danger
+// variant.
+func deleteConfirm(ctx context.Context, noun string) interactive.Confirm {
+	vars := map[string]string{"entity": noun}
+	return interactive.Confirm{
+		Title:   i18nui.TVars(ctx, i18nui.KeyEntityDeleteTitle, vars),
+		Message: i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, vars),
+		Accept:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+		Danger:  true,
+	}
 }

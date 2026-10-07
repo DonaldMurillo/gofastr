@@ -81,9 +81,16 @@ func TestDeletedViewListsTrashedRows(t *testing.T) {
 			t.Errorf("the trash view drew %q:\n%s", refuse, html)
 		}
 	}
-	// The purge asks first.
-	if !strings.Contains(html, "cannot be undone") {
-		t.Errorf("the purge posts without a confirm:\n%s", html)
+	// The purge asks first, in the danger dialog.
+	for _, want := range []string{
+		`data-cui-confirm="It leaves the trash and cannot be restored."`,
+		`data-cui-confirm-title="Delete this note permanently?"`,
+		`data-cui-confirm-accept="Delete permanently"`,
+		`data-cui-confirm-tone="danger"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the purge does not ask with %s:\n%s", want, html)
+		}
 	}
 }
 

@@ -111,7 +111,11 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 		Method: http.MethodPost,
 		ID:     "eui-" + m.name + "-override",
 		ExtraAttrs: interactive.Post(action).
-			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityOverrideConfirm, map[string]string{"entity": m.singular(ctx)})).
+			WithConfirmDialog(interactive.Confirm{
+				Title:   i18nui.TVars(ctx, i18nui.KeyEntityOverrideTitle, map[string]string{"entity": m.noun(ctx, false)}),
+				Message: i18nui.T(ctx, i18nui.KeyEntityOverrideConfirm),
+				Accept:  i18nui.T(ctx, i18nui.KeyEntityOverride),
+			}).
 			OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntityOverrideDone)).
 			OnSuccess(interactive.Navigate(back)).
 			Attrs(),

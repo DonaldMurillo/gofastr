@@ -41,7 +41,8 @@ const (
 	KeyEntityOverrideHelp     Key = "ui.entity.overrideHelp"     // "Required, at most 500 characters. Recorded in the audit log."
 	KeyEntityOverrideDone     Key = "ui.entity.overrideDone"     // "Status overridden"
 	KeyEntityOverrideFailed   Key = "ui.entity.overrideFailed"   // "Could not override the status."
-	KeyEntityOverrideConfirm  Key = "ui.entity.overrideConfirm"  // "Override the status of this {entity}? The change is recorded in the audit log with your reason."
+	KeyEntityOverrideTitle    Key = "ui.entity.overrideTitle"    // "Override the status of this {entity}?"
+	KeyEntityOverrideConfirm  Key = "ui.entity.overrideConfirm"  // "The change skips the workflow and is recorded in the audit log with your reason."
 	KeyEntityOverrideBlank    Key = "ui.entity.overrideBlank"    // "A reason is required."
 	KeyEntityOverrideLong     Key = "ui.entity.overrideLong"     // "The reason is longer than 500 characters."
 	KeyEntityOverrideStateBad Key = "ui.entity.overrideStateBad" // "That status is not one this entity declares."
@@ -89,7 +90,8 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityOverrideHelp:     "Required, at most 500 characters. Recorded in the audit log.",
 	KeyEntityOverrideDone:     "Status overridden",
 	KeyEntityOverrideFailed:   "Could not override the status.",
-	KeyEntityOverrideConfirm:  "Override the status of this {entity}? The change is recorded in the audit log with your reason.",
+	KeyEntityOverrideTitle:    "Override the status of this {entity}?",
+	KeyEntityOverrideConfirm:  "The change skips the workflow and is recorded in the audit log with your reason.",
 	KeyEntityOverrideBlank:    "A reason is required.",
 	KeyEntityOverrideLong:     "The reason is longer than 500 characters.",
 	KeyEntityOverrideStateBad: "That status is not one this entity declares.",

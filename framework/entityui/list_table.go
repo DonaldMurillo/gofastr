@@ -325,7 +325,7 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 	}
 	if b.delete && canDelete(ctx, m, id) {
 		del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
-			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": m.singular(ctx)})).
+			WithConfirmDialog(deleteConfirm(ctx, m.noun(ctx, false))).
 			OnSuccess(interactive.Navigate(listHref(s.path, s.q))).
 			// A refusal (a row other records still reference) toasts
 			// the server's message instead of ending in silence.

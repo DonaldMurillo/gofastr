@@ -123,7 +123,12 @@ func (b *ListBuilder) savedViewsStrip(ctx context.Context, s *listState) render.
 			Ctx:        ctx,
 		}))
 		del := interactive.Post(m.api + "/_views/_delete/" + url.PathEscape(v.ID)).
-			WithConfirm(i18nui.T(ctx, i18nui.KeyEntitySavedDeleteConfirm)).
+			WithConfirmDialog(interactive.Confirm{
+				Title:   i18nui.T(ctx, i18nui.KeyEntitySavedDeleteTitle),
+				Message: i18nui.T(ctx, i18nui.KeyEntitySavedDeleteConfirm),
+				Accept:  i18nui.T(ctx, i18nui.KeyEntitySavedDelete),
+				Danger:  true,
+			}).
 			OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySavedDeleted))
 		parts = append(parts, ui.Form(ui.FormConfig{
 			Action:     m.api + "/_views/_delete/" + url.PathEscape(v.ID),

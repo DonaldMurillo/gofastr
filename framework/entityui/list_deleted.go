@@ -46,7 +46,7 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 	if canUpdate(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
 			m.api+"/"+url.PathEscape(id)+"/_restore",
-			i18nui.T(ctx, i18nui.KeyEntityRestore), ui.ButtonSecondary, "",
+			i18nui.T(ctx, i18nui.KeyEntityRestore), ui.ButtonSecondary, interactive.Confirm{},
 			i18nui.TVars(ctx, i18nui.KeyEntityRestored, map[string]string{"entity": m.singular(ctx)}),
 			back,
 		))
@@ -55,7 +55,12 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 		forms = append(forms, deletedWriteForm(ctx,
 			m.api+"/"+url.PathEscape(id)+"/_purge",
 			i18nui.T(ctx, i18nui.KeyEntityPurge), ui.ButtonDanger,
-			i18nui.TVars(ctx, i18nui.KeyEntityPurgeConfirm, map[string]string{"entity": m.singular(ctx)}),
+			interactive.Confirm{
+				Title:   i18nui.TVars(ctx, i18nui.KeyEntityPurgeTitle, map[string]string{"entity": m.noun(ctx, false)}),
+				Message: i18nui.T(ctx, i18nui.KeyEntityPurgeConfirm),
+				Accept:  i18nui.T(ctx, i18nui.KeyEntityPurge),
+				Danger:  true,
+			},
 			i18nui.TVars(ctx, i18nui.KeyEntityPurged, map[string]string{"entity": m.singular(ctx)}),
 			back,
 		))
@@ -69,12 +74,12 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 // deletedWriteForm is one trash action: a POST form whose submit
 // carries the RPC wiring (a confirm on the purge), the return path as
 // its one field, and a button the scriptless path can press.
-func deletedWriteForm(ctx context.Context, action, label string, variant ui.ButtonVariant, confirm, toast, back string) render.HTML {
+func deletedWriteForm(ctx context.Context, action, label string, variant ui.ButtonVariant, confirm interactive.Confirm, toast, back string) render.HTML {
 	rpc := interactive.Post(action).
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(back))
-	if confirm != "" {
-		rpc = rpc.WithConfirm(confirm)
+	if confirm.Message != "" {
+		rpc = rpc.WithConfirmDialog(confirm)
 	}
 	return ui.Form(ui.FormConfig{
 		Action:     action,

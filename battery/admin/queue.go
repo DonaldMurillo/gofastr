@@ -256,7 +256,13 @@ type opSpec struct {
 func (b *Battery) opForm(ctx context.Context, op opSpec) render.HTML {
 	rpc := interactive.Post(op.path)
 	if op.confirm != "" {
-		rpc = rpc.WithConfirm(op.confirm)
+		// The dialog's accept button is the operation's own label and
+		// takes its variant's danger, so a disable asks in red.
+		rpc = rpc.WithConfirmDialog(interactive.Confirm{
+			Message: op.confirm,
+			Accept:  op.label,
+			Danger:  op.variant == ui.ButtonDanger,
+		})
 	}
 	rpc = rpc.OnSuccess(interactive.Navigate(op.page))
 	children := make([]render.HTML, 0, len(op.fields)+len(op.body)+1)

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -36,14 +35,7 @@ func backofficeServer(t *testing.T) string {
 
 func backofficeBrowser(t *testing.T) context.Context {
 	t.Helper()
-	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
-	// Auto-accept any window.confirm (the data-cui-confirm delete dialog).
-	chromedp.ListenTarget(ctx, func(ev any) {
-		if _, ok := ev.(*page.EventJavascriptDialogOpening); ok {
-			go func() { _ = chromedp.Run(ctx, page.HandleJavaScriptDialog(true)) }()
-		}
-	})
-	return ctx
+	return chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 }
 
 // login signs in via the demo login form, landing on the products list.
@@ -102,15 +94,18 @@ func TestBackofficeE2E_DeleteFlow(t *testing.T) {
 		t.Fatalf("no first row id to delete (id=%q err=%v)", rowID, err)
 	}
 
-	// Open that row's action menu and click Delete. data-cui-confirm calls
-	// window.confirm (the dialog listener accepts it), then the runtime
+	// Open that row's action menu and click Delete. data-cui-confirm opens
+	// the kit's confirm dialog; its accept button answers, then the runtime
 	// DELETEs and re-fetches the list.
 	row := fmt.Sprintf(`tbody tr[id=%q]`, rowID)
 	del := fmt.Sprintf(`%s button[data-cui-rpc=%q][data-cui-rpc-method="DELETE"]`, row, "/admin/api/products/"+rowID)
+	accept := `body > dialog[open] [data-cui-confirm-part^="accept"]`
 	if err := chromedp.Run(ctx,
 		chromedp.Click(row+` summary.fui-menu__trigger`, chromedp.ByQuery),
 		chromedp.WaitVisible(del, chromedp.ByQuery),
 		chromedp.Click(del, chromedp.ByQuery),
+		chromedp.WaitVisible(accept, chromedp.ByQuery),
+		chromedp.Click(accept, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("click delete: %v", err)
 	}

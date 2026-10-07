@@ -10,7 +10,8 @@ const (
 	KeyEntityBulkPage         Key = "ui.entity.bulkPage"         // "This page ({count})"
 	KeyEntityBulkEvery        Key = "ui.entity.bulkEvery"        // "Every match ({count})"
 	KeyEntityBulkApply        Key = "ui.entity.bulkApply"        // "Apply"
-	KeyEntityBulkConfirm      Key = "ui.entity.bulkConfirm"      // "Apply this action to the chosen {entity}?"
+	KeyEntityBulkTitle        Key = "ui.entity.bulkTitle"        // "Apply to the chosen {entity}?"
+	KeyEntityBulkConfirm      Key = "ui.entity.bulkConfirm"      // "The action runs on every row the scope names."
 	KeyEntityBulkDelete       Key = "ui.entity.bulkDelete"       // "Delete"
 	KeyEntityBulkSet          Key = "ui.entity.bulkSet"          // "Set {field} to {value}"
 	KeyEntityBulkMove         Key = "ui.entity.bulkMove"         // "Move: {move}"
@@ -37,7 +38,8 @@ var entityBulkDefaults = map[Key]string{
 	KeyEntityBulkPage:         "This page ({count})",
 	KeyEntityBulkEvery:        "Every match ({count})",
 	KeyEntityBulkApply:        "Apply",
-	KeyEntityBulkConfirm:      "Apply this action to the chosen {entity}?",
+	KeyEntityBulkTitle:        "Apply to the chosen {entity}?",
+	KeyEntityBulkConfirm:      "The action runs on every row the scope names.",
 	KeyEntityBulkDelete:       "Delete",
 	KeyEntityBulkSet:          "Set {field} to {value}",
 	KeyEntityBulkMove:         "Move: {move}",
