@@ -653,6 +653,14 @@ client-controlled and never trusted as an instruction: a forged value
 can change the wrapper element and nothing else, because routing,
 policy, params, `Load`, and content are identical on both paths.
 
+The screen can tell which render it is in: `app.OverlayFromContext(ctx)`
+reports the presentation (`ScreenDrawer` or `ScreenSheet`) inside an
+overlay render and nothing in the canonical one, so a screen draws a
+layer's chrome (`ui.DrawerBar`: close, path, copy link) only where it
+is a layer. A drawer is `--ui-intercept-drawer-w` wide, by default half
+the viewport between 480px and 720px; each layer's inset is
+`--cui-intercept-pad`, which chrome reads to bleed to the layer's edges.
+
 Costs stay off pages that don't use it. The route manifest carries
 `intercept: {from, as}` per route; core loads the `intercept` demand
 module only when some entry has one, and the UI host injects

@@ -13,6 +13,23 @@ import (
 // or any other request data via RequestFromContext.
 type requestContextKey struct{}
 
+// overlayContextKey marks a render as an intercepted overlay.
+type overlayContextKey struct{}
+
+func withOverlay(ctx context.Context, as ScreenType) context.Context {
+	return context.WithValue(ctx, overlayContextKey{}, as)
+}
+
+// OverlayFromContext reports whether the screen is rendering as an
+// intercepted overlay (see InterceptFrom) and which presentation it
+// wears: ScreenDrawer or ScreenSheet. A screen draws the chrome a
+// layer needs (a close control, the page's path) only then; the
+// canonical full page is the same render without it.
+func OverlayFromContext(ctx context.Context) (ScreenType, bool) {
+	as, ok := ctx.Value(overlayContextKey{}).(ScreenType)
+	return as, ok
+}
+
 // WithRequest returns a new context that carries r. The host should
 // call this exactly once per page render, typically inside the HTTP
 // handler that drives the screen.

@@ -1343,6 +1343,9 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	if _, ok := MatchFromContext(ctx); !ok {
 		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
 	}
+	if overlay != nil {
+		ctx = withOverlay(ctx, *overlay)
+	}
 
 	// Resolvers, the same phase ladder the full
 	// page walks: store + eager, policy, Load, then the region phase

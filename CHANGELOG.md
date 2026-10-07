@@ -149,6 +149,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   drawer: a close button, the layer's path in mono, a copy-link button
   when `CopyURL` is set, then `Actions`. It sticks to the layer's top
   edge while the layer scrolls.
+- **`app.OverlayFromContext`** reports whether a render is an
+  intercepted overlay and which presentation, so a screen draws a
+  layer's chrome only in the layer. Each layer's inset is
+  `--cui-intercept-pad`.
 - **`ui.CopyButtonConfig.Icon` and `Inline`.** An icon-only copy button
   draws a registered icon (the new `"copy"` and `"link"`); `Inline`
   draws it quiet, with no border or fill until hover and a 24px target,
@@ -1073,6 +1077,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **An intercepted drawer is wider**: half the viewport between 480px
+  and 720px, up from a fixed 480px, so a record's form has room. Themes
+  that set `--ui-intercept-drawer-w` keep their width.
 - **The admin's recent activity reads as sentences.** Each line names
   the actor by its account's email (through `Config.Auth`), the
   operation as a verb, and the record by its title, with a relative

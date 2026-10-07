@@ -18,9 +18,16 @@ type ixDetail struct {
 	id string
 }
 
-func (s *ixDetail) SetParams(p map[string]string)         { s.id = p["id"] }
-func (s *ixDetail) RenderCtx(context.Context) render.HTML { return render.Text("DETAIL " + s.id) }
-func (s *ixDetail) ScreenTitle() string                   { return "Product" }
+func (s *ixDetail) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *ixDetail) ScreenTitle() string           { return "Product" }
+
+func (s *ixDetail) RenderCtx(ctx context.Context) render.HTML {
+	out := "DETAIL " + s.id
+	if as, ok := OverlayFromContext(ctx); ok {
+		out += " AS " + as.String()
+	}
+	return render.Text(out)
+}
 
 func ixApp(t *testing.T) *App {
 	t.Helper()
@@ -121,6 +128,29 @@ func TestOverlayRenderMatchesCanonicalContent(t *testing.T) {
 	// The title travels either way, the overlay needs it for its label.
 	if page.Title != "Product" || overlay.Title != "Product" {
 		t.Errorf("titles = %q / %q, want both %q", page.Title, overlay.Title, "Product")
+	}
+}
+
+// The screen knows when it renders as an overlay and which one, so it
+// can draw a layer's chrome; the canonical render never sees the mark.
+func TestOverlayRenderKnowsItsPresentation(t *testing.T) {
+	a := ixApp(t)
+	ctx := context.Background()
+	page, err := a.RenderPartialResult(ctx, "/products/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(page.HTML), " AS ") {
+		t.Errorf("the canonical render reads as an overlay: %s", page.HTML)
+	}
+	for _, as := range []ScreenType{ScreenDrawer, ScreenSheet} {
+		got, err := a.RenderOverlayResult(ctx, "/products/42", as)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(got.HTML), "DETAIL 42 AS "+as.String()) {
+			t.Errorf("the %v render does not know its presentation: %s", as, got.HTML)
+		}
 	}
 }
 
