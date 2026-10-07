@@ -266,10 +266,12 @@ app.RegisterBattery(admin.New(admin.Config{
 Replay is offered on failed jobs when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
 naming the actor. A failed list or stats read shows a generic notice and
-logs the driver error; the page never prints it. `QueueListLimit` and
-`AuditListLimit` cap the rows (default 200). The audit page reads
+logs the driver error; the page never prints it. `QueueListLimit`
+caps the Jobs page's rows (default 200). The audit page reads
 `AuditTable` (default `audit_log`) and, when the request carries a
-tenant, only that tenant's rows.
+tenant, only that tenant's rows, newest first, `AuditListLimit` to a
+page (default 50). The pager under the table turns pages through `?p=`
+and keeps the filter; a page past the end shows the last one.
 
 **Naming the actor and the record.** With `Auth` set, the audit page
 and the dashboard's recent activity name each actor by its account's

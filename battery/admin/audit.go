@@ -112,21 +112,40 @@ func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
 	return f, warned
 }
 
-// renderAudit draws the Audit log page: the filter form, then the rows
-// it narrows to.
+// auditPageParam is the Audit log page's page number in its query.
+const auditPageParam = "p"
+
+// renderAudit draws the Audit log page: the filter form, then one page
+// of the rows it narrows to, newest first, with the pager under them. A
+// page turn keeps the filter; a page past the end shows the last one.
 func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.HTML {
 	limit := b.cfg.AuditListLimit
+	page := 1
 	var f auditFilter
 	var warned []string
+	carry := url.Values{}
 	if r := appui.RequestFromContext(ctx); r != nil {
-		limit = parseLimit(r.URL.Query().Get("limit"), b.cfg.AuditListLimit)
-		f, warned = b.parseAuditFilter(r.URL.Query())
+		q := r.URL.Query()
+		limit = parseLimit(q.Get("limit"), b.cfg.AuditListLimit)
+		f, warned = b.parseAuditFilter(q)
+		if n, err := strconv.Atoi(q.Get(auditPageParam)); err == nil && n > 1 {
+			page = n
+		}
+		carry = q
+		carry.Del(auditPageParam)
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.T(ctx, i18nui.KeyAdminAudit),
 		Subtitle: i18nui.T(ctx, i18nui.KeyAdminAuditSub),
 	})
-	rows, err := b.queryAuditWhere(ctx, limit, f)
+	total, err := b.countAuditWhere(ctx, f)
+	var rows []auditRow
+	pages := 1
+	if err == nil {
+		pages = max((total+limit-1)/limit, 1)
+		page = min(page, pages)
+		rows, err = b.queryAuditWhere(ctx, limit, (page-1)*limit, f)
+	}
 	if err != nil {
 		// A missing audit table is the usual cause; driver text stays in
 		// the log.
@@ -139,7 +158,18 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		above = append(above, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
 			render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBadFilter, map[string]string{"param": param}))))
 	}
-	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2))...)
+	var pager *ui.PaginationConfig
+	if pages > 1 {
+		pager = &ui.PaginationConfig{
+			Page:      page,
+			Pages:     pages,
+			Path:      b.cfg.PathPrefix + "/audit",
+			Query:     carry,
+			PageParam: auditPageParam,
+			Ctx:       ctx,
+		}
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2, pager))...)
 }
 
 // auditFilterForm is the page's filter: the list toolbar's Filters
@@ -192,17 +222,48 @@ func dayValue(set bool, t time.Time) string {
 // unfiltered: the dashboard's recent activity. The page narrows through
 // queryAuditWhere.
 func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error) {
-	return b.queryAuditWhere(ctx, limit, auditFilter{})
+	return b.queryAuditWhere(ctx, limit, 0, auditFilter{})
 }
 
-// queryAuditWhere reads the newest limit audit rows in the caller's
-// tenant narrowed by the page's validated filter. A tenant-scoped caller
-// sees only rows stamped with their tenant (system rows with no tenant
-// included in nobody's scope); a caller with no tenant, the platform
-// operator, sees every row. Values only ever travel as placeholders, and
-// the built predicate is the same text on Postgres and SQLite.
-func (b *Battery) queryAuditWhere(ctx context.Context, limit int, f auditFilter) ([]auditRow, error) {
-	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff FROM %s`, b.cfg.AuditTable)
+// countAuditWhere counts the audit rows the filter narrows to in the
+// caller's tenant, for the page's pager.
+func (b *Battery) countAuditWhere(ctx context.Context, f auditFilter) (int, error) {
+	where, args := auditWhere(ctx, f)
+	var n int
+	err := b.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s`, b.cfg.AuditTable)+where, args...).Scan(&n)
+	return n, err
+}
+
+// queryAuditWhere reads one page of audit rows in the caller's tenant
+// narrowed by the page's validated filter: limit rows after skipping
+// offset, newest first, the id breaking a tie so pages never overlap.
+func (b *Battery) queryAuditWhere(ctx context.Context, limit, offset int, f auditFilter) ([]auditRow, error) {
+	where, args := auditWhere(ctx, f)
+	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff FROM %s`, b.cfg.AuditTable) + where +
+		" ORDER BY created_at DESC, id DESC LIMIT " + strconv.Itoa(limit) + " OFFSET " + strconv.Itoa(offset)
+	rows, err := b.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []auditRow
+	for rows.Next() {
+		var r auditRow
+		if err := rows.Scan(&r.ID, &r.Entity, &r.Op, &r.RecordID, &r.ActorID, &r.CreatedAt, &r.Diff); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// auditWhere is the filter's WHERE clause, "" when nothing narrows, and
+// its arguments. A tenant-scoped caller sees only rows stamped with
+// their tenant (system rows with no tenant included in nobody's scope);
+// a caller with no tenant, the platform operator, sees every row. Values
+// only ever travel as placeholders, and the built predicate is the same
+// text on Postgres and SQLite.
+func auditWhere(ctx context.Context, f auditFilter) (string, []any) {
 	var conds []string
 	var args []any
 	add := func(cond string, v any) {
@@ -227,29 +288,15 @@ func (b *Battery) queryAuditWhere(ctx context.Context, limit int, f auditFilter)
 	if f.hasTo {
 		add("created_at <", f.to)
 	}
-	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
+	if len(conds) == 0 {
+		return "", nil
 	}
-	q += " ORDER BY created_at DESC LIMIT " + strconv.Itoa(limit)
-	rows, err := b.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []auditRow
-	for rows.Next() {
-		var r auditRow
-		if err := rows.Scan(&r.ID, &r.Entity, &r.Op, &r.RecordID, &r.ActorID, &r.CreatedAt, &r.Diff); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-// auditTable draws audit rows. An entity row the admin exposes links to
-// its record.
-func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel int) render.HTML {
+// auditTable draws audit rows, with pager under them when it is set. An
+// entity row the admin exposes links to its record.
+func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
 	cols := []ui.Column{
 		{Key: "time", Header: i18nui.T(ctx, i18nui.KeyAdminColTime)},
 		{Key: "actor", Header: i18nui.T(ctx, i18nui.KeyAdminColActor)},
@@ -277,6 +324,7 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 		Caption:       i18nui.T(ctx, i18nui.KeyAdminAudit),
 		CaptionHidden: true,
 		Responsive:    ui.ResponsiveScroll,
+		Pagination:    pager,
 		Ctx:           ctx,
 		Empty: ui.EmptyStateConfig{
 			Title:        i18nui.T(ctx, i18nui.KeyAdminAuditEmpty),

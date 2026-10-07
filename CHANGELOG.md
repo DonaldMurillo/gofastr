@@ -1164,7 +1164,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   range** through the page's query string (`actor`, `entity`, `op`,
   `from`, `to`), set in the same Filters dropdown the entity lists
   use. Each value is validated and bound as a placeholder; an invalid
-  one is ignored with a warning naming it.
+  one is ignored with a warning naming it. A pager under the table
+  reaches older rows (`?p=`), keeping the filter.
 - **`admin.Config.SavedViews` stores saved views** in the admin's
   database (`admin_saved_views`, or `Config.SavedViewsTable`), one set
   per user per entity, kept apart by owner and tenant read from the
@@ -1186,6 +1187,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- `admin.Config.AuditListLimit` is the Audit log page's rows per page,
+  default 50; it was a cap on the only rows the page could show,
+  default 200.
 - The notification bell's spoken count moved out of `headless-feedback`
   into its own `headless-bell` module, loaded on
   `[data-hui-notification-bell]`, which keeps the toast runtime under

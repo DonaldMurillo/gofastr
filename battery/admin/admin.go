@@ -98,7 +98,8 @@ type Config struct {
 	// QueueListLimit caps rows on the Jobs page. Default 200.
 	QueueListLimit int
 
-	// AuditListLimit caps rows on the Audit log page. Default 200.
+	// AuditListLimit is the Audit log page's rows per page; a pager
+	// under the table reaches older rows. Default 50.
 	AuditListLimit int
 
 	// SavedViews turns on per-user saved views over the admin's
@@ -217,7 +218,7 @@ func New(cfg Config) *Battery {
 		cfg.SavedViewsTable = "admin_saved_views"
 	}
 	if cfg.AuditListLimit <= 0 {
-		cfg.AuditListLimit = 200
+		cfg.AuditListLimit = 50
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
