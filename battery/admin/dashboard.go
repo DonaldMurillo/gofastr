@@ -135,7 +135,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 	title := i18nui.T(ctx, i18nui.KeyAdminFailedJobs)
 	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminQueue), b.cfg.PathPrefix+"/queue?status=failed")
-	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows)
+	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
 		b.logger().Error("admin: list failed jobs", "error", err)
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
@@ -148,7 +148,7 @@ func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 	_, replay := b.replayable()
 	body := ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoFailedJobs), HeadingLevel: 3})
 	if len(jobs) > 0 {
-		body = b.jobsTable(ctx, jobs, b.cfg.PathPrefix, replay, 3)
+		body = b.jobsTable(ctx, jobs, b.cfg.PathPrefix, replay, 3, nil)
 	}
 	cfg := ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}
 	if count != "" {

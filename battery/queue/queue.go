@@ -75,10 +75,11 @@ type JobStats map[string]int
 // guessing at the underlying schema. Memory and Redis queues may
 // implement it later; admin code that depends on it should type-assert.
 type Browsable interface {
-	// ListJobs returns up to limit jobs in the given status; pass an
-	// empty status to return all jobs regardless of state. Jobs are
-	// ordered newest-first by created_at.
-	ListJobs(ctx context.Context, status string, limit int) ([]Job, error)
+	// ListJobs returns up to limit jobs in the given status, skipping
+	// the newest offset of them; pass an empty status to return all jobs
+	// regardless of state. Jobs are ordered newest-first by created_at.
+	// A negative offset reads as zero.
+	ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, error)
 	// Stats returns counts grouped by status. Cheap by design, admin
 	// dashboards may poll it.
 	Stats(ctx context.Context) (JobStats, error)

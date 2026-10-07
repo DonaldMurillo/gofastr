@@ -261,13 +261,15 @@ app.RegisterBattery(admin.New(admin.Config{
 | Route | Purpose |
 |---|---|
 | `POST /admin/queue/_replay/{id}` | Re-queue one failed job |
-| `POST /admin/queue/_replay_all` | Re-queue every failed job listed |
+| `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
 
 Replay is offered on failed jobs when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
 naming the actor. A failed list or stats read shows a generic notice and
-logs the driver error; the page never prints it. `QueueListLimit`
-caps the Jobs page's rows (default 200). The audit page reads
+logs the driver error; the page never prints it. The Jobs page shows
+`QueueListLimit` jobs a page (default 50), newest first; the pager
+under the table turns pages through `?p=` and keeps the status. The
+audit page reads
 `AuditTable` (default `audit_log`) and, when the request carries a
 tenant, only that tenant's rows, newest first, `AuditListLimit` to a
 page (default 50). The pager under the table turns pages through `?p=`

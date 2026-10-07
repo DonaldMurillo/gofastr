@@ -259,15 +259,18 @@ All three backends implement `Browsable`:
 
 ```go
 if b, ok := q.(queue.Browsable); ok {
-    jobs, _ := b.ListJobs(ctx, "failed", 50)
+    jobs, _ := b.ListJobs(ctx, "failed", 50, 0)
     stats, _ := b.Stats(ctx)
     fmt.Println("failed:", stats["failed"])
 }
 ```
 
 `ListJobs` accepts a status string (`"pending"`, `"failed"`, `""` for
-all) and a limit. Jobs are returned newest-first. `Stats` returns a
-`JobStats` map (status → count).
+all), a limit and an offset. Jobs are returned newest-first, after
+skipping the newest `offset` of them, so `ListJobs(ctx, "failed", 50,
+50)` is the second page of 50; a negative offset reads as zero.
+`Stats` returns a `JobStats` map (status → count), which gives a
+pager its total.
 
 MemoryQueue and RedisQueue can only enumerate their dead-letter store,
 so only `"failed"` (or `""`) returns results. DBQueue can enumerate any

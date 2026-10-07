@@ -22,14 +22,20 @@ type fakeQueue struct {
 	replayErr error
 	statuses  []string // the status each ListJobs asked for
 	replayed  []string
+	// ignoreOffset answers every offset with the first page.
+	ignoreOffset bool
 }
 
-func (q *fakeQueue) ListJobs(_ context.Context, status string, limit int) ([]queue.Job, error) {
+func (q *fakeQueue) ListJobs(_ context.Context, status string, limit, offset int) ([]queue.Job, error) {
 	q.statuses = append(q.statuses, status)
 	if q.listErr != nil {
 		return nil, q.listErr
 	}
-	return q.jobs[:min(limit, len(q.jobs))], nil
+	if q.ignoreOffset {
+		offset = 0
+	}
+	from := min(offset, len(q.jobs))
+	return q.jobs[from:min(from+limit, len(q.jobs))], nil
 }
 
 func (q *fakeQueue) Stats(context.Context) (queue.JobStats, error) { return q.stats, q.statsErr }
@@ -45,8 +51,8 @@ func (q *fakeQueue) Replay(_ context.Context, id string) error {
 // browseOnly hides Replay.
 type browseOnly struct{ q *fakeQueue }
 
-func (b browseOnly) ListJobs(ctx context.Context, s string, n int) ([]queue.Job, error) {
-	return b.q.ListJobs(ctx, s, n)
+func (b browseOnly) ListJobs(ctx context.Context, s string, n, off int) ([]queue.Job, error) {
+	return b.q.ListJobs(ctx, s, n, off)
 }
 func (b browseOnly) Stats(ctx context.Context) (queue.JobStats, error) { return b.q.Stats(ctx) }
 

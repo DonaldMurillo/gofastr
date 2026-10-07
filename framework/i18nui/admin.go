@@ -127,7 +127,7 @@ const (
 	KeyAdminQueueEmptyDesc   Key = "ui.admin.queueEmptyDesc"   // "No jobs match this filter."
 	KeyAdminReplay           Key = "ui.admin.replay"           // "Replay"
 	KeyAdminReplayAll        Key = "ui.admin.replayAll"        // "Replay all"
-	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job shown here?"
+	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job?"
 	KeyAdminReplayed         Key = "ui.admin.replayed"         // "Job queued again."
 	KeyAdminReplayedAll      Key = "ui.admin.replayedAll"      // "Failed jobs queued again."
 )
@@ -296,7 +296,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminQueueEmptyDesc:    "No jobs match this filter.",
 	KeyAdminReplay:            "Replay",
 	KeyAdminReplayAll:         "Replay all",
-	KeyAdminReplayAllConfirm:  "Replay every failed job shown here?",
+	KeyAdminReplayAllConfirm:  "Replay every failed job?",
 	KeyAdminReplayed:          "Job queued again.",
 	KeyAdminReplayedAll:       "Failed jobs queued again.",
 	KeyAdminAudit:             "Audit log",

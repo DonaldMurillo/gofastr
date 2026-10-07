@@ -36,7 +36,7 @@ func newDurableTestQueue(t *testing.T, db *sql.DB) *DBQueue {
 
 func pendingJobs(t *testing.T, q *DBQueue) []Job {
 	t.Helper()
-	jobs, err := q.ListJobs(context.Background(), "pending", 100)
+	jobs, err := q.ListJobs(context.Background(), "pending", 100, 0)
 	if err != nil {
 		t.Fatalf("ListJobs: %v", err)
 	}

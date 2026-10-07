@@ -1193,6 +1193,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `admin.Config.AuditListLimit` is the Audit log page's rows per page,
   default 50; it was a cap on the only rows the page could show,
   default 200.
+- The admin's Jobs page pages through every job: a pager under the
+  table turns pages through `?p=`, keeping the status.
+  `admin.Config.QueueListLimit` is its rows per page, default 50; it
+  was a cap on the only rows the page could show, default 200.
+  Replay all re-queues every failed job, up to 10,000 a click, where
+  it replayed the ones on screen.
+- **BREAKING: `queue.Browsable.ListJobs(ctx, status, limit, offset)`**
+  takes an offset after the limit and skips the newest `offset` jobs;
+  a negative offset reads as zero. `DBQueue`, `MemoryQueue` and
+  `RedisQueue` implement it. Pass `0` to keep the first page.
 - The notification bell's spoken count moved out of `headless-feedback`
   into its own `headless-bell` module, loaded on
   `[data-hui-notification-bell]`, which keeps the toast runtime under

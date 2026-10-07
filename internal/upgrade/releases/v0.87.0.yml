@@ -291,3 +291,17 @@ notes:
       uses:
         - gofastr/core-ui/app.App.RenderOverlayResult
     guidance: "Pass the location the overlay opens over as the third argument: a.RenderOverlayResult(ctx, path, r.Header.Get(\"X-Gofastr-From\"), as) in a host, or \"\" where there is none (a test). The screen reads its path with app.OverlayOriginFromContext(ctx)."
+  - change: "queue.Browsable.ListJobs takes an offset after the limit, so a caller can page past the newest jobs; the DB, memory and Redis queues implement it"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/queue.Browsable.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.DBQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.MemoryQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.RedisQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+    guidance: "Pass 0 as the new last argument to keep the first page: q.ListJobs(ctx, status, limit, 0). A type of your own that implements Browsable takes the offset too, ListJobs(ctx, status string, limit, offset int), skipping the newest offset jobs and reading a negative offset as zero; a type assertion to queue.Browsable fails quietly until it does."

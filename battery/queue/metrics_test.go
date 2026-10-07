@@ -15,7 +15,7 @@ type fakeBrowsable struct {
 	err   error
 }
 
-func (f *fakeBrowsable) ListJobs(_ context.Context, _ string, _ int) ([]Job, error) {
+func (f *fakeBrowsable) ListJobs(_ context.Context, _ string, _, _ int) ([]Job, error) {
 	return nil, nil
 }
 

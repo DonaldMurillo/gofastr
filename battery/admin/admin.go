@@ -95,7 +95,8 @@ type Config struct {
 	// AuditTable is the audit log table. Defaults to "audit_log".
 	AuditTable string
 
-	// QueueListLimit caps rows on the Jobs page. Default 200.
+	// QueueListLimit is the Jobs page's rows per page; a pager under the
+	// table reaches older jobs. Default 50.
 	QueueListLimit int
 
 	// AuditListLimit is the Audit log page's rows per page; a pager
@@ -212,7 +213,7 @@ func New(cfg Config) *Battery {
 		cfg.AuditTable = "audit_log"
 	}
 	if cfg.QueueListLimit <= 0 {
-		cfg.QueueListLimit = 200
+		cfg.QueueListLimit = 50
 	}
 	if cfg.SavedViewsTable == "" {
 		cfg.SavedViewsTable = "admin_saved_views"

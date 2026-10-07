@@ -778,12 +778,14 @@ func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
 }
 
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
-// supplied status, newest-first. Empty status returns all jobs
-// regardless of state. limit <= 0 defaults to 100.
-func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+// supplied status, newest-first, after skipping offset of them. Empty
+// status returns all jobs regardless of state. limit <= 0 defaults to
+// 100; a negative offset reads as zero.
+func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
 		max_attempts, created_at, scheduled_at FROM %s`, q.qt())
 	args := []any{}
@@ -791,7 +793,9 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 		base += " WHERE status = $1"
 		args = append(args, status)
 	}
-	base += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
+	// id breaks created_at ties, so consecutive pages neither repeat nor
+	// skip a job.
+	base += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d", limit, offset)
 	rows, err := q.db.QueryContext(ctx, base, args...)
 	if err != nil {
 		return nil, err
