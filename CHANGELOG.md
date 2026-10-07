@@ -872,17 +872,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   menu, a trash view and saved views.** They are off on app pages and on
   in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
   and parses it with the parser the chips use; a filter that does not
-  parse keeps the "filter did not apply" warning. `ColumnsMenu()` shows,
-  hides and reorders columns through the `cols` query param, and the
-  list reads only the columns it shows. `Deleted()` adds a Deleted tab
+  parse keeps the "filter did not apply" warning. `ColumnsMenu()` shows
+  and hides columns through the `cols` query param, a menu of checkbox
+  rows that keep the filter and the sort, and the list reads only the
+  columns it shows. `Deleted()` adds a Deleted tab
   to an entity with `Scope.SoftDelete`, listing soft-deleted rows under
   the same owner, tenant and read scope, each with Restore and Delete
   permanently. `SavedViews()`, on a UI built with
   `UI.WithSavedViews(store)`, keeps named filter-and-columns sets per
   caller in a `SavedViewStore`; an opened view is parsed and checked
-  again each time. The query box, the columns menu and the save-view
-  form are disclosures in one exclusive group, so opening one closes
-  the others; the query box starts open while a filter is set.
+  again each time. The list draws one toolbar form: the search, a
+  Filters dropdown holding the facets, the typed filter and the one
+  Apply/Reset pair, and the Columns menu at the row's end. Saved views
+  are tabs beside the declared views, with a "Save view" dropdown at
+  the tab row's end once the filter or the columns differ from the
+  open view, and the open saved view's Delete beside it. Active
+  filters show as chips under the toolbar, each removing its own
+  filter, with a "Clear all".
   `UI.RestoreHandler`, `PurgeHandler` and
   `SavedViewsHandler` serve the writes at `<write base>/<id>/_restore`,
   `/_purge`, `/_views` and `/_views/_delete/<id>`. A plain form post is

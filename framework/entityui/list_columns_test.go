@@ -123,31 +123,27 @@ func TestColsParamHiddenColumnRefused(t *testing.T) {
 func TestColumnsMenuRendersControls(t *testing.T) {
 	x := columnsUI(t)
 	b := x.ui.List("orders").ColumnsMenu()
-	html := listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22&sort=name"))
+	html := listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22&sort=name&cols=name,status"))
 	for _, want := range []string{
-		"Columns",      // the disclosure's summary
-		`name="cols"`,  // one checkbox per available field
-		`value="name"`, // ...named for the field
-		`value="status"`,
-		`href="/orders?`, // the reset and move links stay on the page
+		"Columns", // the menu's trigger
+		// The title field is checked and cannot be turned off.
+		`aria-checked="true" aria-disabled="true"`,
+		// A shown column's row turns it off: cols without it.
+		`aria-checked="true" class="fui-menu__item" href="/orders?cols=name&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
+		// A hidden column's row turns it on, after the shown ones.
+		`aria-checked="false" class="fui-menu__item" href="/orders?cols=name%2Cstatus%2Camount&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the columns menu is missing %q:\n%s", want, html)
 		}
 	}
-	// The form round-trips the state it does not own: the filter and
-	// the sort ride it as hidden inputs.
-	if !strings.Contains(html, `name="filter"`) || !strings.Contains(html, `name="sort"`) {
-		t.Errorf("the columns form dropped the filter or the sort:\n%s", html)
+	if !strings.Contains(html, `role="menuitemcheckbox"`) {
+		t.Errorf("the column rows are not checkbox menu items:\n%s", html)
 	}
-	// A move link rewrites cols with the column moved up.
-	if !strings.Contains(html, "cols=name") && !strings.Contains(html, "cols=status") {
-		t.Errorf("no move link rewrites cols:\n%s", html)
-	}
-	// The reset link drops cols entirely.
+	// The reset link drops cols entirely and keeps the rest.
 	reset := listResetHref(html)
-	if reset == "" || strings.Contains(reset, "cols=") {
-		t.Errorf("the reset link does not drop cols (got %q):\n%s", reset, html)
+	if reset == "" || strings.Contains(reset, "cols=") || !strings.Contains(reset, "sort=name") || !strings.Contains(reset, "filter=") {
+		t.Errorf("the reset link does not drop only cols (got %q):\n%s", reset, html)
 	}
 }
 

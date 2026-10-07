@@ -2,11 +2,10 @@ package entityui
 
 import (
 	"context"
-	"maps"
+	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -78,12 +77,13 @@ func (s *listState) setColumns(names []string) {
 	s.columns = names
 }
 
-// columnsMenu draws the columns control: a disclosure holding a GET
-// form — one checkbox per available field, checked for shown, the
-// title field pinned on — with the list's other params as hidden
-// inputs, move links that rewrite cols in display order, and a Reset
-// link that drops it. The form keeps the page: columns do not change
-// the row set.
+// columnsMenu draws the columns control: a menu of checkbox rows, one
+// per available field in display order (the hidden ones after), each a
+// link to the same URL with that column toggled in cols; the title
+// field is checked and disabled, since it carries the record link. A
+// Reset row drops cols. Every row is a navigation that keeps the other
+// params and the page: columns change what a row shows, not which rows
+// match.
 func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML {
 	if !b.colsMenu || len(s.available) == 0 {
 		return ""
@@ -94,7 +94,6 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 	for _, c := range s.columns {
 		shown[c] = true
 	}
-	// The checkbox order is the display order, the hidden ones after.
 	order := make([]string, 0, len(s.available))
 	for _, c := range s.columns {
 		if slices.Contains(s.available, c) {
@@ -103,7 +102,7 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 	}
 	if tf != "" && !shown[tf] && slices.Contains(s.available, tf) {
 		// The default resolution may leave the title field out (a
-		// builder's Columns without it); the checkbox still names it,
+		// builder's Columns without it); its row still names it,
 		// pinned on.
 		order = append(order, tf)
 		shown[tf] = true
@@ -114,77 +113,58 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 		}
 	}
 
-	fields := make([]render.HTML, 0, len(order)+len(s.q)+1)
-	for _, k := range slices.Sorted(maps.Keys(s.q)) {
-		if k == s.p.cols {
+	items := make([]ui.MenuItem, 0, len(order)+2)
+	for _, name := range order {
+		if tf != "" && name == tf {
+			items = append(items, ui.MenuItem{Label: m.label(ctx, name), Check: true, Checked: true, Disabled: true})
 			continue
 		}
-		if vs := s.q[k]; len(vs) > 0 {
-			fields = append(fields, hiddenInput(k, vs[0]))
+		next := make([]string, 0, len(order))
+		for _, c := range order {
+			if c == name {
+				if !shown[c] {
+					next = append(next, c)
+				}
+			} else if shown[c] {
+				next = append(next, c)
+			}
 		}
+		q := s.carryWithSort(s.p.cols)
+		q.Set(s.p.cols, strings.Join(next, ","))
+		items = append(items, ui.MenuItem{
+			Label:   m.label(ctx, name),
+			Href:    listHref(s.path, q),
+			Check:   true,
+			Checked: shown[name],
+		})
 	}
-	prefix := "eui-" + listIDSafe(s.key, m.name) + "-col"
-	for _, name := range order {
-		isTitle := tf != "" && name == tf
-		row := []render.HTML{ui.Checkbox(ui.ToggleConfig{
-			Name:     s.p.cols,
-			ID:       prefix + "-" + name,
-			Value:    name,
-			Checked:  shown[name] || isTitle,
-			Disabled: isTitle,
-			Label:    m.label(ctx, name),
-		})}
-		row = append(row, b.columnMoves(ctx, s, name)...)
-		fields = append(fields, ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, row...))
-	}
-	return ui.Collapsible(ui.CollapsibleConfig{
-		Summary: i18nui.T(ctx, i18nui.KeyEntityColumns),
-		Name:    s.toolGroup(),
-	}, ui.Form(ui.FormConfig{
-		Action:      s.path,
-		Method:      "GET",
-		Ctx:         ctx,
-		SubmitLabel: i18nui.T(ctx, i18nui.KeyFilterApply),
-	}, fields...), ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.T(ctx, i18nui.KeyFilterReset),
-		Href:    s.dropColsHref(),
-		Variant: ui.ButtonGhost,
-	}))
-}
-
-// columnMoves are one shown column's move links: up and down anchors
-// that rewrite cols with the column swapped, keeping every other param.
-// A column with nowhere to move draws nothing.
-func (b *ListBuilder) columnMoves(ctx context.Context, s *listState, name string) []render.HTML {
-	i := slices.Index(s.columns, name)
-	if i < 0 {
-		return nil
-	}
-	var out []render.HTML
-	add := func(label, aria string, j int) {
-		cols := slices.Clone(s.columns)
-		cols[i], cols[j] = cols[j], cols[i]
-		q := s.carry(s.p.cols)
-		q.Set(s.p.cols, strings.Join(cols, ","))
-		out = append(out, ui.Link(ui.LinkConfig{
-			Href: listHref(s.path, q),
-			Text: label,
-			ExtraAttrs: html.Attrs{
-				"aria-label": aria,
-			},
-		}))
-	}
-	if i > 0 {
-		add("↑", i18nui.TVars(ctx, i18nui.KeyEntityColumnsUp, map[string]string{"column": s.m.label(ctx, name)}), i-1)
-	}
-	if i < len(s.columns)-1 {
-		add("↓", i18nui.TVars(ctx, i18nui.KeyEntityColumnsDown, map[string]string{"column": s.m.label(ctx, name)}), i+1)
-	}
-	return out
+	items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
+		Label: i18nui.T(ctx, i18nui.KeyFilterReset),
+		Href:  s.dropColsHref(),
+	})
+	return ui.Menu(ui.MenuConfig{
+		ID:    "eui-" + listIDSafe(s.key, m.name) + "-cols",
+		Label: i18nui.T(ctx, i18nui.KeyEntityColumns),
+		Icon:  "columns",
+		Items: items,
+	})
 }
 
 // dropColsHref is the same URL with no cols param: the list's resolved
 // columns, whatever else the URL carries.
 func (s *listState) dropColsHref() string {
-	return listHref(s.path, s.carry(s.p.cols))
+	return listHref(s.path, s.carryWithSort(s.p.cols))
+}
+
+// carryWithSort is carry plus the URL's sort and direction: a columns
+// change keeps the order the reader picked, where a narrowing link
+// (a view, a filter) resets it.
+func (s *listState) carryWithSort(exclude ...string) url.Values {
+	q := s.carry(exclude...)
+	for _, k := range []string{s.p.sort, s.p.dir} {
+		if v := strings.TrimSpace(s.q.Get(k)); v != "" {
+			q.Set(k, v)
+		}
+	}
+	return q
 }

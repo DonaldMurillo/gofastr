@@ -81,25 +81,41 @@ func TestQueryBoxBadTextWarnsNotFails(t *testing.T) {
 
 // The tools are collapsibles in one exclusive group, so they take one
 // panel's height at most; the query box opens only while a filter is set.
-func TestListToolsCollapse(t *testing.T) {
+// The list's tools are one row and one form: the search, the facets
+// and the typed filter submit together through the Filters dropdown's
+// one Apply, and the columns menu sits on the same row.
+func TestListToolsShareOneRow(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},
 		map[string][]map[string]any{"orders": ordersRows()},
 	)
 	b := x.ui.List("orders").QueryBox().ColumnsMenu()
-	tools := regexp.MustCompile(`<details[^>]*name="eui-[a-z0-9-]*-tools"[^>]*>`)
-	plain := tools.FindAllString(listHTML(t, b, x.ctx("/orders", "")), -1)
-	if len(plain) != 2 {
-		t.Fatalf("want the query box and the columns menu in one group, got %d: %q", len(plain), plain)
+	html := listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22"))
+	form := regexp.MustCompile(`(?s)<form[^>]*id="eui-orders-toolbar".*?</form>`).FindString(html)
+	if form == "" {
+		t.Fatalf("no toolbar form:\n%s", html)
 	}
-	for _, tag := range plain {
-		if strings.Contains(tag, " open") {
-			t.Errorf("a tool is open with no filter set: %s", tag)
+	for _, want := range []string{
+		`name="filter"`,              // the typed filter
+		`data-hui-menu=`,             // the columns menu
+		`class="fui-dropdown__count`, // the Filters badge
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the toolbar form is missing %q:\n%s", want, form)
 		}
 	}
-	filtered := tools.FindAllString(listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22")), -1)
-	if len(filtered) != 2 || !strings.Contains(filtered[0], " open") || strings.Contains(filtered[1], " open") {
-		t.Errorf("with a filter set, only the query box opens: %q", filtered)
+	// The typed filter is the form's own field, never also a hidden copy.
+	if n := strings.Count(form, `name="filter"`); n != 1 {
+		t.Errorf("want one filter field in the form, got %d:\n%s", n, form)
+	}
+	if n := strings.Count(html, "fui-filter-toolbar__apply"); n != 1 {
+		t.Errorf("want one Apply on the page, got %d:\n%s", n, html)
+	}
+	if strings.Contains(html, "fui-collapsible") {
+		t.Errorf("a tool still renders as a collapsible section:\n%s", html)
+	}
+	if strings.Count(html, "<form") != 1 {
+		t.Errorf("want the one toolbar form, got %d forms:\n%s", strings.Count(html, "<form"), html)
 	}
 }
 

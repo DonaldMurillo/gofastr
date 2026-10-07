@@ -154,11 +154,8 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	lb := b.bulkFor(ctx, s)
 	var body []render.HTML
 	body = append(body, b.header(ctx, s, total, known))
-	if tabs := viewTabs(ctx, s); tabs != "" {
+	if tabs := b.viewTabs(ctx, s); tabs != "" {
 		body = append(body, tabs)
-	}
-	if strip := b.savedViewsStrip(ctx, s); strip != "" {
-		body = append(body, strip)
 	}
 	if s.savedGone {
 		body = append(body, savedGoneWarning(ctx))
@@ -166,20 +163,12 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if s.filterBad {
 		body = append(body, filterWarning(ctx))
 	}
-	if chips := filterChips(ctx, s); chips != "" {
-		body = append(body, chips)
-	}
-	if qb := b.queryBoxForm(ctx, s); qb != "" {
-		body = append(body, qb)
-	}
-	if menu := b.columnsMenu(ctx, s); menu != "" {
-		body = append(body, menu)
-	}
-	if save := b.saveViewTool(ctx, s); save != "" {
-		body = append(body, save)
-	}
-	if tb := b.toolbar(ctx, s); tb != "" {
+	facets := b.facetControls(ctx, s)
+	if tb := b.toolbar(ctx, s, facets); tb != "" {
 		body = append(body, tb)
+	}
+	if chips := filterChips(ctx, s, facets); chips != "" {
+		body = append(body, chips)
 	}
 
 	if lb != nil {
@@ -300,12 +289,10 @@ func actionCluster(actions []render.HTML) render.HTML {
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
 }
 
-// toolbar draws the one GET form: the search box and the facets
-// together, so a submission carries both. Hidden inputs round-trip the
-// request state the form does not own — this list's view, filter and
-// sort, and every other param on the URL — so applying a search does not
-// silently reset the rest of the page.
-func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
+// facetControls are the list's facets as toolbar controls, each named
+// for its URL param and holding the URL's value. A facet with nothing
+// to offer (a refused relation, an enum with no values) is left out.
+func (b *ListBuilder) facetControls(ctx context.Context, s *listState) []ui.Facet {
 	m := s.m
 	facets := make([]ui.Facet, 0, len(m.d.Facets))
 	for _, name := range s.facets() {
@@ -326,13 +313,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 			}
 			facet.Kind = ui.FacetPills
 		case schema.Relation:
-			opts := b.ui.relationFacetOptions(ctx, m, name)
-			if len(opts) == 0 {
-				// A refused relation shows no options; a facet with
-				// nothing to offer is not drawn.
-				continue
-			}
-			facet.Options = opts
+			facet.Options = b.ui.relationFacetOptions(ctx, m, name)
 			facet.Kind = ui.FacetSelect
 		default: // Enum
 			short := len(f.Values) > 0 && len(f.Values) <= 4
@@ -356,17 +337,42 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 		}
 		facets = append(facets, facet)
 	}
+	return facets
+}
+
+// toolbar draws the list's one row of tools: the search box filling
+// it, a Filters dropdown holding the facets and the typed filter with
+// the one Apply, and the columns menu. Search, facets and filter are
+// one GET form, so a submission carries all of them; hidden inputs
+// round-trip the request state the form does not own (this list's view
+// and sort, every other param on the URL) so applying a search does not
+// silently reset the rest of the page.
+func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Facet) render.HTML {
+	m := s.m
 	var search *ui.FilterSearch
 	if len(m.e.Config.SearchFields) > 0 {
 		placeholder := i18nui.TVars(ctx, i18nui.KeyEntitySearch, map[string]string{"entity": m.plural(ctx)})
 		search = &ui.FilterSearch{Name: s.p.q, Value: s.search, Placeholder: placeholder, Label: placeholder}
 	}
-	if len(facets) == 0 && search == nil {
-		return ""
+	var extra []render.HTML
+	applied := 0
+	if qf := b.queryField(ctx, s); qf != "" {
+		extra = append(extra, qf)
+		if s.filterText != "" {
+			applied = 1
+		}
+	}
+	var tools []render.HTML
+	if menu := b.columnsMenu(ctx, s); menu != "" {
+		tools = append(tools, menu)
+	}
+	if len(facets) == 0 && search == nil && len(extra) == 0 {
+		// Nothing to submit: the columns menu, if any, stands alone.
+		return actionCluster(tools)
 	}
 	var hidden []ui.HiddenField
 	for _, k := range slices.Sorted(maps.Keys(s.q)) {
-		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) {
+		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) || (len(extra) > 0 && k == s.p.filter) {
 			continue
 		}
 		if vs := s.q[k]; len(vs) > 0 {
@@ -384,9 +390,14 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 		}
 	}
 	return ui.FilterToolbar(ui.FilterToolbarConfig{
+		ID:        "eui-" + listIDSafe(s.key, m.name) + "-toolbar",
 		Action:    s.path,
+		Dropdown:  true,
 		Facets:    facets,
 		Search:    search,
+		Extra:     extra,
+		Applied:   applied,
+		Tools:     tools,
 		Hidden:    hidden,
 		HideReset: hideReset,
 		Ctx:       ctx,

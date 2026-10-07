@@ -138,19 +138,22 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 	return nil, nil
 }
 
-// viewTabs draws the strip above the list: All plus every declared view
-// shown to this caller. Each tab is a link that swaps the view param and
-// drops sort and page — a view carries its own default order, and every
-// view starts on page one.
-func viewTabs(ctx context.Context, s *listState) render.HTML {
-	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+// viewTabs draws the strip above the list: All, every declared view
+// shown to this caller, then the caller's saved views, with the
+// save/delete view tools at its end. Each tab is a link: a declared one
+// swaps the view param and drops sort, page and any open saved view —
+// a view carries its own default order, and every view starts on page
+// one; a saved one opens that view.
+func (b *ListBuilder) viewTabs(ctx context.Context, s *listState) render.HTML {
+	builtIn := s.savedID == ""
+	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 	if s.implicitView != "" {
 		allQ.Set(s.p.view, allView)
 	}
 	items := []ui.TabNavItem{{
 		Text:    i18nui.T(ctx, i18nui.KeyEntityViewAll),
 		Href:    listHref(s.path, allQ),
-		Current: s.view == "",
+		Current: builtIn && s.view == "",
 	}}
 	for _, v := range s.m.d.Views {
 		if !viewable(ctx, s.m, v.Key) {
@@ -159,46 +162,77 @@ func viewTabs(ctx context.Context, s *listState) render.HTML {
 		items = append(items, ui.TabNavItem{
 			Text: i18nui.ViewLabel(ctx, s.m.tr, s.m.name, v.Key, v.Label),
 			Href: func() string {
-				q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+				q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 				q.Set(s.p.view, v.Key)
 				return listHref(s.path, q)
 			}(),
-			Current: s.view == v.Key,
+			Current: builtIn && s.view == v.Key,
 		})
 	}
-	// The trash view rides beside the declared ones, after them.
+	if savedViewsOn(ctx, s) {
+		for _, v := range s.savedViews {
+			q := s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page)
+			q.Set(s.p.saved, v.ID)
+			items = append(items, ui.TabNavItem{
+				Text:    v.Name,
+				Href:    listHref(s.path, q),
+				Current: v.ID == s.savedID,
+			})
+		}
+	}
+	// The trash view rides after the others.
 	if s.offeredTab {
-		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 		q.Set(s.p.view, deletedViewKey)
 		items = append(items, ui.TabNavItem{
 			Text:    i18nui.T(ctx, i18nui.KeyEntityViewDeleted),
 			Href:    listHref(s.path, q),
-			Current: s.deletedView,
+			Current: builtIn && s.deletedView,
 		})
 	}
-	if len(items) < 2 {
+	end := b.viewTools(ctx, s)
+	if len(items) < 2 && end == "" {
 		// All alone is not a strip of tabs; it is the list's only shape.
 		return ""
 	}
 	return ui.TabNav(ui.TabNavConfig{
 		Label: i18nui.T(ctx, i18nui.KeyEntityViews),
 		Items: items,
+		End:   end,
 	})
 }
 
-// filterChips draws the active filter as one chip per top-level AND
-// term, each a link to the same URL with that term removed. The query
-// box that writes the text is P4; the chips are how a reader narrows
-// what they typed.
-func filterChips(ctx context.Context, s *listState) render.HTML {
-	if s.filterPred == nil {
-		return ""
-	}
-	terms := topLevelTerms(s.filterPred)
-	if len(terms) == 0 {
-		return ""
-	}
+// filterChips draws what narrows the list: a chip per facet set
+// ("Status: Paid") and per top-level AND term of the typed filter, each
+// a link to the same URL without it, then "Clear all", which drops the
+// facets and the filter (and an open saved view whose filter it is) but
+// keeps the search, the view and the columns.
+func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HTML {
 	var chips []render.HTML
+	for _, f := range facets {
+		if f.Value == "" {
+			continue
+		}
+		label := f.Value
+		for _, o := range f.Options {
+			if o.Value == f.Value {
+				label = o.Label
+			}
+		}
+		text := f.Label + ": " + label
+		chips = append(chips, ui.Tag(ui.TagConfig{
+			Label: text,
+			Href:  listHref(s.path, s.carry(f.Name, s.p.page)),
+			ExtraAttrs: map[string]string{
+				"aria-label": i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": text}),
+			},
+			Ctx: ctx,
+		}))
+	}
+	var terms []string
+	if s.filterPred != nil {
+		terms = topLevelTerms(s.filterPred)
+	}
 	for i, term := range terms {
 		chips = append(chips, ui.Tag(ui.TagConfig{
 			Label: term,
@@ -209,6 +243,23 @@ func filterChips(ctx context.Context, s *listState) render.HTML {
 			Ctx: ctx,
 		}))
 	}
+	if len(chips) == 0 {
+		return ""
+	}
+	drop := []string{s.p.filter, s.p.page}
+	for _, f := range facets {
+		drop = append(drop, f.Name)
+	}
+	q := s.carry(drop...)
+	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
+		q.Del(s.p.saved)
+	}
+	chips = append(chips, ui.LinkButton(ui.LinkButtonConfig{
+		Label:   i18nui.T(ctx, i18nui.KeyFilterClearAll),
+		Href:    listHref(s.path, q),
+		Variant: ui.ButtonGhost,
+		Size:    ui.ButtonSizeSmall,
+	}))
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, chips...)
 }
 

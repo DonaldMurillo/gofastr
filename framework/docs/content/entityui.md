@@ -297,10 +297,13 @@ redaction shows.
 
 Four list controls are off by default on app pages and on in the admin.
 Each is one builder method, and each keeps its state in the page's own
-query string like the rest of the list. The query box, the columns
-menu and the save-view form draw as disclosures ("Filter", "Columns",
-"Save view") in one exclusive group: opening one closes the others, and
-the query box starts open while a filter is set.
+query string like the rest of the list. The list draws one toolbar
+form: the search, a Filters dropdown (the facets, the query box and
+the one Apply/Reset pair, with a badge counting the filters set) and
+the Columns menu at the row's end. Saved views are tabs beside the
+declared views, and the "Save view" dropdown sits at the tab row's
+end. Active filters show as chips under the toolbar, each linking to
+the list without it, plus a "Clear all".
 
 ```go
 <!-- gofastr:compile
@@ -313,7 +316,7 @@ var ctx = context.Context(nil)
 list := fwApp.EntityUI(entityui.Extensions{}).
 	List("invoices").
 	QueryBox().      // the filter typed by hand
-	ColumnsMenu().   // show, hide, reorder, reset
+	ColumnsMenu().   // show, hide, reset
 	Deleted().       // the trash view, ?view=deleted
 	SavedViews()     // the caller's named views, ?saved=<id>
 _ = list.RenderCtx(ctx)
@@ -322,14 +325,16 @@ _ = list.RenderCtx(ctx)
 - **The query box** (`.QueryBox()`) is where the reader types the
   filter: a labelled text field named the list's `filter` param,
   prefilled with the active filter text, helped by the entity's
-  queryable field names, riding a GET form that round-trips the state
-  it does not own. The server parses the text with the same parser the
+  queryable field names, inside the Filters dropdown of the toolbar
+  form, which round-trips the state it does not own. The server parses the text with the same parser the
   chips use, so both stay in sync; text that fails to parse, or names a
   Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
   warning and lists without it — never an error page, never SQL.
-- **The columns menu** (`.ColumnsMenu()`) holds a GET form with one
-  checkbox per available field plus move-up and move-down links that
-  rewrite the `cols` param, and a Reset link that drops it. Every
+- **The columns menu** (`.ColumnsMenu()`) is a menu of checkbox rows,
+  one per available field, each a link that toggles that field in the
+  `cols` param and keeps the filter and the sort, plus a Reset row that
+  drops it. The title row is checked and disabled. A `cols` param
+  typed by hand still sets the order. Every
   `cols` name must be a visible, non-omitted field; an unknown,
   Hidden, omitted or duplicate name makes the whole param ignored —
   the list's resolved columns stand. The title column carries the
@@ -362,8 +367,9 @@ _ = list.RenderCtx(ctx)
   with an explicit param in the URL winning, and both are re-parsed
   and re-checked on every open — a view that no longer applies (or an
   unknown or foreign id) draws a callout and lists the All view,
-  revealing nothing. The save form ("Save view", a name) and a delete
-  form per view post to `POST <write base>/_views` and
+  revealing nothing. The save form ("Save view", a name; shown once the
+  filter or the columns differ from the open view) and the open view's
+  delete form post to `POST <write base>/_views` and
   `POST <write base>/_views/_delete/{id}`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
   and columns against the entity's fields before storing anything;

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
@@ -99,81 +98,101 @@ func savedViewsOn(ctx context.Context, s *listState) bool {
 	return s.savedOn && userID(ctx) != ""
 }
 
-// savedViewsStrip draws the caller's saved views: a link each, the open
-// one marked current, and a delete form each. A caller with no views
-// gets no strip; the save form is a list tool of its own (saveViewTool).
-func (b *ListBuilder) savedViewsStrip(ctx context.Context, s *listState) render.HTML {
-	if !savedViewsOn(ctx, s) || len(s.savedViews) == 0 {
-		return ""
-	}
-	m := s.m
-	back := listHref(s.path, s.q)
-	parts := make([]render.HTML, 0, 2*len(s.savedViews)+2)
-	for _, v := range s.savedViews {
-		q := s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page)
-		q.Set(s.p.saved, v.ID)
-		attrs := html.Attrs{}
-		if v.ID == s.savedID {
-			attrs["aria-current"] = "true"
-		}
-		parts = append(parts, ui.Tag(ui.TagConfig{
-			Label:      v.Name,
-			Href:       listHref(s.path, q),
-			ExtraAttrs: attrs,
-			Ctx:        ctx,
-		}))
-		del := interactive.Post(m.api + "/_views/_delete/" + url.PathEscape(v.ID)).
-			WithConfirmDialog(interactive.Confirm{
-				Title:   i18nui.T(ctx, i18nui.KeyEntitySavedDeleteTitle),
-				Message: i18nui.T(ctx, i18nui.KeyEntitySavedDeleteConfirm),
-				Accept:  i18nui.T(ctx, i18nui.KeyEntitySavedDelete),
-				Danger:  true,
-			}).
-			OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySavedDeleted))
-		parts = append(parts, ui.Form(ui.FormConfig{
-			Action:     m.api + "/_views/_delete/" + url.PathEscape(v.ID),
-			Method:     "POST",
-			Ctx:        ctx,
-			HideSubmit: true,
-			ExtraAttrs: del.Attrs(),
-		},
-			hiddenInput("back", back),
-			hiddenInput("key", s.key),
-			ui.Button(ui.ButtonConfig{
-				Label:   i18nui.TVars(ctx, i18nui.KeyEntitySavedDelete, map[string]string{"view": v.Name}),
-				Variant: ui.ButtonGhost,
-				Type:    "submit",
-			}),
-		))
-	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, parts...)
-}
-
-// saveViewTool is the "Save view" form inside a collapsible among the
-// list's tools: a name, the active filter text and columns as hidden
-// fields, and the list's URL to return to.
-func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTML {
+// viewTools are the view strip's end: "Save view" while the list shows
+// something a saved view would keep that is not already one, and
+// "Delete view" while a saved view is open.
+func (b *ListBuilder) viewTools(ctx context.Context, s *listState) render.HTML {
 	if !savedViewsOn(ctx, s) {
 		return ""
 	}
+	var out []render.HTML
+	if save := b.saveViewTool(ctx, s); save != "" {
+		out = append(out, save)
+	}
+	if del := b.deleteViewTool(ctx, s); del != "" {
+		out = append(out, del)
+	}
+	return actionCluster(out)
+}
+
+// saveViewTool is the "Save view" dropdown: a name field and Save, the
+// active filter text and columns as hidden fields, and the list's URL
+// to return to. A saved view keeps the filter and the columns, so the
+// tool shows only when one of them is set and is not simply an open
+// saved view's own.
+func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTML {
+	changed := s.q.Has(s.p.filter) || s.q.Has(s.p.cols)
+	if s.savedID == "" {
+		changed = s.filterText != "" || s.q.Has(s.p.cols)
+	}
+	if !changed {
+		return ""
+	}
 	m := s.m
-	return ui.Collapsible(ui.CollapsibleConfig{
-		Summary: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
-		Name:    s.toolGroup(),
-	}, ui.Form(ui.FormConfig{
-		Action:      m.api + "/_views",
-		Method:      "POST",
-		Ctx:         ctx,
-		SubmitLabel: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+	return ui.Dropdown(ui.DropdownConfig{
+		Label: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+		Icon:  "bookmark",
+		Align: ui.DropdownEnd,
+		ID:    "eui-" + listIDSafe(s.key, m.name) + "-saveview-pop",
+		Content: ui.Form(ui.FormConfig{
+			Action:      m.api + "/_views",
+			Method:      "POST",
+			Ctx:         ctx,
+			SubmitLabel: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+		},
+			hiddenInput("back", listHref(s.path, s.q)),
+			hiddenInput("key", s.key),
+			hiddenInput("filter", s.filterText),
+			hiddenInput("cols", strings.Join(s.columns, ",")),
+			ui.TextField(ui.TextFieldConfig{
+				Name:     "name",
+				ID:       "eui-" + listIDSafe(s.key, m.name) + "-saveview",
+				Label:    i18nui.T(ctx, i18nui.KeyEntitySavedName),
+				Required: true,
+			}),
+		),
+	})
+}
+
+// deleteViewTool is the open saved view's delete form, behind the
+// confirm dialog; it returns to the list without the view.
+func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.HTML {
+	if s.savedID == "" {
+		return ""
+	}
+	name := ""
+	for _, v := range s.savedViews {
+		if v.ID == s.savedID {
+			name = v.Name
+		}
+	}
+	if name == "" {
+		return ""
+	}
+	m := s.m
+	action := m.api + "/_views/_delete/" + url.PathEscape(s.savedID)
+	del := interactive.Post(action).
+		WithConfirmDialog(interactive.Confirm{
+			Title:   i18nui.T(ctx, i18nui.KeyEntitySavedDeleteTitle),
+			Message: i18nui.T(ctx, i18nui.KeyEntitySavedDeleteConfirm),
+			Accept:  i18nui.T(ctx, i18nui.KeyEntitySavedDelete),
+			Danger:  true,
+		}).
+		OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySavedDeleted))
+	return ui.Form(ui.FormConfig{
+		Action:     action,
+		Method:     "POST",
+		Ctx:        ctx,
+		HideSubmit: true,
+		ExtraAttrs: del.Attrs(),
 	},
-		hiddenInput("back", listHref(s.path, s.q)),
+		hiddenInput("back", listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))),
 		hiddenInput("key", s.key),
-		hiddenInput("filter", s.filterText),
-		hiddenInput("cols", strings.Join(s.columns, ",")),
-		ui.TextField(ui.TextFieldConfig{
-			Name:  "name",
-			ID:    "eui-" + listIDSafe(s.key, m.name) + "-saveview",
-			Label: i18nui.T(ctx, i18nui.KeyEntitySavedName),
+		ui.Button(ui.ButtonConfig{
+			Label:   i18nui.TVars(ctx, i18nui.KeyEntitySavedDelete, map[string]string{"view": name}),
+			Variant: ui.ButtonGhost,
+			Size:    ui.ButtonSizeSmall,
+			Type:    "submit",
 		}),
-	))
+	)
 }

@@ -17,14 +17,11 @@ const (
 	KeyEntityFilterInvalidBody  Key = "ui.entity.filterInvalidBody" // "The filter could not be applied. Check its text and try again."
 
 	// The query box: the filter typed by hand.
-	KeyEntityQueryBoxLabel Key = "ui.entity.queryBox"      // "Filter"
 	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
 	KeyEntityQueryBoxHelp  Key = "ui.entity.queryBoxHelp"  // "Filter by these fields: {fields}"
 
 	// The columns menu.
-	KeyEntityColumns     Key = "ui.entity.columns"     // "Columns"
-	KeyEntityColumnsUp   Key = "ui.entity.columnsUp"   // "Move {column} up"
-	KeyEntityColumnsDown Key = "ui.entity.columnsDown" // "Move {column} down"
+	KeyEntityColumns Key = "ui.entity.columns" // "Columns"
 
 	// The trash view.
 	KeyEntityViewDeleted      Key = "ui.entity.viewDeleted"      // "Deleted"
@@ -68,13 +65,10 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidTitle: "Filter not applied",
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
-	KeyEntityQueryBoxLabel: "Filter",
 	KeyEntityQueryBoxField: "Filter expression",
 	KeyEntityQueryBoxHelp:  "Filter by these fields: {fields}",
 
-	KeyEntityColumns:     "Columns",
-	KeyEntityColumnsUp:   "Move {column} up",
-	KeyEntityColumnsDown: "Move {column} down",
+	KeyEntityColumns: "Columns",
 
 	KeyEntityViewDeleted:      "Deleted",
 	KeyEntityDeletedEmpty:     "No deleted {entity} yet",

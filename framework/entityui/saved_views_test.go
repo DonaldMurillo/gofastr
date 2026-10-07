@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -172,16 +173,25 @@ func TestSavedViewOpensAndNarrows(t *testing.T) {
 	if !strings.Contains(html, "alpha") {
 		t.Errorf("the saved view dropped the matching row:\n%s", html)
 	}
-	// The strip carries the view, marked current, and the chips show
-	// the filter — one source of truth.
-	for _, want := range []string{"Open only", `aria-current="true"`, `status = &quot;open&quot;`} {
-		if !strings.Contains(html, want) {
-			t.Errorf("the saved strip is missing %q:\n%s", want, html)
-		}
+	// The view is a tab, marked current, and the chips show the filter
+	// — one source of truth.
+	if !regexp.MustCompile(`<a[^>]*aria-current="page"[^>]*>Open only`).MatchString(html) {
+		t.Errorf("the saved view is not the current tab:\n%s", html)
 	}
-	// The save form is there too, carrying the filter it would save.
+	if !strings.Contains(html, `status = &quot;open&quot;`) {
+		t.Errorf("the chips do not show the saved filter:\n%s", html)
+	}
+	// An open, unchanged saved view offers its delete, not a save.
+	if !strings.Contains(html, `action="/api/orders/_views/_delete/`+saved.ID+`"`) {
+		t.Errorf("the open saved view has no delete form:\n%s", html)
+	}
+	if strings.Contains(html, `action="/api/orders/_views"`) {
+		t.Errorf("an unchanged saved view offers to save itself again:\n%s", html)
+	}
+	// Changing its filter offers the save, posting to the write base.
+	html = listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?saved="+saved.ID+"&filter=name+%3D+%22alpha%22", "u1"))
 	if !strings.Contains(html, `action="/api/orders/_views"`) {
-		t.Errorf("the save form does not post to the write base:\n%s", html)
+		t.Errorf("a changed saved view does not offer the save form:\n%s", html)
 	}
 }
 
@@ -315,7 +325,7 @@ func TestSaveViewStoresAndRedirects(t *testing.T) {
 	}
 	// Following the redirect opens the saved view.
 	html := listHTML(t, x.ui.List("orders").SavedViews(), x.userCtx("/orders", "?"+strings.TrimPrefix(loc, "/orders?"), "u1"))
-	if strings.Contains(html, "zeta") || !strings.Contains(html, `aria-current="true"`) {
+	if strings.Contains(html, "zeta") || !regexp.MustCompile(`<a[^>]*aria-current="page"[^>]*>Open only`).MatchString(html) {
 		t.Errorf("the redirect did not open the saved view:\n%s", html)
 	}
 }
