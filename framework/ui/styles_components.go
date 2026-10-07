@@ -1066,7 +1066,12 @@ func toastStackCSS(_ style.Theme) string {
 
 func dataTableCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
+/* The scroll box is the containing block for a cell's absolutely
+   positioned parts (a visually hidden label, a menu panel), so the
+   clip holds them; otherwise they widen the page from where they sit
+   in a table wider than the viewport. */
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll {
+  position: relative;
   overflow-x: auto;
   border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-lg);

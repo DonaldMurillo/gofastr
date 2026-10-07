@@ -1196,6 +1196,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A `ui.DataTable` wider than a phone no longer widens the page.** A
+  cell's absolutely positioned part, such as a visually hidden label,
+  took its containing block from outside the scroll box, escaped its
+  clip and pushed the document sideways (the Meridian invoice list
+  measured 660px in a 390px viewport). The scroll box is now that
+  containing block.
 - **A panic in a battery or plugin `Init`, a start, ready or seed hook
   logs its stack.** The error said to set `GOTRACEBACK=all`, which
   prints nothing for a recovered panic, so the panic could not be
