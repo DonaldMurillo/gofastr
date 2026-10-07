@@ -173,6 +173,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if menu := b.columnsMenu(ctx, s); menu != "" {
 		body = append(body, menu)
 	}
+	if save := b.saveViewTool(ctx, s); save != "" {
+		body = append(body, save)
+	}
 	if tb := b.toolbar(ctx, s); tb != "" {
 		body = append(body, tb)
 	}

@@ -139,6 +139,7 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 	}
 	return ui.Collapsible(ui.CollapsibleConfig{
 		Summary: i18nui.T(ctx, i18nui.KeyEntityColumns),
+		Name:    s.toolGroup(),
 	}, ui.Form(ui.FormConfig{
 		Action:      s.path,
 		Method:      "GET",

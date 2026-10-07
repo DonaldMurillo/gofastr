@@ -91,17 +91,19 @@ func savedGoneWarning(ctx context.Context) render.HTML {
 	}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySavedGoneBody)))
 }
 
-// savedViewsStrip draws the caller's saved views — a link each, the
-// open one marked current, a delete form each — and the save form: a
-// name and a button, carrying the active filter text and columns. The
-// whole strip is omitted for a caller with no views when they may not
-// save one either; the store's refusal to list anonymously reads as no
-// views, so the strip simply does not draw.
+// savedViewsOn reports whether this caller gets saved views at all. A
+// caller with no user cannot save or keep views (the store refuses
+// them), so neither the strip nor the save form draws: a builder never
+// draws a write the handler would refuse.
+func savedViewsOn(ctx context.Context, s *listState) bool {
+	return s.savedOn && userID(ctx) != ""
+}
+
+// savedViewsStrip draws the caller's saved views: a link each, the open
+// one marked current, and a delete form each. A caller with no views
+// gets no strip; the save form is a list tool of its own (saveViewTool).
 func (b *ListBuilder) savedViewsStrip(ctx context.Context, s *listState) render.HTML {
-	// A caller with no user cannot save or keep views (the store refuses
-	// them), so the strip is not drawn at all: a builder never draws a
-	// write the handler would refuse.
-	if !s.savedOn || userID(ctx) == "" {
+	if !savedViewsOn(ctx, s) || len(s.savedViews) == 0 {
 		return ""
 	}
 	m := s.m
@@ -139,26 +141,27 @@ func (b *ListBuilder) savedViewsStrip(ctx context.Context, s *listState) render.
 			}),
 		))
 	}
-	if len(s.savedViews) == 0 {
-		return b.saveViewForm(ctx, s, back)
-	}
-	return render.Join(
-		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, parts...),
-		b.saveViewForm(ctx, s, back),
-	)
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, parts...)
 }
 
-// saveViewForm is the "Save view" form: a name, the active filter text
-// and columns as hidden fields, and the list's URL to return to.
-func (b *ListBuilder) saveViewForm(ctx context.Context, s *listState, back string) render.HTML {
+// saveViewTool is the "Save view" form inside a collapsible among the
+// list's tools: a name, the active filter text and columns as hidden
+// fields, and the list's URL to return to.
+func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTML {
+	if !savedViewsOn(ctx, s) {
+		return ""
+	}
 	m := s.m
-	return ui.Form(ui.FormConfig{
+	return ui.Collapsible(ui.CollapsibleConfig{
+		Summary: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
+		Name:    s.toolGroup(),
+	}, ui.Form(ui.FormConfig{
 		Action:      m.api + "/_views",
 		Method:      "POST",
 		Ctx:         ctx,
 		SubmitLabel: i18nui.T(ctx, i18nui.KeyEntitySavedSave),
 	},
-		hiddenInput("back", back),
+		hiddenInput("back", listHref(s.path, s.q)),
 		hiddenInput("key", s.key),
 		hiddenInput("filter", s.filterText),
 		hiddenInput("cols", strings.Join(s.columns, ",")),
@@ -167,7 +170,5 @@ func (b *ListBuilder) saveViewForm(ctx context.Context, s *listState, back strin
 			ID:    "eui-" + listIDSafe(s.key, m.name) + "-saveview",
 			Label: i18nui.T(ctx, i18nui.KeyEntitySavedName),
 		}),
-	)
+	))
 }
-
-var _ = dsl.ParsePredicate

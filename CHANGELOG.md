@@ -807,7 +807,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   permanently. `SavedViews()`, on a UI built with
   `UI.WithSavedViews(store)`, keeps named filter-and-columns sets per
   caller in a `SavedViewStore`; an opened view is parsed and checked
-  again each time. `UI.RestoreHandler`, `PurgeHandler` and
+  again each time. The query box, the columns menu and the save-view
+  form are disclosures in one exclusive group, so opening one closes
+  the others; the query box starts open while a filter is set.
+  `UI.RestoreHandler`, `PurgeHandler` and
   `SavedViewsHandler` serve the writes at `<write base>/<id>/_restore`,
   `/_purge`, `/_views` and `/_views/_delete/<id>`. A plain form post is
   answered with a 303 to a return path that must be a same-origin

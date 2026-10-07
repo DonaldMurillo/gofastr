@@ -17,8 +17,9 @@ const (
 	KeyEntityFilterInvalidBody  Key = "ui.entity.filterInvalidBody" // "The filter could not be applied. Check its text and try again."
 
 	// The query box: the filter typed by hand.
-	KeyEntityQueryBoxLabel Key = "ui.entity.queryBox"     // "Filter"
-	KeyEntityQueryBoxHelp  Key = "ui.entity.queryBoxHelp" // "Filter by these fields: {fields}"
+	KeyEntityQueryBoxLabel Key = "ui.entity.queryBox"      // "Filter"
+	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
+	KeyEntityQueryBoxHelp  Key = "ui.entity.queryBoxHelp"  // "Filter by these fields: {fields}"
 
 	// The columns menu.
 	KeyEntityColumns     Key = "ui.entity.columns"     // "Columns"
@@ -66,6 +67,7 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
 	KeyEntityQueryBoxLabel: "Filter",
+	KeyEntityQueryBoxField: "Filter expression",
 	KeyEntityQueryBoxHelp:  "Filter by these fields: {fields}",
 
 	KeyEntityColumns:     "Columns",

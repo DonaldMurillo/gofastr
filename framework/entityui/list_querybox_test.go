@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -75,6 +76,30 @@ func TestQueryBoxBadTextWarnsNotFails(t *testing.T) {
 		if !strings.Contains(html, row) {
 			t.Errorf("the unfiltered list lost row %s:\n%s", row, html)
 		}
+	}
+}
+
+// The tools are collapsibles in one exclusive group, so they take one
+// panel's height at most; the query box opens only while a filter is set.
+func TestListToolsCollapse(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").QueryBox().ColumnsMenu()
+	tools := regexp.MustCompile(`<details[^>]*name="eui-[a-z0-9-]*-tools"[^>]*>`)
+	plain := tools.FindAllString(listHTML(t, b, x.ctx("/orders", "")), -1)
+	if len(plain) != 2 {
+		t.Fatalf("want the query box and the columns menu in one group, got %d: %q", len(plain), plain)
+	}
+	for _, tag := range plain {
+		if strings.Contains(tag, " open") {
+			t.Errorf("a tool is open with no filter set: %s", tag)
+		}
+	}
+	filtered := tools.FindAllString(listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22")), -1)
+	if len(filtered) != 2 || !strings.Contains(filtered[0], " open") || strings.Contains(filtered[1], " open") {
+		t.Errorf("with a filter set, only the query box opens: %q", filtered)
 	}
 }
 

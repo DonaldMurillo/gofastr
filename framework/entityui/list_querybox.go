@@ -24,7 +24,8 @@ import (
 
 // queryBoxForm draws the query box: a labelled text field and an Apply
 // button, prefilled with the active filter text (an open saved view's
-// included) and helped by the entity's queryable field names.
+// included) and helped by the entity's queryable field names. It sits in
+// a collapsible among the list's tools, open while a filter is set.
 func (b *ListBuilder) queryBoxForm(ctx context.Context, s *listState) render.HTML {
 	if !b.queryBox {
 		return ""
@@ -49,16 +50,27 @@ func (b *ListBuilder) queryBoxForm(ctx context.Context, s *listState) render.HTM
 	fields = append(fields, ui.TextField(ui.TextFieldConfig{
 		Name:  s.p.filter,
 		ID:    "eui-" + listIDSafe(s.key, m.name) + "-filter",
-		Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxLabel),
+		Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxField),
 		Value: s.filterText,
 		Help: i18nui.TVars(ctx, i18nui.KeyEntityQueryBoxHelp, map[string]string{
 			"fields": strings.Join(names, ", "),
 		}),
 	}))
-	return ui.Form(ui.FormConfig{
+	return ui.Collapsible(ui.CollapsibleConfig{
+		Summary: i18nui.T(ctx, i18nui.KeyEntityQueryBoxLabel),
+		Open:    s.filterText != "",
+		Name:    s.toolGroup(),
+	}, ui.Form(ui.FormConfig{
 		Action:      s.path,
 		Method:      "GET",
 		Ctx:         ctx,
 		SubmitLabel: i18nui.T(ctx, i18nui.KeyFilterApply),
-	}, fields...)
+	}, fields...))
+}
+
+// toolGroup names the exclusive set the list's tool collapsibles share
+// (the query box, the columns menu, the save-view form): opening one
+// closes the others, so the tools take one panel's height at most.
+func (s *listState) toolGroup() string {
+	return "eui-" + listIDSafe(s.key, s.m.name) + "-tools"
 }

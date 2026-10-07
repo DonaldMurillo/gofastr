@@ -295,7 +295,10 @@ redaction shows.
 
 Four list controls are off by default on app pages and on in the admin.
 Each is one builder method, and each keeps its state in the page's own
-query string like the rest of the list.
+query string like the rest of the list. The query box, the columns
+menu and the save-view form draw as disclosures ("Filter", "Columns",
+"Save view") in one exclusive group: opening one closes the others, and
+the query box starts open while a filter is set.
 
 ```go
 <!-- gofastr:compile
