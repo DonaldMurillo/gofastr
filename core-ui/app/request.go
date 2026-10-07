@@ -34,17 +34,30 @@ func OverlayFromContext(ctx context.Context) (ScreenType, bool) {
 // overlayOriginContextKey carries the path an overlay opened over.
 type overlayOriginContextKey struct{}
 
-// withOverlayOrigin records the origin's path, query and fragment cut
-// off. Anything but a rooted local path (a protocol-relative
-// "//host", a backslash a browser reads as one) records nothing.
+// overlayOriginQueryContextKey carries the query of the page an overlay
+// opened over.
+type overlayOriginQueryContextKey struct{}
+
+// withOverlayOrigin records the origin's path, and its query apart from
+// it; the fragment is cut off. Anything but a rooted local path (a
+// protocol-relative "//host", a backslash a browser reads as one)
+// records nothing, and a query that does not parse records no query.
 func withOverlayOrigin(ctx context.Context, origin string) context.Context {
-	if i := strings.IndexAny(origin, "?#"); i >= 0 {
+	if i := strings.IndexByte(origin, '#'); i >= 0 {
 		origin = origin[:i]
+	}
+	var rawQuery string
+	if i := strings.IndexByte(origin, '?'); i >= 0 {
+		origin, rawQuery = origin[:i], origin[i+1:]
 	}
 	if !strings.HasPrefix(origin, "/") || strings.HasPrefix(origin, "//") || strings.Contains(origin, `\`) {
 		return ctx
 	}
-	return context.WithValue(ctx, overlayOriginContextKey{}, origin)
+	ctx = context.WithValue(ctx, overlayOriginContextKey{}, origin)
+	if q, err := url.ParseQuery(rawQuery); err == nil && len(q) > 0 {
+		ctx = context.WithValue(ctx, overlayOriginQueryContextKey{}, q)
+	}
+	return ctx
 }
 
 // OverlayOriginFromContext returns the path of the page an intercepted
@@ -55,6 +68,24 @@ func withOverlayOrigin(ctx context.Context, origin string) context.Context {
 func OverlayOriginFromContext(ctx context.Context) string {
 	s, _ := ctx.Value(overlayOriginContextKey{}).(string)
 	return s
+}
+
+// OverlayOriginQueryFromContext returns the query of the page an
+// intercepted overlay opened over, or nil on any other render or when
+// the origin had none. A record drawer over a list reads the list's
+// sort, filter and search from it. The client names the origin, so the
+// values are the reader's own input: parse them the way the page under
+// the overlay would, never trust them. Each call returns a copy.
+func OverlayOriginQueryFromContext(ctx context.Context) url.Values {
+	q, _ := ctx.Value(overlayOriginQueryContextKey{}).(url.Values)
+	if q == nil {
+		return nil
+	}
+	out := make(url.Values, len(q))
+	for k, v := range q {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
 }
 
 // WithRequest returns a new context that carries r. The host should

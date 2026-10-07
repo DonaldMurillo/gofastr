@@ -1082,9 +1082,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
-		// layer's history entry. 3067 before it; pinned at the measured
-		// size plus 2 clearance.
-		"intercept": 3106,
+		// layer's history entry. 3067 before it.
+		// 3119 measured (2026-10-07, the drawer's previous/next record):
+		// a data-cui-intercept-swap link in the top pane renders its
+		// target in that pane through the query-move path. Pinned at the
+		// measured size plus 2 clearance.
+		"intercept": 3121,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

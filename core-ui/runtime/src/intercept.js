@@ -38,7 +38,9 @@
 // A link inside a pane that changes only the pane's own query re-renders
 // INSIDE the pane (the pane's URL gains one history entry per click,
 // the same contract a list at top level follows) and never drops the
-// pane by navigating the whole page.
+// pane by navigating the whole page. A link marked
+// data-cui-intercept-swap does the same for another path: the target
+// renders in the pane, fetched with the pane's own origin.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
@@ -290,8 +292,10 @@
       // A link in the top pane marked data-cui-intercept-page opens its
       // target as the page: the stack closes and the router loads it.
       if (inPane && anchor.hasAttribute('data-cui-intercept-page')) return { kind: 'page' };
-      // The pane's own URL, query-only change: stay in the pane.
-      if (inPane && pathOf(path) === pathOf(t.url)) return { kind: 'query' };
+      // The pane's own URL, query-only change, or a link marked
+      // data-cui-intercept-swap (a drawer's previous/next record): render
+      // in the pane, one history entry of the layer.
+      if (inPane && (pathOf(path) === pathOf(t.url) || (anchor.hasAttribute('data-cui-intercept-swap') && NS._originOK?.(path)))) return { kind: 'query' };
       const origin = inPane ? t.url : underPath;
       if (!target || !target.intercept) return null;
       const o = routeFor(pathOf(origin));

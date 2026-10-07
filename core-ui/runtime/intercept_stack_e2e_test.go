@@ -68,6 +68,11 @@ func interceptOverlayBody(path, query string) string {
 	case "/deep/d1":
 		return `<div id="deep-d1"><p>DEEP-D1</p>` +
 			`<a id="d-to-deepest" href="/deepest/x1">deepest</a></div>`
+	case "/rec/s":
+		return `<div id="rec-s"><p>REC-S</p><a id="s-next" href="/rec/t" data-cui-intercept-swap>next</a>` +
+			`<a id="s-plain" href="/rec/t">plain</a></div>`
+	case "/rec/t":
+		return `<div id="rec-t"><p>REC-T</p><a id="t-prev" href="/rec/s" data-cui-intercept-swap>previous</a></div>`
 	case "/deepest/x1":
 		return `<div id="deepest-x1"><p>DEEPEST-X1</p>` +
 			`<a id="x-to-beyond" href="/beyond/b1">beyond</a></div>`
@@ -100,7 +105,7 @@ func interceptFullPage(key string) string {
 	body := "FULL " + key
 	if key == "/list" {
 		id = "list-main"
-		body = `<a id="to-a" href="/rec/a">rec a</a>LIST`
+		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a>LIST`
 	}
 	return `<!doctype html><html><head><title>stack</title>` +
 		`<script type="application/json" id="gofastr-routes">` + interceptStackRoutes + `</script>` +
@@ -851,5 +856,77 @@ func TestInterceptPageLinkLeavesStack(t *testing.T) {
 	}
 	if !interceptWait(ctx, `location.pathname === '/list' && !document.getElementById('cui-intercept')`) {
 		t.Fatalf("Back did not return to the page under the stack: %+v", readStack(ctx))
+	}
+}
+
+// A data-cui-intercept-swap link in the top pane renders its target in
+// that pane, the way a query link does, though the path differs: a
+// drawer steps from one record to the next without stacking a layer or
+// leaving the page under it. Each step is one history entry of the
+// layer, so Back steps back inside the pane, and closing the pane
+// consumes them all and lands on the list. The same link without the
+// marker is a plain navigation, since /rec/:id opens only over /list.
+func TestInterceptSwapLinkStaysInLayer(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-s`, chromedp.ByID),
+		chromedp.Click("#to-s", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('s-next')`) {
+		t.Fatal("the record pane never mounted")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click("#s-next", chromedp.ByID)); err != nil {
+		t.Fatalf("click next: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('rec-t')`) {
+		t.Fatal("the swap link never rendered its target in the pane")
+	}
+	snap := readStack(ctx)
+	if len(snap.Layers) != 1 || !idListHas(snap.Layers[0].IDs, "rec-t") {
+		t.Fatalf("a swap link must render in the top pane, got %d layers %v", len(snap.Layers), snap.Layers)
+	}
+	if snap.URL != "/rec/t" || snap.Main != "list-main" {
+		t.Errorf("after the swap: url %q main %q, want /rec/t over list-main", snap.URL, snap.Main)
+	}
+	if froms := s.overlayFroms(); len(froms) < 2 || froms[len(froms)-1] != "/list" {
+		t.Errorf("swap fetch X-Gofastr-From = %v, want the layer's own origin /list", froms)
+	}
+	interceptHistory(t, ctx, -1, "/rec/s")
+	if !interceptWait(ctx, `!!document.getElementById('rec-s') && document.getElementById('cui-intercept').children.length === 1`) {
+		t.Fatal("Back never stepped back inside the pane")
+	}
+	interceptHistory(t, ctx, 1, "/rec/t")
+	if !interceptWait(ctx, `!!document.getElementById('rec-t')`) {
+		t.Fatal("Forward never stepped forward inside the pane")
+	}
+	interceptEscClosesToList(t, ctx)
+}
+
+// Without the marker, the same link from inside the pane is no swap:
+// /rec/:id does not open over /rec/:id, so the router takes it as a
+// page and the stack closes.
+func TestInterceptUnmarkedLinkLeavesPane(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-s`, chromedp.ByID),
+		chromedp.Click("#to-s", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('s-plain')`) {
+		t.Fatal("the record pane never mounted")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click("#s-plain", chromedp.ByID)); err != nil {
+		t.Fatalf("click plain: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('plain-screen') && !document.getElementById('cui-intercept')`) {
+		snap := readStack(ctx)
+		t.Fatalf("an unmarked link must navigate the page; at %s with %d layers", snap.URL, len(snap.Layers))
 	}
 }

@@ -177,7 +177,13 @@ func TestRegisterAppliesScreenOptions(t *testing.T) {
 type ixCreate struct{ component.ContextOnly }
 
 func (s *ixCreate) RenderCtx(ctx context.Context) render.HTML {
-	return render.Text("CREATE FROM [" + OverlayOriginFromContext(ctx) + "]")
+	q := OverlayOriginQueryFromContext(ctx)
+	if q != nil {
+		// A copy: writing to it changes nothing the next caller reads.
+		q.Set("tab", "mutated")
+		q = OverlayOriginQueryFromContext(ctx)
+	}
+	return render.Text("CREATE FROM [" + OverlayOriginFromContext(ctx) + "] Q[" + q.Encode() + "]")
 }
 
 func ixCreateApp(t *testing.T) *App {
@@ -206,15 +212,20 @@ func TestInterceptForAlsoFrom(t *testing.T) {
 	}
 }
 
-// The overlay render knows the page it opened over, by path alone, so a
-// form in it can return there. A protocol-relative origin is no path.
+// The overlay render knows the page it opened over, its path apart
+// from its query, so a form in it can return there and a record can
+// read the list's order. A protocol-relative origin is no path and
+// carries no query; a query that does not parse is no query.
 func TestOverlayKnowsItsOrigin(t *testing.T) {
 	a := ixCreateApp(t)
 	ctx := context.Background()
 	for origin, want := range map[string]string{
-		"/products/9?tab=related#x": "CREATE FROM [/products/9]",
-		"//evil.example/products":   "CREATE FROM []",
-		`/\evil.example`:            "CREATE FROM []",
+		"/products/9?tab=related#x":   "CREATE FROM [/products/9] Q[tab=related]",
+		"/products?sort=name&dir=asc": "CREATE FROM [/products] Q[dir=asc&amp;sort=name]",
+		"/products?bad=%zz":           "CREATE FROM [/products] Q[]",
+		"/products#a?b=c":             "CREATE FROM [/products] Q[]",
+		"//evil.example/products?x=1": "CREATE FROM [] Q[]",
+		`/\evil.example`:              "CREATE FROM [] Q[]",
 	} {
 		res, err := a.RenderOverlayResult(ctx, "/new-product", origin, ScreenDrawer)
 		if err != nil {
@@ -225,7 +236,7 @@ func TestOverlayKnowsItsOrigin(t *testing.T) {
 		}
 	}
 	page, err := a.RenderPartialResult(ctx, "/new-product")
-	if err != nil || !strings.Contains(string(page.HTML), "CREATE FROM []") {
+	if err != nil || !strings.Contains(string(page.HTML), "CREATE FROM [] Q[]") {
 		t.Errorf("a page render has an overlay origin: %s %v", page.HTML, err)
 	}
 }

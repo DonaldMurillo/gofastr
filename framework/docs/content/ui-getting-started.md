@@ -392,6 +392,11 @@ history as it was before the drawer opened. A save whose navigation
 names the drawer's own path keeps the drawer and refreshes it. Any other
 destination navigates as usual.
 
+`app.OverlayOriginQueryFromContext(ctx)` returns that page's query, as
+`url.Values` (nil on the full page or when there is none): the list's
+sort and filter a drawer opened over. The client names it, so treat it
+as the list treats its own URL, never as trusted input.
+
 ```go
 dest := "/invoices"
 if o := app.OverlayOriginFromContext(ctx); o != "" {

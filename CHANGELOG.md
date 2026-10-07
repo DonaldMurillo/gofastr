@@ -426,7 +426,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   drawer returns to the page under it.** `app.InterceptFrom(from, as,
   also...)` takes more origin patterns (`Intercept.AlsoFrom`, `also` in
   the route manifest). `app.OverlayOriginFromContext(ctx)` gives an
-  overlay render the path of the page it opened over. A form in a drawer
+  overlay render the path of the page it opened over, and
+  `app.OverlayOriginQueryFromContext(ctx)` that page's query. A form in a drawer
   whose success navigation names that page, or the drawer's own path,
   closes the layers above it and re-renders it in place instead of
   leaving the stack, so the new row shows and Back walks history as it
