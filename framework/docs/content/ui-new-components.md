@@ -394,7 +394,7 @@ the server treats an empty param as "no filter". Pair with `FilterChipBar`
 below the toolbar to show the *active* filters as removable chips.
 
 `Dropdown: true` is the compact layout a dense list wants: the row is
-the search field, filling the width, then a **Filters** button, then the
+the search field (`--ui-filter-toolbar-search-width`, 22.5rem), then a **Filters** button, then the
 `Tools`. The facets, the sort, the `Extra` controls and the one
 Apply/Reset pair move into the button's `ui.Dropdown` panel, and its
 badge counts the facets set plus `Applied` (the filters an `Extra`

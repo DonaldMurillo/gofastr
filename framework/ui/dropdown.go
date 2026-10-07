@@ -162,6 +162,8 @@ func dropdownCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
 }
 [data-cui-comp="ui-dropdown"] > .fui-dropdown__panel {
+  /* headless-disclosure shifts a panel that would leave the viewport. */
+  translate: var(--hui-panel-shift, 0);
   position: absolute;
   z-index: var(--z-dropdown, 100);
   top: calc(100% + var(--spacing-sm, 4px));

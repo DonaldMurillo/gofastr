@@ -47,7 +47,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   their form while it is closed. `Icon`, `Count` (a badge) and
   `Align` dress the trigger.
 - **`ui.FilterToolbarConfig.Dropdown` moves the filters into a
-  Filters dropdown**: the row is the search, filling the width, the
+  Filters dropdown**: the row is the search at a fixed width, the
   Filters button with a badge counting the filters set, and the
   `Tools`. `Extra` adds controls of the same form (a typed filter),
   `Applied` adds to the badge, and `Tools` draws links and link menus
@@ -1280,6 +1280,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A menu or dropdown opened near the viewport's edge stays on
+  screen.** Its panel hangs from one edge of the trigger, and a trigger
+  at the end of a row opened it past the viewport (a phone's row menu,
+  a toolbar's last button). `headless-disclosure` measures an opened
+  light-dismiss panel and shifts it back inside, through
+  `--hui-panel-shift`, which the kit's menu and dropdown panels read.
 - **Sorting or paging a list no longer jumps to the top of the page.**
   A client navigation that changes only the query on the same path
   keeps the scroll position; a new path or a fragment still scrolls as

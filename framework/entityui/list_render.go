@@ -340,8 +340,8 @@ func (b *ListBuilder) facetControls(ctx context.Context, s *listState) []ui.Face
 	return facets
 }
 
-// toolbar draws the list's one row of tools: the search box filling
-// it, a Filters dropdown holding the facets and the typed filter with
+// toolbar draws the list's one row of tools: the search box, a Filters
+// dropdown holding the facets and the typed filter with
 // the one Apply, and the columns menu. Search, facets and filter are
 // one GET form, so a submission carries all of them; hidden inputs
 // round-trip the request state the form does not own (this list's view

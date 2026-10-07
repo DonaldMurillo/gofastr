@@ -159,8 +159,8 @@ type FilterToolbarConfig struct {
 
 	// Dropdown moves the facets, the sort, Extra and the Apply/Reset
 	// pair into a "Filters" ui.Dropdown, so the row is the search field
-	// (filling it), the Filters button and the Tools. The button's badge
-	// counts the facets set plus Applied. Every control stays in the one
+	// (--ui-filter-toolbar-search-width wide), the Filters button and
+	// the Tools. The button's badge counts the facets set plus Applied. Every control stays in the one
 	// form: Enter in the search submits the panel's fields too, open or
 	// closed.
 	Dropdown bool
@@ -198,6 +198,9 @@ type FilterToolbarConfig struct {
 func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Compact {
 		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--compact")
+	}
+	if cfg.Dropdown {
+		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--dropdown")
 	}
 	if cfg.Action == "" {
 		panic("ui: FilterToolbar requires Action")
@@ -660,9 +663,14 @@ func filterToolbarCSS(_ style.Theme) string {
   [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
 }
 
-/* Dropdown mode: the search fills the row; the Filters button and the
-   tools keep their natural width and wrap under it on a narrow row.
-   Inside the panel the controls stack full width, Apply/Reset last. */
+/* Dropdown mode: the search takes a fixed share of the row
+   (--ui-filter-toolbar-search-width) with the Filters button and the
+   tools beside it at their natural width; on a narrow row the search
+   goes full width and they wrap under it. Inside the panel the
+   controls stack full width, Apply/Reset last. */
+[data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--dropdown .fui-filter-toolbar__search {
+  flex: 0 1 var(--ui-filter-toolbar-search-width, 22.5rem);
+}
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters,
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
   flex: none;

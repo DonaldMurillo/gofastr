@@ -499,6 +499,8 @@ func menuCSS(_ style.Theme) string {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-cui-comp="ui-menu"] .fui-menu__panel {
+  /* headless-disclosure shifts a panel that would leave the viewport. */
+  translate: var(--hui-panel-shift, 0);
   position: absolute;
   z-index: var(--z-dropdown, 100);
   min-width: var(--ui-menu-min-width, 12rem);

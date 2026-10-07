@@ -73,3 +73,43 @@ func TestE2E_DropdownInsideAForm(t *testing.T) {
 		t.Errorf("Enter submitted %q; want the search and the closed panel's status", search)
 	}
 }
+
+// A popup anchored to the start edge of a trigger at the viewport's end
+// opens back inside the viewport, a dropdown and a menu alike: the
+// anchor edge is chosen at render, and only a measure after open knows
+// whether it has room.
+func TestE2E_PopupPanelStaysInTheViewport(t *testing.T) {
+	dd := ui.Dropdown(ui.DropdownConfig{ID: "dd", Label: "Filters",
+		Content: render.HTML(`<p>a panel at least fourteen rem wide</p>`)})
+	mn := ui.Menu(ui.MenuConfig{ID: "mn", Label: "Columns",
+		Items: []ui.MenuItem{{Label: "A column with a long name", Href: "/a"}}})
+	srv := menuTriggerAxeServer(t, `<div class="cui-test-end">`+string(dd)+string(mn)+`</div>`+
+		`<style>.cui-test-end{display:flex;justify-content:flex-end;gap:4px}</style>`)
+	browser := axetest.NewBrowser(t)
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 700),
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for id, root := range map[string]string{"dd": "#dd", "mn": `[data-hui-menu="mn"]`} {
+		var edges []float64
+		if err := chromedp.Run(ctx,
+			chromedp.Click(root+` > summary`, chromedp.ByQuery),
+			chromedp.Sleep(300*time.Millisecond),
+			chromedp.Evaluate(`(() => { const r = document.querySelector('`+root+` > :not(summary)').getBoundingClientRect();
+				return [r.left, r.right, document.documentElement.clientWidth]; })()`, &edges),
+			chromedp.Click(`body`, chromedp.ByQuery),
+			chromedp.Sleep(200*time.Millisecond),
+		); err != nil {
+			t.Fatal(err)
+		}
+		if edges[0] < 0 || edges[1] > edges[2] {
+			t.Errorf("%s: the open panel spans %v..%v in a %v-wide viewport", id, edges[0], edges[1], edges[2])
+		}
+	}
+}

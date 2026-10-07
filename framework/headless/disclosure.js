@@ -145,6 +145,29 @@
     return out;
   }
 
+  // ─── keeping a popup on screen ───────────────────────────────────
+  //
+  // A light-dismiss popup's panel hangs from one edge of its trigger,
+  // chosen at render; only a measure after open knows whether that edge
+  // has room. A panel that would cross the viewport's inline edge is
+  // shifted back inside it through --hui-panel-shift, which the kit's
+  // panel rules read as a translate (the open animation is a
+  // transform, so the two never fight). The shift is cleared first, so
+  // each open measures where the panel really hangs.
+  const GUTTER = 8;
+  function keepInView(d) {
+    const p = d.querySelector(':scope > :not(summary)');
+    if (!p) return;
+    p.style.removeProperty('--hui-panel-shift');
+    if (!d.open) return;
+    const r = p.getBoundingClientRect();
+    const w = document.documentElement.clientWidth;
+    let dx = 0;
+    if (r.right > w - GUTTER) dx = w - GUTTER - r.right;
+    if (r.left + dx < GUTTER) dx = GUTTER - r.left;
+    if (dx) p.style.setProperty('--hui-panel-shift', Math.round(dx) + 'px');
+  }
+
   // ─── listeners, installed once ───────────────────────────────────
 
   document.addEventListener('toggle', (e) => {
@@ -153,6 +176,7 @@
     mirror(d);
     record(d);
     if (d.hasAttribute('data-hui-disclosure-trap')) applyTrap(d, d.open);
+    if (d.hasAttribute('data-hui-disclosure-dismiss')) keepInView(d);
   }, true);
 
   document.addEventListener('click', (e) => {
