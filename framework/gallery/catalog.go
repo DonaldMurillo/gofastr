@@ -888,6 +888,13 @@ const page = await api.posts.list({ limit: 25 });`},
 			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
 		)
 	}},
+	{"changelist", "ChangeList", "Data", "What one edit changed, a field per row: the old value struck through, then the new one.", func() render.HTML {
+		return ui.ChangeList(ui.ChangeListConfig{Changes: []ui.Change{
+			{Label: "Plan", From: render.Text("Starter"), To: render.Text("Pro")},
+			{Label: "MRR", From: render.Text("$29.00"), To: render.Text("$99.00")},
+			{Label: "Notes", To: render.Text("Upgraded after the trial")},
+		}})
+	}},
 	{"statcard", "StatCard", "Data", "Metric tile with trend.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			ui.StatCard(ui.StatCardConfig{Label: "Active users", Value: "12,483", Trend: "+8.2%", Direction: ui.TrendUp}),
