@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -32,7 +33,8 @@ type Page struct {
 	Nav *entity.EntityNav
 
 	// Access narrows who sees the page beyond the admin gate. Nil admits
-	// every admin. A refused caller gets 403 and no nav entry.
+	// every admin. A refused caller gets 403 and no nav entry. Like Build,
+	// it runs with the caller's own context, never the admin's elevation.
 	Access func(ctx context.Context) bool
 
 	// Build draws the page body. It runs with the caller's own context:
@@ -94,7 +96,7 @@ func (b *Battery) mountPages(group *appui.ScreenGroup) {
 		s.Title = p.Title
 		if p.Access != nil {
 			s.WithPolicy(appui.PolicyFunc(func(ctx context.Context) appui.Decision {
-				if p.Access(ctx) {
+				if p.allows(ctx) {
 					return decide.Allow()
 				}
 				return decide.Block(http.StatusForbidden, http.StatusText(http.StatusForbidden))
@@ -103,14 +105,23 @@ func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	}
 }
 
+// allows reports whether p's Access admits the caller, asked without the
+// admin's elevation: the sidebar and the search page ask it while drawing
+// elevated screens.
+func (p Page) allows(ctx context.Context) bool {
+	return p.Access == nil || p.Access(crud.WithoutElevation(ctx))
+}
+
 // buildSlot runs an app Build with the caller's context and draws what
-// it returns. A panic, an error or a nil component draws a generic
+// it returns. The admin's elevation is stripped first: a dashboard card
+// draws inside the elevated dashboard. A panic, an error or a nil component draws a generic
 // message; the log names the slot, never what the page read.
 func (b *Battery) buildSlot(ctx context.Context, slot string, build func(*http.Request) (component.Component, error)) (out render.HTML) {
 	failed := func(reason string) render.HTML {
 		b.logger().Error("admin: app slot failed", "slot", slot, "reason", reason)
 		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminFailed)))
 	}
+	ctx = crud.WithoutElevation(ctx)
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
 		return failed("no request")

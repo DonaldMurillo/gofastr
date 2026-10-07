@@ -275,7 +275,7 @@ func (b *Battery) navGroups(ctx context.Context) []ui.SidebarItem {
 		all = append(all, it)
 	}
 	for _, p := range b.cfg.Pages {
-		if p.Nav == nil || p.Nav.Hide || (p.Access != nil && !p.Access(ctx)) {
+		if p.Nav == nil || p.Nav.Hide || !p.allows(ctx) {
 			continue
 		}
 		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title,

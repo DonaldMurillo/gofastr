@@ -117,14 +117,16 @@ func TestPageBuildFailureIsContained(t *testing.T) {
 }
 
 // App code runs with the caller's own context: the admin's elevation
-// stops at its own pages.
+// stops at its own pages. An app page and a dashboard card (drawn on the
+// elevated dashboard) both read as the caller.
 func TestPageBuildIsNotElevated(t *testing.T) {
 	var eui *entityui.UI
 	read := func(r *http.Request) (component.Component, error) {
 		return text("count=" + eui.StatValue(r.Context(), "posts", "count", "", "", "")), nil
 	}
 	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()},
-		Config{Entities: []string{"posts"}, Pages: []Page{page("/peek", "Peek", read)}},
+		Config{Entities: []string{"posts"}, Pages: []Page{page("/peek", "Peek", read)},
+			Cards: []Card{{Key: "peek", Title: "Peek", Build: read}}},
 		func(_ *env, c *Config) { eui = c.UI })
 	x.insert("posts", map[string]any{"id": "p1", "title": "Locked one", "status": "draft"})
 	h := withPolicy(x.as(theAdmin))
@@ -133,6 +135,28 @@ func TestPageBuildIsNotElevated(t *testing.T) {
 	}
 	if body := get(h, "/admin/peek").Body.String(); strings.Contains(body, "count=1") || !strings.Contains(body, "count=") {
 		t.Fatalf("SECURITY: an app page read past the entity's Access through the admin's elevation:\n%s", body)
+	}
+	if body := get(h, "/admin").Body.String(); strings.Contains(body, "count=1") || !strings.Contains(body, "count=") {
+		t.Fatalf("SECURITY: a dashboard card read past the entity's Access through the admin's elevation:\n%s", body)
+	}
+}
+
+// A page's Access runs as the caller too, though the sidebar and the
+// search page that ask it draw inside elevated screens.
+func TestPageAccessIsNotElevated(t *testing.T) {
+	var eui *entityui.UI
+	p := page("/secret", "Secret", says("x"))
+	p.Nav = &entity.EntityNav{}
+	p.Access = func(ctx context.Context) bool { return eui.StatValue(ctx, "posts", "count", "", "", "") == "1" }
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()},
+		Config{Entities: []string{"posts"}, Pages: []Page{p}},
+		func(_ *env, c *Config) { eui = c.UI })
+	x.insert("posts", map[string]any{"id": "p1", "title": "Locked one", "status": "draft"})
+	h := withPolicy(x.as(theAdmin))
+	for _, path := range []string{"/admin", "/admin/search?q=Secret"} {
+		if body := get(h, path).Body.String(); strings.Contains(body, `href="/admin/secret"`) {
+			t.Errorf("SECURITY: %s asked a page's Access with the admin's elevation", path)
+		}
 	}
 }
 
