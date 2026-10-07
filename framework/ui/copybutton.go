@@ -59,6 +59,10 @@ type CopyButtonConfig struct {
 	// row): no border, fill or shadow until hover, muted, and a 24px
 	// target in place of the touch-target minimum.
 	Inline bool
+	// Ghost draws the button like a small ghost icon Button: no border,
+	// fill or shadow until hover, so it sits in a row of icon buttons
+	// (the drawer bar) without standing out as the one outlined control.
+	Ghost bool
 
 	// AriaLabel overrides the screen-reader name. When IconOnly is
 	// true and AriaLabel is empty, defaults to "Copy to clipboard".
@@ -143,6 +147,9 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	}
 	if cfg.Inline {
 		cls += " fui-copy-btn--inline"
+	}
+	if cfg.Ghost {
+		cls += " fui-copy-btn--ghost"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -317,6 +324,15 @@ func copyButtonCSS(_ style.Theme) string {
   --ui-copy-btn-color: var(--color-text-muted, #52525b);
   --ui-copy-btn-hover-color: var(--color-text, #09090B);
   padding: var(--spacing-xs, 2px);
+}
+/* Ghost: the knobs set on the button itself, sized and padded like a
+   small icon Button so a row of them lines up. */
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--ghost {
+  --ui-copy-btn-size: auto;
+  --ui-copy-btn-border: transparent;
+  --ui-copy-btn-bg: transparent;
+  --ui-copy-btn-shadow: none;
+  padding: calc(var(--spacing-sm, 4px) * 1.5);
 }
 /* The icon glyph: one line-box tall so the aria-hidden ⧉ never stretches
    the icon-only button past the touch target the base rule sets. */

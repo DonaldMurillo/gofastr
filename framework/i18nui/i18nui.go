@@ -200,6 +200,7 @@ const (
 	KeyCopyCopied      Key = "ui.copy.copied"
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
 	KeyCopyLink        Key = "ui.copy.link"
+	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
 
 	// ProgressSteps
 	KeyProgressLabel Key = "ui.progress.label"
@@ -450,6 +451,7 @@ var Defaults = map[Key]string{
 	KeyCopyCopied:      "Copied",
 	KeyCopyToClipboard: "Copy to clipboard",
 	KeyCopyLink:        "Copy link",
+	KeyDrawerOpenPage:  "Open as page",
 
 	KeyProgressLabel: "Progress",
 
@@ -926,6 +928,7 @@ func AllKeys() []Key {
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
 		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
+		KeyDrawerOpenPage,
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,

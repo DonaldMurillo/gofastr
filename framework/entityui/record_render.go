@@ -220,12 +220,14 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 }
 
 // drawerBar is the intercepted drawer's bar: close, the path, copy
-// link. The full page draws none; its breadcrumbs place it.
+// link, open as page. The full page draws none; its breadcrumbs place
+// it.
 func drawerBar(ctx context.Context) render.HTML {
 	if as, ok := appui.OverlayFromContext(ctx); !ok || as != appui.ScreenDrawer {
 		return ""
 	}
-	return ui.DrawerBar(ui.DrawerBarConfig{Path: currentURLPath(ctx), CopyURL: absoluteURL(ctx), Ctx: ctx})
+	p := currentURLPath(ctx)
+	return ui.DrawerBar(ui.DrawerBarConfig{Path: p, CopyURL: absoluteURL(ctx), PageURL: p, Ctx: ctx})
 }
 
 // saveButton is the form's submit, drawn in the header: it names the

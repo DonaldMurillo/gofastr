@@ -65,7 +65,7 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
-  `ui.DrawerBar` (close, its path, copy link) and its menu drops Copy
+  `ui.DrawerBar` (close, its path, copy link, open as page) and its menu drops Copy
   link. With `WithRecordPath`, a relation select holding a value draws
   an open button beside it, linking to that record, when the caller's
   own read of the related entity returns the row.

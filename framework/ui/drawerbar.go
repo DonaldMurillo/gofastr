@@ -34,6 +34,11 @@ type DrawerBarConfig struct {
 	// CopyURL, when set, adds an icon button that copies it: the
 	// layer's absolute address, so a reader can share the record.
 	CopyURL string
+	// PageURL, when set, adds an icon link that opens it as the full
+	// page (data-cui-intercept-page): the drawer stack closes and the
+	// router loads the URL in the content cell. A root-relative path,
+	// usually the layer's own.
+	PageURL string
 	// Actions trail the bar after the copy button.
 	Actions []render.HTML
 	// Ctx resolves the close and copy labels. Nil means English.
@@ -76,12 +81,24 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 				Target:      id,
 				IconOnly:    true,
 				Icon:        "link",
+				Ghost:       true,
 				AriaLabel:   i18nui.T(ctx, i18nui.KeyCopyLink),
 				ToastOnCopy: true,
 				ToastTitle:  i18nui.T(ctx, i18nui.KeyCopyCopied),
 				Ctx:         ctx,
 			}),
 		)
+	}
+	if cfg.PageURL != "" {
+		kids = append(kids, LinkButton(LinkButtonConfig{
+			Label:      i18nui.T(ctx, i18nui.KeyDrawerOpenPage),
+			Href:       cfg.PageURL,
+			Icon:       "maximize",
+			IconOnly:   true,
+			Variant:    ButtonGhost,
+			Size:       ButtonSizeSmall,
+			ExtraAttrs: html.Attrs{"data-cui-intercept-page": ""},
+		}))
 	}
 	// The bar's own controls are internal; Actions stay the caller's.
 	kids = append([]render.HTML{headless.Own(render.Join(kids...))}, cfg.Actions...)

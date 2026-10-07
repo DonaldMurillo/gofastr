@@ -677,7 +677,7 @@ var kitComponents = []kitComponent{
 	{name: "DetailList", fn: DetailList},
 	{name: "DiffViewer", fn: DiffViewer},
 	{name: "Divider", fn: Divider},
-	{name: "DrawerBar", fn: DrawerBar, prep: prepSet("Path", "/x", "CopyURL", "http://example.com/x")},
+	{name: "DrawerBar", fn: DrawerBar, prep: prepSet("Path", "/x", "CopyURL", "http://example.com/x", "PageURL", "/x")},
 	{name: "Dropdown", fn: Dropdown, required: []string{"Content"}, prep: prepSet("Align", DropdownEnd, "Icon", "filter")},
 	{name: "EmptyState", fn: EmptyState},
 	{name: "EmptyValue", fn: EmptyValue},

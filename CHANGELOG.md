@@ -176,8 +176,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   look until the form it submits has unsaved edits.
 - **`ui.DrawerBar`** is the bar across the top of an intercepted
   drawer: a close button, the layer's path in mono, a copy-link button
-  when `CopyURL` is set, then `Actions`. It sticks to the layer's top
-  edge while the layer scrolls.
+  when `CopyURL` is set, an open-as-page link when `PageURL` is set,
+  then `Actions`. It sticks to the layer's top edge while the layer
+  scrolls. The open-as-page link carries the new
+  `data-cui-intercept-page`: the stack closes and the router loads the
+  link's target over the top layer's history entry, so Back returns to
+  the page under the drawer.
 - **`app.OverlayFromContext`** reports whether a render is an
   intercepted overlay and which presentation, so a screen draws a
   layer's chrome only in the layer. Each layer's inset is
@@ -185,7 +189,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.CopyButtonConfig.Icon` and `Inline`.** An icon-only copy button
   draws a registered icon (the new `"copy"` and `"link"`); `Inline`
   draws it quiet, with no border or fill until hover and a 24px target,
-  for a copy control inside a line of text.
+  for a copy control inside a line of text. `Ghost` draws it like a
+  small ghost icon button, for a row of icon buttons.
 - **`ui.FormConfig.Wide`** lifts the form's readable-measure cap, so a
   `ui.FormFrame` body splits into its side column.
 - **`ui.SelectConfig.Action`** draws a control after the select on its

@@ -176,7 +176,7 @@ func TestRecordDrawerBar(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, p := string(drawer.HTML), string(page.HTML)
-	for _, want := range []string{`data-cui-comp="ui-drawer-bar"`, `data-cui-intercept-close`, `>/rec/invoices/inv-1<`, `http://example.com/rec/invoices/inv-1`} {
+	for _, want := range []string{`data-cui-comp="ui-drawer-bar"`, `data-cui-intercept-close`, `>/rec/invoices/inv-1<`, `http://example.com/rec/invoices/inv-1`, `data-cui-intercept-page="" href="/rec/invoices/inv-1"`, `aria-label="Open as page"`} {
 		if !strings.Contains(d, want) {
 			t.Errorf("the drawer lacks %s:\n%s", want, d)
 		}
@@ -184,7 +184,7 @@ func TestRecordDrawerBar(t *testing.T) {
 	if strings.Contains(d, ">Copy link<") {
 		t.Errorf("the drawer's menu repeats the bar's copy link:\n%s", d)
 	}
-	if strings.Contains(p, "ui-drawer-bar") || strings.Contains(p, "data-cui-intercept-close") {
+	if strings.Contains(p, "ui-drawer-bar") || strings.Contains(p, "data-cui-intercept-close") || strings.Contains(p, "data-cui-intercept-page") {
 		t.Errorf("the full page draws the drawer's bar:\n%s", p)
 	}
 	if !strings.Contains(p, ">Copy link<") {

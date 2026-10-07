@@ -88,6 +88,20 @@ func TestCopyButtonInline(t *testing.T) {
 	}
 }
 
+// Ghost adds its class, and its rule drops the outline and the
+// touch-target floor a small icon Button also drops.
+func TestCopyButtonGhost(t *testing.T) {
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true, Ghost: true})); !classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("Ghost lacks its class: %s", out)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true})); classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("the default draws the ghost class: %s", out)
+	}
+	if !strings.Contains(copyButtonCSS(style.Theme{}), ".fui-copy-btn--ghost {\n  --ui-copy-btn-size: auto;\n  --ui-copy-btn-border: transparent;") {
+		t.Error("the ghost rule does not clear the size floor and the border")
+	}
+}
+
 func TestCopyButtonAriaLabelOverride(t *testing.T) {
 	out := string(CopyButton(CopyButtonConfig{
 		Target:    "#x",
