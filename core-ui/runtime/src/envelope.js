@@ -236,7 +236,7 @@
   };
   const finishNav = (path, prevPath, cached, root, ps) => {
     applyDocShell(root);
-    if (!ps) scrollToHash();
+    if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
       _settleScroll(() => {

@@ -1653,6 +1653,12 @@ and anchoring then moves `scrollY` with no user input, which is exactly
 the drift the write is there to correct. This applies to both plain
 partials and layout envelopes; cold component CSS must not move the
 destination after the runtime has scrolled to it.
+A forward navigation scrolls to its fragment, or to the top when it
+has none, except one that changes only the query on the same path: a
+list's sort, page or filter link keeps the reader where they were,
+because the control they used is on screen and the top of the page is
+not what they asked for. Core's navigator and the envelope module's
+both apply the rule (`TestQueryNavKeepsScroll` runs each).
 A row scrolled above a list pane can cross the window edge geometrically
 without being visible there; it must not become the window's anchor.
 

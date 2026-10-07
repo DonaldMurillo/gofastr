@@ -882,7 +882,14 @@ const (
 	// event must be cancelled synchronously, before the module can load,
 	// so no carve exists; the ask, the resubmit and the fallback all
 	// moved to the module. Six spellings were measured (15534 to 15555).
-	coreCongestionWindowGZ = 14*1024 + 1198
+	//
+	// 2026-10-07, later: a navigation that changes only the query on the
+	// same path (a list's sort, page, filter) keeps the scroll instead of
+	// jumping to the top. It took the real bundle 15534 -> 15563. 15563,
+	// the smallest step that fits. The decision is finishNav's own
+	// scroll write, the tail every plain-page navigation runs, so no
+	// carve exists. Three spellings were measured (15563 to 15567).
+	coreCongestionWindowGZ = 14*1024 + 1227
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1062,7 +1069,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 7664 measured after the session-id rewrite took a replacer
 		// function, so a `$&` or `$1` in the header is never read as a
 		// replacement pattern.
-		"envelope": 7664,
+		// 7679 measured after finishNav kept the scroll on a query-only
+		// change of the same path (core's rule; the module carries its
+		// own navigation tail, so it spells the same decision).
+		"envelope": 7679,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

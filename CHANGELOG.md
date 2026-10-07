@@ -1258,6 +1258,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **Sorting or paging a list no longer jumps to the top of the page.**
+  A client navigation that changes only the query on the same path
+  keeps the scroll position; a new path or a fragment still scrolls as
+  before. Core's navigator and the layout envelope module both apply
+  it.
 - **A `ui.DataTable` wider than a phone no longer widens the page.** A
   cell's absolutely positioned part, such as a visually hidden label,
   took its containing block from outside the scroll box, escaped its
