@@ -56,6 +56,7 @@ func Modal(name string) *widget.Builder {
 //
 //	window.__gofastr.toast({variant:"success", title:"Saved", ttl:5000});
 //
+// The stack sits bottom-right, clear of a page's header actions;
 // Position can be overridden after the preset returns. Backdrop is
 // intentionally OFF, toasts are non-blocking.
 func ToastStack(name string) *widget.Builder {
@@ -64,7 +65,7 @@ func ToastStack(name string) *widget.Builder {
 	// renders the empty `data-cui-toast-stack="<name>"` container
 	// the runtime appends items into.
 	return widget.New(name).
-		Mount(widget.TopRight).
+		Mount(widget.BottomRight).
 		Slot("items", clientToastSlot{name: name})
 }
 

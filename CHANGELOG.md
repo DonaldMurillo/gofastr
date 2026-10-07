@@ -1096,6 +1096,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- **Toasts rise in the bottom-right corner.** `preset.ToastStack`, and
+  so the stack `framework/uihost` mounts, defaults to
+  `widget.BottomRight` instead of top-right, where a toast covered a
+  page's header actions; a bottom stack slides up instead of down.
+  `.Mount` still moves it. The dismiss is a 28px ghost icon button
+  (`--ui-notification-dismiss-size`) with its 44px tap target kept on a
+  pseudo-element, instead of a bare button wearing the browser's border.
 - **An intercepted drawer is wider**: half the viewport between 480px
   and 720px, up from a fixed 480px, so a record's form has room. Themes
   that set `--ui-intercept-drawer-w` keep their width.

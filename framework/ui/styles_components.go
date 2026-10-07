@@ -972,6 +972,7 @@ func formCSS(_ style.Theme) string {
 func notificationCSS(t style.Theme) string {
 	// Knobs: --ui-notification-max-width (28rem) caps the card,
 	// --ui-notification-icon-size (1.25rem) squares the tone icon,
+	// --ui-notification-dismiss-size (1.75rem) the drawn dismiss button,
 	// --ui-notification-tone carries the variant accent; the floating
 	// corners sit --spacing-lg from the viewport edge.
 	return `[data-cui-comp="ui-notification"] .fui-visually-hidden {
@@ -1028,19 +1029,36 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-notification"] .fui-notification__dismiss {
+  position: relative;
   align-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* WCAG 2.5.5 — 44×44 tap target. The 24×24 in chaos sweep was
-     <30% of WCAG's 1936px² floor. */
-  min-inline-size: var(--spacing-touch-target);
-  min-block-size: var(--spacing-touch-target);
-  border-radius: var(--radii-full, 9999px);
+  inline-size: var(--ui-notification-dismiss-size, 1.75rem);
+  block-size: var(--ui-notification-dismiss-size, 1.75rem);
+  /* Centres the box on the title's line, which is a step shorter. */
+  margin-block: calc(var(--spacing-sm, 4px) * -1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radii-md, 8px);
+  background: transparent;
+  font: inherit;
   font-size: var(--text-lg, 1.125rem);
   line-height: 1;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
+  cursor: pointer;
+}
+/* WCAG 2.5.5: the drawn box is small, the 44×44 tap target rides on a
+   pseudo-element centred over it. */
+[data-cui-comp="ui-notification"] .fui-notification__dismiss::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: var(--spacing-touch-target, 44px);
+  block-size: var(--spacing-touch-target, 44px);
+  transform: translate(-50%, -50%);
 }
 [data-cui-comp="ui-notification"] .fui-notification__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
@@ -1099,7 +1117,9 @@ func toastStackCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-md, 8px);
   pointer-events: none;
-  max-width: min(var(--ui-toast-width, 360px), calc(100vw - var(--spacing-2xl, 32px)));
+  /* One width for every toast, so a short title is not a pill; on a
+     phone it spans the viewport less the corner widget's 20px insets. */
+  inline-size: min(var(--ui-toast-width, 360px), calc(100vw - var(--spacing-sm, 4px) * 10));
 }
 [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item {
   pointer-events: auto;
@@ -1111,6 +1131,9 @@ func toastStackCSS(_ style.Theme) string {
   animation: fui-toast-stack-out var(--duration-toast-exit, 180ms)
     var(--easing-ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
 }
+/* A stack in a bottom corner rises from below; one at the top drops. */
+[class*="cui-pos-bottom"] [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item { animation-name: fui-toast-stack-rise; }
+[class*="cui-pos-bottom"] [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item[data-hui-toast-leaving] { animation-name: fui-toast-stack-sink; }
 @keyframes fui-toast-stack-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
@@ -1118,6 +1141,14 @@ func toastStackCSS(_ style.Theme) string {
 @keyframes fui-toast-stack-out {
   from { opacity: 1; transform: translateY(0)   scale(1);    }
   to   { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+@keyframes fui-toast-stack-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes fui-toast-stack-sink {
+  from { opacity: 1; transform: translateY(0)   scale(1);    }
+  to   { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item,

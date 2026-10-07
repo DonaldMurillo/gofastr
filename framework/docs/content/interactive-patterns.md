@@ -138,7 +138,8 @@ content. Triggered by the `data-cui-autogrow` attribute.
 ### Toast notifications
 
 `core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack. The feedback module (`headless-feedback`) owns the pure
+stack in the bottom-right corner, clear of a page's header actions;
+`.Mount` moves it. The feedback module (`headless-feedback`) owns the pure
 client-side toast runtime. Toasts
 auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
 by clicking the close button.

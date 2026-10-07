@@ -65,9 +65,11 @@ func TestPopoverPositionOverride(t *testing.T) {
 	}
 }
 
-func TestToastStackDefaultIsTopRight(t *testing.T) {
+// Toasts rise in the bottom-right corner, clear of a page's header
+// actions.
+func TestToastStackDefaultIsBottomRight(t *testing.T) {
 	d := ToastStack("ts").Build()
-	if d.Position != widget.TopRight {
+	if d.Position != widget.BottomRight {
 		t.Errorf("ToastStack default position = %q", d.Position)
 	}
 }
