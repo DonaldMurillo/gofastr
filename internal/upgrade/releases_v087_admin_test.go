@@ -87,3 +87,25 @@ func main() { _, _ = admin.New(admin.Config{AllEntities: true}), "/admin/e/custo
 		t.Fatalf("hits = %v, want the admin.New call and the /admin/e/ path", got)
 	}
 }
+
+// An operations-only admin builds on the plain app and now fails Init:
+// the host note names its admin.New call, and an old stylesheet link.
+func TestV087AdminHostNoteHitsOpsOnlyAdmins(t *testing.T) {
+	n := adminNote(t, "battery/admin renders every page through the app's UI host")
+	if !n.Review {
+		t.Fatal("the host note must be review-tier: mounting a host is a decision, not an edit")
+	}
+	app := scantest.App(t, map[string]string{"main.go": `package main
+
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+
+func main() { _, _ = admin.New(admin.Config{PathPrefix: "/admin"}), "/admin/admin.css" }
+`}, scantest.Options{Kit: adminKit})
+	got := scantest.Hits(scantest.Run(t, app, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n)
+	if len(got) != 2 {
+		t.Fatalf("hits = %v, want the admin.New call and the stylesheet path", got)
+	}
+	if !strings.Contains(n.Guidance, "NewUIHostApp") {
+		t.Fatalf("guidance does not name the host: %q", n.Guidance)
+	}
+}

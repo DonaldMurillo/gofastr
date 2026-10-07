@@ -873,11 +873,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   record opens in a drawer from its list. Writes go to
   `/admin/api/<entity>`, the entity's own CRUD handler behind the admin
   gate under `crud.WithElevation`. `Config.UI` (`app.EntityUI(ext)`) is
-  required when the admin exposes an entity, and the admin reads names,
-  columns and nav from each entity's `Display`. The admin ships no CSS:
-  `Config.Theme` and `Config.FontFaceCSS` are removed and the shell takes
-  the app's theme through the UI host. `Config.EntityListLimit` (the
-  list's page sizes come from `Display.PageSizes`), `Config.Secret`,
+  required when the admin exposes an entity, and every admin page, the
+  queue and audit pages included, needs the app's UI host: `Init` fails
+  without one. The admin reads names, columns and nav from each entity's
+  `Display`. The admin ships no CSS: `Config.Theme`, `Config.FontFaceCSS`
+  and `/admin/admin.css` are removed and the shell takes the app's theme
+  through the UI host. `Config.EntityListLimit` (the list's page sizes
+  come from `Display.PageSizes`), `Config.Secret`,
   `Battery.RegisterRoutes` and `SortDirOf` are removed. New: a dashboard with a polled
   count card per entity, failed jobs and recent activity; a command
   palette searching pages, entities and records (`SearchFields`);

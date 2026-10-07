@@ -275,3 +275,12 @@ notes:
       strings:
         match: '/admin/e/'
     guidance: "Set Config.UI to the app's one entity UI, built after every entity registers: appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui). Without it, Init fails naming the exposed entities. Point links and tests at /admin/entities/<entity>, /admin/entities/<entity>/create and /admin/entities/<entity>/<id>, which replace the /new, /view/<id> and /edit/<id> screens; the record page holds the edit form. Move the admin's column and label choices to the entity's Display."
+  - change: "battery/admin renders every page through the app's UI host: Init fails on an app without one, a queue- or audit-only admin included, and the admin's own stylesheet at /admin/admin.css is gone"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/admin.New
+      strings:
+        match: '/admin/admin.css'
+    guidance: "Build the app with framework.NewUIHostApp(uihost.New(site), ...) or mount a uihost.New host before app.RegisterBattery(admin.New(cfg)); without one, Init fails with \"admin: every admin page renders through the app's UI host\". The admin draws with the host's theme and ships no stylesheet: remove links to /admin/admin.css and any CSS written against the old admin markup."

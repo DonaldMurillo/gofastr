@@ -169,11 +169,17 @@ at 200 runes. Without JavaScript the field submits to
 
 ## Operations pages
 
+The operations pages draw through the UI host like every other admin
+page: an app that mounts the admin only for its queue or audit log still
+builds with `framework.NewUIHostApp`, or `Init` fails.
+
 <!-- gofastr:compile
 import "database/sql"
 var db *sql.DB
 import "github.com/DonaldMurillo/gofastr/framework"
-var app = framework.NewApp()
+import appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+var app = framework.NewUIHostApp(uihost.New(appui.NewApp("Ops")))
 import "github.com/DonaldMurillo/gofastr/battery/admin"
 import "github.com/DonaldMurillo/gofastr/battery/queue"
 -->
