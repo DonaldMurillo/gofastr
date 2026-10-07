@@ -1187,6 +1187,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- The admin's User roles page pages through every account: a pager
+  under the table turns pages through `?p=`. It read a bare `?offset=`
+  that nothing on the page linked to; that parameter is gone.
 - `admin.Config.AuditListLimit` is the Audit log page's rows per page,
   default 50; it was a cap on the only rows the page could show,
   default 200.

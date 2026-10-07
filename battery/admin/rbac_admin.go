@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -159,12 +160,19 @@ const usersPageSize = 50
 // roles. The roles show once; the form lives behind the row's action.
 func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.HTML {
 	r := appui.RequestFromContext(ctx)
-	opts := listUsersOpts(r)
+	opts, pageNo := listUsersOpts(r)
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.T(ctx, i18nui.KeyAdminUserRoles),
 		Subtitle: i18nui.T(ctx, i18nui.KeyAdminUserRolesSub),
 	})
 	users, total, err := b.cfg.Auth.ListUsers(ctx, opts)
+	pages := pageCount(total, opts.Limit)
+	if err == nil && pageNo > pages {
+		// A page past the end shows the last one.
+		pageNo = pages
+		opts.Offset = (pageNo - 1) * opts.Limit
+		users, total, err = b.cfg.Auth.ListUsers(ctx, opts)
+	}
 	if err != nil {
 		b.logger().Error("admin: list users", "error", err)
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
@@ -215,6 +223,22 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			}),
 		}}
 	}
+	var pager *ui.PaginationConfig
+	if pages > 1 {
+		carry := url.Values{}
+		if r != nil {
+			carry = r.URL.Query()
+			carry.Del(usersPageParam)
+		}
+		pager = &ui.PaginationConfig{
+			Page:      pageNo,
+			Pages:     pages,
+			Path:      b.cfg.PathPrefix + "/rbac/users",
+			Query:     carry,
+			PageParam: usersPageParam,
+			Ctx:       ctx,
+		}
+	}
 	parts := []render.HTML{header, resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
@@ -222,6 +246,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			Caption:       i18nui.T(ctx, i18nui.KeyAdminUserRoles),
 			CaptionHidden: true,
 			Responsive:    ui.ResponsiveScroll,
+			Pagination:    pager,
 			Ctx:           ctx,
 			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoUsers), HeadingLevel: 2},
 		}),
@@ -297,19 +322,30 @@ func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []stri
 	return labels
 }
 
-// listUsersOpts reads ?limit= (1–500, default 50) and ?offset=.
-func listUsersOpts(r *http.Request) auth.ListUsersOptions {
+// usersPageParam is the User roles page's page number in its query.
+const usersPageParam = "p"
+
+// maxUsersPage bounds ?p= before it scales by the page size, so a huge
+// value cannot overflow the offset; past the end shows the last page.
+const maxUsersPage = 1 << 20
+
+// listUsersOpts reads ?limit= (1–500, default 50) and ?p=, the 1-based
+// page, into the store's window and the page number.
+func listUsersOpts(r *http.Request) (auth.ListUsersOptions, int) {
 	opts := auth.ListUsersOptions{Limit: usersPageSize}
+	page := 1
 	if r == nil {
-		return opts
+		return opts, page
 	}
-	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 500 {
+	q := r.URL.Query()
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 && n <= 500 {
 		opts.Limit = n
 	}
-	if n, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && n >= 0 {
-		opts.Offset = n
+	if n, err := strconv.Atoi(q.Get(usersPageParam)); err == nil && n > 1 {
+		page = min(n, maxUsersPage)
 	}
-	return opts
+	opts.Offset = (page - 1) * opts.Limit
+	return opts, page
 }
 
 // ----- posts --------------------------------------------------------------------

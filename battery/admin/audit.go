@@ -142,7 +142,7 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 	var rows []auditRow
 	pages := 1
 	if err == nil {
-		pages = max((total+limit-1)/limit, 1)
+		pages = pageCount(total, limit)
 		page = min(page, pages)
 		rows, err = b.queryAuditWhere(ctx, limit, (page-1)*limit, f)
 	}
@@ -438,6 +438,15 @@ func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID
 		b.logger().Error("admin: audit write failed after the change committed",
 			"entity", entity, "op", op, "record", recordID, "actor", actorID, "error", err)
 	}
+}
+
+// pageCount is how many pages of size limit hold total rows, at least
+// one, so an empty list still draws its first page.
+func pageCount(total, limit int) int {
+	if limit <= 0 {
+		return 1
+	}
+	return max((total+limit-1)/limit, 1)
 }
 
 // parseLimit reads a ?limit= value: the fallback when absent or bad,

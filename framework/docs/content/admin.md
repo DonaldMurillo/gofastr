@@ -421,7 +421,9 @@ When the policy declares capabilities, the grant form offers them as a
 select and marks granted permissions the app does not declare. Under
 `StrictCapabilities` a grant of an undeclared permission is refused.
 The User roles page lists each user's roles once, as tags; the row's
-Edit roles dropdown holds the form that replaces them.
+Edit roles dropdown holds the form that replaces them. It shows 50
+accounts a page (`?limit=`, up to 500), and the pager under the table
+turns pages through `?p=`.
 
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`). A caller may grant or revoke only a permission its
