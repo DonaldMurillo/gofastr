@@ -2,15 +2,22 @@ package i18nui
 
 // The entity list's chrome. See entity.go.
 const (
-	KeyEntityEmpty      Key = "ui.entity.empty"      // "No {entity} yet"
-	KeyEntityEmptyBody  Key = "ui.entity.emptyBody"  // "They will appear here once created."
-	KeyEntityCount      Key = "ui.entity.count"      // "{count} {entity}"
-	KeyEntityCountOne   Key = "ui.entity.countOne"   // "1 {entity}"
-	KeyEntitySearch     Key = "ui.entity.search"     // "Search {entity}"
-	KeyEntityViewAll    Key = "ui.entity.viewAll"    // "All"
-	KeyEntityRowActions Key = "ui.entity.rowActions" // "Actions for {title}"
-	KeyEntityPageSize   Key = "ui.entity.pageSize"   // "Rows per page"
-	KeyEntityViews      Key = "ui.entity.views"      // "Views"
+	KeyEntityEmpty     Key = "ui.entity.empty"     // "No {entity} yet"
+	KeyEntityEmptyBody Key = "ui.entity.emptyBody" // "They will appear here once created."
+	// A list narrowed to nothing: a search, filter or facet that matches
+	// no row, or a view that holds none.
+	KeyEntityNoMatch       Key = "ui.entity.noMatch"       // "No {entity} match"
+	KeyEntityNoMatchBody   Key = "ui.entity.noMatchBody"   // "Try another search, or clear the filters."
+	KeyEntityClearSearch   Key = "ui.entity.clearSearch"   // "Clear search and filters"
+	KeyEntityViewEmpty     Key = "ui.entity.viewEmpty"     // "No {entity} in this view"
+	KeyEntityViewEmptyBody Key = "ui.entity.viewEmptyBody" // "The other views may hold some."
+	KeyEntityCount         Key = "ui.entity.count"         // "{count} {entity}"
+	KeyEntityCountOne      Key = "ui.entity.countOne"      // "1 {entity}"
+	KeyEntitySearch        Key = "ui.entity.search"        // "Search {entity}"
+	KeyEntityViewAll       Key = "ui.entity.viewAll"       // "All"
+	KeyEntityRowActions    Key = "ui.entity.rowActions"    // "Actions for {title}"
+	KeyEntityPageSize      Key = "ui.entity.pageSize"      // "Rows per page"
+	KeyEntityViews         Key = "ui.entity.views"         // "Views"
 	// KeyEntityFilterInvalidTitle and Body draw the callout when ?filter=
 	// text does not parse: the list still renders, without the filter.
 	KeyEntityFilterInvalidTitle Key = "ui.entity.filterInvalid"     // "Filter not applied"
@@ -52,15 +59,21 @@ const (
 )
 
 var entityListDefaults = map[Key]string{
-	KeyEntityEmpty:      "No {entity} yet",
-	KeyEntityEmptyBody:  "They will appear here once created.",
-	KeyEntityCount:      "{count} {entity}",
-	KeyEntityCountOne:   "1 {entity}",
-	KeyEntitySearch:     "Search {entity}",
-	KeyEntityViewAll:    "All",
-	KeyEntityRowActions: "Actions for {title}",
-	KeyEntityPageSize:   "Rows per page",
-	KeyEntityViews:      "Views",
+	KeyEntityEmpty:     "No {entity} yet",
+	KeyEntityEmptyBody: "They will appear here once created.",
+
+	KeyEntityNoMatch:       "No {entity} match",
+	KeyEntityNoMatchBody:   "Try another search, or clear the filters.",
+	KeyEntityClearSearch:   "Clear search and filters",
+	KeyEntityViewEmpty:     "No {entity} in this view",
+	KeyEntityViewEmptyBody: "The other views may hold some.",
+	KeyEntityCount:         "{count} {entity}",
+	KeyEntityCountOne:      "1 {entity}",
+	KeyEntitySearch:        "Search {entity}",
+	KeyEntityViewAll:       "All",
+	KeyEntityRowActions:    "Actions for {title}",
+	KeyEntityPageSize:      "Rows per page",
+	KeyEntityViews:         "Views",
 
 	KeyEntityFilterInvalidTitle: "Filter not applied",
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",

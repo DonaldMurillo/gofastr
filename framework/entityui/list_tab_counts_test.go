@@ -12,8 +12,8 @@ import (
 )
 
 // countedInvoices is two owners' invoices with a Drafts view: u1 holds
-// one draft and one paid, u2 two drafts.
-func countedInvoices(t *testing.T) *testUI {
+// one draft and one paid, u2 two drafts. tweak adjusts the display.
+func countedInvoices(t *testing.T, tweak ...func(*entity.DisplayConfig)) *testUI {
 	t.Helper()
 	installOwnerExtractor(t)
 	ents := invoiceEntities()
@@ -24,6 +24,9 @@ func countedInvoices(t *testing.T) *testUI {
 	d := *inv.Display
 	d.Description = "Every invoice issued."
 	d.Views = []entity.ListView{{Key: "drafts", Label: "Drafts", Where: `status = "draft"`}}
+	for _, f := range tweak {
+		f(&d)
+	}
 	inv.Display = &d
 	ents["invoices"] = inv
 	rows := invoiceRows()

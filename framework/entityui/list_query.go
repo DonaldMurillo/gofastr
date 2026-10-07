@@ -340,6 +340,28 @@ func (s *listState) facetFilters() []filter.ParsedFilter {
 	return out
 }
 
+// searchedOrFiltered reports a search, a typed or saved filter, or a
+// facet narrowing the list.
+func (s *listState) searchedOrFiltered() bool {
+	return strings.TrimSpace(s.search) != "" || s.filterText != "" || len(s.activeFacets()) > 0
+}
+
+// clearSearchHref is the list without its search, filter and facets:
+// the view and columns stay, and the sort resets as on any narrowing
+// link. An open saved view whose filter narrows the list goes too, the
+// way the chip bar's Clear all drops it.
+func (s *listState) clearSearchHref() string {
+	drop := []string{s.p.q, s.p.filter, s.p.page}
+	for _, name := range s.activeFacets() {
+		drop = append(drop, s.facetParam(name))
+	}
+	q := s.carry(drop...)
+	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
+		q.Del(s.p.saved)
+	}
+	return listHref(s.path, q)
+}
+
 // activeFacets are the facets with a value in the URL, for carrying
 // them across sort and page links.
 func (s *listState) activeFacets() []string {

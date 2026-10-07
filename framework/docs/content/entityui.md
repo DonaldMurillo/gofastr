@@ -149,6 +149,13 @@ for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
 `QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
 controls below), and `Actions` for header buttons beside New.
 
+`Empty(text)` replaces the description of an empty list's state, which
+offers New. A list narrowed to nothing draws its own state instead,
+without New: a search, typed filter, facet or saved view that matches
+no row reads "No {entity} match" with a "Clear search and filters"
+link (the view and columns stay, the sort resets), and a view with no
+rows reads "No {entity} in this view".
+
 The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,

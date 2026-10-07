@@ -161,6 +161,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   viewport tall with its own overflow scroll, and the `Toolbar` row
   sticks at every width. The admin shell uses it, so its sidebar and
   top bar no longer scroll away.
+- **An entityui list narrowed to nothing says so.** A search, filter,
+  facet or saved view that matches no row shows "No {entity} match" and
+  a link that clears them, keeping the view; a view with no rows shows
+  "No {entity} in this view". Neither offers New. New i18n keys:
+  `ui.entity.noMatch`, `noMatchBody`, `clearSearch`, `viewEmpty` and
+  `viewEmptyBody`.
 - **`ui.ContentRowConfig.Dense` tightens an operator console on a
   desktop.** On a fine pointer the frame takes the compact density:
   36px controls, 44px table rows and a smaller gap, with the

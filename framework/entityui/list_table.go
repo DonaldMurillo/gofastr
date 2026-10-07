@@ -371,22 +371,45 @@ func listIDSafe(key, entity string) string {
 
 // emptyState is the list's empty state: New where the caller may create,
 // the builder's text over the default description, one heading level
-// below the list's own.
+// below the list's own. A list narrowed to nothing says so instead: a
+// search, filter or facet offers to clear them, and a view says the
+// others may hold rows. Neither offers New, since the entity is not
+// empty.
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
 	var title, desc string
+	noun := map[string]string{"entity": s.m.noun(ctx, true)}
 	if s.deletedView {
 		// The trash view's own empty state: nothing is deleted, and
 		// there is no New to offer from inside it.
-		title = i18nui.TVars(ctx, i18nui.KeyEntityDeletedEmpty, map[string]string{"entity": s.m.noun(ctx, true)})
+		title = i18nui.TVars(ctx, i18nui.KeyEntityDeletedEmpty, noun)
 		desc = i18nui.T(ctx, i18nui.KeyEntityDeletedEmptyBody)
 		return ui.EmptyStateConfig{Title: title, Description: desc, HeadingLevel: b.headingLevel() + 1}
+	}
+	if s.searchedOrFiltered() {
+		return ui.EmptyStateConfig{
+			Title:        i18nui.TVars(ctx, i18nui.KeyEntityNoMatch, noun),
+			Description:  i18nui.T(ctx, i18nui.KeyEntityNoMatchBody),
+			HeadingLevel: b.headingLevel() + 1,
+			Action: ui.LinkButton(ui.LinkButtonConfig{
+				Label:   i18nui.T(ctx, i18nui.KeyEntityClearSearch),
+				Href:    s.clearSearchHref(),
+				Variant: ui.ButtonSecondary,
+			}),
+		}
+	}
+	if s.viewPred != nil {
+		return ui.EmptyStateConfig{
+			Title:        i18nui.TVars(ctx, i18nui.KeyEntityViewEmpty, noun),
+			Description:  i18nui.T(ctx, i18nui.KeyEntityViewEmptyBody),
+			HeadingLevel: b.headingLevel() + 1,
+		}
 	}
 	desc = b.empty
 	if desc == "" {
 		desc = i18nui.T(ctx, i18nui.KeyEntityEmptyBody)
 	}
 	cfg := ui.EmptyStateConfig{
-		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, map[string]string{"entity": s.m.noun(ctx, true)}),
+		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
