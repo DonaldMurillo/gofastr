@@ -40,7 +40,7 @@ func TestListRendersHeaderRowsAndNew(t *testing.T) {
 		"Orders",        // the plural heading
 		"2 orders",      // the count subtitle, a sentence
 		"alpha", "zeta", // rows
-		`href="/orders/o1"`, // the title cell links to the record
+		`class="fui-link fui-link--title" href="/orders/o1"`, // the title cell links to the record
 		`href="/orders/create"`, "New Order",
 		"data-cui-comp=\"ui-data-table\"",
 	} {
@@ -241,7 +241,7 @@ func TestCardsPresentation(t *testing.T) {
 	html := listHTML(t, x.ui.List("orders").As("cards"), x.ctx("/orders", ""))
 	for _, want := range []string{
 		"data-cui-comp=\"ui-card\"",
-		`href="/orders/o1"`, "alpha",
+		`class="fui-link fui-link--title" href="/orders/o1"`, "alpha",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("cards missing %q:\n%s", want, html)

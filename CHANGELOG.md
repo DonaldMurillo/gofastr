@@ -58,6 +58,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   CSS with no script; a browser without `:has()` shows it always. The
   entity list's bulk bar uses it, so a list nobody is selecting from
   no longer carries an action form above its table.
+- **`ui.LinkTitle`** is a link variant for a record's name where it
+  heads a row or card: the text colour, semibold, underlined on hover.
+  The entity list's table and cards link each record through it.
 - **`ui.TabNavConfig.End`** draws a control at the strip's trailing
   edge, outside the `<nav>` landmark, such as a "Save view" dropdown.
 - **`ui.MenuConfig.Icon`** draws a registered icon before the label on

@@ -51,8 +51,9 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 			cells[name] = b.ui.cellHTML(ctx, s, labels, f, row, name)
 			if name == linkCol && !noLinks {
 				cells[name] = ui.Link(ui.LinkConfig{
-					Href: s.recordHref(id),
-					Text: b.ui.plainText(ctx, s, labels, f, row, name),
+					Href:    s.recordHref(id),
+					Text:    b.ui.plainText(ctx, s, labels, f, row, name),
+					Variant: ui.LinkTitle,
 				})
 			}
 		}

@@ -48,6 +48,13 @@ func TestLinkMutedEmitsMutedModifier(t *testing.T) {
 	}
 }
 
+func TestLinkTitleEmitsTitleModifier(t *testing.T) {
+	h := string(Link(LinkConfig{Href: "/x", Text: "INV-1", Variant: LinkTitle}))
+	if !strings.Contains(h, `class="fui-link fui-link--title"`) {
+		t.Errorf("Variant: LinkTitle should emit .fui-link--title:\n%s", h)
+	}
+}
+
 func TestLinkRejectsUnknownVariant(t *testing.T) {
 	defer func() {
 		r := recover()

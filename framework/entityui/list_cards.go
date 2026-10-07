@@ -31,7 +31,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		if title == "" {
 			title = id
 		}
-		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title})}
+		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title, Variant: ui.LinkTitle})}
 		if noLinks {
 			header[0] = render.Text(title)
 		}
