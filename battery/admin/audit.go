@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
@@ -27,20 +30,93 @@ type auditRow struct {
 	RecordID  string
 	ActorID   sql.NullString
 	CreatedAt time.Time
-	Diff      sql.NullString
+
+	Diff sql.NullString
 }
 
-// renderAudit draws the Audit log page.
+// auditOps are the operations the audit filter offers: the fixed set the
+// CRUD hooks and entityui's bulk runs write (crud's create, update,
+// delete, restore, purge and state_override, entityui's bulk summary).
+// A state transition writes "transition:<key>", which no fixed select
+// could enumerate, so it is filtered by entity instead.
+var auditOps = []string{"create", "update", "delete", "restore", "purge", "state_override", "bulk"}
+
+// auditDayLayout is the ?from= and ?to= format the date inputs post.
+const auditDayLayout = "2006-01-02"
+
+// maxAuditActor is the longest ?actor= the page accepts, in bytes.
+const maxAuditActor = 200
+
+// auditFilter is the Audit log page's narrowing, every value validated
+// before it reaches SQL. to is exclusive: the parsed day plus one, so
+// ?to= covers that whole day.
+type auditFilter struct {
+	actor   string
+	entity  string
+	op      string
+	from    time.Time
+	to      time.Time
+	hasFrom bool
+	hasTo   bool
+}
+
+// parseAuditFilter reads the page's query string. An invalid value is
+// dropped and its param name reported, so the page never 500s on a
+// hand-edited URL and never prints the value it refused. The same
+// predicate text runs on both dialects: one query, $n placeholders.
+func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
+	var f auditFilter
+	var warned []string
+	if a := q.Get("actor"); a != "" {
+		if len(a) > maxAuditActor || textsafe.HasControlBytes(a) {
+			warned = append(warned, "actor")
+		} else {
+			f.actor = a
+		}
+	}
+	if e := q.Get("entity"); e != "" {
+		if _, ok := b.exposedNamed(e); !ok {
+			warned = append(warned, "entity")
+		} else {
+			f.entity = e
+		}
+	}
+	if op := q.Get("op"); op != "" {
+		if !slices.Contains(auditOps, op) {
+			warned = append(warned, "op")
+		} else {
+			f.op = op
+		}
+	}
+	day := func(name string, set func(time.Time)) {
+		if raw := q.Get(name); raw != "" {
+			if d, err := time.Parse(auditDayLayout, raw); err != nil {
+				warned = append(warned, name)
+			} else {
+				set(d)
+			}
+		}
+	}
+	day("from", func(d time.Time) { f.from, f.hasFrom = d, true })
+	day("to", func(d time.Time) { f.to, f.hasTo = d.AddDate(0, 0, 1), true })
+	return f, warned
+}
+
+// renderAudit draws the Audit log page: the filter form, then the rows
+// it narrows to.
 func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.HTML {
 	limit := b.cfg.AuditListLimit
+	var f auditFilter
+	var warned []string
 	if r := appui.RequestFromContext(ctx); r != nil {
 		limit = parseLimit(r.URL.Query().Get("limit"), b.cfg.AuditListLimit)
+		f, warned = b.parseAuditFilter(r.URL.Query())
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.T(ctx, i18nui.KeyAdminAudit),
 		Subtitle: i18nui.T(ctx, i18nui.KeyAdminAuditSub),
 	})
-	rows, err := b.queryAudit(ctx, limit)
+	rows, err := b.queryAuditWhere(ctx, limit, f)
 	if err != nil {
 		// A missing audit table is the usual cause; driver text stays in
 		// the log.
@@ -48,19 +124,95 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
 			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditLoadFailed))))
 	}
-	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header, b.auditTable(ctx, rows, 2))
+	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
+	for _, param := range warned {
+		above = append(above, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
+			render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBadFilter, map[string]string{"param": param}))))
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2))...)
 }
 
-// queryAudit reads the newest limit audit rows in the caller's tenant.
-// A tenant-scoped caller sees only rows stamped with their tenant
-// (system rows with no tenant included in nobody's scope); a caller with
-// no tenant, the platform operator, sees every row.
+// auditFilterForm is the page's filter: a GET form that navigates, so
+// the filter state lives in the page's own query string. The clear link
+// drops back to the bare page.
+func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTML {
+	entityOpts := []ui.SelectOption{{Value: "", Text: i18nui.T(ctx, i18nui.KeyAdminAuditAnyEntity)}}
+	opOpts := []ui.SelectOption{{Value: "", Text: i18nui.T(ctx, i18nui.KeyAdminAuditAnyOp)}}
+	for _, e := range b.ents {
+		entityOpts = append(entityOpts, ui.SelectOption{Value: e.GetName(), Text: b.plural(ctx, e), Selected: e.GetName() == f.entity})
+	}
+	for _, op := range auditOps {
+		opOpts = append(opOpts, ui.SelectOption{Value: op, Text: op, Selected: op == f.op})
+	}
+	return ui.Form(ui.FormConfig{
+		Action:      b.cfg.PathPrefix + "/audit",
+		Method:      "GET",
+		SubmitLabel: i18nui.T(ctx, i18nui.KeyFilterApply),
+		Ctx:         ctx,
+	}, ui.Grid(ui.GridConfig{Min: "12rem"},
+		ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.T(ctx, i18nui.KeyAdminColActor), Value: f.actor}),
+		ui.Select(ui.SelectConfig{Name: "entity", Label: i18nui.T(ctx, i18nui.KeyAdminColEntity), Options: entityOpts}),
+		ui.Select(ui.SelectConfig{Name: "op", Label: i18nui.T(ctx, i18nui.KeyAdminColOperation), Options: opOpts}),
+		ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.T(ctx, i18nui.KeyAdminAuditFrom), Value: dayValue(f.hasFrom, f.from)}),
+		ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.T(ctx, i18nui.KeyAdminAuditTo), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
+		ui.LinkButton(ui.LinkButtonConfig{
+			Label:   i18nui.T(ctx, i18nui.KeyFilterReset),
+			Href:    b.cfg.PathPrefix + "/audit",
+			Variant: ui.ButtonGhost,
+		}),
+	))
+}
+
+// dayValue formats a parsed filter day back for the date input; "" when
+// the filter is off.
+func dayValue(set bool, t time.Time) string {
+	if !set {
+		return ""
+	}
+	return t.Format(auditDayLayout)
+}
+
+// queryAudit reads the newest limit audit rows in the caller's tenant,
+// unfiltered: the dashboard's recent activity. The page narrows through
+// queryAuditWhere.
 func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error) {
+	return b.queryAuditWhere(ctx, limit, auditFilter{})
+}
+
+// queryAuditWhere reads the newest limit audit rows in the caller's
+// tenant narrowed by the page's validated filter. A tenant-scoped caller
+// sees only rows stamped with their tenant (system rows with no tenant
+// included in nobody's scope); a caller with no tenant, the platform
+// operator, sees every row. Values only ever travel as placeholders, and
+// the built predicate is the same text on Postgres and SQLite.
+func (b *Battery) queryAuditWhere(ctx context.Context, limit int, f auditFilter) ([]auditRow, error) {
 	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff FROM %s`, b.cfg.AuditTable)
+	var conds []string
 	var args []any
+	add := func(cond string, v any) {
+		conds = append(conds, fmt.Sprintf("%s $%d", cond, len(args)+1))
+		args = append(args, v)
+	}
 	if tid := tenant.GetTenantID(ctx); tid != "" {
-		q += " WHERE tenant_id = $1"
-		args = append(args, tid)
+		add("tenant_id =", tid)
+	}
+	if f.actor != "" {
+		add("actor_id =", f.actor)
+	}
+	if f.entity != "" {
+		add("entity =", f.entity)
+	}
+	if f.op != "" {
+		add("op =", f.op)
+	}
+	if f.hasFrom {
+		add("created_at >=", f.from)
+	}
+	if f.hasTo {
+		add("created_at <", f.to)
+	}
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
 	}
 	q += " ORDER BY created_at DESC LIMIT " + strconv.Itoa(limit)
 	rows, err := b.db.QueryContext(ctx, q, args...)

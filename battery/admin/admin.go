@@ -41,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
@@ -99,6 +100,23 @@ type Config struct {
 
 	// AuditListLimit caps rows on the Audit log page. Default 200.
 	AuditListLimit int
+
+	// SavedViews turns on per-user saved views over the admin's
+	// database (Config.DB or the app's): one named filter/columns set
+	// per user per entity, kept apart by owner and tenant. The store is
+	// SavedViews(); the UI wiring is the host's (UI.WithSavedViews).
+	SavedViews bool
+
+	// SavedViewsTable is the saved views table. Defaults to
+	// "admin_saved_views". Must be a lowercase identifier
+	// ([a-z_][a-z0-9_]*).
+	SavedViewsTable string
+
+	// BulkJobs runs bulk actions over more records than one request may
+	// touch, on a battery/queue backend. Build it with NewBulkJobs and
+	// pass the same value to app.EntityUI's Extensions.Jobs; Init binds
+	// it to Config.UI and hands back any job a crash left unenqueued.
+	BulkJobs *BulkJobs
 
 	// Authorize replaces the role check: it returns true to admit the
 	// request. The embed refusal and a Decider's deny still run first.
@@ -169,6 +187,8 @@ type Battery struct {
 	router *router.Router
 	ents   []*entity.Entity
 	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
+
+	savedViews entityui.SavedViewStore // nil unless Config.SavedViews
 }
 
 // New constructs the Admin battery. Pass the result to
@@ -183,6 +203,9 @@ func New(cfg Config) *Battery {
 	}
 	if cfg.QueueListLimit <= 0 {
 		cfg.QueueListLimit = 200
+	}
+	if cfg.SavedViewsTable == "" {
+		cfg.SavedViewsTable = "admin_saved_views"
 	}
 	if cfg.AuditListLimit <= 0 {
 		cfg.AuditListLimit = 200
@@ -255,8 +278,36 @@ func (b *Battery) Init(app *framework.App) error {
 	if err := b.checkConfig(); err != nil {
 		return err
 	}
+	if b.cfg.SavedViews {
+		sv, err := newSavedViews(context.Background(), b.db, b.cfg.SavedViewsTable)
+		if err != nil {
+			return fmt.Errorf("admin: saved views: %w", err)
+		}
+		b.savedViews = sv
+		if b.ui != nil {
+			b.ui = b.ui.WithSavedViews(sv)
+		}
+	}
+	if b.cfg.BulkJobs != nil {
+		b.cfg.BulkJobs.setAdmit(b.admitJob)
+		// Bind first: a job resumed before its handler was registered
+		// would be dead-lettered by the queue as an unknown type.
+		b.cfg.BulkJobs.Bind(b.cfg.UI)
+		if n, err := b.cfg.UI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
+			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
+		} else if n > 0 {
+			b.logger().Info("admin: resumed bulk jobs", "count", n)
+		}
+	}
 	b.mount()
 	return nil
+}
+
+// SavedViews returns the saved views store, or nil when Config.SavedViews
+// is off. Every method acts for the caller in ctx only; see
+// entityui.SavedViewStore.
+func (b *Battery) SavedViews() entityui.SavedViewStore {
+	return b.savedViews
 }
 
 // checkConfig refuses the names and paths Init cannot draw.
@@ -316,6 +367,26 @@ func (b *Battery) checkConfig() error {
 			return err
 		}
 	}
+	if err := b.checkFeatureConfig(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkFeatureConfig refuses the optional features' config Init cannot
+// start: a saved views table name that is not a lowercase identifier,
+// saved views with no database to keep them in, and bulk jobs with no
+// UI to run them through.
+func (b *Battery) checkFeatureConfig() error {
+	if !savedViewsTableRe.MatchString(b.cfg.SavedViewsTable) {
+		return fmt.Errorf("admin: SavedViewsTable %q must be a lowercase identifier ([a-z_][a-z0-9_]*)", b.cfg.SavedViewsTable)
+	}
+	if b.cfg.SavedViews && b.db == nil {
+		return errors.New("admin: Config.SavedViews needs Config.DB or an app database")
+	}
+	if b.cfg.BulkJobs != nil && b.cfg.UI == nil {
+		return errors.New("admin: Config.BulkJobs needs Config.UI (app.EntityUI with Extensions.Jobs = the same runner): the jobs run the entity screens' bulk actions")
+	}
 	return nil
 }
 
@@ -364,6 +435,20 @@ func (b *Battery) authorized(ctx context.Context) bool {
 		return false
 	}
 	return slices.Contains(rh.GetRoles(), b.adminRole())
+}
+
+// admitJob is the gate a queued bulk run's rebuilt context passes, the
+// same one the admin's bulk route applies: Config.Policy goes on a
+// context that has none, and a creator the gate admits now runs
+// elevated. A creator it no longer admits runs as a plain caller.
+func (b *Battery) admitJob(ctx context.Context) context.Context {
+	if b.cfg.Policy != nil && access.PolicyFromContext(ctx) == nil {
+		ctx = access.WithPolicy(ctx, b.cfg.Policy)
+	}
+	if b.authorized(ctx) {
+		return crud.WithElevation(ctx)
+	}
+	return ctx
 }
 
 // adminRole returns the configured admin role, defaulting to "admin".

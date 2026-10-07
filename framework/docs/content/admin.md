@@ -74,9 +74,12 @@ The list, record and create screens are `entityui` screens, so they
 carry everything the entity declares: its `Display` names, fields and
 nav group, its `States` transitions, relations (a Related tab on the
 record), bulk actions, CSV export, and the record's activity tab. The
-admin reads each entity under the caller's own context plus the
-elevation described below, and points the screens' writes at its own
-routes:
+admin also turns on every optional `entityui` tool: the query box, the
+columns menu, the trash view of a soft-deleting entity, saved views
+(with `Config.SavedViews`), the record's API tab and the status
+override. The admin reads each entity under the caller's own context
+plus the elevation described below, and points the screens' writes at
+its own routes:
 
 | Route | Purpose |
 |---|---|
@@ -84,8 +87,13 @@ routes:
 | `PUT`/`PATCH /admin/api/<name>/{id}` | Update |
 | `DELETE /admin/api/<name>/{id}` | Delete |
 | `POST /admin/api/<name>/{id}/transitions/{key}` | A `States` transition |
+| `POST /admin/api/<name>/{id}/_override` | Status override (`States` only) |
+| `POST /admin/api/<name>/{id}/_restore` | Restore from the trash (`SoftDelete` only) |
+| `POST /admin/api/<name>/{id}/_purge` | Delete permanently (`SoftDelete` only) |
 | `POST /admin/api/<name>/_bulk` | Bulk action |
 | `GET /admin/api/<name>/_export.csv` | CSV export |
+| `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
+| `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
 | `GET /admin/_count/<name>` | A dashboard count card (polled) |
 
 Every write goes through the app's own CRUD handler, so validation,
@@ -96,8 +104,10 @@ the field write checks apply exactly as on the JSON API.
 `crud.WithElevation`, which lifts one check: the entity's
 `Exposure.Access` permissions. An entity locked to `posts:write` on the
 app API is still editable from the admin by a caller the gate admits.
-Elevation never lifts tenant scope, owner scope, soft delete, or the
-field read and write checks, and it never reaches app code: a `Page`
+Elevation never lifts tenant scope, owner scope, soft delete, the
+field read and write checks, a transition's `Permission` or the
+`<name>:override_state` capability the status override needs, and it
+never reaches app code: a `Page`
 or `Card` builds with the caller's own context, and an entityui action,
 tab, view func or field kind gets the caller's context with the
 elevation removed (`crud.WithoutElevation`).
@@ -183,6 +193,85 @@ logs the driver error; the page never prints it. `QueueListLimit` and
 `AuditListLimit` cap the rows (default 200). The audit page reads
 `AuditTable` (default `audit_log`) and, when the request carries a
 tenant, only that tenant's rows.
+
+**Audit filters.** The audit page carries a GET filter form, so a filter
+lives in the page's own query string and works without script:
+`?actor=<user id>`, `?entity=<exposed entity name>`, `?op=<operation>`,
+`?from=YYYY-MM-DD`, `?to=YYYY-MM-DD` (`to` inclusive). The operation
+select offers the fixed set the audit log writes — `create`, `update`,
+`delete`, `restore`, `purge`, `state_override` and entityui's `bulk`
+summary — plus "any"; the entity select offers the exposed entities.
+Every value is checked server-side before it reaches SQL, and values
+travel as placeholders. An invalid value is ignored with a warning
+naming the parameter, never a 500; a link clears the filter.
+
+### Saved views
+
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+-->
+```go
+admin.New(admin.Config{SavedViews: true, DB: db})
+```
+
+`Config.SavedViews` turns on the admin's saved-view store over the
+admin's database (`Config.DB`, default the app's): one named
+filter/columns set per user per entity, in `admin_saved_views`
+(`Config.SavedViewsTable`; a lowercase identifier). The admin's lists
+offer it; `(*Battery).SavedViews()` returns the store for an app's own
+screens (`UI.WithSavedViews`). The store reads the owner and the tenant from the caller's
+context only, keeps every owner's and tenant's views apart, caps a user
+at `entityui.SavedViewCap` views per entity, and refuses blank, duplicate
+and over-long names, filters and column lists with the errors the
+`SavedViewStore` contract names.
+
+### Bulk jobs in the background
+
+A bulk action over more than `entityui.InRequestCap` (100) records runs
+outside the request, on `Config.Queue`'s queue, through
+`admin.NewBulkJobs`:
+
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var app = framework.NewApp(framework.WithDB(db))
+var authManager *auth.AuthManager
+-->
+```go
+q, _ := queue.NewDBQueue(db)
+jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager))
+
+app.RegisterBattery(admin.New(admin.Config{
+    UI:       app.EntityUI(entityui.Extensions{Jobs: jobs}),
+    Entities: []string{"posts"},
+    BulkJobs: jobs,
+}))
+```
+
+The wiring order is fixed by the two directions: the UI needs the
+runner at `app.EntityUI` time (`Extensions.Jobs`), and the runner needs
+the UI to run jobs, so `Config.BulkJobs` closes the cycle — the admin's
+`Init` binds the runner to `Config.UI` and then calls
+`UI.ResumeBulkJobs`, handing back any job a crash left between its
+snapshot and its `Enqueue`. The queue job's payload carries only the job
+id; the confirmed selection lives in the host's snapshot store.
+
+`PrincipalFunc` (the second argument) rebuilds the confirming user's
+request context as of now — the user, their current roles, the tenant —
+before every chunk; an error stops the run, so a creator who is gone
+runs nothing. `admin.AuthPrincipal(am)` builds one from `battery/auth`,
+loading the user and their current roles through the manager's user
+store. The admin then puts `Config.Policy` on a context that has no
+policy and runs its own gate again: a creator it admits runs elevated,
+as the admin's bulk route does; one whose admin role was revoked runs
+as a plain caller, so the writes pass only that user's own permissions.
 
 ### Roles and user roles
 

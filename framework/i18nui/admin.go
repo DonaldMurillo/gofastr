@@ -97,6 +97,11 @@ const (
 	KeyAdminAuditEmpty      Key = "ui.admin.auditEmpty"      // "No audit entries"
 	KeyAdminAuditEmptyDesc  Key = "ui.admin.auditEmptyDesc"  // "Audit events will appear here."
 	KeyAdminAuditSystem     Key = "ui.admin.auditSystem"     // "System"
+	KeyAdminAuditFrom       Key = "ui.admin.auditFrom"       // "From"
+	KeyAdminAuditTo         Key = "ui.admin.auditTo"         // "To"
+	KeyAdminAuditAnyEntity  Key = "ui.admin.auditAnyEntity"  // "Any entity"
+	KeyAdminAuditAnyOp      Key = "ui.admin.auditAnyOp"      // "Any operation"
+	KeyAdminAuditBadFilter  Key = "ui.admin.auditBadFilter"  // "\"{param}\" was ignored. It is not a value the filter accepts."
 )
 
 // Roles and user roles.
@@ -217,6 +222,11 @@ var adminDefaults = map[Key]string{
 	KeyAdminReplayed:          "Job queued again.",
 	KeyAdminReplayedAll:       "Failed jobs queued again.",
 	KeyAdminAudit:             "Audit log",
+	KeyAdminAuditFrom:         "From",
+	KeyAdminAuditTo:           "To",
+	KeyAdminAuditAnyEntity:    "Any entity",
+	KeyAdminAuditAnyOp:        "Any operation",
+	KeyAdminAuditBadFilter:    "\"{param}\" was ignored. It is not a value the filter accepts.",
 	KeyAdminAuditSub:          "Who changed what, newest first.",
 	KeyAdminAuditLoadFailed:   "Could not load audit rows. Check the server logs for details.",
 	KeyAdminAuditEmpty:        "No audit entries",

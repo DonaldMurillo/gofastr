@@ -829,6 +829,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   again, reads the record under the caller's scope, requires a reason of
   at most 500 characters, and writes through `crud.WithStateOverride`,
   so the audit row records `state_override` and the reason.
+- **The admin's audit log filters by actor, entity, operation and date
+  range** through the page's query string (`actor`, `entity`, `op`,
+  `from`, `to`). Each value is validated and bound as a placeholder; an
+  invalid one is ignored with a warning naming it.
+- **`admin.Config.SavedViews` stores saved views** in the admin's
+  database (`admin_saved_views`, or `Config.SavedViewsTable`), one set
+  per user per entity, kept apart by owner and tenant read from the
+  caller's context. `(*Battery).SavedViews()` returns the store.
+- **`admin.NewBulkJobs` runs bulk actions over `entityui.InRequestCap`
+  records on `battery/queue`.** The payload carries only the job id.
+  Before every chunk the runner rebuilds the confirming user's context
+  as of now through `PrincipalFunc` (or `admin.AuthPrincipal` on
+  `battery/auth`), the admin adds its `Config.Policy` when the context
+  carries none, and adds `crud.WithElevation` only while that user still
+  passes the admin gate. A user who is gone runs nothing; one who lost
+  the admin role runs only what their current roles allow. Wire the runner into
+  both `entityui.Extensions.Jobs` and `admin.Config.BulkJobs`.
 
 ### Changed
 

@@ -143,7 +143,8 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		listPath := b.entityBase(e)
 		related := b.relatedTo(e)
 		list := b.screen(group, base, i18nui.KeyAdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
-			return b.ui.List(name).Base(listPath).Bulk().Delete().Duplicate().RenderCtx(ctx)
+			return b.ui.List(name).Base(listPath).Bulk().Delete().Duplicate().
+				QueryBox().ColumnsMenu().Deleted().SavedViews().RenderCtx(ctx)
 		})
 		b.entityTitle(list, e, func(ctx context.Context, _ map[string]string) string { return b.plural(ctx, e) })
 
@@ -155,7 +156,8 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		})
 
 		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
-			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Duplicate().RenderCtx(ctx)
+			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Duplicate().
+				API().Override().RenderCtx(ctx)
 		})
 		b.entityTitle(record, e, func(ctx context.Context, p map[string]string) string {
 			if t, ok := b.ui.RecordTitle(ctx, name, p["id"]); ok {
@@ -201,8 +203,24 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	if len(crud.RoutableTransitions(e.Config.States)) > 0 {
 		r.Post(api+"/{id}/transitions/{key}", elevated(ch.Transition()))
 	}
+	// The override's capability is checked by name: elevation lifts the
+	// entity's update permission for the write, never the capability.
+	if e.Config.States != nil {
+		r.Post(api+"/{id}/_override", elevated(b.ui.OverrideHandler(e.GetName())))
+	}
+	if e.Config.Scope != nil && e.Config.Scope.SoftDelete {
+		r.Post(api+"/{id}/_restore", elevated(b.ui.RestoreHandler(e.GetName())))
+		r.Post(api+"/{id}/_purge", elevated(b.ui.PurgeHandler(e.GetName())))
+	}
 	r.Post(api+"/_bulk", elevated(b.ui.BulkHandler(e.GetName())))
 	r.Get(api+"/_export.csv", elevated(b.ui.ExportHandler(e.GetName())))
+	// Saved views belong to the caller and touch no entity row, so they
+	// run unelevated.
+	if b.savedViews != nil {
+		views := b.ui.SavedViewsHandler(e.GetName())
+		r.Post(api+"/_views", views)
+		r.Post(api+"/_views/_delete/{id}", views)
+	}
 }
 
 // countPoll is how often a dashboard count refreshes. The poll module
