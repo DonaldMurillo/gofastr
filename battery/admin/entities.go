@@ -134,6 +134,21 @@ func (b *Battery) relatedTo(e *entity.Entity) []string {
 	return out
 }
 
+// parentRecords lists the record patterns of the exposed entities e
+// belongs to: the records whose Related tab lists e, the reverse of
+// relatedTo.
+func (b *Battery) parentRecords(e *entity.Entity) []string {
+	var out []string
+	for _, other := range b.ents {
+		if slices.ContainsFunc(e.Config.Relations, func(r entity.Relation) bool {
+			return r.Entity == other.GetName() && r.ForeignKey != ""
+		}) {
+			out = append(out, b.entityBase(other)+"/:id")
+		}
+	}
+	return out
+}
+
 // mountEntities registers each exposed entity's list, record and create
 // screens, and its write routes.
 func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
@@ -154,9 +169,10 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		b.entityTitle(create, e, func(ctx context.Context, _ map[string]string) string {
 			return i18nui.TVars(ctx, i18nui.KeyAdminPaletteNew, map[string]string{"entity": b.singular(ctx, e)})
 		})
-		// New, like a record, opens as a drawer over the list; a direct
-		// load is the full page.
-		create.Intercept = &appui.Intercept{From: listPath, As: appui.ScreenDrawer}
+		// New, like a record, opens as a drawer over the list, and over
+		// the record of each entity it belongs to, whose Related tab adds
+		// to it; a direct load is the full page.
+		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
 		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
 			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Duplicate().

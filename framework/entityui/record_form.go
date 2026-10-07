@@ -218,7 +218,13 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	action := m.api
 	rpc := interactive.Post(m.api)
 	toast := i18nui.TVars(ctx, i18nui.KeyEntityCreated, map[string]string{"entity": m.singular(ctx)})
+	// A create lands on the list, or, opened as a drawer, back on the
+	// page under it (the list, or the record whose Related tab added
+	// it), which the runtime refreshes in place of leaving the stack.
 	dest := base
+	if o := appui.OverlayOriginFromContext(ctx); o != "" {
+		dest = o
+	}
 	if !fb.create {
 		action = m.api + "/" + url.PathEscape(b.id)
 		rpc = interactive.Put(action)

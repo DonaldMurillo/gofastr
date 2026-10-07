@@ -1162,7 +1162,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **BREAKING: `battery/admin` is rebuilt on `framework/entityui`.** Entity
   screens moved from `/admin/e/<entity>` (with `/new`, `/view/<id>` and
   `/edit/<id>`) to `/admin/entities/<entity>`, `/create` and `/<id>`; a
-  record, and the create form, open in a drawer from the list. Writes go to
+  record, and the create form, open in a drawer from the list; the
+  create form also opens over a record whose Related tab adds to it,
+  and Create returns to that record. Writes go to
   `/admin/api/<entity>`, the entity's own CRUD handler behind the admin
   gate under `crud.WithElevation`. `Config.UI` (`app.EntityUI(ext)`) is
   required when the admin exposes an entity, and every admin page, the
