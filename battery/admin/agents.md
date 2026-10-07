@@ -39,8 +39,10 @@ scope apply).
 no role 403. Embed grants and a Decider deny refuse the whole admin.
 
 **Elevation:** admin routes and screens lift only the entity's
-`Exposure.Access` check (`crud.WithElevation`); tenant and owner scope
-still apply. App `Page`/`Card` builds run unelevated.
+`Exposure.Access` check of the exposed entities (`b.elevate`, which
+calls `crud.WithElevation` with their names); tenant and owner scope
+still apply. App `Page`/`Card` builds, `Page.Access` and CRUD hooks run
+unelevated.
 
 **Don't:** add CSS, hand-roll markup, or re-implement CRUD here; a
 missing piece goes into `framework/ui` or `framework/entityui`.

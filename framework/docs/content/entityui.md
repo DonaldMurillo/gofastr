@@ -173,7 +173,8 @@ Extension code runs as the caller. A back office that elevates its own
 reads and writes (`crud.WithElevation`, as battery/admin does) does not
 vouch for an action's `Run`, a tab's `Build`, a view func, a field kind
 or a replaced list or record body: each receives the caller's context
-with the elevation removed (`crud.WithoutElevation`), so it passes only
+with the elevation removed (`crud.WithoutElevation`), and the component
+it returns draws with that context too, so it passes only
 the read and write gates the caller's own roles pass.
 
 ```go

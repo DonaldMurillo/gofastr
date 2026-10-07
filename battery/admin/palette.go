@@ -8,7 +8,6 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -115,7 +114,7 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 	}
 	// The admin's own read, elevated past each entity's Access check;
 	// scope, the Decider and each row's gate still bind.
-	rctx := crud.WithElevation(ctx)
+	rctx := b.elevate(ctx)
 	for _, e := range b.ents {
 		for _, m := range b.ui.SearchRecords(rctx, e.GetName(), q, paletteRecords) {
 			if len(out) >= paletteCap {

@@ -16,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -154,7 +153,7 @@ func (s *adminScreen) ScreenTitle() string { return s.loaded }
 // ever depending on that alone.
 func (s *adminScreen) ctx(ctx context.Context) context.Context {
 	if s.elevate && s.b.authorized(ctx) {
-		return crud.WithElevation(ctx)
+		return s.b.elevate(ctx)
 	}
 	return ctx
 }
@@ -455,7 +454,7 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 		}
 		title, ok := "", false
 		if b.authorized(ctx) {
-			title, ok = b.ui.RecordTitle(crud.WithElevation(ctx), e.GetName(), id)
+			title, ok = b.ui.RecordTitle(b.elevate(ctx), e.GetName(), id)
 		}
 		if !ok {
 			title = b.singular(ctx, e)

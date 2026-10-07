@@ -42,6 +42,12 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
 `HookRegistry(entityName)` lazily creates a registry for that entity.
 Each entity has its own registry: hooks do not cross entities.
 
+A hook runs as the caller. When a back office such as battery/admin
+elevates a write or read (`crud.WithElevation`), the hook's `ctx`, and the
+`Request` a List or Get payload carries, arrive with the elevation
+removed: a read or write the hook makes passes only the caller's own
+gates.
+
 ## List & Get hooks: scoping reads
 
 `BeforeList` and `BeforeGet` let you inject `WHERE` clauses into the

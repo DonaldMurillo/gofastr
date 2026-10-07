@@ -603,7 +603,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// both paths inherit the same scope.
 		listPayload := &hook.ListPayload{Request: r}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeList, listPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -768,7 +768,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// AfterList hook, host can redact / transform / drop rows.
 		if ch.Hooks != nil {
 			listPayload.Results = results
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
 				log.Printf("crud: after-list hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -910,7 +910,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		getPayload := &hook.GetPayload{Request: r, ID: id}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, getPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -956,7 +956,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		if ch.Hooks != nil {
 			getPayload.Result = result
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
 				log.Printf("crud: after-get hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return

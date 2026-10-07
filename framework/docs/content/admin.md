@@ -101,16 +101,20 @@ hooks, events, `WithAuditLog` rows, tenant and `OwnerField` scope, and
 the field write checks apply exactly as on the JSON API.
 
 **Elevation.** The admin routes and the admin's own screens run with
-`crud.WithElevation`, which lifts one check: the entity's
-`Exposure.Access` permissions. An entity locked to `posts:write` on the
-app API is still editable from the admin by a caller the gate admits.
-Elevation never lifts tenant scope, owner scope, soft delete, the
-field read and write checks, a transition's `Permission` or the
-`<name>:override_state` capability the status override needs, and it
-never reaches app code: a `Page`
-or `Card` builds with the caller's own context, and an entityui action,
-tab, view func or field kind gets the caller's context with the
-elevation removed (`crud.WithoutElevation`).
+`crud.WithElevation`, naming the entities the admin exposes, which lifts
+one check on those entities only: their `Exposure.Access` permissions.
+An entity locked to `posts:write` on the app API is still editable from
+the admin by a caller the gate admits; an entity the admin does not
+expose keeps its check, so a relation label, a picker or a stat that
+reaches it reads as the caller. Elevation never lifts tenant scope,
+owner scope, soft delete, the field read and write checks, a
+transition's `Permission` or the `<name>:override_state` capability the
+status override needs, and it never reaches app code: a `Page` or
+`Card` builds, and a page's `Access` answers, with the caller's own
+context; an entityui action, tab, view func or field kind, and the
+component it returns, gets the caller's context with the elevation
+removed (`crud.WithoutElevation`); and every lifecycle hook an admin
+write or read fires runs without it.
 
 ### App pages, cards, links and commands
 

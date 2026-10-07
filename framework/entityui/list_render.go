@@ -52,15 +52,17 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// A replaced list body is the app's component, under the same read
 	// gate and the same key rules. Build runs inside this render's
 	// recover; SafeRenderCtx contains a panic in the component's render.
+	// Both run as the caller.
 	if m.ext.List != nil {
-		comp, err := m.ext.List(ListContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name})
+		cctx := asCaller(ctx)
+		comp, err := m.ext.List(ListContext{Ctx: cctx, UI: b.ui, Entity: m.name})
 		if err != nil {
 			return "", err
 		}
 		if comp == nil {
 			return "", fmt.Errorf("entityui: entity %q: replaced list returned no component", m.name)
 		}
-		out, err := component.SafeRenderCtx(ctx, comp)
+		out, err := component.SafeRenderCtx(cctx, comp)
 		if err != nil {
 			return "", err
 		}

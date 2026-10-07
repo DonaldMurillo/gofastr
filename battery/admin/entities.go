@@ -192,7 +192,7 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	}
 	elevated := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.ServeHTTP(w, r.WithContext(crud.WithElevation(r.Context())))
+			h.ServeHTTP(w, r.WithContext(b.elevate(r.Context())))
 		})
 	}
 	api := b.apiBase(e)
@@ -241,7 +241,7 @@ func (b *Battery) mountCounts(r *router.Router) {
 			http.NotFound(w, r)
 			return
 		}
-		ctx := crud.WithElevation(r.Context())
+		ctx := b.elevate(r.Context())
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(b.entityStat(appui.WithRequest(ctx, r), e)))

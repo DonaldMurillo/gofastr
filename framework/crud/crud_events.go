@@ -472,7 +472,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 		hctx = r.Context()
 	}
 	payload := &hook.GetPayload{Request: r, ID: id, Result: clone}
-	if err := ch.Hooks.ExecuteHooks(hookCtx(hctx), hook.AfterGet, payload); err != nil {
+	if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
 		log.Printf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
 		payload.Result = nil
 	}

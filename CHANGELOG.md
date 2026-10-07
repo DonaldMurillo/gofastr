@@ -771,16 +771,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   title, so a host that scales page titles leaves sections a step below.
 - **`i18nui.RelationLabel`** is `FieldLabel` for a Relation field: its
   fallback drops a trailing `_id`.
-- **`crud.WithElevation(ctx)`** lifts one check for a back office that
-  has already authorized its caller: the entity's `Exposure.Access`
-  permission, on reads and writes. Owner and tenant scope, held token and
-  embed scopes, the session gate, a move's own `Permission` and the state
-  override permission still apply. Set it only from server code, never
-  from request data.
+- **`crud.WithElevation(ctx, entities...)`** lifts one check for a back
+  office that has already authorized its caller: the `Exposure.Access`
+  permission of the named entities, on reads and writes. An entity it does
+  not name keeps its check, and a call naming none lifts nothing. Owner
+  and tenant scope, held token and embed scopes, the session gate, a
+  move's own `Permission` and the state override permission still apply.
+  Set it only from server code, never from request data.
 - **`crud.WithoutElevation(ctx)`** removes `WithElevation`'s lift.
-  entityui runs an app's actions, tabs, view funcs and field kinds under
-  it, so code a back office did not write passes only the caller's own
-  gates.
+  entityui runs an app's actions, tabs, view funcs and field kinds, and
+  draws the components they return, under it, and crud runs every
+  lifecycle hook under it (the request a read hook's payload carries
+  included), so code a back office did not write passes only the
+  caller's own gates.
 - **`ui.Thumbnail`** draws a square, lazily loaded image preview in three
   sizes (`ThumbnailSM`, the default `ThumbnailMD`, `ThumbnailLG`). A
   source `urlsafe.ImageSource` refuses draws nothing.

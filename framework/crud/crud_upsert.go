@@ -97,7 +97,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
 			}
 		}
@@ -308,7 +308,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}

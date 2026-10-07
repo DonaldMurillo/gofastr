@@ -41,6 +41,28 @@ func withPolicy(h http.Handler) http.Handler {
 	})
 }
 
+// The admin elevates only the entities it exposes: a relation, hook or
+// stat that reaches an entity it does not show keeps that entity's
+// Access check.
+func TestElevationStopsAtExposedEntities(t *testing.T) {
+	notes := lockedPosts()
+	notes.Table = "notes"
+	notes.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: "notes:read"}}
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts(), "notes": notes}, Config{Entities: []string{"posts"}}, nil)
+	p := access.NewRolePolicy()
+	_ = p.Grant("admin", "unrelated:thing")
+	ctx := x.b.elevate(access.WithRoles(access.WithPolicy(context.Background(), p), []string{"admin"}))
+	for name, want := range map[string]bool{"posts": true, "notes": false} {
+		ch, err := x.app.CrudHandler(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ch.CanReadScoped(ctx); got != want {
+			t.Errorf("SECURITY: elevated read of %s = %v, want %v", name, got, want)
+		}
+	}
+}
+
 func jsonReq(method, path, body string) *http.Request {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

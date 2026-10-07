@@ -186,6 +186,7 @@ type Battery struct {
 	host   *uihost.UIHost
 	router *router.Router
 	ents   []*entity.Entity
+	names  []string     // the names of ents, the set the admin elevates
 	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
 
 	savedViews entityui.SavedViewStore // nil unless Config.SavedViews
@@ -264,6 +265,9 @@ func (b *Battery) Init(app *framework.App) error {
 		return err
 	}
 	b.ents = ents
+	for _, e := range ents {
+		b.names = append(b.names, e.GetName())
+	}
 	if len(b.ents) > 0 {
 		if b.cfg.UI == nil {
 			return fmt.Errorf("admin: exposing %s needs Config.UI (app.EntityUI(ext)): the admin draws entity screens with it", entityNames(b.ents))
@@ -446,9 +450,17 @@ func (b *Battery) admitJob(ctx context.Context) context.Context {
 		ctx = access.WithPolicy(ctx, b.cfg.Policy)
 	}
 	if b.authorized(ctx) {
-		return crud.WithElevation(ctx)
+		return b.elevate(ctx)
 	}
 	return ctx
+}
+
+// elevate lifts the Access check of the entities the admin exposes and
+// of no other: a relation, a hook or a stat reaching an entity the admin
+// does not show reads as the caller. Call it only once the caller passed
+// the gate.
+func (b *Battery) elevate(ctx context.Context) context.Context {
+	return crud.WithElevation(ctx, b.names...)
 }
 
 // adminRole returns the configured admin role, defaulting to "admin".

@@ -43,7 +43,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -179,7 +179,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
 		}
 	}
@@ -215,7 +215,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -357,7 +357,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -542,7 +542,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
 		}
 	}
@@ -583,7 +583,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}

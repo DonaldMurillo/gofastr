@@ -164,14 +164,15 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	header := b.header(ctx, m, row, base)
 	if m.ext.Record != nil {
 		body := contain(ctx, m.name, "record", func() (render.HTML, error) {
-			c, err := m.ext.Record(RecordContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
+			cctx := asCaller(ctx)
+			c, err := m.ext.Record(RecordContext{Ctx: cctx, UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
 			if err != nil {
 				return "", err
 			}
 			if c == nil {
 				return "", fmt.Errorf("record body is nil")
 			}
-			return renderComponent(ctx, c), nil
+			return renderComponent(cctx, c), nil
 		})
 		return render.Join(header, body), nil
 	}
@@ -381,14 +382,15 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {
-				c, err := build(TabContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name, Record: rec})
+				cctx := asCaller(ctx)
+				c, err := build(TabContext{Ctx: cctx, UI: b.ui, Entity: m.name, Record: rec})
 				if err != nil {
 					return "", err
 				}
 				if c == nil {
 					return "", fmt.Errorf("tab body is nil")
 				}
-				return renderComponent(ctx, c), nil
+				return renderComponent(cctx, c), nil
 			}), nil
 		}})
 	}
@@ -449,8 +451,9 @@ func currentURLPath(ctx context.Context) string {
 	return r.URL.Path
 }
 
-// renderComponent draws an extension component with the request
-// context when it takes one, and through Render when it does not.
+// renderComponent draws an extension component with ctx when it takes
+// one, and through Render when it does not. ctx is the caller's, with
+// any elevation removed.
 func renderComponent(ctx context.Context, c component.Component) render.HTML {
 	if cc, ok := c.(component.ContextComponent); ok {
 		return cc.RenderCtx(ctx)

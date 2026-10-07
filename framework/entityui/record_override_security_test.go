@@ -52,7 +52,7 @@ func TestOverrideWildcardRefused(t *testing.T) {
 // crud.WithElevation still answers 403 without the exact grant.
 func TestOverrideElevationIsNotCapability(t *testing.T) {
 	w := newOverrideWorld(t, nil)
-	rec := postOverride(t, w, crud.WithElevation(noCapCtx()), "application/json", `{"state":"paid","reason":"nope"}`)
+	rec := postOverride(t, w, crud.WithElevation(noCapCtx(), "invoices"), "application/json", `{"state":"paid","reason":"nope"}`)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("elevated ctx: status %d, want 403: %s", rec.Code, rec.Body.String())
 	}
