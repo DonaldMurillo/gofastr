@@ -220,7 +220,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **banner**: `framework/ui.Banner`, page-level persistent status strip
 - **callout**: `framework/ui.Callout`, persistent inline info / warning / danger / neutral block
 - **notification**: `framework/ui.Notification`, toast-styled inline notification (variant + dismiss)
-- **emptystate**: `framework/ui.EmptyState`, centered title + description + optional CTA for no-data screens
+- **emptystate**: `framework/ui.EmptyState`, centered title + description + optional CTA for no-data screens; `Compact` draws one muted line in a small panel, for an empty list inside another screen
 - **signout**: `framework/ui.SignOut`, logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
 - **pollingindicator**: `framework/ui.PollingIndicator`, pulsing dot + label confirming a polling RPC is firing
 - **seo**: `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema`, per-page SEO + sitewide sitemap.xml / robots.txt

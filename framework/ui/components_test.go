@@ -481,6 +481,21 @@ func TestEmptyStateHeadingLevel(t *testing.T) {
 	}
 }
 
+// Compact puts its class on the root beside the caller's, and the
+// sheet styles it.
+func TestEmptyStateCompact(t *testing.T) {
+	h := string(EmptyState(EmptyStateConfig{Title: "x", Compact: true, Class: "mine"}))
+	if !strings.Contains(h, `class="fui-empty-state fui-empty-state--compact mine"`) {
+		t.Fatalf("Compact did not mark the root: %s", h)
+	}
+	if h := string(EmptyState(EmptyStateConfig{Title: "x"})); strings.Contains(h, "--compact") {
+		t.Fatalf("a plain empty state is compact: %s", h)
+	}
+	if !strings.Contains(emptyStateCSS(style.Theme{}), ".fui-empty-state--compact") {
+		t.Fatal("emptyStateCSS does not style the compact state")
+	}
+}
+
 // ─── Callout ───
 // TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge. Typo
 // must panic instead of silently emitting an unmatched class.

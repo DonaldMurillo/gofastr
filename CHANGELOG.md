@@ -162,6 +162,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.SelectConfig.Action`** draws a control after the select on its
   row, such as a link to the chosen record. The new `"arrow-up-right"`
   icon draws one.
+- **`ui.EmptyStateConfig.Compact`** draws one muted line in a small
+  panel, for an empty list inside another screen.
 - **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
   prose. Every other cell now holds its value on one line, so a table
   wider than its box scrolls inside it instead of breaking a date at its
@@ -1032,7 +1034,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the tab row's end once the filter or the columns differ from the
   open view, and the open saved view's Delete beside it. Active
   filters show as chips under the toolbar, each removing its own
-  filter, with a "Clear all". `TabCounts()` puts a row count on each
+  filter, with a "Clear all". `Embedded()` draws a list as a section
+  of another screen: a compact header with the count and a small "Add
+  <singular>" button, the rows without tabs, search, filters or bulk,
+  and a one-line empty state; a record's Related tab draws its lists
+  this way. `TabCounts()` puts a row count on each
   view tab, the rows that tab's link lists under the page's search,
   facets, filter and read scope, and the header then shows the
   entity's description in place of its count.

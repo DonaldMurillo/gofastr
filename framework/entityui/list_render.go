@@ -151,6 +151,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
 
+	if b.embedded {
+		return b.embeddedBody(ctx, s, rows, total, known, page), nil
+	}
 	lb := b.bulkFor(ctx, s)
 	var body []render.HTML
 	tabs := b.viewTabs(ctx, s, total, known)
@@ -291,6 +294,45 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 		Actions:      actionCluster(actions),
 		HeadingLevel: b.headingLevel(),
 	})
+}
+
+// embeddedBody is an Embedded list: its compact header, then the rows,
+// or the one-line empty state in place of an empty table. It selects
+// no rows: bulk belongs to the entity's own list.
+func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
+	m := s.m
+	title := b.heading
+	if title == "" {
+		title = m.plural(ctx)
+	}
+	var count render.HTML
+	if known {
+		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
+	}
+	actions := slices.Clone(b.actions)
+	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
+		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
+			Label:   i18nui.TVars(ctx, i18nui.KeyEntityAdd, map[string]string{"entity": m.noun(ctx, false)}),
+			Href:    s.createHref(),
+			Variant: ui.ButtonSecondary,
+			Size:    ui.ButtonSizeSmall,
+			Icon:    "plus",
+		}))
+	}
+	head := ui.PageHeader(ui.PageHeaderConfig{
+		Title:        title,
+		Badge:        count,
+		Actions:      actionCluster(actions),
+		HeadingLevel: b.headingLevel(),
+		Compact:      true,
+	})
+	switch {
+	case known && total == 0:
+		return render.Join(head, ui.EmptyState(b.emptyState(ctx, s)))
+	case s.as == "cards":
+		return render.Join(head, b.cards(ctx, s, rows, total, known, page))
+	}
+	return render.Join(head, b.table(ctx, s, nil, rows, total, known, page))
 }
 
 // actionCluster lays out zero or more actions without wrapping markup

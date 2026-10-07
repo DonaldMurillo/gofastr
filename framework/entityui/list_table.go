@@ -378,6 +378,14 @@ func listIDSafe(key, entity string) string {
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
 	var title, desc string
 	noun := map[string]string{"entity": s.m.noun(ctx, true)}
+	if b.embedded {
+		// The section's header already offers Add.
+		return ui.EmptyStateConfig{
+			Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
+			HeadingLevel: b.headingLevel() + 1,
+			Compact:      true,
+		}
+	}
 	if s.deletedView {
 		// The trash view's own empty state: nothing is deleted, and
 		// there is no New to offer from inside it.

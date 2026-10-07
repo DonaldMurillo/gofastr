@@ -743,6 +743,10 @@ type EmptyStateConfig struct {
 	Action      render.HTML // optional CTA (e.g. a button or link)
 	ID          string
 	Class       string
+	// Compact draws one quiet line in a small panel, for an empty list
+	// inside another screen (a record's related list), where the
+	// section's own header carries the call to action.
+	Compact bool
 
 	// HeadingLevel overrides the title's heading level (1–6). Zero defaults
 	// to 3 (h3), preserving the gallery/demo behaviour where the empty state
@@ -771,6 +775,9 @@ var emptyStateClasses = headless.Classes{
 // region named by its own heading, so "no results" is a findable
 // place with a way out.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
+	if cfg.Compact {
+		cfg.Class = cls("fui-empty-state--compact", cfg.Class)
+	}
 	return emptyStateStyle.WrapHTML(headless.EmptyState(headless.EmptyStateProps{
 		Title:       cfg.Title,
 		Level:       cfg.HeadingLevel,

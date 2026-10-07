@@ -35,6 +35,7 @@ type ListBuilder struct {
 	deleted  bool
 	saved    bool
 	counts   bool
+	embedded bool
 	actions  []render.HTML
 }
 
@@ -140,6 +141,13 @@ func (b *ListBuilder) SavedViews() *ListBuilder { b.saved = true; return b }
 // count leaves its tab bare. Off by default on app pages; the admin
 // turns it on.
 func (b *ListBuilder) TabCounts() *ListBuilder { b.counts = true; return b }
+
+// Embedded draws the list as one section of another screen, the way a
+// record's Related tab shows its lists: a compact header holding the
+// heading, the row count and a small "Add <singular>" button, then the
+// rows with no view tabs, search or filters, and a one-line empty
+// state when there are none. Sort and pager stay, keyed as ever.
+func (b *ListBuilder) Embedded() *ListBuilder { b.embedded = true; return b }
 
 // mayCreate reports whether the list offers New: on unless NoCreate or
 // NoLinks turned it off.

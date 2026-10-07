@@ -57,7 +57,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   primary action. Tabs: Edit (the form from `Display.Form`), Related
   (the related entities the page names), any extension tabs, and
   Activity (the audit trail) and API (the record as the API returns it)
-  where turned on. Related shows how many rows its lists hold, each
+  where turned on. Related draws each related entity as an embedded
+  list (see below) whose Add opens the create form with this record
+  prefilled, and shows how many rows its lists hold, each
   entity counted through its own read gate and scope, and Activity how
   many trail entries it draws (50 at most, "50+" past that). The form's
   side column holds Details: the id with a copy button, the created and
@@ -377,6 +379,13 @@ list := fwApp.EntityUI(entityui.Extensions{}).
 	TabCounts()      // a row count on each view tab
 _ = list.RenderCtx(ctx)
 ```
+
+- **An embedded list** (`.Embedded()`) is one section of another
+  screen, the way a record's Related tab draws its lists: a compact
+  header holding the heading, the row count and a small "Add
+  <singular>" button, then the rows with no view tabs, search, filters
+  or bulk selection, and a one-line empty state when there are none.
+  Sort and pager stay, keyed as ever.
 
 - **The query box** (`.QueryBox()`) is where the reader types the
   filter: a labelled text field named the list's `filter` param,

@@ -732,7 +732,17 @@ func emptyStateCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   max-inline-size: 36ch;
 }
-[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-md, 8px); }`
+[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-md, 8px); }
+/* Compact: one muted line in a small panel. */
+[data-cui-comp="ui-empty-state"].fui-empty-state--compact {
+  padding: var(--spacing-lg, 16px);
+  border-radius: var(--radii-lg);
+}
+.fui-empty-state--compact .fui-empty-state__title {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-muted, #52525B);
+}`
 }
 
 func calloutCSS(t style.Theme) string {

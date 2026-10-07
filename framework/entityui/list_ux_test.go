@@ -165,8 +165,8 @@ func TestRecordReadOnlyDateMatchesList(t *testing.T) {
 	}
 }
 
-// The Related tab adds no New of its own: the list's header New (and
-// its empty state's) is the one, pointed at this record.
+// The Related tab adds no New of its own: the list's header Add is the
+// one, pointed at this record.
 func TestRelatedTabOneNew(t *testing.T) {
 	x := newInvoiceUI(t)
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Related("payments").
@@ -174,10 +174,7 @@ func TestRelatedTabOneNew(t *testing.T) {
 	section := body[strings.Index(body, `id="eui-related-payments"`):]
 	all := strings.Count(section, "/rec/payments/create")
 	pointed := strings.Count(section, `/rec/payments/create?prefill_invoice_id=inv-1"`)
-	if all == 0 || all != pointed {
-		t.Errorf("%d of %d New links prefill the record:\n%s", pointed, all, section)
-	}
-	if strings.Contains(section, "fui-button--secondary") {
-		t.Errorf("the Related tab drew its own New beside the list's:\n%s", section)
+	if all != 1 || pointed != 1 {
+		t.Errorf("%d of %d create links prefill the record, want 1 of 1:\n%s", pointed, all, section)
 	}
 }

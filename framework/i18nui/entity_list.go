@@ -3,6 +3,7 @@ package i18nui
 // The entity list's chrome. See entity.go.
 const (
 	KeyEntityEmpty     Key = "ui.entity.empty"     // "No {entity} yet"
+	KeyEntityAdd       Key = "ui.entity.add"       // "Add {entity}"
 	KeyEntityEmptyBody Key = "ui.entity.emptyBody" // "They will appear here once created."
 	// A list narrowed to nothing: a search, filter or facet that matches
 	// no row, or a view that holds none.
@@ -60,6 +61,7 @@ const (
 
 var entityListDefaults = map[Key]string{
 	KeyEntityEmpty:     "No {entity} yet",
+	KeyEntityAdd:       "Add {entity}",
 	KeyEntityEmptyBody: "They will appear here once created.",
 
 	KeyEntityNoMatch:       "No {entity} match",
