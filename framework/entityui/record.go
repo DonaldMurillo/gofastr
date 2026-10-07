@@ -5,6 +5,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -36,6 +37,24 @@ func (u *UI) Record(entity, id string) *RecordBuilder {
 // Create starts the create screen: the record form, empty, posting a create.
 func (u *UI) Create(entity string) *RecordBuilder {
 	return &RecordBuilder{ui: u, entity: entity}
+}
+
+// RecordTitle names one record the way its record screen's heading
+// does, for breadcrumbs and links drawn outside the screen. It reads
+// behind the record's own gate (scope, sign-in, RBAC and a Decider's
+// per-row answer), through the read hooks, and answers false for a
+// record the caller may not see, a missing id and an unknown entity
+// alike.
+func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bool) {
+	m, err := u.meta(entityName)
+	if err != nil || !canReadRecord(ctx, m.ch, id) {
+		return "", false
+	}
+	row, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
+	if err != nil || row == nil {
+		return "", false
+	}
+	return m.recordTitle(ctx, row), true
 }
 
 // Base is the entity's list path on this app; Back, Cancel and the
