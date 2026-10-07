@@ -105,6 +105,9 @@ entities:
         group: catalog
         icon: box
         order: 1
+      fields:
+        price:
+          input: money
     fields:
       - name: name
         type: string
@@ -177,8 +180,11 @@ entities:
           where: 'status = "past_due"'
       facets: [status]
       fields:
+        email:
+          input: email
         mrr:
           label: MRR
+          input: money
 
   - name: subscriptions
     crud: true
@@ -227,6 +233,7 @@ entities:
       fields:
         mrr:
           label: MRR
+          input: money
     relations:
       - type: belongs_to
         name: customer
@@ -326,6 +333,9 @@ entities:
           where: 'status = "open"'
           sort: due_on ASC
       facets: [status, customer_id]
+      fields:
+        amount:
+          input: money
 
   - name: payments
     crud: true
@@ -347,6 +357,9 @@ entities:
           label: Failed
           where: 'status = "failed"'
       facets: [status, method]
+      fields:
+        amount:
+          input: money
     fields:
       - name: invoice_id
         type: relation
