@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
+  window scrolls the page while the nav column sticks to the top, one
+  viewport tall with its own overflow scroll, and the `Toolbar` row
+  sticks at every width. The admin shell uses it, so its sidebar and
+  top bar no longer scroll away.
 - **`app.Instant()` swaps a layout region in one frame** while the
   rest of the page runs its view transition: no fade, no group morph.
   The admin's breadcrumb trail uses it, so its root no longer blinks on

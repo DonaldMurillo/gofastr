@@ -81,6 +81,16 @@ type ContentRowConfig struct {
 	// carrying the fixed band. The row assumes no footer band below it
 	// in this mode; give viewport pages their footer inside main.
 	Viewport bool
+	// Sticky keeps the frame in place while the window scrolls the
+	// page: at and above the breakpoint the nav column sticks to the
+	// top, one viewport tall, and scrolls its own overflow; the Toolbar
+	// row sticks to the top of the workspace at every width, on the
+	// page background and above the content. The window stays the
+	// scroller, so the client router's scroll restore and fragment
+	// jumps keep working. The row assumes nothing above it scrolls into
+	// view first (no header band); for a header band with columns that
+	// scroll on their own, use Viewport. Setting both panics.
+	Sticky bool
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
 	// lives outside the column (a NativeMobile sidebar whose drawer
@@ -103,12 +113,18 @@ type ContentRowConfig struct {
 // footer at the viewport bottom with no dead scroll.
 func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	checkStackBreakpoint(cfg.Breakpoint)
+	if cfg.Sticky && cfg.Viewport {
+		panic("ui: ContentRow Sticky and Viewport are two scroll models; set one")
+	}
 	cls := "fui-content-row"
 	if cfg.Sidebar != "" {
 		cls += " fui-content-row--has-nav"
 	}
 	if cfg.Viewport {
 		cls += " fui-content-row--viewport"
+	}
+	if cfg.Sticky {
+		cls += " fui-content-row--sticky"
 	}
 	if cfg.PhoneNavFlush {
 		cls += " fui-content-row--phone-nav-flush"
@@ -184,6 +200,9 @@ func contentRowCSS(_ style.Theme) string {
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
+/* Sticky: the toolbar row stays at the top of the window at every
+   width, painted over the content that scrolls beneath it. */
+.fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }
@@ -195,7 +214,20 @@ func contentRowCSS(_ style.Theme) string {
   gap: var(--spacing-xl, 24px);
   padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
 }
-` + md.viewportCSS() + md.stackCSS() + lg.viewportCSS() + lg.stackCSS()
+` + md.viewportCSS() + md.stickyCSS() + md.stackCSS() + lg.viewportCSS() + lg.stickyCSS() + lg.stackCSS()
+}
+
+// stickyCSS is the desktop half of Sticky mode: the nav column sticks
+// to the top, exactly one viewport tall, and scrolls its own overflow
+// while the window scrolls the page. align-self keeps the row's
+// stretch from making the column as tall as the page, which would
+// leave it nothing to stick within.
+func (b rowBreakpointCSS) stickyCSS() string {
+	css := fmt.Sprintf(`@media (min-width: %s) {
+  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: 0; align-self: flex-start; block-size: 100dvh; overflow-y: auto; overscroll-behavior: contain; }
+}
+`, b.minw)
+	return strings.ReplaceAll(css, ":SCOPE:", b.scope)
 }
 
 // viewportCSS is the desktop half of Viewport mode: the row fills the

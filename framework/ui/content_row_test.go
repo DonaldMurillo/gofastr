@@ -120,3 +120,14 @@ func TestContentRowModifiersAndBreakpointValidation(t *testing.T) {
 	renderRow(t, ContentRowConfig{Breakpoint: "xl"}, render.Text("main"))
 	t.Error("an unknown StackBreakpoint should panic at render")
 }
+
+// Sticky and Viewport are two scroll models: a row asking for both is
+// refused at render, not drawn with one silently winning.
+func TestContentRowStickyRefusesViewport(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ContentRow drew a row with both Sticky and Viewport")
+		}
+	}()
+	ContentRow(ContentRowConfig{Sticky: true, Viewport: true}, render.Text("main"))
+}

@@ -755,6 +755,13 @@ Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
 `ui.Stack{Screen: true}` and an app bar whose height is that token.
+`Sticky: true` is the frame for a shell with no header band (the
+admin's): the window still scrolls the page, the nav column sticks to
+the top at one viewport tall and scrolls its own overflow, and the
+`Toolbar` row sticks to the top at every width, painted over the
+content beneath it. The client router's scroll restore and fragment
+jumps keep working because the window stays the scroller. Sticky and
+Viewport are two scroll models; setting both panics.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,
