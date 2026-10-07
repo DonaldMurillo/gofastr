@@ -80,7 +80,7 @@ a click that never leaves the browser is still what the button DOES, so it trave
 
 === Card / titled ===
 the common card: a heading, a line of context, a body
-<div><div><h3>Deployments</h3><p>Last 24 hours</p></div><div><p>Nothing yet.</p></div></div>
+<div><div data-cui-internal=""><h3>Deployments</h3><p>Last 24 hours</p></div><div><p>Nothing yet.</p></div></div>
 
 === Card / bare ===
 no title and no description means no header — an empty header is a stripe of padding that reads as a mistake
@@ -88,7 +88,11 @@ no title and no description means no header — an empty header is a stripe of p
 
 === Card / footed ===
 the footer is where the actions that apply to the whole card live
-<div><div><h3>Restart policy</h3></div><div><p>On failure, up to 3 times.</p></div><div><button type="button">Save</button></div></div>
+<div><div data-cui-internal=""><h3>Restart policy</h3></div><div><p>On failure, up to 3 times.</p></div><div><button type="button">Save</button></div></div>
+
+=== Card / with a header action ===
+a feed's way to its full list sits at the header's end, beside the title it belongs to, not in a footer under the last row
+<div><div><h3 data-cui-internal="">Recent activity</h3><div><a href="/audit">Audit log</a></div></div><div><p>Ada created INV-1.</p></div></div>
 
 === Card / the whole card is the link ===
 an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer
@@ -765,6 +769,10 @@ an event with no tone is the ordinary case and draws an untinted marker; ordered
 === Timeline / attributed ===
 the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution
 <ol aria-label="Audit log"><li data-cui-internal=""><span aria-hidden="true"></span><div><div><p>Role granted</p><span>by dom</span></div><p>admin, on the api app.</p></div></li></ol>
+
+=== Timeline / with icons ===
+an activity feed marks each event with what kind it was, a pencil or a plus, inside the hidden marker; the title still carries the words
+<ol aria-label="Recent activity"><li><span aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24"></svg></span><div data-cui-internal=""><div data-cui-internal=""><p>Ada created INV-1</p><span>2h ago</span></div></div></li></ol>
 
 === Toast / a success, visible with no script ===
 the toast row is on the first paint — a notification the server rendered is news already delivered, and no module is needed to read it

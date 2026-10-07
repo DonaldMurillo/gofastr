@@ -13,6 +13,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   verified state, roles), the theme choice, and, with `Config.Auth`, a
   change-password form posting to `POST <auth>/password` with per-field
   errors. A passwordless account is pointed at "Forgot password".
+- **`ui.CardConfig.Action`** puts a control at the end of the card's
+  header, level with the heading (a feed's "Audit log" link), the slot
+  shadcn calls CardAction. It panics beside `Href`, whose link would wrap
+  it. `headless.CardProps.Action` draws it in the new `card-action` part.
+- **`ui.TimelineEvent.Icon`** draws a registered icon in the event's
+  marker, which becomes a bordered circle with the icon tinted by the
+  variant: an activity feed's pencil or plus. `--ui-timeline-icon-size`
+  (28px) sizes it; `headless.Event.Icon` carries it.
+- **`ui.SectionConfig.Overline`** draws the heading as a group label:
+  small, upper case and muted, over a run of cards. The
+  `--ui-section-overline-*` knobs tune it.
+- **`ui.GridConfig.Fill`** keeps the row's empty columns (`auto-fill`), so
+  a lone card, or a short last row, keeps a column's width.
 - **`ui.ClusterConfig.Shrink`**: the row narrows below its content and
   its last child takes the squeeze while the earlier children keep
   their size: a toolbar's menu button beside a trail that ellipsizes.
@@ -126,7 +139,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Checked`. The server owns the state, so the row is a link or RPC
   that toggles it.
 - **Icons:** `filter`, `columns`, `bookmark`, `arrow-up`, `arrow-down`,
-  `chevrons-up-down` and `download`.
+  `chevrons-up-down`, `download`, `pencil`, `trash` and `rotate-ccw`.
 - **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
   window scrolls the page while the nav column sticks to the top, one
   viewport tall with its own overflow scroll, and the `Toolbar` row
@@ -1347,6 +1360,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A `ui.StatCard` fills its grid cell**, so a row of cards shares one
+  height when each sits in a wrapper such as a polled region; a card
+  without a trend line no longer stops short of its neighbours.
 - **A `CompactMobile` breadcrumb trail stays on one line on a phone.**
   Its crumbs ellipsize, the parent before the current page, instead of
   wrapping the trail over two lines of the toolbar. The admin's toolbar

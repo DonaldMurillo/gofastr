@@ -83,6 +83,9 @@ func layoutCSS(_ style.Theme) string {
      overflowing it. */
   grid-template-columns: repeat(auto-fit, minmax(min(var(--ui-grid-min, 16rem), 100%), 1fr));
 }
+[data-cui-comp="ui-layout"].fui-grid--fill {
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--ui-grid-min, 16rem), 100%), 1fr));
+}
 /* GridConfig.Min rides on data-min (no inline style under the CSP).
    Where typed attr() is supported the attribute IS the minimum, any
    length; elsewhere the whole-rem steps below cover 1rem–64rem, the
@@ -209,6 +212,21 @@ func cardCSS(t style.Theme) string {
    without a footer below). */
 [data-cui-comp="ui-card"] .fui-card__header:last-child,
 [data-cui-comp="ui-card"] .fui-card__header:has(+ .fui-card__body:empty) { padding-block-end: var(--spacing-xl, 24px); }
+/* With an Action the header is two columns: the heading and its
+   description, then the control at the end, level with the heading. */
+[data-cui-comp="ui-card"] .fui-card__header:has(> .fui-card__action) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-card"] .fui-card__action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+}
 [data-cui-comp="ui-card"] .fui-card__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);

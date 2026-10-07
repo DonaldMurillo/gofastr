@@ -188,8 +188,12 @@ type GridConfig struct {
 	// Min is the minimum column width (e.g. "20rem"). The grid uses
 	// `repeat(auto-fit, minmax(<Min>, 1fr))` so columns wrap at the
 	// breakpoint implied by the minimum. Defaults to "16rem".
-	Min   string
-	Gap   Gap
+	Min string
+	Gap Gap
+	// Fill keeps the row's empty columns (auto-fill rather than
+	// auto-fit), so a short last row, or a grid of one card, keeps a
+	// full row's column width instead of stretching across it.
+	Fill  bool
 	ID    string
 	Class string
 
@@ -218,10 +222,14 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 		attrs = html.Attrs{}
 	}
 	attrs["data-min"] = min
-	if cfg.Class != "" {
+	class := cfg.Class
+	if cfg.Fill {
+		class = strings.TrimSpace("fui-grid--fill " + class)
+	}
+	if class != "" {
 		// The class rides in the same root attrs as the hook: a part
 		// map set beside them would be replaced, not merged.
-		attrs["class"] = cfg.Class
+		attrs["class"] = class
 	}
 	return layoutStyle.WrapHTML(headless.Grid(headless.GridProps{
 		Gap:   string(cfg.Gap),

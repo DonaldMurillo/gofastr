@@ -126,6 +126,11 @@ type SectionConfig struct {
 	ID    string
 	// Compact removes outer margins when a parent Stack owns section spacing.
 	Compact bool
+	// Overline draws the heading as a group label: small, upper case
+	// and muted, over a run of cards rather than a page band (a
+	// dashboard's "Billing" above its count cards). It is still the
+	// section's <h2>.
+	Overline bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
@@ -152,6 +157,9 @@ var sectionClasses = headless.Classes{
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	if cfg.Compact {
 		cfg.Class += " fui-section--compact"
+	}
+	if cfg.Overline {
+		cfg.Class += " fui-section--overline"
 	}
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {

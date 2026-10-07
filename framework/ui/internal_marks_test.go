@@ -147,10 +147,17 @@ func TestKitMarkingCoversEveryComponent(t *testing.T) {
 		t.Errorf("component %s is not in kitComponents: add it, so the marking gate renders it", n)
 	}
 	for n := range listed {
-		if !found[n] {
+		if !found[funcName(n)] {
 			t.Errorf("kitComponents lists %s, which is not an exported render.HTML function", n)
 		}
 	}
+}
+
+// funcName is the function a kitComponents entry renders: a name past
+// a slash is a second rendering of the same function (Card/linked).
+func funcName(entry string) string {
+	name, _, _ := strings.Cut(entry, "/")
+	return name
 }
 
 // exportedHTMLFuncs returns every exported package-level function in
@@ -259,7 +266,7 @@ func renderWithSentinels(c kitComponent, empty bool) (out render.HTML, err error
 // fillableParts returns the parts a headless spec lets a caller fill,
 // for a component rendered through headless.Parts.
 func fillableParts(name string) []headless.Part {
-	sp, ok := headless.SpecOf(strings.TrimPrefix(name, "headless."))
+	sp, ok := headless.SpecOf(strings.TrimPrefix(funcName(name), "headless."))
 	if !ok {
 		return nil
 	}
@@ -609,7 +616,10 @@ var kitComponents = []kitComponent{
 	{name: "Breadcrumbs", fn: Breadcrumbs},
 	{name: "Button", fn: Button},
 	{name: "Callout", fn: Callout},
-	{name: "Card", fn: Card},
+	// Action and Href refuse each other: the linked card is the second
+	// entry.
+	{name: "Card", fn: Card, prep: prepSet("Href", "")},
+	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""))},
 	{name: "Carousel", fn: Carousel, required: []string{"Content"}},
 	{name: "Center", fn: Center},
 	{name: "Checkbox", fn: Checkbox},
@@ -759,7 +769,8 @@ var kitComponents = []kitComponent{
 	{name: "headless.Badge", fn: headless.Badge},
 	{name: "headless.Breadcrumbs", fn: headless.Breadcrumbs},
 	{name: "headless.Button", fn: headless.Button},
-	{name: "headless.Card", fn: headless.Card},
+	{name: "headless.Card", fn: headless.Card, prep: prepSet("Href", "")},
+	{name: "headless.Card/linked", fn: headless.Card, prep: prepSet("Action", render.HTML(""))},
 	{name: "headless.Carousel", fn: headless.Carousel},
 	{name: "headless.Choice", fn: headless.Choice, prep: prepSet("Type", "checkbox")},
 	{name: "headless.Cluster", fn: headless.Cluster},

@@ -434,6 +434,15 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
   line-height: var(--leading-tight, 1.2);
 }
+/* Overline: the heading is a group label over a run of cards.
+   Knobs: --ui-section-overline-size/-weight/-tracking/-color. */
+[data-cui-comp="ui-section"].fui-section--overline .fui-section__heading {
+  font-size: var(--ui-section-overline-size, var(--text-xs, 0.75rem));
+  font-weight: var(--ui-section-overline-weight, 600);
+  letter-spacing: var(--ui-section-overline-tracking, 0.06em);
+  text-transform: uppercase;
+  color: var(--ui-section-overline-color, var(--color-text-muted));
+}
 [data-cui-comp="ui-section"] .fui-section__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
@@ -780,6 +789,10 @@ func statCardCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-stat-card"] {
   display: grid;
   align-content: start;
+  /* A card wrapped in a grid cell (a polled region) fills the cell, so
+     a row's cards share one height. */
+  block-size: 100%;
+  box-sizing: border-box;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-xl, 24px);
   background: var(--color-surface);

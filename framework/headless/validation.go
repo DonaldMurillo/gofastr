@@ -154,6 +154,10 @@ type Event struct {
 	Machine string
 	// Tone lets the class map colour the marker — "success", "danger".
 	Tone string
+	// Icon is drawn inside the marker: what kind of event it was (a
+	// pencil for an edit, a plus for a create). The marker is
+	// aria-hidden, so the icon adds no words; the title says it.
+	Icon render.HTML
 	// Meta is the secondary line beside the title — an actor, a
 	// relative time ("by dom", "2h ago") — in the header row, read
 	// after the title it qualifies. When is the timestamp contract;
@@ -197,14 +201,17 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 			panic("headless: Event requires Title")
 		}
 		kids := make([]render.HTML, 0, 4)
-		markAttrs := internalIf(e.Body != "", Attrs(map[string]string{"aria-hidden": "true"}))
+		// A caller's Body or Icon makes the item a slot ancestor; the
+		// mark holding an Icon is one too.
+		slot := e.Body != "" || e.Icon != ""
+		markAttrs := internalIf(slot && e.Icon == "", Attrs(map[string]string{"aria-hidden": "true"}))
 		// Tone reaches the class map as the mark's variant, joined to
 		// the mark's own class the way Alert's tone joins its root: a
 		// tinted dot is still a dot.
 		if cls := s.Variant(PartTimelineMark, e.Tone); cls != "" {
 			markAttrs["class"] = cls
 		}
-		kids = append(kids, b.El("span", PartTimelineMark, markAttrs, render.HTML("")))
+		kids = append(kids, b.El("span", PartTimelineMark, markAttrs, e.Icon))
 
 		body := make([]render.HTML, 0, 4)
 		if e.When != "" {
@@ -217,32 +224,32 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 					panic("headless: Event Machine must be an RFC 3339 timestamp, not " + strconv.Quote(e.Machine))
 				}
 				body = append(body, b.El("time", PartTimelineTime,
-					internalIf(e.Body != "", Attrs(map[string]string{"datetime": e.Machine})), render.Text(e.When)))
+					internalIf(slot, Attrs(map[string]string{"datetime": e.Machine})), render.Text(e.When)))
 			} else {
-				body = append(body, b.El("span", PartTimelineTime, internalIf(e.Body != "", nil), render.Text(e.When)))
+				body = append(body, b.El("span", PartTimelineTime, internalIf(slot, nil), render.Text(e.When)))
 			}
 		}
 		// The title is marked by the header row when there is one.
-		body = append(body, b.El("p", PartTitle, internalIf(e.Body != "" && e.Meta == "", nil), render.Text(e.Title)))
+		body = append(body, b.El("p", PartTitle, internalIf(slot && e.Meta == "", nil), render.Text(e.Title)))
 		if e.Meta != "" {
 			// The meta line and the title share a header row: the meta
 			// qualifies the title, and DOM order keeps the title first
 			// for a reader who hears the event before its attribution.
 			headRow := body[len(body)-1]
-			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(e.Body != "", nil),
+			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(slot, nil),
 				headRow,
 				b.El("span", PartTimelineMeta, nil, render.Text(e.Meta)))
 		}
 		if e.Detail != "" {
-			body = append(body, b.El("p", PartDesc, internalIf(e.Body != "", nil), render.Text(e.Detail)))
+			body = append(body, b.El("p", PartDesc, internalIf(slot, nil), render.Text(e.Detail)))
 		}
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
-		// A caller's Body makes the item a slot ancestor; without one
-		// the whole item is the component's own.
-		kids = append(kids, b.El("div", PartTimelineBody, nil, body...))
-		items = append(items, b.El("li", PartTimelineItem, internalIf(e.Body == "", nil), kids...))
+		// Without a caller's Body or Icon the whole item is the
+		// component's own.
+		kids = append(kids, b.El("div", PartTimelineBody, internalIf(e.Icon != "" && e.Body == "", nil), body...))
+		items = append(items, b.El("li", PartTimelineItem, internalIf(!slot, nil), kids...))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
 		"id": p.ID, "aria-label": p.Label,
@@ -317,6 +324,12 @@ func init() {
 				Why:  "the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution",
 				HTML: Timeline(TimelineProps{Label: "Audit log", Events: []Event{
 					{Title: "Role granted", Meta: "by dom", Detail: "admin, on the api app."},
+				}}, s),
+			}, {
+				Name: "with icons",
+				Why:  "an activity feed marks each event with what kind it was, a pencil or a plus, inside the hidden marker; the title still carries the words",
+				HTML: Timeline(TimelineProps{Label: "Recent activity", Events: []Event{
+					{Title: "Ada created INV-1", Meta: "2h ago", Icon: render.HTML(`<svg aria-hidden="true" viewBox="0 0 24 24"></svg>`)},
 				}}, s),
 			}}
 		},

@@ -55,6 +55,11 @@ type CardConfig struct {
 	// Common usage: button row, last-updated timestamp, status pill.
 	Footer render.HTML
 
+	// Action is a control at the header's end, beside the heading: a
+	// feed's "View all" link, the card's own menu. It panics with Href,
+	// whose link would wrap it.
+	Action render.HTML
+
 	// Interactive flips the surface to a focusable, hover-able link
 	// shell. When set, the card renders as an <a> wrapping one inner
 	// part so the entire surface activates on click.
@@ -78,6 +83,7 @@ var cardClasses = headless.Classes{
 	headless.PartTitle:      "fui-card__heading",
 	headless.PartDesc:       "fui-card__description",
 	headless.PartCardHeader: "fui-card__header",
+	headless.PartCardAction: "fui-card__action",
 	headless.PartCardBody:   "fui-card__body",
 	headless.PartCardInner:  "fui-card__inner",
 	headless.PartFooter:     "fui-card__footer",
@@ -118,6 +124,7 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		TitleTag:   titleTag,
 		Desc:       cfg.Description,
 		Footer:     cfg.Footer,
+		Action:     cfg.Action,
 		Href:       cfg.Href,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
