@@ -57,6 +57,7 @@ func interceptOverlayBody(path, query string) string {
 			`<input id="rec-note" value="" aria-label="note">` +
 			`<a id="a-to-rel" href="/rel/r1">related</a>` +
 			`<a id="a-sort" href="/rec/a?sort=name">sort</a>` + interceptPager +
+			`<a id="a-page" href="/rec/a" data-cui-intercept-page>page</a>` +
 			`<button id="a-close" type="button" data-cui-intercept-close>Close</button></div>`
 	case "/rel/r1":
 		return `<div id="rel-r1"><p>REL-R1</p>` +
@@ -803,5 +804,52 @@ func TestInterceptLayersKeepOwnPresentation(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "drawer,drawer,sheet" {
 		t.Errorf("layer presentations = %v, want [drawer drawer sheet]", got)
+	}
+}
+
+// A link in the top pane marked data-cui-intercept-page opens its target
+// as the page: the stack closes, the router loads the URL in the content
+// cell, and the page takes the layer's history entry, so Back returns to
+// what was under the stack instead of a layer that is gone. The link is
+// the pane's own path, which without the mark is a query move that
+// re-renders in the pane.
+func TestInterceptPageLinkLeavesStack(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	stackTo(t, ctx, 1)
+	if !interceptWait(ctx, `!!document.getElementById('a-page')`) {
+		t.Fatal("layer 1 never mounted")
+	}
+	var depth int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`history.length`, &depth),
+		chromedp.Click("#a-page", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("click page link: %v", err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('cui-intercept') && /plain \/rec\/a/.test((document.querySelector('main p')||{}).textContent || '')`) {
+		t.Fatalf("the page link never loaded the record as the page: %+v", readStack(ctx))
+	}
+	var after int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.length`, &after)); err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if after != depth {
+		t.Errorf("the page pushed an entry (%d → %d); it must take the layer's", depth, after)
+	}
+	if snap := readStack(ctx); snap.URL != "/rec/a" {
+		t.Errorf("url = %q, want /rec/a", snap.URL)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/list' && !document.getElementById('cui-intercept')`) {
+		t.Fatalf("Back did not return to the page under the stack: %+v", readStack(ctx))
 	}
 }

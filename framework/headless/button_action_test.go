@@ -143,6 +143,20 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 	}
 }
 
+// data-cui-intercept-page says where a link goes (its target, as the
+// page), so it rides an anchor; a button has no target to open, so it
+// is refused there.
+func TestButtonInterceptPageIsLinkOnly(t *testing.T) {
+	got := Button(ButtonProps{Label: "Open as page", Href: "/rec/1", Action: html.Attrs{"data-cui-intercept-page": ""}}, nil)
+	has(t, got, `data-cui-intercept-page="" href="/rec/1"`, "the page mark did not land on the anchor")
+	defer func() {
+		if recover() == nil {
+			t.Error("a button with no Href carried data-cui-intercept-page")
+		}
+	}()
+	Button(ButtonProps{Label: "Open", Action: html.Attrs{"data-cui-intercept-page": ""}}, nil)
+}
+
 // Each check exists because a value that fails it is a button that
 // looks wired and does nothing: an empty name, a foreign origin, a
 // method or pane the runtime never answers to, a payload that fails

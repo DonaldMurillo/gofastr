@@ -287,6 +287,9 @@
     if (layers.length && cont) {
       const t = top();
       const inPane = !!(anchor && cont.contains(anchor));
+      // A link in the top pane marked data-cui-intercept-page opens its
+      // target as the page: the stack closes and the router loads it.
+      if (inPane && anchor.hasAttribute('data-cui-intercept-page')) return { kind: 'page' };
       // The pane's own URL, query-only change: stay in the pane.
       if (inPane && pathOf(path) === pathOf(t.url)) return { kind: 'query' };
       const origin = inPane ? t.url : underPath;
@@ -310,7 +313,7 @@
   // it); an element = that layer (a query move re-renders the top pane).
   NS._interceptScope = function (path, anchor) {
     const d = decide(path, anchor);
-    if (!d) return undefined;
+    if (!d || d.kind === 'page') return undefined;
     return d.kind === 'query' ? top().el : null;
   };
 
@@ -328,6 +331,15 @@
     if (!d) return false;
     if (d.kind === 'query') {
       claimQuery(path, hash);
+      return true;
+    }
+    if (d.kind === 'page') {
+      // The page takes the top layer's history entry, so Back returns to
+      // what was under the stack, not to a layer that is gone. Then the
+      // router loads it the way fallbackNav hands a navigation over.
+      closeAllNow();
+      history.replaceState(null, '', path + (hash || ''));
+      window.dispatchEvent(new PopStateEvent('popstate'));
       return true;
     }
     if (d.kind === 'refuse') {
