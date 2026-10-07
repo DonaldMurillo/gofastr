@@ -60,9 +60,12 @@ func TestDispatchRPC_ConfirmCancelDoesNotAbortInFlight(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		// Click 1: confirm=true → slow RPC enters flight.
-		chromedp.Evaluate(`window.confirm=function(){return true;};`, nil),
+		// Click 1: confirm=true → slow RPC enters flight. The ask is
+		// async (the confirm module loads first), so wait until click 1
+		// has asked before swapping the answer.
+		chromedp.Evaluate(`window.confirm=function(){window.__asked=1;return true;};`, nil),
 		chromedp.Click(`#b`, chromedp.ByID),
+		chromedp.Poll(`window.__asked === 1`, nil),
 		// Click 2 while click 1 is still in flight: confirm=false → cancel.
 		chromedp.Evaluate(`window.confirm=function(){return false;};`, nil),
 		chromedp.Click(`#b`, chromedp.ByID),

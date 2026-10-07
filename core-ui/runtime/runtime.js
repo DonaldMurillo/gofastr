@@ -2414,10 +2414,14 @@
       // submitter wins over the form: one form can carry several submit
       // buttons of different destructive weight. Callers that already
       // gated pass {confirmed:true} so rpc.js does not prompt twice.
+      // The gate cancels the submit and lets the confirm module ask and
+      // submit again (marked form._ok); a module that cannot load fails
+      // closed.
       const sub = e.submitter;
       const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
-      if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
+      if (msg && !form._ok) {
         e.preventDefault();
+        loadModule('confirm').then(() => window.__gofastr.confirm(form, sub));
         return;
       }
       if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) {

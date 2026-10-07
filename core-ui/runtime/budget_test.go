@@ -874,7 +874,15 @@ const (
 	// placements and spellings were measured (15532 to 15537); the
 	// header alone, with no kernel property, measures 15527. Bracket
 	// re-verified by TestCoreBudgetRejectsCliffOverflow.
-	coreCongestionWindowGZ = 14*1024 + 1197
+	//
+	// 2026-10-07, the themed confirm (data-cui-confirm opens the kit's
+	// dialog from the confirm demand module instead of window.confirm)
+	// took the real bundle 15533 -> 15534. 15534, the smallest step that
+	// fits. What stays in core is the submit gate itself: the submit
+	// event must be cancelled synchronously, before the module can load,
+	// so no carve exists; the ask, the resubmit and the fallback all
+	// moved to the module. Six spellings were measured (15534 to 15555).
+	coreCongestionWindowGZ = 14*1024 + 1198
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1055,6 +1063,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// function, so a `$&` or `$1` in the header is never read as a
 		// replacement pattern.
 		"envelope": 7664,
+		// widgets 3077 measured (2026-10-07): a widget-scoped form's
+		// data-cui-confirm gate cancels the submit and hands it to the
+		// confirm demand module, the same synchronous gate core runs for
+		// the document; the 5 bytes over the generic goal are that
+		// hand-off. Pinned at the measured size plus 2 clearance.
+		"widgets": 3079,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

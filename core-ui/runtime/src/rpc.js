@@ -150,9 +150,9 @@
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
-    const confirmMsg = node.getAttribute('data-cui-confirm');
-    if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
-      if (!window.confirm(confirmMsg)) return;
+    if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
+      await NS.loadModule('confirm');
+      if (!(await NS.ask(node))) return;
     }
 
     if (responseSignal) {
