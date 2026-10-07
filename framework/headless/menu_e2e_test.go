@@ -414,8 +414,8 @@ func TestE2E_MenuLazyTriggerPathAndPreloadedOpen(t *testing.T) {
 	// (the details' open state is the caller's), so patch the bytes the
 	// same way a server-rendered-open menu would carry them.
 	page := "<span data-open-patch></span>" + string(open)
-	page = replaceFirst(page, `<details data-hui-disclosure="" data-hui-menu="lzo">`,
-		`<details data-hui-disclosure="" data-hui-menu="lzo" open>`)
+	page = replaceFirst(page, `<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="lzo">`,
+		`<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="lzo" open>`)
 	b2 := startBehaviorServer(t, page)
 	ctx2 := behaviorPage(t, b2)
 	if !pollTrue(ctx2, menuLoaded) {

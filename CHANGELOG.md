@@ -36,6 +36,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   operations use it, with new i18n title keys (`ui.entity.deleteTitle`,
   `purgeTitle`, `bulkTitle`, `overrideTitle`, `savedDeleteTitle`,
   `ui.dialog.confirmTitle`).
+- **A click outside an open menu closes it.** `headless.Disclosure`
+  gains `Dismiss` (`data-hui-disclosure-dismiss`) for panels that
+  float over the page, and every menu root carries it. An accordion
+  section leaves it off.
 - **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
   window scrolls the page while the nav column sticks to the top, one
   viewport tall with its own overflow scroll, and the `Toolbar` row

@@ -253,9 +253,11 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 	// rootAttrs arrives already sanitised (Menu ran Safe) with the
 	// position variant folded into its class; re-running Safe here
 	// would drop the class the variant lives in.
+	// A menu is a popup: a press outside closes it.
 	own := Merge(rootAttrs, html.Attrs{
-		"data-hui-disclosure": "",
-		"data-hui-menu":       id,
+		"data-hui-disclosure":         "",
+		"data-hui-disclosure-dismiss": "",
+		"data-hui-menu":               id,
 	})
 	hasContent := menuItemsHaveOwnContent(items)
 	rows := menuRows(b, items, panelID, hasContent)
@@ -670,7 +672,7 @@ func init() {
 		Anatomy: []Part{PartRoot, PartSummary, PartMenuCaret, PartPanel, PartMenuItem,
 			PartIcon, PartText, PartDividerLine, PartMenuSubmenu, PartMenuTrigger, PartMenuToggle, PartMenuForm},
 		Hooks: []string{"data-hui-menu", "data-hui-menu-trigger", "data-hui-menu-panel",
-			"data-hui-menu-radio", "data-hui-menu-lazy", "data-hui-disclosure"},
+			"data-hui-menu-radio", "data-hui-menu-lazy", "data-hui-disclosure", "data-hui-disclosure-dismiss"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Menu(MenuProps{Label: "Options", Items: []MenuItem{
 				{Label: "Profile", Href: "/profile"},

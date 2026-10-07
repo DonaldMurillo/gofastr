@@ -17,7 +17,7 @@ func TestMenuRendersTheDisclosureContract(t *testing.T) {
 		{Label: "Delete", RPC: "/api/del", RPCMethod: "DELETE", Confirm: "Really?", Danger: true},
 	}})
 	for _, want := range []string{
-		`<details data-hui-disclosure="" data-hui-menu="acct">`,
+		`<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="acct">`,
 		`<summary aria-controls="acct-panel" aria-haspopup="menu" data-cui-internal="">`,
 		`<div data-cui-internal="" data-hui-menu-panel="" id="acct-panel" role="menu">`,
 		`<a href="/me" role="menuitem" tabindex="-1">`,
@@ -85,7 +85,7 @@ func TestMenuTriggerElementPairsByHook(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`<div><div data-hui-menu-trigger="um" role="presentation"><button type="button">U</button></div>`,
-		`<details data-hui-disclosure="" data-hui-menu="um">`,
+		`<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="um">`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("trigger menu missing %q:\n%s", want, h)

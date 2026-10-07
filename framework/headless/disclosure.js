@@ -11,6 +11,9 @@
 //     summary itself has focus),
 //   - the close-on-navigation for disclosures that did not ask to
 //     persist, and the restore-from-store for the ones that did,
+//   - light dismiss for the popups that ask for it
+//     (data-hui-disclosure-dismiss, every menu among them): a press
+//     outside an open one closes it,
 //   - the optional trap posture: Tab containment over the kernel's
 //     shared focus selector (the widget runtime's own technique — see
 //     widgetfocus.js), armed while the disclosure is open and released
@@ -211,6 +214,23 @@
       e.preventDefault(); first.focus();
     }
   });
+
+  // Light dismiss: a click outside an open popup disclosure closes it.
+  // Capture phase, so the popup closes before the click's own target
+  // acts (another popup's summary opens after this one closed). A
+  // click, not a pointerdown: closing on the press can move the layout
+  // under the pointer, and the release then lands on something else.
+  // A click on the popup's own controller (a caller-owned menu trigger
+  // outside the details) is the controller's to handle.
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    for (const d of document.querySelectorAll(HOOK + '[data-hui-disclosure-dismiss][open]')) {
+      if (d.contains(t)) continue;
+      const c = controllerOf(d);
+      if (c && c.contains(t)) continue;
+      d.removeAttribute('open');
+    }
+  }, true);
 
   // A click on an ordinary link inside a disclosure closes it (the
   // destination page does not need the menu open); a persistent
