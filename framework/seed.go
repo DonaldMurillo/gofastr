@@ -56,9 +56,7 @@ func (a *App) runSeedHooks() error {
 func (a *App) runSeedHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (callModuleSafe precedent).
-			err = fmt.Errorf("seed hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+			err = recoveredPanic("seed hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)

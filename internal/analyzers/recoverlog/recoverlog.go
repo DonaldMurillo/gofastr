@@ -32,7 +32,7 @@
 //
 // Shape: the result of recover() — directly, through a local assigned
 // from it, through fmt.Sprint/Sprintln/Sprintf rendering it (%v/%s; a
-// %q format pre-escapes and is quiet), or through any
+// format whose every verb is %q or %T is quiet), or through any
 // string/error/any-returning wrapper the value is piped into
 // (truncate, errors.New, fmt.Errorf) — reaches a LOG SINK in the same
 // function, or is passed to a same-package helper whose body sinks
@@ -62,8 +62,11 @@
 //     concession;
 //   - calls whose result cannot carry the bytes onward (bool, int,
 //     a struct, a buffer): only string/error/any results propagate;
-//   - a %q format: the verb pre-escapes control bytes, which is
-//     exactly the hiding the scrub would do;
+//   - a format whose every verb is %q or %T: %q pre-escapes control
+//     bytes, which is exactly the hiding the scrub would do, and %T
+//     renders a type name, never the value. A %q that merely appears
+//     beside a %v clears nothing (an earlier spelling of this posture
+//     cleared any format containing "%q");
 //   - _test.go files.
 package recoverlog
 
@@ -343,10 +346,11 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if scrubNamed(e.Fun) {
 			return false
 		}
-		// fmt.Sprintf's %q verb pre-escapes control bytes: the format
-		// itself is the scrub.
+		// fmt.Sprintf with only %q and %T verbs: %q pre-escapes control
+		// bytes and %T renders a type name, so the format itself is the
+		// scrub. One %v or %s beside them renders the value raw.
 		if t.a.qualifiedFunc(e.Fun) == "fmt.Sprintf" && len(e.Args) > 0 {
-			if lit, ok := e.Args[0].(*ast.BasicLit); ok && strings.Contains(lit.Value, "%q") {
+			if lit, ok := e.Args[0].(*ast.BasicLit); ok && onlyQuoteOrTypeVerbs(lit.Value) {
 				return false
 			}
 		}
@@ -383,6 +387,35 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	default:
 		return false
 	}
+}
+
+// onlyQuoteOrTypeVerbs reports whether a format literal has at least
+// one verb and every verb is %q or %T (%% prints a percent sign and
+// takes no argument). Flags, width, precision and an [n] index between
+// the % and the verb are skipped.
+func onlyQuoteOrTypeVerbs(format string) bool {
+	verbs := 0
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' {
+			continue
+		}
+		j := i + 1
+		for j < len(format) && strings.IndexByte("+-# 0123456789.*[]", format[j]) >= 0 {
+			j++
+		}
+		if j == len(format) {
+			return false
+		}
+		switch format[j] {
+		case '%':
+		case 'q', 'T':
+			verbs++
+		default:
+			return false
+		}
+		i = j
+	}
+	return verbs > 0
 }
 
 // callCarries reports whether the call's result type can carry the

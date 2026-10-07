@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"sync"
@@ -269,17 +271,25 @@ func (bm *BatteryManager) InitAll(app *App) error {
 func callModuleSafe(kind, name, phase string, call func() error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// Format with %T not %v so a panic value containing secrets
-			// (e.g. panic(config)) doesn't leak into the error chain.
-			// Operators wanting the full panic value can set
-			// GOTRACEBACK=all and read the stack.
-			err = fmt.Errorf("%s %q %s panicked (panic type %T): set GOTRACEBACK=all for details", kind, name, phase, v)
+			err = recoveredPanic(fmt.Sprintf("%s %q %s", kind, name, phase), fmt.Sprintf("%T", v))
 		}
 	}()
 	if e := call(); e != nil {
 		return fmt.Errorf("%s %q %s failed: %w", kind, name, phase, e)
 	}
 	return nil
+}
+
+// recoveredPanic turns a recovered panic into an error and logs the
+// panicking goroutine's stack. Call it from the deferred function that
+// recovered, while the stack still holds the panicking frames:
+// GOTRACEBACK prints nothing for a panic that was recovered, so the
+// logged stack is the only record of where it happened. The caller
+// passes the value's type name (%T), never the value, so a
+// panic(config) leaks no secret and panicked-on bytes forge no log line.
+func recoveredPanic(what, panicType string) error {
+	slog.Error("framework: recovered panic", "in", what, "panic_type", panicType, "stack", string(debug.Stack()))
+	return fmt.Errorf("%s panicked (panic type %s); its stack is logged", what, panicType)
 }
 
 // StartAll calls OnStart on batteries that implement BatteryLifecycle,

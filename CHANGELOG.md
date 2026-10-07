@@ -1110,6 +1110,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A panic in a battery or plugin `Init`, a start, ready or seed hook
+  logs its stack.** The error said to set `GOTRACEBACK=all`, which
+  prints nothing for a recovered panic, so the panic could not be
+  traced. The stack now goes to the log at error level; the error and
+  the log still name only the panic value's type.
 - **A `DataTable` in cards mode no longer clips its cells.** The table's
   52px row height is a minimum in table layout but an exact height once
   a cell becomes a flex box, so a cell taller than that (an empty state,

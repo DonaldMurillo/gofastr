@@ -190,6 +190,27 @@ func quotePanic() {
 	maybePanic()
 }
 
+// quoteBesideRaw: a %q elsewhere in the format does not escape the %v
+// that renders the value.
+func quoteBesideRaw(name string) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("panicked", "panic", fmt.Sprintf("%q: %v", name, r)) // want `recoverlog: recover\(\) value reaches slog.Debug/Info/Warn/Error key-value unscrubbed`
+		}
+	}()
+	maybePanic()
+}
+
+// typeBesideRaw: a %T beside a %v still renders the value.
+func typeBesideRaw() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("panicked", "panic", fmt.Sprintf("%T %v", r, r)) // want `recoverlog: recover\(\) value reaches slog.Debug/Info/Warn/Error key-value unscrubbed`
+		}
+	}()
+	maybePanic()
+}
+
 // helperHopScrubbed: the helper scrubs before its sink, so the call
 // site is quiet.
 func helperHopScrubbed() {
@@ -206,6 +227,31 @@ func logPanicScrubbed(v any) {
 }
 
 // ---- quiet postures --------------------------------------------------------
+
+// typeOnly: a %T format renders the value's type name, never its
+// bytes (framework's recoveredPanic logs the stack beside it).
+func typeOnly() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panicked", "panic_type", fmt.Sprintf("%T", r))
+		}
+	}()
+	maybePanic()
+}
+
+// typeOnlyHelper: the type name handed to a helper that logs it.
+func typeOnlyHelper() {
+	defer func() {
+		if r := recover(); r != nil {
+			logPanicType("init", fmt.Sprintf("%T", r))
+		}
+	}()
+	maybePanic()
+}
+
+func logPanicType(what, panicType string) {
+	slog.Error("panicked", "in", what, "panic_type", panicType)
+}
 
 // noSink: the value becomes a returned error, never a log line
 // (core/a2a's errHandlerPanicked posture).
