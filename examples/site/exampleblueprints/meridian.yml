@@ -278,6 +278,9 @@ entities:
     crud: true
     mcp: true
     owner_field: user_id
+    # A deleted payment goes to the admin's trash, where it can be
+    # restored or deleted for good.
+    soft_delete: true
     properties:
       label: Payments
     fields:
