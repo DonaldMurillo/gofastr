@@ -791,6 +791,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **BREAKING: `battery/admin` is rebuilt on `framework/entityui`.** Entity
+  screens moved from `/admin/e/<entity>` (with `/new`, `/view/<id>` and
+  `/edit/<id>`) to `/admin/entities/<entity>`, `/create` and `/<id>`; a
+  record opens in a drawer from its list. Writes go to
+  `/admin/api/<entity>`, the entity's own CRUD handler behind the admin
+  gate under `crud.WithElevation`. `Config.UI` (`app.EntityUI(ext)`) is
+  required when the admin exposes an entity, and the admin reads names,
+  columns and nav from each entity's `Display`. The admin ships no CSS:
+  `Config.Theme` and `Config.FontFaceCSS` are removed and the shell takes
+  the app's theme through the UI host. `Config.EntityListLimit` (the
+  list's page sizes come from `Display.PageSizes`), `Config.Secret` and
+  `Battery.RegisterRoutes` are removed. New: a dashboard with a polled
+  count card per entity, failed jobs and recent activity; a command
+  palette searching pages, entities and records (`SearchFields`);
+  `Config.Pages`, `Cards`, `Links` and `Commands` for the app's own admin
+  pages, dashboard cards, sidebar links and palette entries;
+  `Config.Logo`; and `Config.SignOutPath` for the account menu. The jobs,
+  audit, roles, user roles and modules pages draw in the same shell. See
+  `framework/docs/content/admin.md`.
 - **A `Float` field takes decimal text.** A form posts `"42.5"` for a
   number input; create and update now read it as the number, the way an
   `Int` field already read `"42"`. Hex, underscore separators, `NaN` and
@@ -1280,7 +1299,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **An empty list with hooks or includes answers `"data": []`**, not
   `null`.
 - **The admin nav lists every exposed entity** when the config uses
-  `AllEntities`, and the entity pages link back to Overview and Audit.
+  `AllEntities`, and the entity pages link back to the dashboard and
+  the audit log.
   Both navs label an entity the same way ("Customers", not
   "customers").
 - **Admin labels singularize English plurals** ("New category", not

@@ -1,316 +1,255 @@
 package admin
 
-// RBAC admin screens: a role→permission matrix and a user→role assignment
-// page. Both are standalone server-rendered HTML (same pipeline as the
-// queue/audit ops dashboards) gated by the admin default-deny gate. Every
-// mutation (grant, revoke, assign-roles) writes an audit row via
-// framework.AppendAuditEvent so changes land in audit_log and show at
-// /admin/audit.
-//
-// Security: the screens + RPC routes are behind b.gate, which requires an
-// authenticated admin. Role and permission strings are bound as $n params
-// in GrantStore (never interpolated). There is no unauthenticated or
-// self-service grant path.
-
 import (
+	"cmp"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"slices"
-	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
-	html "github.com/DonaldMurillo/gofastr/core-ui/html"
+	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// adminActorID extracts the authenticated admin's user ID from the request
-// context for audit logging. Returns "unknown" when no user is present
-// (should not happen past the gate, but audit must never panic).
+// adminActorID is the signed-in admin's user id, for audit rows.
+// "unknown" when there is none, which the gate never lets through.
 func adminActorID(ctx context.Context) string {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {
 		return "unknown"
 	}
-	type ider interface{ GetID() string }
-	if id, ok := u.(ider); ok {
+	if id, ok := u.(interface{ GetID() string }); ok {
 		return id.GetID()
 	}
 	return "unknown"
 }
 
-// ----- role → permission matrix -------------------------------------------
+// ----- roles ------------------------------------------------------------------
 
-// handleRBACRoles renders the role→permission matrix screen. Lists every
-// role from Policy.Roles() with its granted permissions, plus forms to
-// grant/revoke. A non-empty capability registry feeds the grant inputs'
-// datalist while preserving free-text entry for backward compatibility.
-func (b *Battery) handleRBACRoles(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.Policy == nil {
-		b.writePage(w, b.cfg.Title, "Roles",
-			ui.Muted(render.Text("No RBAC policy wired.")))
-		return
-	}
-	roles := b.cfg.Policy.Roles()
-	capabilities := b.cfg.Policy.Capabilities()
-	capabilitySet := make(map[access.Permission]struct{}, len(capabilities))
-	for _, capability := range capabilities {
-		capabilitySet[capability] = struct{}{}
-	}
-
-	csrf := middleware.TokenFromContext(r.Context())
-
+// renderRoles draws the Roles page: each role with its permissions, and
+// with a GrantStore, grant, revoke and a form that adds a role.
+func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.HTML {
+	p := b.cfg.Policy
+	caps := p.Capabilities()
+	page := b.cfg.PathPrefix + "/rbac/roles"
 	cols := []ui.Column{
-		{Key: "role", Header: "Role"},
-		{Key: "permissions", Header: "Permissions"},
-		{Key: "actions", Header: "Actions"},
+		{Key: "role", Header: i18nui.T(ctx, i18nui.KeyAdminColRole)},
+		{Key: "permissions", Header: i18nui.T(ctx, i18nui.KeyAdminColPermissions)},
 	}
+	if b.cfg.GrantStore != nil {
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminGrant)})
+	}
+	roles := p.Roles()
 	rows := make([]ui.Row, 0, len(roles))
 	for _, role := range roles {
-		perms := b.cfg.Policy.PermissionsOf(role)
-		permLabels := make([]string, len(perms))
-		for i, p := range perms {
-			permLabels[i] = string(p)
+		cells := map[string]render.HTML{
+			"role":        html.Code(html.TextConfig{}, render.Text(role)),
+			"permissions": b.permissionChips(ctx, role, caps, page),
 		}
-		sort.Strings(permLabels)
-		rows = append(rows, ui.Row{Cells: map[string]render.HTML{
-			"role":        monoCell(role),
-			"permissions": permissionChips(role, permLabels, capabilitySet, capabilities, b.cfg.GrantStore, b.cfg.PathPrefix, csrf),
-			"actions":     grantForm(b.cfg.PathPrefix, csrf, role, capabilities, b.cfg.GrantStore),
-		}})
+		if b.cfg.GrantStore != nil {
+			cells["actions"] = b.opForm(ctx, opSpec{
+				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
+				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonSecondary, small: true,
+				fields: map[string]string{"role": role},
+				body:   []render.HTML{permissionInput(ctx, caps, role)},
+			})
+		}
+		rows = append(rows, ui.Row{ID: role, Cells: cells})
 	}
-
 	parts := []render.HTML{
+		ui.PageHeader(ui.PageHeaderConfig{
+			Title:    i18nui.T(ctx, i18nui.KeyAdminRoles),
+			Subtitle: i18nui.T(ctx, i18nui.KeyAdminRolesSub),
+		}),
+		resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
-			Columns: cols,
-			Rows:    rows,
-			Empty:   ui.EmptyStateConfig{Title: "No roles", Description: "Define roles via your policy.", HeadingLevel: 3},
+			Columns:       cols,
+			Rows:          rows,
+			Caption:       i18nui.T(ctx, i18nui.KeyAdminRoles),
+			CaptionHidden: true,
+			Responsive:    ui.ResponsiveScroll,
+			Ctx:           ctx,
+			Empty: ui.EmptyStateConfig{
+				Title:        i18nui.T(ctx, i18nui.KeyAdminNoRoles),
+				Description:  i18nui.T(ctx, i18nui.KeyAdminNoRolesDesc),
+				HeadingLevel: 2,
+			},
 		}),
 	}
-	// Add-role form (creates a role with an initial permission).
 	if b.cfg.GrantStore != nil {
-		parts = append(parts, ui.Stack(ui.StackConfig{Gap: ui.GapSM},
-			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Add role")),
-			addRoleForm(b.cfg.PathPrefix, csrf, capabilities),
-		))
+		parts = append(parts, ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyAdminAddRole)},
+			b.opForm(ctx, opSpec{
+				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
+				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonPrimary,
+				body: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.T(ctx, i18nui.KeyAdminNewRole), Required: true}),
+					permissionInput(ctx, caps, ""),
+				},
+			})))
 	}
-	if len(capabilities) > 0 {
-		parts = append(parts, capabilityDatalist(capabilities))
-	}
-
-	b.writePage(w, b.cfg.Title, "Roles",
-		adminSection("Roles & Permissions", ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 }
 
-// permissionChips renders one role's permissions as a Cluster of ui.Tag chips.
-// A grant outside the capability registry (when one exists) is flagged with a
-// danger StatusBadge; when grants persist, each chip is followed by a CSRF'd
-// inline Revoke form. Replaces the orphan .badge/.badge-remove markup (which
-// had no CSS anywhere) with real design-system components.
-func permissionChips(role string, perms []string, capabilitySet map[access.Permission]struct{},
-	capabilities []access.Permission, store *access.GrantStore, prefix, csrf string) render.HTML {
+// permissionChips draws a role's permissions as tags. With a capability
+// registry, a grant outside it (other than Wildcard) is flagged; with a
+// GrantStore each one has a Revoke.
+func (b *Battery) permissionChips(ctx context.Context, role string, caps []access.Permission, page string) render.HTML {
+	perms := b.cfg.Policy.PermissionsOf(role)
 	if len(perms) == 0 {
 		return ui.Muted(render.Text("—"))
 	}
-	items := make([]render.HTML, 0, len(perms)*3)
-	for _, p := range perms {
-		items = append(items, ui.Tag(ui.TagConfig{Label: p, Variant: ui.StatusNeutral}))
-		// Once a registry exists, any non-global grant outside it is dead
-		// configuration and is called out.
-		if len(capabilities) > 0 {
-			if _, known := capabilitySet[access.Permission(p)]; !known && access.Permission(p) != access.Wildcard {
-				items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{
-					Label:   "unknown/dead",
-					Variant: ui.StatusDanger,
-				}))
-			}
+	slices.Sort(perms)
+	items := make([]render.HTML, 0, len(perms))
+	for _, perm := range perms {
+		chip := []render.HTML{ui.Tag(ui.TagConfig{Label: string(perm)})}
+		if len(caps) > 0 && perm != access.Wildcard && !slices.Contains(caps, perm) {
+			chip = append(chip, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminUndeclared), Variant: ui.StatusDanger}))
 		}
-		if store != nil {
-			items = append(items, render.HTML(html.Form(html.FormConfig{
-				Method: "post",
-				Action: prefix + "/rbac/_revoke",
-				Class:  "admin-inline",
-			},
-				html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-				html.Input(html.InputConfig{Type: "hidden", Name: "role", Value: role}),
-				html.Input(html.InputConfig{Type: "hidden", Name: "permission", Value: p}),
-				ui.Button(ui.ButtonConfig{
-					Label:     "Revoke",
-					AriaLabel: "Revoke " + p + " from " + role,
-					Type:      "submit",
-					Variant:   ui.ButtonGhost,
-					Size:      ui.ButtonSizeSmall,
-				}),
-			)))
+		if b.cfg.GrantStore != nil {
+			chip = append(chip, b.opForm(ctx, opSpec{
+				path: b.cfg.PathPrefix + "/rbac/_revoke", page: page,
+				label:     i18nui.T(ctx, i18nui.KeyAdminRevoke),
+				ariaLabel: i18nui.TVars(ctx, i18nui.KeyAdminRevokeLabel, map[string]string{"permission": string(perm), "role": role}),
+				variant:   ui.ButtonGhost, small: true,
+				fields: map[string]string{"role": role, "permission": string(perm)},
+			}))
 		}
+		items = append(items, ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter, NoWrap: true}, chip...))
 	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, items...)
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, items...)
 }
 
-// grantForm renders the per-row "grant a permission" inline form, or nothing
-// when grants do not persist.
-func grantForm(prefix, csrf, role string, capabilities []access.Permission, store *access.GrantStore) render.HTML {
-	if store == nil {
-		return render.Text("")
+// permissionInput is the permission a grant names: a choice of the
+// declared capabilities when the app declares them, else free text.
+// suffix keeps each row's field id unique.
+func permissionInput(ctx context.Context, caps []access.Permission, suffix string) render.HTML {
+	label := i18nui.T(ctx, i18nui.KeyAdminPermission)
+	id := "admin-perm"
+	if suffix != "" {
+		id += "-" + suffix
 	}
-	return render.HTML(html.Form(html.FormConfig{
-		Method: "post",
-		Action: prefix + "/rbac/_grant",
-		Class:  "admin-inline",
-	},
-		html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-		html.Input(html.InputConfig{Type: "hidden", Name: "role", Value: role}),
-		capabilityInput(capabilities, "new:perm", false),
-		ui.Button(ui.ButtonConfig{Label: "Grant", Type: "submit", Size: ui.ButtonSizeSmall}),
-	))
+	if len(caps) == 0 {
+		return ui.TextField(ui.TextFieldConfig{Name: "permission", Label: label, ID: id, Required: true})
+	}
+	opts := make([]ui.SelectOption, len(caps))
+	for i, c := range caps {
+		opts[i] = ui.SelectOption{Value: string(c), Text: string(c)}
+	}
+	return ui.Select(ui.SelectConfig{Name: "permission", Label: label, ID: id, Options: opts, Required: true})
 }
 
-// addRoleForm renders the "create a role with an initial permission" form.
-func addRoleForm(prefix, csrf string, capabilities []access.Permission) render.HTML {
-	return render.HTML(html.Form(html.FormConfig{
-		Method: "post",
-		Action: prefix + "/rbac/_grant",
-		Class:  "admin-inline",
-	},
-		html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-		html.Input(html.InputConfig{
-			Type:        "text",
-			Name:        "role",
-			Placeholder: "role-name",
-			Class:       "admin-input",
-			ExtraAttrs:  html.Attrs{"required": "required", "aria-label": "New role name"},
-		}),
-		render.Text(" "),
-		capabilityInput(capabilities, "perm:verb", true),
-		render.Text(" "),
-		ui.Button(ui.ButtonConfig{Label: "Grant", Type: "submit"}),
-	))
-}
+// ----- user roles ---------------------------------------------------------------
 
-// capabilityInput renders the free-text permission input, wired to the
-// capability datalist when capabilities are known.
-func capabilityInput(capabilities []access.Permission, placeholder string, required bool) render.HTML {
-	attrs := html.Attrs{}
-	if len(capabilities) > 0 {
-		attrs["list"] = "known-capabilities"
-	}
-	if required {
-		attrs["required"] = "required"
-	}
-	return html.Input(html.InputConfig{
-		Type:        "text",
-		Name:        "permission",
-		Placeholder: placeholder,
-		Class:       "admin-input",
-		ExtraAttrs:  attrs,
+// usersPageSize is the User roles page's default page of users.
+const usersPageSize = 50
+
+// renderUsers draws the User roles page: each user, the roles they hold
+// (with their origin when EffectiveRoles resolves more), and a form
+// that sets their direct roles.
+func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.HTML {
+	r := appui.RequestFromContext(ctx)
+	opts := listUsersOpts(r)
+	header := ui.PageHeader(ui.PageHeaderConfig{
+		Title:    i18nui.T(ctx, i18nui.KeyAdminUserRoles),
+		Subtitle: i18nui.T(ctx, i18nui.KeyAdminUserRolesSub),
 	})
-}
-
-func capabilityDatalist(capabilities []access.Permission) render.HTML {
-	options := make([]render.HTML, 0, len(capabilities))
-	for _, capability := range capabilities {
-		options = append(options, html.Option(string(capability), "", false))
-	}
-	return render.Tag("datalist", map[string]string{"id": "known-capabilities"}, options...)
-}
-
-// ----- user → role assignment ---------------------------------------------
-
-// handleRBACUsers renders the user→role assignment screen. Lists users
-// (via AuthManager.ListUsers) with their current roles and a form to
-// replace them via SetUserRoles.
-func (b *Battery) handleRBACUsers(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.Auth == nil {
-		b.writePage(w, b.cfg.Title, "User roles",
-			ui.Muted(render.Text("No auth manager wired.")))
-		return
-	}
-	users, total, err := b.cfg.Auth.ListUsers(r.Context(), listUsersOpts(r))
+	users, total, err := b.cfg.Auth.ListUsers(ctx, opts)
 	if err != nil {
-		b.writePage(w, b.cfg.Title, "User roles",
-			adminError("Could not load users. Check the server logs."))
-		return
+		b.logger().Error("admin: list users", "error", err)
+		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminUsersLoadFailed))))
 	}
-
-	// Known roles for the dropdown suggestions.
-	var knownRoles []string
+	page := b.cfg.PathPrefix + "/rbac/users"
+	if r != nil && r.URL.RawQuery != "" {
+		page += "?" + r.URL.Query().Encode()
+	}
+	var known []string
 	if b.cfg.Policy != nil {
-		knownRoles = b.cfg.Policy.Roles()
+		known = b.cfg.Policy.Roles()
 	}
-
-	csrf := middleware.TokenFromContext(r.Context())
-
 	cols := []ui.Column{
-		{Key: "email", Header: "Email"},
-		{Key: "roles", Header: "Current roles"},
-		{Key: "set", Header: "Set roles"},
+		{Key: "user", Header: i18nui.T(ctx, i18nui.KeyAdminColUser)},
+		{Key: "roles", Header: i18nui.T(ctx, i18nui.KeyAdminColRoles)},
+		{Key: "set", Header: i18nui.T(ctx, i18nui.KeyAdminSaveRoles)},
 	}
 	rows := make([]ui.Row, len(users))
 	for i, u := range users {
-		directRoles := u.GetRoles()
-		directRolesStr := strings.Join(directRoles, ", ")
-		displayRoles := directRolesStr
+		direct := u.GetRoles()
+		labels := direct
 		if b.cfg.EffectiveRoles != nil {
-			effective := b.cfg.EffectiveRoles(r.Context(), u.GetID())
-			displayRoles = strings.Join(roleOriginLabels(directRoles, effective), ", ")
+			labels = roleOriginLabels(direct, b.cfg.EffectiveRoles(ctx, u.GetID()))
 		}
-		if displayRoles == "" {
-			displayRoles = "—"
+		held := make([]render.HTML, 0, len(labels))
+		for _, l := range labels {
+			held = append(held, ui.Tag(ui.TagConfig{Label: l}))
 		}
-		rolesInput := html.InputConfig{
-			Type: "text", Name: "roles", Value: directRolesStr,
-			Placeholder: "role1,role2", Class: "admin-input",
+		heldCell := ui.Muted(render.Text("—"))
+		if len(held) > 0 {
+			heldCell = ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, held...)
 		}
-		if len(knownRoles) > 0 {
-			rolesInput.ExtraAttrs = html.Attrs{"list": "known-roles"}
-		}
-		rows[i] = ui.Row{Cells: map[string]render.HTML{
-			"email": render.Text(u.GetEmail()),
-			"roles": render.Text(displayRoles),
-			"set": render.HTML(html.Form(html.FormConfig{
-				Method: "post",
-				Action: b.cfg.PathPrefix + "/rbac/_assign",
-				Class:  "admin-inline",
-			},
-				html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-				html.Input(html.InputConfig{Type: "hidden", Name: "user_id", Value: u.GetID()}),
-				html.Input(rolesInput),
-				ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit", Size: ui.ButtonSizeSmall}),
-			)),
+		rows[i] = ui.Row{ID: u.GetID(), Cells: map[string]render.HTML{
+			"user":  render.Text(u.GetEmail()),
+			"roles": heldCell,
+			"set": b.opForm(ctx, opSpec{
+				path: b.cfg.PathPrefix + "/rbac/_assign", page: page,
+				label: i18nui.T(ctx, i18nui.KeyAdminSaveRoles), variant: ui.ButtonSecondary, small: true,
+				fields: map[string]string{"user_id": u.GetID()},
+				body:   []render.HTML{rolesInput(ctx, u.GetID(), direct, known)},
+			}),
 		}}
 	}
-
-	parts := []render.HTML{
+	parts := []render.HTML{header, resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
-			Columns: cols,
-			Rows:    rows,
-			Empty:   ui.EmptyStateConfig{Title: "No users", HeadingLevel: 3},
+			Columns:       cols,
+			Rows:          rows,
+			Caption:       i18nui.T(ctx, i18nui.KeyAdminUserRoles),
+			CaptionHidden: true,
+			Responsive:    ui.ResponsiveScroll,
+			Ctx:           ctx,
+			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoUsers), HeadingLevel: 2},
 		}),
 	}
 	if total > len(users) {
-		parts = append(parts, ui.Muted(render.Text(fmt.Sprintf("Showing %d of %d users.", len(users), total))))
+		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminUsersShown,
+			map[string]string{"shown": strconv.Itoa(len(users)), "total": strconv.Itoa(total)}))))
 	}
-	// Datalist of known roles for autocomplete.
-	if len(knownRoles) > 0 {
-		opts := make([]render.HTML, 0, len(knownRoles))
-		for _, rl := range knownRoles {
-			opts = append(opts, html.Option(rl, "", false))
-		}
-		parts = append(parts, render.Tag("datalist", map[string]string{"id": "known-roles"}, opts...))
-	}
-
-	b.writePage(w, b.cfg.Title, "User roles",
-		adminSection("User Roles", ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 }
 
+// rolesInput is a user's direct roles as a form field: a checkbox per
+// role with a policy (the user's undeclared roles included, so a save
+// never drops one unseen), comma-separated text without one.
+func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
+	label := i18nui.T(ctx, i18nui.KeyAdminColRoles)
+	if len(known) == 0 {
+		return ui.TextField(ui.TextFieldConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
+	}
+	all := slices.Clone(known)
+	for _, r := range direct {
+		if !slices.Contains(all, r) {
+			all = append(all, r)
+		}
+	}
+	slices.Sort(all)
+	opts := make([]ui.MultiSelectOption, len(all))
+	for i, r := range all {
+		opts[i] = ui.MultiSelectOption{Value: r, Label: r, Selected: slices.Contains(direct, r)}
+	}
+	return ui.MultiSelect(ui.MultiSelectConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
+}
+
+// roleOriginLabels joins a user's direct roles with resolved ones as
+// "role (origin)", sorted and deduplicated.
 func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []string {
 	roles := make([]access.RoleWithOrigin, 0, len(direct)+len(effective))
 	for _, role := range direct {
@@ -327,183 +266,126 @@ func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []stri
 		}
 		roles = append(roles, role)
 	}
-	sort.Slice(roles, func(i, j int) bool {
-		if roles[i].Role == roles[j].Role {
-			return roles[i].Origin < roles[j].Origin
-		}
-		return roles[i].Role < roles[j].Role
+	slices.SortFunc(roles, func(a, b access.RoleWithOrigin) int {
+		return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Origin, b.Origin))
 	})
-
-	labels := make([]string, 0, len(roles))
-	seen := make(map[access.RoleWithOrigin]struct{}, len(roles))
-	for _, role := range roles {
-		if _, ok := seen[role]; ok {
-			continue
-		}
-		seen[role] = struct{}{}
-		labels = append(labels, fmt.Sprintf("%s (%s)", role.Role, role.Origin))
+	roles = slices.Compact(roles)
+	labels := make([]string, len(roles))
+	for i, role := range roles {
+		labels[i] = fmt.Sprintf("%s (%s)", role.Role, role.Origin)
 	}
 	return labels
 }
 
+// listUsersOpts reads ?limit= (1–500, default 50) and ?offset=.
 func listUsersOpts(r *http.Request) auth.ListUsersOptions {
-	limit := 50
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := fmtAtoi(v); err == nil && n > 0 && n <= 500 {
-			limit = n
-		}
+	opts := auth.ListUsersOptions{Limit: usersPageSize}
+	if r == nil {
+		return opts
 	}
-	offset := 0
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := fmtAtoi(v); err == nil && n >= 0 {
-			offset = n
-		}
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 500 {
+		opts.Limit = n
 	}
-	return auth.ListUsersOptions{Limit: limit, Offset: offset}
+	if n, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && n >= 0 {
+		opts.Offset = n
+	}
+	return opts
 }
 
-func fmtAtoi(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscanf(s, "%d", &n)
-	return n, err
+// ----- posts --------------------------------------------------------------------
+
+// handleGrant grants a permission to a role through the GrantStore. A
+// caller may grant only a permission its own roles hold; a refusal is
+// audited too.
+func (b *Battery) handleGrant(w http.ResponseWriter, r *http.Request) {
+	b.grantOrRevoke(w, r, "grant", "granted", b.cfg.GrantStore.Grant)
 }
 
-// ----- RPC handlers --------------------------------------------------------
+// handleRevoke revokes a permission from a role, under the same rule.
+func (b *Battery) handleRevoke(w http.ResponseWriter, r *http.Request) {
+	b.grantOrRevoke(w, r, "revoke", "revoked", b.cfg.GrantStore.Revoke)
+}
 
-// handleRBACGrant grants a permission to a role via GrantStore.Grant. The
-// role and permission are user-supplied strings. GrantStore binds them as
-// $n parameters, never interpolating them into SQL. Writes an audit row.
-func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.GrantStore == nil {
-		http.Error(w, "grant store not wired", http.StatusNotImplemented)
+func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok string,
+	call func(ctx context.Context, role string, perms ...access.Permission) error) {
+	page := b.cfg.PathPrefix + "/rbac/roles"
+	vals, read := b.readOps(w, r, page)
+	if !read {
 		return
 	}
-	if !parseCappedForm(w, r) {
-		return
-	}
-	role := strings.TrimSpace(r.FormValue("role"))
-	perm := strings.TrimSpace(r.FormValue("permission"))
+	role := strings.TrimSpace(vals.Get("role"))
+	perm := access.Permission(strings.TrimSpace(vals.Get("permission")))
 	if role == "" || perm == "" {
-		http.Error(w, "role and permission required", http.StatusBadRequest)
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
-	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
-		b.appendAudit(r.Context(), "access", "grant-refused", role, adminActorID(r.Context()),
-			map[string]any{"permission": perm})
-		http.Error(w, "forbidden: you can only grant a permission you hold", http.StatusForbidden)
+	actor := adminActorID(r.Context())
+	diff := map[string]any{"permission": string(perm)}
+	if !b.callerHoldsPermission(r.Context(), perm) {
+		b.appendAudit(r.Context(), "access", op+"-refused", role, actor, diff)
+		b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
 		return
 	}
-	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
-		// A strict-mode unknown capability is the admin's typo, not a
-		// server fault, surface the reason instead of a generic 500.
-		if unknown, ok := errors.AsType[*access.UnknownCapabilityError](err); ok {
-			http.Error(w, unknown.Error(), http.StatusBadRequest)
+	if err := call(r.Context(), role, perm); err != nil {
+		if _, unknown := errors.AsType[*access.UnknownCapabilityError](err); unknown {
+			b.refuse(w, r, page, http.StatusBadRequest, "unknown-capability")
 			return
 		}
-		http.Error(w, "grant failed; check server logs", http.StatusInternalServerError)
+		b.logger().Error("admin: "+op, "role", textsafe.ScrubControlBytes(role), "permission", textsafe.ScrubControlBytes(string(perm)), "error", textsafe.ScrubControlBytes(err.Error()))
+		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	// Audit: op="grant", subject=role, diff={permission:perm}. The grant
-	// already committed; a failed audit row is logged, not swallowed.
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), "access", "grant", role, actor,
-		map[string]any{"permission": perm})
-	http.Redirect(w, r, b.cfg.PathPrefix+"/rbac/roles", http.StatusSeeOther)
+	b.appendAudit(r.Context(), "access", op, role, actor, diff)
+	b.done(w, r, page, ok)
 }
 
-// handleRBACRevoke revokes a permission from a role via GrantStore.Revoke.
-// Writes an audit row.
-func (b *Battery) handleRBACRevoke(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.GrantStore == nil {
-		http.Error(w, "grant store not wired", http.StatusNotImplemented)
+// handleAssign replaces a user's direct roles. A caller may assign only
+// roles its own tier covers (see nonAssignableRole); a refusal is
+// audited with the role that stopped it.
+func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
+	page := b.cfg.PathPrefix + "/rbac/users"
+	vals, read := b.readOps(w, r, page)
+	if !read {
 		return
 	}
-	if !parseCappedForm(w, r) {
-		return
-	}
-	role := strings.TrimSpace(r.FormValue("role"))
-	perm := strings.TrimSpace(r.FormValue("permission"))
-	if role == "" || perm == "" {
-		http.Error(w, "role and permission required", http.StatusBadRequest)
-		return
-	}
-	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
-		b.appendAudit(r.Context(), "access", "revoke-refused", role, adminActorID(r.Context()),
-			map[string]any{"permission": perm})
-		http.Error(w, "forbidden: you can only revoke a permission you hold", http.StatusForbidden)
-		return
-	}
-	if err := b.cfg.GrantStore.Revoke(r.Context(), role, access.Permission(perm)); err != nil {
-		http.Error(w, "revoke failed; check server logs", http.StatusInternalServerError)
-		return
-	}
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), "access", "revoke", role, actor,
-		map[string]any{"permission": perm})
-	http.Redirect(w, r, b.cfg.PathPrefix+"/rbac/roles", http.StatusSeeOther)
-}
-
-// handleRBACAssign replaces a user's roles via AuthManager.SetUserRoles.
-// The roles are OPERATOR input from the admin screen, never request data
-// sourced from the user being edited. Writes an audit row.
-//
-// A caller may only write roles its own tier already covers: a role it
-// holds, or a role whose every granted permission its own permissions
-// imply (a Wildcard caller may assign anything). Anything else is refused
-// with 403 and its own audit row — a designated sub-admin tier must not be
-// able to mint the top role through the sanctioned RPC.
-func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
-	if b.cfg.Auth == nil {
-		http.Error(w, "auth manager not wired", http.StatusNotImplemented)
-		return
-	}
-	if !parseCappedForm(w, r) {
-		return
-	}
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	rolesRaw := strings.TrimSpace(r.FormValue("roles"))
+	userID := strings.TrimSpace(vals.Get("user_id"))
 	if userID == "" {
-		http.Error(w, "user_id required", http.StatusBadRequest)
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
-	// Parse comma-separated roles.
+	// One value per checkbox, or one comma-separated text field.
 	var roles []string
-	for r := range strings.SplitSeq(rolesRaw, ",") {
-		r = strings.TrimSpace(r)
-		if r != "" {
-			roles = append(roles, r)
+	for _, v := range vals["roles"] {
+		for role := range strings.SplitSeq(v, ",") {
+			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
+				roles = append(roles, role)
+			}
 		}
 	}
+	actor := adminActorID(r.Context())
 	if offending := b.nonAssignableRole(r.Context(), roles); offending != "" {
-		// An attempted escalation is a security event even when refused;
-		// audit it on its own row, out of the success path.
-		actor := adminActorID(r.Context())
 		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
 			map[string]any{"roles": roles, "refused_role": offending})
-		http.Error(w, "cannot assign a role above your own tier: "+offending, http.StatusForbidden)
+		b.refuse(w, r, page, http.StatusForbidden, "assign-refused")
 		return
 	}
 	if err := b.cfg.Auth.SetUserRoles(r.Context(), userID, roles); err != nil {
-		http.Error(w, "assign failed; check server logs", http.StatusInternalServerError)
+		b.logger().Error("admin: assign roles", "user", textsafe.ScrubControlBytes(userID), "error", textsafe.ScrubControlBytes(err.Error()))
+		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor,
-		map[string]any{"roles": roles})
-	http.Redirect(w, r, b.cfg.PathPrefix+"/rbac/users", http.StatusSeeOther)
+	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor, map[string]any{"roles": roles})
+	b.done(w, r, page, "roles-saved")
 }
 
+// ----- tiers --------------------------------------------------------------------
+
 // nonAssignableRole returns the first requested role the caller may not
-// write onto an account, or "" when the whole set is assignable. A role is
-// assignable when the caller already holds it, or when every permission the
-// configured policy grants that role is covered by the caller's own
-// permissions (a Wildcard covers everything; a role with no grants confers
-// nothing and is always assignable). With no policy wired, only held roles
-// are assignable — the fail-closed default.
+// write onto an account, or "" when all are assignable. A role is
+// assignable when the caller holds it, or when the caller's own
+// permissions cover every permission the policy grants it (Wildcard
+// covers everything). With no policy only held roles are assignable.
 func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) string {
-	// The caller's real roles come from the user object, not ctx: the gate's
-	// adminSuperuserCtx has already overwritten ctx roles with the synthetic
-	// __admin wildcard, which would make every caller a top-tier one here.
 	held := callerHeldRoles(ctx)
 	callerPerms := map[access.Permission]bool{}
 	if b.cfg.Policy != nil {
@@ -514,39 +396,24 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 		}
 	}
 	for _, want := range requested {
-		if slices.Contains(held, want) {
+		if slices.Contains(held, want) || callerPerms[access.Wildcard] {
 			continue
 		}
-		if callerPerms[access.Wildcard] {
-			continue
-		}
-		assignable := true
-		if b.cfg.Policy != nil {
-			for _, p := range b.cfg.Policy.PermissionsOf(want) {
-				if !callerPerms[p] {
-					assignable = false
-					break
-				}
-			}
-		} else {
-			assignable = false
-		}
-		if !assignable {
+		if b.cfg.Policy == nil {
 			return want
+		}
+		for _, p := range b.cfg.Policy.PermissionsOf(want) {
+			if !callerPerms[p] {
+				return want
+			}
 		}
 	}
 	return ""
 }
 
-// callerHeldRoles resolves the caller's own roles from the authenticated
-// user via the structural GetRoles interface authorized() uses.
 // callerHoldsPermission reports whether the caller's own roles grant
-// perm (or the wildcard). A grant or revoke of a permission the caller
-// does not hold is an escalation through the sibling RPC of _assign: a
-// weaker tier the host admitted at the gate would otherwise write
-// Wildcard onto a role it already holds and become superuser live.
-// With no Policy wired nothing can be proven held, so every grant is
-// refused (fail closed).
+// perm or Wildcard. With no policy nothing can be proven held, so it
+// refuses.
 func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
 	if b.cfg.Policy == nil {
 		return false
@@ -561,6 +428,8 @@ func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permiss
 	return false
 }
 
+// callerHeldRoles is the signed-in user's own roles, read from the user
+// (GetRoles), never from the context.
 func callerHeldRoles(ctx context.Context) []string {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {
@@ -571,27 +440,4 @@ func callerHeldRoles(ctx context.Context) []string {
 		return nil
 	}
 	return rh.GetRoles()
-}
-
-// effectiveDB returns the DB for audit writes: cfg.DB when set, else b.db
-// (set by Init from app.DB).
-func (b *Battery) effectiveDB() *sql.DB {
-	if b.cfg.DB != nil {
-		return b.cfg.DB
-	}
-	return b.db
-}
-
-// appendAudit writes a security/compliance audit row and surfaces a write
-// failure via the configured logger instead of discarding it. The mutation
-// that triggered the row has ALREADY committed by the time this runs (a grant
-// was applied, a module enabled), there is nothing to roll back and the
-// client already got its answer, so failing the request would mislead the
-// operator into believing the action did not take effect. But an unrecorded
-// mutation is a silent security gap, so the failed write MUST be logged.
-func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID string, diff map[string]any) {
-	if err := framework.AppendAuditEvent(ctx, b.effectiveDB(), b.cfg.AuditTable, entity, op, recordID, actorID, diff); err != nil {
-		b.logger().Error("admin: audit write failed (mutation already applied)",
-			"entity", entity, "op", op, "record_id", recordID, "actor_id", actorID, "error", err)
-	}
 }

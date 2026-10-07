@@ -66,9 +66,10 @@ func TestE2EVisualSurfaces(t *testing.T) {
 	}{
 		{name: "app", path: "/app"},
 		{name: "admin", path: "/admin"},
+		{name: "admin-list", path: "/admin/entities/customers"},
 		// A generated form with a bool field: the checkbox in a
 		// ui.FormField must keep its own size, not the text track's.
-		{name: "admin-form", path: "/admin/e/plans/new"},
+		{name: "admin-form", path: "/admin/entities/plans/create"},
 	} {
 		captureMeridianSurface(t, browser, base, surface.name, surface.path)
 	}

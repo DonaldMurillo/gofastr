@@ -1,9 +1,10 @@
 package main
 
-// Browser-level (chromedp) e2e for the entity admin. Drives the real user
-// path through a headless Chrome so the runtime-dependent behaviour is
-// exercised end to end: SSR list hydration, the data-cui-confirm delete
-// (native confirm → DELETE RPC → SPA refresh), and a form create round-trip.
+// Browser-level (chromedp) e2e for the admin's entity screens. Drives the
+// real user path through a headless Chrome so the runtime-dependent
+// behaviour is exercised end to end: the row menu's confirmed delete
+// (native confirm → DELETE RPC → the list re-fetched), and a create
+// round-trip through the form RPC.
 //
 // Gated by -short (slow; needs a headless Chrome), matching the repo's e2e
 // convention.
@@ -21,6 +22,9 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
+
+// productForm is the product create and record form.
+const productForm = `form#eui-products-form`
 
 func backofficeServer(t *testing.T) string {
 	t.Helper()
@@ -98,11 +102,15 @@ func TestBackofficeE2E_DeleteFlow(t *testing.T) {
 		t.Fatalf("no first row id to delete (id=%q err=%v)", rowID, err)
 	}
 
-	// Click that row's Delete. data-cui-confirm calls window.confirm, stub it to
-	// accept, then the runtime DELETEs and the island swaps in the fresh table.
+	// Open that row's action menu and click Delete. data-cui-confirm calls
+	// window.confirm (the dialog listener accepts it), then the runtime
+	// DELETEs and re-fetches the list.
+	row := fmt.Sprintf(`tbody tr[id=%q]`, rowID)
+	del := fmt.Sprintf(`%s button[data-cui-rpc=%q][data-cui-rpc-method="DELETE"]`, row, "/admin/api/products/"+rowID)
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`window.confirm = () => true; true`, nil),
-		chromedp.Click(`tbody tr:first-child button[data-cui-rpc^="/admin/e/products/_delete/"]`, chromedp.ByQuery),
+		chromedp.Click(row+` summary.fui-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitVisible(del, chromedp.ByQuery),
+		chromedp.Click(del, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("click delete: %v", err)
 	}
@@ -129,13 +137,14 @@ func TestBackofficeE2E_CreateFlow(t *testing.T) {
 	login(t, ctx, base)
 
 	name := fmt.Sprintf("E2E Widget %d", time.Now().UnixNano())
+	waitHydrated(t, ctx)
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/admin/e/products/new"),
-		chromedp.WaitVisible(`input[name="name"]`, chromedp.ByQuery),
-		chromedp.SendKeys(`input[name="name"]`, name, chromedp.ByQuery),
-		chromedp.SendKeys(`input[name="price"]`, "42", chromedp.ByQuery),
-		chromedp.Click(`button[type=submit]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`table`, chromedp.ByQuery), // redirected back to the list
+		chromedp.Click(`a[href="/admin/entities/products/create"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(productForm+` input[name="name"]`, chromedp.ByQuery),
+		chromedp.SendKeys(productForm+` input[name="name"]`, name, chromedp.ByQuery),
+		chromedp.SendKeys(productForm+` input[name="price"]`, "42", chromedp.ByQuery),
+		chromedp.Click(productForm+` button[type=submit]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`table`, chromedp.ByQuery), // navigated back to the list
 	); err != nil {
 		t.Fatalf("create flow: %v", err)
 	}
@@ -144,7 +153,7 @@ func TestBackofficeE2E_CreateFlow(t *testing.T) {
 	// search (also exercises the search path) rather than assuming page 1.
 	var body string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/admin/e/products?q="+url.QueryEscape(name)),
+		chromedp.Navigate(base+"/admin/entities/products?q="+url.QueryEscape(name)),
 		chromedp.WaitVisible(`tbody tr`, chromedp.ByQuery),
 		chromedp.Text(`tbody`, &body, chromedp.ByQuery),
 	); err != nil {

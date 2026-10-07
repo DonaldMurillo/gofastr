@@ -1,10 +1,10 @@
-// Command backoffice is a minimal example of the battery/admin entity CRUD
-// admin rendered through a UI host: a few entities, a (demo-grade) login, and
-// admin.New(...) generating the whole back-office with defaults.
+// Command backoffice is a minimal example of battery/admin rendered through
+// a UI host: a few entities, a (demo-grade) login, and admin.New(...)
+// drawing the whole back office with defaults.
 //
-// The admin screens hydrate with runtime.js, the list is a DataTable island
-// (paginate without a reload), delete is a data-cui-confirm button, and forms
-// are server-rendered. There is no bespoke JavaScript anywhere in this app.
+// The admin's entity screens are framework/entityui's list and record:
+// server-rendered, with sort, filter and paging in the URL. There is no
+// bespoke JavaScript or CSS anywhere in this app.
 //
 // The auth here is a deliberately tiny demo stand-in (a signed-cookie-free
 // session) so the example stays focused on the admin. Real apps wire
@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -91,19 +92,33 @@ func setupApp(dsn string) *framework.App {
 	app.Use(demoSession)
 
 	registerEntities(app)
+	// Every admin write lands in the audit log, which the dashboard's
+	// recent activity and the Audit log page read.
+	app.WithAuditLog(framework.AuditConfig{})
 
-	// Expose every CRUD entity as an admin screen, the explicit
-	// whole-back-office opt-in (an empty Entities list exposes nothing).
-	app.RegisterBattery(admin.New(admin.Config{Title: "Backoffice", EntityListLimit: 8, AllEntities: true}))
+	// Expose every CRUD entity in the admin, the explicit whole-back-office
+	// opt-in (an empty Entities list exposes nothing).
+	app.RegisterBattery(admin.New(admin.Config{
+		Title:       "Backoffice",
+		UI:          app.EntityUI(entityui.Extensions{}),
+		AllEntities: true,
+		LoginPath:   "/login",
+		SignOutPath: "/logout",
+	}))
 
 	// GET /login is the themed host screen registered above. The form posts to a
 	// DISTINCT path (/login/submit) so an explicit route doesn't shadow /login
 	// and force a 405 on the host-served GET screen.
+	//gofastr:allow(GOFASTR1902) the sign-in form posts here before the caller has a session
 	app.Router().Post("/login/submit", http.HandlerFunc(loginSubmit))
-	app.Router().Get("/logout", http.HandlerFunc(logout))
+	//gofastr:allow(GOFASTR1902) signing out clears only the caller's own session cookie
+	app.Router().Post("/logout", http.HandlerFunc(logout))
 
 	// Bring the app up without binding a port: migrate, init the battery, seed.
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
+		log.Fatal(err)
+	}
+	if err := framework.EnsureAuditTable(db, ""); err != nil {
 		log.Fatal(err)
 	}
 	if err := app.InitPlugins(); err != nil {
@@ -120,6 +135,7 @@ func registerEntities(app *framework.App) {
 		Fields: []schema.Field{
 			{Name: "name", Type: schema.String, Required: true, Max: new(float64(120))},
 		},
+		SearchFields: []string{"name"},
 	})
 	app.Entity("products", entity.EntityConfig{
 		Fields: []schema.Field{
@@ -128,14 +144,15 @@ func registerEntities(app *framework.App) {
 			{Name: "in_stock", Type: schema.Bool},
 			{Name: "category", Type: schema.Enum, Values: []string{"tools", "parts", "accessories"}, Default: "tools"},
 			{Name: "description", Type: schema.Text},
-			{Name: "photo", Type: schema.Image},        // shows a thumbnail in list/detail
-			{Name: "specs", Type: schema.JSON},         // shows a code block in detail
-			{Name: "launched_on", Type: schema.Date},   // shows a formatted date
-			{Name: "supplier_id", Type: schema.String}, // FK → suppliers (optional)
+			{Name: "photo", Type: schema.Image},                           // shows a thumbnail in list/detail
+			{Name: "specs", Type: schema.JSON},                            // shows a code block in detail
+			{Name: "launched_on", Type: schema.Date},                      // shows a formatted date
+			{Name: "supplier_id", Type: schema.Relation, To: "suppliers"}, // a supplier picker
 		},
 		Relations: []entity.Relation{
 			entity.BelongsTo("supplier", "suppliers", "supplier_id"),
 		},
+		SearchFields: []string{"name", "description"},
 	})
 	//gofastr:allow(GOFASTR1901) a back-office customer list is staff-wide by design, every signed-in user here IS staff, so there is no per-user row to scope to. An app where customers own their own record sets Scope.OwnerField instead.
 	app.Entity("customers", entity.EntityConfig{
@@ -144,13 +161,15 @@ func registerEntities(app *framework.App) {
 			{Name: "email", Type: schema.String, Required: true, Max: new(float64(200))},
 			{Name: "vip", Type: schema.Bool},
 		},
+		SearchFields: []string{"name", "email"},
 	})
 }
 
 func seed(db *sql.DB) {
-	// A small amber square as a self-contained (CSP-safe data URI) demo photo so
-	// the Image field shows a real thumbnail without a storage backend.
-	const photo = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='80'%3E%3Crect%20width='80'%20height='80'%20fill='%23f0b429'/%3E%3C/svg%3E"
+	// A small amber square as a self-contained raster data URI demo photo, so
+	// the Image field shows a real thumbnail without a storage backend. (An
+	// SVG data URI would draw nothing: the image URL policy refuses it.)
+	const photo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGP4sEUTK2IYWhIAOitzQdKjHIAAAAAASUVORK5CYII="
 	products := []struct {
 		name, cat, desc string
 		price           float64
@@ -228,7 +247,7 @@ func loginSubmit(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: email, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/admin/e/products", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/entities/products", http.StatusSeeOther)
 }
 
 func logout(w http.ResponseWriter, r *http.Request) {
@@ -246,11 +265,11 @@ func (homeScreen) ScreenTitle() string { return "Backoffice" }
 func (homeScreen) RenderCtx(ctx context.Context) render.HTML {
 	href, label := "/login", "Sign in"
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		href, label = "/admin/e/products", "Open the admin"
+		href, label = "/admin/entities/products", "Open the admin"
 	}
 	return ui.Hero(ui.HeroConfig{
 		Title:    "Backoffice",
-		Subtitle: "An entity admin generated by battery/admin, rendered through the UI host. Products, suppliers, and customers are editable at /admin/e/<entity>.",
+		Subtitle: "An entity admin generated by battery/admin, rendered through the UI host. Products, suppliers, and customers are editable at /admin/entities/<entity>.",
 		Actions:  []render.HTML{ui.LinkButton(ui.LinkButtonConfig{Label: label, Href: href})},
 	})
 }

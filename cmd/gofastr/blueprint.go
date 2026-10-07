@@ -5135,13 +5135,6 @@ func renderBlueprintMain(bp Blueprint) string {
 		if adminRole == "" {
 			adminRole = "admin"
 		}
-		themeArg := ""
-		if blueprintHasTheme(bp.App) {
-			// Hand the admin back-office the same theme tokens AND @font-face
-			// rules the UI host uses, so the back-office renders coherently
-			// with the rest of the app. Same colors, same fonts.
-			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
-		}
 		// The admin battery reads audit_log for its audit page and appends
 		// to it on RBAC and module changes, but nothing else creates the
 		// table: ensure it here (idempotent, dialect-aware).
@@ -5150,9 +5143,11 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\tif db != nil {\n\t\tif err := framework.EnsureAuditTable(db, \"audit_log\"); err != nil {\n\t\t\tlog.Fatalf(\"audit table: %v\", err)\n\t\t}\n\t}\n")
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
-		// can wire Policy/GrantStore/Auth additively, no edits here.
-		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}\n",
-			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
+		// can wire Policy/GrantStore/Auth additively, no edits here. The
+		// admin draws through the app's UI host and its entity screens
+		// through appUI, so it inherits the app's theme and fonts.
+		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, UI: appUI, DB: db, AuditTable: \"audit_log\", AllEntities: true}\n",
+			adminPath, adminRole, bp.App.Admin.LoginPath))
 		sb.WriteString("\tapplyAdminBatteryConfigurators(&adminCfg)\n")
 		sb.WriteString("\tfwApp.RegisterBattery(admin.New(adminCfg))\n")
 	}

@@ -9,9 +9,8 @@ import (
 // rejectCrossSiteForm refuses a browser cross-site submission to a mutating
 // admin route and reports whether it wrote a response. The battery needs its
 // own posture because the CSRF middleware is an optional app-level add-on:
-// under the battery's own default mounting (RegisterRoutes = SecurityHeaders +
-// gate) a rendered-but-empty hidden _csrf input is the only token the screens
-// can carry, so the battery itself must refuse the forgeable cross-site shape.
+// an app that never installs it still serves the admin's ops posts, so the
+// battery itself must refuse the forgeable cross-site shape.
 //
 // The gate is handler.IsForgeableRequest, NOT the Content-Type alone: a form
 // with enctype="text/plain" and a bodyless fetch() POST are CORS-simple,
