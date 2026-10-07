@@ -560,6 +560,9 @@ the example website:
   spatial wrappers covering vertical stacking, horizontal flow, CSS
   grid, centring, flex filler, and padded surface. `Cluster` wraps by default;
   set `ClusterConfig.NoWrap` only for compact chrome guaranteed to fit.
+  `ClusterConfig.Shrink` lets a no-wrap row narrow below its content,
+  its last child taking the squeeze (a breadcrumb trail beside a menu
+  button).
 - `Card`: labelled `<section>` with header / body / footer slots
   and elevated / outlined / flat / interactive variants.
 - `OptimizedImage`: responsive `<picture>` with `srcset`, lazy

@@ -13,6 +13,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   verified state, roles), the theme choice, and, with `Config.Auth`, a
   change-password form posting to `POST <auth>/password` with per-field
   errors. A passwordless account is pointed at "Forgot password".
+- **`ui.ClusterConfig.Shrink`**: the row narrows below its content and
+  its last child takes the squeeze while the earlier children keep
+  their size: a toolbar's menu button beside a trail that ellipsizes.
 - **`ui.ContainerConfig.Start`**: pins the column to the inline start
   and drops the container's gutter, for a measure inside a frame that
   already pads its content.
@@ -1341,6 +1344,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A `CompactMobile` breadcrumb trail stays on one line on a phone.**
+  Its crumbs ellipsize, the parent before the current page, instead of
+  wrapping the trail over two lines of the toolbar. The admin's toolbar
+  gives the trail the room left after the menu button.
 - **`ui.PasswordInput` turns red when a submit is refused**: the
   form-errors runtime marks the input `aria-invalid`, and the shell
   now takes the danger border from it as it does from a server-rendered

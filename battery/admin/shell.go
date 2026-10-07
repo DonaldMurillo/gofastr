@@ -180,7 +180,7 @@ func (b *Battery) layout() *appui.Layout {
 		})
 		trigger, _ := ui.CommandPalette(b.paletteConfig(ctx))
 		toolbar := ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, Align: ui.AlignCenter, NoWrap: true},
-			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
+			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true, Shrink: true},
 				ui.SidebarDrawerTrigger(cfg), crumbs),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
 				trigger,

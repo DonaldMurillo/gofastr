@@ -69,6 +69,11 @@ func layoutCSS(_ style.Theme) string {
   align-items: center;
 }
 [data-cui-comp="ui-layout"].fui-cluster--nowrap { flex-wrap: nowrap; }
+/* Shrink: the row narrows below its content, the last child takes the
+   squeeze, and the earlier children keep their size. */
+:where([data-cui-comp="ui-layout"]).fui-cluster--shrink { min-inline-size: 0; }
+[data-cui-comp="ui-layout"].fui-cluster--shrink > :not(:last-child) { flex-shrink: 0; }
+[data-cui-comp="ui-layout"].fui-cluster--shrink > :last-child { min-inline-size: 0; }
 
 :where([data-cui-comp="ui-layout"]).fui-grid {
   display: grid;
