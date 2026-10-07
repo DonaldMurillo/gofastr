@@ -103,10 +103,13 @@
   function rawPush(t) { history.pushState({ cui: { s: stackId, k: t.key, i: t.cur } }, '', t.url); }
 
   // A fresh render of a layer, wearing the presentation the server
-  // chose for it. Each layer carries its own: a stack can mix them.
+  // chose for it. Each layer carries its own: a stack can mix them. The
+  // pane loads the stylesheet of each component it brings, as every
+  // other swap path does.
   function swap(t, res) {
     t.el.innerHTML = res.html;
     t.el.setAttribute('data-cui-intercept-as', res.as);
+    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(t.el);
   }
 
   function overlayHost() {

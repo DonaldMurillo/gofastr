@@ -53,7 +53,7 @@ func interceptOverlayBody(path, query string) string {
 	}
 	switch path {
 	case "/rec/a":
-		return `<div id="rec-a"><p>REC-A</p>` +
+		return `<div id="rec-a"><p>REC-A</p><span data-cui-comp="intercept-probe"></span>` +
 			`<input id="rec-note" value="" aria-label="note">` +
 			`<a id="a-to-rel" href="/rel/r1">related</a>` +
 			`<a id="a-sort" href="/rec/a?sort=name">sort</a>` + interceptPager +
@@ -103,6 +103,7 @@ func interceptFullPage(key string) string {
 	}
 	return `<!doctype html><html><head><title>stack</title>` +
 		`<script type="application/json" id="gofastr-routes">` + interceptStackRoutes + `</script>` +
+		`<script>window.__gofastr_catalog={"intercept-probe":{stylePath:"/css/intercept-probe.css"}};</script>` +
 		`</head><body><main id="` + id + `">` + body + `</main>` +
 		`<span id="ready">ready</span>` +
 		`<script src="/__gofastr/runtime.js"></script></body></html>`
@@ -137,6 +138,10 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/css/intercept-probe.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, `[data-cui-comp="intercept-probe"]{display:block;inline-size:7px}`)
+	})
 	mux.HandleFunc("/save", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)

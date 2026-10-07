@@ -1620,7 +1620,7 @@ node). The SSR host string-scans the final rendered HTML for those
 markers and emits **one** `<link rel="stylesheet">` in `<head>` for
 the page's exact set of components. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
-mount) and lazy-loads any new component's CSS as a `<link>` once
+mount, intercepted pane) and lazy-loads any new component's CSS as a `<link>` once
 per session, dedup'd by `data-cui-style="<name>"`. The browser
 caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
 under `immutable` headers in prod, content-addressed via the

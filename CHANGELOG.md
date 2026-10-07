@@ -1394,6 +1394,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **An intercepted drawer or sheet loads its components' stylesheets.**
+  A pane that brought a component the page under it did not carry drew
+  it unstyled: the admin's record drawer showed its money field's
+  currency on a line of its own and its read-only fields as bare text.
 - **A DataTable's body rows are 52px, as their rule says.** A cell's
   4px inset sat on top of the row height, so every row drew 60px; the
   cells now count it inside.
