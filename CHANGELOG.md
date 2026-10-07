@@ -1111,7 +1111,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   sent, so a form shows "is already in use" on the control instead of a
   bare conflict toast. Columns the caller did not send stay unnamed, a
   conflict on a `hidden` or `no_query` field the caller sent stays bare,
-  and the driver's text never reaches the body.
+  and the driver's text never reaches the body. A NOT NULL refusal on a
+  declared field answers 400 with "is required" on it instead of a 500.
 - **An intercepted drawer is wider**: half the viewport between 480px
   and 720px, up from a fixed 480px, so a record's form has room. Themes
   that set `--ui-intercept-drawer-w` keep their width.

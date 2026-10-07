@@ -1622,7 +1622,11 @@ A relation's message is "refers to a record that does not exist". A
 column the caller did not send (the owner column of a per-account
 index) is not named, and a conflict on a `hidden` or `no_query` field
 the caller sent stays bare, so a probe cannot learn which value exists. SQLite's foreign-key refusal names no column, so on
-SQLite it stays bare too.
+SQLite it stays bare too. A NOT NULL refusal on a declared field (a
+column the database holds `NOT NULL` that the entity does not mark
+`required`) answers `400` in the same shape with "is required" on it,
+instead of a `500`; on a `hidden` column the server fills, it stays a
+`500`, since the caller cannot fix it.
 A path no route ever owned — `/api/anything/else`, including on apps with
 no DB and therefore no CRUD routes — answers `404` with an RFC 9457
 `application/problem+json` document (`type`/`title`/`status`/`detail`)

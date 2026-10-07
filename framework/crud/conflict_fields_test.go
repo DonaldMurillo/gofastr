@@ -93,6 +93,58 @@ func TestConflictOnSensitiveFieldIsBare(t *testing.T) {
 	}
 }
 
+// A column the database holds NOT NULL that the entity does not mark
+// Required is refused by the driver; the answer is a 400 naming the
+// field, not a 500. A hidden column's refusal is the server's own bug
+// and stays a 500.
+func TestNotNullNamesField(t *testing.T) {
+	for name, c := range map[string]struct {
+		hidden bool
+		code   int
+		fields any
+	}{
+		"plain":  {false, http.StatusBadRequest, map[string]any{"title": []any{"is required"}}},
+		"hidden": {true, http.StatusInternalServerError, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dbc := setupDB(t, `CREATE TABLE nn (id TEXT PRIMARY KEY, title TEXT NOT NULL, memo TEXT)`)
+			ent := entity.Define("nn", entity.EntityConfig{
+				Name: "nn", Table: "nn",
+				Fields: []schema.Field{{Name: "title", Type: schema.String, Hidden: c.hidden}, {Name: "memo", Type: schema.String}},
+			}.WithTimestamps(false))
+			ent.SetDB(dbc)
+			req := withTestUser(httptest.NewRequest("POST", "/nn", strings.NewReader(`{"memo":"x"}`)), "u1")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			NewCrudHandler(ent, dbc).WithJSONCase(CaseSnake).Create()(rec, req)
+			var env map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatalf("body is not JSON: %s", rec.Body.String())
+			}
+			if rec.Code != c.code || !reflect.DeepEqual(env["fields"], c.fields) {
+				t.Errorf("= %d %s, want %d with fields %v", rec.Code, rec.Body.String(), c.code, c.fields)
+			}
+			if strings.Contains(rec.Body.String(), "NOT NULL") {
+				t.Errorf("driver text leaked: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestNotNullColumnByDriver(t *testing.T) {
+	for msg, want := range map[string]string{
+		"constraint failed: NOT NULL constraint failed: inv.title (1299)":                                     "title",
+		`ERROR: null value in column "title" of relation "inv" violates not-null constraint (SQLSTATE 23502)`: "title",
+		`pq: null value in column "title" violates not-null constraint`:                                       "title",
+		"Error 1048 (23000): Column 'title' cannot be null":                                                   "title",
+		"NOT NULL constraint failed: other.title":                                                             "",
+	} {
+		if got := notNullColumn("inv", msg); got != want {
+			t.Errorf("%s\n got %q, want %q", msg, got, want)
+		}
+	}
+}
+
 func TestConflictColumnsByDriver(t *testing.T) {
 	ent := entity.Define("inv", entity.EntityConfig{
 		Name: "inv", Table: "inv",

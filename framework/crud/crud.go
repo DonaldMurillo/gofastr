@@ -1041,7 +1041,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, ch.withConflictFields(err, sent))
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1134,7 +1134,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, ch.withConflictFields(err, sent))
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1319,6 +1319,18 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
 		writeConflict(w, err, "conflict: the record is referenced by, or references, another record")
+		return
+	}
+	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
+		// A NOT NULL refusal on a declared field is the caller's to
+		// fix: the validation shape, naming it (conflict_fields.go).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   "validation failed",
+			"success": false,
+			"fields":  cf.fields,
+		})
 		return
 	}
 	// Unrecognised error → 500 with a generic message. Returning

@@ -22,34 +22,50 @@ import (
 // of a per-account index, hidden or not) are not theirs to fix and are
 // not named. A Hidden or NoQuery field the caller sent is sensitive: a
 // conflict on it stays bare, so a probe cannot learn which value exists.
+//
+// A NOT NULL refusal on a declared field (a column the database holds
+// NOT NULL that the entity does not mark Required) answers 400 with
+// "is required" on it, sent or not: it says nothing about stored rows.
+// On a Hidden column the server fills, it is the server's own bug and
+// stays a 500.
 
 const (
 	msgUniqueTaken    = "is already in use"
 	msgMissingTarget  = "refers to a record that does not exist"
+	msgRequired       = "is required"
 	sqliteUniqueLead  = "UNIQUE constraint failed: "
+	sqliteNotNullLead = "NOT NULL constraint failed: "
+	pgNotNullLead     = `null value in column "`
+	mysqlNotNullLead  = "Column '"
 	pgForeignKeyLead  = "insert or update on table "
 	mysqlForeignChild = "Cannot add or update a child row"
 )
 
-// conflictFieldsError carries the fields a constraint refusal is about
+// constraintFieldsError carries the fields a constraint refusal is about
 // to writeCRUDError, which keeps its order of arms.
-type conflictFieldsError struct {
+type constraintFieldsError struct {
 	err    error
 	fields map[string][]string
 }
 
-func (e *conflictFieldsError) Error() string { return e.err.Error() }
-func (e *conflictFieldsError) Unwrap() error { return e.err }
+func (e *constraintFieldsError) Error() string { return e.err.Error() }
+func (e *constraintFieldsError) Unwrap() error { return e.err }
 
-// withConflictFields wraps a constraint refusal with the sent fields it
+// withConstraintFields wraps a constraint refusal with the sent fields it
 // names; any other error, or one it can name no field for, passes
 // through unchanged. sent holds the request body's keys (columns, or
 // wire keys), taken before the write ran.
-func (ch *CrudHandler) withConflictFields(err error, sent map[string]bool) error {
+func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) error {
 	msg := msgUniqueTaken
 	switch {
 	case err == nil:
 		return nil
+	case isNotNullViolation(err):
+		c := notNullColumn(ch.Entity.Config.Table, err.Error())
+		if f, declared := fieldNamed(ch.Entity, c); !declared || f.Hidden {
+			return err
+		}
+		return &constraintFieldsError{err: err, fields: map[string][]string{ch.convertKey(c): {msgRequired}}}
 	case isUniqueViolation(err):
 	case isForeignKeyViolation(err):
 		msg = msgMissingTarget
@@ -72,13 +88,13 @@ func (ch *CrudHandler) withConflictFields(err error, sent map[string]bool) error
 	if len(fields) == 0 {
 		return err
 	}
-	return &conflictFieldsError{err: err, fields: fields}
+	return &constraintFieldsError{err: err, fields: fields}
 }
 
 // writeConflict answers a constraint refusal: 409 with the generic
 // message, plus the named fields when the error carries them.
 func writeConflict(w http.ResponseWriter, err error, message string) {
-	cf, ok := errors.AsType[*conflictFieldsError](err)
+	cf, ok := errors.AsType[*constraintFieldsError](err)
 	if !ok {
 		writeJSONError(w, http.StatusConflict, message)
 		return
@@ -193,6 +209,43 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 		}
 	}
 	return nil
+}
+
+// isNotNullViolation reports whether err is a NOT NULL refusal: SQLite
+// (extended code 1299), Postgres SQLSTATE 23502, MySQL error 1048.
+func isNotNullViolation(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, sqliteNotNullLead) || strings.Contains(msg, "violates not-null constraint") ||
+		strings.Contains(msg, "Error 1048")
+}
+
+// notNullColumn returns the column a NOT NULL refusal on table names, or
+// "" when it names another table's or none. SQLite writes table.col,
+// Postgres the column and (since 12) its relation, MySQL the column.
+func notNullColumn(table, msg string) string {
+	if i := strings.Index(msg, sqliteNotNullLead); i >= 0 {
+		rest := msg[i+len(sqliteNotNullLead):]
+		if j := strings.Index(rest, " ("); j >= 0 {
+			rest = rest[:j]
+		}
+		col, ok := strings.CutPrefix(strings.TrimSpace(rest), table+".")
+		if !ok {
+			return ""
+		}
+		return col
+	}
+	if i := strings.Index(msg, pgNotNullLead); i >= 0 {
+		col, rest, ok := strings.Cut(msg[i+len(pgNotNullLead):], `"`)
+		if !ok || (strings.Contains(rest, ` of relation "`) && !strings.Contains(rest, ` of relation "`+table+`"`)) {
+			return ""
+		}
+		return col
+	}
+	if i := strings.Index(msg, mysqlNotNullLead); i >= 0 && strings.Contains(msg, "cannot be null") {
+		col, _, _ := strings.Cut(msg[i+len(mysqlNotNullLead):], "'")
+		return col
+	}
+	return ""
 }
 
 func sameSet(a, b []string) bool {
