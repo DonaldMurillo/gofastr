@@ -1324,6 +1324,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **An invalid control inside a `ui.InputGroup` marks the whole group.**
+  The input drew its own danger ring inside the group, so a `$` prefix
+  sat outside the red box; the group now takes the error ring the way it
+  takes the focus ring.
+- **A field's error message starts with a capital.** Server messages are
+  fragments written to follow the field name ("is required"); under
+  the label they now read "Is required".
 - **A menu or dropdown opened near the viewport's edge stays on
   screen.** Its panel hangs from one edge of the trigger, and a trigger
   at the end of a row opened it past the viewport (a phone's row menu,

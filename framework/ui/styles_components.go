@@ -518,6 +518,11 @@ func formFieldCSS(_ style.Theme) string {
    a live error unstyled. */
 .fui-field__error,
 .fui-field > [data-hui-field-error] { color: var(--color-danger, #DC2626); }
+/* A server's message is a fragment written to follow the field's name
+   ("is required"); under the label it starts the line, so its first
+   letter is capitalized, by the page's own lang. */
+.fui-field__error::first-letter,
+.fui-field > [data-hui-field-error]::first-letter { text-transform: uppercase; }
 /* A reserved error node (headless.FieldProps.ReserveError) ships empty
    so a script can fill it without re-rendering. Empty, it must not
    take a grid row: the row gap under every reserved field would be

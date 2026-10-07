@@ -100,6 +100,18 @@ func inputGroupCSS(_ style.Theme) string {
   min-width: 0;
 }
 .fui-input-group > input::placeholder { color: var(--color-text-subtle); }
+/* So is the error state: the group draws the danger ring an invalid
+   input would, and the input inside draws none, or the addon sits
+   outside the red box. The input selectors outweigh the control's own
+   [aria-invalid] rule, whose sheet may load after this one. */
+.fui-input-group:has(> [aria-invalid="true"]) {
+  border-color: var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+}
+.fui-input-group > input,
+.fui-input-group > select,
+.fui-input-group > input[aria-invalid="true"],
+.fui-input-group > select[aria-invalid="true"] { box-shadow: none; }
 .fui-input-group > input:focus-visible,
 .fui-input-group > select:focus-visible {
   outline: none;
