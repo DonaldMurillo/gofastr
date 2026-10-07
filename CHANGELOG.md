@@ -33,7 +33,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   hover), the record's entity, muted, and a live record's title as a
   link to its screen. A deleted one is named by the title the audit row
   stored, as on the Audit log page, and an edit lists what it changed
-  under its line. Underneath:
+  under its line. A bulk run reads "deleted 2 payments in bulk"
+  (`i18nui.KeyAdminActivityBulkLine`). Underneath:
   `ui.TimelineEvent.Lead` (and `headless.Event.Lead`), headline markup
   in place of `Title`, and `i18nui.TVarsHTML`, which fills a translated
   line with markup values in one pass and escapes the text around them.

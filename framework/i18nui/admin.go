@@ -74,6 +74,7 @@ const (
 	// One recent-activity line and its parts: who did what to which
 	// record, and how long ago.
 	KeyAdminActivityLine      Key = "ui.admin.activityLine"      // "{actor} {verb} {record}"
+	KeyAdminActivityBulkLine  Key = "ui.admin.activityBulkLine"  // "{actor} {verb} {count} {entity} in bulk"
 	KeyAdminVerbCreate        Key = "ui.admin.verbCreate"        // "created"
 	KeyAdminVerbUpdate        Key = "ui.admin.verbUpdate"        // "updated"
 	KeyAdminVerbDelete        Key = "ui.admin.verbDelete"        // "deleted"
@@ -250,6 +251,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminAttentionClear:    "Nothing needs attention.",
 	KeyAdminAttentionList:     "{entity} · {view}",
 	KeyAdminActivityLine:      "{actor} {verb} {record}",
+	KeyAdminActivityBulkLine:  "{actor} {verb} {count} {entity} in bulk",
 	KeyAdminVerbCreate:        "created",
 	KeyAdminVerbUpdate:        "updated",
 	KeyAdminVerbDelete:        "deleted",

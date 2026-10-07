@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +140,46 @@ func TestRecentActivityListsChanges(t *testing.T) {
 		if !strings.Contains(list, want) {
 			t.Errorf("the edit's change list lacks %q:\n%s", want, list)
 		}
+	}
+}
+
+// A bulk run's summary row says what the run did and to how many records
+// ("deleted 2 posts in bulk"); a set or a move reads as an update. An
+// app's own action, a run that went through on nothing, and a row whose
+// detail does not parse keep the generic line.
+func TestRecentActivityNamesBulkRuns(t *testing.T) {
+	named := []string{
+		`{"action":"delete","count":2,"done":2,"skipped":0,"failed":0,"status":"done"}`,
+		`{"action":"restore","count":3,"done":1,"skipped":2,"failed":0,"status":"done"}`,
+		`{"action":"set:status:published","count":4,"done":4,"skipped":0,"failed":0,"status":"done"}`,
+		`{"action":"move:publish","count":2,"done":2,"skipped":0,"failed":0,"status":"done"}`,
+	}
+	generic := []string{
+		`{"action":"archive","count":2,"done":2,"skipped":0,"failed":0,"status":"done"}`,
+		`{"action":"delete","count":2,"done":0,"skipped":2,"failed":0,"status":"done"}`,
+		`not json`,
+	}
+	feed := func(diffs []string) string {
+		x, userID := activityEnv(t)
+		now := time.Now().UTC()
+		for i, d := range diffs {
+			id := "b" + strconv.Itoa(i)
+			x.seedAuditDiff(id, "", "posts", "bulk", "run-"+id, userID, now.Add(-time.Duration(i)*time.Minute), d)
+		}
+		return get(x.as(theAdmin), "/admin").Body.String()
+	}
+	body := feed(named)
+	for _, want := range []string{
+		"</strong> deleted 2 posts in bulk",
+		"</strong> restored 1 post in bulk",
+		"</strong> updated 4 posts in bulk",
+		"</strong> updated 2 posts in bulk",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("recent activity lacks %q:\n%s", want, body)
+		}
+	}
+	if body := feed(generic); strings.Count(body, "ran a bulk action on") != len(generic) {
+		t.Errorf("an app action, an empty run or a bad detail lost the generic line:\n%s", body)
 	}
 }

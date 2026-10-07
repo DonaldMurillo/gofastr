@@ -2,7 +2,9 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -66,6 +68,9 @@ func actorLabel(ctx context.Context, names map[string]string, r auditRow) string
 // translated line, and the line is filled in one pass, so a title
 // holding a placeholder stays text.
 func (b *Battery) activityLead(ctx context.Context, names map[string]string, r auditRow, before, after map[string]any) render.HTML {
+	if line := b.bulkLead(ctx, names, r); line != "" {
+		return line
+	}
 	kind, label, href := b.activityRecord(ctx, r, before, after)
 	record := render.Text(label)
 	if href != "" {
@@ -110,6 +115,50 @@ func (b *Battery) activityRecord(ctx context.Context, r auditRow, before, after 
 		return b.singular(ctx, e), t, ""
 	}
 	return "", b.singular(ctx, e), ""
+}
+
+// bulkLead is a bulk run's summary row as a sentence, "**ada** deleted
+// 2 payments in bulk", in the bulk toast's noun forms: a delete or a
+// restore by its own verb, a set or a move as an update, counting the
+// records it went through on. It is "" for any other row, an exposed
+// entity's or not, an app's own action, a run that went through on
+// nothing and a detail that does not parse: those keep the generic line.
+func (b *Battery) bulkLead(ctx context.Context, names map[string]string, r auditRow) render.HTML {
+	e, ok := b.exposedNamed(r.Entity)
+	if r.Op != "bulk" || !ok || !r.Diff.Valid {
+		return ""
+	}
+	var d struct {
+		Action string `json:"action"`
+		Done   int    `json:"done"`
+	}
+	if json.Unmarshal([]byte(r.Diff.String), &d) != nil || d.Done <= 0 {
+		return ""
+	}
+	var verb i18nui.Key
+	switch {
+	case d.Action == "delete":
+		verb = i18nui.KeyAdminVerbDelete
+	case d.Action == "restore":
+		verb = i18nui.KeyAdminVerbRestore
+	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
+		verb = i18nui.KeyAdminVerbUpdate
+	default:
+		return ""
+	}
+	display := ""
+	if dc := e.Config.Display; dc != nil {
+		display = dc.Singular
+		if d.Done != 1 {
+			display = dc.Plural
+		}
+	}
+	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityBulkLine, map[string]render.HTML{
+		"actor":  activityActor(ctx, names, r),
+		"verb":   render.Text(i18nui.T(ctx, verb)),
+		"count":  render.Text(strconv.Itoa(d.Done)),
+		"entity": render.Text(i18nui.EntityNoun(ctx, nil, e.GetName(), display, d.Done != 1)),
+	})
 }
 
 // activityChanges is what one row's edit changed, drawn under its line
