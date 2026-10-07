@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -52,8 +53,8 @@ func TestWithAPIPathMovesWrites(t *testing.T) {
 	}
 }
 
-// The derived UI keeps the host's bulk backing, so a queued run still
-// finds its snapshot store.
+// The derived UI keeps the host's bulk backing and its clock, so a queued
+// run still finds its snapshot store and can lease and settle.
 func TestWithAPIPathKeepsBulkHost(t *testing.T) {
 	x := newTestHost(t, invoiceEntities(), invoiceRows())
 	mb := newMemBulk()
@@ -67,5 +68,8 @@ func TestWithAPIPathKeepsBulkHost(t *testing.T) {
 	}
 	if p, _ := d.host.APIPath(nil); p != "/admin/api/invoices" {
 		t.Fatalf("derived bulk-backed UI APIPath = %q", p)
+	}
+	if _, err := d.PruneBulkJobs(context.Background(), BulkRetention); err != nil {
+		t.Fatalf("derived UI PruneBulkJobs: %v", err)
 	}
 }

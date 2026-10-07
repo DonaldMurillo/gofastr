@@ -121,9 +121,9 @@ func New(h Host, ext Extensions) (*UI, error) {
 func (u *UI) WithAPIPath(path func(e *entity.Entity) (string, bool)) *UI {
 	h := apiPathHost{Host: u.host, path: path}
 	if bh, ok := u.host.(BulkHost); ok {
-		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext}
+		return &UI{host: apiPathBulkHost{apiPathHost: h, BulkHost: bh}, ext: u.ext, now: u.now}
 	}
-	return &UI{host: h, ext: u.ext}
+	return &UI{host: h, ext: u.ext, now: u.now}
 }
 
 // apiPathHost is a Host whose write routes live elsewhere.
