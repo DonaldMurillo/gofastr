@@ -49,7 +49,7 @@ func TestFilterToolbarDropdownLayout(t *testing.T) {
 		t.Errorf("want exactly one Apply:\n%s", out)
 	}
 	// One facet set plus one applied extra.
-	if !strings.Contains(out, `<span class="fui-dropdown__count" data-cui-internal="">2</span>`) {
+	if !strings.Contains(out, `<span class="fui-dropmenu__count" data-cui-internal="">2</span>`) {
 		t.Errorf("the Filters badge does not count 2:\n%s", out)
 	}
 	if t2 := strings.Index(out, "fui-filter-toolbar__tools"); t2 < strings.Index(out, "fui-filter-toolbar__filters") {

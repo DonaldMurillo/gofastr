@@ -150,7 +150,7 @@ func TestAuditFilterFormDraws(t *testing.T) {
 	if !strings.Contains(body, "fui-filter-toolbar--dropdown") || strings.Count(body, "fui-filter-toolbar__apply") != 1 {
 		t.Errorf("the audit filters are not one Filters dropdown:\n%s", body)
 	}
-	if !strings.Contains(body, `<span class="fui-dropdown__count" data-cui-internal="">3</span>`) {
+	if !strings.Contains(body, `<span class="fui-dropmenu__count" data-cui-internal="">3</span>`) {
 		t.Errorf("the Filters badge does not count the three filters set:\n%s", body)
 	}
 }

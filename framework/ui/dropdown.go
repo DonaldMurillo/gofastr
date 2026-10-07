@@ -83,9 +83,9 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 		}
 		trigger = append(trigger, Icon(cfg.Icon, IconConfig{Size: "16"}))
 	}
-	trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropdown__label"}, render.Text(cfg.Label)))
+	trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropmenu__label"}, render.Text(cfg.Label)))
 	if cfg.Count > 0 {
-		trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropdown__count"},
+		trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropmenu__count"},
 			render.Text(strconv.Itoa(cfg.Count))))
 	}
 	out := headless.Disclosure(headless.DisclosureProps{
@@ -98,9 +98,9 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "open", "class"),
 	}, headless.Classes{
-		headless.PartRoot:    cls("fui-dropdown fui-dropdown--"+string(align), cfg.Class),
-		headless.PartSummary: "fui-dropdown__trigger",
-		headless.PartPanel:   "fui-dropdown__panel",
+		headless.PartRoot:    cls("fui-dropmenu fui-dropmenu--"+string(align), cfg.Class),
+		headless.PartSummary: "fui-dropmenu__trigger",
+		headless.PartPanel:   "fui-dropmenu__panel",
 	})
 	return dropdownStyle.WrapHTML(out)
 }
@@ -114,11 +114,11 @@ var dropdownStyle = registry.RegisterStyle("ui-dropdown", dropdownCSS)
 // (28rem) bound the panel; the viewport always wins.
 // --ui-dropdown-count-size (1.25rem) sizes the count badge.
 func dropdownCSS(_ style.Theme) string {
-	return `:where([data-cui-comp="ui-dropdown"]).fui-dropdown {
+	return `:where([data-cui-comp="ui-dropdown"]).fui-dropmenu {
   position: relative;
   display: inline-block;
 }
-[data-cui-comp="ui-dropdown"] > summary.fui-dropdown__trigger {
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -138,17 +138,17 @@ func dropdownCSS(_ style.Theme) string {
   min-height: var(--spacing-touch-target, 44px);
   transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
-[data-cui-comp="ui-dropdown"] > summary.fui-dropdown__trigger::-webkit-details-marker { display: none; }
-[data-cui-comp="ui-dropdown"] > summary.fui-dropdown__trigger:hover,
-[data-cui-comp="ui-dropdown"][open] > summary.fui-dropdown__trigger {
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger::-webkit-details-marker { display: none; }
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger:hover,
+[data-cui-comp="ui-dropdown"][open] > summary.fui-dropmenu__trigger {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-cui-comp="ui-dropdown"] > summary.fui-dropdown__trigger:focus-visible {
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-[data-cui-comp="ui-dropdown"] .fui-dropdown__trigger svg { flex: none; color: var(--color-text-muted); }
-[data-cui-comp="ui-dropdown"] .fui-dropdown__count {
+[data-cui-comp="ui-dropdown"] .fui-dropmenu__trigger svg { flex: none; color: var(--color-text-muted); }
+[data-cui-comp="ui-dropdown"] .fui-dropmenu__count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -161,7 +161,7 @@ func dropdownCSS(_ style.Theme) string {
   line-height: var(--ui-dropdown-count-size, 1.25rem);
   font-variant-numeric: tabular-nums;
 }
-[data-cui-comp="ui-dropdown"] > .fui-dropdown__panel {
+[data-cui-comp="ui-dropdown"] > .fui-dropmenu__panel {
   /* headless-disclosure shifts a panel that would leave the viewport. */
   translate: var(--hui-panel-shift, 0);
   position: absolute;
@@ -176,15 +176,15 @@ func dropdownCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 10px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
-  animation: fui-dropdown-in var(--duration-dropdown-enter, 120ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  animation: fui-dropmenu-in var(--duration-dropdown-enter, 120ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
-[data-cui-comp="ui-dropdown"].fui-dropdown--start > .fui-dropdown__panel { inset-inline-start: 0; }
-[data-cui-comp="ui-dropdown"].fui-dropdown--end > .fui-dropdown__panel { inset-inline-end: 0; }
-@keyframes fui-dropdown-in {
+[data-cui-comp="ui-dropdown"].fui-dropmenu--start > .fui-dropmenu__panel { inset-inline-start: 0; }
+[data-cui-comp="ui-dropdown"].fui-dropmenu--end > .fui-dropmenu__panel { inset-inline-end: 0; }
+@keyframes fui-dropmenu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-cui-comp="ui-dropdown"] > .fui-dropdown__panel { animation: none; }
+  [data-cui-comp="ui-dropdown"] > .fui-dropmenu__panel { animation: none; }
 }
 `
 }

@@ -98,7 +98,7 @@ func TestListToolsShareOneRow(t *testing.T) {
 	for _, want := range []string{
 		`name="filter"`,              // the typed filter
 		`data-hui-menu=`,             // the columns menu
-		`class="fui-dropdown__count`, // the Filters badge
+		`class="fui-dropmenu__count`, // the Filters badge
 	} {
 		if !strings.Contains(form, want) {
 			t.Errorf("the toolbar form is missing %q:\n%s", want, form)

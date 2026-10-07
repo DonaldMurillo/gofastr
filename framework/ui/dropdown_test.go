@@ -20,9 +20,9 @@ func TestDropdownIsADismissablePopup(t *testing.T) {
 	for _, want := range []string{
 		`data-cui-comp="ui-dropdown"`,
 		`data-hui-disclosure-dismiss`,
-		`fui-dropdown fui-dropdown--end`,
-		`<span class="fui-dropdown__label" data-cui-internal="">Filters</span>`,
-		`<span class="fui-dropdown__count" data-cui-internal="">2</span>`,
+		`fui-dropmenu fui-dropmenu--end`,
+		`<span class="fui-dropmenu__label" data-cui-internal="">Filters</span>`,
+		`<span class="fui-dropmenu__count" data-cui-internal="">2</span>`,
 		`<input name="q" aria-label="q">`,
 		`<svg`,
 	} {
@@ -38,10 +38,10 @@ func TestDropdownIsADismissablePopup(t *testing.T) {
 // No count badge for zero, and the start edge is the default.
 func TestDropdownDefaults(t *testing.T) {
 	out := string(Dropdown(DropdownConfig{Label: "Save view", Content: render.Text("x")}))
-	if strings.Contains(out, "fui-dropdown__count") {
+	if strings.Contains(out, "fui-dropmenu__count") {
 		t.Errorf("a zero count drew a badge:\n%s", out)
 	}
-	if !strings.Contains(out, "fui-dropdown--start") {
+	if !strings.Contains(out, "fui-dropmenu--start") {
 		t.Errorf("the default edge is not start:\n%s", out)
 	}
 }
@@ -54,7 +54,7 @@ func TestDropdownOwnsOpenAndClass(t *testing.T) {
 	if strings.Contains(out, "theirs") || strings.Contains(out, " open") {
 		t.Errorf("ExtraAttrs took an owned key:\n%s", out)
 	}
-	for _, want := range []string{"fui-dropdown--start mine", `data-test="d"`} {
+	for _, want := range []string{"fui-dropmenu--start mine", `data-test="d"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dropdown missing %q:\n%s", want, out)
 		}
