@@ -25,6 +25,10 @@ import (
 // productForm is the product create and record form.
 const productForm = `form#eui-products-form`
 
+// productSave is the record header's Save, which submits productForm
+// through its form attribute from outside it.
+const productSave = `button#eui-products-save[form="eui-products-form"]`
+
 func backofficeServer(t *testing.T) string {
 	t.Helper()
 	app := setupApp(":memory:")
@@ -138,8 +142,11 @@ func TestBackofficeE2E_CreateFlow(t *testing.T) {
 		chromedp.WaitVisible(productForm+` input[name="name"]`, chromedp.ByQuery),
 		chromedp.SendKeys(productForm+` input[name="name"]`, name, chromedp.ByQuery),
 		chromedp.SendKeys(productForm+` input[name="price"]`, "42", chromedp.ByQuery),
-		chromedp.Click(productForm+` button[type=submit]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`table`, chromedp.ByQuery), // navigated back to the list
+		chromedp.Click(productSave, chromedp.ByQuery),
+		// The create form opens as a drawer over the list, so the table
+		// is visible before the save lands; the drawer closing is the
+		// signal. Navigating sooner meets the dirty form's leave guard.
+		chromedp.WaitNotPresent(productForm, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("create flow: %v", err)
 	}

@@ -162,8 +162,11 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 		chromedp.SetValue(picker, acmeID(t, ctx, picker), chromedp.ByQuery),
 		chromedp.SendKeys(productForm+` input[name="name"]`, "Relation Widget", chromedp.ByQuery),
 		chromedp.SendKeys(productForm+` input[name="price"]`, "10", chromedp.ByQuery),
-		chromedp.Click(productForm+` button[type=submit]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`table`, chromedp.ByQuery),
+		chromedp.Click(productSave, chromedp.ByQuery),
+		// The create form opens as a drawer over the list, so the table
+		// is visible before the save lands; the drawer closing is the
+		// signal. Navigating sooner meets the dirty form's leave guard.
+		chromedp.WaitNotPresent(productForm, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("submit with relation: %v", err)
 	}
