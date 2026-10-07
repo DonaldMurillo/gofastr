@@ -24,13 +24,20 @@ import (
 //
 // Close carries data-cui-intercept-close, so it is the same history
 // move as Escape and the backdrop, and a form with unsaved edits asks
-// first.
+// first. Prev and Next carry data-cui-intercept-swap: the neighbour
+// renders in the same layer, one history entry per step.
 
 // DrawerBarConfig configures the bar.
 type DrawerBarConfig struct {
 	// Path is the layer's own URL path, shown in mono and truncated
 	// from the end when it does not fit. Required.
 	Path string
+	// Prev and Next, when either is set, add up and down icon links
+	// after the path that step to the neighbouring layer in place: a
+	// record drawer's previous and next record in the list under it.
+	// Root-relative paths. At an end of the list the empty one draws
+	// disabled, so the bar keeps its shape.
+	Prev, Next string
 	// CopyURL, when set, adds an icon button that copies it: the
 	// layer's absolute address, so a reader can share the record.
 	CopyURL string
@@ -68,6 +75,11 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 		}),
 		html.Code(html.TextConfig{Class: "fui-drawer-bar__path", ExtraAttrs: html.Attrs{"title": cfg.Path}}, render.Text(cfg.Path)),
 	}
+	if cfg.Prev != "" || cfg.Next != "" {
+		kids = append(kids,
+			drawerStep(ctx, cfg.Prev, "chevron-up", i18nui.KeyDrawerPrev),
+			drawerStep(ctx, cfg.Next, "chevron-down", i18nui.KeyDrawerNext))
+	}
 	if cfg.CopyURL != "" {
 		// One id per path: a stack never holds two layers on one path
 		// (a link to the top layer's own path re-renders it), so the
@@ -103,6 +115,24 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 	// The bar's own controls are internal; Actions stay the caller's.
 	kids = append([]render.HTML{headless.Own(render.Join(kids...))}, cfg.Actions...)
 	return drawerBarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-drawer-bar", ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, kids...))
+}
+
+// drawerStep is one step control: a link that swaps href into the
+// layer, or with no href the same control disabled.
+func drawerStep(ctx context.Context, href, icon string, key i18nui.Key) render.HTML {
+	label := i18nui.T(ctx, key)
+	if href == "" {
+		return Button(ButtonConfig{Label: label, Icon: icon, IconOnly: true, Variant: ButtonGhost, Size: ButtonSizeSmall, Disabled: true})
+	}
+	return LinkButton(LinkButtonConfig{
+		Label:      label,
+		Href:       href,
+		Icon:       icon,
+		IconOnly:   true,
+		Variant:    ButtonGhost,
+		Size:       ButtonSizeSmall,
+		ExtraAttrs: html.Attrs{"data-cui-intercept-swap": ""},
+	})
 }
 
 var drawerBarStyle = registry.RegisterStyle("ui-drawer-bar", drawerBarCSS)

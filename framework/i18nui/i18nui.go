@@ -201,6 +201,8 @@ const (
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
 	KeyCopyLink        Key = "ui.copy.link"
 	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
+	KeyDrawerPrev      Key = "ui.drawer.prev"
+	KeyDrawerNext      Key = "ui.drawer.next"
 
 	// Ago: how long before now, the way an activity feed says it.
 	KeyAgoNow     Key = "ui.ago.now"     // "just now"
@@ -463,6 +465,8 @@ var Defaults = map[Key]string{
 	KeyCopyToClipboard: "Copy to clipboard",
 	KeyCopyLink:        "Copy link",
 	KeyDrawerOpenPage:  "Open as page",
+	KeyDrawerPrev:      "Previous record",
+	KeyDrawerNext:      "Next record",
 
 	KeyAgoNow:     "just now",
 	KeyAgoMinutes: "{n}m ago",
@@ -947,7 +951,7 @@ func AllKeys() []Key {
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
 		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
-		KeyDrawerOpenPage,
+		KeyDrawerOpenPage, KeyDrawerPrev, KeyDrawerNext,
 		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
 		KeyChangeFrom, KeyChangeTo,
 		KeyProgressLabel, KeyTagRemove,

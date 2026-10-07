@@ -78,14 +78,15 @@ type ButtonProps struct {
 // linkLegal reports whether an Action key may ride an anchor: exactly
 // the wiring keys that say where a click goes — opening a widget,
 // deep-linking its data, writing the URL, prefetching a module,
-// leaving an intercept stack for the page. The
+// leaving an intercept stack for the page, swapping the target into
+// the top intercept layer. The
 // rest of the vocabulary needs a button, because a link navigates and
 // a button acts: a request, a pane, a toast or a local mutation on an
 // anchor is a click the href and the runtime would both answer.
 func linkLegal(key string) bool {
 	switch key {
 	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch",
-		"data-cui-intercept-page":
+		"data-cui-intercept-page", "data-cui-intercept-swap":
 		return true
 	}
 	return false
@@ -163,7 +164,7 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// it "Done".
 			out[k] = v
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
-			"data-cui-intercept-close", "data-cui-intercept-page":
+			"data-cui-intercept-close", "data-cui-intercept-page", "data-cui-intercept-swap":
 			// Presence is the value. intercept-close closes the
 			// enclosing intercept overlay — the runtime's own family
 			// (fragments.go owns it), carried the same way a page
@@ -269,8 +270,10 @@ func Button(p ButtonProps, s Classes) render.HTML {
 		panic("headless: Button needs Label, or AriaLabel for an icon-only button")
 	}
 	action := actionAttrs(p.Action)
-	if _, ok := action["data-cui-intercept-page"]; ok && p.Href == "" {
-		panic("headless: Button carries data-cui-intercept-page with no Href — it opens a link's target as the page, and a button has no target")
+	for _, k := range []string{"data-cui-intercept-page", "data-cui-intercept-swap"} {
+		if _, ok := action[k]; ok && p.Href == "" {
+			panic("headless: Button carries " + k + " with no Href — it acts on a link's target, and a button has no target")
+		}
 	}
 	if p.Href != "" {
 		for k := range action {

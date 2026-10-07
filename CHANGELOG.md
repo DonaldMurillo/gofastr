@@ -193,7 +193,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   scrolls. The open-as-page link carries the new
   `data-cui-intercept-page`: the stack closes and the router loads the
   link's target over the top layer's history entry, so Back returns to
-  the page under the drawer.
+  the page under the drawer. `Prev` and `Next` draw up and down icon
+  links after the path, marked with the new `data-cui-intercept-swap`:
+  the target renders in the same layer, one history entry per step, so
+  Back steps back inside the drawer and closing it consumes them all.
 - **`app.OverlayFromContext`** reports whether a render is an
   intercepted overlay and which presentation, so a screen draws a
   layer's chrome only in the layer. Each layer's inset is

@@ -143,18 +143,22 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 	}
 }
 
-// data-cui-intercept-page says where a link goes (its target, as the
-// page), so it rides an anchor; a button has no target to open, so it
-// is refused there.
-func TestButtonInterceptPageIsLinkOnly(t *testing.T) {
-	got := Button(ButtonProps{Label: "Open as page", Href: "/rec/1", Action: html.Attrs{"data-cui-intercept-page": ""}}, nil)
-	has(t, got, `data-cui-intercept-page="" href="/rec/1"`, "the page mark did not land on the anchor")
-	defer func() {
-		if recover() == nil {
-			t.Error("a button with no Href carried data-cui-intercept-page")
-		}
-	}()
-	Button(ButtonProps{Label: "Open", Action: html.Attrs{"data-cui-intercept-page": ""}}, nil)
+// data-cui-intercept-page and data-cui-intercept-swap say where a link
+// goes (its target, as the page or into the top layer), so they ride an
+// anchor; a button has no target, so each is refused there.
+func TestButtonInterceptMarksAreLinkOnly(t *testing.T) {
+	for _, k := range []string{"data-cui-intercept-page", "data-cui-intercept-swap"} {
+		got := Button(ButtonProps{Label: "Go", Href: "/rec/1", Action: html.Attrs{k: ""}}, nil)
+		has(t, got, k+`="" href="/rec/1"`, "the mark did not land on the anchor")
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("a button with no Href carried %s", k)
+				}
+			}()
+			Button(ButtonProps{Label: "Go", Action: html.Attrs{k: ""}}, nil)
+		}()
+	}
 }
 
 // Each check exists because a value that fails it is a button that

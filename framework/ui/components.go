@@ -608,7 +608,7 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 		switch {
 		case lk == "data-cui-push-state", lk == "data-cui-prefetch",
 			lk == "data-cui-open", lk == "data-cui-deeplink",
-			lk == "data-cui-intercept-page":
+			lk == "data-cui-intercept-page", lk == "data-cui-intercept-swap":
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			// Refused, as before the seam existed.
