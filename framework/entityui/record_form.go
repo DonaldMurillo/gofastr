@@ -446,7 +446,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
 			return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: muted()}}})
 		}
-		cc := CellContext{Ctx: ctx, Entity: fb.m.name, Field: f, Value: val, Row: row}
+		cc := CellContext{Ctx: asCaller(ctx), Entity: fb.m.name, Field: f, Value: val, Row: row}
 		if k.Detail != nil {
 			return k.Detail(cc)
 		}
@@ -738,7 +738,7 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	// The kind's ctx carries the app's translator so its labels
 	// resolve through the same catalog the form's own fields read, and
 	// Control carries the wiring a FormField would have handed down.
-	kctx := i18nui.WithTranslator(ctx, fb.m.tr)
+	kctx := i18nui.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
 			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,

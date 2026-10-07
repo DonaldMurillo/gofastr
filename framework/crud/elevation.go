@@ -34,6 +34,17 @@ func WithElevation(ctx context.Context) context.Context {
 	return context.WithValue(ctx, elevationKey{}, true)
 }
 
+// WithoutElevation returns ctx with WithElevation's lift removed, for code
+// a back office runs on the caller's behalf but does not vouch for: an
+// app's actions, tabs, view funcs and field kinds run as the caller, so
+// entityui hands them this context.
+func WithoutElevation(ctx context.Context) context.Context {
+	if !elevated(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, elevationKey{}, false)
+}
+
 // elevated reports whether ctx carries WithElevation.
 func elevated(ctx context.Context) bool {
 	v, _ := ctx.Value(elevationKey{}).(bool)

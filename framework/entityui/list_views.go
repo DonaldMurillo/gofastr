@@ -56,7 +56,7 @@ func viewable(ctx context.Context, m *meta, key string) bool {
 	if !ok || vf.Show == nil {
 		return true
 	}
-	return vf.Show(ctx)
+	return vf.Show(asCaller(ctx))
 }
 
 // declaredAndViewable reports whether key is one of the entity's views
@@ -102,7 +102,7 @@ func viewPredicate(ctx context.Context, m *meta, key string) (*filter.Predicate,
 	if !ok || vf.Filter == nil {
 		return nil, nil
 	}
-	p, err := vf.Filter(ctx)
+	p, err := vf.Filter(asCaller(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("entityui: entity %q view %q filter: %w", m.name, key, err)
 	}

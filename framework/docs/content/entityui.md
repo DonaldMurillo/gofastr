@@ -161,6 +161,13 @@ routes under `/admin/api/<entity>` this way. Reads are unchanged.
 `Extensions` is the code an app registers next to its screens: the entity
 says what to show, extensions draw or act.
 
+Extension code runs as the caller. A back office that elevates its own
+reads and writes (`crud.WithElevation`, as battery/admin does) does not
+vouch for an action's `Run`, a tab's `Build`, a view func, a field kind
+or a replaced list or record body: each receives the caller's context
+with the elevation removed (`crud.WithoutElevation`), so it passes only
+the read and write gates the caller's own roles pass.
+
 ```go
 <!-- gofastr:compile
 import "context"

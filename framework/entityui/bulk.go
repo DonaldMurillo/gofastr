@@ -508,7 +508,7 @@ func runAction(ctx context.Context, entityName string, a Action, actx ActionCont
 			ok = false
 		}
 	}()
-	if err := a.Run(ctx, actx); err != nil {
+	if err := a.Run(asCaller(ctx), actx); err != nil {
 		slog.ErrorContext(ctx, "entityui: action failed", "entity", entityName, "action", a.Key, "error", err)
 		return false
 	}

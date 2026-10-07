@@ -98,7 +98,9 @@ the field write checks apply exactly as on the JSON API.
 app API is still editable from the admin by a caller the gate admits.
 Elevation never lifts tenant scope, owner scope, soft delete, or the
 field read and write checks, and it never reaches app code: a `Page`
-or `Card` builds with the caller's own context.
+or `Card` builds with the caller's own context, and an entityui action,
+tab, view func or field kind gets the caller's context with the
+elevation removed (`crud.WithoutElevation`).
 
 ### App pages, cards, links and commands
 

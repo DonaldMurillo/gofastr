@@ -90,6 +90,15 @@ type ViewFunc struct {
 	Show   func(ctx context.Context) bool
 }
 
+// asCaller is the context an app's extension code runs under: the
+// caller's own, with a back office's elevation (crud.WithElevation)
+// removed. The admin vouches for its own reads and writes, not for an
+// action's Run, a tab's Build, a view func or a field kind, so those
+// see only what the caller's roles allow.
+func asCaller(ctx context.Context) context.Context {
+	return crud.WithoutElevation(ctx)
+}
+
 // Tab is an extra record tab.
 type Tab struct {
 	Key   string

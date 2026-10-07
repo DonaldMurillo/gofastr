@@ -164,7 +164,7 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	header := b.header(ctx, m, row, base)
 	if m.ext.Record != nil {
 		body := contain(ctx, m.name, "record", func() (render.HTML, error) {
-			c, err := m.ext.Record(RecordContext{Ctx: ctx, UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
+			c, err := m.ext.Record(RecordContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
 			if err != nil {
 				return "", err
 			}
@@ -364,7 +364,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {
-				c, err := build(TabContext{Ctx: ctx, UI: b.ui, Entity: m.name, Record: rec})
+				c, err := build(TabContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name, Record: rec})
 				if err != nil {
 					return "", err
 				}

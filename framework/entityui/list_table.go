@@ -157,7 +157,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		// An app's Cell runs behind a recover: a panicking kind degrades
 		// to a muted value, never a failed list.
 		return contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: ctx, Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
 		})
 	}
 	val := cell(rowValue(row, name))
@@ -222,7 +222,7 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	}
 	if kind, ok := u.kindCell(m, f); ok {
 		return string(contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: ctx, Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
+			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: rowValue(row, name), Row: row}), nil
 		}))
 	}
 	raw := rowValue(row, name)

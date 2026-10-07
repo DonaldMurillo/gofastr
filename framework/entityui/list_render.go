@@ -53,7 +53,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// gate and the same key rules. Build runs inside this render's
 	// recover; SafeRenderCtx contains a panic in the component's render.
 	if m.ext.List != nil {
-		comp, err := m.ext.List(ListContext{Ctx: ctx, UI: b.ui, Entity: m.name})
+		comp, err := m.ext.List(ListContext{Ctx: asCaller(ctx), UI: b.ui, Entity: m.name})
 		if err != nil {
 			return "", err
 		}

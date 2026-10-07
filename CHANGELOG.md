@@ -776,6 +776,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   embed scopes, the session gate, a move's own `Permission` and the state
   override permission still apply. Set it only from server code, never
   from request data.
+- **`crud.WithoutElevation(ctx)`** removes `WithElevation`'s lift.
+  entityui runs an app's actions, tabs, view funcs and field kinds under
+  it, so code a back office did not write passes only the caller's own
+  gates.
 - **`ui.Thumbnail`** draws a square, lazily loaded image preview in three
   sizes (`ThumbnailSM`, the default `ThumbnailMD`, `ThumbnailLG`). A
   source `urlsafe.ImageSource` refuses draws nothing.
