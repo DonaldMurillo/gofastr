@@ -436,6 +436,19 @@ func entityNames(ents []*entity.Entity) string {
 
 // ----- the gate --------------------------------------------------------------
 
+// askPolicy runs one of the app's policy callbacks and fails closed: a
+// panic answers false, and the log names the callback and the panic's
+// type, never its value.
+func (b *Battery) askPolicy(name string, ask func() bool) (ok bool) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			b.logger().Error("admin: policy callback panicked", "callback", name, "panic", fmt.Sprintf("%T", rec))
+			ok = false
+		}
+	}()
+	return ask()
+}
+
 // authorized reports whether the request may use the admin. The embed
 // refusal and a Decider's deny run before everything else and cannot be
 // lifted by Authorize; a Decider can veto the admin, never admit it.
@@ -449,7 +462,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 		}
 	}
 	if b.cfg.Authorize != nil {
-		return b.cfg.Authorize(ctx)
+		return b.askPolicy("Authorize", func() bool { return b.cfg.Authorize(ctx) })
 	}
 	// battery/auth seeds a nil user on every request, so ok alone is true
 	// for an anonymous caller; the nil check is what refuses one.

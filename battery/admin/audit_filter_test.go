@@ -44,6 +44,27 @@ func TestAuditFilterByEntityAndOp(t *testing.T) {
 	}
 }
 
+// The operation filter offers what the operations pages write too: a
+// replay, a grant or a revoke, a role assignment, a module lever.
+func TestAuditFilterByOpsPageOp(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}}, nil)
+	now := time.Now().UTC()
+	x.seedAudit("o1", "", "queue", "replay", "job-1", "u1", now)
+	x.seedAudit("o2", "", "access", "grant", "editor", "u1", now)
+	x.seedAudit("o3", "", "access", "assign-roles", "user-9", "u1", now)
+	x.seedAudit("o4", "", "module", "module_disable", "billing", "u1", now)
+	x.seedAudit("o5", "", "posts", "create", "p-1", "u1", now)
+	for op, record := range map[string]string{"replay": "job-1", "grant": "editor", "assign-roles": "user-9", "module_disable": "billing"} {
+		body := get(x.as(theAdmin), "/admin/audit?op="+op).Body.String()
+		if auditRowsShown(body) != 1 || !strings.Contains(body, record) {
+			t.Errorf("op=%s showed %d rows, want the %s row:\n%s", op, auditRowsShown(body), record, body)
+		}
+		if !strings.Contains(body, `selected="" value="`+op+`"`) {
+			t.Errorf("the operation select does not offer %s selected", op)
+		}
+	}
+}
+
 func TestAuditFilterByDateRange(t *testing.T) {
 	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig(), "notes": notesConfig()}, Config{Entities: []string{"posts", "notes"}}, nil)
 	now := time.Now().UTC()

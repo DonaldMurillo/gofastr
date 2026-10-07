@@ -188,7 +188,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		direct := u.GetRoles()
 		labels := direct
 		if b.cfg.EffectiveRoles != nil {
-			labels = roleOriginLabels(direct, b.cfg.EffectiveRoles(ctx, u.GetID()))
+			labels = b.effectiveRoleLabels(ctx, u.GetID(), direct)
 		}
 		held := make([]render.HTML, 0, len(labels))
 		for _, l := range labels {
@@ -253,6 +253,19 @@ func rolesInput(ctx context.Context, userID string, direct, known []string) rend
 		opts[i] = ui.MultiSelectOption{Value: r, Label: r, Selected: slices.Contains(direct, r)}
 	}
 	return ui.MultiSelect(ui.MultiSelectConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
+}
+
+// effectiveRoleLabels labels a user's roles with their origins through
+// EffectiveRoles. A resolver that panics leaves the direct roles as they
+// are; the log names the callback and the panic's type.
+func (b *Battery) effectiveRoleLabels(ctx context.Context, userID string, direct []string) (labels []string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			b.logger().Error("admin: policy callback panicked", "callback", "EffectiveRoles", "panic", fmt.Sprintf("%T", rec))
+			labels = direct
+		}
+	}()
+	return roleOriginLabels(direct, b.cfg.EffectiveRoles(ctx, userID))
 }
 
 // roleOriginLabels joins a user's direct roles with resolved ones as

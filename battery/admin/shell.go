@@ -304,7 +304,7 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 		all = append(all, it)
 	}
 	for _, p := range b.cfg.Pages {
-		if p.Nav == nil || p.Nav.Hide || !p.allows(ctx) {
+		if p.Nav == nil || p.Nav.Hide || !b.pageAllows(ctx, p) {
 			continue
 		}
 		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title,

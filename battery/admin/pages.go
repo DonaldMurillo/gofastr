@@ -96,7 +96,7 @@ func (b *Battery) mountPages(group *appui.ScreenGroup) {
 		s.Title = p.Title
 		if p.Access != nil {
 			s.WithPolicy(appui.PolicyFunc(func(ctx context.Context) appui.Decision {
-				if p.allows(ctx) {
+				if b.pageAllows(ctx, p) {
 					return decide.Allow()
 				}
 				return decide.Block(http.StatusForbidden, http.StatusText(http.StatusForbidden))
@@ -105,11 +105,15 @@ func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	}
 }
 
-// allows reports whether p's Access admits the caller, asked without the
-// admin's elevation: the sidebar and the search page ask it while drawing
-// elevated screens.
-func (p Page) allows(ctx context.Context) bool {
-	return p.Access == nil || p.Access(crud.WithoutElevation(ctx))
+// pageAllows reports whether p's Access admits the caller, asked without
+// the admin's elevation: the sidebar and the palette ask it while drawing
+// elevated screens. An Access that panics refuses, so one page's policy
+// hides that page and leaves the rest of the admin drawing.
+func (b *Battery) pageAllows(ctx context.Context, p Page) bool {
+	if p.Access == nil {
+		return true
+	}
+	return b.askPolicy("Page "+p.Path+" Access", func() bool { return p.Access(crud.WithoutElevation(ctx)) })
 }
 
 // buildSlot runs an app Build with the caller's context and draws what

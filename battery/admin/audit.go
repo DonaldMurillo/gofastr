@@ -36,12 +36,21 @@ type auditRow struct {
 
 // auditOps are the operations the audit filter offers: the fixed set the
 // CRUD hooks and entityui's bulk runs write (crud's create, update,
-// delete, restore, purge and state_override, entityui's bulk summary).
-// A state transition writes "transition:<key>", which no fixed select
-// could enumerate, so it is filtered by entity instead.
-var auditOps = []string{"create", "update", "delete", "restore", "purge", "state_override", "bulk"}
+// delete, restore, purge and state_override, entityui's bulk summary),
+// then what the operations pages write (a queue replay, a role grant or
+// revoke, a user's role assignment, the module levers). A state
+// transition writes "transition:<key>", which no fixed select could
+// enumerate, so it is filtered by entity instead; a refused operation
+// shows in the unfiltered log.
+var auditOps = []string{
+	"create", "update", "delete", "restore", "purge", "state_override", "bulk",
+	"replay", "grant", "revoke", "assign-roles",
+	opModuleEnable, opModuleDisable, opModuleBump, opModuleRevoke,
+}
 
-// auditDayLayout is the ?from= and ?to= format the date inputs post.
+// auditDayLayout is the ?from= and ?to= format the date inputs post. A
+// day parses as UTC midnight, so the bounds are UTC days whatever the
+// server's zone; the audit page documents it.
 const auditDayLayout = "2006-01-02"
 
 // maxAuditActor is the longest ?actor= the page accepts, in bytes.

@@ -160,7 +160,10 @@ admin.New(admin.Config{
   (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/entities`,
   `/api`, or anything under `/_`); boot fails if it does. `Access`
   refuses with 403, hides the nav entry and the palette entry, and Build
-  never runs for a refused caller.
+  never runs for a refused caller. An `Access` that panics refuses too,
+  for that page alone; the rest of the admin draws. (A panicking
+  `EffectiveRoles` likewise leaves the User roles page showing direct
+  roles.)
 - A **Card** draws on the dashboard. A positive `Poll` redraws it from
   `GET <PathPrefix>/_card/<key>` on that interval (`data-cui-poll`).
 - **Metrics** are the strip at the top of the dashboard, above the
@@ -283,10 +286,15 @@ this.
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
 filter lives in the page's own query string and works without script:
 `?actor=<user id>`, `?entity=<exposed entity name>`, `?op=<operation>`,
-`?from=YYYY-MM-DD`, `?to=YYYY-MM-DD` (`to` inclusive). The operation
-select offers the fixed set the audit log writes — `create`, `update`,
+`?from=YYYY-MM-DD`, `?to=YYYY-MM-DD` (`to` inclusive; days run midnight
+to midnight UTC, whatever the server's zone). The operation select
+offers the fixed set the audit log writes — `create`, `update`,
 `delete`, `restore`, `purge`, `state_override` and entityui's `bulk`
-summary — plus "any"; the entity select offers the exposed entities.
+summary, then the operations pages' `replay`, `grant`, `revoke`,
+`assign-roles` and `module_enable`/`disable`/`bump`/`revoke` — plus
+"any". A state transition (`transition:<key>`) is found by entity, and a
+refused operation in the unfiltered log. The entity select offers the
+exposed entities.
 Every value is checked server-side before it reaches SQL, and values
 travel as placeholders. An invalid value is ignored with a warning
 naming the parameter, never a 500; a link clears the filter.
@@ -435,8 +443,9 @@ status. A plain post redirects (`303`) back to the page with
 
 The gate admits an authenticated user whose `GetRoles()` holds
 `Config.AdminRole` (default `"admin"`); `battery/auth`'s `User` does.
-`Config.Authorize` replaces the role check with your own predicate. Two
-refusals run before either:
+`Config.Authorize` replaces the role check with your own predicate; one
+that panics refuses, as `false` does, and the log names the callback and
+the panic's type. Two refusals run before either:
 
 - an `embed` grant on the request (an embedded surface never reaches the
   back office);
