@@ -60,14 +60,19 @@ func actorLabel(ctx context.Context, names map[string]string, r auditRow) string
 }
 
 // activityLead is one activity line as markup: the actor in bold, what
-// they did, and the record, a link to its screen while it is live. Each
-// part is escaped before it fills the translated line, and the line is
-// filled in one pass, so a title holding a placeholder stays text.
-func (b *Battery) activityLead(ctx context.Context, names map[string]string, r auditRow) render.HTML {
-	label, href := b.activityRecord(ctx, r)
+// they did, and the record after its entity's singular name, muted, so
+// "Payment INV-1013" never reads as the invoice; the record is a link to
+// its screen while it is live. Each part is escaped before it fills the
+// translated line, and the line is filled in one pass, so a title
+// holding a placeholder stays text.
+func (b *Battery) activityLead(ctx context.Context, names map[string]string, r auditRow, before, after map[string]any) render.HTML {
+	kind, label, href := b.activityRecord(ctx, r, before, after)
 	record := render.Text(label)
 	if href != "" {
 		record = ui.Link(ui.LinkConfig{Href: href, Text: label, Variant: ui.LinkTitle})
+	}
+	if kind != "" {
+		record = render.Join(ui.Muted(render.Text(kind)), render.Text(" "), record)
 	}
 	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityLine, map[string]render.HTML{
 		"actor":  activityActor(ctx, names, r),
@@ -88,23 +93,34 @@ func activityActor(ctx context.Context, names map[string]string, r auditRow) ren
 }
 
 // activityRecord names one row's record and where it lives: an exposed
-// entity's record as auditTitle names it, with its screen's path when it
-// is live, else by its entity's singular name; an entity the admin does
-// not expose by its table name and id. Only a live record has a path.
-func (b *Battery) activityRecord(ctx context.Context, r auditRow) (label, href string) {
+// entity's record as auditTitle names it, kind its singular name, with
+// its screen's path when it is live, else by the singular name alone; an
+// entity the admin does not expose by its table name and id. Only a live
+// record has a path.
+func (b *Battery) activityRecord(ctx context.Context, r auditRow, before, after map[string]any) (kind, label, href string) {
 	e, ok := b.exposedNamed(r.Entity)
 	if !ok {
-		return strings.TrimSpace(r.Entity + " " + r.RecordID), ""
+		return "", strings.TrimSpace(r.Entity + " " + r.RecordID), ""
 	}
-	before, after := auditSides(r)
 	t, live := b.auditTitle(ctx, e, r, before, after)
 	switch {
 	case live:
-		return t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
+		return b.singular(ctx, e), t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
 	case t != "":
-		return t, ""
+		return b.singular(ctx, e), t, ""
 	}
-	return b.singular(ctx, e), ""
+	return "", b.singular(ctx, e), ""
+}
+
+// activityChanges is what one row's edit changed, drawn under its line
+// the way the Audit log page draws it, "" for a row of an entity the
+// admin does not expose and a row that is not an edit.
+func (b *Battery) activityChanges(ctx context.Context, r auditRow, before, after map[string]any) render.HTML {
+	e, ok := b.exposedNamed(r.Entity)
+	if !ok || b.ui == nil {
+		return ""
+	}
+	return b.ui.Changes(b.elevate(ctx), e.GetName(), before, after)
 }
 
 // activityVerbs are the audit operations the admin has words for.

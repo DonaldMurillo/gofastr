@@ -280,13 +280,16 @@ and the dashboard's recent activity name each actor by its account's
 email, the account the User roles page lists; an id no account matches,
 or every id without `Auth`, shows as written, and a row with no actor
 reads "System". The dashboard reads each row as a sentence, "**ada**
-updated INV-1010 · 5m ago": the actor in bold, an account by its
-email's local part with the full email on hover; a live record of an
-exposed entity by its title, read the way its record screen's
-breadcrumb is, as a link to that screen; and a deleted or purged one,
-unlinked, by the title in the row's stored copy, the way the audit page
-names it, else by its entity's singular name. A delete row names what
-was deleted even after a restore brings the record back.
+updated Invoice INV-1010 · 5m ago": the actor in bold, an account by its
+email's local part with the full email on hover; then a record of an
+exposed entity after its entity's singular name, muted, so a payment
+titled by its invoice never reads as the invoice. A live record is
+named by its title, read the way its record screen's breadcrumb is, as
+a link to that screen; a deleted or purged one, unlinked, by the title
+in the row's stored copy, the way the audit page names it, else by the
+singular name alone. A delete row names what was deleted even after a
+restore brings the record back. An edit's line lists what it changed
+under it, as the audit page's Changes column does.
 
 The audit page's columns are Time ("2h ago", the exact UTC time on
 hover), Actor, Operation, Record and Changes. Record reads "Invoice ·

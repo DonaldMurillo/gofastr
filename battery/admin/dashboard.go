@@ -175,8 +175,10 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	now := time.Now()
 	events := make([]ui.TimelineEvent, len(rows))
 	for i, r := range rows {
+		before, after := auditSides(r)
 		events[i] = ui.TimelineEvent{
-			Lead:    b.activityLead(ctx, names, r),
+			Lead:    b.activityLead(ctx, names, r, before, after),
+			Body:    b.activityChanges(ctx, r, before, after),
 			Meta:    ui.Ago(ctx, now, r.CreatedAt),
 			Variant: timelineVariant(r.Op),
 			Icon:    opIcon(r.Op),

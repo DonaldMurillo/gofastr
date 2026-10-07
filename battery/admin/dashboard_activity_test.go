@@ -33,7 +33,8 @@ func activityEnv(t *testing.T) (*env, string) {
 }
 
 // Each activity line reads as a sentence: who in bold, what they did,
-// the record by its title as a link to it, and how long ago. An account
+// the record by its entity, muted, and its title as a link to it, and
+// how long ago. An account
 // reads as its email's local part, the full email on hover. A deleted
 // record with no stored copy is named by its entity alone and links
 // nowhere, and an actor no account matches keeps its id.
@@ -48,7 +49,7 @@ func TestRecentActivityReadsAsSentences(t *testing.T) {
 		t.Errorf("a deleted record links to its record screen:\n%s", body)
 	}
 	for _, want := range []string{
-		`title="ada@example.com">ada</strong> updated <a`, `href="/admin/entities/posts/p-1"`, `>Hello world</a>`, "5m ago",
+		`title="ada@example.com">ada</strong> updated <span class="fui-muted" data-cui-comp="ui-muted">Post</span> <a`, `href="/admin/entities/posts/p-1"`, `>Hello world</a>`, "5m ago",
 		"<strong>System</strong> deleted Post", "2h ago",
 		"<strong>ghost-1</strong> created billing rec-9", "3d ago",
 	} {
@@ -116,7 +117,27 @@ func TestRecentActivityNamesDeletedRecord(t *testing.T) {
 			t.Errorf("%s: a delete row links to a record screen:\n%s", path, body)
 		}
 	}
-	if body := get(x.as(theAdmin), "/admin").Body.String(); !strings.Contains(body, "<strong>System</strong> deleted Old news") {
+	if body := get(x.as(theAdmin), "/admin").Body.String(); !strings.Contains(body, `<strong>System</strong> deleted <span class="fui-muted" data-cui-comp="ui-muted">Post</span> Old news`) {
 		t.Errorf("the feed's delete line does not read as a sentence:\n%s", body)
+	}
+}
+
+// An edit's line lists what it changed under it, old value struck
+// through, the way the Audit log page does; a create lists nothing.
+func TestRecentActivityListsChanges(t *testing.T) {
+	x, userID := activityEnv(t)
+	now := time.Now().UTC()
+	x.seedAuditDiff("a1", "", "posts", "update", "p-1", userID, now,
+		`{"old":{"title":"Hello world","status":"draft"},"new":{"title":"Hello world","status":"published"}}`)
+	x.seedAuditDiff("a2", "", "posts", "create", "p-1", userID, now.Add(-time.Minute), `{"new":{"title":"Hello world","status":"draft"}}`)
+	body := get(x.as(theAdmin), "/admin").Body.String()
+	if n := strings.Count(body, `data-cui-comp="ui-change-list"`); n != 1 {
+		t.Fatalf("recent activity draws %d change lists, want 1 (the edit's):\n%s", n, body)
+	}
+	list := body[strings.Index(body, `data-cui-comp="ui-change-list"`):]
+	for _, want := range []string{"Status", ">Draft<", ">Published<"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the edit's change list lacks %q:\n%s", want, list)
+		}
 	}
 }
