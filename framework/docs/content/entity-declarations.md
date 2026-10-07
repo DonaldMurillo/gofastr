@@ -178,9 +178,12 @@ the user left blank arrives as `""`. Create and update treat that as
 optional field takes its declared `Default` on create and leaves the
 column alone on update, and a blank required field fails with
 `is required` rather than `must be an integer`. Empty text stays an
-empty string, since that is a value a user can mean. The entityui forms
-(`framework/entityui`) rely on this; a JSON
-client gets the same treatment.
+empty string, since that is a value a user can mean. A filled number
+input arrives as text too: an `Int` field takes `"42"` and a `Float`
+field takes `"42.5"` as the number each spells, and a `Float` refuses
+hex, underscore separators, `NaN` and `Inf`. `Decimal` stays a string. The
+entityui forms (`framework/entityui`) rely on this; a JSON client gets
+the same treatment.
 
 ## `Entity` vs `TryEntity`
 

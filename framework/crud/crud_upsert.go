@@ -101,7 +101,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return &beforeHookError{err: err}
 			}
 		}
-		if err := ch.coerceIntColumnValues(body); err != nil {
+		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)

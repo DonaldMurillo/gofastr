@@ -377,7 +377,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	// Same integer-exactness gate as the HTTP update path: a host map
 	// carrying a float64 (decoded elsewhere from JSON) must not silently
 	// round an Int column above 2^53.
-	if err := q.handler.coerceIntColumnValues(body); err != nil {
+	if err := q.handler.coerceNumberColumnValues(body); err != nil {
 		return 0, err
 	}
 

@@ -59,7 +59,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidateAll(ch.entitySchema(), body)
@@ -236,7 +236,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidatePartial(ch.entitySchema(), body)

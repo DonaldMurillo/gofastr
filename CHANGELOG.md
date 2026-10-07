@@ -766,9 +766,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   title, so a host that scales page titles leaves sections a step below.
 - **`i18nui.RelationLabel`** is `FieldLabel` for a Relation field: its
   fallback drops a trailing `_id`.
+- **`crud.WithElevation(ctx)`** lifts one check for a back office that
+  has already authorized its caller: the entity's `Exposure.Access`
+  permission, on reads and writes. Owner and tenant scope, held token and
+  embed scopes, the session gate, a move's own `Permission` and the state
+  override permission still apply. Set it only from server code, never
+  from request data.
 
 ### Changed
 
+- **A `Float` field takes decimal text.** A form posts `"42.5"` for a
+  number input; create and update now read it as the number, the way an
+  `Int` field already read `"42"`. Hex, underscore separators, `NaN` and
+  `Inf` are still refused.
 - **BREAKING: `framework/ui/resource` is removed.** `framework/entityui`
   replaces its `Config` and `Registry` screens and its island routes:
   build the app's UI with `App.EntityUI` and render `appUI.List`,
