@@ -633,7 +633,7 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 // records still reference) toasts the server's message instead of
 // ending in silence. Under undo, on a soft-deleting entity whose record
 // the caller may update, the toast carries Undo: it restores the record
-// and returns to back.
+// and returns to back, and the restore handler's answer is its toast.
 func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
 	vars := map[string]string{"entity": m.singular(ctx)}
 	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
@@ -644,7 +644,6 @@ func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) inte
 	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
 		del = del.OnSuccessToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
 			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityRestored, vars)).
 				OnSuccess(interactive.Navigate(back)).
 				OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
 	}

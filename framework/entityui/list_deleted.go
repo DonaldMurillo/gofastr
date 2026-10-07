@@ -47,7 +47,6 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 		forms = append(forms, deletedWriteForm(ctx,
 			m.api+"/"+url.PathEscape(id)+"/_restore",
 			i18nui.T(ctx, i18nui.KeyEntityRestore), ui.ButtonSecondary, interactive.Confirm{},
-			i18nui.TVars(ctx, i18nui.KeyEntityRestored, map[string]string{"entity": m.singular(ctx)}),
 			back,
 		))
 	}
@@ -61,22 +60,21 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 				Accept:  i18nui.T(ctx, i18nui.KeyEntityPurge),
 				Danger:  true,
 			},
-			i18nui.TVars(ctx, i18nui.KeyEntityPurged, map[string]string{"entity": m.singular(ctx)}),
 			back,
 		))
 	}
 	if len(forms) == 0 {
 		return ""
 	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, forms...)
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter, NoWrap: true}, forms...)
 }
 
 // deletedWriteForm is one trash action: a POST form whose submit
 // carries the RPC wiring (a confirm on the purge), the return path as
-// its one field, and a button the scriptless path can press.
-func deletedWriteForm(ctx context.Context, action, label string, variant ui.ButtonVariant, confirm interactive.Confirm, toast, back string) render.HTML {
+// its one field, and a button the scriptless path can press. The toast
+// is the handler's answer, so the form carries none of its own.
+func deletedWriteForm(ctx context.Context, action, label string, variant ui.ButtonVariant, confirm interactive.Confirm, back string) render.HTML {
 	rpc := interactive.Post(action).
-		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(back))
 	if confirm.Message != "" {
 		rpc = rpc.WithConfirmDialog(confirm)

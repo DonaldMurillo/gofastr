@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -232,8 +233,32 @@ func TestTrashWriteJSONAnswersStatus(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"ok":true`) {
 		t.Errorf("JSON restore body = %s", w.Body.String())
 	}
-	if !strings.Contains(w.Header().Get("Set-Cookie"), "toast") && w.Header().Get("X-Gofastr-Toast") == "" && !strings.Contains(w.Body.String(), "ok") {
-		t.Errorf("JSON restore carried no toast header")
+	if got := w.Header().Get("X-Gofastr-Toast"); !strings.Contains(got, "Note restored") {
+		t.Errorf("JSON restore toast header = %q, want Note restored", got)
+	}
+}
+
+// A trash write's toast is the server's answer: the Restore, the Delete
+// permanently and a delete toast's Undo carry none of their own, so one
+// press shows one toast.
+func TestTrashWriteToastsOnce(t *testing.T) {
+	x := deletedUI(t)
+	page := listHTML(t, x.ui.List("notes").Deleted(), x.userCtx("/notes", "?view=deleted", "u1"))
+	for _, path := range []string{"/api/notes/n2/_restore", "/api/notes/n2/_purge"} {
+		tag := regexp.MustCompile(`<form[^>]*data-cui-rpc="` + regexp.QuoteMeta(path) + `"[^>]*>`).FindString(page)
+		if tag == "" {
+			t.Fatalf("no form posts %s:\n%s", path, page)
+		}
+		if strings.Contains(tag, "data-cui-rpc-success-toast") {
+			t.Errorf("%s toasts on its own beside the server's toast: %s", path, tag)
+		}
+	}
+	undo := undoOf(t, notesRecord(x, x.userCtx("/notes/n1", "", "u1"), func(b *RecordBuilder) { b.Undo() }))
+	if undo == nil {
+		t.Fatal("the delete toast has no Undo")
+	}
+	if toast, ok := undo.Attrs["data-cui-rpc-success-toast"]; ok {
+		t.Errorf("Undo toasts %q on its own beside the server's toast", toast)
 	}
 }
 
