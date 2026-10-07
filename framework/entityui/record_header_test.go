@@ -122,6 +122,10 @@ func TestRecordStateIsTheBadge(t *testing.T) {
 	if !strings.Contains(body, ">Draft<") {
 		t.Errorf("the badge is missing:\n%s", body)
 	}
+	// Details is the side panel beside the fields, the prototype's rail.
+	if !strings.Contains(form, "fui-form-frame--side-panel") {
+		t.Errorf("the record's rail is not the side panel:\n%s", form)
+	}
 }
 
 // The header says when the record was created and last updated.

@@ -196,7 +196,8 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	}
 	// The record's facts sit in the side column, after any the layout
 	// put there; the frame stacks them under the fields in a narrow
-	// pane (a drawer, a phone).
+	// pane (a drawer, a phone). Beside the fields they are a panel on
+	// the wide rail, which holds a full id without crowding its label.
 	if !fb.create {
 		if d := fb.details(ctx); d != "" {
 			side = append(side, d)
@@ -204,7 +205,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	}
 	var body render.HTML
 	if len(side) > 0 {
-		body = ui.FormFrame(ui.FormFrameConfig{Main: main, Side: side})
+		body = ui.FormFrame(ui.FormFrameConfig{Main: main, Side: side, SidePanel: true, SideWidth: ui.FormFrameSideWide})
 	} else {
 		body = render.Join(main...)
 	}
