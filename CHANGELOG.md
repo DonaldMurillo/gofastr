@@ -795,6 +795,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `database`, `inbox`, `folder`, `tag`, `mail`, `bell`, `globe`, `repeat`,
   `cpu` and `star`, for an entity's `Display.Nav.Icon`, sidebar links and
   dashboard cards.
+- **`crud.ListOptions.Deleted`** lists only soft-deleted rows in
+  `ListAll` and `CountAll`, with every other scope applied unchanged. An
+  entity without `Scope.SoftDelete` returns `ErrNoSoftDelete` before any
+  SQL runs.
 
 ### Changed
 

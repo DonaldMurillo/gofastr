@@ -235,6 +235,15 @@ type ListOptions struct {
 	// Returns an error when set on an entity without SearchFields (fail
 	// loud, matching unknown-sort policy).
 	Search string
+	// Deleted lists only soft-deleted rows, the trash view a list draws
+	// beside its live one: it inverts the soft-delete filter (the read
+	// answers deleted_at IS NOT NULL) while every other scope — owner,
+	// tenant, read scope, Where, Filters, Search — applies unchanged, so
+	// the trashed rows a caller sees are the trashed rows they own. An
+	// entity without Scope.SoftDelete answers ErrNoSoftDelete, the same
+	// sentinel RestoreOne and PurgeOne use, before any SQL runs. Applies
+	// to ListAll and CountAll alike.
+	Deleted bool
 }
 
 // ListAll runs a list query with optional filters/sort/limit/offset/includes
@@ -300,6 +309,11 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, nil, err
 	}
+	// The trash view is refused on an entity that never declared it,
+	// before any SQL could name a deleted_at column the table lacks.
+	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
+		return nil, nil, ErrNoSoftDelete
+	}
 	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
 	if err != nil {
 		return nil, nil, err
@@ -337,7 +351,13 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplyReadScope(qb, req)
-	ch.ApplySoftDeleteFilter(qb, req)
+	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
+	// the trash view's inversion — only soft-deleted rows.
+	if opts.Deleted {
+		qb.Where("deleted_at IS NOT NULL")
+	} else {
+		ch.ApplySoftDeleteFilter(qb, req)
+	}
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
@@ -464,6 +484,11 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return 0, err
 	}
+	// The trash view is refused on an entity that never declared it,
+	// before any SQL could name a deleted_at column the table lacks.
+	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
+		return 0, ErrNoSoftDelete
+	}
 	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
 	if err != nil {
 		return 0, err
@@ -503,7 +528,13 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
 	ch.ApplyReadScopeCount(cb, req)
-	ch.ApplySoftDeleteFilterCount(cb, req)
+	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
+	// the trash view's inversion — only soft-deleted rows.
+	if opts.Deleted {
+		cb.Where("deleted_at IS NOT NULL")
+	} else {
+		ch.ApplySoftDeleteFilterCount(cb, req)
+	}
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
