@@ -2,9 +2,12 @@ package entityui
 
 import (
 	"context"
+	"log/slog"
 	"path"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -63,6 +66,40 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 		}, list.RenderCtx(ctx)))
 	}
 	return render.Join(lists...)
+}
+
+// relatedCount is the Related tab's count: the rows its lists draw,
+// summed. Each entity counts through its own read gate and scope, the
+// list's, so a row the caller could not see is never counted; an
+// entity that refuses or fails adds nothing, and none readable is "".
+func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta) string {
+	total, any := 0, false
+	for _, rl := range b.related {
+		other, err := b.ui.entityFor(rl.name)
+		if err != nil {
+			continue
+		}
+		_, fk := relationTo(other, m.name)
+		if fk == "" {
+			continue
+		}
+		om, err := b.ui.meta(other.GetName())
+		if err != nil || !canRead(ctx, om.ch) {
+			continue
+		}
+		n, err := om.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
+			Where: &filter.Predicate{Field: fk, Op: filter.OpEq, Value: b.id},
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "entityui: related count", "entity", om.name, "error", err)
+			continue
+		}
+		total, any = total+n, true
+	}
+	if !any {
+		return ""
+	}
+	return formatNumber(float64(total), 0)
 }
 
 // relatedBase derives the related entity's list path from this

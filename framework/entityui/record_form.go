@@ -90,17 +90,19 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 			}
 		}
 	}
-	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
-		Eyebrow: m.plural(ctx),
-		Actions: ui.LinkButton(ui.LinkButtonConfig{
+	cfg := ui.PageHeaderConfig{
+		Title: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+	}
+	if !m.hasAPI {
+		return render.Join(drawerBar(ctx), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
+	}
+	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+		ui.LinkButton(ui.LinkButtonConfig{
 			Label: i18nui.T(ctx, i18nui.KeyEntityCancel), Href: base, Variant: ui.ButtonGhost,
 		}),
-	})
-	if !m.hasAPI {
-		return render.Join(header, readOnlyNotice(ctx, m))
-	}
-	return render.Join(header, b.drawForm(ctx, m, nil, nil, nil, values, base))
+		saveButton(ctx, m, true),
+	)
+	return render.Join(drawerBar(ctx), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
 }
 
 // readOnlyNotice is what a create screen draws when the entity mounts
@@ -160,6 +162,14 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		// skipping it there.
 		return slotFailed(ctx)
 	}
+	// The record's facts sit in the side column, after any the layout
+	// put there; the frame stacks them under the fields in a narrow
+	// pane (a drawer, a phone).
+	if !fb.create {
+		if d := fb.details(ctx); d != "" {
+			side = append(side, d)
+		}
+	}
 	var body render.HTML
 	if len(side) > 0 {
 		body = ui.FormFrame(ui.FormFrameConfig{Main: main, Side: side})
@@ -187,14 +197,16 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(dest)).
 		Attrs()
+	// The header's Save submits it (saveButton): the form draws none.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
-		Action:      action,
-		Method:      "POST",
-		ID:          "eui-" + m.name + "-form",
-		Ctx:         ctx,
-		SubmitLabel: submitLabel(ctx, m, fb.create),
-		ExtraAttrs:  attrs,
-		LeaveGuard:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
+		Action:     action,
+		Method:     "POST",
+		ID:         recordFormID(m),
+		Ctx:        ctx,
+		HideSubmit: true,
+		Wide:       len(side) > 0,
+		ExtraAttrs: attrs,
+		LeaveGuard: i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
 	}, body)}
 	// The masked fields' Replace forms: empty, their input and button
 	// sit in the record form's markup and name them by the form
@@ -278,7 +290,9 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 		return nil, nil, err
 	}
 	for _, fl := range fb.b.editableFields(fb.m) {
-		if fb.placed[fl.Name] {
+		// The state field shows as the header's badge and its stamps
+		// in Details: a layout that places one draws it there instead.
+		if fb.placed[fl.Name] || fb.m.guarded(fl.Name) {
 			continue
 		}
 		if h := fb.field(ctx, fl); h != "" {
@@ -286,6 +300,52 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 		}
 	}
 	return main, side, nil
+}
+
+// details is the record's facts below its fields: the id with a copy
+// button, when it was created and updated, and the workflow's stamps
+// the layout did not place. A field the schema hides stays out.
+func (fb *formBuilder) details(ctx context.Context) render.HTML {
+	m, row := fb.m, fb.displayRow
+	if row == nil {
+		row = fb.row
+	}
+	if row == nil {
+		return ""
+	}
+	var items []ui.DetailItem
+	if id := cell(rowValue(row, m.pk)); id != "" {
+		target := "eui-" + m.name + "-id"
+		items = append(items, ui.DetailItem{
+			Label: i18nui.T(ctx, i18nui.KeyEntityID),
+			Value: render.Join(
+				html.Code(html.TextConfig{ID: target, ExtraAttrs: html.Attrs{"title": id}}, render.Text(id)),
+				ui.CopyButton(ui.CopyButtonConfig{
+					Target: target, IconOnly: true, Icon: "copy", Inline: true, Ctx: ctx,
+					AriaLabel: i18nui.T(ctx, i18nui.KeyCopyToClipboard),
+				})),
+		})
+	}
+	names := []string{"created_at", "updated_at"}
+	if m.states != nil {
+		names = append(names, m.states.Guarded()[1:]...)
+	}
+	for _, name := range names {
+		f, ok := m.field(name)
+		if !ok || f.Hidden || fb.placed[name] || fb.skipped(name) {
+			continue
+		}
+		v := fb.display(ctx, f, row)
+		if v == "" {
+			v = muted()
+		}
+		items = append(items, ui.DetailItem{Label: m.label(ctx, name), Value: v})
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityDetails), Overline: true, Compact: true},
+		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
 // items renders one level of form items: fields, rows and sections.

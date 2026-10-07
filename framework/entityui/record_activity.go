@@ -18,12 +18,15 @@ import (
 // them); masked fields and fields the caller cannot read are REMOVED
 // from Before and After before a diff is built, so the tab never shows
 // what the API would refuse the same caller.
+// activityCap is how many trail entries the tab draws.
+const activityCap = 50
+
 func (b *RecordBuilder) activityTab(ctx context.Context, m *meta) render.HTML {
 	reader := b.ui.host.Audit()
 	if reader == nil {
 		return ""
 	}
-	entries, err := reader.Trail(ctx, m.name, b.id, 50)
+	entries, err := reader.Trail(ctx, m.name, b.id, activityCap)
 	if err != nil {
 		return slotFailed(ctx)
 	}
@@ -35,6 +38,23 @@ func (b *RecordBuilder) activityTab(ctx context.Context, m *meta) render.HTML {
 		rows = append(rows, activityRow(ctx, m, e))
 	}
 	return render.Join(rows...)
+}
+
+// activityCount is the Activity tab's count: the trail entries the tab
+// draws, "50+" past its cap, or "" when the trail cannot be read.
+func (b *RecordBuilder) activityCount(ctx context.Context, m *meta) string {
+	reader := b.ui.host.Audit()
+	if reader == nil {
+		return ""
+	}
+	entries, err := reader.Trail(ctx, m.name, b.id, activityCap+1)
+	if err != nil {
+		return ""
+	}
+	if len(entries) > activityCap {
+		return formatNumber(activityCap, 0) + "+"
+	}
+	return formatNumber(float64(len(entries)), 0)
 }
 
 // activityRow draws one audit entry: a section named by its operation,

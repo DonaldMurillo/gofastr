@@ -18,7 +18,6 @@ const (
 	KeyEntityNotFoundBody   Key = "ui.entity.notFoundBody"   // "This {entity} does not exist."
 	KeyEntityNew            Key = "ui.entity.new"            // "New {entity}"
 	KeyEntityView           Key = "ui.entity.view"           // "View"
-	KeyEntityBack           Key = "ui.entity.back"           // "Back"
 	KeyEntityCancel         Key = "ui.entity.cancel"         // "Cancel"
 	KeyEntityDelete         Key = "ui.entity.delete"         // "Delete"
 	KeyEntityDeleteTitle    Key = "ui.entity.deleteTitle"    // "Delete this {entity}?"
@@ -42,7 +41,6 @@ var entityDefaults = map[Key]string{
 	KeyEntityNotFoundBody:   "This {entity} does not exist.",
 	KeyEntityNew:            "New {entity}",
 	KeyEntityView:           "View",
-	KeyEntityBack:           "Back",
 	KeyEntityCancel:         "Cancel",
 	KeyEntityDelete:         "Delete",
 	KeyEntityDeleteTitle:    "Delete this {entity}?",

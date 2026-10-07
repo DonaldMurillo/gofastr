@@ -3,7 +3,11 @@ package i18nui
 // The entity record's chrome. See entity.go.
 const (
 	KeyEntityCreate           Key = "ui.entity.create"           // "Create {entity}"
-	KeyEntitySave             Key = "ui.entity.save"             // "Save changes"
+	KeyEntitySave             Key = "ui.entity.save"             // "Save"
+	KeyEntityCreatedOn        Key = "ui.entity.createdOn"        // "Created {date}"
+	KeyEntityUpdatedOn        Key = "ui.entity.updatedOn"        // "Updated {date}"
+	KeyEntityDetails          Key = "ui.entity.details"          // "Details"
+	KeyEntityID               Key = "ui.entity.id"               // "ID"
 	KeyEntitySaved            Key = "ui.entity.saved"            // "Saved"
 	KeyEntityCreated          Key = "ui.entity.created"          // "{entity} created"
 	KeyEntitySaveFailed       Key = "ui.entity.saveFailed"       // "Could not save."
@@ -52,7 +56,11 @@ const (
 
 var entityRecordDefaults = map[Key]string{
 	KeyEntityCreate:           "Create {entity}",
-	KeyEntitySave:             "Save changes",
+	KeyEntitySave:             "Save",
+	KeyEntityCreatedOn:        "Created {date}",
+	KeyEntityUpdatedOn:        "Updated {date}",
+	KeyEntityDetails:          "Details",
+	KeyEntityID:               "ID",
 	KeyEntitySaved:            "Saved",
 	KeyEntityCreated:          "{entity} created",
 	KeyEntitySaveFailed:       "Could not save.",

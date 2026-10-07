@@ -162,7 +162,7 @@ func TestRecordChromeComesFromTranslator(t *testing.T) {
 		i18nui.KeyEntityTabEdit:    "BEARBEITEN",
 		i18nui.KeyEntitySave:       "SPEICHERN",
 		i18nui.KeyEntitySaved:      "GESPEICHERT",
-		i18nui.KeyEntityBack:       "ZURÜCK",
+		i18nui.KeyEntityDetails:    "ANGABEN",
 		i18nui.KeyEntityLeaveGuard: "UNGESPEICHERTE ÄNDERUNGEN",
 		i18nui.KeyEntityNotFound:   "NICHT GEFUNDEN",
 	}

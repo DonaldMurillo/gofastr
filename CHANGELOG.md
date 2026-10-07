@@ -130,9 +130,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   no longer carries an action form above its table.
 - **`ui.DetailListConfig.Stacked`** draws a read-only value inside a
   form: the label above like a field's, the value in a control's box on
-  the soft surface. The entity record form draws its locked, state and
-  stamp fields this way, so they line up with the inputs around them
-  instead of jutting out as a two-column row.
+  the soft surface. The entity record form draws its locked fields this
+  way, so they line up with the inputs around them instead of jutting
+  out as a two-column row.
 - **`ui.DetailListConfig.Spread`** draws compact facts for a side
   column: the label at the row's start, the value at its end, one line
   each, no row rules. A first value that does not fit (an id) truncates
@@ -884,10 +884,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   prefills it. A relation field labels as its target (`customer_id`
   reads "Customer"), and an entity with no `TitleField`, `name` or
   `title` is named by its first plain `String` column. A record draws its state
-  badge, a button per open move (gated by `access.CanResourceExact`, the
-  route's own check), one icon-only menu holding copy link, duplicate
-  and delete, and Edit, Related and Activity tabs, with
-  `Related` and `RelatedAt` naming the related lists. An app action
+  as the header's badge with a "Created … · Updated …" line, a button
+  per open move (gated by `access.CanResourceExact`, the route's own
+  check), one icon-only menu holding copy link, duplicate and delete,
+  and Edit, Related and Activity tabs, with `Related` and `RelatedAt`
+  naming the related lists. Save sits in the header, answers Mod+S, and
+  reads as idle until the form has edits; a move or action declared
+  primary draws as secondary beside it. Related and Activity show their
+  counts, the Related count read through each entity's own gate and
+  scope. A Details column beside the form holds the id with a copy
+  button, the timestamps and each move's stamp. In a drawer the record
+  wears `ui.DrawerBar` and its menu drops copy link. An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.
   New, Duplicate,

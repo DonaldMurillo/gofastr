@@ -47,12 +47,24 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   (`.TabCounts()`) — "Query box, columns menu, trash view, saved
   views, tab counts" covers them.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
-  record's title and state badge, a button per state move whose `From`
-  holds the stored value, one icon-only menu named for the record (Copy
-  link, and Duplicate and Delete where turned on), and tabs: Edit (the form from `Display.Form`),
-  Related (the related entities the page names), any extension tabs, and
+  record's title, its state as the badge, and "Created … · Updated …"
+  from its timestamps; a button per state move whose `From` holds the
+  stored value; one icon-only menu named for the record (Copy link, and
+  Duplicate and Delete where turned on); and on the Edit tab, Save. Save
+  submits the form from the header, answers Mod+S (⌘S, Ctrl+S), and
+  reads as idle until the form has edits; beside it a move or app action
+  declared primary draws as secondary, so Save is the header's one
+  primary action. Tabs: Edit (the form from `Display.Form`), Related
+  (the related entities the page names), any extension tabs, and
   Activity (the audit trail) and API (the record as the API returns it)
-  where turned on.
+  where turned on. Related shows how many rows its lists hold, each
+  entity counted through its own read gate and scope, and Activity how
+  many trail entries it draws (50 at most, "50+" past that). The form's
+  side column holds Details: the id with a copy button, the created and
+  updated times, and each move's stamp; the state field and its stamps
+  are not form fields. Opened as a drawer, the record wears
+  `ui.DrawerBar` (close, its path, copy link) and its menu drops Copy
+  link.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills

@@ -59,15 +59,15 @@ func resendExt(perm string, variant ui.ButtonVariant, ran *[]ActionContext, fail
 // bulk route runs it on that record alone.
 func TestRecordActionRendersAndRuns(t *testing.T) {
 	var ran []ActionContext
-	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("", ui.ButtonPrimary, &ran, false),
+	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("", ui.ButtonDanger, &ran, false),
 		withAPI(map[string]string{"invoices": "/api/invoices"}))
 	page := renderRecord(t, x, "inv-1", nil)
 	body, path, tag := recordActionBody(t, page, "Resend receipt")
 	if body == nil {
 		t.Fatalf("no Resend receipt button on the record:\n%s", page)
 	}
-	if path != "/api/invoices/_bulk" || !strings.Contains(tag, "fui-button--primary") {
-		t.Fatalf("button posts to %q in %s, want the bulk route as a primary button", path, tag)
+	if path != "/api/invoices/_bulk" || !strings.Contains(tag, "fui-button--danger") {
+		t.Fatalf("button posts to %q in %s, want the bulk route as a danger button", path, tag)
 	}
 	if body["scope"] != "record" || body["ids"] != "inv-1" || body["action"] != "run:resend" {
 		t.Fatalf("button body = %v", body)

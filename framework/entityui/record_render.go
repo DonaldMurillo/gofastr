@@ -161,8 +161,8 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	}
 	masked := maskedFields(m, raw, row)
 
-	header := b.header(ctx, m, row, base)
 	if m.ext.Record != nil {
+		header := b.header(ctx, m, row, base, false)
 		body := contain(ctx, m.name, "record", func() (render.HTML, error) {
 			cctx := asCaller(ctx)
 			c, err := m.ext.Record(RecordContext{Ctx: cctx, UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
@@ -176,10 +176,11 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 		})
 		return render.Join(header, body), nil
 	}
-	body, err := b.tabbedBody(ctx, m, row, raw, masked, base)
+	body, active, err := b.tabbedBody(ctx, m, row, raw, masked, base)
 	if err != nil {
 		return "", err
 	}
+	header := b.header(ctx, m, row, base, active == "edit" && canUpdate(ctx, m, b.id))
 	// The override panel rides below the tabs, not inside one: it is an
 	// operator action on the record, not a view of it.
 	return render.Join(header, body, b.overridePanel(ctx, m, row, base)), nil
@@ -195,11 +196,13 @@ func (m *meta) notFound(ctx context.Context) render.HTML {
 	})
 }
 
-// header draws the record's page header: the title, the singular
-// eyebrow, the state badge, and the action row (moves, copy link,
-// duplicate, delete, back).
-func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string) render.HTML {
-	cfg := ui.PageHeaderConfig{Title: m.recordTitle(ctx, row), Eyebrow: m.singular(ctx)}
+// header draws the record's page header: the title, the state badge,
+// when it was created and last updated, and the action row (moves, app
+// actions, the menu, and Save when the Edit tab drew a form). Drawn as
+// an intercepted drawer it sits under the drawer's bar: close, the
+// record's path, copy link.
+func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string, save bool) render.HTML {
+	cfg := ui.PageHeaderConfig{Title: m.recordTitle(ctx, row), Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
 		if v := cell(rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
@@ -208,11 +211,64 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 			})
 		}
 	}
-	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, b.actions(ctx, m, row, base)...)
-	return ui.PageHeader(cfg)
+	actions := b.actions(ctx, m, row, base, save)
+	if save {
+		actions = append(actions, saveButton(ctx, m, false))
+	}
+	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
+	return render.Join(drawerBar(ctx), ui.PageHeader(cfg))
 }
 
-func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, base string) []render.HTML {
+// drawerBar is the intercepted drawer's bar: close, the path, copy
+// link. The full page draws none; its breadcrumbs place it.
+func drawerBar(ctx context.Context) render.HTML {
+	if as, ok := appui.OverlayFromContext(ctx); !ok || as != appui.ScreenDrawer {
+		return ""
+	}
+	return ui.DrawerBar(ui.DrawerBarConfig{Path: currentURLPath(ctx), CopyURL: absoluteURL(ctx), Ctx: ctx})
+}
+
+// saveButton is the form's submit, drawn in the header: it names the
+// record form by the form attribute, so it submits from outside it,
+// and Mod+S clicks it. It reads as idle until the form has edits.
+func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
+	return ui.Button(ui.ButtonConfig{
+		Label:           submitLabel(ctx, m, create),
+		Type:            "submit",
+		ID:              "eui-" + m.name + "-save",
+		Shortcut:        "Mod+S",
+		QuietUntilDirty: true,
+		ExtraAttrs:      html.Attrs{"form": recordFormID(m)},
+	})
+}
+
+// recordFormID is the record form's id, which the header's Save names.
+func recordFormID(m *meta) string { return "eui-" + m.name + "-form" }
+
+// stampLine is "Created Aug 2, 2026 · Updated Sep 2, 2026" from the
+// entity's timestamp columns, each part only when its column is shown
+// and set.
+func stampLine(ctx context.Context, m *meta, row map[string]any) string {
+	var parts []string
+	for _, s := range []struct {
+		col string
+		key i18nui.Key
+	}{{"created_at", i18nui.KeyEntityCreatedOn}, {"updated_at", i18nui.KeyEntityUpdatedOn}} {
+		f, ok := m.field(s.col)
+		if !ok || f.Hidden {
+			continue
+		}
+		if t, ok := parseTime(rowValue(row, s.col)); ok {
+			parts = append(parts, i18nui.TVars(ctx, s.key, map[string]string{"date": t.Format(dateLayout)}))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// actions are the header's moves, app actions and menu. With save the
+// header also draws Save, its one primary action, so a move or action
+// declared primary draws as secondary beside it.
+func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, base string, save bool) []render.HTML {
 	var out []render.HTML
 	if m.states != nil && canUpdate(ctx, m, b.id) {
 		current := cell(rowValue(row, m.states.Field))
@@ -229,7 +285,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			}
 			label := i18nui.TransitionLabel(ctx, m.tr, m.name, t.Key, t.Label)
 			variant, ok := ui.ParseButtonVariant(t.Variant)
-			if !ok || variant == "" {
+			if !ok || variant == "" || (save && variant == ui.ButtonPrimary) {
 				variant = ui.ButtonSecondary
 			}
 			out = append(out, ui.Button(ui.ButtonConfig{
@@ -243,23 +299,17 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			}))
 		}
 	}
-	out = append(out, b.appActions(ctx, m)...)
+	out = append(out, b.appActions(ctx, m, save)...)
 	if menu := b.menu(ctx, m, row, base); menu != "" {
 		out = append(out, menu)
 	}
-	out = append(out, ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.T(ctx, i18nui.KeyEntityBack),
-		Href:    base,
-		Variant: ui.ButtonGhost,
-		Icon:    "chevron-left",
-	}))
 	return out
 }
 
 // appActions are the Extension actions the caller may run on this
 // record, each a button posting the record scope to the bulk route: the
 // same route, gates and audit as a bulk run over one record.
-func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
+func (b *RecordBuilder) appActions(ctx context.Context, m *meta, save bool) []render.HTML {
 	if !m.hasAPI {
 		return nil
 	}
@@ -269,7 +319,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
 			continue
 		}
 		variant := act.app.Variant
-		if variant == "" {
+		if variant == "" || (save && variant == ui.ButtonPrimary) {
 			variant = ui.ButtonSecondary
 		}
 		body, err := json.Marshal(map[string]string{"action": act.key, "scope": bulkScopeRecord, "ids": b.id})
@@ -296,7 +346,12 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
 // buttons beside it, so the header row fits a phone. Nothing to offer
 // draws nothing.
 func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, base string) render.HTML {
-	span, items := b.copyLink(ctx)
+	// A drawer's bar carries the copy link; the full page's menu does.
+	var span render.HTML
+	var items []ui.MenuItem
+	if drawerBar(ctx) == "" {
+		span, items = b.copyLink(ctx)
+	}
 	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
 		items = append(items, ui.MenuItem{
 			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
@@ -331,9 +386,21 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 // utility class: present for the copy module, absent to the eye. No
 // request on the context draws neither.
 func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuItem) {
+	abs := absoluteURL(ctx)
+	if abs == "" {
+		return "", nil
+	}
+	id := "eui-rec-link"
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
+		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+}
+
+// absoluteURL is the request's absolute address without its query:
+// the record's shareable link. No request on the context is "".
+func absoluteURL(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
-		return "", nil
+		return ""
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -346,28 +413,28 @@ func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuIte
 	if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
 		scheme = p
 	}
-	abs := scheme + "://" + r.Host + r.URL.Path
-	id := "eui-rec-link"
-	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
-		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+	return scheme + "://" + r.Host + r.URL.Path
 }
 
 // tab is one entry of the record's tab strip.
 type tab struct {
 	key   string
 	label string
+	// count is the strip's badge on this tab; empty draws none.
+	count string
 	build func() (render.HTML, error)
 }
 
 // tabbedBody draws the tab strip (query-param navigation) and the
-// active tab's body. Only the active tab's body is built.
-func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, error) {
+// active tab's body, and names the active tab. Only the active tab's
+// body is built.
+func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, string, error) {
 	editTab := tab{key: "edit", label: i18nui.T(ctx, i18nui.KeyEntityTabEdit), build: func() (render.HTML, error) {
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
 	if len(b.related) > 0 {
-		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})
 	}
@@ -395,7 +462,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 	if b.activity && b.ui.host.Audit() != nil {
-		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
 			return b.activityTab(ctx, m), nil
 		}})
 	}
@@ -425,11 +492,12 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 			Text:    t.label,
 			Href:    currentURLPath(ctx) + "?tab=" + url.QueryEscape(t.key),
 			Current: i == active,
+			Badge:   t.count,
 		}
 	}
 	body, err := tabs[active].build()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	return ui.Stack(ui.StackConfig{},
 		ui.TabNav(ui.TabNavConfig{
@@ -438,7 +506,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 			Items: items,
 		}),
 		body,
-	), nil
+	), tabs[active].key, nil
 }
 
 // currentURLPath is the request path with its query stripped: the page

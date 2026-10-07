@@ -228,10 +228,17 @@ func TestPortedRelatedTabGatedEntityNoRows(t *testing.T) {
 	if strings.Contains(anon, "PAY-77") {
 		t.Fatalf("the gated related entity's rows leaked:\n%s", anon)
 	}
+	// Nor does their number: the tab's count passes the same gate.
+	if got := tabBadge(t, anon, "related"); got != "" {
+		t.Fatalf("the gated related entity's row count leaked: %q", got)
+	}
 
 	signed := render(x.userCtx("/eui/invoices/inv-9", "?tab=related", "u1"))
 	if !strings.Contains(signed, "PAY-77") {
 		t.Fatalf("a readable related entity's rows vanished — the gate is too tight:\n%s", signed)
+	}
+	if got := tabBadge(t, signed, "related"); got != "1" {
+		t.Fatalf("a readable related entity counts %q, want 1", got)
 	}
 }
 
