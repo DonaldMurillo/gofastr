@@ -143,6 +143,9 @@ type Strings struct {
 	// unlike the {n} the runtime substitutes, the key is known on
 	// the server.
 	TableSortBy string
+	// TableSelectAll names a select-all header checkbox whose column
+	// has no Header.
+	TableSelectAll string
 	// TableSortedBy says what a changed table is now sorted by, with
 	// {column} where the column's header goes and {direction} where
 	// the direction word goes. Rendered into data-hui-table-announcement
@@ -375,6 +378,8 @@ var defaultStrings = Strings{
 	// The i18nui catalog's own English for ui.table.sortBy; the ui
 	// bridge's gate holds the two to the same bytes.
 	TableSortBy: "Sort by {column}",
+	// The i18nui catalog's own English for ui.table.selectAll.
+	TableSelectAll: "Select all rows",
 	// The i18nui catalog's own English for ui.table.sortedBy and the
 	// two direction words; the ui bridge's gate holds the two to the
 	// same bytes.

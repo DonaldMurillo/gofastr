@@ -94,6 +94,7 @@ var stringsKeys = map[string]i18nui.Key{
 	// announcement's three keys are new with the headless behaviour
 	// and their English is the component's own defaults.
 	"TableSortBy":    i18nui.KeyTableSortBy,
+	"TableSelectAll": i18nui.KeyTableSelectAll,
 	"TableSortedBy":  i18nui.KeyTableSortedBy,
 	"SortAscending":  i18nui.KeyTableDirAscending,
 	"SortDescending": i18nui.KeyTableDirDescending,

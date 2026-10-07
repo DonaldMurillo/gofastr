@@ -460,6 +460,10 @@ What it does, one line per behaviour:
   the `data-hui-table-status` span. A failed answer leaves focus and
   status where they were. A plain table's status and announcement
   render for the pager's later use; this module fills neither.
+  A `data-hui-table-select-all` header checkbox (a `Column.SelectAll`)
+  checks or clears every enabled checkbox in its own table whose name
+  matches the attribute, firing a change event on each it moves, and
+  shows checked, clear or indeterminate as the rows change.
 
 Three more modules of this package ship beside it, each registered the
 same way and each owning one family of the stateful controls:

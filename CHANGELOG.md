@@ -28,6 +28,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `--ui-section-overline-*` knobs tune it.
 - **`ui.GridConfig.Fill`** keeps the row's empty columns (`auto-fill`), so
   a lone card, or a short last row, keeps a column's width.
+- **`ui.Column.Fit`** shrinks a DataTable column to its content, a
+  checkbox or a row menu, so the other columns take the spare width.
+- **`ui.Column.SelectAll`** (and `headless.Column.SelectAll`) draws a
+  header checkbox that checks and clears its own table's row boxes of
+  that name and shows mixed when only some are checked. A checkbox in
+  the indeterminate state now draws filled with a bar. An entityui bulk
+  list uses it for its select column.
 - **`ui.ClusterConfig.Shrink`**: the row narrows below its content and
   its last child takes the squeeze while the earlier children keep
   their size: a toolbar's menu button beside a trail that ellipsizes.
@@ -1363,6 +1370,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A DataTable sort header's label sits level with the values under
+  it**, at the start edge and the end edge, instead of one padding
+  further in.
 - **A `ui.StatCard` fills its grid cell**, so a row of cards shares one
   height when each sits in a wrapper such as a polled region; a card
   without a trend line no longer stops short of its neighbours.

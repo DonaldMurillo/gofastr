@@ -46,6 +46,17 @@ type Column struct {
 	// date at its hyphens. A wrapping cell keeps
 	// --ui-data-table-wrap-width (16rem) as its minimum width.
 	Wrap bool
+
+	// Fit narrows the column to its content, leaving the table's spare
+	// width to the data columns: a selection checkbox, a row menu. A
+	// column cannot both Fit and Wrap.
+	Fit bool
+
+	// SelectAll makes the header a checkbox that checks or clears the
+	// row checkboxes named SelectAll in this table, and shows mixed
+	// when only some are checked. Header, when set, is its accessible
+	// name. A select-all column cannot sort.
+	SelectAll string
 }
 
 // Row is a single rendered table row. Cells map column Key → HTML.
@@ -201,7 +212,16 @@ var dataTableClasses = headless.Classes{
 	headless.PartCaption: "fui-data-table__caption",
 	headless.PartSort:    "fui-data-table__sort",
 	headless.PartStatus:  "fui-visually-hidden",
+	// The select-all header draws the kit's checkbox.
+	headless.PartTableSelect: "fui-choice--checkbox fui-data-table__select",
+	headless.PartControl:     "fui-choice__input",
 
+	"header--fit":         "is-fit",
+	"header--center-fit":  "is-align-center is-fit",
+	"header--end-fit":     "is-align-end is-fit",
+	"cell--fit":           "is-fit",
+	"cell--center-fit":    "is-align-center is-fit",
+	"cell--end-fit":       "is-align-end is-fit",
 	"header--center":      "is-align-center",
 	"header--end":         "is-align-end",
 	"header--center-wrap": "is-align-center",
@@ -247,10 +267,16 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		case "center", "end":
 			variant = c.Align
 		}
+		if c.Wrap && c.Fit {
+			panic("ui: DataTable Column " + c.Key + " sets Fit and Wrap; a fitted column holds one line")
+		}
 		if c.Wrap {
 			variant = strings.TrimPrefix(variant+"-wrap", "-")
 		}
-		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, Variant: variant}
+		if c.Fit {
+			variant = strings.TrimPrefix(variant+"-fit", "-")
+		}
+		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, SelectAll: c.SelectAll, Variant: variant}
 	}
 	rows := make([]headless.Row, len(cfg.Rows))
 	for i, r := range cfg.Rows {

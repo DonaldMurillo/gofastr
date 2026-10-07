@@ -1167,6 +1167,16 @@ func dataTableCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
+/* A fitted column takes its content's width; the spare width goes to
+   the data columns. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table .is-fit { inline-size: 1%; }
+[data-cui-comp="ui-data-table"] .fui-data-table__select {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--spacing-touch-target);
+  vertical-align: middle;
+  cursor: pointer;
+}
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort {
   display: inline-flex;
@@ -1181,6 +1191,9 @@ func dataTableCSS(_ style.Theme) string {
   background: transparent;
   border: 0;
   padding: 0 var(--spacing-sm, 0.25rem);
+  /* The anchor's own inset hangs into the cell's padding, so the
+     label lines up with the values under it. */
+  margin-inline: calc(-1 * var(--spacing-sm, 0.25rem));
   color: inherit;
   font: inherit;
   text-align: inherit;

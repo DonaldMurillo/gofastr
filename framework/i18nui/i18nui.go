@@ -121,6 +121,7 @@ const (
 	// DataTable extras
 	KeyTableEmptyDesc Key = "ui.table.emptyDescription"
 	KeyTableSortBy    Key = "ui.table.sortBy"
+	KeyTableSelectAll Key = "ui.table.selectAll"
 
 	// FilterToolbar
 	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
@@ -385,6 +386,7 @@ var Defaults = map[Key]string{
 
 	KeyTableEmptyDesc: "Adjust your filters or add new entries.",
 	KeyTableSortBy:    "Sort by {column}",
+	KeyTableSelectAll: "Select all rows",
 
 	KeyFilterToolbarLabel: "Filters",
 	KeyFilterApply:        "Apply",
@@ -862,7 +864,7 @@ func AllKeys() []Key {
 		KeyBannerDismiss,
 		KeyTableSortAsc, KeyTableSortDesc, KeyTableNoSort,
 		KeyTableFilter, KeyTableNoResults, KeyTableLoading,
-		KeyTableEmptyDesc, KeyTableSortBy,
+		KeyTableEmptyDesc, KeyTableSortBy, KeyTableSelectAll,
 		KeyFilterToolbarLabel, KeyFilterApply, KeyFilterReset,
 		KeyFilterAll, KeyFilterAllPlain, KeyFilterSortBy,
 		KeyFilterClearAll, KeyFilterChipRemove,

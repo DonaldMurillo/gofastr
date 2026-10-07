@@ -375,6 +375,25 @@
     }
   }
 
+  // A header checkbox (data-hui-table-select-all) governs the row
+  // checkboxes its value names inside its own table: checking it
+  // checks them, and their states show it checked, clear or mixed.
+  function selectGroup(all) {
+    const x = all.closest('[data-hui-table]'), name = all.getAttribute('data-hui-table-select-all');
+    if (!x) return [];
+    return Array.prototype.filter.call(x.querySelectorAll('input[type="checkbox"]'), function (b) {
+      return b !== all && b.name === name && !b.disabled;
+    });
+  }
+  function syncSelectAll(all) {
+    const boxes = selectGroup(all), on = boxes.filter(function (b) { return b.checked; }).length;
+    all.checked = boxes.length > 0 && on === boxes.length;
+    all.indeterminate = on > 0 && on < boxes.length;
+  }
+  function armSelectAll(root) {
+    for (const all of within(root, '[data-hui-table-select-all]')) syncSelectAll(all);
+  }
+
   // ─── delegated listeners ────────────────────────────────────────
 
   // Clicks, typing and the two custom events are delegated from the
@@ -421,6 +440,23 @@
     if (!t || !t.closest) return;
     const root = t.closest('[data-hui-drop]');
     if (root && t.type === 'file') showFiles(root);
+    if (t.matches('[data-hui-table-select-all]')) {
+      // The wanted state is read first: each row's change event syncs
+      // this box again on the way.
+      const want = t.checked;
+      for (const b of selectGroup(t)) {
+        if (b.checked === want) continue;
+        b.checked = want;
+        b.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      syncSelectAll(t);
+      return;
+    }
+    const x = t.type === 'checkbox' && t.name && t.closest('[data-hui-table]');
+    if (!x) return;
+    for (const all of x.querySelectorAll('[data-hui-table-select-all]')) {
+      if (all.getAttribute('data-hui-table-select-all') === t.name) syncSelectAll(all);
+    }
   });
 
   document.addEventListener('action:rolled-back', function (e) {
@@ -454,6 +490,7 @@
     armActions(scope);
     armDrops(scope);
     armTables(scope);
+    armSelectAll(scope);
     armSystem(scope);
   }
 

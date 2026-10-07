@@ -436,6 +436,17 @@ func toggleCSS(_ style.Theme) string {
   background-position: 3px 8px, 7px 4px;
 }
 
+/* A mixed box (a select-all over a partial selection) is a filled box
+   with a bar. */
+.fui-choice--checkbox .fui-choice__input:indeterminate {
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
+  background-image: linear-gradient(var(--color-primary-fg, #FFFFFF), var(--color-primary-fg, #FFFFFF));
+  background-repeat: no-repeat;
+  background-size: 50% 2px;
+  background-position: center;
+}
+
 /* ─── Radio: the dot is a hard-stop radial gradient. ─── */
 .fui-choice--radio .fui-choice__input {
   border-radius: 50%;
