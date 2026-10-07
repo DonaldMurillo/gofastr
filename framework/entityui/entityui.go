@@ -86,6 +86,9 @@ type UI struct {
 	// recordPath is the base of an entity's record screens, nil when
 	// the UI links no relation to its record.
 	recordPath func(e *entity.Entity) (string, bool)
+	// actorName names an audit entry's actor, nil when entries show the
+	// stored id.
+	actorName func(ctx context.Context, id string) string
 	// now is the clock queued runs lease and finish by.
 	now func() time.Time
 }
@@ -161,6 +164,19 @@ func (u *UI) WithSavedViews(store SavedViewStore) *UI {
 	}
 	c := *u
 	c.views = store
+	return &c
+}
+
+// WithActorName returns a UI whose Activity tab names each entry's actor
+// by name(ctx, id), an account's email say, in place of the bare id the
+// audit row stores. An empty answer, or a panic, falls back to the id.
+// A nil name returns the UI unchanged.
+func (u *UI) WithActorName(name func(ctx context.Context, id string) string) *UI {
+	if name == nil {
+		return u
+	}
+	c := *u
+	c.actorName = name
 	return &c
 }
 

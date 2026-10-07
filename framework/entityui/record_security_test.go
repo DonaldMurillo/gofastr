@@ -102,8 +102,9 @@ func TestRecordActivityHidesMaskedAndHidden(t *testing.T) {
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Activity().
 		RenderCtx(x.userCtx("/rec/invoices/inv-1", "?tab=activity", "u1")))
 
-	if !strings.Contains(body, `number: INV-1</pre>`) || !strings.Contains(body, `number: INV-2</pre>`) {
-		t.Fatalf("the diff shows the changed readable field:\n%s", body)
+	if !strings.Contains(body, `fui-change-list__label" data-cui-internal="">Number</span>`) ||
+		!strings.Contains(body, `from </span>INV-1</del>`) || !strings.Contains(body, `to </span>INV-2</ins>`) {
+		t.Fatalf("the change list shows the changed readable field:\n%s", body)
 	}
 	if strings.Contains(body, "tok-secret") || strings.Contains(body, "user_hash") {
 		t.Fatalf("SECURITY: the activity diff leaked a masked or hidden field:\n%s", body)

@@ -28,8 +28,6 @@ const (
 	KeyEntityReplace          Key = "ui.entity.replace"          // "Replace"
 	KeyEntityReplaceHint      Key = "ui.entity.replaceHint"      // "Saving the form keeps it. Type a new value and choose Replace to change it."
 	KeyEntityNewValue         Key = "ui.entity.newValue"         // "New value"
-	KeyEntityBefore           Key = "ui.entity.before"           // "Before"
-	KeyEntityAfter            Key = "ui.entity.after"            // "After"
 	KeyEntityTabApi           Key = "ui.entity.tabApi"           // "API"
 	KeyEntityApiJsonTitle     Key = "ui.entity.apiJsonTitle"     // "This record as the API returns it"
 	KeyEntityApiRestTitle     Key = "ui.entity.apiRestTitle"     // "REST"
@@ -52,6 +50,18 @@ const (
 	KeyEntityOverrideStateBad Key = "ui.entity.overrideStateBad" // "That status is not one this entity declares."
 	KeyEntityOverrideNoAudit  Key = "ui.entity.overrideNoAudit"  // "A status override needs an audit log on this entity."
 	KeyEntityOverrideDenied   Key = "ui.entity.overrideDenied"   // "You may not override the status of this {entity}."
+
+	// One Activity tab entry's headline: who did what to this record.
+	KeyEntityActivityCreated  Key = "ui.entity.activityCreated"  // "{actor} created this {entity}"
+	KeyEntityActivityUpdated  Key = "ui.entity.activityUpdated"  // "{actor} made changes"
+	KeyEntityActivitySaved    Key = "ui.entity.activitySaved"    // "{actor} saved this {entity}"
+	KeyEntityActivityDeleted  Key = "ui.entity.activityDeleted"  // "{actor} deleted this {entity}"
+	KeyEntityActivityRestored Key = "ui.entity.activityRestored" // "{actor} restored this {entity}"
+	KeyEntityActivityMoved    Key = "ui.entity.activityMoved"    // "{actor} ran {action}"
+	KeyEntityActivityOverride Key = "ui.entity.activityOverride" // "{actor} overrode the status"
+	KeyEntityActivityOther    Key = "ui.entity.activityOther"    // "{actor}: {action}"
+	KeyEntityActivitySystem   Key = "ui.entity.activitySystem"   // "System"
+	KeyEntityActivityReason   Key = "ui.entity.activityReason"   // "Reason: {reason}"
 )
 
 var entityRecordDefaults = map[Key]string{
@@ -81,8 +91,6 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityReplace:          "Replace",
 	KeyEntityReplaceHint:      "Saving the form keeps it. Type a new value and choose Replace to change it.",
 	KeyEntityNewValue:         "New value",
-	KeyEntityBefore:           "Before",
-	KeyEntityAfter:            "After",
 	KeyEntityTabApi:           "API",
 	KeyEntityApiJsonTitle:     "This record as the API returns it",
 	KeyEntityApiRestTitle:     "REST",
@@ -105,4 +113,15 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityOverrideStateBad: "That status is not one this entity declares.",
 	KeyEntityOverrideNoAudit:  "A status override needs an audit log on this entity.",
 	KeyEntityOverrideDenied:   "You may not override the status of this {entity}.",
+
+	KeyEntityActivityCreated:  "{actor} created this {entity}",
+	KeyEntityActivityUpdated:  "{actor} made changes",
+	KeyEntityActivitySaved:    "{actor} saved this {entity}",
+	KeyEntityActivityDeleted:  "{actor} deleted this {entity}",
+	KeyEntityActivityRestored: "{actor} restored this {entity}",
+	KeyEntityActivityMoved:    "{actor} ran {action}",
+	KeyEntityActivityOverride: "{actor} overrode the status",
+	KeyEntityActivityOther:    "{actor}: {action}",
+	KeyEntityActivitySystem:   "System",
+	KeyEntityActivityReason:   "Reason: {reason}",
 }

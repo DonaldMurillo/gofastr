@@ -79,6 +79,11 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		DirParam:   s.p.dir,
 		Empty:      b.emptyState(ctx, s),
 		Ctx:        ctx,
+		// The heading names the table too, as a hidden caption (the
+		// heading already shows): the scroll region is a named region,
+		// and two lists on one page are told apart.
+		Caption:       b.title(ctx, s.m),
+		CaptionHidden: true,
 	}
 	if known && pagesFor(total, s.limit) > 1 && !b.top {
 		dt.Pagination = &ui.PaginationConfig{

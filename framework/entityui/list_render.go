@@ -251,10 +251,7 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 // the counts.
 func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known, tabsCounted bool) render.HTML {
 	m := s.m
-	title := b.heading
-	if title == "" {
-		title = m.plural(ctx)
-	}
+	title := b.title(ctx, m)
 	desc := m.description(ctx)
 	subtitle := ""
 	if known && (desc == "" || !tabsCounted) {
@@ -301,10 +298,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 // no rows: bulk belongs to the entity's own list.
 func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
 	m := s.m
-	title := b.heading
-	if title == "" {
-		title = m.plural(ctx)
-	}
+	title := b.title(ctx, m)
 	var count render.HTML
 	if known {
 		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
@@ -473,6 +467,14 @@ func (s *listState) ownsFacetParam(name string) bool {
 		}
 	}
 	return false
+}
+
+// title is the list's heading: the builder's, else the entity's plural.
+func (b *ListBuilder) title(ctx context.Context, m *meta) string {
+	if b.heading != "" {
+		return b.heading
+	}
+	return m.plural(ctx)
 }
 
 // headingLevel is the list heading's level: the builder's, or 1 when

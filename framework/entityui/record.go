@@ -62,6 +62,22 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 	return m.recordTitle(ctx, row), true
 }
 
+// SnapshotTitle names a record from a stored copy of its values, an
+// audit row's old or new side, the way RecordTitle names a live one: its
+// title field, else the entity's singular name. A masked title field
+// reads as the singular name. It answers false for an entity this UI
+// does not draw. It reads nothing, so a deleted record still has a name.
+func (u *UI) SnapshotTitle(ctx context.Context, entityName string, row map[string]any) (string, bool) {
+	m, err := u.meta(entityName)
+	if err != nil {
+		return "", false
+	}
+	if f, ok := m.field(m.titleField()); ok && m.hiddenFromCaller(f) {
+		return m.singular(ctx), true
+	}
+	return m.recordTitle(ctx, row), true
+}
+
 // RecordMatch is one record SearchRecords found: its id and its title.
 type RecordMatch struct {
 	ID    string

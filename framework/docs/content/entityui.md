@@ -61,7 +61,15 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   list (see below) whose Add opens the create form with this record
   prefilled, and shows how many rows its lists hold, each
   entity counted through its own read gate and scope, and Activity how
-  many trail entries it draws (50 at most, "50+" past that). The form's
+  many trail entries it draws (50 at most, "50+" past that). Activity is
+  a timeline, newest first: each entry is a sentence with the actor in
+  bold ("**ada@example.com** made changes", "… created this invoice",
+  "… ran Send", "… overrode the status") and how long ago, and an edit
+  lists the fields it changed as a `ui.ChangeList`, each value drawn the
+  way the list's cell draws it (a badge, a money figure, a related
+  record's title). An update that changed no field the caller may see
+  reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
+  never appear, and an override's reason shows under it. The form's
   side column holds Details: the id with a copy button, the created and
   updated times, and each move's stamp; the state field and its stamps
   are not form fields. Opened as a drawer, the record wears
@@ -167,7 +175,9 @@ The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
 none), `As("cards")`, `Where(field, value)` (pins a term inside the
 caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where
-record links hang off), `Heading(text, level)` and `Empty(text)`,
+record links hang off), `Heading(text, level)` (it also names the table,
+as a hidden caption, so two lists on one page are two named regions) and
+`Empty(text)`,
 `NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
 for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
 `QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
@@ -205,6 +215,17 @@ refuses does not use up a place, and the read pages past refused rows for
 at most five pages of `limit` rows. Both read behind the same gates as
 the screens (scope, sign-in, RBAC, a Decider's per-row answer, the read
 hooks) and answer nothing for a record or entity the caller may not see.
+
+`appUI.SnapshotTitle(ctx, entity, row)` names a record from a stored copy
+of its values (an audit row's old or new side) the way `RecordTitle`
+names a live one, reading nothing, so a deleted record keeps its name; a
+masked title field reads as the entity's singular name.
+`appUI.Changes(ctx, entity, before, after)` draws what one edit changed
+as the Activity tab's change list, "" when no field the caller may see
+differs; `before` and `after` are keyed by the API's wire names, the way
+the audit log stores them. `appUI.WithActorName(name)` returns a UI whose
+Activity tab names each actor by `name(ctx, id)` (the admin passes the
+account's email), the id where it answers "" or panics.
 
 `appUI.WithAPIPath(path)` returns a UI with the same screens and
 Extensions whose writes (save, delete, moves, bulk, export) post to
