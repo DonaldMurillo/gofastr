@@ -40,6 +40,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   gains `Dismiss` (`data-hui-disclosure-dismiss`) for panels that
   float over the page, and every menu root carries it. An accordion
   section leaves it off.
+- **`ui.Dropdown`.** A trigger button whose panel floats under it and
+  holds any content, such as a list's filter fields or a "save view"
+  form, where a `Menu` holds only command rows. It closes on a click
+  outside, Escape and a navigation, and fields inside it submit with
+  their form while it is closed. `Icon`, `Count` (a badge) and
+  `Align` dress the trigger.
+- **Checkbox menu rows.** `MenuItem.Check` renders a
+  `role="menuitemcheckbox"` row whose `aria-checked` comes from
+  `Checked`. The server owns the state, so the row is a link or RPC
+  that toggles it.
+- **Icons:** `filter`, `columns`, `bookmark`, `arrow-up`, `arrow-down`,
+  `chevrons-up-down` and `download`.
 - **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
   window scrolls the page while the nav column sticks to the top, one
   viewport tall with its own overflow scroll, and the `Toolbar` row

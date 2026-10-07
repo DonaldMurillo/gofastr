@@ -79,7 +79,13 @@ type MenuItem struct {
 	// both set is refused at render.
 	Radio string
 
-	// Checked sets aria-checked on a Radio row.
+	// Check renders the row as a checkbox option: role=
+	// "menuitemcheckbox" plus aria-checked (see Checked). The state is
+	// the server's: pair it with Href or RPC, whose answer re-renders
+	// the row. Mutually exclusive with Radio and Children.
+	Check bool
+
+	// Checked sets aria-checked on a Radio or Check row.
 	Checked bool
 
 	// Action renders the row as a form submission instead of a link or
@@ -350,12 +356,14 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 	// out of the tab order.
 	own["tabindex"] = "-1"
 	own["role"] = menuRowRole(it)
-	if it.Radio != "" {
+	if it.Radio != "" || it.Check {
 		checked := "false"
 		if it.Checked {
 			checked = "true"
 		}
 		own["aria-checked"] = checked
+	}
+	if it.Radio != "" {
 		own["data-hui-menu-radio"] = it.Radio
 	}
 	if it.Disabled {
@@ -472,6 +480,9 @@ func menuRowRole(it MenuItem) string {
 	if it.Radio != "" {
 		return "menuitemradio"
 	}
+	if it.Check {
+		return "menuitemcheckbox"
+	}
 	return "menuitem"
 }
 
@@ -564,7 +575,13 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 // checkMenuItemCoherence refuses the caller-incoherent combinations.
 func checkMenuItemCoherence(it MenuItem) {
 	checkMenuRowShape(it)
+	if it.Check && it.Radio != "" {
+		panic("headless: MenuItem cannot be both Check and Radio — a row is one kind of option")
+	}
 	if len(it.Children) > 0 {
+		if it.Check {
+			panic("headless: MenuItem with Check cannot have Children — a checkbox row is a leaf option, a submenu parent is a disclosure")
+		}
 		if it.Radio != "" {
 			panic("headless: MenuItem with Radio cannot have Children — a radio row is a leaf command, a submenu parent is a disclosure")
 		}

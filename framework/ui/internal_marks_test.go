@@ -632,6 +632,7 @@ var kitComponents = []kitComponent{
 	{name: "DetailList", fn: DetailList},
 	{name: "DiffViewer", fn: DiffViewer},
 	{name: "Divider", fn: Divider},
+	{name: "Dropdown", fn: Dropdown, required: []string{"Content"}, prep: prepSet("Align", DropdownEnd, "Icon", "filter")},
 	{name: "EmptyState", fn: EmptyState},
 	{name: "EmptyValue", fn: EmptyValue},
 	{name: "FactBox", fn: FactBox},

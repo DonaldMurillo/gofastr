@@ -87,9 +87,14 @@ type MenuItem struct {
 	// zero-value output is unchanged.
 	Radio string
 
-	// Checked sets aria-checked on a Radio row. Inert without Radio
-	// (like Confirm without RPC): there is no checked state to render
-	// on a plain menuitem.
+	// Check renders the row as a checkbox option (menuitemcheckbox)
+	// with a check mark while Checked. The state is the server's: pair
+	// it with Href (a link that toggles the option) or RPC. Mutually
+	// exclusive with Radio and Children.
+	Check bool
+
+	// Checked sets aria-checked on a Radio or Check row. Inert on a
+	// plain menuitem: there is no checked state to render.
 	Checked bool
 
 	// Action renders the row as a form submission instead of a link or
@@ -375,6 +380,7 @@ func headlessMenuItem(it MenuItem) headless.MenuItem {
 		Separator:  it.Separator,
 		ID:         it.ID,
 		Radio:      it.Radio,
+		Check:      it.Check,
 		Checked:    it.Checked,
 		Action:     action,
 		ExtraAttrs: extras,
@@ -575,10 +581,10 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   opacity: var(--ui-menu-submenu-caret-opacity, 0.7);
 }
 :dir(rtl) [data-cui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
-/* Radio rows: the check indicator is likewise a pseudo-element —
-   space is reserved in both states so labels align whether checked
-   or not. */
-[data-cui-comp="ui-menu"] [role="menuitemradio"]::before {
+/* Radio and checkbox rows: the check indicator is likewise a
+   pseudo-element — space is reserved in both states so labels align
+   whether checked or not. */
+[data-cui-comp="ui-menu"] :is([role="menuitemradio"], [role="menuitemcheckbox"])::before {
   content: "✓";
   display: inline-flex;
   width: 1em;
@@ -586,7 +592,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   justify-content: center;
   visibility: hidden;
 }
-[data-cui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
+[data-cui-comp="ui-menu"] :is([role="menuitemradio"], [role="menuitemcheckbox"])[aria-checked="true"]::before { visibility: visible; }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-menu"] .fui-menu__panel { animation: none; }
 }`

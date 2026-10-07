@@ -128,6 +128,8 @@ func TestMenuRefusesBrokenConfiguration(t *testing.T) {
 		{"whitespace-only row label", MenuProps{Label: "x", Items: []MenuItem{{Label: "  "}}}},
 		{"row without a label", MenuProps{Label: "x", Items: []MenuItem{{}}}},
 		{"radio with children", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Radio: "g", Children: []MenuItem{{Label: "in"}}}}}},
+		{"check with children", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Check: true, Children: []MenuItem{{Label: "in"}}}}}},
+		{"check and radio", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Check: true, Radio: "g"}}}},
 		{"href with children", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Href: "/x", Children: []MenuItem{{Label: "in"}}}}}},
 		{"action with radio", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Radio: "g", Action: &MenuAction{Path: "/x", Unsafe: true}}}}},
 		{"action without fields", MenuProps{Label: "x", Items: []MenuItem{{Label: "p", Action: &MenuAction{Path: "/x"}}}}},
@@ -228,5 +230,25 @@ func TestDisclosureNameMakesAnExclusiveGroup(t *testing.T) {
 		ExtraAttrs: html.Attrs{"name": "evil"}}, nil))
 	if strings.Contains(smuggled, `name="evil"`) {
 		t.Errorf("a caller forged the group name:\n%s", smuggled)
+	}
+}
+
+// A Check row is a checkbox option the server owns: a link with
+// role=menuitemcheckbox and aria-checked, no radio group.
+func TestMenuCheckRowIsACheckbox(t *testing.T) {
+	out := string(Menu(MenuProps{ID: "cols", Label: "Columns", Items: []MenuItem{
+		{Label: "Amount", Href: "/x?cols=amount", Check: true, Checked: true},
+		{Label: "Status", Href: "/x?cols=status", Check: true},
+	}}, nil))
+	for _, want := range []string{
+		`<a aria-checked="true" href="/x?cols=amount" role="menuitemcheckbox" tabindex="-1">`,
+		`<a aria-checked="false" href="/x?cols=status" role="menuitemcheckbox" tabindex="-1">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("menu missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "data-hui-menu-radio") {
+		t.Errorf("a Check row joined a radio group:\n%s", out)
 	}
 }

@@ -37,7 +37,7 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
-  const ITEM = '[role="menuitem"],[role="menuitemradio"]';
+  const ITEM = '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
   const DETAILS = 'details[data-hui-disclosure]';
   const TRIGGER_WRAP = '[data-hui-menu-trigger]';
   const INTERACTIVE = 'button, a, input, select, textarea, [role="button"]';
