@@ -44,7 +44,10 @@ type Kind struct {
 
 // InputContext is what a Kind's Input receives: the field, the control
 // wiring the form field built (label association, description chain,
-// invalid state), the input name and the current value as text.
+// invalid state), the input name, the current value as text, and the
+// label and help the form resolved for the field (the catalog entry,
+// else the Display hint, else the humanized name), so a kind draws the
+// same words a built-in field would.
 type InputContext struct {
 	Ctx         context.Context
 	Entity      string
@@ -53,6 +56,8 @@ type InputContext struct {
 	Name        string
 	Value       string
 	Placeholder string
+	Label       string
+	Help        string
 }
 
 // CellContext is what a Kind's Cell and Detail receive. Row and Value

@@ -36,7 +36,7 @@ func builtinKind(name string) Kind {
 		t := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.FormField(ui.FormFieldConfig{
-				Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic), Required: ic.Control.Required,
+				Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
 						Field: c, Type: t, Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
@@ -49,8 +49,8 @@ func builtinKind(name string) Kind {
 	case "markdown", "code":
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
-				Name: ic.Name, Label: kindLabel(ic), ID: kindID(ic), Value: ic.Value,
-				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Monospace: true,
+				Name: ic.Name, Label: ic.Label, ID: ic.Control.ID, Value: ic.Value,
+				Rows: 8, Placeholder: ic.Placeholder, Help: ic.Help, Monospace: true,
 				Required:  ic.Control.Required,
 				MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
 			})
@@ -68,7 +68,7 @@ func moneyInput(ic InputContext) render.HTML {
 		step = "0.01"
 	}
 	return ui.FormField(ui.FormFieldConfig{
-		Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic), Required: ic.Control.Required,
+		Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 		Input: func(c headless.FieldControl) render.HTML {
 			return ui.InputGroup(ui.InputGroupConfig{
 				Prepend: render.Text(i18nui.T(ic.Ctx, i18nui.KeyEntityCurrency)),
@@ -87,32 +87,6 @@ func bound(b *float64) string {
 		return ""
 	}
 	return strconv.FormatFloat(*b, 'f', -1, 64)
-}
-
-// kindLabel and kindHelp resolve through the InputContext's own ctx:
-// the builder attaches the app's translator before calling a kind, so
-// the kind sees the same catalog the built-in fields do.
-func kindLabel(ic InputContext) string {
-	if ic.Field.Type == schema.Relation {
-		return i18nui.RelationLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
-	}
-	return i18nui.FieldLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
-}
-
-func kindHelp(ic InputContext) string {
-	return i18nui.FieldHelp(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
-}
-
-// kindID is the control id a kind's field derives, the same scheme the
-// form's own fields use.
-func kindID(ic InputContext) string { return "eui-f-" + ic.Field.Name }
-
-// kindControl is the wiring a kind that builds its own control copies
-// from the InputContext: the label's target, the description chain and
-// the required flag, precomputed the way FormField would hand them
-// down.
-func kindControl(ic InputContext) headless.FieldControl {
-	return ic.Control
 }
 
 // display renders a field's stored value for a read-only surface: the

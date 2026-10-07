@@ -748,7 +748,7 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
 			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,
-			Control: headless.FieldControl{ID: id, Required: f.Required},
+			Label: label, Help: help, Control: headless.FieldControl{ID: id, Required: f.Required},
 		}), nil
 	})
 }

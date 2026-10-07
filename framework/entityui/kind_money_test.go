@@ -25,7 +25,7 @@ func dealsConfig() entity.EntityConfig {
 		Display: &entity.DisplayConfig{
 			TitleField: "name",
 			Fields: map[string]entity.FieldDisplay{
-				"amount": {Input: "money"},
+				"amount": {Input: "money", Label: "Deal value", Help: "Before tax"},
 				"fee":    {Input: "money", Locked: true},
 			},
 		},
@@ -124,5 +124,19 @@ func TestBuiltinKindRefusesWrongType(t *testing.T) {
 	x := newTestHost(t, map[string]entity.EntityConfig{"things": cfg}, nil)
 	if _, err := New(x.host, Extensions{Kinds: map[string]Kind{"money": {Input: func(InputContext) render.HTML { return "" }}}}); err != nil {
 		t.Errorf("an app money kind was refused: %v", err)
+	}
+}
+
+// A kind draws the label and help the form resolved, the Display hint
+// included, never the humanized field name.
+func TestKindUsesDisplayLabel(t *testing.T) {
+	x := newDealsUI(t)
+	body := string(x.ui.Create("deals").Base("/deals").RenderCtx(x.userCtx("/deals/create", "", "u1")))
+	label := regexp.MustCompile(`<label[^>]*\bfor="eui-f-amount"[^>]*>[^<]*`).FindString(body)
+	if !strings.HasSuffix(label, ">Deal value") {
+		t.Errorf("the amount label is not the hint: %q", label)
+	}
+	if !strings.Contains(body, "Before tax") {
+		t.Errorf("the amount help is missing:\n%s", body)
 	}
 }

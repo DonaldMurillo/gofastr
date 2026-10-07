@@ -229,7 +229,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   `Cell` and `Detail` get the row after the read hooks, so a column a hook
   masks stays masked in them, and a relation whose target the caller may
   not read draws muted without calling them. Only `Input` gets the stored
-  value, since a form prefills from it.
+  value, since a form prefills from it. `InputContext.Label` and `Help`
+  carry the words the form resolved (catalog entry, else the Display
+  hint, else the humanized name), so a kind labels its field the way a
+  built-in field would.
 - **Views** bind a func to a `Display.Views` key, for a filter that
   depends on who is looking, the tenant or the clock. The URL carries the
   key (`?view=overdue`), never the predicate. The func's predicate passes
