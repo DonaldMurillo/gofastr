@@ -253,6 +253,37 @@ func TestBulkRefusedEnqueueIsNotResumed(t *testing.T) {
 	}
 }
 
+// A runner whose Enqueue panics takes the refused path: the confirm
+// answers 500 and a resume never runs the job behind the confirmer.
+func TestBulkPanickingEnqueueIsNotResumed(t *testing.T) {
+	r := newRemindJob(t)
+	r.mb.panicEnqueue = true
+	if code, _ := r.post(t); code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500", code)
+	}
+	r.mb.panicEnqueue = false
+	if n, err := r.x.ui.ResumeBulkJobs(context.Background(), 0); err != nil || n != 0 {
+		t.Fatalf("SECURITY: ResumeBulkJobs = %d, %v; a job whose Enqueue panicked must stay stopped", n, err)
+	}
+}
+
+// A Principal that panics stops the run like one that errors: nothing
+// is written and the job closes as stopped, not held under its lease.
+func TestBulkPanickingPrincipalStopsTheRun(t *testing.T) {
+	r := newRemindJob(t)
+	id := r.queue(t)
+	r.mb.principal = func(BulkJob) (context.Context, error) { panic("principal") }
+	if err := r.x.ui.RunBulkJob(context.Background(), id); err != nil {
+		t.Fatalf("RunBulkJob with a panicking Principal = %v, want the run stopped", err)
+	}
+	if len(r.calls) != 0 {
+		t.Fatalf("SECURITY: the run reached %d records without a creator context", len(r.calls))
+	}
+	if j, _ := r.mb.Job(context.Background(), id); j.Status != BulkStopped {
+		t.Fatalf("job status %q, want stopped", j.Status)
+	}
+}
+
 // Finishing a job drops its ids; PruneBulkJobs drops finished jobs past
 // the retention and keeps queued ones.
 func TestBulkFinishedJobsArePruned(t *testing.T) {

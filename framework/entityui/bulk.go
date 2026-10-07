@@ -684,7 +684,7 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, m *meta, act 
 		return
 	}
 	if held.ID == job.ID {
-		if err := u.ext.Jobs.Enqueue(ctx, job); err != nil {
+		if err := u.enqueueJob(ctx, job); err != nil {
 			slog.ErrorContext(ctx, "entityui: bulk enqueue", "entity", m.name, "job", job.ID, "error", err)
 			u.abandonJob(ctx, store, m, job)
 			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
@@ -811,7 +811,7 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 		if err != nil {
 			return err
 		}
-		cctx, perr := u.ext.Jobs.Principal(ctx, job)
+		cctx, perr := u.jobPrincipal(ctx, job)
 		if len(ids) == 0 {
 			if perr != nil {
 				cctx = ctx
@@ -866,7 +866,7 @@ func (u *UI) ResumeBulkJobs(ctx context.Context, grace time.Duration) (int, erro
 	}
 	n := 0
 	for _, job := range jobs {
-		if err := u.ext.Jobs.Enqueue(ctx, job); err != nil {
+		if err := u.enqueueJob(ctx, job); err != nil {
 			return n, fmt.Errorf("entityui: resume bulk job %s: %w", job.ID, err)
 		}
 		if err := store.Enqueued(ctx, job.ID); err != nil {
@@ -921,4 +921,28 @@ func writeBulkJSON(w http.ResponseWriter, status int, v any) {
 
 func writeBulkError(w http.ResponseWriter, status int, msg string) {
 	writeBulkJSON(w, status, map[string]string{"error": msg})
+}
+
+// enqueueJob is Jobs.Enqueue with a panic turned into an error, so a
+// runner that panics takes the refused path: the job is abandoned, and
+// no resume runs it behind a confirm that answered failure.
+func (u *UI) enqueueJob(ctx context.Context, job BulkJob) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("entityui: the job runner's Enqueue panicked")
+		}
+	}()
+	return u.ext.Jobs.Enqueue(ctx, job)
+}
+
+// jobPrincipal is Jobs.Principal with a panic turned into an error, so
+// the run stops and hands its lease back instead of holding it until it
+// runs out.
+func (u *UI) jobPrincipal(ctx context.Context, job BulkJob) (c context.Context, err error) {
+	defer func() {
+		if recover() != nil {
+			c, err = nil, errors.New("entityui: the job runner's Principal panicked")
+		}
+	}()
+	return u.ext.Jobs.Principal(ctx, job)
 }
