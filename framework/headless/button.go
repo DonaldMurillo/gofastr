@@ -223,6 +223,17 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			checkNoControlBytes("a Button Action", k, v)
 			out[k] = v
+		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+			checkConfirmWording("Action", a, k, v)
+			out[k] = v
+		case "data-cui-confirm-part":
+			// The part of the kit's confirm dialog this button is: the
+			// confirm module (confirm.js) finds the answer buttons by
+			// it. Only the dialog's own buttons carry one.
+			if v != "accept" && v != "accept-danger" && v != "cancel" {
+				panic("headless: Action carries data-cui-confirm-part " + strconv.Quote(v) + ", and a confirm dialog's buttons are accept, accept-danger and cancel")
+			}
+			out[k] = v
 		case "data-cui-prefetch":
 			for _, name := range strings.Fields(v) {
 				for i := range len(name) {
@@ -338,4 +349,29 @@ func orDefault(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// hasFold reports whether a carries key under any spelling of its case.
+func hasFold(a html.Attrs, key string) bool {
+	for k := range a {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkConfirmWording checks what a confirm dialog says
+// (interactive.Confirm): a title or an accept label must say
+// something, danger is the one tone the dialog draws, and every one
+// of them rides only beside the data-cui-confirm it words.
+func checkConfirmWording(seam string, a html.Attrs, k, v string) {
+	switch {
+	case k == "data-cui-confirm-tone" && v != "danger":
+		panic("headless: " + seam + " carries data-cui-confirm-tone " + strconv.Quote(v) + ", and danger is the only tone the confirm dialog draws")
+	case v == "":
+		panic("headless: " + seam + " carries an empty " + k + " — it words the confirm dialog, and empty words nothing")
+	case !hasFold(a, "data-cui-confirm"):
+		panic("headless: " + seam + " carries " + k + " with no data-cui-confirm — it words a confirmation nothing asks")
+	}
 }

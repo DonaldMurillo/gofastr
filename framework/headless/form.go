@@ -255,6 +255,9 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Form Request carries an empty data-cui-confirm — a confirmation with no message confirms nothing")
 			}
 			out[k] = v
+		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+			checkConfirmWording("Form Request", a, k, v)
+			out[k] = v
 		case "data-action-mount":
 			// A compiled action name: an identifier the host
 			// registered, not prose. Whitespace or control bytes in it

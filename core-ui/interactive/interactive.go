@@ -34,10 +34,10 @@ import (
 
 // Action describes an RPC call triggered by click or submit.
 type Action struct {
-	method  string // GET, POST, PUT, DELETE, PATCH
-	path    string // URL path
-	confirm string // pre-flight window.confirm message (empty = none)
-	body    string // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
+	method  string  // GET, POST, PUT, DELETE, PATCH
+	path    string  // URL path
+	confirm Confirm // pre-flight confirmation (empty Message = none)
+	body    string  // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
 	effects []Effect
 	// errorToast is the data-cui-rpc-error-toast title; nil = no error toast.
 	errorToast *string
@@ -83,26 +83,60 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 	return a
 }
 
+// Confirm is what a pre-flight confirmation says: the dialog's title,
+// its message, the accept button's label, and whether accepting
+// destroys something (Danger draws the accept button in the danger
+// variant). Only Message is required; an empty Title or Accept keeps
+// the kit dialog's own ("Are you sure?", "Confirm").
+type Confirm struct {
+	Title   string
+	Message string
+	Accept  string
+	Danger  bool
+}
+
 // WithConfirm gates the action behind a PRE-FLIGHT confirmation. Before the
-// RPC is dispatched, the runtime shows a native window.confirm(message)
-// dialog; cancelling aborts the request entirely, so the RPC never fires.
+// RPC is dispatched, the runtime opens the kit's confirm dialog with
+// message; cancelling aborts the request entirely, so the RPC never fires.
 // Because the gate runs *before* the request, not after it succeeds, it is
-// a property of the Action itself, not an OnSuccess effect. Use for
-// destructive actions (delete, revoke, drop):
+// a property of the Action itself, not an OnSuccess effect.
 //
-//	interactive.OnClick(deleteBtn,
-//	    interactive.Delete("/api/items/42").
-//	        WithConfirm("Delete this item? This cannot be undone."),
+//	interactive.OnClick(saveBtn,
+//	    interactive.Post("/api/items/42/publish").
+//	        WithConfirm("Publish this item to every customer?"),
 //	)
 //
-// window.confirm is native, unthemed, and blocks browser automation. For a
-// design-system-styled confirmation that matches the rest of the app (and is
-// drivable by tests), reach for framework/ui.ConfirmAction instead, it
-// renders a themed alertdialog whose Confirm button carries the RPC.
+// It is WithConfirmDialog(Confirm{Message: message}): reach for that to
+// title the dialog, name the accept button or mark the action
+// destructive. A page with no confirm dialog registered (no kit
+// imported) falls back to window.confirm, so the gate never opens.
 //
 // Maps to data-cui-confirm="message".
 func (a Action) WithConfirm(message string) Action {
-	a.confirm = message
+	return a.WithConfirmDialog(Confirm{Message: message})
+}
+
+// WithConfirmDialog gates the action behind the kit's confirm dialog,
+// spelled in full. Use it for destructive actions (delete, revoke,
+// drop), where the dialog names what goes and the accept button says
+// so in the danger variant:
+//
+//	interactive.Delete("/api/items/42").
+//	    WithConfirmDialog(interactive.Confirm{
+//	        Title:   "Delete item?",
+//	        Message: "This cannot be undone.",
+//	        Accept:  "Delete",
+//	        Danger:  true,
+//	    })
+//
+// Panics on an empty Message: a confirmation that says nothing asks
+// nothing. Maps to data-cui-confirm, data-cui-confirm-title,
+// data-cui-confirm-accept and data-cui-confirm-tone="danger".
+func (a Action) WithConfirmDialog(c Confirm) Action {
+	if c.Message == "" {
+		panic("interactive: WithConfirmDialog needs a Message — a confirmation that says nothing asks nothing")
+	}
+	a.confirm = c
 	return a
 }
 
@@ -631,8 +665,17 @@ func (a Action) attrs() map[string]string {
 		"data-cui-rpc":        a.path,
 		"data-cui-rpc-method": a.method,
 	}
-	if a.confirm != "" {
-		m["data-cui-confirm"] = a.confirm
+	if a.confirm.Message != "" {
+		m["data-cui-confirm"] = a.confirm.Message
+		if a.confirm.Title != "" {
+			m["data-cui-confirm-title"] = a.confirm.Title
+		}
+		if a.confirm.Accept != "" {
+			m["data-cui-confirm-accept"] = a.confirm.Accept
+		}
+		if a.confirm.Danger {
+			m["data-cui-confirm-tone"] = "danger"
+		}
 	}
 	if a.body != "" {
 		m["data-cui-rpc-body"] = a.body

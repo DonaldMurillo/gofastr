@@ -91,7 +91,7 @@ type MenuItem struct {
 	// RPCAttrs carries a built RPC's attributes, core-ui/interactive's
 	// Action.Attrs(), for a row that needs more of the RPC contract
 	// than RPC and Confirm spell: a navigate on success, an error
-	// toast. Only data-cui-rpc* and data-cui-confirm keys are taken,
+	// toast. Only data-cui-rpc* and data-cui-confirm* keys are taken,
 	// data-cui-rpc is required and must be a same-origin path, and any
 	// other key is refused at render. Mutually exclusive with Href,
 	// RPC, Action, Copy, Radio and Children.
@@ -593,8 +593,12 @@ func checkMenuRowShape(it MenuItem) {
 			panic("headless: MenuItem RPCAttrs needs data-cui-rpc set to a same-origin path, got " + strconv.Quote(path))
 		}
 		for k := range it.RPCAttrs {
-			if k != "data-cui-confirm" && !strings.HasPrefix(k, "data-cui-rpc") {
-				panic("headless: MenuItem RPCAttrs takes only data-cui-rpc* and data-cui-confirm keys, got " + strconv.Quote(k))
+			switch k {
+			case "data-cui-confirm", "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+				continue
+			}
+			if !strings.HasPrefix(k, "data-cui-rpc") {
+				panic("headless: MenuItem RPCAttrs takes only data-cui-rpc* and data-cui-confirm* keys, got " + strconv.Quote(k))
 			}
 		}
 	}
