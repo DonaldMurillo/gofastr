@@ -1529,6 +1529,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **Choosing a `ui.Menu` command row closes the menu.** Only link rows
+  closed it, so Delete and the other button rows left the panel open
+  behind their confirm dialog and after their request. A command row
+  now closes the whole chain and returns focus to the trigger; radio
+  and checkbox rows keep the menu open.
 - **A harness event stream carries the turn its client starts at once.**
   The REST `/v1/sessions/<id>/events` stream and the web client's SSE
   stream flushed their headers before subscribing to the session's bus,

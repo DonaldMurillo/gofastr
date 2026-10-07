@@ -966,3 +966,67 @@ func TestE2E_MenuNestedTriggerButtonRealClick(t *testing.T) {
 		t.Fatal("the second real click did not close the menu (double-toggle)")
 	}
 }
+
+// Choosing a command row closes the whole menu and hands focus back to
+// its trigger, the way a link row already does: a row that opens a
+// confirm dialog must not leave the panel hanging open behind it. A
+// radio row is a setting, not a command, and keeps the menu open.
+func TestE2E_MenuCommandRowCloses(t *testing.T) {
+	menu := Menu(MenuProps{ID: "cr", Label: "Record", Items: []MenuItem{
+		{Label: "Archive", RPC: "/archive"},
+		{Label: "More", Children: []MenuItem{{Label: "Purge", RPC: "/purge"}}},
+		{Label: "Compact", Radio: "density"},
+	}}, nil)
+	b := startBehaviorServer(t, menuPage(t, menu))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, menuLoaded) {
+		t.Fatal("the module never loaded")
+	}
+	const root = `document.querySelector('details[data-hui-menu="cr"]')`
+	run := func(js string) {
+		t.Helper()
+		if err := chromedp.Run(ctx, chromedp.Evaluate(js, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row := func(label string) string {
+		return `Array.from(document.querySelectorAll('[data-hui-menu="cr"] [role^="menuitem"]')).find(r => r.textContent.trim() === '` + label + `')`
+	}
+	open := func() {
+		t.Helper()
+		run(root + `.querySelector(':scope > summary').click()`)
+		if !pollTrue(ctx, root+`.open`) {
+			t.Fatal("the menu did not open")
+		}
+	}
+
+	open()
+	run(row("Archive") + `.click()`)
+	if !pollTrue(ctx, `!`+root+`.open`) {
+		t.Fatal("choosing a command row left the menu open")
+	}
+	if !pollTrue(ctx, `document.activeElement === `+root+`.querySelector(':scope > summary')`) {
+		t.Fatal("focus did not return to the trigger")
+	}
+
+	open()
+	run(row("More") + `.click()`)
+	if !pollTrue(ctx, row("Purge")+`.closest('details').open`) {
+		t.Fatal("the submenu did not open")
+	}
+	run(row("Purge") + `.click()`)
+	if !pollTrue(ctx, `!`+root+`.open && !`+root+`.querySelector('details[open]')`) {
+		t.Fatal("choosing a submenu row left the menu chain open")
+	}
+
+	open()
+	run(row("Compact") + `.click()`)
+	time.Sleep(200 * time.Millisecond)
+	var still bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(root+`.open`, &still)); err != nil {
+		t.Fatal(err)
+	}
+	if !still {
+		t.Fatal("a radio row closed the menu")
+	}
+}
