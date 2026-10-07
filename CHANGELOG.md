@@ -168,8 +168,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.entity.noMatch`, `noMatchBody`, `clearSearch`, `viewEmpty` and
   `viewEmptyBody`.
 - **`ui.ContentRowConfig.Dense` tightens an operator console on a
-  desktop.** On a fine pointer the frame takes the compact density:
-  36px controls, 44px table rows and a smaller gap, with the
+  desktop.** On a fine pointer the page takes the compact density,
+  drawers and dialogs included: 36px controls, 44px table rows and a
+  smaller gap, with the
   `--spacing-touch-target` token at 36px so every control sized from it
   follows. A touch screen keeps 44px targets. The admin shell sets it.
   A DataTable's rows, header, select boxes and sort links, pagination

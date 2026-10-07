@@ -691,8 +691,8 @@ tighten; reach for a size when one control must. Buttons, fields,
 selects, pagination, the theme toggle and a DataTable's rows and
 header read the density height, so a compact table's rows are 44px
 (the height plus a 4px inset) where comfortable ones are 52px. A
-`ui.ContentRow` with `Dense: true` applies the compact values inside
-its frame on a fine pointer only (see the layouts page): the admin's
+`ui.ContentRow` with `Dense: true` applies the compact values to its
+page on a fine pointer only (see the layouts page): the admin's
 operator console tightens on a desktop and keeps 44px targets on a
 phone.
 
