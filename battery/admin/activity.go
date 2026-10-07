@@ -88,19 +88,21 @@ func activityActor(ctx context.Context, names map[string]string, r auditRow) ren
 }
 
 // activityRecord names one row's record and where it lives: an exposed
-// entity's live record by its title, read the way the record screen's
-// breadcrumb reads it, with its screen's path; a deleted, purged or
-// unreadable one by its entity's singular name; an entity the admin does
+// entity's record as auditTitle names it, with its screen's path when it
+// is live, else by its entity's singular name; an entity the admin does
 // not expose by its table name and id. Only a live record has a path.
 func (b *Battery) activityRecord(ctx context.Context, r auditRow) (label, href string) {
 	e, ok := b.exposedNamed(r.Entity)
 	if !ok {
 		return strings.TrimSpace(r.Entity + " " + r.RecordID), ""
 	}
-	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" && b.ui != nil {
-		if t, ok := b.ui.RecordTitle(b.elevate(ctx), e.GetName(), r.RecordID); ok && t != "" {
-			return t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
-		}
+	before, after := auditSides(r)
+	t, live := b.auditTitle(ctx, e, r, before, after)
+	switch {
+	case live:
+		return t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
+	case t != "":
+		return t, ""
 	}
 	return b.singular(ctx, e), ""
 }

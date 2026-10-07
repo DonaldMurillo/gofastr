@@ -35,8 +35,8 @@ func activityEnv(t *testing.T) (*env, string) {
 // Each activity line reads as a sentence: who in bold, what they did,
 // the record by its title as a link to it, and how long ago. An account
 // reads as its email's local part, the full email on hover. A deleted
-// record is named by its entity alone and links nowhere, and an actor no
-// account matches keeps its id.
+// record with no stored copy is named by its entity alone and links
+// nowhere, and an actor no account matches keeps its id.
 func TestRecentActivityReadsAsSentences(t *testing.T) {
 	x, userID := activityEnv(t)
 	now := time.Now().UTC()
@@ -94,5 +94,29 @@ func TestAuditPageNamesTheActor(t *testing.T) {
 	body := get(x.as(theAdmin), "/admin/audit").Body.String()
 	if !strings.Contains(body, "ada@example.com") || strings.Contains(body, ">"+userID+"<") {
 		t.Errorf("the audit page does not name the actor:\n%s", body)
+	}
+}
+
+// A deleted record is named by its title from the row's stored copy, the
+// way the Audit log page names it, and still links nowhere. A delete row
+// names what was deleted even when the record is live again (restored).
+func TestRecentActivityNamesDeletedRecord(t *testing.T) {
+	x, _ := activityEnv(t)
+	now := time.Now().UTC()
+	x.seedAuditDiff("a1", "", "posts", "delete", "p-9", "", now, `{"old":{"id":"p-9","title":"Old news"}}`)
+	x.seedAuditDiff("a2", "", "posts", "delete", "p-1", "", now.Add(-time.Minute), `{"old":{"id":"p-1","title":"Draft title"}}`)
+	for _, path := range []string{"/admin", "/admin/audit"} {
+		body := get(x.as(theAdmin), path).Body.String()
+		for _, want := range []string{"Old news", "Draft title"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: a deleted record is not named %q from its stored copy:\n%s", path, want, body)
+			}
+		}
+		if strings.Contains(body, "/admin/entities/posts/p-") {
+			t.Errorf("%s: a delete row links to a record screen:\n%s", path, body)
+		}
+	}
+	if body := get(x.as(theAdmin), "/admin").Body.String(); !strings.Contains(body, "<strong>System</strong> deleted Old news") {
+		t.Errorf("the feed's delete line does not read as a sentence:\n%s", body)
 	}
 }

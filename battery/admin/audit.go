@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -347,30 +348,49 @@ func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map
 		id := html.Code(html.TextConfig{}, render.Text(r.RecordID))
 		return render.Join(render.Text(r.Entity+" "), id), ui.EmptyValue()
 	}
-	ectx := b.elevate(ctx)
 	var title render.HTML
-	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" {
-		if t, ok := b.ui.RecordTitle(ectx, e.GetName(), r.RecordID); ok && t != "" {
-			title = ui.Link(ui.LinkConfig{Href: b.entityBase(e) + "/" + pathSegment(r.RecordID), Text: t, Variant: ui.LinkTitle})
-		}
-	}
-	if title == "" {
-		snap := before
-		if snap == nil {
-			snap = after
-		}
-		if t, ok := b.ui.SnapshotTitle(ectx, e.GetName(), snap); ok && snap != nil {
-			title = render.Text(t)
-		} else {
-			title = html.Code(html.TextConfig{}, render.Text(r.RecordID))
-		}
+	switch t, live := b.auditTitle(ctx, e, r, before, after); {
+	case live:
+		title = ui.Link(ui.LinkConfig{Href: b.entityBase(e) + "/" + pathSegment(r.RecordID), Text: t, Variant: ui.LinkTitle})
+	case t != "":
+		title = render.Text(t)
+	default:
+		title = html.Code(html.TextConfig{}, render.Text(r.RecordID))
 	}
 	record = render.Join(ui.Muted(render.Text(b.singular(ctx, e)+" · ")), title)
-	changes = b.ui.Changes(ectx, e.GetName(), before, after)
+	changes = b.ui.Changes(b.elevate(ctx), e.GetName(), before, after)
 	if changes == "" {
 		changes = ui.EmptyValue()
 	}
 	return record, changes
+}
+
+// auditTitle names an exposed entity's audit row record: a live one by
+// its title, read the way the record screen's breadcrumb reads it (live
+// is true), and a deleted, purged or unreadable one from the row's
+// stored copy, its old side else its new. It answers "" when neither
+// names it. The reads run elevated, as auditRecord says why.
+func (b *Battery) auditTitle(ctx context.Context, e *entity.Entity, r auditRow, before, after map[string]any) (title string, live bool) {
+	if b.ui == nil {
+		return "", false
+	}
+	ectx := b.elevate(ctx)
+	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" {
+		if t, ok := b.ui.RecordTitle(ectx, e.GetName(), r.RecordID); ok && t != "" {
+			return t, true
+		}
+	}
+	snap := before
+	if snap == nil {
+		snap = after
+	}
+	if snap == nil {
+		return "", false
+	}
+	if t, ok := b.ui.SnapshotTitle(ectx, e.GetName(), snap); ok {
+		return t, false
+	}
+	return "", false
 }
 
 // auditSides is a row's stored old and new values, nil where the row

@@ -30,7 +30,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   past-due invoices and subscriptions.
 - **The admin's recent activity reads like the prototype**: the actor
   in bold (an account by its email's local part, the full email on
-  hover) and a live record's title as a link to its screen. Underneath:
+  hover) and a live record's title as a link to its screen. A deleted
+  one is named by the title the audit row stored, as on the Audit log
+  page. Underneath:
   `ui.TimelineEvent.Lead` (and `headless.Event.Lead`), headline markup
   in place of `Title`, and `i18nui.TVarsHTML`, which fills a translated
   line with markup values in one pass and escapes the text around them.

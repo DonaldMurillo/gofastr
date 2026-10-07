@@ -283,8 +283,10 @@ reads "System". The dashboard reads each row as a sentence, "**ada**
 updated INV-1010 · 5m ago": the actor in bold, an account by its
 email's local part with the full email on hover; a live record of an
 exposed entity by its title, read the way its record screen's
-breadcrumb is, as a link to that screen; and a deleted or purged one by
-its entity's singular name, unlinked.
+breadcrumb is, as a link to that screen; and a deleted or purged one,
+unlinked, by the title in the row's stored copy, the way the audit page
+names it, else by its entity's singular name. A delete row names what
+was deleted even after a restore brings the record back.
 
 The audit page's columns are Time ("2h ago", the exact UTC time on
 hover), Actor, Operation, Record and Changes. Record reads "Invoice ·
