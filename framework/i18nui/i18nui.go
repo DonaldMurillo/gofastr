@@ -198,6 +198,7 @@ const (
 	KeyCopyCopy        Key = "ui.copy.copy"
 	KeyCopyCopied      Key = "ui.copy.copied"
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
+	KeyCopyLink        Key = "ui.copy.link"
 
 	// ProgressSteps
 	KeyProgressLabel Key = "ui.progress.label"
@@ -447,6 +448,7 @@ var Defaults = map[Key]string{
 	KeyCopyCopy:        "Copy",
 	KeyCopyCopied:      "Copied",
 	KeyCopyToClipboard: "Copy to clipboard",
+	KeyCopyLink:        "Copy link",
 
 	KeyProgressLabel: "Progress",
 
@@ -890,7 +892,7 @@ func AllKeys() []Key {
 		KeyAuthEmail, KeyAuthPassword, KeyAuthRememberMe,
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
-		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard,
+		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,

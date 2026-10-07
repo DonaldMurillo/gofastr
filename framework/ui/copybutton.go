@@ -51,6 +51,14 @@ type CopyButtonConfig struct {
 	// IconOnly hides the visible label but keeps the SR-only label
 	// (via AriaLabel or default). Use when the button is icon-only.
 	IconOnly bool
+	// Icon names the registered icon an IconOnly button draws ("link"
+	// for a copy-link control). Empty, or a name not registered, draws
+	// the copy glyph.
+	Icon string
+	// Inline sits the button within a line of text (an id in a detail
+	// row): no border, fill or shadow until hover, muted, and a 24px
+	// target in place of the touch-target minimum.
+	Inline bool
 
 	// AriaLabel overrides the screen-reader name. When IconOnly is
 	// true and AriaLabel is empty, defaults to "Copy to clipboard".
@@ -133,6 +141,9 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.IconOnly {
 		cls += " fui-copy-btn--icon"
 	}
+	if cfg.Inline {
+		cls += " fui-copy-btn--inline"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -196,6 +207,10 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		// Icon-only: no visible label, just an inline check / clipboard glyph.
 		inner = []render.HTML{
 			render.Raw(`<span class="fui-copy-btn__icon" aria-hidden="true">⧉</span>`),
+		}
+		if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+			inner = []render.HTML{html.Span(html.TextConfig{Class: "fui-copy-btn__icon", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
+				Icon(cfg.Icon, IconConfig{Size: "16"}))}
 		}
 	}
 
@@ -292,6 +307,17 @@ func copyButtonCSS(_ style.Theme) string {
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5); }
+/* Inline: the knobs set on the button itself, so the base rules draw
+   it quiet; WCAG 2.5.8's 24px floor stands in for the touch target. */
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn--inline {
+  --ui-copy-btn-size: 1.5rem;
+  --ui-copy-btn-border: transparent;
+  --ui-copy-btn-bg: transparent;
+  --ui-copy-btn-shadow: none;
+  --ui-copy-btn-color: var(--color-text-muted, #52525b);
+  --ui-copy-btn-hover-color: var(--color-text, #09090B);
+  padding: var(--spacing-xs, 2px);
+}
 /* The icon glyph: one line-box tall so the aria-hidden ⧉ never stretches
    the icon-only button past the touch target the base rule sets. */
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn__icon {

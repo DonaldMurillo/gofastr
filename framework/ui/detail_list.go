@@ -36,6 +36,12 @@ type DetailListConfig struct {
 	// up with the inputs around it and reads as locked. It drops the
 	// row rules and the measure cap. Stacked and Inline are exclusive.
 	Stacked bool
+	// Spread draws compact facts for a side column: the label at the
+	// row's start, the value at its end, no row rules, one line each.
+	// A value that does not fit truncates its first element (an id in
+	// <code>) while the elements after it (a copy button) keep their
+	// size. Spread excludes Inline and Stacked.
+	Spread bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <dl>. Keys the
@@ -73,8 +79,8 @@ func DetailList(cfg DetailListConfig) render.HTML {
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
-	if cfg.Inline && cfg.Stacked {
-		panic("ui: DetailList Inline and Stacked are exclusive")
+	if (cfg.Inline && cfg.Stacked) || (cfg.Spread && (cfg.Inline || cfg.Stacked)) {
+		panic("ui: DetailList Inline, Stacked and Spread are exclusive")
 	}
 	class := ""
 	switch {
@@ -82,6 +88,8 @@ func DetailList(cfg DetailListConfig) render.HTML {
 		class = "fui-detail-list--inline"
 	case cfg.Stacked:
 		class = "fui-detail-list--stacked"
+	case cfg.Spread:
+		class = "fui-detail-list--spread"
 	}
 	if cfg.Class != "" {
 		class = strings.TrimSpace(class + " " + cfg.Class)
@@ -139,6 +147,32 @@ func detailListCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--spacing-sm); }
 [data-cui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__value { min-inline-size: 0; overflow-wrap: anywhere; }
+/* Spread: side-column facts, label start, value end, one line. */
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread { --ui-detail-list-max-width: none; }
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread .fui-detail-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md, 8px);
+  min-block-size: var(--fui-density-control-h, 2rem);
+  padding: 0;
+  border-bottom: none;
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread .fui-detail-list__label { flex: none; }
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread .fui-detail-list__value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-xs, 2px);
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread .fui-detail-list__value > :first-child {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-cui-comp="ui-detail-list"].fui-detail-list--spread .fui-detail-list__value > :not(:first-child) { flex: none; }
 /* Stacked: a form field's anatomy, the value boxed like a control. */
 [data-cui-comp="ui-detail-list"].fui-detail-list--stacked {
   --ui-detail-list-max-width: none;

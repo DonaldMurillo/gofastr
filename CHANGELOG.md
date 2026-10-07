@@ -133,6 +133,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the soft surface. The entity record form draws its locked, state and
   stamp fields this way, so they line up with the inputs around them
   instead of jutting out as a two-column row.
+- **`ui.DetailListConfig.Spread`** draws compact facts for a side
+  column: the label at the row's start, the value at its end, one line
+  each, no row rules. A first value that does not fit (an id) truncates
+  while what follows it (a copy button) keeps its size.
+- **`ui.ButtonConfig` gains `Icon`, `IconOnly`, `Shortcut` and
+  `QuietUntilDirty`.** `Icon` draws a registered icon before the label;
+  `IconOnly` draws it alone in a square button, the label its
+  accessible name (`ui.LinkButtonConfig.IconOnly` too). `Shortcut`
+  ("Mod+S") binds a chord that clicks the button, drawn after the label
+  as `ui.ShortcutHint` chips and announced through `aria-keyshortcuts`;
+  it needs `ID`. `QuietUntilDirty` draws the button in the secondary
+  look until the form it submits has unsaved edits.
+- **`ui.DrawerBar`** is the bar across the top of an intercepted
+  drawer: a close button, the layer's path in mono, a copy-link button
+  when `CopyURL` is set, then `Actions`. It sticks to the layer's top
+  edge while the layer scrolls.
+- **`ui.CopyButtonConfig.Icon` and `Inline`.** An icon-only copy button
+  draws a registered icon (the new `"copy"` and `"link"`); `Inline`
+  draws it quiet, with no border or fill until hover and a 24px target,
+  for a copy control inside a line of text.
+- **`ui.FormConfig.Wide`** lifts the form's readable-measure cap, so a
+  `ui.FormFrame` body splits into its side column.
 - **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
   prose. Every other cell now holds its value on one line, so a table
   wider than its box scrolls inside it instead of breaking a date at its
@@ -346,7 +368,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-hui-leave-guard-message` sets the question. The form cleans on
   a successful submit or a reset; a refused submit marks it changed
   again (the rpc module now dispatches `gofastr:formresult` with
-  `detail.ok` on the form).
+  `detail.ok` on the form). While dirty, the form and every control
+  naming it by `form=` carry `data-hui-dirty`.
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
@@ -1395,6 +1418,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A keyboard chord reaches the top layer's control.** A
+  `data-hui-shortcut-click` or `-focus` target inside an `inert`
+  subtree (the page under an open drawer, a lower drawer) is skipped,
+  so Mod+S in a drawer clicks that drawer's Save, not the page's.
 - **An intercepted drawer or sheet loads its components' stylesheets.**
   A pane that brought a component the page under it did not carry drew
   it unstyled: the admin's record drawer showed its money field's

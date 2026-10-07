@@ -66,10 +66,27 @@
     }
   }
 
+  // The state also shows as data-hui-dirty, on the form and on every
+  // control that names it by form= from outside (a header Save), so
+  // styling can follow it.
+  function setDirty(el, on) {
+    if (on) el.setAttribute('data-hui-dirty', '');
+    else el.removeAttribute('data-hui-dirty');
+  }
+
+  function reflect(f, on) {
+    setDirty(f, on);
+    if (!f.id) return;
+    for (const c of document.querySelectorAll('[form="' + CSS.escape(f.id) + '"]')) {
+      setDirty(c, on);
+    }
+  }
+
   function mark(f, on) {
     if (!f) return;
     if (on) dirty.add(f);
     else dirty.delete(f);
+    reflect(f, on);
     syncBeforeUnload();
   }
 

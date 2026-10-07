@@ -38,7 +38,7 @@ import (
 // A form's default measure caps well below the split point (ui.Form
 // at --ui-form-max), so the frame stacks until the host widens the
 // form — the one-column shape stays the default, and a record page
-// opts into the rail.
+// opts into the rail with FormConfig.Wide.
 
 // FormFrameConfig configures a FormFrame.
 type FormFrameConfig struct {

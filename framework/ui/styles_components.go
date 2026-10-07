@@ -166,6 +166,14 @@ func buttonCSS(t style.Theme) string {
   box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--secondary:hover { background: var(--color-surface-soft); }
+/* QuietUntilDirty: the leave guard sets data-hui-dirty on the form
+   and on a control naming it by form=; until then the button reads
+   as idle, in body text so its label and chips keep their contrast. */
+.fui-button--until-dirty:not([data-hui-dirty]) {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
 .fui-button--ghost {
   background: transparent;
   color: var(--color-text);
@@ -193,6 +201,15 @@ func buttonCSS(t style.Theme) string {
   min-height: var(--ui-button-large-min-height, 48px);
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-xl, 24px);
   font-size: var(--text-base);
+}
+/* IconOnly: a square the control's height, the glyph centred. */
+.fui-button--icon {
+  min-inline-size: var(--fui-density-control-h);
+  padding-inline: 0;
+}
+.fui-button--small:where(.fui-button--icon) {
+  min-inline-size: 0;
+  padding: calc(var(--spacing-sm, 4px) * 1.5);
 }
 ` +
 		// Registered custom variants and sizes, as plain class rules.
@@ -923,6 +940,7 @@ func formCSS(_ style.Theme) string {
 	// Knob: --ui-form-max caps the form at a readable measure (a 60rem
 	// pane does not stretch every input across it); set none to fill.
 	return `.fui-form { display: grid; gap: var(--spacing-xl, 24px); grid-template-columns: 1fr; max-inline-size: var(--ui-form-max, 42rem); }
+.fui-form--wide { max-inline-size: none; }
 /* Fields sit a step further apart than a field's own label and control,
    so each label reads as belonging to the control under it. */
 .fui-form__body { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }

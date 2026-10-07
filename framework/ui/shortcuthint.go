@@ -204,6 +204,37 @@ func renderChordPart(p chordPart) render.HTML {
 	}
 }
 
+// ariaKeyShortcuts spells a chord the way aria-keyshortcuts reads it:
+// "Mod+S" is "Meta+S Control+S", one alternative per platform.
+func ariaKeyShortcuts(chord string) string {
+	var mods []string
+	key := ""
+	mod := false
+	for raw := range strings.SplitSeq(chord, "+") {
+		switch t := strings.TrimSpace(raw); strings.ToLower(t) {
+		case "":
+		case "mod", "cmd", "ctrl", "control":
+			mod = true
+		case "shift":
+			mods = append(mods, "Shift")
+		case "alt", "option", "opt":
+			mods = append(mods, "Alt")
+		default:
+			key = t
+			if len(t) == 1 {
+				key = strings.ToUpper(t)
+			}
+		}
+	}
+	spell := func(m string) string {
+		return strings.Join(append(append([]string{m}, mods...), key), "+")
+	}
+	if !mod {
+		return strings.Join(append(mods, key), "+")
+	}
+	return spell("Meta") + " " + spell("Control")
+}
+
 func humanizeChord(parts []chordPart) string {
 	out := []string{}
 	for _, p := range parts {
@@ -268,6 +299,15 @@ html[data-cui-os="mac"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__m
 html[data-cui-os="other"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac { display: none; }
 /* Default (SSR before runtime boots, or non-JS): show Mac symbol. */
 html:not([data-cui-os]) [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-other { display: none; }
+
+/* Inside a button the chips take the button's own ink, so a hint on
+   a primary button reads as part of it rather than a pasted-on key. */
+[data-cui-comp="ui-button"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__key {
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+  border-bottom-width: var(--stroke-thin, 1px);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+}
 
 /* Touch devices have no physical keyboard — hide hints to avoid confusion. */
 @media (pointer: coarse) and (hover: none) {

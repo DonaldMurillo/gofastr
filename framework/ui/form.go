@@ -83,6 +83,11 @@ type FormConfig struct {
 	// should be a thumb target spanning the card.
 	SubmitFullWidth bool
 
+	// Wide lifts the readable-measure cap (--ui-form-max), so the form
+	// fills its container: for a form whose body is a FormFrame with a
+	// side column, which splits only when the form is wide enough.
+	Wide bool
+
 	// NoValidate turns off the browser's own validation bubbles, for a
 	// form that validates on the server and reports through Errors.
 	NoValidate bool
@@ -194,6 +199,9 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	rootClass := cfg.Class
 	if cfg.SubmitFullWidth {
 		rootClass = strings.TrimSpace(rootClass + " fui-form--block-actions")
+	}
+	if cfg.Wide {
+		rootClass = strings.TrimSpace(rootClass + " fui-form--wide")
 	}
 
 	request, plain := splitFormAttrs(cfg.ExtraAttrs)

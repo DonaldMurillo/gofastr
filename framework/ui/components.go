@@ -352,6 +352,23 @@ type ButtonConfig struct {
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
+	// Icon, when set, renders the named registered icon (see
+	// RegisterIcon / Icon) before the label.
+	Icon string
+	// IconOnly draws the icon alone in a square button; Label becomes
+	// the accessible name. It needs a registered Icon.
+	IconOnly bool
+	// Shortcut is a keyboard chord ("Mod+S") that clicks this button,
+	// drawn after the label as ShortcutHint chips. It needs ID: the
+	// chord names the button by it. The chord reaches assistive tech
+	// through aria-keyshortcuts; the accessible name stays the label.
+	Shortcut string
+	// QuietUntilDirty draws the button in the secondary look until the
+	// form it submits (the one it sits in, or the one its form
+	// attribute names) holds unsaved edits: the leave guard's dirty
+	// state, so that form needs FormConfig.LeaveGuard. It stays
+	// clickable and keeps its shortcut either way.
+	QuietUntilDirty bool
 }
 
 // Button renders a semantic button with a typed variant, through the
@@ -374,13 +391,32 @@ func Button(cfg ButtonConfig) render.HTML {
 	checkButtonVariant("Button", v)
 	checkButtonSize("Button", cfg.Size)
 	action, extra := splitButtonAttrs(cfg.ExtraAttrs)
+	aria := cfg.AriaLabel
+	label, icon := buttonIcon("Button", cfg.Label, cfg.Icon, cfg.IconOnly, &aria)
+	var suffix render.HTML
+	if cfg.Shortcut != "" {
+		if cfg.ID == "" {
+			panic("ui: Button Shortcut needs ID — the chord clicks the button it names")
+		}
+		suffix = headless.Own(ShortcutHint(ShortcutHintConfig{Chord: cfg.Shortcut, BindTarget: "#" + cfg.ID}))
+		if aria == "" {
+			aria = cfg.Label
+		}
+		extra["aria-keyshortcuts"] = ariaKeyShortcuts(cfg.Shortcut)
+	}
+	cls := cfg.Class
+	if cfg.QuietUntilDirty {
+		cls = strings.TrimSpace("fui-button--until-dirty " + cls)
+	}
 	// All variants share the single canonical ui-button marker; the
 	// .fui-button--<variant> class on the same element drives the
 	// visual delta via buttonCSS's variant rules. No legacy per-
 	// variant marker / sheet.
 	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
-		Label:      cfg.Label,
-		AriaLabel:  cfg.AriaLabel,
+		Label:      label,
+		AriaLabel:  aria,
+		Icon:       icon,
+		Suffix:     suffix,
 		Variant:    string(v),
 		Size:       string(cfg.Size),
 		Type:       cfg.Type,
@@ -388,7 +424,7 @@ func Button(cfg ButtonConfig) render.HTML {
 		ID:         cfg.ID,
 		Action:     action,
 		ExtraAttrs: extra,
-		Parts:      rootClassParts(cfg.Class),
+		Parts:      rootClassParts(cls),
 	}, buttonClasses))
 }
 
@@ -413,9 +449,12 @@ type LinkButtonConfig struct {
 	// Icon, when set, renders the named registered icon (see
 	// RegisterIcon / Icon) before the label. The button's inline-flex
 	// gap handles spacing. Unknown names render the label alone.
-	Icon  string
-	ID    string
-	Class string
+	Icon string
+	// IconOnly draws the icon alone in a square button; Label becomes
+	// the accessible name. It needs a registered Icon.
+	IconOnly bool
+	ID       string
+	Class    string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <a>. The
 	// four data-cui-* keys that make sense on a link (push-state,
@@ -465,12 +504,11 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	checkButtonVariant("LinkButton", v)
 	checkButtonSize("LinkButton", cfg.Size)
 	action, extra := splitLinkAttrs(cfg.ExtraAttrs)
-	var icon render.HTML
-	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
-		icon = Icon(cfg.Icon, IconConfig{Size: "18"})
-	}
+	aria := ""
+	label, icon := buttonIcon("LinkButton", cfg.Label, cfg.Icon, cfg.IconOnly, &aria)
 	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
-		Label:      cfg.Label,
+		Label:      label,
+		AriaLabel:  aria,
 		Href:       cfg.Href,
 		External:   cfg.External,
 		Variant:    string(v),
@@ -481,6 +519,26 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 		ExtraAttrs: extra,
 		Parts:      rootClassParts(cfg.Class),
 	}, buttonClasses))
+}
+
+// buttonIcon resolves a button's icon and visible label. An unknown
+// icon name draws the label alone; IconOnly moves the label into the
+// accessible name (unless one is set) and needs an icon to draw.
+func buttonIcon(comp, label, name string, only bool, aria *string) (string, render.HTML) {
+	var icon render.HTML
+	if name != "" && IconRegistered(name) {
+		icon = Icon(name, IconConfig{Size: "18"})
+	}
+	if !only {
+		return label, icon
+	}
+	if icon == "" {
+		panic("ui: " + comp + " IconOnly needs a registered Icon, got " + strconv.Quote(name))
+	}
+	if *aria == "" {
+		*aria = label
+	}
+	return "", icon
 }
 
 // rootClassParts carries a caller's Class onto the root part, where

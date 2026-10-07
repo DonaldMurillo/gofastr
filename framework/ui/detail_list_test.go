@@ -48,6 +48,25 @@ func TestDetailListStackedVariant(t *testing.T) {
 	DetailList(DetailListConfig{Inline: true, Stacked: true, Items: []DetailItem{{Label: "L"}}})
 }
 
+// Spread names its variant class and refuses Inline or Stacked beside it.
+func TestDetailListSpreadVariant(t *testing.T) {
+	h := string(DetailList(DetailListConfig{Spread: true, Items: []DetailItem{{Label: "L", Value: render.Text("V")}}}))
+	if !strings.Contains(h, `class="fui-detail-list fui-detail-list--spread"`) {
+		t.Fatalf("Spread lacks its class:\n%s", h)
+	}
+	for _, cfg := range []DetailListConfig{{Spread: true, Inline: true}, {Spread: true, Stacked: true}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%+v did not panic", cfg)
+				}
+			}()
+			cfg.Items = []DetailItem{{Label: "L"}}
+			DetailList(cfg)
+		}()
+	}
+}
+
 // DetailList's label column reads the --ui-detail-list-label-track
 // knob and keeps the page default without it.
 func TestDetailListLabelTrackKnob(t *testing.T) {

@@ -67,6 +67,7 @@
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise
+//	DrawerBar:            close / path / copy-link bar atop an intercepted drawer
 //	EmptyState:           title/description/action block for no-data screens
 //	FactBox:              labelled tile (label-first OR value-first KPI)
 //	FileDropzone:         hero file-drop surface with image previews
