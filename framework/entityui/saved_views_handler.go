@@ -57,6 +57,12 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 			writeBulkError(w, http.StatusForbidden, "sign in to save views")
 			return
 		}
+		if !canRead(ctx, m.ch) {
+			// A view names a filter over the entity's rows; a caller who
+			// may not list them may not keep one either.
+			writeBulkError(w, http.StatusForbidden, "access denied")
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, savedViewBodyLimit)
 		body, jsonCall, err := decodeSavedViewBody(r)
 		if err != nil {

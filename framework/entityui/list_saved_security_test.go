@@ -7,6 +7,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // Saved views' security posture: a view belongs to the caller who made
@@ -80,6 +83,35 @@ func TestSavedViewAnonymousCallerNoViews(t *testing.T) {
 	html := listHTML(t, x.ui.List("orders").SavedViews(), x.ctx("/orders", ""))
 	if strings.Contains(html, "Save view") {
 		t.Errorf("an anonymous caller drew the save form:\n%s", html)
+	}
+}
+
+// A caller the entity's read permission refuses saves nothing: the
+// handler asks the list's own read gate before it parses a filter.
+func TestSavedViewsNeedTheReadGate(t *testing.T) {
+	cfg := ordersConfig()
+	cfg.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: "orders:read"}}
+	x := newTestUI(t, map[string]entity.EntityConfig{"orders": cfg},
+		map[string][]map[string]any{"orders": ordersRows()},
+		withAPI(map[string]string{"orders": "/api/orders"}))
+	store := newMemSavedViews()
+	installOwnerExtractor(t)
+	x.ui = x.ui.WithSavedViews(store)
+	policy := access.NewRolePolicy()
+	policy.Register("orders:read")
+	r := httptest.NewRequest(http.MethodPost, "/api/orders/_views", strings.NewReader(url.Values{
+		"name": {"Peek"}, "filter": {`status = "open"`}, "back": {"/orders"},
+	}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = withUserRequest(r, "u1")
+	r = r.WithContext(access.WithRoles(access.WithPolicy(r.Context(), policy), []string{"clerk"}))
+	w := httptest.NewRecorder()
+	savedViewsMux(x).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("SECURITY: a caller without orders:read saved a view: %d %s", w.Code, w.Body.String())
+	}
+	if views, _ := store.List(asUser(context.Background(), "u1"), "orders"); len(views) != 0 {
+		t.Fatalf("SECURITY: the store holds %v", views)
 	}
 }
 
