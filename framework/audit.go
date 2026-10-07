@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -32,6 +33,8 @@ type AuditConfig struct {
 
 	// Actor resolves the actor id (typically a user id) from the request
 	// context. Return "" when no actor is attached (e.g. system writes).
+	// Nil reads the request's user: its GetID() when the user on the
+	// context (handler.GetUser) has one, else no actor.
 	Actor func(context.Context) string
 
 	// Entities restricts auditing to the named entities. Empty means audit
@@ -282,8 +285,9 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 // or to losing audit coverage entirely). The result is passed through
 // sanitizeAuditField to defuse log-injection via control characters.
 func (c AuditConfig) actor(ctx context.Context) string {
-	if c.Actor == nil {
-		return ""
+	resolve := c.Actor
+	if resolve == nil {
+		resolve = requestUserID
 	}
 	var out string
 	func() {
@@ -292,9 +296,22 @@ func (c AuditConfig) actor(ctx context.Context) string {
 				out = ""
 			}
 		}()
-		out = c.Actor(ctx)
+		out = resolve(ctx)
 	}()
 	return sanitizeAuditField(out)
+}
+
+// requestUserID is the default audit actor: the id of the user on the
+// request, "" when there is none or it has no GetID.
+func requestUserID(ctx context.Context) string {
+	u, ok := handler.GetUser(ctx)
+	if !ok || u == nil {
+		return ""
+	}
+	if id, ok := u.(interface{ GetID() string }); ok {
+		return id.GetID()
+	}
+	return ""
 }
 
 // sanitizeAuditField strips control bytes (including newlines and NUL)

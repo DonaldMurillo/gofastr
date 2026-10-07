@@ -855,6 +855,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Changed
 
+- **An audit row names the request's user by default.** With
+  `AuditConfig.Actor` unset, `WithAuditLog` recorded no actor, so every
+  write read as a system write. It now records the `GetID()` of the user
+  `handler.GetUser` returns, and still no actor when the request has no
+  user. An `Actor` func, including one that returns `""`, wins.
 - **BREAKING: `battery/admin` is rebuilt on `framework/entityui`.** Entity
   screens moved from `/admin/e/<entity>` (with `/new`, `/view/<id>` and
   `/edit/<id>`) to `/admin/entities/<entity>`, `/create` and `/<id>`; a

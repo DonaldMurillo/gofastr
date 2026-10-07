@@ -82,7 +82,7 @@ A state move writes `transition:<key>` and a state override
 | Field      | Effect                                                                  |
 |------------|--------------------------------------------------------------------------|
 | `Table`    | Destination table. Defaults to `audit_log`.                              |
-| `Actor`    | Resolves the actor ID (typically user ID) from `context.Context`. Empty string = system write. |
+| `Actor`    | Resolves the actor ID (typically user ID) from `context.Context`. Empty string = system write. Nil records the request user's `GetID()` (the user `handler.GetUser` returns), or no actor when the request has none. |
 | `Entities` | Allowlist of entity names to audit. Empty = every registered entity.    |
 
 ## Row shape
