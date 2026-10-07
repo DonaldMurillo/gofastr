@@ -214,8 +214,9 @@ title, read the way its record screen's breadcrumb is, and a deleted or
 purged one by its entity's singular name. The audit diff is never read
 for this.
 
-**Audit filters.** The audit page carries a GET filter form, so a filter
-lives in the page's own query string and works without script:
+**Audit filters.** The audit page carries a GET filter form, the list
+toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
+filter lives in the page's own query string and works without script:
 `?actor=<user id>`, `?entity=<exposed entity name>`, `?op=<operation>`,
 `?from=YYYY-MM-DD`, `?to=YYYY-MM-DD` (`to` inclusive). The operation
 select offers the fixed set the audit log writes — `create`, `update`,

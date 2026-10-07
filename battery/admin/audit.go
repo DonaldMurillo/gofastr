@@ -132,37 +132,41 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2))...)
 }
 
-// auditFilterForm is the page's filter: a GET form that navigates, so
-// the filter state lives in the page's own query string. The clear link
+// auditFilterForm is the page's filter: the list toolbar's Filters
+// dropdown, a GET form that navigates, so the filter state lives in the
+// page's own query string. Entity and operation are facets; the actor
+// and the date range ride along as Extra, counted on the badge. Reset
 // drops back to the bare page.
 func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTML {
-	entityOpts := []ui.SelectOption{{Value: "", Text: i18nui.T(ctx, i18nui.KeyAdminAuditAnyEntity)}}
-	opOpts := []ui.SelectOption{{Value: "", Text: i18nui.T(ctx, i18nui.KeyAdminAuditAnyOp)}}
+	entityOpts := []ui.FacetOption{{Value: "", Label: i18nui.T(ctx, i18nui.KeyAdminAuditAnyEntity)}}
+	opOpts := []ui.FacetOption{{Value: "", Label: i18nui.T(ctx, i18nui.KeyAdminAuditAnyOp)}}
 	for _, e := range b.ents {
-		entityOpts = append(entityOpts, ui.SelectOption{Value: e.GetName(), Text: b.plural(ctx, e), Selected: e.GetName() == f.entity})
+		entityOpts = append(entityOpts, ui.FacetOption{Value: e.GetName(), Label: b.plural(ctx, e)})
 	}
 	for _, op := range auditOps {
-		opOpts = append(opOpts, ui.SelectOption{Value: op, Text: op, Selected: op == f.op})
+		opOpts = append(opOpts, ui.FacetOption{Value: op, Label: op})
 	}
-	return ui.Form(ui.FormConfig{
-		Action:     b.cfg.PathPrefix + "/audit",
-		Method:     "GET",
-		HideSubmit: true,
-		Ctx:        ctx,
-	}, ui.Grid(ui.GridConfig{Min: "12rem"},
-		ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.T(ctx, i18nui.KeyAdminColActor), Value: f.actor}),
-		ui.Select(ui.SelectConfig{Name: "entity", Label: i18nui.T(ctx, i18nui.KeyAdminColEntity), Options: entityOpts}),
-		ui.Select(ui.SelectConfig{Name: "op", Label: i18nui.T(ctx, i18nui.KeyAdminColOperation), Options: opOpts}),
-		ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.T(ctx, i18nui.KeyAdminAuditFrom), Value: dayValue(f.hasFrom, f.from)}),
-		ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.T(ctx, i18nui.KeyAdminAuditTo), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
-	), ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
-		ui.Button(ui.ButtonConfig{Label: i18nui.T(ctx, i18nui.KeyFilterApply), Type: "submit", Variant: ui.ButtonPrimary}),
-		ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyFilterReset),
-			Href:    b.cfg.PathPrefix + "/audit",
-			Variant: ui.ButtonGhost,
-		}),
-	))
+	applied := 0
+	for _, set := range []bool{f.actor != "", f.hasFrom, f.hasTo} {
+		if set {
+			applied++
+		}
+	}
+	return ui.FilterToolbar(ui.FilterToolbarConfig{
+		Action:   b.cfg.PathPrefix + "/audit",
+		Dropdown: true,
+		Facets: []ui.Facet{
+			{Name: "entity", Label: i18nui.T(ctx, i18nui.KeyAdminColEntity), Options: entityOpts, Value: f.entity},
+			{Name: "op", Label: i18nui.T(ctx, i18nui.KeyAdminColOperation), Options: opOpts, Value: f.op},
+		},
+		Extra: []render.HTML{
+			ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.T(ctx, i18nui.KeyAdminColActor), Value: f.actor}),
+			ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.T(ctx, i18nui.KeyAdminAuditFrom), Value: dayValue(f.hasFrom, f.from)}),
+			ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.T(ctx, i18nui.KeyAdminAuditTo), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
+		},
+		Applied: applied,
+		Ctx:     ctx,
+	})
 }
 
 // dayValue formats a parsed filter day back for the date input; "" when

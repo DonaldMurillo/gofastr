@@ -927,8 +927,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   answer can tell a refusal from a failure.
 - **The admin's audit log filters by actor, entity, operation and date
   range** through the page's query string (`actor`, `entity`, `op`,
-  `from`, `to`). Each value is validated and bound as a placeholder; an
-  invalid one is ignored with a warning naming it.
+  `from`, `to`), set in the same Filters dropdown the entity lists
+  use. Each value is validated and bound as a placeholder; an invalid
+  one is ignored with a warning naming it.
 - **`admin.Config.SavedViews` stores saved views** in the admin's
   database (`admin_saved_views`, or `Config.SavedViewsTable`), one set
   per user per entity, kept apart by owner and tenant read from the
