@@ -117,7 +117,7 @@ Each `Transition`:
 | `From` | The values the move starts from; never empty. |
 | `To` | The value the move writes. |
 | `Stamp` | A Date or Timestamp field the move sets to the server's current UTC date or time. The client never supplies it. |
-| `Variant` | The button variant screens draw the move with (`ui.ParseButtonVariant` spellings, e.g. `danger`). Empty is the screen's default. |
+| `Variant` | The button variant screens draw the move with (`ui.ParseButtonVariant` spellings, e.g. `danger`). Empty is the screen's default. An entityui record puts a `danger` move in its menu, behind a confirm, not in the header. |
 | `Permission` | Required on top of the entity's update access, and held by name: a Wildcard grant does not satisfy it. Empty means update access alone. |
 | `System` | No route, button or MCP tool. Only Go code calls `RunTransition` for this move. |
 

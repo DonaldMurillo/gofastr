@@ -50,7 +50,10 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   record's title, its state as the badge, and "Created … · Updated …"
   from its timestamps; a button per state move whose `From` holds the
   stored value; one icon-only menu named for the record (Copy link, and
-  Duplicate and Delete where turned on); and on the Edit tab, Save. Save
+  Duplicate and Delete where turned on); and on the Edit tab, Save. A
+  move or app action declared `danger` is not a header button: it sits
+  in the menu above Delete and runs only after a confirm dialog names it
+  ("Void this invoice?" / "It moves from Draft to Paid."). Save
   submits the form from the header, answers Mod+S (⌘S, Ctrl+S), and
   reads as idle until the form has edits; beside it a move or app action
   declared primary draws as secondary, so Save is the header's one
@@ -139,7 +142,9 @@ earlier.
 field and every stamp render read-only on every screen; a button per
 transition posts the entity's transition route
 (`POST <api>/<entity>/<id>/transitions/<key>`), whose success re-fetches
-the page. A `System: true` move draws no button — only Go code calls it.
+the page. A move with `Variant: "danger"` is a menu item behind a
+confirm in place of a button. A `System: true` move draws no button —
+only Go code calls it.
 A move's `Permission` gates its button with the same exact resource check
 the route runs: the caller's roles must grant it by name, and a
 `Wildcard` grant does not, so no button is drawn that the route would
@@ -325,7 +330,8 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   the record's gates skipped it and 500 when `Run` failed. It shows only
   to a caller who may run it on that record, in its `Variant`
   (`ui.ButtonSecondary` when empty; `New` refuses a variant no Button
-  knows). `Permission`, when set, is checked against the caller's own
+  knows). A `ui.ButtonDanger` action is a record menu item above Delete,
+  behind a confirm naming the action and the record. `Permission`, when set, is checked against the caller's own
   roles on top of the entity's update access; a `Wildcard` grant does not
   satisfy it. `Run` receives the resolved selection and a CRUD handle
   scoped to the caller. Up to `InRequestCap` (100) records run inside the

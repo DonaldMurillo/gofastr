@@ -202,7 +202,8 @@ func (m *meta) notFound(ctx context.Context) render.HTML {
 // an intercepted drawer it sits under the drawer's bar: close, the
 // record's path, copy link.
 func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string, save bool) render.HTML {
-	cfg := ui.PageHeaderConfig{Title: b.ui.recordTitle(ctx, m, row), Subtitle: stampLine(ctx, m, row)}
+	title := b.ui.recordTitle(ctx, m, row)
+	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
 		if v := cell(rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
@@ -211,7 +212,7 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 			})
 		}
 	}
-	actions := b.actions(ctx, m, row, base, save)
+	actions := b.actions(ctx, m, row, title, base, save)
 	if save {
 		actions = append(actions, saveButton(ctx, m, false))
 	}
@@ -270,8 +271,11 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 // actions are the header's moves, app actions and menu. With save the
 // header also draws Save, its one primary action, so a move or action
 // declared primary draws as secondary beside it.
-func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, base string, save bool) []render.HTML {
+func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, title, base string, save bool) []render.HTML {
 	var out []render.HTML
+	// A danger move or action never sits beside Save as a header
+	// button: it goes in the menu, above Delete, behind a confirm.
+	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
 		current := cell(rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
@@ -290,32 +294,46 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			if !ok || variant == "" || (save && variant == ui.ButtonPrimary) {
 				variant = ui.ButtonSecondary
 			}
-			out = append(out, ui.Button(ui.ButtonConfig{
-				Label:   label,
-				Variant: variant,
-				ExtraAttrs: interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
-					OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
-					OnSuccess(interactive.Navigate(currentURL(ctx))).
-					OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)})).
-					Attrs(),
-			}))
+			act := interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
+				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
+				OnSuccess(interactive.Navigate(currentURL(ctx))).
+				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)}))
+			if variant == ui.ButtonDanger {
+				act = act.WithConfirmDialog(interactive.Confirm{
+					Title: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirmTitle, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Message: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirm, map[string]string{
+						"from": m.valueLabel(ctx, m.states.Field, current),
+						"to":   m.valueLabel(ctx, m.states.Field, t.To),
+					}),
+					// The move's label alone can read as the dismiss
+					// button ("Cancel" beside "Cancel"); naming the
+					// record makes the accept unmistakable.
+					Accept: i18nui.TVars(ctx, i18nui.KeyEntityMoveAccept, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Danger: true,
+				})
+				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
+				continue
+			}
+			out = append(out, ui.Button(ui.ButtonConfig{Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
 		}
 	}
-	out = append(out, b.appActions(ctx, m, save)...)
-	if menu := b.menu(ctx, m, row, base); menu != "" {
+	buttons, dangerActs := b.appActions(ctx, m, title, save)
+	out = append(out, buttons...)
+	danger = append(danger, dangerActs...)
+	if menu := b.menu(ctx, m, title, base, danger); menu != "" {
 		out = append(out, menu)
 	}
 	return out
 }
 
 // appActions are the Extension actions the caller may run on this
-// record, each a button posting the record scope to the bulk route: the
-// same route, gates and audit as a bulk run over one record.
-func (b *RecordBuilder) appActions(ctx context.Context, m *meta, save bool) []render.HTML {
+// record, each posting the record scope to the bulk route: the same
+// route, gates and audit as a bulk run over one record. A danger action
+// comes back as a menu item behind a confirm, the rest as buttons.
+func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, save bool) (out []render.HTML, danger []ui.MenuItem) {
 	if !m.hasAPI {
-		return nil
+		return nil, nil
 	}
-	var out []render.HTML
 	for _, act := range recordActions(m) {
 		if !mayRun(ctx, m, act, b.id) {
 			continue
@@ -329,17 +347,23 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, save bool) []re
 			continue
 		}
 		name := strings.ToLower(act.label)
-		out = append(out, ui.Button(ui.ButtonConfig{
-			Label:   act.label,
-			Variant: variant,
-			ExtraAttrs: interactive.Post(m.api + "/_bulk").WithBody(string(body)).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
-				OnSuccess(interactive.Navigate(currentURL(ctx))).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name})).
-				Attrs(),
-		}))
+		run := interactive.Post(m.api + "/_bulk").WithBody(string(body)).
+			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
+			OnSuccess(interactive.Navigate(currentURL(ctx))).
+			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name}))
+		if variant == ui.ButtonDanger {
+			run = run.WithConfirmDialog(interactive.Confirm{
+				Title:   i18nui.TVars(ctx, i18nui.KeyEntityActionConfirmTitle, map[string]string{"action": act.label}),
+				Message: i18nui.TVars(ctx, i18nui.KeyEntityActionConfirm, map[string]string{"title": title}),
+				Accept:  act.label,
+				Danger:  true,
+			})
+			danger = append(danger, ui.MenuItem{Label: act.label, Danger: true, Do: &run})
+			continue
+		}
+		out = append(out, ui.Button(ui.ButtonConfig{Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
 	}
-	return out
+	return out, danger
 }
 
 // menu is the header's icon-only menu named for the record, the list
@@ -347,7 +371,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, save bool) []re
 // a confirmed RPC that lands on the list. The moves and app actions stay
 // buttons beside it, so the header row fits a phone. Nothing to offer
 // draws nothing.
-func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, base string) render.HTML {
+func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, danger []ui.MenuItem) render.HTML {
 	// A drawer's bar carries the copy link; the full page's menu does.
 	var span render.HTML
 	var items []ui.MenuItem
@@ -360,6 +384,12 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 			Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
 		})
 	}
+	if len(danger) > 0 {
+		if len(items) > 0 {
+			items = append(items, ui.MenuItem{Separator: true})
+		}
+		items = append(items, danger...)
+	}
 	if b.delete && canDelete(ctx, m, b.id) {
 		singular := m.singular(ctx)
 		del := interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
@@ -367,7 +397,8 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
 			OnSuccess(interactive.Navigate(base)).
 			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular}))
-		if len(items) > 0 {
+		// Delete joins the danger group when there is one.
+		if len(items) > 0 && len(danger) == 0 {
 			items = append(items, ui.MenuItem{Separator: true})
 		}
 		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeyEntityDelete), Danger: true, Do: &del})
@@ -376,7 +407,7 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, b
 		return ""
 	}
 	return render.Join(span, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": b.ui.recordTitle(ctx, m, row)}),
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,

@@ -967,6 +967,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.
+  A danger move or action sits in the menu above Delete instead, and
+  runs only after a confirm dialog names it and where the record lands.
   Duplicate leaves blank the fields a unique index covers, as it does a
   `unique` field, keeping a relation in a mixed index. New, Duplicate,
   Delete, the moves and the edit form follow the caller's create, update
