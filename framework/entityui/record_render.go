@@ -243,28 +243,8 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 		}
 	}
 	out = append(out, b.appActions(ctx, m)...)
-	if link := b.copyLink(ctx, m, base); link != "" {
-		out = append(out, link)
-	}
-	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
-		out = append(out, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityDuplicate),
-			Href:    base + "/create?duplicate=" + url.QueryEscape(b.id),
-			Variant: ui.ButtonSecondary,
-		}))
-	}
-	if b.delete && canDelete(ctx, m, b.id) {
-		singular := m.singular(ctx)
-		out = append(out, ui.Button(ui.ButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityDelete),
-			Variant: ui.ButtonDanger,
-			ExtraAttrs: interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
-				WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": singular})).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
-				OnSuccess(interactive.Navigate(base)).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular})).
-				Attrs(),
-		}))
+	if menu := b.menu(ctx, m, row, base); menu != "" {
+		out = append(out, menu)
 	}
 	out = append(out, ui.LinkButton(ui.LinkButtonConfig{
 		Label:   i18nui.T(ctx, i18nui.KeyEntityBack),
@@ -309,13 +289,50 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
 	return out
 }
 
-// copyLink renders the record's absolute URL as a hidden span plus the
-// button that copies it. The span carries the kernel's visually-hidden
-// utility class: present for the copy module, absent to the eye.
-func (b *RecordBuilder) copyLink(ctx context.Context, m *meta, base string) render.HTML {
+// menu is the header's icon-only menu named for the record, the list
+// row menu's shape: Copy link, Duplicate where turned on, and Delete as
+// a confirmed RPC that lands on the list. The moves and app actions stay
+// buttons beside it, so the header row fits a phone. Nothing to offer
+// draws nothing.
+func (b *RecordBuilder) menu(ctx context.Context, m *meta, row map[string]any, base string) render.HTML {
+	span, items := b.copyLink(ctx)
+	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
+		items = append(items, ui.MenuItem{
+			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+			Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
+		})
+	}
+	if b.delete && canDelete(ctx, m, b.id) {
+		singular := m.singular(ctx)
+		del := interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
+			WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": singular})).
+			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
+			OnSuccess(interactive.Navigate(base)).
+			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular}))
+		if len(items) > 0 {
+			items = append(items, ui.MenuItem{Separator: true})
+		}
+		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeyEntityDelete), Danger: true, Do: &del})
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return render.Join(span, ui.Menu(ui.MenuConfig{
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": m.recordTitle(ctx, row)}),
+		IconOnly: true,
+		Items:    items,
+		Position: ui.MenuBottomEnd,
+	}))
+}
+
+// copyLink is the record's absolute URL as a hidden span and the menu
+// row that copies it. The span carries the kernel's visually-hidden
+// utility class: present for the copy module, absent to the eye. No
+// request on the context draws neither.
+func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuItem) {
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
-		return ""
+		return "", nil
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -330,10 +347,8 @@ func (b *RecordBuilder) copyLink(ctx context.Context, m *meta, base string) rend
 	}
 	abs := scheme + "://" + r.Host + r.URL.Path
 	id := "eui-rec-link"
-	return render.Join(
-		html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
-		ui.CopyButton(ui.CopyButtonConfig{Target: id, Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Ctx: ctx}),
-	)
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
+		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
 }
 
 // tab is one entry of the record's tab strip.

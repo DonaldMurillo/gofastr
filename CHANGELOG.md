@@ -685,7 +685,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   reads "Customer"), and an entity with no `TitleField`, `name` or
   `title` is named by its first plain `String` column. A record draws its state
   badge, a button per open move (gated by `access.CanResourceExact`, the
-  route's own check), and Edit, Related and Activity tabs, with
+  route's own check), one icon-only menu holding copy link, duplicate
+  and delete, and Edit, Related and Activity tabs, with
   `Related` and `RelatedAt` naming the related lists. An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.

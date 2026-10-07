@@ -169,3 +169,32 @@ func TestActionVariantChecked(t *testing.T) {
 		t.Fatalf("New = %v, want the bad variant refused naming resend", err)
 	}
 }
+
+// The record header keeps its moves and app actions as buttons and folds
+// Copy link, Duplicate and Delete into one icon-only menu named for the
+// record, so the header row fits a phone.
+func TestRecordHeaderMenu(t *testing.T) {
+	x := newInvoiceUI(t)
+	page := renderRecord(t, x, "inv-1", func(b *RecordBuilder) { b.Duplicate().Delete() })
+	trigger := strings.Index(page, "fui-menu__trigger--icon")
+	if trigger < 0 || !strings.Contains(page, "Actions for INV-1") {
+		t.Fatalf("no actions menu named for the record on its header:\n%s", page)
+	}
+	for _, want := range []string{
+		`data-hui-copy-target="eui-rec-link"`,
+		`href="/rec/invoices/create?duplicate=inv-1"`,
+		`data-cui-rpc-method="DELETE"`,
+	} {
+		if i := strings.Index(page, want); i < trigger {
+			t.Errorf("%s is not in the header menu:\n%s", want, page)
+		}
+	}
+	for _, tag := range rpcButtonRe.FindAllString(page, -1) {
+		if strings.Contains(tag, `data-cui-rpc-method="DELETE"`) && strings.Contains(tag, "fui-button") {
+			t.Errorf("Delete is still a header button: %s", tag)
+		}
+	}
+	if move := strings.Index(page, "/transitions/send"); move < 0 || move > trigger {
+		t.Errorf("the move is not a header button before the menu:\n%s", page)
+	}
+}

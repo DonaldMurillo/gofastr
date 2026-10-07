@@ -47,7 +47,8 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   columns menu, trash view, saved views" covers them.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
   record's title and state badge, a button per state move whose `From`
-  holds the stored value, and tabs: Edit (the form from `Display.Form`),
+  holds the stored value, one icon-only menu named for the record (Copy
+  link, and Duplicate and Delete where turned on), and tabs: Edit (the form from `Display.Form`),
   Related (the related entities the page names), any extension tabs, and
   Activity (the audit trail) and API (the record as the API returns it)
   where turned on.
