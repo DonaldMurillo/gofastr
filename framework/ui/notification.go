@@ -160,6 +160,7 @@ var notificationClasses = headless.Classes{
 	headless.PartTitle:         "fui-notification__title",
 	headless.PartBody:          "fui-notification__body",
 	headless.PartDismiss:       "fui-notification__dismiss",
+	headless.PartToastAction:   "fui-notification__action",
 
 	"root--info":    "fui-notification--info",
 	"root--success": "fui-notification--success",

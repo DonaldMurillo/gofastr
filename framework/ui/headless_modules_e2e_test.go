@@ -272,8 +272,8 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{Name: "bell", Href: "/notifications",
 		Label: "Notifications", UnreadCount: 2, SignalUnread: "unread", ID: "bell"})
 	ctx := moduleTestCtx(t, string(trigger))
-	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
-		t.Fatal("the bell marker never loaded headless-feedback")
+	if !pollJS(ctx, moduleLoaded("headless-bell")) {
+		t.Fatal("the bell marker never loaded headless-bell")
 	}
 	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "2 unread notifications" {
 		t.Fatalf("SSR aria-label = %q, want \"2 unread notifications\"", got)

@@ -1018,6 +1018,37 @@ func notificationCSS(t style.Theme) string {
 [data-cui-comp="ui-notification"] > .fui-notification__title { grid-column: 2; grid-row: 1; }
 [data-cui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
 [data-cui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
+/* A runtime toast's action (Undo) takes a column of its own before the
+   dismiss; a toast without one keeps three. */
+[data-cui-comp="ui-notification"]:has(> .fui-notification__action:not([hidden])) { grid-template-columns: auto 1fr auto auto; }
+[data-cui-comp="ui-notification"] > .fui-notification__action { grid-column: 3; grid-row: 1 / span 2; }
+[data-cui-comp="ui-notification"]:has(> .fui-notification__action:not([hidden])) > .fui-notification__dismiss { grid-column: 4; }
+[data-cui-comp="ui-notification"] .fui-notification__action {
+  position: relative;
+  align-self: center;
+  padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface, #FFFFFF);
+  font: inherit;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+}
+[data-cui-comp="ui-notification"] .fui-notification__action::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: max(100%, var(--spacing-touch-target, 44px));
+  block-size: var(--spacing-touch-target, 44px);
+  transform: translate(-50%, -50%);
+}
+[data-cui-comp="ui-notification"] .fui-notification__action:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+}
 [data-cui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);

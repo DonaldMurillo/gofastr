@@ -43,6 +43,7 @@ func TestRegisteredBehaviorSources_FindsTheTreesModules(t *testing.T) {
 		"framework/headless/collections.js",
 		"framework/headless/wizard.js",
 		"framework/headless/feedback.js",
+		"framework/headless/bell.js",
 		"framework/headless/navigation.js",
 		"examples/site/behavior_ping.js",
 	} {

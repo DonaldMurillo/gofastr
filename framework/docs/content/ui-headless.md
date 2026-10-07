@@ -502,12 +502,11 @@ One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
 after a successful copy, and `data-hui-toast-leaving` on a toast item
 the moment it is dismissed; the kit's sheets style both.
 
-Two more modules of this package own the feedback and page-control
+Three more modules of this package own the feedback and page-control
 families:
 
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
-  and `[data-cui-toast-stack]`, `[data-hui-notification-bell]`,
-  `[data-hui-network-retry]`): the copy control (no clipboard mutation
+  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`): the copy control (no clipboard mutation
   without script — the words travel on the wrapper from `Strings`),
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
@@ -515,11 +514,12 @@ families:
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast), the bell's spoken count re-said when a signal changes it
-  (the module watches the badge's text, which the `UnreadBind` signal
-  writes, and re-formats the anchor's `aria-label` from it),
-  and the offline banner's retry link. It replaced the retired `copy`,
-  `toasts` and `networkretrybanner` runtime modules.
+  toast) and the offline banner's retry link. It replaced the retired
+  `copy`, `toasts` and `networkretrybanner` runtime modules.
+- **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
+  count re-said when a signal changes it (the module watches the
+  badge's text, which the `UnreadBind` signal writes, and re-formats
+  the anchor's `aria-label` from it).
 - **headless-navigation** (`[data-hui-back-to-top]`,
   `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
   the document, the visibility mark, the focus return) and the theme

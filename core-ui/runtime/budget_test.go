@@ -1132,7 +1132,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// in a drawer that names the page under it returns there instead
 		// of leaving the stack. The question needs the node that saved,
 		// which only this module holds at the navigate.
-		"rpc": 3210,
+		// 3225 measured (3223 + 2) after the success toast carries the
+		// trigger's data-cui-rpc-success-action through (2026-10-07, the
+		// delete toast's Undo): the 13 bytes are the attribute read; the
+		// parse, the button and the longer stay live in headless-feedback,
+		// which made room by moving the bell into headless-bell.
+		"rpc": 3225,
 	}
 	const coreOverride = 0
 

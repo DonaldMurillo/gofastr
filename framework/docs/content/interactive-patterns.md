@@ -346,6 +346,32 @@ falls back to `Request failed (<status>)`. The resource detail page's
 Delete and state-transition buttons carry it, so a `409` from a record
 that other records still reference reaches the user.
 
+### OnSuccessToast and OnSuccessToastAction (say what happened, offer Undo)
+
+`Action.OnSuccessToast(title)` shows a success toast on a 2xx answer,
+before any `OnSuccess(Navigate(…))` runs: the toast stack sits outside
+the swapped region, so the toast outlives the navigation.
+`OnSuccessToastAction(label, next)` puts one button on that toast (and
+panics without one); pressing it runs `next`, with next's own toasts and navigation. A toast
+with a button stays up ten seconds instead of six, paused while hovered
+or focused.
+
+```go
+interactive.Delete("/api/invoices/42").
+    OnSuccessToast("Invoice deleted").
+    OnSuccess(interactive.Navigate("/invoices")).
+    OnSuccessToastAction("Undo", interactive.Post("/api/invoices/42/_restore").
+        WithBody(`{}`).
+        OnSuccessToast("Invoice restored"))
+```
+
+Attributes injected: `data-cui-rpc-success-toast="title"` and
+`data-cui-rpc-success-action` (JSON: the label and next's attributes).
+The button carries next's `data-cui-rpc*` wiring and nothing else:
+`OnSuccessToastAction` panics on a confirm, a signal or any other key,
+and the runtime drops any such key from the JSON it reads. entityui's
+`Undo()` on a soft delete is built on it.
+
 ### AfterText (one-shot button label swap on success)
 
 `interactive.AfterText(text)` replaces the trigger element's text content

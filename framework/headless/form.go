@@ -250,6 +250,9 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Form Request carries an empty data-cui-rpc-success-toast — say the title or leave the toast off")
 			}
 			out[k] = v
+		case "data-cui-rpc-success-action":
+			checkToastAction("Form Request", v)
+			out[k] = v
 		case "data-cui-confirm":
 			if v == "" {
 				panic("headless: Form Request carries an empty data-cui-confirm — a confirmation with no message confirms nothing")
@@ -278,6 +281,7 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Form Request carries " + k + ", which is not a request attribute a form admits (the wiring vocabulary lives on FormProps.Request; decoration belongs in ExtraAttrs)")
 		}
 	}
+	checkToastActionRides("Form Request", out)
 	return out
 }
 

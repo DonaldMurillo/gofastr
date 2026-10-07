@@ -345,8 +345,10 @@
       // its RPC triggered — a save that lands on the record page still
       // says "Saved". _toastOrFallback keeps it reachable when the
       // feedback module cannot load.
+      // Its action (Undo) passes through as the attribute's JSON: the
+      // feedback module parses it and puts it on the toast's button.
       if (successToast !== null) {
-        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000 });
+        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
       }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
       // A save inside an intercept layer returns to the layer (or the

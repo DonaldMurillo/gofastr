@@ -31,6 +31,10 @@ const (
 	// from the toast root the tone colours. Only ToastTemplate draws
 	// it; a server-rendered Toast sits in the stack bare.
 	PartToastItem Part = "toast-item"
+	// PartToastAction is a runtime toast's one action button (Undo,
+	// View): only ToastTemplate draws it, and the module removes it
+	// from a row whose toast names no action.
+	PartToastAction Part = "toast-action"
 )
 
 // ToastProps configures one toast.
@@ -225,7 +229,7 @@ var styleNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 
 // ToastTemplate renders the row template. Every part the module may
 // fill is present and empty: the tone word, the icon, the title, the
-// body, the dismiss. A part with nothing to say is removed at clone
+// body, the action, the dismiss. A part with nothing to say is removed at clone
 // time, so the rendered row matches what Toast renders for the same
 // content.
 func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
@@ -243,6 +247,9 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		b.El("span", PartIcon, Mark(Internal(Attrs(map[string]string{"aria-hidden": "true"})), "data-hui-toast-icon")),
 		b.El("span", PartTitle, Mark(Internal(nil), "data-hui-toast-title")),
 		b.El("span", PartBody, Mark(Internal(nil), "data-hui-toast-body")),
+		// Hidden until the module fills it: the template's action has
+		// no label of its own.
+		b.El("button", PartToastAction, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-action", "hidden")),
 		b.El("button", PartDismiss, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-dismiss"),
 			render.Text("×")),
 	)
@@ -504,9 +511,9 @@ func init() {
 
 	Register(Spec{
 		Name:    "ToastTemplate",
-		Anatomy: []Part{PartToastItem, PartRoot, PartToastToneWord, PartIcon, PartTitle, PartBody, PartDismiss},
+		Anatomy: []Part{PartToastItem, PartRoot, PartToastToneWord, PartIcon, PartTitle, PartBody, PartToastAction, PartDismiss},
 		Hooks: []string{"data-hui-toast-template", "data-hui-toast-item", "data-hui-toast",
-			"data-hui-toast-tone", "data-hui-toast-icon", "data-hui-toast-title", "data-hui-toast-body", "data-hui-toast-dismiss",
+			"data-hui-toast-tone", "data-hui-toast-icon", "data-hui-toast-title", "data-hui-toast-body", "data-hui-toast-action", "data-hui-toast-dismiss",
 			"data-hui-toast-glyph-info", "data-hui-toast-glyph-success", "data-hui-toast-glyph-warning", "data-hui-toast-glyph-danger",
 			"data-hui-toast-variant-info", "data-hui-toast-variant-success", "data-hui-toast-variant-warning", "data-hui-toast-variant-danger",
 			"data-hui-toast-dismiss-label", "data-hui-toast-variants",

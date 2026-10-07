@@ -371,6 +371,7 @@ var moduleAttrs = map[string][]string{
 		"data-cui-rpc-scroll-to",
 		"data-cui-rpc-error-toast",
 		"data-cui-rpc-success-toast",
+		"data-cui-rpc-success-action",
 		"data-cui-confirm",
 		"data-cui-push-state",
 	},

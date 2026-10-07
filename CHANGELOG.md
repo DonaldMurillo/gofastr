@@ -933,6 +933,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-cui-rpc-error-toast` attribute it writes: a non-2xx answer to
   the action shows a toast with that title. The resource detail page's
   Delete and transition buttons use it, so a refused delete says so.
+- **`interactive.Action.OnSuccessToastAction(label, next)`** puts one
+  button on the action's success toast, written as
+  `data-cui-rpc-success-action`: pressing it runs `next`, with its own
+  toasts and navigation, and the toast stays up ten seconds. The button
+  carries RPC wiring only; the Go side panics on anything else and the
+  runtime drops it. The toast row gains the `headless.PartToastAction`
+  part (`fui-notification__action` in the kit), and
+  `__gofastr.toast(cfg)` takes `action: {label, attrs}`.
 - **`check.LintReplaceFill`** fires on a `String.prototype.replace` whose
   replacement is a value rather than a function, since `$&`, `$1` and
   `$$` in user text expand there.
@@ -1170,6 +1178,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- The notification bell's spoken count moved out of `headless-feedback`
+  into its own `headless-bell` module, loaded on
+  `[data-hui-notification-bell]`, which keeps the toast runtime under
+  its size budget now that a toast can carry an action.
 - **BREAKING: `app.App.RenderOverlayResult(ctx, path, origin, as)`** takes
   the location the overlay opens over, which the screen reads with
   `app.OverlayOriginFromContext`. A host passes the request's

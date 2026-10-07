@@ -163,6 +163,9 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// on the same button. Empty is allowed: the runtime titles
 			// it "Done".
 			out[k] = v
+		case "data-cui-rpc-success-action":
+			checkToastAction("Action", v)
+			out[k] = v
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
 			"data-cui-intercept-close", "data-cui-intercept-page", "data-cui-intercept-swap":
 			// Presence is the value. intercept-close closes the
@@ -261,6 +264,7 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Action carries data-cui-action=\"close\" beside data-cui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-cui-rpc-close")
 		}
 	}
+	checkToastActionRides("Action", out)
 	return out
 }
 
@@ -373,6 +377,36 @@ func hasFold(a html.Attrs, key string) bool {
 // (interactive.Confirm): a title or an accept label must say
 // something, danger is the one tone the dialog draws, and every one
 // of them rides only beside the data-cui-confirm it words.
+// checkToastAction checks a data-cui-rpc-success-action: the success
+// toast's one button, {"label", "attrs"}, whose attrs are RPC wiring only
+// (the runtime copies nothing else onto the button) and are checked as a
+// Button's own would be, so its navigate stays same-origin too.
+func checkToastAction(seam, v string) {
+	var a struct {
+		Label string            `json:"label"`
+		Attrs map[string]string `json:"attrs"`
+	}
+	if err := json.Unmarshal([]byte(v), &a); err != nil || a.Label == "" || a.Attrs["data-cui-rpc"] == "" {
+		panic("headless: " + seam + " carries a data-cui-rpc-success-action that is not a label and an RPC to run")
+	}
+	for k := range a.Attrs {
+		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
+			panic("headless: " + seam + "'s success toast action carries " + k + "; a toast's button carries RPC wiring only")
+		}
+	}
+	actionAttrs(html.Attrs(a.Attrs))
+}
+
+// checkToastActionRides refuses a success toast action with no success
+// toast: the runtime shows the action only on that toast.
+func checkToastActionRides(seam string, out html.Attrs) {
+	if _, act := out["data-cui-rpc-success-action"]; act {
+		if _, toast := out["data-cui-rpc-success-toast"]; !toast {
+			panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
+		}
+	}
+}
+
 func checkConfirmWording(seam string, a html.Attrs, k, v string) {
 	switch {
 	case k == "data-cui-confirm-tone" && v != "danger":
