@@ -248,6 +248,7 @@ func registerPayments(app *framework.App) {
 			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
 		},
 		Scope: &framework.ScopeConfig{
+			SoftDelete: true,
 			OwnerField: "user_id",
 		},
 		Exposure: &framework.ExposureConfig{

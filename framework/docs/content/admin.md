@@ -225,7 +225,8 @@ screens (`UI.WithSavedViews`). The store reads the owner and the tenant from the
 context only, keeps every owner's and tenant's views apart, caps a user
 at `entityui.SavedViewCap` views per entity, and refuses blank, duplicate
 and over-long names, filters and column lists with the errors the
-`SavedViewStore` contract names.
+`SavedViewStore` contract names. A generated app's admin config sets
+`SavedViews: true`.
 
 ### Bulk jobs in the background
 

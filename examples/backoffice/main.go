@@ -102,6 +102,7 @@ func setupApp(dsn string) *framework.App {
 		Title:       "Backoffice",
 		UI:          app.EntityUI(entityui.Extensions{}),
 		AllEntities: true,
+		SavedViews:  true,
 		LoginPath:   "/login",
 		SignOutPath: "/logout",
 	}))

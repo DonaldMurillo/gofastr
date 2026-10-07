@@ -846,6 +846,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   passes the admin gate. A user who is gone runs nothing; one who lost
   the admin role runs only what their current roles allow. Wire the runner into
   both `entityui.Extensions.Jobs` and `admin.Config.BulkJobs`.
+- **Generated apps turn on saved views** in the admin config the
+  blueprint writes, and Meridian's payments use soft delete, so the
+  admin shows their trash view.
 
 ### Changed
 
