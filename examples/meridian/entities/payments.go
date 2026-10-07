@@ -255,6 +255,7 @@ func registerPayments(app *framework.App) {
 			CRUD: boolPtr(true),
 			MCP:  true,
 		},
+		Display:    &framework.DisplayConfig{Description: "Money in, and the attempts that failed.", Nav: &framework.EntityNav{Group: "billing", Icon: "card", Order: 4}, Views: []framework.ListView{{Key: "failed", Label: "Failed", Where: "status = \"failed\""}}, Facets: []string{"status", "method"}},
 		Properties: map[string]any{"label": "Payments"},
 	})
 	_ = Payments{}

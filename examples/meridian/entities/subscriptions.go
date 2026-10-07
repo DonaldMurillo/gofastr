@@ -258,7 +258,7 @@ func registerSubscriptions(app *framework.App) {
 			MCP:  true,
 		},
 		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "activate", Label: "Activate", From: []string{"trialing", "past_due"}, To: "active", Variant: "primary"}, {Key: "cancel", Label: "Cancel", From: []string{"trialing", "active", "past_due"}, To: "canceled", Variant: "danger"}}, Advisory: true},
-		Display:    &framework.DisplayConfig{Fields: map[string]framework.FieldDisplay{"mrr": {Label: "MRR"}}},
+		Display:    &framework.DisplayConfig{Description: "Who is on which plan, and what they bring in.", Nav: &framework.EntityNav{Group: "billing", Icon: "repeat", Order: 2}, Views: []framework.ListView{{Key: "active", Label: "Active", Where: "status = \"active\""}, {Key: "trialing", Label: "Trialing", Where: "status = \"trialing\""}, {Key: "past_due", Label: "Past due", Where: "status = \"past_due\""}}, Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"mrr": {Label: "MRR"}}},
 		Properties: map[string]any{"label": "Subscriptions"},
 	})
 	_ = Subscriptions{}
