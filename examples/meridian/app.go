@@ -276,6 +276,14 @@ var (
 	marketingLayout *app.Layout
 )
 
+// authMgr and rolePolicy are the app's auth manager and RBAC policy,
+// set by RegisterGenerated; main.go hands both to the admin, which names
+// audit actors and draws its User roles and Roles pages through them.
+var (
+	authMgr    *auth.AuthManager
+	rolePolicy *access.RolePolicy
+)
+
 // appUI is the app's entityui value: every generated entity screen
 // renders through it. RegisterGenerated builds it once, after the
 // entities registered and before any screen mounts. extensions.go owns
@@ -337,7 +345,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
-		authMgr := auth.New(authCfg)
+		authMgr = auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
 		// Scoped API tokens (PATs): logged-in users mint them at
 		// POST /auth/tokens (session-only, a leaked token can't mint
@@ -403,7 +411,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// admin role holds the wildcard; a plain signup session
 		// resolves nothing and reads stay open. Add finer per-role
 		// Grants here as the back-office grows.
-		rolePolicy := access.NewRolePolicy()
+		rolePolicy = access.NewRolePolicy()
 		rolePolicy.Grant("admin", access.Wildcard)
 		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
