@@ -239,7 +239,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			Ctx:       ctx,
 		}
 	}
-	parts := []render.HTML{header, resultNotice(ctx),
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header, resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
 			Rows:          rows,
@@ -250,12 +250,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			Ctx:           ctx,
 			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoUsers), HeadingLevel: 2},
 		}),
-	}
-	if total > len(users) {
-		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminUsersShown,
-			map[string]string{"shown": strconv.Itoa(len(users)), "total": strconv.Itoa(total)}))))
-	}
-	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
+	)
 }
 
 // rolesInput is a user's direct roles as a form field: a checkbox per

@@ -156,7 +156,6 @@ const (
 	KeyAdminNoRoles           Key = "ui.admin.noRoles"           // "No roles"
 	KeyAdminNoRolesDesc       Key = "ui.admin.noRolesDesc"       // "Define roles in the app's access policy."
 	KeyAdminNoUsers           Key = "ui.admin.noUsers"           // "No users"
-	KeyAdminUsersShown        Key = "ui.admin.usersShown"        // "Showing {shown} of {total} users."
 	KeyAdminUsersLoadFailed   Key = "ui.admin.usersLoadFailed"   // "Could not load users. Check the server logs for details."
 	KeyAdminPermission        Key = "ui.admin.permission"        // "Permission"
 	KeyAdminNewRole           Key = "ui.admin.newRole"           // "New role"
@@ -317,7 +316,6 @@ var adminDefaults = map[Key]string{
 	KeyAdminNoRoles:           "No roles",
 	KeyAdminNoRolesDesc:       "Define roles in the app's access policy.",
 	KeyAdminNoUsers:           "No users",
-	KeyAdminUsersShown:        "Showing {shown} of {total} users.",
 	KeyAdminUsersLoadFailed:   "Could not load users. Check the server logs for details.",
 	KeyAdminPermission:        "Permission",
 	KeyAdminNewRole:           "New role",
