@@ -127,7 +127,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 				Kind: "password.change_failed", UserID: sess.UserID, Remote: remoteHost(r),
 				Meta: map[string]string{"reason": "bad_credentials"},
 			})
-			writeAuthFieldError(w, "current password is incorrect", "current_password", "is incorrect")
+			writeAuthFieldError(w, "current password is incorrect", "current_password", "does not match your current password")
 			return
 		}
 		if body.Password == body.Current {

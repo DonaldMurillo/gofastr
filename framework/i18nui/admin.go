@@ -23,6 +23,30 @@ const (
 	KeyAdminYourRoles    Key = "ui.admin.yourRoles"    // "Roles: {roles}"
 )
 
+// The account page: the signed-in user's own settings.
+const (
+	KeyAdminAccountSettings Key = "ui.admin.accountSettings" // "Account settings"
+	KeyAdminAccountSub      Key = "ui.admin.accountSub"      // "Your profile, how the admin looks to you, and your password."
+	KeyAdminProfile         Key = "ui.admin.profile"         // "Profile"
+	KeyAdminProfileSub      Key = "ui.admin.profileSub"      // "Who you are signed in as."
+	KeyAdminName            Key = "ui.admin.name"            // "Name"
+	KeyAdminEmail           Key = "ui.admin.email"           // "Email"
+	KeyAdminVerified        Key = "ui.admin.verified"        // "Verified"
+	KeyAdminUnverified      Key = "ui.admin.unverified"      // "Unverified"
+	KeyAdminAppearance      Key = "ui.admin.appearance"      // "Appearance"
+	KeyAdminAppearanceSub   Key = "ui.admin.appearanceSub"   // "Applies in this browser."
+	KeyAdminThemeLabel      Key = "ui.admin.themeLabel"      // "Theme"
+	KeyAdminSecurity        Key = "ui.admin.security"        // "Password"
+	KeyAdminSecuritySub     Key = "ui.admin.securitySub"     // "Changing it signs you out everywhere else."
+	KeyAdminCurrentPassword Key = "ui.admin.currentPassword" // "Current password"
+	KeyAdminNewPassword     Key = "ui.admin.newPassword"     // "New password"
+	KeyAdminNewPasswordHelp Key = "ui.admin.newPasswordHelp" // "At least {min} characters."
+	KeyAdminConfirmPassword Key = "ui.admin.confirmPassword" // "Confirm new password"
+	KeyAdminChangePassword  Key = "ui.admin.changePassword"  // "Change password"
+	KeyAdminPasswordChanged Key = "ui.admin.passwordChanged" // "Password changed"
+	KeyAdminNoPassword      Key = "ui.admin.noPassword"      // "Your account signs in without a password. Use "Forgot password" on the sign-in page to set one."
+)
+
 // Answers every admin form shares.
 const (
 	KeyAdminRefused  Key = "ui.admin.refused"  // "You may not do that."
@@ -188,6 +212,26 @@ var adminDefaults = map[Key]string{
 	KeyAdminAccount:           "Account",
 	KeyAdminSignedInAs:        "Signed in as {name}",
 	KeyAdminYourRoles:         "Roles: {roles}",
+	KeyAdminAccountSettings:   "Account settings",
+	KeyAdminAccountSub:        "Your profile, how the admin looks to you, and your password.",
+	KeyAdminProfile:           "Profile",
+	KeyAdminProfileSub:        "Who you are signed in as.",
+	KeyAdminName:              "Name",
+	KeyAdminEmail:             "Email",
+	KeyAdminVerified:          "Verified",
+	KeyAdminUnverified:        "Unverified",
+	KeyAdminAppearance:        "Appearance",
+	KeyAdminAppearanceSub:     "Applies in this browser.",
+	KeyAdminThemeLabel:        "Theme",
+	KeyAdminSecurity:          "Password",
+	KeyAdminSecuritySub:       "Changing it signs you out everywhere else.",
+	KeyAdminCurrentPassword:   "Current password", // not-a-secret: UI label
+	KeyAdminNewPassword:       "New password",     // not-a-secret: UI label
+	KeyAdminNewPasswordHelp:   "At least {min} characters.",
+	KeyAdminConfirmPassword:   "Confirm new password", // not-a-secret: UI label
+	KeyAdminChangePassword:    "Change password",      // not-a-secret: UI label
+	KeyAdminPasswordChanged:   "Password changed",
+	KeyAdminNoPassword:        "Your account signs in without a password. Use \"Forgot password\" on the sign-in page to set one.", // not-a-secret: UI label
 	KeyAdminRefused:           "You may not do that.",
 	KeyAdminFailed:            "That did not work. Check the server logs for details.",
 	KeyAdminBadInput:          "Fill in every field the form asks for.",

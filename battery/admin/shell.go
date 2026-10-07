@@ -39,6 +39,7 @@ func (b *Battery) mount() {
 
 	b.screen(group, "", i18nui.KeyAdminDashboard, true, b.renderDashboard)
 	b.screen(group, "/search", i18nui.KeyAdminSearch, true, b.renderSearch)
+	b.screen(group, "/account", i18nui.KeyAdminAccountSettings, false, b.renderAccount)
 	if b.cfg.Queue != nil {
 		b.screen(group, "/queue", i18nui.KeyAdminQueue, false, b.renderQueue)
 	}
@@ -363,7 +364,8 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 
 // ----- toolbar -----------------------------------------------------------------
 
-// accountMenu is the signed-in user, their roles, and Sign out.
+// accountMenu is the signed-in user, their roles, the account page,
+// and Sign out.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	name := displayName(ctx)
 	items := []ui.MenuItem{
@@ -375,14 +377,17 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 			Disabled: true,
 		})
 	}
+	items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
+		Label: i18nui.T(ctx, i18nui.KeyAdminAccountSettings),
+		Href:  b.cfg.PathPrefix + "/account",
+	})
 	if b.cfg.SignOutPath != "" {
 		dest := b.cfg.LoginPath
 		if dest == "" {
 			dest = "/"
 		}
 		out := interactive.Post(b.cfg.SignOutPath).OnSuccess(interactive.Navigate(dest))
-		items = append(items, ui.MenuItem{Separator: true},
-			ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out})
+		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out})
 	}
 	return ui.Menu(ui.MenuConfig{
 		Label:    i18nui.T(ctx, i18nui.KeyAdminAccount),
@@ -395,17 +400,16 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 // displayName names the signed-in user: their name, else their email,
 // else their id.
 func displayName(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
+	if handlerUser(ctx) == nil {
 		return ""
 	}
-	if n, ok := u.(interface{ GetName() string }); ok && n.GetName() != "" {
-		return n.GetName()
-	}
-	if e, ok := u.(interface{ GetEmail() string }); ok && e.GetEmail() != "" {
-		return e.GetEmail()
-	}
-	return adminActorID(ctx)
+	return cmp.Or(userName(ctx), userEmail(ctx), adminActorID(ctx))
+}
+
+// handlerUser is the signed-in user the auth middleware set, or nil.
+func handlerUser(ctx context.Context) any {
+	u, _ := handler.GetUser(ctx)
+	return u
 }
 
 // crumbs draws the breadcrumbs for path: the product, then where the
@@ -426,6 +430,8 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminDashboard)}}
 	case "/search":
 		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminSearch)}}
+	case "/account":
+		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminAccountSettings)}}
 	case "/queue":
 		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminQueue)}}
 	case "/audit":

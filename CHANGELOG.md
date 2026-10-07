@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Admin account settings**: `<PathPrefix>/account`, linked from the
+  account menu, shows the signed-in user's profile (email with its
+  verified state, roles), the theme choice, and, with `Config.Auth`, a
+  change-password form posting to `POST <auth>/password` with per-field
+  errors. A passwordless account is pointed at "Forgot password".
 - **`ui.ContainerConfig.Start`**: pins the column to the inline start
   and drops the container's gutter, for a measure inside a frame that
   already pads its content.

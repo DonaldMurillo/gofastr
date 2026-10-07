@@ -56,6 +56,7 @@ not register fails boot.
 |---|---|
 | `GET /admin` | Dashboard: a count card per entity, failed jobs, recent activity, the app's cards |
 | `GET /admin/search?q=` | Search results: the palette's scriptless twin |
+| `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
 | `GET /admin/entities/<name>` | Entity list |
 | `GET /admin/entities/<name>/create` | Create form |
 | `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list) |
@@ -156,6 +157,26 @@ admin.New(admin.Config{
   draws a generic notice in the shell and logs `app slot failed` with
   the slot name, never what the page read.
 - **Links** must be same-origin paths; boot refuses anything else.
+
+### Account settings
+
+The account menu's "Account settings" opens `<PathPrefix>/account`, the
+signed-in user's own page. It reads only the caller's record, so it is
+never elevated.
+
+- **Profile**: name and email, with a Verified or Unverified badge when
+  the auth store implements `auth.EmailVerifiedChecker`, and the roles
+  the caller holds.
+- **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
+  the browser like the toolbar's toggle.
+- **Password** (only with `Config.Auth`): current, new and confirm
+  fields posting to the auth battery's `POST <BasePath>/password`. The
+  route checks every field and answers a refusal per field, and the
+  form draws it beside the input. A change signs the user out of their
+  other sessions. An account with no password (a store implementing
+  `auth.PasswordChecker` reports none, as after an OAuth or magic-link
+  sign-up) is told to use "Forgot password" instead of seeing a form it
+  cannot pass.
 
 ### Command palette
 
