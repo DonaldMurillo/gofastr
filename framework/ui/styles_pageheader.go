@@ -29,7 +29,9 @@ func pageHeaderCSS(t style.Theme) string {
 			// No rule under the header: the title's weight and the gap to
 			// the content separate them, and a hairline that every page
 			// header drew competed with the card and table borders below.
-			"padding", "var(--spacing-xl, 24px) 0 var(--spacing-sm, 4px)",
+			// Knob: --ui-page-header-inset (the xl spacing) is the top
+			// inset; a frame that pads its content already sets it to 0.
+			"padding", "var(--ui-page-header-inset, var(--spacing-xl, 24px)) 0 var(--spacing-sm, 4px)",
 		).
 		End().
 		Rule(".fui-page-header__text").

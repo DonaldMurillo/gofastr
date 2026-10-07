@@ -1291,6 +1291,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a toolbar's last button). `headless-disclosure` measures an opened
   light-dismiss panel and shifts it back inside, through
   `--hui-panel-shift`, which the kit's menu and dropdown panels read.
+- **A page header inside an app frame no longer doubles the top
+  inset.** `ui.ContentRow` pads main beside a nav column, and a
+  `ui.PageHeader` first in it added its own 24px above the title. The
+  header reads its top inset from `--ui-page-header-inset`, which the
+  padded main sets to 0.
 - **Sorting or paging a list no longer jumps to the top of the page.**
   A client navigation that changes only the query on the same path
   keeps the scroll position; a new path or a fragment still scrolls as

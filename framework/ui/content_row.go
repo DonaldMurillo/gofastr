@@ -207,12 +207,14 @@ func contentRowCSS(_ style.Theme) string {
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }
 .fui-content-row--viewport { min-block-size: 0; flex: 1 0 auto; }
-/* App frame: a padded content area beside the nav column. */
+/* App frame: a padded content area beside the nav column. The padding
+   is the page header's top inset too, so the header adds none. */
 .fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl, 24px);
   padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
+  --ui-page-header-inset: 0;
 }
 ` + md.viewportCSS() + md.stickyCSS() + md.stackCSS() + lg.viewportCSS() + lg.stickyCSS() + lg.stackCSS()
 }
