@@ -905,7 +905,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.
-  New, Duplicate,
+  Duplicate leaves blank the fields a unique index covers, as it does a
+  `unique` field, keeping a relation in a mixed index. New, Duplicate,
   Delete, the moves and the edit form follow the caller's create, update
   and delete access, so a screen never draws a write the route refuses.
   A relation the caller may not read shows the em dash, in pickers and

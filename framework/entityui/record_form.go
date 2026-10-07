@@ -65,8 +65,9 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		// failed or empty hooked read refuses the duplicate rather than
 		// fall back to raw values. The prefill itself comes from the
 		// raw read, since the values round-trip on submit. Fields a
-		// create may not set (system, the state field, stamps, unique)
-		// start blank, so the normal create hooks and scope apply.
+		// create may not set (system, the state field, stamps) and
+		// fields a copy would collide on (uniqueBlank) start blank, so
+		// the normal create hooks and scope apply.
 		if !canReadRecord(ctx, m.ch, dup) {
 			return m.notFound(ctx)
 		}
@@ -78,8 +79,9 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		if err != nil || row == nil {
 			return m.notFound(ctx)
 		}
+		blank := uniqueBlank(m)
 		for _, f := range m.fields {
-			if !mayCreateSet(m, f) || f.Unique {
+			if !mayCreateSet(m, f) || blank[f.Name] {
 				continue
 			}
 			if cell(rowValue(row, f.Name)) != cell(rowValue(hooked, f.Name)) {
@@ -103,6 +105,36 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		saveButton(ctx, m, true),
 	)
 	return render.Join(drawerBar(ctx), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
+}
+
+// uniqueBlank names the fields a duplicate leaves blank because the
+// copy would collide on them: a Unique field, and each field of a
+// unique column index. A relation in a mixed index keeps its value,
+// since the other fields alone make the copy distinct (an invoice
+// copied under the same customer needs only a new number); an index
+// of relations alone blanks them all.
+func uniqueBlank(m *meta) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range m.fields {
+		if f.Unique {
+			out[f.Name] = true
+		}
+	}
+	for _, ix := range m.e.Config.Indices {
+		if !ix.Unique || ix.Expression != "" {
+			continue
+		}
+		onlyRelations := !slices.ContainsFunc(ix.Columns, func(c string) bool {
+			f, ok := m.field(c)
+			return ok && f.Type != schema.Relation
+		})
+		for _, c := range ix.Columns {
+			if f, ok := m.field(c); ok && (onlyRelations || f.Type != schema.Relation) {
+				out[c] = true
+			}
+		}
+	}
+	return out
 }
 
 // readOnlyNotice is what a create screen draws when the entity mounts

@@ -72,7 +72,10 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills
-  from that record minus what a create may not set;
+  from that record minus what a create may not set and what the copy
+  would collide on: a `unique` field and the fields of a unique index
+  start blank (a relation in a mixed index keeps its value, so an
+  invoice copies under its customer with a blank number);
   `?prefill_<field>=<value>` prefills one field — the convention a
   `Where`-pinned list's New link uses, the Related tab's among them. A
   bare `?<field>=` is some other param and prefills nothing.
