@@ -271,11 +271,13 @@ tenant, only that tenant's rows.
 and the dashboard's recent activity name each actor by its account's
 email, the account the User roles page lists; an id no account matches,
 or every id without `Auth`, shows as written, and a row with no actor
-reads "System". The dashboard reads each row as a sentence, "ada@…
-updated INV-1010 · 5m ago": a live record of an exposed entity by its
-title, read the way its record screen's breadcrumb is, and a deleted or
-purged one by its entity's singular name. The audit diff is never read
-for this.
+reads "System". The dashboard reads each row as a sentence, "**ada**
+updated INV-1010 · 5m ago": the actor in bold, an account by its
+email's local part with the full email on hover; a live record of an
+exposed entity by its title, read the way its record screen's
+breadcrumb is, as a link to that screen; and a deleted or purged one by
+its entity's singular name, unlinked. The audit diff is never read for
+this.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a

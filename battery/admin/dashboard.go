@@ -176,11 +176,7 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	events := make([]ui.TimelineEvent, len(rows))
 	for i, r := range rows {
 		events[i] = ui.TimelineEvent{
-			Title: i18nui.TVars(ctx, i18nui.KeyAdminActivityLine, map[string]string{
-				"actor":  actorLabel(ctx, names, r),
-				"verb":   activityVerb(ctx, r.Op),
-				"record": b.activityRecord(ctx, r),
-			}),
+			Lead:    b.activityLead(ctx, names, r),
 			Meta:    ago(ctx, now, r.CreatedAt),
 			Variant: timelineVariant(r.Op),
 			Icon:    opIcon(r.Op),

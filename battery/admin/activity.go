@@ -2,11 +2,15 @@ package admin
 
 import (
 	"context"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // actorNames maps each distinct actor id in rows to its account's email
@@ -47,21 +51,50 @@ func actorLabel(ctx context.Context, names map[string]string, r auditRow) string
 	return r.ActorID.String
 }
 
-// activityRecord names one row's record: an exposed entity's live record
-// by its title, read the way the record screen's breadcrumb reads it; a
-// deleted, purged or unreadable one by its entity's singular name; an
-// entity the admin does not expose by its table name and id.
-func (b *Battery) activityRecord(ctx context.Context, r auditRow) string {
-	e, ok := b.exposedNamed(r.Entity)
-	if !ok {
-		return strings.TrimSpace(r.Entity + " " + r.RecordID)
+// activityLead is one activity line as markup: the actor in bold, what
+// they did, and the record, a link to its screen while it is live. Each
+// part is escaped before it fills the translated line, and the line is
+// filled in one pass, so a title holding a placeholder stays text.
+func (b *Battery) activityLead(ctx context.Context, names map[string]string, r auditRow) render.HTML {
+	label, href := b.activityRecord(ctx, r)
+	record := render.Text(label)
+	if href != "" {
+		record = ui.Link(ui.LinkConfig{Href: href, Text: label, Variant: ui.LinkTitle})
 	}
-	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" && b.ui != nil {
-		if t, ok := b.ui.RecordTitle(b.elevate(ctx), e.GetName(), r.RecordID); ok {
-			return t
+	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityLine, map[string]render.HTML{
+		"actor":  activityActor(ctx, names, r),
+		"verb":   render.Text(activityVerb(ctx, r.Op)),
+		"record": record,
+	})
+}
+
+// activityActor is one row's actor in bold: an account by its email's
+// local part, the full email on hover; otherwise as actorLabel names it.
+func activityActor(ctx context.Context, names map[string]string, r auditRow) render.HTML {
+	if email, ok := names[r.ActorID.String]; ok && r.ActorID.Valid {
+		if at := strings.LastIndexByte(email, '@'); at > 0 {
+			return html.Strong(html.TextConfig{ExtraAttrs: html.Attrs{"title": email}}, render.Text(email[:at]))
 		}
 	}
-	return b.singular(ctx, e)
+	return html.Strong(html.TextConfig{}, render.Text(actorLabel(ctx, names, r)))
+}
+
+// activityRecord names one row's record and where it lives: an exposed
+// entity's live record by its title, read the way the record screen's
+// breadcrumb reads it, with its screen's path; a deleted, purged or
+// unreadable one by its entity's singular name; an entity the admin does
+// not expose by its table name and id. Only a live record has a path.
+func (b *Battery) activityRecord(ctx context.Context, r auditRow) (label, href string) {
+	e, ok := b.exposedNamed(r.Entity)
+	if !ok {
+		return strings.TrimSpace(r.Entity + " " + r.RecordID), ""
+	}
+	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" && b.ui != nil {
+		if t, ok := b.ui.RecordTitle(b.elevate(ctx), e.GetName(), r.RecordID); ok && t != "" {
+			return t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
+		}
+	}
+	return b.singular(ctx, e), ""
 }
 
 // activityVerbs are the audit operations the admin has words for.

@@ -23,6 +23,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   menu, and `--ui-page-header-subsection-title-size`, which sizes an h3
   or deeper `PageHeader` title a step under an h2. Meridian watches its
   past-due invoices and subscriptions.
+- **The admin's recent activity reads like the prototype**: the actor
+  in bold (an account by its email's local part, the full email on
+  hover) and a live record's title as a link to its screen. Underneath:
+  `ui.TimelineEvent.Lead` (and `headless.Event.Lead`), headline markup
+  in place of `Title`, and `i18nui.TVarsHTML`, which fills a translated
+  line with markup values in one pass and escapes the text around them.
 - **The admin sidebar counts each entity's records.** The figure ends
   the row, counted under the list's read gate, and re-renders on every
   client navigation, so a create shows on the next click.
