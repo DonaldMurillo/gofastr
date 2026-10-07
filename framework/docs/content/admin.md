@@ -77,8 +77,9 @@ nav group, its `States` transitions, relations (a Related tab on the
 record), bulk actions, CSV export, and the record's activity tab. The
 admin also turns on every optional `entityui` tool: the query box, the
 columns menu, the trash view of a soft-deleting entity, saved views
-(with `Config.SavedViews`), a row count on each view tab, the record's
-API tab and the status
+(with `Config.SavedViews`), a row count on each view tab, relation
+cells that link to the related record when the admin exposes that
+entity, the record's API tab and the status
 override. The admin reads each entity under the caller's own context
 plus the elevation described below, and points the screens' writes at
 its own routes:

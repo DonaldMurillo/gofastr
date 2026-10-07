@@ -277,6 +277,11 @@ func (b *Battery) Init(app *framework.App) error {
 				return b.apiBase(e), true
 			}
 			return "", false
+		}).WithRecordPath(func(e *entity.Entity) (string, bool) {
+			if b.exposed(e) {
+				return b.entityBase(e), true
+			}
+			return "", false
 		})
 	}
 	if err := b.checkConfig(); err != nil {
