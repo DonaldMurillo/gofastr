@@ -702,6 +702,7 @@ var kitComponents = []kitComponent{
 		opts.Index(1).FieldByName("Value").SetString("other")
 	}},
 	{name: "Select", fn: Select},
+	{name: "Selection", fn: Selection, required: []string{"Bar", "Body"}},
 	{name: "ShortcutHint", fn: ShortcutHint},
 	{name: "SidebarBody", fn: SidebarBody, prep: prepSet("Href", "")},
 	{name: "SidebarBrand", fn: SidebarBrand},

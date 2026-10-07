@@ -53,6 +53,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Applied` adds to the badge, and `Tools` draws links and link menus
   at the row's end; a tool holding a `<form>` panics. With nothing for
   the panel there is no Filters button and no Apply.
+- **`ui.Selection`** puts a bulk-action bar over the rows it acts on
+  and shows the bar only while a checkbox in the rows is checked, in
+  CSS with no script; a browser without `:has()` shows it always. The
+  entity list's bulk bar uses it, so a list nobody is selecting from
+  no longer carries an action form above its table.
 - **`ui.TabNavConfig.End`** draws a control at the strip's trailing
   edge, outside the `<nav>` landmark, such as a "Save view" dropdown.
 - **`ui.MenuConfig.Icon`** draws a registered icon before the label on

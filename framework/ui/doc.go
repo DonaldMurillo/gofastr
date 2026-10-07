@@ -128,6 +128,7 @@
 //	Section:              labelled content section with heading + description
 //	SegmentedControl:     radio-group styled as a sliding pill bar
 //	Select:               labelled native <select> with help/error/placeholder
+//	Selection:            bulk bar over selectable rows, shown while a row is checked
 //	ShortcutHint:         OS-aware keyboard chord chips
 //	Sidebar:              responsive primary navigation (inline/drawer)
 //	SidebarBody:          nav content only, for a mirroring drawer slot

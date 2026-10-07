@@ -90,6 +90,24 @@ func TestBulkCardsHaveNoSelectedScope(t *testing.T) {
 	if !strings.Contains(html, `value="page">This page (2)</option>`) {
 		t.Errorf("cards lost the page scope:\n%s", html)
 	}
+	// No row checkboxes, so the bar must not wait for one.
+	if strings.Contains(html, `data-cui-comp="ui-selection"`) {
+		t.Errorf("cards hid their bar behind a selection they cannot make:\n%s", html)
+	}
+}
+
+// The table's bar and rows share one ui.Selection, bar first, so the
+// bar shows only while a row is checked.
+func TestBulkBarWaitsForASelection(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	html := listHTML(t, x.ui.List("invoices").Bulk(), x.userCtx("/invoices", "", "u1"))
+	sel := strings.Index(html, `data-cui-comp="ui-selection"`)
+	bar := strings.Index(html, `id="eui-invoices-bulk"`)
+	rows := strings.Index(html, `form="eui-invoices-bulk"`)
+	body := strings.Index(html, `class="fui-selection__body"`)
+	if sel < 0 || bar < sel || body < bar || rows < body {
+		t.Errorf("the bar and the rows are not one Selection, bar first:\n%s", html)
+	}
 }
 
 // A keyed list's export link names its key, so the handler reads the

@@ -171,14 +171,25 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		body = append(body, chips)
 	}
 
+	var bar render.HTML
 	if lb != nil {
-		if bar := b.bulkBar(ctx, s, lb, rows, total, known); bar != "" {
+		bar = b.bulkBar(ctx, s, lb, rows, total, known)
+	}
+	switch {
+	case s.as == "cards":
+		// Cards carry no row checkboxes; the bar acts on the page or
+		// every match, so it stays in view.
+		if bar != "" {
 			body = append(body, bar)
 		}
-	}
-	if s.as == "cards" {
 		body = append(body, b.cards(ctx, s, rows, total, known, page))
-	} else {
+	case bar != "":
+		// The bar shows while a row is checked.
+		body = append(body, ui.Selection(ui.SelectionConfig{
+			Bar:  bar,
+			Body: b.table(ctx, s, lb, rows, total, known, page),
+		}))
+	default:
 		body = append(body, b.table(ctx, s, lb, rows, total, known, page))
 	}
 	return render.Join(body...), nil
