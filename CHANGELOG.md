@@ -1306,6 +1306,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a toolbar's last button). `headless-disclosure` measures an opened
   light-dismiss panel and shifts it back inside, through
   `--hui-panel-shift`, which the kit's menu and dropdown panels read.
+- **A menu or dropdown inside a table opens in full.** A table's
+  scroll box clips what hangs past its edge, so a last-row menu opened
+  cut off at the table's bottom and scrolled the table instead.
+  `headless-disclosure` now floats a panel that a scrolling ancestor
+  would clip: fixed at its trigger's edge, above the trigger when the
+  viewport has no room below, and following it while the page scrolls.
 - **A `ui.DataTable` in cards mode no longer runs past its box.** Each
   card was the box's full width plus its own padding and border, 26px
   too wide on a phone; the card's padding and border now sit inside

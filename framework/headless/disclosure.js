@@ -159,14 +159,129 @@
     const p = d.querySelector(':scope > :not(summary)');
     if (!p) return;
     p.style.removeProperty('--hui-panel-shift');
+    land(d, p);
     if (!d.open) return;
     const r = p.getBoundingClientRect();
+    if (clipped(d, r)) {
+      float(d, p, r);
+      return;
+    }
     const w = document.documentElement.clientWidth;
     let dx = 0;
     if (r.right > w - GUTTER) dx = w - GUTTER - r.right;
     if (r.left + dx < GUTTER) dx = GUTTER - r.left;
     if (dx) p.style.setProperty('--hui-panel-shift', Math.round(dx) + 'px');
   }
+
+  // ─── floating out of a clipping box ──────────────────────────────
+  //
+  // A box that scrolls (a table wider than its column scrolls sideways,
+  // and any overflow but visible clips both axes) cuts a panel off at
+  // its edge, and opening the panel scrolls the box instead of showing
+  // it: a table's last-row menu opened half hidden. A panel that the
+  // measure finds past such a box floats instead: position fixed,
+  // which takes it out of every ancestor's overflow, hung from the
+  // same edge of its trigger, flipped above the trigger when the
+  // viewport has no room below, and moved with the trigger while
+  // anything scrolls. The written styles are the panel's own inline
+  // ones, cleared on close and before every measure.
+  const FLOAT_PROPS = ['position', 'top', 'left', 'right', 'bottom'];
+  const floating = new Map(); // details -> {end}
+
+  function clipped(d, r) {
+    const root = document.documentElement;
+    for (let el = d.parentElement; el && el !== document.body && el !== root; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const b = el.getBoundingClientRect();
+      const top = b.top + el.clientTop;
+      const left = b.left + el.clientLeft;
+      if (r.top < top - 1 || r.left < left - 1 ||
+          r.bottom > top + el.clientHeight + 1 || r.right > left + el.clientWidth + 1) return true;
+    }
+    return false;
+  }
+
+  function float(d, p, r) {
+    const t = (controllerOf(d) || d).getBoundingClientRect();
+    // The panel hangs from the trigger edge it was laid out against.
+    floating.set(d, { end: Math.abs(r.right - t.right) < Math.abs(r.left - t.left) });
+    syncFloatWatch();
+    place(d, p);
+  }
+
+  function place(d, p) {
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    const gap = 4;
+    // Fixed first: the panel's width depends on its containing block.
+    p.style.setProperty('position', 'fixed');
+    p.style.setProperty('right', 'auto');
+    p.style.setProperty('bottom', 'auto');
+    const w = p.offsetWidth;
+    const h = p.offsetHeight;
+    // And the trigger after: a panel laid out inside the box could give
+    // the box a scrollbar, which moved the trigger.
+    const t = (controllerOf(d) || d).getBoundingClientRect();
+    let top = t.bottom + gap;
+    if (top + h > vh - GUTTER && t.top - gap - h >= GUTTER) top = t.top - gap - h;
+    let left = floating.get(d).end ? t.right - w : t.left;
+    left = Math.max(GUTTER, Math.min(left, vw - GUTTER - w));
+    const o = fixedOrigin(p);
+    p.style.setProperty('top', (top - o.y) + 'px');
+    p.style.setProperty('left', (left - o.x) + 'px');
+  }
+
+  // A transformed, filtered or contained ancestor is a fixed panel's
+  // containing block in place of the viewport; the panel's coordinates
+  // are then relative to that ancestor's padding box.
+  function fixedOrigin(p) {
+    const root = document.documentElement;
+    for (let el = p.parentElement; el && el !== root; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (cs.transform !== 'none' || cs.translate !== 'none' || cs.scale !== 'none' ||
+          cs.rotate !== 'none' || cs.perspective !== 'none' || cs.filter !== 'none' ||
+          (cs.backdropFilter && cs.backdropFilter !== 'none') ||
+          /paint|layout|strict|content/.test(cs.contain) ||
+          /transform|perspective|filter/.test(cs.willChange)) {
+        const b = el.getBoundingClientRect();
+        return { x: b.left + el.clientLeft, y: b.top + el.clientTop };
+      }
+    }
+    return { x: 0, y: 0 };
+  }
+
+  function land(d, p) {
+    if (!floating.delete(d)) return;
+    for (const prop of FLOAT_PROPS) p.style.removeProperty(prop);
+    syncFloatWatch();
+  }
+
+  let floatFrame = 0;
+  const follow = () => {
+    if (floatFrame) return;
+    floatFrame = requestAnimationFrame(() => {
+      floatFrame = 0;
+      for (const d of Array.from(floating.keys())) {
+        const p = d.querySelector(':scope > :not(summary)');
+        if (!p) { floating.delete(d); continue; }
+        if (!d.isConnected || !d.open) land(d, p);
+        else place(d, p);
+      }
+    });
+  };
+  let watching = false;
+  const syncFloatWatch = () => {
+    if (floating.size > 0 && !watching) {
+      window.addEventListener('scroll', follow, { capture: true, passive: true });
+      window.addEventListener('resize', follow, { passive: true });
+      watching = true;
+    } else if (floating.size === 0 && watching) {
+      window.removeEventListener('scroll', follow, { capture: true });
+      window.removeEventListener('resize', follow);
+      watching = false;
+    }
+  };
 
   // ─── listeners, installed once ───────────────────────────────────
 
