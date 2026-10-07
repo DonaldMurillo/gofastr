@@ -309,22 +309,43 @@ func TestBlueprint_LoginScreenAndAdminWiring(t *testing.T) {
 	}
 }
 
-// The admin battery reads and appends to audit_log; nothing else in a
-// generated app creates it, so /admin/audit always failed to load and
-// the admin's own audit writes failed. main.go ensures the table before
-// the battery registers.
-func TestAdminMainEnsuresAuditTable(t *testing.T) {
-	bp := websitesBlueprint()
-	bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
-	bp.App.Admin = BlueprintAdmin{Enabled: true, Role: "admin", LoginPath: "/login"}
-	main := renderBlueprintMain(bp)
-	ensure := strings.Index(main, `framework.EnsureAuditTable(db, "audit_log")`)
-	register := strings.Index(main, "fwApp.RegisterBattery(admin.New(adminCfg))")
-	if ensure < 0 || register < 0 || ensure > register {
-		t.Fatalf("main.go must ensure audit_log before registering the admin battery:\n%s", main)
-	}
-	if strings.Count(main, `AuditTable: "audit_log"`) != 1 {
-		t.Errorf("admin.Config must name the table the ensure call creates")
+// The admin writes entities under elevation and its Audit log page and
+// dashboard read audit_log, so a generated admin turns on the audit log
+// for every entity: with only the table ensured, admin writes left no
+// trail and the page stayed empty. WithAuditLog runs once, after the
+// entities register (it hooks the ones registered) and before the admin
+// battery, and it creates the table the admin config names.
+func TestAdminMainAuditsEntityWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		states bool
+	}{{"plain", false}, {"states and seed", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bp := websitesBlueprint()
+			bp.App.Auth = BlueprintAuth{Enabled: true, DevMode: true}
+			bp.App.Admin = BlueprintAdmin{Enabled: true, Role: "admin", LoginPath: "/login"}
+			if tc.states {
+				// websitesBlueprint already seeds rows; give items states.
+				bp.Entities[1].States = &framework.StatesConfig{
+					Field:       "status",
+					Initial:     []string{"draft"},
+					Transitions: []framework.Transition{{Key: "publish", From: []string{"draft"}, To: "published"}},
+				}
+			}
+			main := renderBlueprintMain(bp)
+			if n := strings.Count(main, "fwApp.WithAuditLog(framework.AuditConfig{})"); n != 1 {
+				t.Fatalf("main.go must turn on the audit log exactly once, got %d:\n%s", n, main)
+			}
+			entities := strings.Index(main, "entities.RegisterAll(fwApp)")
+			audit := strings.Index(main, "fwApp.WithAuditLog(")
+			register := strings.Index(main, "fwApp.RegisterBattery(admin.New(adminCfg))")
+			if entities < 0 || register < 0 || entities > audit || audit > register {
+				t.Fatalf("WithAuditLog must sit between the entity registration and the admin battery:\n%s", main)
+			}
+			if strings.Count(main, `AuditTable: "audit_log"`) != 1 {
+				t.Errorf("admin.Config must name the table WithAuditLog creates")
+			}
+		})
 	}
 }
 

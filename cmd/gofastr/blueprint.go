@@ -5014,12 +5014,20 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
-	if hasSeed && blueprintHasStatesEntity(bp) {
+	switch {
+	case hasSeed && blueprintHasStatesEntity(bp):
 		sb.WriteString("\t// An entity declares states and the seed writes rows: seeded rows may\n")
 		sb.WriteString("\t// start at any state under the audited state override below, and an\n")
 		sb.WriteString("\t// override is refused on an entity with no audit log, so enable it\n")
 		sb.WriteString("\t// here (WithAuditLog creates audit_log when it does not exist).\n")
 		sb.WriteString("\tfwApp.WithAuditLog(framework.AuditConfig{})\n")
+	case bp.App.Admin.Enabled:
+		// The admin writes under elevation and its Audit log page and
+		// dashboard read audit_log: every entity write leaves a row.
+		sb.WriteString("\t// The admin writes entities under elevation, and its Audit log page and\n")
+		sb.WriteString("\t// dashboard read audit_log: record every entity write there\n")
+		sb.WriteString("\t// (WithAuditLog creates audit_log when it does not exist).\n")
+		sb.WriteString("\tif db != nil {\n\t\tfwApp.WithAuditLog(framework.AuditConfig{})\n\t}\n")
 	}
 	for _, hook := range bp.Hooks {
 		handler := strings.TrimSpace(hook.Handler)
@@ -5135,12 +5143,6 @@ func renderBlueprintMain(bp Blueprint) string {
 		if adminRole == "" {
 			adminRole = "admin"
 		}
-		// The admin battery reads audit_log for its audit page and appends
-		// to it on RBAC and module changes, but nothing else creates the
-		// table: ensure it here (idempotent, dialect-aware).
-		sb.WriteString("\t// The admin audit page reads audit_log and the admin's own RBAC and\n")
-		sb.WriteString("\t// module changes append to it: create it if it does not exist.\n")
-		sb.WriteString("\tif db != nil {\n\t\tif err := framework.EnsureAuditTable(db, \"audit_log\"); err != nil {\n\t\t\tlog.Fatalf(\"audit table: %v\", err)\n\t\t}\n\t}\n")
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
 		// can wire Policy/GrantStore/Auth additively, no edits here. The

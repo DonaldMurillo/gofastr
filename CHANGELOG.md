@@ -851,7 +851,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   both `entityui.Extensions.Jobs` and `admin.Config.BulkJobs`.
 - **Generated apps turn on saved views** in the admin config the
   blueprint writes, and Meridian's payments use soft delete, so the
-  admin shows their trash view.
+  admin shows their trash view. A generated app with an admin, and
+  Meridian, turn on `WithAuditLog` for every entity, so admin writes
+  leave audit rows for the Audit log page and the dashboard's recent
+  activity.
 
 ### Changed
 
