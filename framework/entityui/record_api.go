@@ -59,11 +59,11 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 	}
 	items := []ui.DetailItem{{
 		Label: i18nui.T(ctx, i18nui.KeyEntityApiResource),
-		Value: render.Text(restResourceMethods(crudExposureOn(m.e)) + " " + base),
+		Value: render.Text(restResourceMethods + " " + base),
 	}}
 	items = append(items, ui.DetailItem{
 		Label: i18nui.T(ctx, i18nui.KeyEntityApiRecord),
-		Value: render.Text(restRecordMethods(crudExposureOn(m.e)) + " " + base + "/{id}"),
+		Value: render.Text(restRecordMethods + " " + base + "/{id}"),
 	})
 	return []render.HTML{
 		ui.DetailList(ui.DetailListConfig{Items: items}),
@@ -111,26 +111,11 @@ func (u *UI) restBase(e *entity.Entity) (string, bool) {
 	}
 }
 
-// crudExposureOn reports whether the entity's declaration generates
-// write routes: Exposure nil or CRUD nil means on. A read-only mount
-// (App.View) is a mount-time fact the declaration does not carry.
-func crudExposureOn(e *entity.Entity) bool {
-	return e.Config.Exposure == nil || e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD
-}
-
-// restResourceMethods names the methods the resource row serves; writes
-// stay off when the entity's exposure turns CRUD off.
-func restResourceMethods(writes bool) string {
-	if writes {
-		return "GET, POST"
-	}
-	return "GET"
-}
-
-// restRecordMethods names the methods one record serves.
-func restRecordMethods(writes bool) string {
-	if writes {
-		return "GET, PUT, PATCH, DELETE"
-	}
-	return "GET"
-}
+// The methods the entity's REST routes serve. The host reports a REST
+// base only for an entity whose CRUD routes mounted (a read-only view or
+// CRUD turned off has none, and the tab says so), so a base always
+// serves every method.
+const (
+	restResourceMethods = "GET, POST"
+	restRecordMethods   = "GET, PUT, PATCH, DELETE"
+)
