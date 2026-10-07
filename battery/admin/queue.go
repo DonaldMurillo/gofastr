@@ -199,12 +199,12 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, page string, 
 		{Key: "scheduled", Header: i18nui.T(ctx, i18nui.KeyAdminColScheduled)},
 	}
 	if replay {
-		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end"})
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end", Fit: true})
 	}
 	rows := make([]ui.Row, len(jobs))
 	for i, j := range jobs {
 		cells := map[string]render.HTML{
-			"id":        html.Code(html.TextConfig{}, render.Text(j.ID)),
+			"id":        ui.ShortID(ui.ShortIDConfig{Value: j.ID, Ctx: ctx}),
 			"type":      render.Text(j.Type),
 			"attempts":  render.Text(fmt.Sprintf("%d / %d", j.Attempts, j.MaxAttempts)),
 			"priority":  render.Text(strconv.Itoa(j.Priority)),

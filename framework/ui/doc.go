@@ -62,6 +62,7 @@
 //	Container:            max-width page wrapper with breakpoint padding
 //	ContentRow:           nav column + main + optional context aside row
 //	CopyButton:           clipboard button with SR-announced confirmation
+//	ShortID:              a long identifier's first characters and a copy button for all of it
 //	Counter:              signal-driven counter with +/− buttons
 //	DataTable:            sortable/paginated table (island-friendly)
 //	DateField:            typed labelled native date field with bounds

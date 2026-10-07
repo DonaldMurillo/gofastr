@@ -888,6 +888,9 @@ const page = await api.posts.list({ limit: 25 });`},
 			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
 		)
 	}},
+	{"shortid", "ShortID", "Data", "A long identifier's first characters, with a copy button for all of it.", func() render.HTML {
+		return ui.ShortID(ui.ShortIDConfig{Value: "c86a70b90b096dfa646910e48fd975dc"})
+	}},
 	{"changelist", "ChangeList", "Data", "What one edit changed, a field per row: the old value struck through, then the new one.", func() render.HTML {
 		return ui.ChangeList(ui.ChangeListConfig{Changes: []ui.Change{
 			{Label: "Plan", From: render.Text("Starter"), To: render.Text("Pro")},

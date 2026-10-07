@@ -672,6 +672,7 @@ var kitComponents = []kitComponent{
 	{name: "ContentRow", fn: ContentRow},
 	{name: "Control", fn: Control},
 	{name: "CopyButton", fn: CopyButton},
+	{name: "ShortID", fn: ShortID, required: []string{"Value"}},
 	{name: "Counter", fn: Counter, prep: prepZero("Slice")},
 	{name: "DataTable", fn: DataTable, prep: prepSet("Pages", 3, "Page", 1)},
 	{name: "DateField", fn: DateField},

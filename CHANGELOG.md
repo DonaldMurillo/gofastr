@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.ShortID` shows a long identifier (a UUID, a job id, a hash) in
+  a table cell: its first eight characters, the full value as their
+  title, and an inline copy button that copies all of it. The admin's
+  Jobs page draws job ids with it, so the Replay column stays on
+  screen.
 - **Admin dashboard metrics**: `admin.Config.Metrics` draws a strip of
   figures above the entity cards, each a count or a sum over an exposed
   entity (`Where` in the query DSL, `Format: "money"`), linked to a list
