@@ -126,7 +126,7 @@ func dropdownCSS(_ style.Theme) string {
   list-style: none;
   user-select: none;
   white-space: nowrap;
-  padding: 0 var(--spacing-md, 8px);
+  padding: 0 var(--spacing-lg, 16px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);

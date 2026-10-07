@@ -664,7 +664,7 @@ var kitComponents = []kitComponent{
 	// the fill drops those and checks the avatar trigger.
 	{name: "Menu", fn: Menu, prep: func(args []reflect.Value) {
 		prepSet("Href", "", "RPC", "", "Action", nil, "Do", nil, "Copy", nil)(args)
-		prepZero("TriggerHTML", "TriggerElement", "IconOnly")(args)
+		prepZero("TriggerHTML", "TriggerElement", "IconOnly", "Icon")(args)
 	}},
 	{name: "MetricBand", fn: MetricBand},
 	{name: "MultiSelect", fn: MultiSelect},

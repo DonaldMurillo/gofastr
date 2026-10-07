@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -196,6 +198,12 @@ type MenuConfig struct {
 	// avatar buttons and other custom triggers.
 	TriggerHTML render.HTML
 
+	// Icon names a registered icon drawn before Label on the trigger
+	// (a list's Columns menu). It panics beside TriggerHTML,
+	// TriggerElement, IconOnly or Avatar, which draw the trigger
+	// themselves, and on a name that is not registered.
+	Icon string
+
 	// IconOnly draws the trigger as the "more" glyph, a compact square
 	// like an icon button, with Label as its accessible name and no
 	// caret: a table row's actions, where the row already says what
@@ -316,6 +324,18 @@ func Menu(cfg MenuConfig) render.HTML {
 		classes[headless.PartPanel] += " " + cfg.PanelClass
 	}
 	trigger := cfg.TriggerHTML
+	if cfg.Icon != "" {
+		if trigger != "" || cfg.TriggerElement != "" || cfg.IconOnly || cfg.Avatar != nil {
+			panic("ui: Menu Icon dresses the Label trigger; drop TriggerHTML, TriggerElement, IconOnly and Avatar")
+		}
+		if !IconRegistered(cfg.Icon) {
+			panic("ui: Menu Icon " + strconv.Quote(cfg.Icon) + " is not a registered icon")
+		}
+		trigger = headless.Own(render.Join(
+			Icon(cfg.Icon, IconConfig{Size: "16"}),
+			html.Span(html.TextConfig{}, render.Text(cfg.Label)),
+		))
+	}
 	if cfg.Avatar != nil {
 		if trigger != "" || cfg.TriggerElement != "" || cfg.IconOnly {
 			panic("ui: Menu Avatar draws the trigger; drop TriggerHTML, TriggerElement and IconOnly")
@@ -426,6 +446,11 @@ func menuCSS(_ style.Theme) string {
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
+}
+/* Icon: the glyph before the label, quieter than the text. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger > svg.fui-icon {
+  flex: none;
+  color: var(--color-text-muted, #52525B);
 }
 /* IconOnly: a quiet square the touch target's size, the glyph centred,
    for a row's actions where a bordered button per row would shout. It

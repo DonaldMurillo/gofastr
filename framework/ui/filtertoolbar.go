@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -156,6 +157,24 @@ type FilterToolbarConfig struct {
 	// Below 18rem the controls still stack so none are clipped.
 	Compact bool
 
+	// Dropdown moves the facets, the sort, Extra and the Apply/Reset
+	// pair into a "Filters" ui.Dropdown, so the row is the search field
+	// (filling it), the Filters button and the Tools. The button's badge
+	// counts the facets set plus Applied. Every control stays in the one
+	// form: Enter in the search submits the panel's fields too, open or
+	// closed.
+	Dropdown bool
+	// Extra are more controls of the same form, drawn after the facets
+	// (a typed filter expression).
+	Extra []render.HTML
+	// Applied adds the filters Extra holds to the Filters badge.
+	Applied int
+	// Tools are drawn at the row's end, after the filters: links and
+	// link menus such as a Columns menu or a layout switch. They render
+	// inside the form, so a tool holding a <form> panics: a nested form
+	// is invalid HTML and the browser drops it.
+	Tools []render.HTML
+
 	// Label is the toolbar's accessible name (search landmark
 	// aria-label). Default "Filters".
 	Label string
@@ -183,8 +202,16 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Action == "" {
 		panic("ui: FilterToolbar requires Action")
 	}
-	if len(cfg.Facets) == 0 && cfg.Search == nil && len(cfg.Sort) == 0 {
-		panic("ui: FilterToolbar requires at least one of Facets, Search, or Sort")
+	if len(cfg.Facets) == 0 && cfg.Search == nil && len(cfg.Sort) == 0 && len(cfg.Extra) == 0 {
+		panic("ui: FilterToolbar requires at least one of Facets, Search, Sort or Extra")
+	}
+	for _, t := range cfg.Tools {
+		if strings.Contains(strings.ToLower(string(t)), "<form") {
+			panic("ui: FilterToolbar Tools must not hold a <form>: they render inside the toolbar's form, and a nested form is dropped")
+		}
+	}
+	if cfg.Applied < 0 {
+		panic("ui: FilterToolbar Applied must not be negative")
 	}
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -205,7 +232,8 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		label = i18nui.T(ctx, i18nui.KeyFilterToolbarLabel)
 	}
 
-	controls := make([]render.HTML, 0, len(cfg.Facets)+3)
+	controls := make([]render.HTML, 0, len(cfg.Facets)+len(cfg.Extra)+3)
+	applied := cfg.Applied
 
 	for _, f := range cfg.Facets {
 		if f.Name == "" {
@@ -217,6 +245,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		if len(f.Options) == 0 {
 			panic("ui: FilterToolbar Facet requires at least one Option")
 		}
+		if f.Value != "" {
+			applied++
+		}
 		if f.Kind == FacetPills {
 			controls = append(controls, renderPillFacet(ctx, f))
 		} else {
@@ -224,15 +255,24 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		}
 	}
 
+	var search render.HTML
 	if cfg.Search != nil {
 		if cfg.Search.Name == "" {
 			panic("ui: FilterToolbar Search requires Name")
 		}
-		controls = append(controls, renderSearchFacet(ctx, *cfg.Search))
+		search = renderSearchFacet(ctx, *cfg.Search)
+		if !cfg.Dropdown {
+			controls = append(controls, search)
+		}
 	}
 
 	if len(cfg.Sort) > 0 {
 		controls = append(controls, renderSortFacet(ctx, cfg))
+	}
+	// The Extra and Tools wrappers hold caller content, so they stay
+	// unmarked: kit internals stop at a slot.
+	for _, x := range cfg.Extra {
+		controls = append(controls, html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet"}, x))
 	}
 
 	// Apply (submit) + Reset (link to the bare action → clears params).
@@ -283,11 +323,40 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		}
 		hidden = append(hidden, html.Input(html.InputConfig{Type: "hidden", Name: h.Name, Value: h.Value, ExtraAttrs: html.Attrs{"data-cui-internal": ""}}))
 	}
-	controls = append(hidden, controls...)
-	controls = append(controls, html.Div(html.DivConfig{
+	actions := html.Div(html.DivConfig{
 		Class:      "fui-filter-toolbar__actions",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""},
-	}, actionsKids...))
+	}, actionsKids...)
+	var row []render.HTML
+	if cfg.Dropdown {
+		// The row is the search, the Filters button and the tools; a
+		// toolbar with nothing to put in the panel draws no button, and
+		// the search submits on Enter.
+		row = append(hidden, search)
+		if len(controls) > 0 {
+			id := ""
+			if cfg.ID != "" {
+				id = cfg.ID + "-filters"
+			}
+			row = append(row, Dropdown(DropdownConfig{
+				Label: label,
+				Icon:  "filter",
+				Count: applied,
+				ID:    id,
+				Class: "fui-filter-toolbar__filters",
+				Content: html.Div(html.DivConfig{
+					Class:      "fui-filter-toolbar__panel",
+					ExtraAttrs: html.Attrs{"data-cui-internal": ""},
+				}, append(controls, actions)...),
+			}))
+		}
+	} else {
+		row = append(hidden, controls...)
+		row = append(row, actions)
+	}
+	if len(cfg.Tools) > 0 {
+		row = append(row, html.Div(html.DivConfig{Class: "fui-filter-toolbar__tools"}, cfg.Tools...))
+	}
 
 	formAttrs := html.Attrs{
 		"class":      cls("fui-filter-toolbar", cfg.Class),
@@ -306,7 +375,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	// live). Re-assert after the merge so the sanitizer is not reversible.
 	formAttrs["action"] = action
 
-	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), controls...))
+	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), row...))
 }
 
 // renderSelectFacet composes ui.Select for a facet, prepending an
@@ -591,6 +660,38 @@ func filterToolbarCSS(_ style.Theme) string {
   [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
 }
 
+/* Dropdown mode: the search fills the row; the Filters button and the
+   tools keep their natural width and wrap under it on a narrow row.
+   Inside the panel the controls stack full width, Apply/Reset last. */
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters,
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
+  flex: none;
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters {
+  --ui-dropdown-min-width: var(--ui-filter-toolbar-panel-width, 20rem);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg, 16px);
+  padding: var(--spacing-sm, 4px);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__facet,
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__actions {
+  flex: none;
+  margin-inline-start: 0;
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__actions {
+  justify-content: flex-end;
+  padding-block-start: var(--spacing-md, 8px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill { transition: none; }
 }`

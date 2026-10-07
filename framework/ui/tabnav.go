@@ -5,6 +5,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── TabNav ─────────────────────────────────────────────────────────
@@ -49,10 +50,17 @@ type TabNavConfig struct {
 	// assistive tech cannot tell apart.
 	Label string
 
+	// End, when set, is drawn at the strip's trailing edge on the same
+	// rule: a control that acts on the views, such as a "Save view"
+	// dropdown. It sits beside the <nav>, not inside it, so a form in it
+	// is not part of the navigation landmark; the root is then a <div>
+	// holding both.
+	End render.HTML
+
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the <nav> root. Keys the
+	// analytics markers, ARIA overrides) to the <nav>. Keys the
 	// component owns are dropped: class and id (use Class / ID) and
 	// aria-label (use Label).
 	ExtraAttrs html.Attrs
@@ -104,18 +112,26 @@ func TabNav(cfg TabNavConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return tabNavStyle.WrapHTML(html.Nav(html.NavConfig{
+	nav := html.Nav(html.NavConfig{
 		Label:      cfg.Label,
 		Class:      cls,
 		ID:         cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "class", "id", "aria-label"),
-	}, links...))
+	}, links...)
+	if cfg.End == "" {
+		return tabNavStyle.WrapHTML(nav)
+	}
+	return tabNavStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-tab-nav-row"},
+		headless.Own(nav),
+		html.Div(html.DivConfig{Class: "fui-tab-nav__end"}, cfg.End),
+	))
 }
 
 var tabNavStyle = registry.RegisterStyle("ui-tab-nav", tabNavCSS)
 
 func tabNavCSS(_ style.Theme) string {
-	return `:where([data-cui-comp="ui-tab-nav"] .fui-tab-nav) {
+	return `/* The strip is the root <nav>, or the <nav> inside the End row. */
+:where([data-cui-comp="ui-tab-nav"].fui-tab-nav, [data-cui-comp="ui-tab-nav"] > .fui-tab-nav) {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
@@ -152,5 +168,26 @@ func tabNavCSS(_ style.Theme) string {
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__badge {
   color: var(--color-text-muted, #6B7280);
   font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+}
+/* With an End slot the row carries the rule: the tabs sit on it and
+   the end control floats at its trailing edge, wrapping under the tabs
+   when the row is too narrow for both. */
+:where([data-cui-comp="ui-tab-nav"]).fui-tab-nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
+:where([data-cui-comp="ui-tab-nav"].fui-tab-nav-row) > .fui-tab-nav {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  border-block-end: 0;
+}
+[data-cui-comp="ui-tab-nav"].fui-tab-nav-row > .fui-tab-nav__end {
+  flex: none;
+  padding-block-end: var(--spacing-sm, 4px);
 }`
 }

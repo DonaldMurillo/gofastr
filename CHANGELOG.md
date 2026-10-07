@@ -46,6 +46,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   outside, Escape and a navigation, and fields inside it submit with
   their form while it is closed. `Icon`, `Count` (a badge) and
   `Align` dress the trigger.
+- **`ui.FilterToolbarConfig.Dropdown` moves the filters into a
+  Filters dropdown**: the row is the search, filling the width, the
+  Filters button with a badge counting the filters set, and the
+  `Tools`. `Extra` adds controls of the same form (a typed filter),
+  `Applied` adds to the badge, and `Tools` draws links and link menus
+  at the row's end; a tool holding a `<form>` panics. With nothing for
+  the panel there is no Filters button and no Apply.
+- **`ui.TabNavConfig.End`** draws a control at the strip's trailing
+  edge, outside the `<nav>` landmark, such as a "Save view" dropdown.
+- **`ui.MenuConfig.Icon`** draws a registered icon before the label on
+  the default trigger. It panics beside `TriggerHTML`,
+  `TriggerElement`, `IconOnly` or `Avatar`.
+- **`ui.DataTable` sort headers show their state as icons**: a muted
+  up-down glyph on every sortable column and an up or down arrow on the
+  sorted one, drawn from `aria-sort`.
+  `--ui-data-table-sort-icon-size` sizes them.
 - **Checkbox menu rows.** `MenuItem.Check` renders a
   `role="menuitemcheckbox"` row whose `aria-checked` comes from
   `Checked`. The server owns the state, so the row is a link or RPC

@@ -1171,17 +1171,28 @@ func dataTableCSS(_ style.Theme) string {
 }
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
-   one source and cannot disagree. The markup carries no glyph. */
-[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
-[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
-  font-size: 0.85em;
-  color: var(--color-text-muted);
+   one source and cannot disagree. The markup carries no glyph. A
+   sortable column at rest shows the up-down chevrons, quiet; the
+   sorted one shows its arrow at full strength. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after {
+  content: "";
+  flex: none;
+  inline-size: var(--ui-data-table-sort-icon-size, 14px);
+  block-size: var(--ui-data-table-sort-icon-size, 14px);
+  background: currentColor;
+  opacity: var(--opacity-muted, 0.6);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
-  content: "↑";
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='19' x2='12' y2='5'/%3E%3Cpolyline points='5 12 12 5 19 12'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='19' x2='12' y2='5'/%3E%3Cpolyline points='5 12 12 5 19 12'/%3E%3C/svg%3E");
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
-  content: "↓";
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cpolyline points='19 12 12 19 5 12'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cpolyline points='19 12 12 19 5 12'/%3E%3C/svg%3E");
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
