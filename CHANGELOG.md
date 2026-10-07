@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.ContainerConfig.Start`**: pins the column to the inline start
+  and drops the container's gutter, for a measure inside a frame that
+  already pads its content.
 - **`POST /auth/password`**: the core auth plugin takes a signed-in
   user's password change, `{"current_password", "password"}` and an
   optional `confirm_password`. It needs
