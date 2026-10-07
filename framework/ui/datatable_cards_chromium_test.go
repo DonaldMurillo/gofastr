@@ -57,6 +57,7 @@ func TestDataTableCardsCellsFitContent(t *testing.T) {
 			const thead = document.querySelector("#" + id + " thead");
 			out[id + "Cards"] = getComputedStyle(thead).position === "absolute";
 			out[id + "Clipped"] = sc.scrollHeight - sc.clientHeight;
+			out[id + "Wide"] = sc.scrollWidth - sc.clientWidth;
 		}
 		const td = document.querySelector("#empty tbody td");
 		const es = document.querySelector("#empty .fui-empty-state");
@@ -73,6 +74,11 @@ func TestDataTableCardsCellsFitContent(t *testing.T) {
 		}
 		if px, _ := got[id+"Clipped"].(float64); px > 1 {
 			t.Errorf("%s table clips %vpx of its cards", id, px)
+		}
+		// A card's long value wraps inside the card; it does not keep
+		// the table's one-line cells and scroll sideways.
+		if px, _ := got[id+"Wide"].(float64); px > 1 {
+			t.Errorf("%s table's cards run %vpx past the phone", id, px)
 		}
 	}
 	// The empty state fills its card, not the end half a label-less

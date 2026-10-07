@@ -1306,6 +1306,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a toolbar's last button). `headless-disclosure` measures an opened
   light-dismiss panel and shifts it back inside, through
   `--hui-panel-shift`, which the kit's menu and dropdown panels read.
+- **A `ui.DataTable` in cards mode no longer runs past its box.** Each
+  card was the box's full width plus its own padding and border, 26px
+  too wide on a phone; the card's padding and border now sit inside
+  that width.
 - **A page header inside an app frame no longer doubles the top
   inset.** `ui.ContentRow` pads main beside a nav column, and a
   `ui.PageHeader` first in it added its own 24px above the title. The

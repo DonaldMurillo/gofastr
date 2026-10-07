@@ -1232,6 +1232,8 @@ func dataTableCSS(_ style.Theme) string {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: block;
     inline-size: 100%;
+    /* The card's padding and border sit inside that width. */
+    box-sizing: border-box;
     /* A card is as wide as the phone: its values wrap. */
     white-space: normal;
   }
