@@ -94,7 +94,9 @@ const (
 	// ResponsiveCards collapses each row into a labeled card stack
 	// (header → value pairs) when the container is narrower than
 	// ~640px. Column headers travel with each cell via data-label,
-	// which the primitive renders for every headered column.
+	// which the primitive renders for every headered column, and each
+	// cell's value is one .fui-data-table__value element, so a value
+	// of several parts stays together on its card line.
 	ResponsiveCards ResponsiveMode = "cards"
 )
 
@@ -239,6 +241,18 @@ var dataTableClasses = headless.Classes{
 // roles and sort anchors under this package's class map, the styled
 // EmptyState in the primitive's empty slot, and the typed pager in
 // a footer div of its own outside the scroll region.
+// cardValues wraps each cell of a cards-mode row in one value element,
+// so a card line holds two parts, the column's label and the value. A
+// value made of text and inline parts ("Role · billing") would otherwise
+// spread across the line, one flex item per part.
+func cardValues(cells map[string]render.HTML) map[string]render.HTML {
+	out := make(map[string]render.HTML, len(cells))
+	for k, v := range cells {
+		out[k] = render.Tag("span", map[string]string{"class": "fui-data-table__value"}, v)
+	}
+	return out
+}
+
 func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Columns) == 0 {
 		panic("ui: DataTable requires at least one Column")
@@ -286,7 +300,11 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	}
 	rows := make([]headless.Row, len(cfg.Rows))
 	for i, r := range cfg.Rows {
-		rows[i] = headless.Row{ID: r.ID, Cells: r.Cells}
+		cells := r.Cells
+		if cfg.Responsive == ResponsiveCards {
+			cells = cardValues(r.Cells)
+		}
+		rows[i] = headless.Row{ID: r.ID, Cells: cells}
 	}
 
 	var empty render.HTML

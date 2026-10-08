@@ -1710,6 +1710,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   after a `Where` appended its value after the WHERE args, so the
   statement bound the wrong value to each slot. `Build` now lists every SET value, then every
   WHERE arg.
+- **A `ui.DataTable` card keeps a value of several parts together.** A
+  cell of text and inline elements ("Role · billing") spread each part
+  across the card line, one flex item apiece; each cell's value is now
+  one element (`fui-data-table__value`) at the line's end, and a
+  label-less cell's controls still sit apart.
 - **A `DataTable` in cards mode no longer clips its cells.** The table's
   52px row height is a minimum in table layout but an exact height once
   a cell becomes a flex box, so a cell taller than that (an empty state,

@@ -1438,6 +1438,15 @@ func dataTableCSS(_ style.Theme) string {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
     justify-content: flex-end;
   }
+  /* A labelled cell's value is one part, however many it is made of,
+     and wraps inside its share of the line. A label-less cell's
+     controls stay apart, each its own part. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__value {
+    min-inline-size: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) > .fui-data-table__value {
+    display: contents;
+  }
   /* The empty row's one spanning cell holds the empty state, which
      fills the card rather than aligning to its end. */
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td[colspan] {
