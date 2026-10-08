@@ -29,7 +29,9 @@ const (
 	KeyEntityKeepValue          Key = "ui.entity.keepValue"          // "Leave blank to keep the current value."
 	KeyEntityNoActivity         Key = "ui.entity.noActivity"         // "No activity yet"
 	KeyEntityReadOnly           Key = "ui.entity.readOnly"           // "This {entity} is read-only."
-	KeyEntityLeaveGuard         Key = "ui.entity.leaveGuard"         // "You have unsaved changes."
+	KeyEntityLeaveGuard         Key = "ui.entity.leaveGuard"         // "You have unsaved changes. Leaving now discards them."
+	KeyEntityLeaveGuardTitle    Key = "ui.entity.leaveGuardTitle"    // "Discard unsaved changes?"
+	KeyEntityLeaveGuardAccept   Key = "ui.entity.leaveGuardAccept"   // "Discard changes"
 	KeyEntityUnchanged          Key = "ui.entity.unchanged"          // "— unchanged —"
 	KeyEntityReplace            Key = "ui.entity.replace"            // "Replace"
 	KeyEntityReplaceHint        Key = "ui.entity.replaceHint"        // "Saving the form keeps it. Type a new value and choose Replace to change it."
@@ -97,7 +99,9 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityKeepValue:          "Leave blank to keep the current value.",
 	KeyEntityNoActivity:         "No activity yet",
 	KeyEntityReadOnly:           "This {entity} is read-only.",
-	KeyEntityLeaveGuard:         "You have unsaved changes.",
+	KeyEntityLeaveGuard:         "You have unsaved changes. Leaving now discards them.",
+	KeyEntityLeaveGuardTitle:    "Discard unsaved changes?",
+	KeyEntityLeaveGuardAccept:   "Discard changes",
 	KeyEntityUnchanged:          "— unchanged —",
 	KeyEntityReplace:            "Replace",
 	KeyEntityReplaceHint:        "Saving the form keeps it. Type a new value and choose Replace to change it.",

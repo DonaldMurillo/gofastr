@@ -5,10 +5,9 @@ package headless
 // after a successful submit or a reset. While dirty, link navigation
 // (through gofastr:beforenavigate), closing an intercept layer (Esc,
 // Back), a reload (beforeunload) and the browser's own Back all ask
-// first. The ask is window.confirm — the same mechanism data-cui-confirm
-// uses — because gofastr:beforenavigate is a synchronous, cancellable
-// event: an async dialog cannot answer it in time, and the runtime has
-// no synchronous dialog of its own.
+// first. These fixtures carry no kit dialog template, so the ask is the
+// window.confirm fallback; leaveguard_dialog_e2e_test.go covers the
+// kit's dialog.
 
 import (
 	"fmt"
@@ -195,10 +194,13 @@ func TestLeaveGuardBeforeunloadFollowsDirty(t *testing.T) {
 // leaveGuardLayerServer adds the intercepted /rec/1 overlay to the
 // behavior server: the overlay carries a guarded form, so closing the
 // layer with edits in flight has to ask first.
-func leaveGuardLayerServer(t *testing.T) *behaviorServer {
+func leaveGuardLayerServer(t *testing.T, extra ...string) *behaviorServer {
 	t.Helper()
 	body := `<script type="application/json" id="gofastr-routes">` + leaveGuardRoutes + `</script>` +
 		`<a id="open" href="/rec/1">open</a>`
+	for _, x := range extra {
+		body += x
+	}
 	b := startBehaviorServer(t, body, func(mux *http.ServeMux) {
 		mux.HandleFunc("/rec/1", func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Gofastr-Intercept") == "" {

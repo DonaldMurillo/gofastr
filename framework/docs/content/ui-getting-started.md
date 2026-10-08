@@ -411,8 +411,14 @@ the form is changed, following a link away from it, going Back past
 it, closing its drawer with Escape, and reloading the page all ask
 first. Opening a related record in a drawer over it does not ask: the
 form stays where it was, edits included. The form cleans itself on
-a successful submit or a reset. `data-hui-leave-guard-message` carries
-the question's words; the default is "You have unsaved changes."
+a successful submit or a reset. The question opens in the kit's
+confirm dialog: Cancel keeps the edits, Discard drops them and makes
+the move. `data-hui-leave-guard-message` carries its words (the
+default is "You have unsaved changes."), and
+`data-hui-leave-guard-title` and `data-hui-leave-guard-accept` its
+title and accept label (`ui.FormConfig.LeaveGuard`, `LeaveGuardTitle`
+and `LeaveGuardAccept` write all three). A page without the kit's
+dialog asks with the browser's own prompt.
 
 Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
 only when some route declares an intercept), and the runtime module loads

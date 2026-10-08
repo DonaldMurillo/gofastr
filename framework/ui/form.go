@@ -119,6 +119,11 @@ type FormConfig struct {
 	// away, Back, a drawer's Escape and a reload all ask first, with
 	// these words. Empty omits the guard. See headless.FormProps.
 	LeaveGuard string
+	// LeaveGuardTitle and LeaveGuardAccept word the kit's dialog the
+	// guard asks in (its title and danger accept button). Empty keeps
+	// the dialog's own.
+	LeaveGuardTitle  string
+	LeaveGuardAccept string
 }
 
 // Form renders a complete <form> with an optional error summary above
@@ -209,16 +214,18 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	// package's too: today's "#" substitution shipped a form whose
 	// submit went nowhere, which is worse than a panic at render.
 	return formStyle.WrapHTML(headless.Form(headless.FormProps{
-		Action:     cfg.Action,
-		Method:     method,
-		Errors:     errorsHTML,
-		Actions:    actions,
-		NoValidate: cfg.NoValidate,
-		LeaveGuard: cfg.LeaveGuard,
-		Request:    request,
-		ID:         cfg.ID,
-		ExtraAttrs: plain,
-		Parts:      rootClassParts(rootClass),
+		Action:           cfg.Action,
+		Method:           method,
+		Errors:           errorsHTML,
+		Actions:          actions,
+		NoValidate:       cfg.NoValidate,
+		LeaveGuard:       cfg.LeaveGuard,
+		LeaveGuardTitle:  cfg.LeaveGuardTitle,
+		LeaveGuardAccept: cfg.LeaveGuardAccept,
+		Request:          request,
+		ID:               cfg.ID,
+		ExtraAttrs:       plain,
+		Parts:            rootClassParts(rootClass),
 	}, formClasses, body...))
 }
 

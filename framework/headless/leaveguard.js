@@ -14,10 +14,18 @@
   // Back or Forward on a page (the router's first popstate hook), and
   // the intercept module's close paths (through _leaveGuard.ok, scoped
   // to the layers they drop); beforeunload is armed while any form is
-  // dirty so a reload or tab close gets the browser's own prompt. The
-  // ask is window.confirm — the same synchronous gate
-  // data-cui-confirm uses — because the cancellable hooks it answers
-  // are synchronous events; an async dialog cannot answer them.
+  // dirty so a reload or tab close gets the browser's own prompt.
+  //
+  // The hooks the guard answers are synchronous, and the kit's dialog is
+  // not. On a page carrying the kit's <template data-cui-confirm-dialog>
+  // the guard declines the move at once, then asks in that dialog (the
+  // confirm module's askWords, worded by the form's
+  // data-hui-leave-guard-message, -title and -accept, with the danger
+  // accept); Cancel leaves everything where the decline put it, and
+  // Discard cleans the dirty forms in the move's scope and makes the
+  // move again through the retry its caller passed. A page without the
+  // template, a caller that passes no retry, or a browser with no
+  // module loader asks with window.confirm, the synchronous fallback.
   const GUARD = '[data-hui-leave-guard]';
   const dirty = new WeakSet();
   let armed = false;
@@ -113,10 +121,46 @@
     if (e.detail) mark(guardOf(e.target), e.detail.ok === false);
   });
 
-  function ask(scope) {
+  // One dialog at a time: a move made while it is open (Back under a
+  // modal dialog) is declined without a second ask.
+  let asking = false;
+
+  function themed() {
+    return typeof NS.loadModule === 'function' &&
+      !!document.querySelector('template[data-cui-confirm-dialog]');
+  }
+
+  function discard(scope) {
+    for (let f = dirtyIn(scope); f; f = dirtyIn(scope)) mark(f, false);
+  }
+
+  // ask answers whether the move may go ahead now. retry makes the same
+  // move again; with it, on a themed page, the answer is no for now and
+  // the dialog decides.
+  function ask(scope, retry) {
     const f = dirtyIn(scope);
-    if (!f || typeof window.confirm !== 'function') return true;
-    return !!window.confirm(messageOf(f));
+    if (!f) return true;
+    if (asking) return false;
+    if (typeof retry !== 'function' || !themed()) {
+      return typeof window.confirm !== 'function' || !!window.confirm(messageOf(f));
+    }
+    asking = true;
+    NS.loadModule('confirm')
+      .then(function () {
+        return NS.askWords({
+          message: messageOf(f),
+          title: f.getAttribute('data-hui-leave-guard-title'),
+          accept: f.getAttribute('data-hui-leave-guard-accept'),
+          danger: true,
+        });
+      })
+      .then(function (yes) {
+        asking = false;
+        if (!yes) return;
+        discard(scope);
+        retry();
+      }, function () { asking = false; });
+    return false;
   }
 
   // Fires only for clicks the router is about to take. The intercept
@@ -124,11 +168,17 @@
   // stacks a layer over the edits (or refuses at the cap), the top pane
   // when a query move re-renders it, and the whole document when it
   // will not claim the click at all.
+  // Discard clicks the link again (its forms clean now, so the router
+  // takes it), or navigates to its path when it has left the page.
   document.addEventListener('gofastr:beforenavigate', function (e) {
     const d = e.detail || {};
     const scope = NS._interceptScope ? NS._interceptScope(d.path || '', d.anchor) : undefined;
     if (scope === null) return;
-    if (!ask(scope)) e.preventDefault();
+    const again = function () {
+      if (d.anchor && d.anchor.isConnected) d.anchor.click();
+      else if (typeof NS.navigate === 'function' && d.path) NS.navigate(d.path);
+    };
+    if (!ask(scope, again)) e.preventDefault();
   });
 
   // Back and Forward. Back cannot be cancelled, and a popstate listener
@@ -152,7 +202,10 @@
   // across an entry the guard did not write (an intercept layer's raw
   // push). A destination without a usable tag falls back to pushing
   // the left URL again. `repair` is the position the undo must land
-  // on; a landing anywhere else falls back the same way.
+  // on; a landing anywhere else falls back the same way. Discard makes
+  // the move again: by the same distance (the dialog answers after the
+  // undo has landed), or, when the distance was not known, to the URL
+  // it was headed for.
   let here = location.pathname + location.search;
   let inner = NS._interceptPopstate;
   let numbering = '';
@@ -174,6 +227,10 @@
     history.pushState(null, '', here);
     tag(null);
   }
+  function replay(delta, dest) {
+    if (delta) history.go(delta);
+    else if (typeof NS.navigate === 'function') NS.navigate(dest);
+  }
   function guardedPopstate() {
     const t = tagOf();
     const to = location.pathname + location.search;
@@ -185,10 +242,12 @@
     }
     if (!(NS._interceptOpen && NS._interceptOpen())) {
       if (to !== here) {
-        if (!ask(document)) {
-          if (t && pos !== null && t.i !== pos) {
+        const delta = t && pos !== null && t.i !== pos ? t.i - pos : 0;
+        const dest = to + location.hash;
+        if (!ask(document, function () { replay(delta, dest); })) {
+          if (delta) {
             repair = pos;
-            history.go(pos - t.i);
+            history.go(-delta);
           } else {
             pushBack();
           }
@@ -208,7 +267,8 @@
 
   // The kernel-side seam: the intercept module's close paths (Esc, the
   // close control, a popstate that would close layers or refetch a
-  // pane) ask through here, scoped to the content the move discards.
+  // pane) ask through here, scoped to the content the move discards,
+  // passing the retry that makes their move again.
   NS._leaveGuard = { ok: ask };
 
   // The page the popstate guard compares against moves with the router:

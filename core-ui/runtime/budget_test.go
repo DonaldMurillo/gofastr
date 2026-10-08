@@ -1087,7 +1087,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// a data-cui-intercept-swap link in the top pane renders its
 		// target in that pane through the query-move path. Pinned at the
 		// measured size plus 2 clearance.
-		"intercept": 3121,
+		// 3176 measured (2026-10-07, the leave guard in the kit's
+		// dialog): each guarded close path hands the guard a retry that
+		// makes its move again after Discard. Pinned at the measured
+		// size plus 2 clearance.
+		"intercept": 3178,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

@@ -457,7 +457,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   lost**: to a link, Back or Forward, a drawer's Escape or close
   control, or a reload. It asks only when the move discards the form,
   so opening a related drawer over a changed record does not ask.
-  `data-hui-leave-guard-message` sets the question. The form cleans on
+  It asks in the kit's confirm dialog: Cancel keeps the edits, Discard
+  drops them and makes the move (the browser's own prompt only on a
+  page without the kit's dialog). `data-hui-leave-guard-message`,
+  `-title` and `-accept` word it (`ui.FormConfig.LeaveGuard`,
+  `LeaveGuardTitle`, `LeaveGuardAccept`). The form cleans on
   a successful submit or a reset; a refused submit marks it changed
   again (the rpc module now dispatches `gofastr:formresult` with
   `detail.ok` on the form). While dirty, the form and every control

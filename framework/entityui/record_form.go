@@ -238,14 +238,16 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		Attrs()
 	// The header's Save submits it (saveButton): the form draws none.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
-		Action:     action,
-		Method:     "POST",
-		ID:         recordFormID(m),
-		Ctx:        ctx,
-		HideSubmit: true,
-		Wide:       len(side) > 0,
-		ExtraAttrs: attrs,
-		LeaveGuard: i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
+		Action:           action,
+		Method:           "POST",
+		ID:               recordFormID(m),
+		Ctx:              ctx,
+		HideSubmit:       true,
+		Wide:             len(side) > 0,
+		ExtraAttrs:       attrs,
+		LeaveGuard:       i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
+		LeaveGuardTitle:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuardTitle),
+		LeaveGuardAccept: i18nui.T(ctx, i18nui.KeyEntityLeaveGuardAccept),
 	}, body)}
 	// The masked fields' Replace forms: empty, their input and button
 	// sit in the record form's markup and name them by the form

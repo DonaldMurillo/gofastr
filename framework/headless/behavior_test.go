@@ -247,6 +247,8 @@ var adapterHooks = map[string]string{
 	"data-hui-copy-toast":          "the toast-on-copy config, rendered by ui.CopyButton on the button",
 	"data-hui-leave-guard":         "the leave-guard mark a form carries for this package's headless-leaveguard module; the forms that render it are the record screens and kit forms, no headless primitive owns a whole form",
 	"data-hui-leave-guard-message": "the leave guard's ask words, rendered beside the mark by the same record-screen form builder",
+	"data-hui-leave-guard-title":   "the leave guard dialog's title, rendered beside the mark by the same record-screen form builder",
+	"data-hui-leave-guard-accept":  "the leave guard dialog's accept label, rendered beside the mark by the same record-screen form builder",
 }
 
 var hostHooks = map[string]string{

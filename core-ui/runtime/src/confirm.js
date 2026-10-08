@@ -16,7 +16,9 @@
 // data-cui-confirm-part="title|message|accept|accept-danger|cancel".
 // The template carries the default title and labels; the two accept
 // buttons are the kit's primary and danger variants, and the tone
-// picks one, so the module never restyles a button.
+// picks one, so the module never restyles a button. askWords asks the
+// same dialog from words instead of an element's hooks: the leave
+// guard's question comes from the form it would discard.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
@@ -31,15 +33,26 @@
   }
 
   function ask(el) {
-    const msg = el.getAttribute(A) || '';
+    return askWords({
+      message: el.getAttribute(A) || '',
+      title: el.getAttribute(A + '-title'),
+      accept: el.getAttribute(A + '-accept'),
+      danger: el.getAttribute(A + '-tone') === 'danger',
+    });
+  }
+
+  // askWords: {message, title, accept, danger}; an empty title or
+  // accept keeps the template's own.
+  function askWords(w) {
+    const msg = w.message || '';
     const tpl = document.querySelector('template[data-cui-confirm-dialog]');
     const dlg = tpl && tpl.content.firstElementChild && tpl.content.firstElementChild.cloneNode(true);
     if (!dlg || typeof dlg.showModal !== 'function') {
       return Promise.resolve(typeof window.confirm === 'function' && window.confirm(msg));
     }
-    const title = el.getAttribute(A + '-title');
-    const label = el.getAttribute(A + '-accept');
-    const danger = el.getAttribute(A + '-tone') === 'danger';
+    const title = w.title;
+    const label = w.accept;
+    const danger = !!w.danger;
     const t = part(dlg, 'title');
     const m = part(dlg, 'message');
     const ok = part(dlg, danger ? 'accept-danger' : 'accept');
@@ -94,6 +107,7 @@
   }
 
   NS.ask = ask;
+  NS.askWords = askWords;
   NS.confirm = confirmSubmit;
   (NS.loadedModules ||= {}).confirm = true;
 })();

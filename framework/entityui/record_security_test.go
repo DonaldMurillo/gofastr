@@ -160,12 +160,14 @@ func TestRecord422FieldNamesMatchControls(t *testing.T) {
 func TestRecordChromeComesFromTranslator(t *testing.T) {
 	cat := i18n.NewMapCatalog()
 	mapped := map[i18nui.Key]string{
-		i18nui.KeyEntityTabEdit:    "BEARBEITEN",
-		i18nui.KeyEntitySave:       "SPEICHERN",
-		i18nui.KeyEntitySaved:      "GESPEICHERT",
-		i18nui.KeyEntityDetails:    "ANGABEN",
-		i18nui.KeyEntityLeaveGuard: "UNGESPEICHERTE ÄNDERUNGEN",
-		i18nui.KeyEntityNotFound:   "NICHT GEFUNDEN",
+		i18nui.KeyEntityTabEdit:          "BEARBEITEN",
+		i18nui.KeyEntitySave:             "SPEICHERN",
+		i18nui.KeyEntitySaved:            "GESPEICHERT",
+		i18nui.KeyEntityDetails:          "ANGABEN",
+		i18nui.KeyEntityLeaveGuard:       "UNGESPEICHERTE ÄNDERUNGEN",
+		i18nui.KeyEntityLeaveGuardTitle:  "ÄNDERUNGEN VERWERFEN?",
+		i18nui.KeyEntityLeaveGuardAccept: "VERWERFEN",
+		i18nui.KeyEntityNotFound:         "NICHT GEFUNDEN",
 	}
 	for k, v := range mapped {
 		cat.Set("de", string(k), i18n.Message{Text: v})
@@ -185,8 +187,14 @@ func TestRecordChromeComesFromTranslator(t *testing.T) {
 		}
 	}
 	// The leave guard's words are the translator's, not the default.
-	if !strings.Contains(body, `data-hui-leave-guard-message="UNGESPEICHERTE ÄNDERUNGEN"`) {
-		t.Fatalf("the leave guard carries the translated words:\n%s", body)
+	for _, want := range []string{
+		`data-hui-leave-guard-message="UNGESPEICHERTE ÄNDERUNGEN"`,
+		`data-hui-leave-guard-title="ÄNDERUNGEN VERWERFEN?"`,
+		`data-hui-leave-guard-accept="VERWERFEN"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the leave guard is missing the translated %s:\n%s", want, body)
+		}
 	}
 	missingRec := func() string {
 		ctx := i18n.WithContext(x.userCtx("/rec/invoices/none", "", "u1"), i18n.Locale{Tag: "de"})

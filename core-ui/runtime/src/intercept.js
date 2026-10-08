@@ -157,9 +157,12 @@
 
   // The leave guard hook (headless-leaveguard, loaded when a
   // data-hui-leave-guard form is on the page). scope is the element (or
-  // elements) whose content the move would discard.
-  function guardOK(scope) {
-    return !NS._leaveGuard || NS._leaveGuard.ok(scope);
+  // elements) whose content the move would discard; retry makes the
+  // move again, for a guard that declines now and asks in the kit's
+  // dialog after. A declined history move's retry goes the same
+  // distance again: the dialog answers after the undo has landed.
+  function guardOK(scope, retry) {
+    return !NS._leaveGuard || NS._leaveGuard.ok(scope, retry);
   }
 
   // fetchOverlay asks the server for the overlay variant of path,
@@ -232,7 +235,7 @@
   function closeTopDirect() {
     const t = top();
     if (!t) return;
-    if (!guardOK(t.el)) return;
+    if (!guardOK(t.el, closeTopDirect)) return;
     epoch++;
     layers.pop();
     t.el.remove();
@@ -381,7 +384,7 @@
     let i = layers.length - 1;
     while (i >= 0 && pathOf(layers[i].url) !== p) i--;
     if (i < 0 && pathOf(underPath) !== p) return false;
-    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el))) return true;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node))) return true;
     const e = ++epoch;
     let focus = null;
     while (layers.length > i + 1) {
@@ -438,7 +441,7 @@
       const scope = layers.slice(i + 1).map((l) => l.el);
       const refetch = j !== lay.cur;
       if (refetch) scope.push(lay.el);
-      if (!guardOK(scope)) { undo(lay.p0 + j); return true; }
+      if (!guardOK(scope, () => history.go(lay.p0 + j - t.p0 - t.cur))) { undo(lay.p0 + j); return true; }
       // Focus returns to the control that opened the LOWEST closed
       // layer: it lives in layer i, the one left showing.
       let focus = null;
@@ -472,7 +475,8 @@
     // entry is pushed again instead); accepted, drop the stack and let
     // the router load the destination.
     const base = tag.s === stackId && !tag.k;
-    if (!guardOK(base ? layers.map((l) => l.el) : null)) {
+    const dest = location.href;
+    if (!guardOK(base ? layers.map((l) => l.el) : null, () => (base ? history.go(-t.p0 - t.cur) : NS.navigate(dest)))) {
       if (base) undo(0);
       else rawPush(t);
       return true;
