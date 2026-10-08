@@ -65,6 +65,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **icon**: `framework/ui.Icon`, inline-SVG primitive backed by `RegisterIcon`; built-ins cover chevrons, close, menu, more, search, the status family and a navigation set (home, user, users, file, receipt, card, box, layers, activity, shield, key, lock, sliders, chart, calendar, clock, plus, list, grid, database, inbox, folder, tag, mail, bell, globe, repeat, cpu, star, pencil, trash, rotate-ccw), `currentColor` stroke, `AriaLabel` flips to `role="img"`
 - **link**: `framework/ui.Link`, typed anchor with external-link affordances + unsafe-scheme href sanitizing
 - **muted**: `framework/ui.Muted`, subdued inline `<span>` for secondary text
+- **inline code**: `framework/ui.InlineCode`, a short escaped `<code>` in the mono font on the soft surface, for an operator, a field name or an example inside text; blocks of code use `CodeBlock`
 
 ### Buttons & form controls
 

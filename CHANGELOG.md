@@ -8,6 +8,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.InlineCode` draws a short piece of code inside text or a
+  reference row (an operator, a field name, an example) as a `<code>`
+  in the mono font on the soft surface. The entity list's query box
+  uses it for its syntax reference.
 - `ui.ShortID` shows a long identifier (a UUID, a job id, a hash) in
   a table cell: its first eight characters, the full value as their
   title, and an inline copy button that copies all of it. The admin's

@@ -700,6 +700,7 @@ var kitComponents = []kitComponent{
 	{name: "Hero", fn: Hero},
 	{name: "HeroSplit", fn: HeroSplit},
 	{name: "Icon", fn: Icon},
+	{name: "InlineCode", fn: InlineCode},
 	{name: "InputGroup", fn: InputGroup, required: []string{"Input"}},
 	{name: "JSONViewer", fn: JSONViewer},
 	{name: "LineChart", fn: LineChart},
