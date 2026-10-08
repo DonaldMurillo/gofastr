@@ -324,9 +324,11 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 		Rows:          data,
 		Caption:       i18nui.T(ctx, i18nui.KeyAdminAudit),
 		CaptionHidden: true,
-		Responsive:    ui.ResponsiveScroll,
-		Pagination:    pager,
-		Ctx:           ctx,
+		// Phone cards keep the record and its changes in view; a scrolled
+		// table showed only who and when.
+		Responsive: ui.ResponsiveCards,
+		Pagination: pager,
+		Ctx:        ctx,
 		Empty: ui.EmptyStateConfig{
 			Title:        i18nui.T(ctx, i18nui.KeyAdminAuditEmpty),
 			Description:  i18nui.T(ctx, i18nui.KeyAdminAuditEmptyDesc),
@@ -343,7 +345,17 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 // elevated: the audit log is behind the admin gate, and the trail must
 // name records whatever the entity's own read permission says.
 func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map[string]any) (record, changes render.HTML) {
+	if r.Entity == "access" {
+		if record, changes, ok := b.accessAudit(ctx, r); ok {
+			return record, changes
+		}
+	}
 	e, ok := b.exposedNamed(r.Entity)
+	if ok && r.Op == "bulk" {
+		if record, changes, ok := bulkAudit(ctx, e, r); ok {
+			return record, changes
+		}
+	}
 	if !ok || b.ui == nil {
 		id := html.Code(html.TextConfig{}, render.Text(r.RecordID))
 		return render.Join(render.Text(r.Entity+" "), id), ui.EmptyValue()
@@ -363,6 +375,92 @@ func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map
 		changes = ui.EmptyValue()
 	}
 	return record, changes
+}
+
+// accessAudit draws a Roles or User roles row: "Role · billing" with the
+// permission granted, revoked or refused, or "User · ada@example.com"
+// with the roles set or the one refused. ok is false for a row it has
+// no words for, which keeps the generic table name and id.
+func (b *Battery) accessAudit(ctx context.Context, r auditRow) (record, changes render.HTML, ok bool) {
+	var d struct {
+		Permission  string   `json:"permission"`
+		Roles       []string `json:"roles"`
+		RefusedRole string   `json:"refused_role"`
+	}
+	if !r.Diff.Valid || json.Unmarshal([]byte(r.Diff.String), &d) != nil {
+		return "", "", false
+	}
+	switch r.Op {
+	case "grant", "revoke", "grant-refused", "revoke-refused":
+		if d.Permission == "" {
+			return "", "", false
+		}
+		key := map[string]i18nui.Key{
+			"grant": i18nui.KeyAdminAuditGranted, "revoke": i18nui.KeyAdminAuditRevoked,
+			"grant-refused": i18nui.KeyAdminAuditGrantRefused, "revoke-refused": i18nui.KeyAdminAuditRevokeRefused,
+		}[r.Op]
+		record = render.Join(ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditRole)+" · ")), render.Text(r.RecordID))
+		return record, i18nui.TVarsHTML(ctx, key, map[string]render.HTML{"permission": ui.InlineCode(d.Permission)}), true
+	case "assign-roles", "assign-roles-refused":
+		who := b.actorName(ctx, r.RecordID)
+		if who == "" {
+			who = r.RecordID
+		}
+		record = render.Join(ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditUser)+" · ")), render.Text(who))
+		if r.Op == "assign-roles-refused" {
+			return record, i18nui.TVarsHTML(ctx, i18nui.KeyAdminAuditAssignRefused, map[string]render.HTML{"role": ui.InlineCode(d.RefusedRole)}), true
+		}
+		if len(d.Roles) == 0 {
+			return record, ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditNoRoles))), true
+		}
+		tags := make([]render.HTML, len(d.Roles))
+		for i, role := range d.Roles {
+			tags[i] = ui.Tag(ui.TagConfig{Label: role})
+		}
+		return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, tags...), true
+	}
+	return "", "", false
+}
+
+// bulkAudit draws a bulk run's summary row: "2 payments" and what the run
+// did, with what it skipped or failed on. ok is false for a detail that
+// does not parse or an action it has no word for.
+func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, changes render.HTML, ok bool) {
+	if !r.Diff.Valid {
+		return "", "", false
+	}
+	var d struct {
+		Action  string `json:"action"`
+		Count   int    `json:"count"`
+		Skipped int    `json:"skipped"`
+		Failed  int    `json:"failed"`
+	}
+	if json.Unmarshal([]byte(r.Diff.String), &d) != nil || d.Count < 0 || d.Skipped < 0 || d.Failed < 0 {
+		return "", "", false
+	}
+	var verb i18nui.Key
+	switch {
+	case d.Action == "delete":
+		verb = i18nui.KeyAdminAuditBulkDeleted
+	case d.Action == "restore":
+		verb = i18nui.KeyAdminAuditBulkRestored
+	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
+		verb = i18nui.KeyAdminAuditBulkUpdated
+	default:
+		return "", "", false
+	}
+	record = i18nui.TVarsHTML(ctx, i18nui.KeyAdminAuditBulkRecord, map[string]render.HTML{
+		"count":  render.Text(strconv.Itoa(d.Count)),
+		"entity": render.Text(entityNoun(ctx, e, d.Count)),
+	})
+	parts := []render.HTML{render.Text(i18nui.T(ctx, verb))}
+	if d.Skipped > 0 {
+		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBulkSkipped, map[string]string{"count": strconv.Itoa(d.Skipped)}))))
+	}
+	if d.Failed > 0 {
+		parts = append(parts, ui.Muted(render.Text(i18nui.TVars(ctx, i18nui.KeyAdminAuditBulkFailed, map[string]string{"count": strconv.Itoa(d.Failed)}))))
+	}
+	return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, parts...), true
 }
 
 // auditTitle names an exposed entity's audit row record: a live one by

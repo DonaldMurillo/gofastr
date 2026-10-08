@@ -53,7 +53,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   "5m ago" wording, through `i18nui.KeyAgo*`),
   `entityui.UI.WithActorName`, `entityui.UI.Changes` and
   `entityui.UI.SnapshotTitle`. A move's audit row (`transition:<key>`)
-  now badges and draws like any move.
+  now badges and draws like any move. A Roles change reads "Role ·
+  billing" and "Granted `plans:write`"; a User roles change names the
+  account and its roles; a bulk run reads "2 payments" and "Deleted · 1
+  skipped". On a phone the audit table is a stack of cards.
 - **The admin's related records stack as drawers.** A record opens as a
   drawer over the record of each exposed entity it belongs to or that
   belongs to it, so a relation field's open button and a Related tab's

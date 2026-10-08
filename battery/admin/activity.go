@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -146,19 +147,25 @@ func (b *Battery) bulkLead(ctx context.Context, names map[string]string, r audit
 	default:
 		return ""
 	}
-	display := ""
-	if dc := e.Config.Display; dc != nil {
-		display = dc.Singular
-		if d.Done != 1 {
-			display = dc.Plural
-		}
-	}
 	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityBulkLine, map[string]render.HTML{
 		"actor":  activityActor(ctx, names, r),
 		"verb":   render.Text(i18nui.T(ctx, verb)),
 		"count":  render.Text(strconv.Itoa(d.Done)),
-		"entity": render.Text(i18nui.EntityNoun(ctx, nil, e.GetName(), display, d.Done != 1)),
+		"entity": render.Text(entityNoun(ctx, e, d.Done)),
 	})
+}
+
+// entityNoun is e's name for n records, "payment" or "payments", in its
+// Display forms when it declares them.
+func entityNoun(ctx context.Context, e *entity.Entity, n int) string {
+	display := ""
+	if dc := e.Config.Display; dc != nil {
+		display = dc.Singular
+		if n != 1 {
+			display = dc.Plural
+		}
+	}
+	return i18nui.EntityNoun(ctx, nil, e.GetName(), display, n != 1)
 }
 
 // activityChanges is what one row's edit changed, drawn under its line

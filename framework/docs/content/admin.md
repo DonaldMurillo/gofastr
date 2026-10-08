@@ -302,6 +302,12 @@ shows, linked there, and a deleted or purged one by the title in the
 row's stored copy, unlinked. An entity the admin does not expose shows
 its table name and the id. Changes lists the fields an update changed,
 through `entityui.UI.Changes`, so masked and hidden fields never show.
+A Roles change reads "Role · billing" and "Granted `plans:write`" (or
+Revoked, or Refused to grant or revoke); a User roles change names the
+account by its email and lists the roles it was given, or the one
+refused. A bulk run's row reads "2 payments" and what the run did,
+Deleted, Restored or Updated, with how many it skipped or failed on; an
+app's own bulk action keeps the run id. On a phone each row is a card.
 Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
 
