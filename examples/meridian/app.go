@@ -409,10 +409,11 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// RolePolicy resolves the signed-in user's roles to those
 		// permissions on the gated CRUD API and the MCP tools. The
 		// admin role holds the wildcard; a plain signup session
-		// resolves nothing and reads stay open. Add finer per-role
-		// Grants here as the back-office grows.
+		// resolves nothing and reads stay open. seedRoles
+		// (admin_access.go) adds the billing and support roles.
 		rolePolicy = access.NewRolePolicy()
 		rolePolicy.Grant("admin", access.Wildcard)
+		seedRoles(rolePolicy)
 		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {
