@@ -88,30 +88,28 @@ const (
 
 // Table columns on the ops pages.
 const (
-	KeyAdminColID          Key = "ui.admin.colID"          // "ID"
-	KeyAdminColType        Key = "ui.admin.colType"        // "Type"
-	KeyAdminColAttempts    Key = "ui.admin.colAttempts"    // "Attempts"
-	KeyAdminColPriority    Key = "ui.admin.colPriority"    // "Priority"
-	KeyAdminColCreated     Key = "ui.admin.colCreated"     // "Created"
-	KeyAdminColScheduled   Key = "ui.admin.colScheduled"   // "Scheduled"
-	KeyAdminColActions     Key = "ui.admin.colActions"     // "Actions"
-	KeyAdminColTime        Key = "ui.admin.colTime"        // "Time"
-	KeyAdminColEntity      Key = "ui.admin.colEntity"      // "Entity"
-	KeyAdminColOperation   Key = "ui.admin.colOperation"   // "Operation"
-	KeyAdminColRecord      Key = "ui.admin.colRecord"      // "Record"
-	KeyAdminColChanges     Key = "ui.admin.colChanges"     // "Changes"
-	KeyAdminColActor       Key = "ui.admin.colActor"       // "Actor"
-	KeyAdminColRole        Key = "ui.admin.colRole"        // "Role"
-	KeyAdminColPermissions Key = "ui.admin.colPermissions" // "Permissions"
-	KeyAdminColUser        Key = "ui.admin.colUser"        // "User"
-	KeyAdminColRoles       Key = "ui.admin.colRoles"       // "Roles"
-	KeyAdminColModule      Key = "ui.admin.colModule"      // "Module"
-	KeyAdminColTrust       Key = "ui.admin.colTrust"       // "Trust"
-	KeyAdminColState       Key = "ui.admin.colState"       // "State"
-	KeyAdminColGeneration  Key = "ui.admin.colGeneration"  // "Generation"
-	KeyAdminColRestarts    Key = "ui.admin.colRestarts"    // "Restarts"
-	KeyAdminColRoutes      Key = "ui.admin.colRoutes"      // "Routes / tools"
-	KeyAdminColLastExit    Key = "ui.admin.colLastExit"    // "Last exit"
+	KeyAdminColID         Key = "ui.admin.colID"         // "ID"
+	KeyAdminColType       Key = "ui.admin.colType"       // "Type"
+	KeyAdminColAttempts   Key = "ui.admin.colAttempts"   // "Attempts"
+	KeyAdminColPriority   Key = "ui.admin.colPriority"   // "Priority"
+	KeyAdminColCreated    Key = "ui.admin.colCreated"    // "Created"
+	KeyAdminColScheduled  Key = "ui.admin.colScheduled"  // "Scheduled"
+	KeyAdminColActions    Key = "ui.admin.colActions"    // "Actions"
+	KeyAdminColTime       Key = "ui.admin.colTime"       // "Time"
+	KeyAdminColEntity     Key = "ui.admin.colEntity"     // "Entity"
+	KeyAdminColOperation  Key = "ui.admin.colOperation"  // "Operation"
+	KeyAdminColRecord     Key = "ui.admin.colRecord"     // "Record"
+	KeyAdminColChanges    Key = "ui.admin.colChanges"    // "Changes"
+	KeyAdminColActor      Key = "ui.admin.colActor"      // "Actor"
+	KeyAdminColUser       Key = "ui.admin.colUser"       // "User"
+	KeyAdminColRoles      Key = "ui.admin.colRoles"      // "Roles"
+	KeyAdminColModule     Key = "ui.admin.colModule"     // "Module"
+	KeyAdminColTrust      Key = "ui.admin.colTrust"      // "Trust"
+	KeyAdminColState      Key = "ui.admin.colState"      // "State"
+	KeyAdminColGeneration Key = "ui.admin.colGeneration" // "Generation"
+	KeyAdminColRestarts   Key = "ui.admin.colRestarts"   // "Restarts"
+	KeyAdminColRoutes     Key = "ui.admin.colRoutes"     // "Routes / tools"
+	KeyAdminColLastExit   Key = "ui.admin.colLastExit"   // "Last exit"
 )
 
 // The jobs page.
@@ -163,12 +161,16 @@ const (
 	KeyAdminAddRole           Key = "ui.admin.addRole"           // "Add a role"
 	KeyAdminGrant             Key = "ui.admin.grant"             // "Grant"
 	KeyAdminRevoke            Key = "ui.admin.revoke"            // "Revoke"
-	KeyAdminRevokeLabel       Key = "ui.admin.revokeLabel"       // "Revoke {permission} from {role}"
+	KeyAdminGrantCell         Key = "ui.admin.grantCell"         // "{role} holds {permission}"
+	KeyAdminHoldsEvery        Key = "ui.admin.holdsEvery"        // "{role} holds every permission"
+	KeyAdminSavePermissions   Key = "ui.admin.savePermissions"   // "Save permissions"
+	KeyAdminPermissionsSaved  Key = "ui.admin.permissionsSaved"  // "Permissions saved."
+	KeyAdminNoPermissions     Key = "ui.admin.noPermissions"     // "No permissions to grant"
+	KeyAdminNoPermissionsDesc Key = "ui.admin.noPermissionsDesc" // "Every role holds every permission. Register the app's capabilities on its policy to grant them one by one."
 	KeyAdminUndeclared        Key = "ui.admin.undeclared"        // "Not declared"
 	KeyAdminSaveRoles         Key = "ui.admin.saveRoles"         // "Save roles"
 	KeyAdminEditRoles         Key = "ui.admin.editRoles"         // "Edit roles"
 	KeyAdminGranted           Key = "ui.admin.granted"           // "Permission granted."
-	KeyAdminRevoked           Key = "ui.admin.revoked"           // "Permission revoked."
 	KeyAdminRolesSaved        Key = "ui.admin.rolesSaved"        // "Roles saved."
 	KeyAdminGrantRefused      Key = "ui.admin.grantRefused"      // "You can only grant or revoke a permission you hold."
 	KeyAdminAssignRefused     Key = "ui.admin.assignRefused"     // "You cannot assign a role above your own."
@@ -274,8 +276,6 @@ var adminDefaults = map[Key]string{
 	KeyAdminColRecord:         "Record",
 	KeyAdminColChanges:        "Changes",
 	KeyAdminColActor:          "Actor",
-	KeyAdminColRole:           "Role",
-	KeyAdminColPermissions:    "Permissions",
 	KeyAdminColUser:           "User",
 	KeyAdminColRoles:          "Roles",
 	KeyAdminColModule:         "Module",
@@ -324,12 +324,16 @@ var adminDefaults = map[Key]string{
 	KeyAdminAddRole:           "Add a role",
 	KeyAdminGrant:             "Grant",
 	KeyAdminRevoke:            "Revoke",
-	KeyAdminRevokeLabel:       "Revoke {permission} from {role}",
+	KeyAdminGrantCell:         "{role} holds {permission}",
+	KeyAdminHoldsEvery:        "{role} holds every permission",
+	KeyAdminSavePermissions:   "Save permissions",
+	KeyAdminPermissionsSaved:  "Permissions saved.",
+	KeyAdminNoPermissions:     "No permissions to grant",
+	KeyAdminNoPermissionsDesc: "Every role holds every permission. Register the app's capabilities on its policy to grant them one by one.",
 	KeyAdminUndeclared:        "Not declared",
 	KeyAdminSaveRoles:         "Save roles",
 	KeyAdminEditRoles:         "Edit roles",
 	KeyAdminGranted:           "Permission granted.",
-	KeyAdminRevoked:           "Permission revoked.",
 	KeyAdminRolesSaved:        "Roles saved.",
 	KeyAdminGrantRefused:      "You can only grant or revoke a permission you hold.",
 	KeyAdminAssignRefused:     "You cannot assign a role above your own.",

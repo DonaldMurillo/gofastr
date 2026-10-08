@@ -653,7 +653,7 @@ var results = map[string]result{
 	"replayed":           {i18nui.KeyAdminReplayed, true},
 	"replayed-all":       {i18nui.KeyAdminReplayedAll, true},
 	"granted":            {i18nui.KeyAdminGranted, true},
-	"revoked":            {i18nui.KeyAdminRevoked, true},
+	"permissions-saved":  {i18nui.KeyAdminPermissionsSaved, true},
 	"roles-saved":        {i18nui.KeyAdminRolesSaved, true},
 	"module-enabled":     {i18nui.KeyAdminModuleEnabled, true},
 	"module-disabled":    {i18nui.KeyAdminModuleDisabled, true},

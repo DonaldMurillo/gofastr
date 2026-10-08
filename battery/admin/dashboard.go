@@ -256,7 +256,7 @@ func (b *Battery) mountOps(r *router.Router) {
 	}
 	if b.cfg.Policy != nil && b.cfg.GrantStore != nil {
 		post("/rbac/_grant", b.handleGrant)
-		post("/rbac/_revoke", b.handleRevoke)
+		post("/rbac/_permissions", b.handlePermissions)
 	}
 	if b.cfg.Auth != nil {
 		post("/rbac/_assign", b.handleAssign)

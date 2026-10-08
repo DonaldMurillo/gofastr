@@ -341,6 +341,7 @@ type opSpec struct {
 	fields     map[string]string // hidden fields, sorted by name
 	body       []render.HTML     // visible fields before the button
 	stacked    bool              // fields over the button, for a panel
+	wide       bool              // full width, the button in the form's own actions row
 }
 
 // opForm draws an opSpec.
@@ -361,6 +362,16 @@ func (b *Battery) opForm(ctx context.Context, op opSpec) render.HTML {
 		children = append(children, html.Input(html.InputConfig{Type: "hidden", Name: name, Value: op.fields[name]}))
 	}
 	children = append(children, op.body...)
+	if op.wide {
+		return ui.Form(ui.FormConfig{
+			Action:      op.path,
+			Method:      "POST",
+			Ctx:         ctx,
+			Wide:        true,
+			SubmitLabel: op.label,
+			ExtraAttrs:  rpc.Attrs(),
+		}, ui.Stack(ui.StackConfig{Gap: ui.GapMD}, children...))
+	}
 	btn := ui.ButtonConfig{Label: op.label, AriaLabel: op.ariaLabel, Variant: op.variant, Type: "submit"}
 	if op.small {
 		btn.Size = ui.ButtonSizeSmall

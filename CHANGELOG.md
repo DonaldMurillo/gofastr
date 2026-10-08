@@ -1217,6 +1217,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - The admin's User roles page pages through every account: a pager
   under the table turns pages through `?p=`. It read a bare `?offset=`
   that nothing on the page linked to; that parameter is gone.
+- **BREAKING: the admin's Roles page is a grid, saved through
+  `POST /admin/rbac/_permissions`; `POST /admin/rbac/_revoke` is
+  removed.** A row per permission, a column per role, a checkbox where
+  they meet, and one "Save permissions" button that grants and revokes
+  only what changed, one audit row per change. A save is checked whole
+  first: one change the caller may not make refuses the save and
+  applies nothing. Revoke by unchecking a box and saving; a client that
+  posted to `_revoke` posts the grid to `_permissions` instead (see
+  admin.md). `_grant` stays, for the "Add a role" form. Meridian seeds
+  `billing` and `support` roles over its declared capabilities and
+  wires a `GrantStore`, so its Roles page can be edited.
 - `admin.Config.AuditListLimit` is the Audit log page's rows per page,
   default 50; it was a cap on the only rows the page could show,
   default 200.

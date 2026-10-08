@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -70,9 +71,59 @@ func canAs(p *access.RolePolicy, role string, perm access.Permission) bool {
 func TestRolesPageListsGrants(t *testing.T) {
 	r := newRBACEnv(t, Config{})
 	body := get(r.as(theAdmin), "/admin/rbac/roles").Body.String()
-	for _, want := range []string{"editor", "posts:read", `action="/admin/rbac/_grant"`, `action="/admin/rbac/_revoke"`} {
+	for _, want := range []string{"editor", "posts:read", `action="/admin/rbac/_grant"`, `action="/admin/rbac/_permissions"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("roles page lacks %q", want)
+		}
+	}
+}
+
+// The grid is a box per role and permission: checked where the role
+// holds it, Wildcard's column checked and locked and never posted.
+func TestRolesGridMarksHeldPermissions(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	body := get(r.as(theAdmin), "/admin/rbac/roles").Body.String()
+	input := func(id string) string {
+		m := regexp.MustCompile(`<input[^>]*id="` + id + `"[^>]*>`).FindString(body)
+		if m == "" {
+			t.Fatalf("no box %s", id)
+		}
+		return m
+	}
+	// Roles sort admin, editor, support; rows posts:read, queue:read.
+	if in := input("admin-grant-0-0"); !strings.Contains(in, "checked") || !strings.Contains(in, "disabled") || strings.Contains(in, "value=") {
+		t.Errorf("a Wildcard box is not checked, locked and unposted: %s", in)
+	}
+	if in := input("admin-grant-1-0"); !strings.Contains(in, "checked") || strings.Contains(in, "disabled") || !strings.Contains(in, `value="0:0"`) {
+		t.Errorf("editor's posts:read box = %s", in)
+	}
+	if in := input("admin-grant-1-1"); strings.Contains(in, "checked") || !strings.Contains(in, `value="0:1"`) {
+		t.Errorf("editor's queue:read box = %s", in)
+	}
+	if !strings.Contains(body, `aria-label="editor holds posts:read"`) && !strings.Contains(body, ">editor holds posts:read<") {
+		t.Error("a box does not say whose permission it is")
+	}
+	for _, hidden := range []string{`name="role" type="hidden" value="editor"`, `name="role" type="hidden" value="support"`, `name="permission" type="hidden" value="queue:read"`} {
+		if !strings.Contains(body, hidden) {
+			t.Errorf("the grid does not post %s", hidden)
+		}
+	}
+	if strings.Contains(body, `name="role" type="hidden" value="admin"`) {
+		t.Error("the grid posts the Wildcard role")
+	}
+}
+
+// Without a GrantStore the grid is read-only: every box locked, no save.
+func TestRolesGridReadOnlyWithoutStore(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	r.b.cfg.GrantStore = nil
+	body := get(r.as(theAdmin), "/admin/rbac/roles").Body.String()
+	if strings.Contains(body, "/rbac/_permissions") || strings.Contains(body, "/rbac/_grant") {
+		t.Error("a read-only grid offers a save")
+	}
+	for _, in := range regexp.MustCompile(`<input[^>]*name="grant"[^>]*>`).FindAllString(body, -1) {
+		if !strings.Contains(in, "disabled") {
+			t.Errorf("a read-only box is live: %s", in)
 		}
 	}
 }
@@ -111,16 +162,72 @@ func TestGrantUpdatesPolicyAndAudits(t *testing.T) {
 	}
 }
 
-func TestRevokeUpdatesPolicy(t *testing.T) {
+// A grid save grants and revokes the shown boxes that changed and
+// leaves the rest: a Wildcard role, an unshown permission, an unchanged
+// box.
+func TestPermissionsSaveAppliesChangedBoxes(t *testing.T) {
 	r := newRBACEnv(t, Config{})
-	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_revoke", url.Values{"role": {"editor"}, "permission": {"posts:read"}})); got != "revoked" {
+	// A Wildcard role's exact grants stay too, though its boxes posted
+	// unchecked.
+	_ = r.policy.Grant("admin", "posts:write")
+	vals := url.Values{
+		"role":       {"editor", "admin"},
+		"permission": {"posts:read", "posts:write"},
+		"grant":      {"0:1"},
+	}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", vals)); got != "permissions-saved" {
 		t.Fatalf("result = %q", got)
 	}
-	if canAs(r.policy, "editor", "posts:read") {
-		t.Fatal("the revoke did not reach the live policy")
+	if canAs(r.policy, "editor", "posts:read") || !canAs(r.policy, "editor", "posts:write") {
+		t.Fatalf("editor = %v, want [posts:write]", r.policy.PermissionsOf("editor"))
 	}
-	if ops := r.auditOps("access"); !slices.Equal(ops, []string{"revoke"}) {
+	if got := r.policy.PermissionsOf("admin"); !slices.Equal(got, []access.Permission{access.Wildcard, "posts:write"}) {
+		t.Errorf("the Wildcard role changed: %v", got)
+	}
+	if !canAs(r.policy, "support", "queue:read") {
+		t.Error("an unshown role lost its grant")
+	}
+	if ops := r.auditOps("access"); !slices.Equal(ops, []string{"revoke", "grant"}) {
 		t.Fatalf("audit ops = %v", ops)
+	}
+	// The same boxes again change nothing and audit nothing.
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", vals)); got != "permissions-saved" {
+		t.Fatalf("repeat result = %q", got)
+	}
+	if ops := r.auditOps("access"); len(ops) != 2 {
+		t.Errorf("an unchanged save audited %v", ops)
+	}
+}
+
+func TestPermissionsSaveRefusesBadInput(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	for _, vals := range []url.Values{
+		{"permission": {"posts:read"}},
+		{"role": {"editor"}},
+		{"role": {"editor", "editor"}, "permission": {"posts:read"}},
+		{"role": {"editor", " "}, "permission": {"posts:read"}},
+		{"role": {"editor"}, "permission": {"posts:read"}, "grant": {"1:0"}},
+		{"role": {"editor"}, "permission": {"posts:read"}, "grant": {"0:-1"}},
+		{"role": {"editor"}, "permission": {"posts:read"}, "grant": {"0"}},
+		{"role": {"editor"}, "permission": {"posts:read"}, "grant": {"a:b"}},
+	} {
+		if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", vals)); got != "bad-input" {
+			t.Errorf("%v: result = %q, want bad-input", vals, got)
+		}
+	}
+	// 100 roles by 101 permissions passes the cell cap in a small body.
+	many := url.Values{}
+	for i := range 100 {
+		many.Add("role", "r"+strconv.Itoa(i))
+	}
+	for i := range maxGridCells/100 + 1 {
+		many.Add("permission", "p:"+strconv.Itoa(i))
+	}
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_permissions", many)); got != "bad-input" {
+		t.Errorf("a grid past the cell cap = %q", got)
+	}
+	if !canAs(r.policy, "editor", "posts:read") {
+		t.Error("a refused save revoked a permission")
 	}
 }
 
@@ -173,8 +280,15 @@ func TestGrantRevokeRequireCallerTier(t *testing.T) {
 	if slices.Contains(r.policy.PermissionsOf("support"), access.Wildcard) {
 		t.Fatal("SECURITY: support holds Wildcard")
 	}
-	if c := grant("_revoke", "posts:read").StatusCode; c != http.StatusForbidden {
-		t.Errorf("SECURITY: support revoked a permission outside its tier: %d", c)
+	revoke := rpc(r.as(support), "/admin/rbac/_permissions", map[string]any{"role": "editor", "permission": "posts:read"}).Result()
+	if revoke.StatusCode != http.StatusForbidden || !canAs(r.policy, "editor", "posts:read") {
+		t.Errorf("SECURITY: support revoked a permission outside its tier: %d", revoke.StatusCode)
+	}
+	// One box outside the tier refuses the whole save, before any write.
+	mixed := rpc(r.as(support), "/admin/rbac/_permissions", map[string]any{
+		"role": "editor", "permission": []any{"queue:read", "users:delete"}, "grant": []any{"0:0", "0:1"}}).Result()
+	if mixed.StatusCode != http.StatusForbidden || canAs(r.policy, "editor", "queue:read") {
+		t.Errorf("SECURITY: a save with one refused box wrote the others: %d", mixed.StatusCode)
 	}
 	refused := 0
 	for _, op := range r.auditOps("access") {
@@ -182,8 +296,8 @@ func TestGrantRevokeRequireCallerTier(t *testing.T) {
 			refused++
 		}
 	}
-	if refused != 3 {
-		t.Errorf("audited %d refusals, want 3: %v", refused, r.auditOps("access"))
+	if refused != 4 {
+		t.Errorf("audited %d refusals, want 4: %v", refused, r.auditOps("access"))
 	}
 }
 
@@ -268,7 +382,7 @@ func TestRBACUnwiredHasNoPages(t *testing.T) {
 			t.Errorf("unwired %s = %d, want 404", p, rr.Code)
 		}
 	}
-	for _, p := range []string{"/admin/rbac/_grant", "/admin/rbac/_assign"} {
+	for _, p := range []string{"/admin/rbac/_grant", "/admin/rbac/_permissions", "/admin/rbac/_assign"} {
 		if rr := post(x.as(theAdmin), p, url.Values{"role": {"a"}}); rr.Code == http.StatusSeeOther || rr.Code == http.StatusNoContent {
 			t.Errorf("unwired %s answered %d", p, rr.Code)
 		}

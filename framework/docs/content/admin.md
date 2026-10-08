@@ -424,24 +424,38 @@ app.RegisterBattery(admin.New(admin.Config{
 
 | Route | Purpose |
 |---|---|
-| `POST /admin/rbac/_grant` | Grant a permission to a role |
-| `POST /admin/rbac/_revoke` | Revoke a permission from a role |
+| `POST /admin/rbac/_permissions` | Save the Roles grid |
+| `POST /admin/rbac/_grant` | Grant a permission to a role (the "Add a role" form) |
 | `POST /admin/rbac/_assign` | Replace a user's roles |
 
-When the policy declares capabilities, the grant form offers them as a
-select and marks granted permissions the app does not declare. Under
-`StrictCapabilities` a grant of an undeclared permission is refused.
+The Roles page is a grid: a row per permission, a column per role, and a
+checkbox where they meet. Its rows are the policy's declared
+capabilities and every permission a role holds; one a role holds that
+the app does not declare is marked "Undeclared". A role holding the
+wildcard reads as holding everything, its boxes checked and locked.
+"Save permissions" posts the whole grid to `_permissions` (each role
+and permission it showed, and a `grant` value `<role>:<permission>` per
+checked box, as indexes into those lists); the admin grants and revokes
+only what changed, and a save that changed nothing writes nothing. With
+no `GrantStore` the grid is read-only. On a phone each permission is a
+card listing every role. The "Add a role" form under the grid gives a
+new role its first permission, offering the declared capabilities as a
+select. Under `StrictCapabilities` a grant of an undeclared permission
+is refused.
 The User roles page lists each user's roles once, as tags; the row's
 Edit roles dropdown holds the form that replaces them. It shows 50
 accounts a page (`?limit=`, up to 500), and the pager under the table
 turns pages through `?p=`.
 
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
-or `assign-roles`). A caller may grant or revoke only a permission its
-own roles hold (or the wildcard), and assign only roles it holds or
-whose permissions its own roles imply; a refusal is a 403 with a
-`grant-refused`, `revoke-refused` or `assign-roles-refused` row, so a
-narrower admin tier cannot mint a role above its own.
+or `assign-roles`), one per permission a save grants or revokes. A
+caller may grant or revoke only a permission its own roles hold (or the
+wildcard), and assign only roles it holds or whose permissions its own
+roles imply; a refusal is a 403 with a `grant-refused`,
+`revoke-refused` or `assign-roles-refused` row, so a narrower admin
+tier cannot mint a role above its own. A grid save is checked whole
+before it writes: one refused change refuses the save, and nothing in
+it is applied.
 
 ### Process modules
 

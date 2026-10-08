@@ -37,61 +37,114 @@ func adminActorID(ctx context.Context) string {
 
 // ----- roles ------------------------------------------------------------------
 
-// renderRoles draws the Roles page: each role with its permissions, and
-// with a GrantStore, grant, revoke and a form that adds a role.
+// renderRoles draws the Roles page: a grid with a row per permission
+// and a column per role, a checkbox where the role holds it. A role
+// holding Wildcard shows every box checked and locked. With a
+// GrantStore the grid is one form whose Save grants and revokes the
+// boxes that changed, and a form below adds a role; without one the
+// boxes are read-only.
 func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.HTML {
 	p := b.cfg.Policy
 	caps := p.Capabilities()
-	page := b.cfg.PathPrefix + "/rbac/roles"
-	cols := []ui.Column{
-		{Key: "role", Header: i18nui.T(ctx, i18nui.KeyAdminColRole)},
-		{Key: "permissions", Header: i18nui.T(ctx, i18nui.KeyAdminColPermissions)},
-	}
-	if b.cfg.GrantStore != nil {
-		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminGrant)})
-	}
 	roles := p.Roles()
-	rows := make([]ui.Row, 0, len(roles))
-	for _, role := range roles {
-		cells := map[string]render.HTML{
-			"role":        html.Code(html.TextConfig{}, render.Text(role)),
-			"permissions": b.permissionChips(ctx, role, caps, page),
-		}
-		if b.cfg.GrantStore != nil {
-			cells["actions"] = b.opForm(ctx, opSpec{
-				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonSecondary, small: true,
-				fields: map[string]string{"role": role},
-				body:   []render.HTML{permissionInput(ctx, caps, role)},
-			})
-		}
-		rows = append(rows, ui.Row{ID: role, Cells: cells})
+	var perms []access.Permission
+	if len(roles) > 0 {
+		perms = permissionRows(p, roles, caps)
 	}
+	editable := b.cfg.GrantStore != nil
+	page := b.cfg.PathPrefix + "/rbac/roles"
+
+	cols := []ui.Column{{Key: "permission", Header: i18nui.T(ctx, i18nui.KeyAdminPermission)}}
+	for i, role := range roles {
+		cols = append(cols, ui.Column{Key: "role-" + strconv.Itoa(i), Header: role, Align: "center", Fit: true})
+	}
+	// Only the roles a save may change are posted; their index in the
+	// posted list is what a checked box names.
+	var posted []string
+	col := make([]int, len(roles))
+	for i, role := range roles {
+		col[i] = -1
+		if editable && !holdsWildcard(p, role) {
+			col[i] = len(posted)
+			posted = append(posted, role)
+		}
+	}
+	rows := make([]ui.Row, len(perms))
+	for j, perm := range perms {
+		name := []render.HTML{ui.InlineCode(string(perm))}
+		if len(caps) > 0 && !slices.Contains(caps, perm) {
+			name = append(name, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminUndeclared), Variant: ui.StatusDanger}))
+		}
+		cells := map[string]render.HTML{"permission": ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name...)}
+		for i, role := range roles {
+			cell := ui.ToggleConfig{
+				Name:        "grant",
+				ID:          "admin-grant-" + strconv.Itoa(i) + "-" + strconv.Itoa(j),
+				LabelHidden: true,
+				Label:       i18nui.TVars(ctx, i18nui.KeyAdminGrantCell, map[string]string{"permission": string(perm), "role": role}),
+				Checked:     slices.Contains(p.PermissionsOf(role), perm),
+				Disabled:    col[i] < 0,
+			}
+			if holdsWildcard(p, role) {
+				cell.Checked = true
+				cell.Label = i18nui.TVars(ctx, i18nui.KeyAdminHoldsEvery, map[string]string{"role": role})
+			}
+			if col[i] >= 0 {
+				cell.Value = strconv.Itoa(col[i]) + ":" + strconv.Itoa(j)
+			}
+			cells["role-"+strconv.Itoa(i)] = ui.Checkbox(cell)
+		}
+		rows[j] = ui.Row{ID: string(perm), Cells: cells}
+	}
+	empty := ui.EmptyStateConfig{
+		Title:        i18nui.T(ctx, i18nui.KeyAdminNoRoles),
+		Description:  i18nui.T(ctx, i18nui.KeyAdminNoRolesDesc),
+		HeadingLevel: 2,
+	}
+	if len(roles) > 0 {
+		empty.Title = i18nui.T(ctx, i18nui.KeyAdminNoPermissions)
+		empty.Description = i18nui.T(ctx, i18nui.KeyAdminNoPermissionsDesc)
+	}
+	grid := ui.DataTable(ui.DataTableConfig{
+		Columns:       cols,
+		Rows:          rows,
+		Caption:       i18nui.T(ctx, i18nui.KeyAdminRoles),
+		CaptionHidden: true,
+		// On a phone each permission is a card of role boxes, so no
+		// role hides past the scroll edge.
+		Responsive: ui.ResponsiveCards,
+		Ctx:        ctx,
+		Empty:      empty,
+	})
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
 			Title:    i18nui.T(ctx, i18nui.KeyAdminRoles),
 			Subtitle: i18nui.T(ctx, i18nui.KeyAdminRolesSub),
 		}),
 		resultNotice(ctx),
-		ui.DataTable(ui.DataTableConfig{
-			Columns:       cols,
-			Rows:          rows,
-			Caption:       i18nui.T(ctx, i18nui.KeyAdminRoles),
-			CaptionHidden: true,
-			Responsive:    ui.ResponsiveScroll,
-			Ctx:           ctx,
-			Empty: ui.EmptyStateConfig{
-				Title:        i18nui.T(ctx, i18nui.KeyAdminNoRoles),
-				Description:  i18nui.T(ctx, i18nui.KeyAdminNoRolesDesc),
-				HeadingLevel: 2,
-			},
-		}),
 	}
-	if b.cfg.GrantStore != nil {
+	if len(posted) == 0 || len(rows) == 0 {
+		parts = append(parts, grid)
+	} else {
+		shown := make([]render.HTML, 0, len(posted)+len(perms)+1)
+		for _, role := range posted {
+			shown = append(shown, html.Input(html.InputConfig{Type: "hidden", Name: "role", Value: role}))
+		}
+		for _, perm := range perms {
+			shown = append(shown, html.Input(html.InputConfig{Type: "hidden", Name: "permission", Value: string(perm)}))
+		}
+		parts = append(parts, b.opForm(ctx, opSpec{
+			path: b.cfg.PathPrefix + "/rbac/_permissions", page: page,
+			label: i18nui.T(ctx, i18nui.KeyAdminSavePermissions), variant: ui.ButtonPrimary,
+			body: append(shown, grid),
+			wide: true,
+		}))
+	}
+	if editable {
 		parts = append(parts, ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyAdminAddRole)},
 			b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonPrimary,
+				label: i18nui.T(ctx, i18nui.KeyAdminGrant), variant: ui.ButtonSecondary,
 				body: []render.HTML{
 					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.T(ctx, i18nui.KeyAdminNewRole), Required: true}),
 					permissionInput(ctx, caps, ""),
@@ -101,33 +154,24 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 }
 
-// permissionChips draws a role's permissions as tags. With a capability
-// registry, a grant outside it (other than Wildcard) is flagged; with a
-// GrantStore each one has a Revoke.
-func (b *Battery) permissionChips(ctx context.Context, role string, caps []access.Permission, page string) render.HTML {
-	perms := b.cfg.Policy.PermissionsOf(role)
-	if len(perms) == 0 {
-		return ui.Muted(render.Text("—"))
+// permissionRows is the grid's rows: every declared capability and
+// every permission a role holds, Wildcard aside, sorted.
+func permissionRows(p *access.RolePolicy, roles []string, caps []access.Permission) []access.Permission {
+	perms := slices.Clone(caps)
+	for _, role := range roles {
+		for _, perm := range p.PermissionsOf(role) {
+			if perm != access.Wildcard && !slices.Contains(perms, perm) {
+				perms = append(perms, perm)
+			}
+		}
 	}
 	slices.Sort(perms)
-	items := make([]render.HTML, 0, len(perms))
-	for _, perm := range perms {
-		chip := []render.HTML{ui.Tag(ui.TagConfig{Label: string(perm)})}
-		if len(caps) > 0 && perm != access.Wildcard && !slices.Contains(caps, perm) {
-			chip = append(chip, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminUndeclared), Variant: ui.StatusDanger}))
-		}
-		if b.cfg.GrantStore != nil {
-			chip = append(chip, b.opForm(ctx, opSpec{
-				path: b.cfg.PathPrefix + "/rbac/_revoke", page: page,
-				label:     i18nui.T(ctx, i18nui.KeyAdminRevoke),
-				ariaLabel: i18nui.TVars(ctx, i18nui.KeyAdminRevokeLabel, map[string]string{"permission": string(perm), "role": role}),
-				variant:   ui.ButtonGhost, small: true,
-				fields: map[string]string{"role": role, "permission": string(perm)},
-			}))
-		}
-		items = append(items, ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter, NoWrap: true}, chip...))
-	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, items...)
+	return perms
+}
+
+// holdsWildcard reports whether role holds every permission.
+func holdsWildcard(p *access.RolePolicy, role string) bool {
+	return slices.Contains(p.PermissionsOf(role), access.Wildcard)
 }
 
 // permissionInput is the permission a grant names: a choice of the
@@ -352,11 +396,6 @@ func (b *Battery) handleGrant(w http.ResponseWriter, r *http.Request) {
 	b.grantOrRevoke(w, r, "grant", "granted", b.cfg.GrantStore.Grant)
 }
 
-// handleRevoke revokes a permission from a role, under the same rule.
-func (b *Battery) handleRevoke(w http.ResponseWriter, r *http.Request) {
-	b.grantOrRevoke(w, r, "revoke", "revoked", b.cfg.GrantStore.Revoke)
-}
-
 func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok string,
 	call func(ctx context.Context, role string, perms ...access.Permission) error) {
 	page := b.cfg.PathPrefix + "/rbac/roles"
@@ -370,24 +409,131 @@ func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok s
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
-	actor := adminActorID(r.Context())
-	diff := map[string]any{"permission": string(perm)}
-	if !b.callerHoldsPermission(r.Context(), perm) {
-		b.appendAudit(r.Context(), "access", op+"-refused", role, actor, diff)
-		b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
+	if b.applyGrants(w, r, page, []grantChange{{role: role, perm: perm, grant: op == "grant"}}) {
+		b.done(w, r, page, ok)
+	}
+}
+
+// maxGridCells bounds the roles × permissions a grid save may name.
+const maxGridCells = 10_000
+
+// handlePermissions saves the Roles grid. role and permission list the
+// columns and rows the form showed; each grant value "i:j" is a checked
+// box, role i holding permission j. A shown box that differs from the
+// policy is granted or revoked; anything the form did not show, and any
+// role holding Wildcard, is left alone.
+func (b *Battery) handlePermissions(w http.ResponseWriter, r *http.Request) {
+	page := b.cfg.PathPrefix + "/rbac/roles"
+	vals, read := b.readOps(w, r, page)
+	if !read {
 		return
 	}
-	if err := call(r.Context(), role, perm); err != nil {
-		if _, unknown := errors.AsType[*access.UnknownCapabilityError](err); unknown {
-			b.refuse(w, r, page, http.StatusBadRequest, "unknown-capability")
+	roles, rolesOK := distinctTrimmed(vals["role"])
+	perms, permsOK := distinctTrimmed(vals["permission"])
+	if !rolesOK || !permsOK || len(roles) == 0 || len(perms) == 0 || len(roles) > maxGridCells/len(perms) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+		return
+	}
+	want := map[[2]int]bool{}
+	for _, v := range vals["grant"] {
+		i, j, ok := gridCell(v, len(roles), len(perms))
+		if !ok {
+			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 			return
 		}
-		b.logger().Error("admin: "+op, "role", textsafe.ScrubControlBytes(role), "permission", textsafe.ScrubControlBytes(string(perm)), "error", textsafe.ScrubControlBytes(err.Error()))
-		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
-		return
+		want[[2]int{i, j}] = true
 	}
-	b.appendAudit(r.Context(), "access", op, role, actor, diff)
-	b.done(w, r, page, ok)
+	var changes []grantChange
+	for i, role := range roles {
+		held := b.cfg.Policy.PermissionsOf(role)
+		if slices.Contains(held, access.Wildcard) {
+			continue
+		}
+		for j, perm := range perms {
+			p := access.Permission(perm)
+			if want[[2]int{i, j}] != slices.Contains(held, p) {
+				changes = append(changes, grantChange{role: role, perm: p, grant: want[[2]int{i, j}]})
+			}
+		}
+	}
+	if b.applyGrants(w, r, page, changes) {
+		b.done(w, r, page, "permissions-saved")
+	}
+}
+
+// grantChange is one box a save flips: grant (or revoke) perm on role.
+type grantChange struct {
+	role  string
+	perm  access.Permission
+	grant bool
+}
+
+// applyGrants checks every change against the caller's own permissions
+// before writing any, then grants and revokes through the GrantStore,
+// auditing each. A refusal is audited with the permission that stopped
+// it and answered; it reports whether the caller should answer success.
+func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page string, changes []grantChange) bool {
+	ctx := r.Context()
+	actor := adminActorID(ctx)
+	for _, c := range changes {
+		if !b.callerHoldsPermission(ctx, c.perm) {
+			b.appendAudit(ctx, "access", c.op()+"-refused", c.role, actor, map[string]any{"permission": string(c.perm)})
+			b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
+			return false
+		}
+	}
+	for _, c := range changes {
+		call := b.cfg.GrantStore.Revoke
+		if c.grant {
+			call = b.cfg.GrantStore.Grant
+		}
+		if err := call(ctx, c.role, c.perm); err != nil {
+			if _, unknown := errors.AsType[*access.UnknownCapabilityError](err); unknown {
+				b.refuse(w, r, page, http.StatusBadRequest, "unknown-capability")
+				return false
+			}
+			b.logger().Error("admin: "+c.op(), "role", textsafe.ScrubControlBytes(c.role), "permission", textsafe.ScrubControlBytes(string(c.perm)), "error", textsafe.ScrubControlBytes(err.Error()))
+			b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+			return false
+		}
+		b.appendAudit(ctx, "access", c.op(), c.role, actor, map[string]any{"permission": string(c.perm)})
+	}
+	return true
+}
+
+func (c grantChange) op() string {
+	if c.grant {
+		return "grant"
+	}
+	return "revoke"
+}
+
+// distinctTrimmed trims each value and refuses an empty or repeated one:
+// a grid index must name one column or row.
+func distinctTrimmed(vals []string) ([]string, bool) {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" || slices.Contains(out, v) {
+			return nil, false
+		}
+		out = append(out, v)
+	}
+	return out, true
+}
+
+// gridCell parses a grant value "i:j" against the grid's size.
+func gridCell(v string, roles, perms int) (int, int, bool) {
+	a, c, ok := strings.Cut(v, ":")
+	if !ok {
+		return 0, 0, false
+	}
+	i, err1 := strconv.Atoi(a)
+	j, err2 := strconv.Atoi(c)
+	if err1 != nil || err2 != nil || i < 0 || j < 0 || i >= roles || j >= perms {
+		return 0, 0, false
+	}
+	return i, j, true
 }
 
 // handleAssign replaces a user's direct roles. A caller may assign only
