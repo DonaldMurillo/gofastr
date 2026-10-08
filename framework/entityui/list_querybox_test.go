@@ -25,11 +25,11 @@ func TestQueryBoxFiltersAndRoundTrips(t *testing.T) {
 	b := x.ui.List("orders").QueryBox()
 	html := listHTML(t, b, x.ctx("/orders", ""))
 	// The box is named the list's filter param, prefilled, labelled, and
-	// its help names the queryable fields — not the NoQuery memo.
+	// its reference names the queryable fields — not the NoQuery memo.
 	for _, want := range []string{
 		`name="filter"`,
 		"Filter",
-		"name, status, amount",
+		`>name</code> <code class="fui-code" data-cui-comp="ui-code">status</code> <code class="fui-code" data-cui-comp="ui-code">amount</code>`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the query box is missing %q:\n%s", want, html)
@@ -55,9 +55,9 @@ func TestQueryBoxFiltersAndRoundTrips(t *testing.T) {
 	}
 }
 
-// The box says how to write a filter: the operators, how to join and
-// quote, and an example built from the entity's own fields that the
-// parser accepts as written.
+// The box says how to write a filter: an example built from the
+// entity's own fields that the parser accepts as written, the operators
+// and the joining words, each as code.
 func TestQueryBoxExplainsSyntax(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},
@@ -68,8 +68,10 @@ func TestQueryBoxExplainsSyntax(t *testing.T) {
 	const example = `status = "open" and amount > 100`
 	for _, want := range []string{
 		`placeholder="` + example + `"`,
-		"Example: " + example,
-		"!=", ">=", "contains", "in [", "parentheses",
+		"Quote text",
+		">" + example + "</code>",
+		">!=</code>", ">>=</code>", ">contains</code>", ">in [a, b]</code>",
+		">and</code>", ">or</code>", ">( )</code>",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the query box help is missing %q:\n%s", want, page)

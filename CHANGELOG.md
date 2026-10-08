@@ -1128,10 +1128,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   menu, a trash view, saved views and tab counts.** They are off on app
   pages and on in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
   and parses it with the parser the chips use; a filter that does not
-  parse keeps the "filter did not apply" warning. Its help lists the
-  operators, gives an example from the entity's own fields
-  (`status = "open" and amount > 100`, also the placeholder) and names
-  the fields a filter may use. `ColumnsMenu()` shows
+  parse keeps the "filter did not apply" warning. A reference under
+  the box shows an example from the entity's own fields
+  (`status = "open" and amount > 100`, also the placeholder), the
+  operators, the joining words and the fields a filter may use. `ColumnsMenu()` shows
   and hides columns through the `cols` query param, a menu of checkbox
   rows that keep the filter and the sort, and the list reads only the
   columns it shows. `Deleted()` adds a Deleted tab

@@ -20,10 +20,10 @@ import (
 // starts on page one.
 
 // queryField draws the query box's field, prefilled with the active
-// filter text (an open saved view's included). Its help says how to
-// write one: the operators, how to quote and join, an example built
-// from the entity's own fields (the placeholder too), and the
-// queryable field names.
+// filter text (an open saved view's included), and under it a short
+// reference: an example built from the entity's own fields (the
+// placeholder too), the operators, the joining words and the queryable
+// field names, each as code.
 func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML {
 	if !b.queryBox {
 		return ""
@@ -38,22 +38,43 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 		queryable = append(queryable, f)
 		names = append(names, f.Name)
 	}
-	help := []string{i18nui.T(ctx, i18nui.KeyEntityQueryBoxHelp)}
 	example := queryExample(queryable)
+	var ref []ui.DetailItem
 	if example != "" {
-		help = append(help, i18nui.TVars(ctx, i18nui.KeyEntityQueryBoxExample, map[string]string{"example": example}))
+		ref = append(ref, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxExample), Value: ui.InlineCode(example)})
 	}
-	help = append(help, i18nui.TVars(ctx, i18nui.KeyEntityQueryBoxFields, map[string]string{
-		"fields": strings.Join(names, ", "),
-	}))
-	return ui.TextField(ui.TextFieldConfig{
-		Name:        s.p.filter,
-		ID:          "eui-" + listIDSafe(s.key, m.name) + "-filter",
-		Label:       i18nui.T(ctx, i18nui.KeyEntityQueryBoxField),
-		Value:       s.filterText,
-		Placeholder: example,
-		Help:        strings.Join(help, " "),
-	})
+	ref = append(ref,
+		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxOperators), Value: codeRun(queryOperators...)},
+		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxJoin), Value: codeRun("and", "or", "( )")},
+		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxFields), Value: codeRun(names...)},
+	)
+	return render.Join(
+		ui.TextField(ui.TextFieldConfig{
+			Name:        s.p.filter,
+			ID:          "eui-" + listIDSafe(s.key, m.name) + "-filter",
+			Label:       i18nui.T(ctx, i18nui.KeyEntityQueryBoxField),
+			Value:       s.filterText,
+			Placeholder: example,
+			Help:        i18nui.T(ctx, i18nui.KeyEntityQueryBoxHelp),
+		}),
+		ui.DetailList(ui.DetailListConfig{Items: ref}),
+	)
+}
+
+// queryOperators are the comparisons the filter parser takes.
+var queryOperators = []string{"=", "!=", "<", ">", "<=", ">=", "contains", "in [a, b]"}
+
+// codeRun is each text as inline code, separated by spaces so the run
+// wraps.
+func codeRun(texts ...string) render.HTML {
+	parts := make([]render.HTML, 0, 2*len(texts))
+	for i, t := range texts {
+		if i > 0 {
+			parts = append(parts, render.Text(" "))
+		}
+		parts = append(parts, ui.InlineCode(t))
+	}
+	return render.Join(parts...)
 }
 
 // queryExample is a filter the parser accepts, written from the
