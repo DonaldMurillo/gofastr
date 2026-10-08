@@ -50,7 +50,7 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS}
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS, bellJS}
 
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,
@@ -475,7 +475,8 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-cui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
+		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
 		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
@@ -513,7 +514,8 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-cui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
+		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
 		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
 			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
 		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
