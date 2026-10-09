@@ -1,10 +1,10 @@
 # Admin rebuild status
 
 As of 2026-10-09. The admin rebuild ships as five stacked PRs (gh stack #492).
-All five were green at the last check. The top PR (#495) has 56 commits on
+All five were green at the last check. The top PR (#495) has 59 commits on
 top of its pushed head (5b53d2af), plus this status update, that are not on its
-branch yet. They live
-on `wip/admin-shell-remote`, which has every gap from the last status closed.
+branch yet. They live on `wip/admin-shell-remote`, which has every gap from the
+last status closed.
 
 The approved design is the "D · Hybrid" prototype
 (https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL). A copy sits at
@@ -21,7 +21,7 @@ The PRs merge bottom up. Never rebase them; merge the base in instead.
 | #491 | P0: entity Display config, views, facets, boot validation | Open, green |
 | #493 | States: transitions, audit, overrides | Open, green |
 | #494 | entityui: lists, records, forms, bulk, saved views | Open, green |
-| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 56 commits waiting on `wip/admin-shell-remote` |
+| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 59 commits waiting on `wip/admin-shell-remote` |
 
 At the last check every PR passed its 17 checks, showed 0 unresolved review
 threads, and was not behind its base or main. CodeRabbit skipped #494 and #495
@@ -33,6 +33,9 @@ Review dispositions for #495 are in its issue comment 6044570777.
 
 Newest first, on top of 5b53d2af (merge commits left out):
 
+- 6a92d337 test(backoffice): the supplier field is a searchable picker
+- 82a088ac fix(meridian): the blueprint seeds the same payments as the app
+- 3a5564cf docs: the admin parity round is done; rewrite the status doc
 - dafa6476 feat(admin): the dashboard's primary New button
 - b879680f feat(meridian): a Revenue report and seeded payments
 - e1a21d37 feat(meridian): a Spanish catalog and a pseudo-locale overflow test
@@ -134,15 +137,27 @@ phone) on 2026-10-09.
 
 ## Known test failures
 
-These fail on this branch and on its base the same way; none comes from the
-admin work:
+`./scripts/test-all.sh` ran on 2026-10-09. Two failures came from this
+round and are fixed (82a088ac, 6a92d337). The rest fail on the round's
+starting commit too, or come from the container:
 
-- `framework` TestContractsFixAdmitsPartialWritesOnFailure and
-  `framework/migrate` TestGenFileRerunAfterSnapshotFail: they count on a
-  write being refused, and the container runs as root.
-- `core-ui/runtime` TestTransitionPickedByDestination times out here.
-- `core-ui/runtime` TestInterceptForwardAfterBackLoadsPage failed once in a
-  full run and passed alone.
+- `framework` TestContractsFixAdmitsPartialWritesOnFailure,
+  `cmd/gofastr` TestVerifyJSONFixFailureCarriesPartialWrites and
+  TestVerifyFixReportsPartialWritesOnFailure, `framework/migrate`
+  TestGenFileRerunAfterSnapshotFail and `core/upload`
+  TestDeleteExistsLeakNoAbsPath: each counts on a write being refused,
+  and the container runs as root.
+- `core/webbotauth` (four tests): a fetch to a made-up HTTPS host meets
+  the container's egress proxy.
+- `framework/ui` TestContentRowDenseOnFinePointer: the headless browser
+  here does not report a fine pointer.
+- `examples/webmcp-remote-assist` TestRemoteAssistFlow: the known Chrome
+  WebMCP `executeTool` change.
+- `internal/upgrade` and its `scan` packages failed only under
+  `GOTOOLCHAIN=go1.27.2`, which leaves the type-checker reading export
+  data from a newer compiler. They pass on the default toolchain.
+- `core-ui/runtime` TestTransitionPickedByDestination timed out alone
+  here and on the starting commit; it passed in the full run.
 
 ## Next steps
 
