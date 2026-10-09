@@ -130,6 +130,8 @@ const (
 	KeyFilterReset         Key = "ui.filterToolbar.reset"
 	KeyShortcutSheetTitle  Key = "ui.shortcutSheet.title"  // "Keyboard shortcuts"
 	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
+	KeyInlineEditSave      Key = "ui.inlineEdit.save"      // "Save"
+	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
 	// ColumnPicker's link names.
 	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
 	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
@@ -419,6 +421,8 @@ var Defaults = map[Key]string{
 	KeyFilterReset:         "Reset",
 	KeyShortcutSheetTitle:  "Keyboard shortcuts",
 	KeyTextAreaInvalidJSON: "Enter valid JSON",
+	KeyInlineEditSave:      "Save",
+	KeyInlineEditSaved:     "Saved",
 	KeyColumnShow:          "Show {column}",
 	KeyColumnHide:          "Hide {column}",
 	KeyColumnMoveUp:        "Move {column} earlier",
@@ -977,6 +981,10 @@ func AllKeys() []Key {
 		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
 		KeyThemeAuto, KeyThemeColorScheme,
 		KeyThemePicker, KeyThemeDefault,
+		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
+		KeyInlineEditSave, KeyInlineEditSaved,
+		KeyColumnShow, KeyColumnHide,
+		KeyColumnMoveUp, KeyColumnMoveDown,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
 		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,

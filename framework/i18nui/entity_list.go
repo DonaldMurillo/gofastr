@@ -28,6 +28,7 @@ const (
 	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
 	// The filter rows: the group, each row's three controls and the
 	// operators' names.
+	KeyEntityInlineEdit     Key = "ui.entity.inlineEdit"     // "Edit {field} of {title}"
 	KeyEntityLayout         Key = "ui.entity.layout"         // "Layout"
 	KeyEntityLayoutTable    Key = "ui.entity.layoutTable"    // "Table"
 	KeyEntityLayoutCards    Key = "ui.entity.layoutCards"    // "Cards"
@@ -104,6 +105,7 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
 	KeyEntityQueryBoxField:     "Filter expression",
+	KeyEntityInlineEdit:        "Edit {field} of {title}",
 	KeyEntityLayout:            "Layout",
 	KeyEntityLayoutTable:       "Table",
 	KeyEntityLayoutCards:       "Cards",

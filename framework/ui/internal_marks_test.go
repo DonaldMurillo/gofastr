@@ -754,6 +754,7 @@ var kitComponents = []kitComponent{
 	{name: "ColumnPicker", fn: ColumnPicker},
 	{name: "ShortcutList", fn: ShortcutList},
 	{name: "SegmentedLinks", fn: SegmentedLinks, required: []string{"Href", "Text"}},
+	{name: "InlineEdit", fn: InlineEdit, prep: prepSet("Action", "/a", "Return", "/r", "Label", "Edit"), required: []string{"Display", "Control"}},
 	{name: "FilterRows", fn: FilterRows},
 	{name: "Picker", fn: Picker},
 	{name: "PickerRows", fn: PickerRows},

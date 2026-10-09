@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Inline editing**: `ListBuilder.InlineEdit()` edits a table's plain
+  cells in place (new `ui.InlineEdit`, a popup one-field form that PUTs
+  over the runtime's form RPC and returns to the list), only for a
+  caller who may update the row and never on a value a read hook masks.
+  The admin turns it on.
 - `ListBuilder.LayoutSwitch()` draws a Table / Cards switch (new
   `ui.SegmentedLinks`) whose links set the list's `as` param; the admin
   turns it on.

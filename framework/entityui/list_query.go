@@ -60,6 +60,10 @@ type listState struct {
 	relBase map[string]string
 	// titles is each page row's title by id, set by pageTitles.
 	titles map[string]string
+	// rawRows is the page read without read hooks, by id: set only for
+	// a list with InlineEdit, which edits a value only where the hooked
+	// and the stored one agree.
+	rawRows map[string]map[string]any
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that

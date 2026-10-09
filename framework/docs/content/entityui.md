@@ -218,7 +218,12 @@ _, _ = list, record
 
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
-none), `As("cards")`, `LayoutSwitch()` (a Table / Cards switch in the
+none), `As("cards")`, `InlineEdit()` (a table's plain cells, an enum, a bool, a
+number, a date or a short string, are edited in place through
+`ui.InlineEdit`: the form PUTs the one field to the record's write route
+and returns to the list; only for a caller who may update the row, never
+on a value a read hook masks, the title link, a state field or a locked
+one), `LayoutSwitch()` (a Table / Cards switch in the
 toolbar, `ui.SegmentedLinks`, whose links set `<key>_as`; it then wins
 over `As` and the view's layout), `Where(field, value)` (pins a term inside the
 caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where

@@ -156,6 +156,16 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
 	b.ui.pageTitles(ctx, s, rows)
+	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
+		// The same page read without read hooks: an inline editor
+		// prefills only a value the hooks left as stored.
+		if raw, err := m.ch.ListAll(ctx, listOpts); err == nil {
+			s.rawRows = make(map[string]map[string]any, len(raw))
+			for _, r := range raw {
+				s.rawRows[cell(rowValue(r, m.pk))] = r
+			}
+		}
+	}
 
 	if b.embedded {
 		return b.embeddedBody(ctx, s, rows, total, known, page), nil

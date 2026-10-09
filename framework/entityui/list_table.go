@@ -48,9 +48,15 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		if lb != nil {
 			cells["_s"] = selectCell(ctx, s, lb, row, i)
 		}
+		editable := s.rawRows != nil && canUpdate(ctx, s.m, id)
 		for _, name := range s.columns {
 			f, _ := s.m.field(name)
 			cells[name] = b.ui.cellHTML(ctx, s, labels, f, row, name)
+			if editable && name != linkCol {
+				if ed := b.inlineEditor(ctx, s, f, row, cells[name], id, i); ed != "" {
+					cells[name] = ed
+				}
+			}
 			if name == linkCol && !noLinks {
 				cells[name] = ui.Link(ui.LinkConfig{
 					Href:    s.recordHref(id),
@@ -96,6 +102,49 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		}
 	}
 	return ui.DataTable(dt)
+}
+
+// inlineEditable is whether a cell of f may be edited in place: a plain
+// scalar the record form edits with one control, never a system,
+// locked, hidden or NoQuery column.
+func inlineEditable(m *meta, f schema.Field) bool {
+	if m.system(f) || m.locked(f) || f.Hidden || f.NoQuery {
+		return false
+	}
+	switch f.Type {
+	case schema.String, schema.Enum, schema.Bool, schema.Int, schema.Float, schema.Decimal, schema.Date:
+		return true
+	default:
+		// Text, JSON, files, relations, timestamps and UUIDs need the
+		// record form's larger controls.
+		return false
+	}
+}
+
+// inlineEditor wraps a cell in a ui.InlineEdit whose form PUTs the one
+// field to the record's write route and returns to this URL. It draws
+// nothing for a field it may not edit, or whose hooked value differs
+// from the stored one (a mask).
+func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.Field, row map[string]any, display render.HTML, id string, i int) render.HTML {
+	if !inlineEditable(s.m, f) || display == "" {
+		return ""
+	}
+	raw, ok := s.rawRows[id]
+	if !ok || cell(rowValue(raw, f.Name)) != cell(rowValue(row, f.Name)) {
+		return ""
+	}
+	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw}
+	label := s.m.label(ctx, f.Name)
+	control := fb.typedInput(ctx, f, label, "", "eui-ie-"+listIDSafe(s.key, s.m.name)+"-"+strconv.Itoa(i)+"-"+f.Name)
+	return ui.InlineEdit(ui.InlineEditConfig{
+		Display: display,
+		Label:   i18nui.TVars(ctx, i18nui.KeyEntityInlineEdit, map[string]string{"field": label, "title": s.rowTitle(ctx, row)}),
+		Control: control,
+		Action:  s.m.api + "/" + url.PathEscape(id),
+		Return:  listHref(s.path, s.q),
+		Saved:   i18nui.T(ctx, i18nui.KeyEntitySaved),
+		Ctx:     ctx,
+	})
 }
 
 // pagerQuery carries everything a page turn must not drop: the search,

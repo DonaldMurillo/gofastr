@@ -40,7 +40,9 @@ type ListBuilder struct {
 	top      bool
 	// layoutSwitch draws the Table / Cards switch and reads the as param.
 	layoutSwitch bool
-	actions      []render.HTML
+	// inlineEdit edits plain table cells in place.
+	inlineEdit bool
+	actions    []render.HTML
 }
 
 type listWhere struct {
@@ -68,6 +70,13 @@ func (b *ListBuilder) View(key string) *ListBuilder { b.view = key; return b }
 
 // As draws rows as "table" or "cards".
 func (b *ListBuilder) As(presentation string) *ListBuilder { b.as = presentation; return b }
+
+// InlineEdit edits a table's plain cells where they are shown (ui.InlineEdit):
+// an enum, a bool, a number, a date or a short string the caller may
+// update and no read hook masks. Saving PUTs the one field to the
+// record's write route and returns to the list. The title link, long
+// text, relations, files, JSON and NoQuery fields are left as they are.
+func (b *ListBuilder) InlineEdit() *ListBuilder { b.inlineEdit = true; return b }
 
 // LayoutSwitch draws a Table / Cards switch in the toolbar. Its links set
 // the list's as param (<key>_as), which then wins over As and the view's
