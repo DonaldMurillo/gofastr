@@ -242,3 +242,20 @@ func TestEntityCountReadsAndFormats(t *testing.T) {
 		t.Errorf("countText(—) = %q", got)
 	}
 }
+
+// A count that misses its deadline is not "—" when a bounded read of the
+// rows answers: the card shows that many, or "10k+" past the cap, still
+// in the caller's scope.
+func TestCountFallsBackToBoundedRead(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig().WithTimestamps(true)}, Config{Entities: []string{"posts"}}, nil)
+	for _, id := range []string{"p1", "p2", "p3"} {
+		x.insert("posts", map[string]any{"id": id, "title": id, "status": "draft"})
+	}
+	prev := countDeadline
+	countDeadline = 0 // the exact count cannot finish
+	t.Cleanup(func() { countDeadline = prev })
+	body := get(x.as(theAdmin), "/admin/_count/posts").Body.String()
+	if !strings.Contains(body, ">3<") {
+		t.Fatalf("a late count did not fall back to the bounded read:\n%s", body)
+	}
+}

@@ -132,6 +132,32 @@ func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool)
 	return formatNumber(float64(n), 0), true
 }
 
+// CountUpTo counts the records the caller can read that match where, up
+// to limit: a read of at most limit+1 ids, under the same gates and
+// scope as Count, for when an exact count is too slow. more reports
+// that there are more than limit; ok is false when the read is refused
+// or fails.
+func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int) (n int, more, ok bool) {
+	if limit < 1 {
+		return 0, false, false
+	}
+	m, opts, ok := u.statRead(ctx, entityName, where)
+	if !ok {
+		return 0, false, false
+	}
+	opts.Fields = []string{m.pk}
+	opts.Limit = limit + 1
+	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), opts)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: bounded count", "entity", entityName, "error", err)
+		return 0, false, false
+	}
+	if len(rows) > limit {
+		return limit, true, true
+	}
+	return len(rows), false, true
+}
+
 // LastUpdated is when the newest record the caller can read was last
 // written: the greatest updated_at in the caller's scope, read through
 // the entity's read hooks. It reports false when the entity has no

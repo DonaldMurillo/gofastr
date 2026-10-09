@@ -108,7 +108,7 @@ its own routes:
 | `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
 | `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
-| `GET /admin/_count/<name>` | A dashboard count card (polled) |
+| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
 
 Every write goes through the app's own CRUD handler, so validation,
 hooks, events, `WithAuditLog` rows, tenant and `OwnerField` scope, and

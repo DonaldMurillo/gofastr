@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- A dashboard count that misses its deadline falls back to a bounded
+  read (`entityui.UI.CountUpTo`, at most 10,000 ids in the caller's
+  scope) instead of drawing "—".
 - An entity record's menu offers Create another (with `Duplicate()`)
   and Copy API URL, the record's REST address on this origin.
 - **Keyboard help**: `ui.ShortcutSheet` is a modal listing an app's

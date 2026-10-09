@@ -25,7 +25,12 @@ const dashboardRows = 5
 
 // countDeadline bounds one card's count, so a slow table cannot hold the
 // dashboard; a count past it reads "—" until the next poll.
-const countDeadline = 2 * time.Second
+var countDeadline = 2 * time.Second
+
+// probeDeadline bounds the read a card falls back to when its count is
+// late: at most manyRows ids, which a slow COUNT(*) on a large table
+// usually is not.
+const probeDeadline = time.Second
 
 // renderDashboard draws the dashboard.
 func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) render.HTML {
@@ -99,6 +104,23 @@ func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML 
 	}}, b.entityStat(ctx, e))
 }
 
+// probeCount is a late count's fallback: a bounded read of at most
+// manyRows ids in the caller's scope, its own deadline apart from the
+// one the count spent. It reads the number when there are fewer, "10k+"
+// past it, and "—" when the read fails too.
+func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
+	pctx, cancel := context.WithTimeout(ctx, probeDeadline)
+	defer cancel()
+	n, more, ok := b.ui.CountUpTo(pctx, e.GetName(), "", manyRows)
+	switch {
+	case !ok:
+		return "—"
+	case more:
+		return countText(ctx, strconv.Itoa(manyRows))
+	}
+	return countText(ctx, strconv.Itoa(n))
+}
+
 // entityStat is the card itself: the plural, the count read in the
 // caller's scope, when the newest of those records was written, a link
 // to the list and, when the caller may create one, New.
@@ -106,6 +128,9 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
 	count := countText(ctx, b.ui.StatValue(cctx, e.GetName(), "count", "", "", ""))
+	if count == "—" {
+		count = b.probeCount(ctx, e)
+	}
 	updated := ""
 	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
 		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ui.Ago(ctx, time.Now(), t)})

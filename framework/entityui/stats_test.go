@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"slices"
 	"testing"
 
@@ -173,5 +174,24 @@ func TestStatGroupsOrderAndCap(t *testing.T) {
 	seedInvoiceRows(t, x, "g", statGroupCap, "1")
 	if bars := x.ui.GroupBars(ctx, "invoices", "number"); len(bars) != 0 {
 		t.Fatalf("a field with %d+ values drew %d bars, want none", statGroupCap, len(bars))
+	}
+}
+
+// CountUpTo reads at most limit+1 ids: the number under the cap, the cap
+// and more past it, in the caller's scope like Count.
+func TestCountUpTo(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	ctx := x.ctx("/", "")
+	if n, more, ok := x.ui.CountUpTo(ctx, "orders", "", 5); !ok || more || n != 2 {
+		t.Errorf("CountUpTo(5) = %d, %v, %v", n, more, ok)
+	}
+	if n, more, ok := x.ui.CountUpTo(ctx, "orders", "", 1); !ok || !more || n != 1 {
+		t.Errorf("CountUpTo(1) = %d, %v, %v", n, more, ok)
+	}
+	if _, _, ok := x.ui.CountUpTo(ctx, "nope", "", 5); ok {
+		t.Errorf("an unknown entity counted")
 	}
 }
