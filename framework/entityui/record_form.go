@@ -717,13 +717,17 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Relation:
 		return fb.relationPicker(ctx, f, label, help, id, val)
-	case schema.Image:
-		// The stored URL stays editable; a preview sits above it.
+	case schema.Image, schema.File:
+		if fb.m.uploads() {
+			return fb.uploadInput(ctx, f, label, help, id, val, required)
+		}
+		// Without storage the stored URL stays editable; a preview sits
+		// above it.
 		field := ui.TextField(ui.TextFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required,
 		})
-		if t := ui.Thumbnail(ui.ThumbnailConfig{Src: val, Alt: label, Size: ui.ThumbnailLG}); t != "" {
+		if t := fb.b.ui.fileValue(f, label, val, ui.ThumbnailLG); t != "" {
 			return ui.Stack(ui.StackConfig{Gap: ui.GapSM}, t, field)
 		}
 		return field

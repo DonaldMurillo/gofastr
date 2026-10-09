@@ -154,10 +154,22 @@ config. (JSON requests are reverse-cased; multipart is not.)
 | `schema.Image`  | multipart file part | `TEXT` URL    |
 | `schema.File`   | multipart file part | `TEXT` URL    |
 
-The two differ in two ways: the UI host emits an image-aware widget for
-`Image` fields, and only `Image` fields run the image pipeline described
-below. A `File` field is any binary, a PDF or a CSV, so decoding it as an
-image would fail every upload.
+The two differ in three ways: the UI host emits an image-aware widget for
+`Image` fields, only `Image` fields run the image pipeline described
+below, and an `Image` field takes only a raster image (PNG, JPEG, GIF or
+WebP, sniffed from the bytes; anything else answers 400 and nothing is
+stored). A `File` field is any binary, a PDF or a CSV, so decoding it as
+an image would fail every upload. `file.AllowTypes(mimes...)` is the
+same check for your own `ProcessFileField` calls; `file.ImageTypes` is
+the image list. In a multipart body a `Decimal` field stays the decimal
+string, as on the JSON path.
+
+Entity screens (`framework/entityui`, and so the admin) draw an `Image`
+or `File` field as an upload when the app has file storage: the stored
+file (a thumbnail, or a link named by its file name) above a file input.
+Leaving the input empty keeps the stored file. Set
+`entityui.Extensions.FilesURL` to the path you serve stored files under
+(below), so the screens can draw a stored key.
 
 ## Automatic renditions and placeholders
 
@@ -389,6 +401,9 @@ uploading their own avatar or a cover image) and needs no queue.
 
 Uploads are bounded and content-checked before anything is stored:
 
+- **Type** is checked for `Image` fields (above) and wherever
+  `file.AllowTypes` is passed, from the sniffed type before the filename
+  fallback, so an unknown blob named `logo.png` is not an image.
 - **Size** is capped at `file.MaxProcessFileSize` (32 MiB), and the
   multipart parser buffers at most `crud.MaxMultipartMemory` (32 MiB) in
   memory before spilling to a temp file. An oversize body returns

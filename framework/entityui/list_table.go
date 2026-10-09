@@ -263,10 +263,10 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		return render.Text(formatDate(rowValue(row, name), dateLayout))
 	case schema.Timestamp:
 		return render.Text(formatDate(rowValue(row, name), timestampLayout))
-	case schema.Image:
-		// A URL the image policy refuses draws the empty mark, never
-		// the stored text.
-		if t := ui.Thumbnail(ui.ThumbnailConfig{Src: val, Alt: m.label(ctx, name), Size: ui.ThumbnailSM}); t != "" {
+	case schema.Image, schema.File:
+		// A value with no safe address draws the empty mark, never the
+		// stored text.
+		if t := u.fileValue(f, m.label(ctx, name), val, ui.ThumbnailSM); t != "" {
 			return t
 		}
 		return muted()

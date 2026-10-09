@@ -8,6 +8,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Uploads on entity screens**: with file storage on the app, an
+  `Image` or `File` field on an entity form (and so the admin) is a
+  `ui.FileUpload` beside the stored file, and the save posts multipart.
+  `entityui.Extensions.FilesURL` names where stored files are served.
+  An `Image` field now takes only PNG, JPEG, GIF or WebP, sniffed from
+  the bytes (`file.AllowTypes`, `file.ImageTypes`,
+  `file.ErrFileFieldType`). The runtime's multipart body folds a bool's
+  hidden-false pair and sends no part for an empty file input. Meridian
+  customers have a logo, served to signed-in accounts at `/files/`.
 - **Queue history**: a job `DBQueue.ListJobs` returns carries `Status`,
   `UpdatedAt` and `LastError` (the worker keeps the error its last
   failed attempt returned, scrubbed and cut to 500 runes), and
@@ -1642,6 +1651,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- A multipart create or update stored a `Decimal` field as a float,
+  which the decimal validator refused; it is the decimal string now.
 - **An empty `ui.DataTable` keeps its empty state in view on a phone.**
   The empty state sat in a cell spanning the head, so when the columns
   outgrew a narrow screen it scrolled sideways with them and its text

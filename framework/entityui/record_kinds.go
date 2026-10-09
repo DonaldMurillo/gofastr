@@ -130,6 +130,11 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		}
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)
+	case schema.Image, schema.File:
+		if t := fb.b.ui.fileValue(f, fb.m.label(ctx, f.Name), cell(v), ui.ThumbnailMD); t != "" {
+			return t
+		}
+		return muted()
 	case schema.JSON:
 		if s := cell(v); s != "" {
 			return ui.JSONViewer(ui.JSONViewerConfig{Value: s, OpenDepth: 1})

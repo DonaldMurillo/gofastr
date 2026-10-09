@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/upload"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -67,6 +68,7 @@ type testHost struct {
 	apis  map[string]string
 	tr    *i18n.Translator
 	audit AuditReader
+	store upload.Storage
 }
 
 func (h *testHost) Registry() entity.Registry { return h.reg }
@@ -76,6 +78,7 @@ func (h *testHost) Crud(e *entity.Entity) (*crud.CrudHandler, error) {
 		return ch, nil
 	}
 	ch := crud.NewCrudHandler(e, h.db).WithJSONCase(crud.CaseSnake)
+	ch.Storage = h.store
 	h.cruds[e.GetName()] = ch
 	return ch, nil
 }
@@ -107,6 +110,12 @@ func withAPI(paths map[string]string) testUIOption {
 			x.host.apis[k] = v
 		}
 	}
+}
+
+// withStorage gives every CRUD handler a file store, as
+// framework.WithFileStorage does.
+func withStorage(st upload.Storage) testUIOption {
+	return func(x *testUI) { x.host.store = st }
 }
 
 // withTranslator installs a catalog-backed translator.

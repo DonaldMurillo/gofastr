@@ -106,6 +106,14 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   no-store, refused cross-site, and gated by the host entity's read and
   the related entity's read and per-row Decider. `App.EntityUI` and the
   admin mount it beside `_bulk`.
+  An `Image` or `File` field is an upload when the app has file storage
+  (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
+  named by its file name) above a `ui.FileUpload` of the types the field
+  takes; the form then posts multipart, and an empty input keeps the
+  stored file. Without storage the stored URL stays an editable text
+  box. A stored key draws at `Extensions.FilesURL` + key (each segment
+  escaped; a key with `..` or a scheme other than http(s) draws
+  nothing).
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills

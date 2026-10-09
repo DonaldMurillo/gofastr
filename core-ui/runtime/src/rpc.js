@@ -204,6 +204,22 @@
         const qs = params.toString();
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
       } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
+        // Multipart keeps the JSON body's shape: a hidden-false +
+        // checkbox pair is one value, the last, and a file input left
+        // empty sends no part, so a save that picks no new file keeps
+        // the stored one rather than clearing it.
+        for (const k of Array.from(new Set(fd.keys()))) {
+          const v = fd.getAll(k);
+          if (v.length > 1 && _hiddenCheckboxPair(formSource, k)) {
+            fd.set(k, v[v.length - 1]);
+            continue;
+          }
+          const kept = v.filter((x) => !(typeof File !== 'undefined' && x instanceof File && x.size === 0 && x.name === ''));
+          if (kept.length !== v.length) {
+            fd.delete(k);
+            for (const x of kept) fd.append(k, x);
+          }
+        }
         body = fd;
         bodyIsFormData = true;
       } else {

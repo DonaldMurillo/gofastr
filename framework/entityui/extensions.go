@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -31,6 +32,13 @@ type Extensions struct {
 	// A queued run needs the Host to keep snapshots (BulkHost); New
 	// refuses Jobs on a Host that does not.
 	Jobs JobRunner
+	// FilesURL is the same-origin path the app serves stored files
+	// under ("/uploads/" for upload.ServeHandler on /uploads/{key...}).
+	// A relative Image or File value is a storage key: the screens draw
+	// it at FilesURL + key, and draw nothing for one when FilesURL is
+	// empty. With file storage set on the app (framework.WithFileStorage),
+	// forms draw Image and File fields as uploads.
+	FilesURL string
 }
 
 // Kind draws one field kind: Input on forms, Cell in list cells and cards,
@@ -311,6 +319,9 @@ type BulkHost interface {
 
 // check is New's name check. See New for the refusals.
 func (x Extensions) check(reg entity.Registry) error {
+	if x.FilesURL != "" && (!strings.HasPrefix(x.FilesURL, "/") || strings.HasPrefix(x.FilesURL, "//") || !strings.HasSuffix(x.FilesURL, "/")) {
+		return fmt.Errorf("entityui: FilesURL %q must be a same-origin path that starts and ends with /", x.FilesURL)
+	}
 	for _, name := range slices.Sorted(maps.Keys(x.Kinds)) {
 		k := x.Kinds[name]
 		if !entity.ValidKey(name) {
@@ -455,7 +466,7 @@ func (x Extension) check(e *entity.Entity) error {
 // clone copies the maps and slices New keeps, so the caller changing its
 // value later changes nothing New checked.
 func (x Extensions) clone() Extensions {
-	out := Extensions{Jobs: x.Jobs, Kinds: maps.Clone(x.Kinds), Entities: map[string]Extension{}}
+	out := Extensions{Jobs: x.Jobs, FilesURL: x.FilesURL, Kinds: maps.Clone(x.Kinds), Entities: map[string]Extension{}}
 	for k, v := range x.Entities {
 		v.Views = maps.Clone(v.Views)
 		v.Tabs = slices.Clone(v.Tabs)

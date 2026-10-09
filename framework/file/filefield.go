@@ -28,6 +28,7 @@ var (
 	ErrFileFieldTooLarge      = errors.New("filefield: file exceeds maximum size")
 	ErrFileFieldUnsafeContent = errors.New("filefield: file content is unsafe by default")
 	ErrFileFieldControlBytes  = errors.New("filefield: field contains control bytes")
+	ErrFileFieldType          = errors.New("filefield: file type is not allowed here")
 )
 
 // MaxFileFieldStringBytes caps the length of any FileField string field,
@@ -325,6 +326,11 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 
 	// Detect MIME type from content
 	mimeType := http.DetectContentType(data)
+	// The allow list reads the sniffed type, before the filename
+	// fallback below can name an unknown blob "image/png".
+	if cfg.allow != nil && !slices.Contains(cfg.allow, mimeBase(mimeType)) {
+		return nil, fmt.Errorf("%w: %s", ErrFileFieldType, mimeBase(mimeType))
+	}
 	if mimeType == "application/octet-stream" {
 		// Try to detect from filename extension
 		if detected := detectMIMEFromName(filename); detected != "" {
@@ -496,6 +502,15 @@ func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 //     binary. They genuinely appear in EXIF/XMP/comment metadata of real
 //     images and in PDF/font streams, so a whole-body scan would reject
 //     legitimate uploads.
+// mimeBase is a sniffed type without its parameters: "text/plain;
+// charset=utf-8" is "text/plain".
+func mimeBase(t string) string {
+	if i := strings.IndexByte(t, ';'); i >= 0 {
+		t = t[:i]
+	}
+	return strings.TrimSpace(t)
+}
+
 func rejectUnsafeContent(data []byte) error {
 	head := data
 	if len(head) > 512 {

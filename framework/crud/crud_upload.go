@@ -318,6 +318,8 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	// Only Image fields get the pipeline. A File field is any binary, a
 	// PDF, a CSV, and decoding it as an image would fail every upload.
 	if fieldType == schema.Image {
+		// An image field takes a raster image, sniffed from its bytes.
+		opts = append(opts, file.AllowTypes(file.ImageTypes...))
 		if d := ch.deriverFor(key); d != nil {
 			opts = append(opts, file.WithImageDeriver(d))
 		}
@@ -407,7 +409,11 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 			if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
 				return n
 			}
-		case schema.Float, schema.Decimal:
+		case schema.Decimal:
+			// A decimal is the exact string the JSON path takes; a float
+			// would round it, and the decimal validator refuses one.
+			return raw
+		case schema.Float:
 			// Reject NaN/Inf so a form value like "NaN" cannot land in a
 			// numeric column; the raw string then fails schema validation.
 			if n, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {

@@ -350,6 +350,7 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	Logo    string `json:"logo,omitempty"`
 }
 
 type CustomersInput struct {
@@ -358,6 +359,7 @@ type CustomersInput struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	Logo    string `json:"logo,omitempty"`
 }
 
 type CustomersPatch struct {
@@ -366,6 +368,7 @@ type CustomersPatch struct {
 	Company *string `json:"company,omitempty"`
 	Status  *string `json:"status,omitempty"`
 	Mrr     *string `json:"mrr,omitempty"`
+	Logo    *string `json:"logo,omitempty"`
 }
 
 type CustomersListResponse struct {
@@ -440,6 +443,7 @@ type CustomersBatchPatch struct {
 	Company *string `json:"company,omitempty"`
 	Status  *string `json:"status,omitempty"`
 	Mrr     *string `json:"mrr,omitempty"`
+	Logo    *string `json:"logo,omitempty"`
 }
 
 // BatchCreateCustomers creates up to 100 records atomically (one transaction).

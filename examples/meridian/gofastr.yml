@@ -163,6 +163,8 @@ entities:
         type: decimal
         min: 0
         default: "0"
+      - name: logo
+        type: image
     display:
       title_fields: [name]
       description: Every account that pays you.

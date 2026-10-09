@@ -61,7 +61,7 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
@@ -97,7 +97,9 @@ func main() {
 	// The queue first: its bulk runner joins the entity UI's extensions,
 	// which RegisterGenerated builds the UI from.
 	setupQueue(fwApp, db)
+	appExtensions.FilesURL = filesURL
 	RegisterGenerated(fwApp, site, db)
+	mountFiles(fwApp)
 	// SEO surface: sitewide description/OG defaults (per-screen values
 	// override, see screen_home.go / screen_pricing.go), a sitemap of the
 	// marketing pages only, and a robots.txt that keeps the authed app,

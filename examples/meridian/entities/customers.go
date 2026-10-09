@@ -15,6 +15,7 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	Logo    string `json:"logo,omitempty"`
 	UserId  string `json:"userId,omitempty"`
 }
 
@@ -27,6 +28,7 @@ var (
 	CustomersCompany = framework.NewStringColumn("company")
 	CustomersStatus  = framework.NewStringColumn("status")
 	CustomersMrr     = framework.NewFloatColumn("mrr")
+	CustomersLogo    = framework.NewStringColumn("logo")
 	CustomersUserId  = framework.NewStringColumn("user_id")
 )
 
@@ -233,6 +235,7 @@ func registerCustomers(app *framework.App) {
 			{Name: "company", Type: schema.String, Max: floatPtr(120)},
 			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
 			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
+			{Name: "logo", Type: schema.Image},
 			{Name: "user_id", Type: schema.String, Hidden: true},
 		},
 		Scope: &framework.ScopeConfig{
