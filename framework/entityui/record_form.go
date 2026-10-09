@@ -202,6 +202,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		if d := fb.details(ctx); d != "" {
 			side = append(side, d)
 		}
+		side = append(side, fb.sidePanels(ctx)...)
 	}
 	var body render.HTML
 	if len(side) > 0 {
@@ -313,6 +314,37 @@ type formBuilder struct {
 // button belong to.
 func (fb *formBuilder) replaceFormID(field string) string {
 	return "eui-" + fb.m.name + "-replace-" + field
+}
+
+// sidePanels draws the entity's extension side panels, each built as
+// the caller from the record the read hooks left, each failing alone.
+func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
+	m := fb.m
+	row := fb.displayRow
+	if row == nil {
+		row = fb.row
+	}
+	rec := Record{ID: fb.b.id, Values: row}
+	var out []render.HTML
+	for _, p := range m.ext.Side {
+		body := contain(ctx, m.name, "side "+p.Key, func() (render.HTML, error) {
+			cctx := asCaller(ctx)
+			c, err := p.Build(RecordContext{Ctx: cctx, UI: fb.b.ui, Entity: m.name, Record: rec})
+			if err != nil {
+				return "", err
+			}
+			if c == nil {
+				return "", fmt.Errorf("side panel body is nil")
+			}
+			return renderComponent(cctx, c), nil
+		})
+		title := p.Title
+		if title == "" {
+			title = p.Key
+		}
+		out = append(out, ui.Section(ui.SectionConfig{ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
+	}
+	return out
 }
 
 // walk resolves the form layout: Main and Side children. A field the

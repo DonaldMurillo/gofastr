@@ -99,6 +99,31 @@ func TestTabBuildIsNotElevated(t *testing.T) {
 	}
 }
 
+// A record side panel's Build runs as the caller, and so does the render
+// of the component it returns.
+func TestSidePanelBuildIsNotElevated(t *testing.T) {
+	titled, ran := true, false
+	var drawn, drawTitled bool
+	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Side: []SidePanel{{
+		Key: "peek", Title: "Peek",
+		Build: func(rc RecordContext) (component.Component, error) {
+			ran = true
+			_, titled = rc.UI.RecordTitle(rc.Ctx, "invoices", "inv-1")
+			return peek{rc.UI, &drawn, &drawTitled}, nil
+		},
+	}}}}})
+	x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(elevatedClerk(x, policy, "/rec/invoices/inv-1", ""))
+	if !ran || !drawn {
+		t.Fatal("setup: the elevated record never drew the side panel")
+	}
+	if titled {
+		t.Fatal("SECURITY: a side panel read a record title its caller's roles cannot read")
+	}
+	if drawTitled {
+		t.Fatal("SECURITY: a side panel's component drew with the back office's elevation")
+	}
+}
+
 // A replaced record body and a replaced list body draw as the caller.
 func TestReplacedBodiesAreNotElevated(t *testing.T) {
 	var recDrawn, recTitled, listDrawn, listTitled bool

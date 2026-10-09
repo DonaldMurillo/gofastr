@@ -86,6 +86,9 @@ type Extension struct {
 	Views map[string]ViewFunc
 	// Tabs are record tabs drawn after the built-in ones.
 	Tabs []Tab
+	// Side are panels in the record's side column on the Edit tab,
+	// after the record's details. A create form draws none.
+	Side []SidePanel
 	// Actions are record header buttons and, with Bulk, list bulk actions.
 	Actions []Action
 	// List and Record replace the body of the entity's list or record
@@ -117,6 +120,17 @@ type Tab struct {
 	Key   string
 	Label string
 	Build func(TabContext) (component.Component, error)
+}
+
+// SidePanel is a panel in a record's side column: Title heads it and
+// Build draws its body, as the caller. The column sits inside the
+// record's form, so a panel is read-only or gives its own controls a
+// form attribute naming a form outside it. A panicking or erroring
+// panel fails that panel alone.
+type SidePanel struct {
+	Key   string
+	Title string
+	Build func(RecordContext) (component.Component, error)
 }
 
 // Record is the record a tab, action or replaced screen is drawn for, as
@@ -446,6 +460,18 @@ func (x Extension) check(e *entity.Entity) error {
 		seen[t.Key] = true
 	}
 	seen = map[string]bool{}
+	for _, p := range x.Side {
+		switch {
+		case !entity.ValidKey(p.Key):
+			return fmt.Errorf("entityui: entity %q: side panel key %q is not a key", name, p.Key)
+		case seen[p.Key]:
+			return fmt.Errorf("entityui: entity %q: duplicate side panel %q", name, p.Key)
+		case p.Build == nil:
+			return fmt.Errorf("entityui: entity %q: side panel %q has no Build", name, p.Key)
+		}
+		seen[p.Key] = true
+	}
+	seen = map[string]bool{}
 	for _, a := range x.Actions {
 		_, knownVariant := ui.ParseButtonVariant(string(a.Variant))
 		switch {
@@ -470,6 +496,7 @@ func (x Extensions) clone() Extensions {
 	for k, v := range x.Entities {
 		v.Views = maps.Clone(v.Views)
 		v.Tabs = slices.Clone(v.Tabs)
+		v.Side = slices.Clone(v.Side)
 		v.Actions = slices.Clone(v.Actions)
 		out.Entities[k] = v
 	}

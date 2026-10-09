@@ -370,6 +370,14 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   func registered for a key no view declares.
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
+- **Side** adds panels to the record's side column on the Edit tab,
+  after the record's details, each a compact section headed by its
+  `Title`. `Build` gets the record as the read hooks left it and runs
+  as the caller, inside a recover: a panicking or erroring panel fails
+  that panel alone. A create form draws none. The column sits inside the
+  record's form, so a panel is read-only or gives its own controls a
+  `form` attribute naming a form outside it. `New` refuses a panel whose
+  key is not a key, a duplicate key, or a nil `Build`.
 - **Actions** add record header buttons and, with `Bulk`, list bulk
   actions. A record button posts to the entity's `_bulk` route with scope
   `record` and the one id, so it runs through the same re-read, gates and

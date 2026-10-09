@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `entityui.Extension.Side` adds panels (`SidePanel`: Key, Title,
+  Build) to a record's side column, after its details, each built as
+  the caller and failing alone.
 - `ui.DateTimeField`: a labelled native date-and-time field
   (`datetime-local`) with min/max bounds and a step in seconds, the
   peer of `ui.DateField` and `ui.TimePicker`. Entity forms draw
