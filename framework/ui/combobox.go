@@ -128,6 +128,10 @@ func comboboxCSS(_ style.Theme) string {
   inline-size: 100%;
   max-inline-size: var(--ui-combobox-max-width, 24rem);
 }
+/* The fill variant takes its field's width: a Picker in a form. */
+:where([data-cui-comp="ui-combobox"]).fui-combobox--fill {
+  max-inline-size: none;
+}
 [data-cui-comp="ui-combobox"] .fui-combobox__label {
   display: block;
   margin-block-end: var(--spacing-sm, 4px);
@@ -186,7 +190,7 @@ func comboboxCSS(_ style.Theme) string {
      attribute over theirs. */
   display: none;
 }
-[data-cui-comp="ui-combobox"] .fui-combobox__option {
+:where([data-cui-comp="ui-combobox"]) .fui-combobox__option {
   display: block;
   padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 6px);
@@ -203,7 +207,7 @@ func comboboxCSS(_ style.Theme) string {
   cursor: default;
 }
 @media (pointer: coarse) {
-  [data-cui-comp="ui-combobox"] .fui-combobox__option {
+  :where([data-cui-comp="ui-combobox"]) .fui-combobox__option {
     min-block-size: var(--spacing-touch-target, 44px);
     display: flex;
     align-items: center;

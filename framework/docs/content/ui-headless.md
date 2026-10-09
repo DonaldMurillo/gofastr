@@ -367,7 +367,13 @@ The parts the navigation members draw beyond the shared vocabulary:
   `carousel-prev`, `carousel-next`.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
-  `combobox-status`.
+  `combobox-status`. `Pick` makes it a picker inside a host form: a
+  hidden input (`data-hui-combobox-value`) submits the picked option's
+  `Value`, the search input names a form that does not exist so the
+  host form never submits the query, `Options` are the first rows of
+  the island listbox, and `NoScriptAction` is refused (its form would
+  nest). `Control` hands the input to a host `Field`, whose label and
+  description name it. `ComboboxRows` renders an island answer's rows.
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,

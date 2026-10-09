@@ -111,6 +111,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 ### Selection & input composition
 
 - **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
+- **picker**: `framework/ui.Picker`, a form field that picks one record out of many: a search input over a server-searched listbox (`headless.Combobox` in Pick mode) and a hidden input that submits the picked `Value`. The search input is detached from the host form (its `form` attribute names no form), so only the value submits. `Endpoint` answers each search, a POST of `{"q": …}`, with `ui.PickerRows(id, options, more)`; `Options` are the first rows shown on focus and `More` a note row after them ("Showing 20 of 312"). Focus selects the shown label so typing searches afresh; typed text that was never picked goes back to the picked label on blur, and an emptied input clears the value. `Action` sits after the input (an open or a New button). `headless.ComboboxRows` renders the rows for any island combobox answer.
 - **commandpalette**: `framework/ui.CommandPalette`, ⌘K modal + combobox composition
 - **globalsearch**: `framework/ui.GlobalSearch`, sticky inline `/`-shortcut search bar
 - **dropzone**: `framework/ui.FileDropzone`, hero file-drop surface with image previews

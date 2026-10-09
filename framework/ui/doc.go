@@ -113,6 +113,7 @@
 //	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage:        multi-format <picture> consuming framework/image
+//	Picker:               form field picking one record from a server-searched list
 //	                       VariantSet output (typed sources + a stacked
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing

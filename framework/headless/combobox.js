@@ -95,8 +95,39 @@
     catch (_) { return false; }
   }
 
+  // A picker's hidden value input, or null for a search combobox.
+  function pickValueOf(input) {
+    const root = input.closest('[data-hui-combobox-pick]');
+    return root && root.querySelector('[data-hui-combobox-value]');
+  }
+
+  // The label a picker last committed: what the input showed when the
+  // page drew it, then each pick. Typing that is not a pick goes back
+  // to it on blur; clearing the input clears the value.
+  const committed = new WeakMap();
+  function committedLabel(input) {
+    return committed.has(input) ? committed.get(input) : input.defaultValue;
+  }
+
+  function setPicked(input, hidden, value, label) {
+    committed.set(input, label);
+    input.value = label;
+    if (hidden.value === value) return;
+    hidden.value = value;
+    // The host form hears the edit (its leave guard, its watchers).
+    hidden.dispatchEvent(new Event('input', { bubbles: true }));
+    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function pickOption(input, lb, opt) {
     if (!opt) return;
+    const hidden = pickValueOf(input);
+    if (hidden) {
+      setPicked(input, hidden, opt.getAttribute('data-value') || '',
+        opt.getAttribute('data-label') || (opt.textContent || '').trim());
+      closeListbox(input, lb);
+      return;
+    }
     const val = opt.getAttribute('data-value') || (opt.textContent || '').trim();
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -201,9 +232,24 @@
   document.addEventListener('focusin', function (e) {
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input) return;
+    // A picker selects its label on focus: typing searches afresh
+    // rather than appending to the picked name.
+    if (pickValueOf(input) && input.select) input.select();
     const lbId = input.getAttribute('aria-controls');
     const lb = lbId ? document.getElementById(lbId) : null;
     if (lb && lb.querySelector('[role="option"]')) openListbox(input, lb);
+  });
+
+  // A picker's input leaving focus keeps the value it shows: typed
+  // text that was never picked goes back to the committed label, and
+  // an emptied input clears the value.
+  document.addEventListener('focusout', function (e) {
+    const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
+    if (!input) return;
+    const hidden = pickValueOf(input);
+    if (!hidden) return;
+    if (!(input.value || '').trim()) setPicked(input, hidden, '', '');
+    else if (input.value !== committedLabel(input)) input.value = committedLabel(input);
   });
 
   // Outside-click closes any open combobox.

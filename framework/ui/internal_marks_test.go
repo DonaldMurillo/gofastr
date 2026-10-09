@@ -750,6 +750,8 @@ var kitComponents = []kitComponent{
 		opts.Set(reflect.Append(opts, opts.Index(0)))
 		opts.Index(1).FieldByName("Value").SetString("other")
 	}},
+	{name: "Picker", fn: Picker},
+	{name: "PickerRows", fn: PickerRows},
 	{name: "Select", fn: Select},
 	{name: "Selection", fn: Selection, required: []string{"Bar", "Body"}},
 	{name: "ShortcutHint", fn: ShortcutHint},
@@ -814,7 +816,9 @@ var kitComponents = []kitComponent{
 	{name: "headless.Choice", fn: headless.Choice, prep: prepSet("Type", "checkbox")},
 	{name: "headless.Cluster", fn: headless.Cluster},
 	{name: "headless.Color", fn: headless.Color},
-	{name: "headless.Combobox", fn: headless.Combobox},
+	{name: "headless.Combobox", fn: headless.Combobox, prep: prepZero("Pick", "Control")},
+	{name: "headless.Combobox/pick", fn: headless.Combobox, prep: prepZero("NoScriptAction", "Control")},
+	{name: "headless.ComboboxRows", fn: headless.ComboboxRows},
 	{name: "headless.ConditionalField", fn: headless.ConditionalField},
 	{name: "headless.Container", fn: headless.Container},
 	{name: "headless.Counter", fn: headless.Counter},
