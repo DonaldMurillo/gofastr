@@ -201,6 +201,14 @@ admin.New(admin.Config{
       {Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount"}},
   },
   ```
+- **Themes** are page themes the toolbar offers beside the light and
+  dark toggle, as a `ui.ThemePicker` (Default plus each choice). Each is
+  a theme registered with `style.RegisterThemeOverride`; `theme.Brutal()`
+  is one. The choice is per browser.
+
+  ```go
+  Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: style.RegisterThemeOverride(theme.Brutal())}},
+  ```
 - Build failures are contained: an error, a panic or a nil component
   draws a generic notice in the shell and logs `app slot failed` with
   the slot name, never what the page read.

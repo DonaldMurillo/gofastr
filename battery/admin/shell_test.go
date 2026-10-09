@@ -9,9 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // The nav drawer and the palette are widgets with routes of their own;
@@ -191,5 +194,20 @@ func TestShortcutHelpSheet(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("the shortcuts page misses %q", want)
 		}
+	}
+}
+
+// With Config.Themes the toolbar offers a page-theme picker beside the
+// light and dark toggle; without it, the toggle alone.
+func TestThemePickerInToolbar(t *testing.T) {
+	brutal := style.RegisterThemeOverride(theme.Brutal())
+	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: brutal}}}, nil)
+	body := get(x.as(theAdmin), "/admin").Body.String()
+	if !strings.Contains(body, `data-hui-theme-picker=""`) || !strings.Contains(body, ">Brutal<") {
+		t.Errorf("no theme picker in the toolbar")
+	}
+	plain := setup(t, nil, Config{}, nil)
+	if strings.Contains(get(plain.as(theAdmin), "/admin").Body.String(), "data-hui-theme-picker") {
+		t.Errorf("a theme picker drew with no Themes")
 	}
 }

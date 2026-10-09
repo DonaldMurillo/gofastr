@@ -567,7 +567,7 @@ To let a visitor switch the whole page between themes, register each
 extra theme as an override and render a picker:
 
 ```go
-var Brutal = style.RegisterThemeOverride(brutalTheme())
+var Brutal = style.RegisterThemeOverride(theme.Brutal())
 
 ui.ThemePicker(ui.ThemePickerConfig{
     Ctx:    ctx,
@@ -591,6 +591,13 @@ The override CSS names `:root.cui-theme-<hash>` beside the descendant
 selector in each block, so the class works on `<html>` as well as on a
 `ui.Themed` wrapper. On `<html>` the override's light tokens outrank
 the root theme's dark block, and its dark tokens outrank both.
+
+`theme.Brutal()` is a ready page theme: the framework theme's tokens
+re-skinned as neo-brutalism, with square corners (every radius 0), 2px
+and 3px strokes, hard offset shadows drawn in the border colour (black
+on cream in light, cream on near-black in dark), a yellow primary with
+black ink, and "Archivo" first in the font stacks (self-host the face;
+without it the stack falls back to the system sans).
 
 It composes with `ui.ThemeToggle`: the page theme decides the palette
 and the toggle decides light or dark within it. Put both in the

@@ -1,6 +1,11 @@
 package main
 
-import "github.com/DonaldMurillo/gofastr/battery/admin"
+import (
+	"github.com/DonaldMurillo/gofastr/battery/admin"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+)
 
 // adminMetrics is the strip at the top of the admin dashboard: the
 // figures a billing team opens the admin to check.
@@ -18,3 +23,11 @@ var adminAttention = []admin.Watch{
 	{Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount", "due_on"}},
 	{Entity: "subscriptions", View: "past_due", Columns: []string{"customer_id", "plan_id", "mrr"}},
 }
+
+// brutalTheme is the admin's second look: the same tokens re-skinned
+// with square corners, 2px strokes and hard shadows, picked from the
+// toolbar and remembered per browser.
+var brutalTheme = style.RegisterThemeOverride(theme.Brutal())
+
+// adminThemes are the page themes the admin's toolbar offers.
+var adminThemes = []ui.ThemeChoice{{Label: "Brutal", Theme: brutalTheme}}

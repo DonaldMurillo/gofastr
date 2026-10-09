@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `theme.Brutal()` re-skins the framework theme's tokens as
+  neo-brutalism (square corners, 2px strokes, hard shadows in the
+  border colour, a yellow primary, Archivo) in light and dark.
+  `admin.Config.Themes` offers page themes in the toolbar as a
+  `ui.ThemePicker`; Meridian offers Brutal.
 - `ui.TextAreaConfig.JSON` checks the text as JSON in the browser as it
   is typed (`headless.TextareaProps.JSON`, the `data-hui-json` hook of
   headless-controls); entity forms' JSON fields use it.

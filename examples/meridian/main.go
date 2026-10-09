@@ -137,7 +137,7 @@ func main() {
 	if db != nil {
 		fwApp.WithAuditLog(framework.AuditConfig{})
 	}
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
