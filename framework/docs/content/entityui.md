@@ -109,8 +109,8 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
-  takes; the form then posts multipart, and an empty input keeps the
-  stored file. Without storage the stored URL stays an editable text
+  takes; the form then posts multipart (the runtime does so for any
+  form with a file input), and an empty input keeps the stored file. Without storage the stored URL stays an editable text
   box. A stored key draws at `Extensions.FilesURL` + key (each segment
   escaped; a key with `..` or a scheme other than http(s) draws
   nothing).

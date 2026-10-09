@@ -22,6 +22,8 @@ type listParams struct {
 	view   string
 	cols   string
 	saved  string
+	// The filter rows' field, operator and value, repeated per row.
+	rowF, rowO, rowV string
 }
 
 func listParamsFor(key string) listParams {
@@ -34,6 +36,10 @@ func listParamsFor(key string) listParams {
 		view:   param(key, "view"),
 		cols:   param(key, "cols"),
 		saved:  param(key, "saved"),
+
+		rowF: param(key, "rf"),
+		rowO: param(key, "ro"),
+		rowV: param(key, "rv"),
 	}
 }
 
@@ -420,7 +426,8 @@ func (s *listState) carry(exclude ...string) url.Values {
 // ownsParam reports whether name is one of this list's own params.
 func (s *listState) ownsParam(name string) bool {
 	switch name {
-	case s.p.sort, s.p.dir, s.p.page, s.p.q, s.p.filter, s.p.view:
+	case s.p.sort, s.p.dir, s.p.page, s.p.q, s.p.filter, s.p.view,
+		s.p.rowF, s.p.rowO, s.p.rowV:
 		return true
 	}
 	// A facet param names one of this entity's fields: an unkeyed list's

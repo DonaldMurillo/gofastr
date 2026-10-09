@@ -46,8 +46,14 @@ func TestQueryBoxFiltersAndRoundTrips(t *testing.T) {
 	if !strings.Contains(filtered, "alpha") {
 		t.Errorf("the typed filter dropped the matching row:\n%s", filtered)
 	}
-	if !strings.Contains(filtered, `value="status = &quot;open&quot;"`) {
-		t.Errorf("the box did not prefill the filter text:\n%s", filtered)
+	// A plain term is a filter row; the box keeps what a row cannot
+	// say (an or group).
+	if !strings.Contains(filtered, `value="open"`) {
+		t.Errorf("the filter's term is not a row:\n%s", filtered)
+	}
+	grouped := listHTML(t, b, x.ctx("/orders", "?filter="+url.QueryEscape(`status = "open" or name = "zeta"`)))
+	if !strings.Contains(grouped, `value="status = &quot;open&quot; or name = &quot;zeta&quot;"`) {
+		t.Errorf("the box did not prefill the or group:\n%s", grouped)
 	}
 	// The chip still reads the same param, so both stay in sync.
 	if !strings.Contains(filtered, `status = &quot;open&quot;`) {
@@ -164,7 +170,7 @@ func TestListToolsShareOneRow(t *testing.T) {
 	}
 	for _, want := range []string{
 		`name="filter"`,              // the typed filter
-		`data-hui-menu=`,             // the columns menu
+		`fui-colpick`,                // the columns control
 		`class="fui-dropmenu__count`, // the Filters badge
 	} {
 		if !strings.Contains(form, want) {

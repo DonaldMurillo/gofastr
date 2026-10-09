@@ -128,9 +128,14 @@ const (
 	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
 	KeyFilterApply        Key = "ui.filterToolbar.apply"
 	KeyFilterReset        Key = "ui.filterToolbar.reset"
-	KeyFilterAll          Key = "ui.filterToolbar.all" // "All {label}"
-	KeyFilterAllPlain     Key = "ui.filterToolbar.allPlain"
-	KeyFilterSortBy       Key = "ui.filterToolbar.sortBy"
+	// ColumnPicker's link names.
+	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
+	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
+	KeyColumnMoveUp   Key = "ui.columnPicker.moveUp"   // "Move {column} earlier"
+	KeyColumnMoveDown Key = "ui.columnPicker.moveDown" // "Move {column} later"
+	KeyFilterAll      Key = "ui.filterToolbar.all"     // "All {label}"
+	KeyFilterAllPlain Key = "ui.filterToolbar.allPlain"
+	KeyFilterSortBy   Key = "ui.filterToolbar.sortBy"
 	// FilterChipBar
 	KeyFilterClearAll   Key = "ui.filterChipBar.clearAll"
 	KeyFilterChipRemove Key = "ui.filterChipBar.removeFilter" // "Remove filter {label}"
@@ -410,6 +415,10 @@ var Defaults = map[Key]string{
 	KeyFilterClearAll:     "Clear all",
 	KeyFilterChipRemove:   "Remove filter {label}",
 	KeyFilterReset:        "Reset",
+	KeyColumnShow:         "Show {column}",
+	KeyColumnHide:         "Hide {column}",
+	KeyColumnMoveUp:       "Move {column} earlier",
+	KeyColumnMoveDown:     "Move {column} later",
 	KeyFilterAll:          "All {label}",
 	KeyFilterAllPlain:     "All",
 

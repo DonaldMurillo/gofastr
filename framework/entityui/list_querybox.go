@@ -2,7 +2,10 @@ package entityui
 
 import (
 	"context"
+	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -48,17 +51,154 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxJoin), Value: codeRun("and", "or", "( )")},
 		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxFields), Value: codeRun(names...)},
 	)
+	rows, box := filterRowsOf(s)
 	return render.Join(
+		filterRowsField(ctx, s, queryable, rows),
 		ui.TextField(ui.TextFieldConfig{
 			Name:        s.p.filter,
 			ID:          "eui-" + listIDSafe(s.key, m.name) + "-filter",
 			Label:       i18nui.T(ctx, i18nui.KeyEntityQueryBoxField),
-			Value:       s.filterText,
+			Value:       box,
 			Placeholder: example,
 			Help:        i18nui.T(ctx, i18nui.KeyEntityQueryBoxHelp),
 		}),
 		ui.DetailList(ui.DetailListConfig{Items: ref}),
 	)
+}
+
+// rowOps are the filter rows' operators: the DSL's own spelling, each
+// with its name.
+var rowOps = []struct {
+	op  string
+	key i18nui.Key
+}{
+	{"=", i18nui.KeyEntityFilterOpEq},
+	{"!=", i18nui.KeyEntityFilterOpNe},
+	{"contains", i18nui.KeyEntityFilterOpLike},
+	{">", i18nui.KeyEntityFilterOpGt},
+	{"<", i18nui.KeyEntityFilterOpLt},
+	{">=", i18nui.KeyEntityFilterOpGte},
+	{"<=", i18nui.KeyEntityFilterOpLte},
+}
+
+// maxFilterRows caps the rows one submit reads.
+const maxFilterRows = 10
+
+// maxFilterRowValue caps one row's value, in runes.
+const maxFilterRowValue = 200
+
+// rowTerms are the submitted rows as DSL terms: a row whose field is not
+// a queryable field of the entity, whose operator is not a row
+// operator, or whose value is empty or over maxFilterRowValue is
+// dropped; at most maxFilterRows are read.
+func rowTerms(m *meta, fields, ops, values []string) []string {
+	var out []string
+	for i := 0; i < len(fields) && i < maxFilterRows; i++ {
+		f, ok := m.field(fields[i])
+		if !ok || f.NoQuery || i >= len(ops) || i >= len(values) {
+			continue
+		}
+		v := strings.TrimSpace(values[i])
+		if v == "" || len([]rune(v)) > maxFilterRowValue || !slices.ContainsFunc(rowOps, func(o struct {
+			op  string
+			key i18nui.Key
+		}) bool {
+			return o.op == ops[i]
+		}) {
+			continue
+		}
+		out = append(out, f.Name+" "+ops[i]+" "+dslQuote(v))
+	}
+	return out
+}
+
+// dslQuote quotes a value the way predicateText does, so a row's term
+// round-trips through the parser.
+func dslQuote(v string) string { return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"` }
+
+// composeFilter joins the rows' terms and the box's text with and; the
+// box's text is grouped when it holds an or, so the and binds the whole.
+func composeFilter(terms []string, box string) string {
+	if box != "" {
+		if len(terms) > 0 && strings.Contains(strings.ToLower(box), " or ") {
+			box = "(" + box + ")"
+		}
+		terms = append(terms, box)
+	}
+	return strings.Join(terms, " and ")
+}
+
+// filterRowsOf splits the filter into rows, one per plain top-level
+// term (field, comparison, one value), and the box's text, the terms a
+// row cannot say (an or group, an in list). A filter that did not parse
+// stays whole in the box.
+func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
+	if s.filterPred == nil {
+		return nil, s.filterText
+	}
+	terms := []*filter.Predicate{s.filterPred}
+	if len(s.filterPred.Children) > 0 && !s.filterPred.Or {
+		terms = terms[:0]
+		for i := range s.filterPred.Children {
+			terms = append(terms, &s.filterPred.Children[i])
+		}
+	}
+	var rest []string
+	for _, t := range terms {
+		if op, ok := rowOp(t); ok {
+			rows = append(rows, ui.FilterRow{Field: t.Field, Op: op, Value: t.Value})
+			continue
+		}
+		rest = append(rest, predicateText(t))
+	}
+	return rows, strings.Join(rest, " and ")
+}
+
+// rowOp is a leaf's row operator, or false for a term a row cannot say.
+func rowOp(p *filter.Predicate) (string, bool) {
+	if len(p.Children) > 0 {
+		return "", false
+	}
+	op, ok := map[filter.FilterOp]string{
+		filter.OpEq: "=", filter.OpNe: "!=", filter.OpLike: "contains",
+		filter.OpGt: ">", filter.OpLt: "<", filter.OpGte: ">=", filter.OpLte: "<=",
+	}[p.Op]
+	return op, ok
+}
+
+// filterRowsField draws the rows over the queryable fields.
+func filterRowsField(ctx context.Context, s *listState, queryable []schema.Field, rows []ui.FilterRow) render.HTML {
+	// The entity's own fields first, the system ones (id, timestamps)
+	// after: a new row starts on a field a reader means.
+	fields := make([]ui.SelectOption, 0, len(queryable))
+	var system []ui.SelectOption
+	for _, f := range queryable {
+		o := ui.SelectOption{Value: f.Name, Text: s.m.label(ctx, f.Name)}
+		if s.m.system(f) {
+			system = append(system, o)
+			continue
+		}
+		fields = append(fields, o)
+	}
+	fields = append(fields, system...)
+	ops := make([]ui.SelectOption, 0, len(rowOps))
+	for _, o := range rowOps {
+		ops = append(ops, ui.SelectOption{Value: o.op, Text: i18nui.T(ctx, o.key)})
+	}
+	return ui.FilterRows(ui.FilterRowsConfig{
+		ID:         "eui-" + listIDSafe(s.key, s.m.name) + "-rows",
+		FieldName:  s.p.rowF,
+		OpName:     s.p.rowO,
+		ValueName:  s.p.rowV,
+		Fields:     fields,
+		Operators:  ops,
+		Rows:       rows,
+		Legend:     i18nui.T(ctx, i18nui.KeyEntityFilterRows),
+		FieldLabel: i18nui.T(ctx, i18nui.KeyEntityFilterRowField),
+		OpLabel:    i18nui.T(ctx, i18nui.KeyEntityFilterRowOp),
+		ValueLabel: i18nui.T(ctx, i18nui.KeyEntityFilterRowValue),
+		Ctx:        ctx,
+	})
 }
 
 // queryOperators are the comparisons the filter parser takes.

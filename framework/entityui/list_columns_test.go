@@ -125,25 +125,34 @@ func TestColumnsMenuRendersControls(t *testing.T) {
 	b := x.ui.List("orders").ColumnsMenu()
 	html := listHTML(t, b, x.ctx("/orders", "?filter=status+%3D+%22open%22&sort=name&cols=name,status"))
 	for _, want := range []string{
-		"Columns", // the menu's trigger
-		// The title field is checked and cannot be turned off.
-		`aria-checked="true" aria-disabled="true"`,
+		"Columns", // the control's trigger
+		// The title field is on and cannot be turned off.
+		`aria-disabled="true" class="fui-colpick__toggle"`,
 		// A shown column's row turns it off: cols without it.
-		`aria-checked="true" class="fui-menu__item" href="/orders?cols=name&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
+		`aria-label="Hide Status" class="fui-colpick__toggle" href="/orders?cols=name&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
 		// A hidden column's row turns it on, after the shown ones.
-		`aria-checked="false" class="fui-menu__item" href="/orders?cols=name%2Cstatus%2Camount&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
+		`aria-label="Show Amount" class="fui-colpick__toggle" href="/orders?cols=name%2Cstatus%2Camount&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
+		// A shown column moves one place: Status before Name.
+		`aria-label="Move Status earlier" class="fui-colpick__move" href="/orders?cols=status%2Cname&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
+		`aria-label="Move Name later" class="fui-colpick__move" href="/orders?cols=status%2Cname&amp;filter=status+%3D+%22open%22&amp;sort=name"`,
 	} {
 		if !strings.Contains(html, want) {
-			t.Errorf("the columns menu is missing %q:\n%s", want, html)
+			t.Errorf("the columns control is missing %q:\n%s", want, html)
 		}
 	}
-	if !strings.Contains(html, `role="menuitemcheckbox"`) {
-		t.Errorf("the column rows are not checkbox menu items:\n%s", html)
+	// The first column cannot move earlier, the last cannot move later.
+	if !strings.Contains(html, `aria-disabled="true" aria-label="Move Name earlier"`) || !strings.Contains(html, `aria-disabled="true" aria-label="Move Status later"`) {
+		t.Errorf("the ends of the order are not disabled:\n%s", html)
 	}
 	// The reset link drops cols entirely and keeps the rest.
 	reset := listResetHref(html)
 	if reset == "" || strings.Contains(reset, "cols=") || !strings.Contains(reset, "sort=name") || !strings.Contains(reset, "filter=") {
 		t.Errorf("the reset link does not drop only cols (got %q):\n%s", reset, html)
+	}
+	// Following a move link reorders the table.
+	moved := listHTML(t, b, x.ctx("/orders", "?cols=status,name"))
+	if colOrder(moved, "Status", "Name") < 0 {
+		t.Errorf("the moved order did not draw:\n%s", moved)
 	}
 }
 
@@ -183,7 +192,7 @@ func listResetHref(html string) string {
 func TestColumnsMenuReachesTitleOnly(t *testing.T) {
 	x := columnsUI(t)
 	html := listHTML(t, x.ui.List("orders").ColumnsMenu(), x.ctx("/orders", "?cols=name,status"))
-	if !strings.Contains(html, `href="/orders?cols=name" role="menuitemcheckbox"`) {
+	if !strings.Contains(html, `class="fui-colpick__toggle" href="/orders?cols=name"`) {
 		t.Fatalf("unchecking Status does not link to the title alone:\n%s", html)
 	}
 	html = listHTML(t, x.ui.List("orders").ColumnsMenu(), x.ctx("/orders", "?cols=name"))

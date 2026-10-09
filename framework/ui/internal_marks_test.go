@@ -751,6 +751,8 @@ var kitComponents = []kitComponent{
 		opts.Set(reflect.Append(opts, opts.Index(0)))
 		opts.Index(1).FieldByName("Value").SetString("other")
 	}},
+	{name: "ColumnPicker", fn: ColumnPicker},
+	{name: "FilterRows", fn: FilterRows},
 	{name: "Picker", fn: Picker},
 	{name: "PickerRows", fn: PickerRows},
 	{name: "Select", fn: Select},

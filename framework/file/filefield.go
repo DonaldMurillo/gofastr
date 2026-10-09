@@ -502,6 +502,7 @@ func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 //     binary. They genuinely appear in EXIF/XMP/comment metadata of real
 //     images and in PDF/font streams, so a whole-body scan would reject
 //     legitimate uploads.
+//
 // mimeBase is a sniffed type without its parameters: "text/plain;
 // charset=utf-8" is "text/plain".
 func mimeBase(t string) string {

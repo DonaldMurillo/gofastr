@@ -77,11 +77,11 @@ func (s *listState) setColumns(names []string) {
 	s.columns = names
 }
 
-// columnsMenu draws the columns control: a menu of checkbox rows, one
-// per available field in display order (the hidden ones after), each a
-// link to the same URL with that column toggled in cols; the title
-// field is checked and disabled, since it carries the record link. A
-// Reset row drops cols. Every row is a navigation that keeps the other
+// columnsMenu draws the columns control (ui.ColumnPicker): one row per
+// available field in display order (the hidden ones after), each a
+// link to the same URL with that column toggled in cols, and beside a
+// shown one, links that move it one place; the title field is on and
+// locked, since it carries the record link. Reset drops cols. Every row is a navigation that keeps the other
 // params and the page: columns change what a row shows, not which rows
 // match.
 func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML {
@@ -113,41 +113,58 @@ func (b *ListBuilder) columnsMenu(ctx context.Context, s *listState) render.HTML
 		}
 	}
 
-	items := make([]ui.MenuItem, 0, len(order)+2)
-	for _, name := range order {
-		if tf != "" && name == tf {
-			items = append(items, ui.MenuItem{Label: m.label(ctx, name), Check: true, Checked: true, Disabled: true})
-			continue
+	href := func(names []string) string {
+		q := s.carryWithSort(s.p.cols)
+		q.Set(s.p.cols, strings.Join(names, ","))
+		return listHref(s.path, q)
+	}
+	var shownOrder []string
+	for _, c := range order {
+		if shown[c] {
+			shownOrder = append(shownOrder, c)
 		}
-		next := make([]string, 0, len(order))
-		for _, c := range order {
-			if c == name {
-				if !shown[c] {
-					next = append(next, c)
+	}
+	cols := make([]ui.ColumnChoice, 0, len(order))
+	for _, name := range order {
+		c := ui.ColumnChoice{Label: m.label(ctx, name), Shown: shown[name], Locked: tf != "" && name == tf}
+		if !c.Locked {
+			next := make([]string, 0, len(order))
+			for _, o := range order {
+				if o == name {
+					if !shown[o] {
+						next = append(next, o)
+					}
+				} else if shown[o] {
+					next = append(next, o)
 				}
-			} else if shown[c] {
-				next = append(next, c)
+			}
+			c.ToggleHref = href(next)
+		}
+		if i := slices.Index(shownOrder, name); i >= 0 {
+			if i > 0 {
+				c.UpHref = href(swapped(shownOrder, i, i-1))
+			}
+			if i < len(shownOrder)-1 {
+				c.DownHref = href(swapped(shownOrder, i, i+1))
 			}
 		}
-		q := s.carryWithSort(s.p.cols)
-		q.Set(s.p.cols, strings.Join(next, ","))
-		items = append(items, ui.MenuItem{
-			Label:   m.label(ctx, name),
-			Href:    listHref(s.path, q),
-			Check:   true,
-			Checked: shown[name],
-		})
+		cols = append(cols, c)
 	}
-	items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
-		Label: i18nui.T(ctx, i18nui.KeyFilterReset),
-		Href:  s.dropColsHref(),
+	return ui.ColumnPicker(ui.ColumnPickerConfig{
+		ID:         "eui-" + listIDSafe(s.key, m.name) + "-cols",
+		Label:      i18nui.T(ctx, i18nui.KeyEntityColumns),
+		Columns:    cols,
+		ResetHref:  s.dropColsHref(),
+		ResetLabel: i18nui.T(ctx, i18nui.KeyFilterReset),
+		Ctx:        ctx,
 	})
-	return ui.Menu(ui.MenuConfig{
-		ID:    "eui-" + listIDSafe(s.key, m.name) + "-cols",
-		Label: i18nui.T(ctx, i18nui.KeyEntityColumns),
-		Icon:  "columns",
-		Items: items,
-	})
+}
+
+// swapped is a copy of names with i and j swapped.
+func swapped(names []string, i, j int) []string {
+	out := slices.Clone(names)
+	out[i], out[j] = out[j], out[i]
+	return out
 }
 
 // dropColsHref is the same URL with no cols param: the list's resolved

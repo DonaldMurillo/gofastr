@@ -232,6 +232,11 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 	if !s.q.Has(s.p.filter) && s.savedFilter != "" {
 		text = s.savedFilter
 	}
+	// Submitted filter rows write the filter: their terms, then the
+	// box's text. The row params never ride a link; the filter does.
+	if s.q.Has(s.p.rowF) {
+		text = composeFilter(rowTerms(m, s.q[s.p.rowF], s.q[s.p.rowO], s.q[s.p.rowV]), strings.TrimSpace(s.q.Get(s.p.filter)))
+	}
 	if text != "" {
 		s.filterText = text
 		p, err := dsl.ParsePredicate(text, m.e.GetFields())
@@ -425,7 +430,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 	}
 	var hidden []ui.HiddenField
 	for _, k := range slices.Sorted(maps.Keys(s.q)) {
-		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) || (len(extra) > 0 && k == s.p.filter) {
+		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) || (len(extra) > 0 && (k == s.p.filter || k == s.p.rowF || k == s.p.rowO || k == s.p.rowV)) {
 			continue
 		}
 		// Every value: a repeated param (another list's cols=a&cols=b)

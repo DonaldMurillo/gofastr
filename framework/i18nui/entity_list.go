@@ -26,6 +26,19 @@ const (
 
 	// The query box: the filter typed by hand.
 	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
+	// The filter rows: the group, each row's three controls and the
+	// operators' names.
+	KeyEntityFilterRows     Key = "ui.entity.filterRows"     // "Filter where"
+	KeyEntityFilterRowField Key = "ui.entity.filterRowField" // "Field"
+	KeyEntityFilterRowOp    Key = "ui.entity.filterRowOp"    // "Operator"
+	KeyEntityFilterRowValue Key = "ui.entity.filterRowValue" // "Value"
+	KeyEntityFilterOpEq     Key = "ui.entity.filterOpEq"     // "is"
+	KeyEntityFilterOpNe     Key = "ui.entity.filterOpNe"     // "is not"
+	KeyEntityFilterOpLike   Key = "ui.entity.filterOpLike"   // "contains"
+	KeyEntityFilterOpGt     Key = "ui.entity.filterOpGt"     // "more than"
+	KeyEntityFilterOpLt     Key = "ui.entity.filterOpLt"     // "less than"
+	KeyEntityFilterOpGte    Key = "ui.entity.filterOpGte"    // "at least"
+	KeyEntityFilterOpLte    Key = "ui.entity.filterOpLte"    // "at most"
 	// The help is one line; the reference under the field labels its
 	// rows: an example from the entity's own fields (left out when none
 	// fits), the operators, the joining words and the fields.
@@ -88,6 +101,17 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
 	KeyEntityQueryBoxField:     "Filter expression",
+	KeyEntityFilterRows:        "Filter where",
+	KeyEntityFilterRowField:    "Field",
+	KeyEntityFilterRowOp:       "Operator",
+	KeyEntityFilterRowValue:    "Value",
+	KeyEntityFilterOpEq:        "is",
+	KeyEntityFilterOpNe:        "is not",
+	KeyEntityFilterOpLike:      "contains",
+	KeyEntityFilterOpGt:        "more than",
+	KeyEntityFilterOpLt:        "less than",
+	KeyEntityFilterOpGte:       "at least",
+	KeyEntityFilterOpLte:       "at most",
 	KeyEntityQueryBoxHelp:      "Compare a field with a value. Quote text.",
 	KeyEntityQueryBoxExample:   "Example",
 	KeyEntityQueryBoxOperators: "Operators",

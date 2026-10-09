@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Filter rows and column order on lists**: an entity list's Filters
+  dropdown holds field / operator / value rows (`ui.FilterRows`), one per
+  plain term of the filter plus a blank one; submitting them writes the
+  filter param (row params never ride a link), and the query box keeps
+  what a row cannot say. The Columns control is `ui.ColumnPicker`: show,
+  hide and move each column earlier or later, all links into the list's
+  `cols` param. A headless Disclosure whose content is a component's own
+  marks its panel internal, as it does its summary.
 - **Uploads on entity screens**: with file storage on the app, an
   `Image` or `File` field on an entity form (and so the admin) is a
   `ui.FileUpload` beside the stored file, and the save posts multipart.
