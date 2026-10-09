@@ -829,6 +829,7 @@ func calloutCSS(t style.Theme) string {
 func statCardCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-stat-card"] {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   /* A card wrapped in a grid cell (a polled region) fills the cell, so
      a row's cards share one height. */
@@ -849,11 +850,15 @@ func statCardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
 }
+/* The label takes the line; an action that no longer fits beside a
+   long (or translated) label drops under it instead of leaving the
+   card. */
 [data-cui-comp="ui-stat-card"] .fui-stat-card__head > .fui-stat-card__label {
-  flex: 1;
+  flex: 1 1 auto;
   min-inline-size: 0;
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__icon {
@@ -1507,6 +1512,13 @@ func dataTableCSS(_ style.Theme) string {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A chip or an id in a slot is one atomic box the cell's ellipsis
+     cannot reach: it is held to the cell's width and ends its own text
+     instead. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[class*="is-phone-"] > * {
+    max-inline-size: 100%;
+    vertical-align: middle;
   }
   /* The checkbox and the row menu are controls, never clipped. */
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-lead {

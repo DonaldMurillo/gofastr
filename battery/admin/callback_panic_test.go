@@ -55,7 +55,7 @@ func TestPanickingEffectiveRolesShowsDirectRoles(t *testing.T) {
 	r := newRBACEnv(t, Config{EffectiveRoles: func(context.Context, string) []access.RoleWithOrigin { panic("resolver down") }})
 	rr := get(r.as(theAdmin), "/admin/rbac/users")
 	body := rr.Body.String()
-	if rr.Code != http.StatusOK || !strings.Contains(body, "editor@example.com") || !strings.Contains(body, `data-cui-comp="ui-tag">editor</span>`) {
+	if rr.Code != http.StatusOK || !strings.Contains(body, "editor@example.com") || !strings.Contains(body, `<span class="fui-tag__label" data-cui-internal="">editor</span>`) {
 		t.Fatalf("a panicking EffectiveRoles broke the users page: %d\n%s", rr.Code, body)
 	}
 }

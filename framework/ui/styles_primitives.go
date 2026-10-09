@@ -669,6 +669,19 @@ func tagCSS(t style.Theme) string {
   line-height: var(--ui-tag-line-height, 1rem);
   text-decoration: none;
   text-transform: var(--ui-tag-case, none);
+  /* In a box narrower than the chip (a phone row's cell) the label
+     ends with an ellipsis; the icon and the dismiss keep their size. */
+  min-inline-size: 0;
+}
+[data-cui-comp="ui-tag"] .fui-tag__label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-cui-comp="ui-tag"] .fui-tag__icon,
+[data-cui-comp="ui-tag"] .fui-tag__dismiss {
+  flex: none;
 }
 /* Same drawing as ui-badge: the tint is 15% of the status hue, the ink
    mixes the hue toward --color-text so it holds AA on the tint in

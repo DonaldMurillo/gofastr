@@ -97,9 +97,18 @@ func shortIDCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-xs, 2px);
   white-space: nowrap;
+  min-inline-size: 0;
 }
+/* In a box narrower than the id (a phone row's cell) the code gives
+   way and the copy button stays whole. */
 [data-cui-comp="ui-short-id"] .fui-short-id__code {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-sm, 0.875rem);
+}
+:where([data-cui-comp="ui-short-id"] .fui-copy-btn-wrap) {
+  flex: none;
 }
 [data-cui-comp="ui-short-id"] .fui-visually-hidden {
   position: absolute;

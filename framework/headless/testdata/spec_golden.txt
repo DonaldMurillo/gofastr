@@ -748,11 +748,11 @@ hidden panels ship empty with their content in the stash the module restores on 
 
 === Tag / removable ===
 the × names what it removes — twelve controls all called Remove tell a screen reader user nothing — and it is an anchor that keeps its href for no script while carrying the island contract, because dropping a filter is an in-page state change and never a route
-<span>env=prod<a aria-label="Remove env=prod" data-cui-internal="" data-cui-push-state="/apps?env=" data-cui-rpc="/island/apps?env=" data-cui-rpc-method="GET" data-cui-rpc-signal="apps" href="/apps?env=">×</a></span>
+<span><span data-cui-internal="">env=prod</span><a aria-label="Remove env=prod" data-cui-internal="" data-cui-push-state="/apps?env=" data-cui-rpc="/island/apps?env=" data-cui-rpc-method="GET" data-cui-rpc-signal="apps" href="/apps?env=">×</a></span>
 
 === Tag / fixed ===
 a tag with nothing to navigate to renders no control at all rather than a dead ×, and its icon is hidden from assistive technology exactly as a badge's is, because a tag is a badge with a dismiss control and the two must not drift
-<span><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span>leader</span>
+<span><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span><span data-cui-internal="">leader</span></span>
 
 === TagInput / values, visible and submittable ===
 every committed value is a chip with its own named remove control AND a hidden input — what a reader sees removed is what a submit stops carrying, on the first paint, with no module at all

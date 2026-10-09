@@ -1692,6 +1692,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- A chip, a short id or a stat card's action no longer runs out of a
+  narrow box. `headless.Tag` draws its label as its own part
+  (`fui-tag__label`), which ends with an ellipsis when the chip is held
+  narrower than its text; `ui.ShortID`'s code gives way before its copy
+  button; a `ui.DataTable` phone row holds each slot's chip or id to the
+  cell's width; and a `ui.StatCard` action drops under a long (or
+  translated) label instead of leaving the card. Found by Meridian's
+  pseudo-locale overflow test.
 - A multipart create or update stored a `Decimal` field as a float,
   which the decimal validator refused; it is the decimal string now.
 - **An empty `ui.DataTable` keeps its empty state in view on a phone.**
