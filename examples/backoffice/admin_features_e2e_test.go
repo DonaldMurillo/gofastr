@@ -123,7 +123,7 @@ func TestBackofficeE2E_RecordFromRow(t *testing.T) {
 	var picker bool
 	if err := chromedp.Run(ctx,
 		chromedp.Value(productForm+` input[name="name"]`, &value, chromedp.ByQuery),
-		chromedp.Evaluate(`!!document.querySelector('`+productForm+` select[name="supplier_id"]')`, &picker),
+		chromedp.Evaluate(`!!document.querySelector('`+productForm+` [data-hui-combobox-pick] input[type="hidden"][name="supplier_id"]')`, &picker),
 	); err != nil {
 		t.Fatalf("read record: %v", err)
 	}
@@ -133,8 +133,8 @@ func TestBackofficeE2E_RecordFromRow(t *testing.T) {
 }
 
 // TestBackofficeE2E_RelationDropdown asserts the product form renders a
-// supplier <select> populated with the seeded suppliers, selects one, and
-// submits, proving the relationship picker is wired end to end.
+// supplier picker listing the seeded suppliers, searches it, picks one,
+// and submits, proving the relationship picker is wired end to end.
 func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("chromedp e2e: skipped under -short")
@@ -144,12 +144,13 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	login(t, ctx, base)
 	waitHydrated(t, ctx)
 
-	picker := productForm + ` select[name="supplier_id"]`
+	search := productForm + ` [data-hui-combobox-pick] input[role="combobox"]`
+	picked := productForm + ` [data-hui-combobox-pick] input[type="hidden"][name="supplier_id"]`
 	var optionText string
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`a[href="/admin/entities/products/create"]`, chromedp.ByQuery),
-		chromedp.WaitVisible(picker, chromedp.ByQuery),
-		chromedp.Evaluate(`[...document.querySelector('`+picker+`').options].map(o=>o.textContent).join('|')`, &optionText),
+		chromedp.WaitVisible(search, chromedp.ByQuery),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+productForm+` [data-hui-combobox-pick] [role="option"]')].map(o=>o.dataset.label).join('|')`, &optionText),
 	); err != nil {
 		t.Fatalf("open product form: %v", err)
 	}
@@ -157,9 +158,24 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 		t.Fatalf("supplier picker not populated with related records; options = %q", optionText)
 	}
 
-	// Select Acme, fill the required fields, submit, and land back on the list.
+	// Search for Acme and pick it: the hidden input takes its id.
+	acme := productForm + ` [data-hui-combobox-pick] [role="option"][data-label="Acme Supply"]`
+	var id string
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(picker, acmeID(t, ctx, picker), chromedp.ByQuery),
+		chromedp.Click(search, chromedp.ByQuery),
+		chromedp.SendKeys(search, "Acme", chromedp.ByQuery),
+		chromedp.WaitVisible(acme, chromedp.ByQuery),
+		chromedp.Click(acme, chromedp.ByQuery),
+		chromedp.Value(picked, &id, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("pick a supplier: %v", err)
+	}
+	if id == "" {
+		t.Fatal("picking Acme Supply left the supplier empty")
+	}
+
+	// Fill the required fields, submit, and land back on the list.
+	if err := chromedp.Run(ctx,
 		chromedp.SendKeys(productForm+` input[name="name"]`, "Relation Widget", chromedp.ByQuery),
 		chromedp.SendKeys(productForm+` input[name="price"]`, "10", chromedp.ByQuery),
 		chromedp.Click(productSave, chromedp.ByQuery),
@@ -183,15 +199,4 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	}) {
 		t.Fatalf("product created with a supplier not found via search; tbody = %q", tbodyText(ctx))
 	}
-}
-
-// acmeID is the picker option value for Acme Supply.
-func acmeID(t *testing.T, ctx context.Context, picker string) string {
-	t.Helper()
-	var id string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`[...document.querySelector('`+picker+`').options].find(o=>o.textContent.trim()==='Acme Supply')?.value || ''`, &id)); err != nil || id == "" {
-		t.Fatalf("no Acme Supply option (err=%v)", err)
-	}
-	return id
 }
