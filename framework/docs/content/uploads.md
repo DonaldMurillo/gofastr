@@ -162,7 +162,9 @@ stored). A `File` field is any binary, a PDF or a CSV, so decoding it as
 an image would fail every upload. `file.AllowTypes(mimes...)` is the
 same check for your own `ProcessFileField` calls; `file.ImageTypes` is
 the image list. In a multipart body a `Decimal` field stays the decimal
-string, as on the JSON path.
+string, as on the JSON path, and a `Bool` field's hidden `"false"`
+followed by its checked box (the HTML checkbox idiom) is one value, the
+box's; any other repeated scalar is still refused.
 
 Entity screens (`framework/entityui`, and so the admin) draw an `Image`
 or `File` field as an upload when the app has file storage: the stored

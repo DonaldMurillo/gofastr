@@ -254,6 +254,13 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 			if len(vals) == 0 {
 				continue
 			}
+			// The HTML checkbox idiom: a bool field's hidden "false"
+			// followed by its checked box. Exactly that pair is one
+			// value, the box's, as the runtime folds it on the JSON path.
+			if len(vals) == 2 && vals[0] == "false" && ch.isBoolColumn(key) {
+				body[key] = coerceFormValue(ch.Entity, key, vals[1])
+				continue
+			}
 			if len(vals) == 1 {
 				body[key] = coerceFormValue(ch.Entity, key, vals[0])
 				continue
@@ -297,6 +304,16 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 	}
 
 	return body, rec.saved(), nil
+}
+
+// isBoolColumn reports whether name is a Bool field of the entity.
+func (ch *CrudHandler) isBoolColumn(name string) bool {
+	for _, f := range ch.snapshotFields() {
+		if f.Name == name {
+			return f.Type == schema.Bool
+		}
+	}
+	return false
 }
 
 // saveFilePart opens one multipart file header, runs ProcessFileField, and

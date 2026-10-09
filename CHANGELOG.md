@@ -14,8 +14,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `entityui.Extensions.FilesURL` names where stored files are served.
   An `Image` field now takes only PNG, JPEG, GIF or WebP, sniffed from
   the bytes (`file.AllowTypes`, `file.ImageTypes`,
-  `file.ErrFileFieldType`). The runtime's multipart body folds a bool's
-  hidden-false pair and sends no part for an empty file input. Meridian
+  `file.ErrFileFieldType`). A multipart body takes a bool's hidden
+  "false" followed by its checked box as one value, as the JSON path
+  does; any other repeated scalar is still refused. Meridian
   customers have a logo, served to signed-in accounts at `/files/`.
 - **Queue history**: a job `DBQueue.ListJobs` returns carries `Status`,
   `UpdatedAt` and `LastError` (the worker keeps the error its last
