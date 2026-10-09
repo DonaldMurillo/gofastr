@@ -87,6 +87,7 @@ func (fb *formBuilder) uploadInput(ctx context.Context, f schema.Field, label, h
 		Required:  required && val == "",
 		MaxSizeMB: uploadMaxMB,
 		Help:      help,
+		Ctx:       ctx,
 	})
 	if cur := fb.b.ui.fileValue(f, label, val, ui.ThumbnailLG); cur != "" {
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM}, cur, input)

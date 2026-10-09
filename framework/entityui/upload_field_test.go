@@ -4,15 +4,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // uploadsUI is a products entity with a photo and a manual, over a
 // UI that serves stored files at /uploads/ and an app with storage.
-func uploadsUI(t *testing.T, store bool) *testUI {
-	opts := []testUIOption{withAPI(map[string]string{"products": "/api/products"})}
+func uploadsUI(t *testing.T, store bool, more ...testUIOption) *testUI {
+	opts := append([]testUIOption{withAPI(map[string]string{"products": "/api/products"})}, more...)
 	if store {
 		opts = append(opts, withStorage(upload.NewLocalStorage(t.TempDir())))
 	}
@@ -78,5 +80,17 @@ func TestUploadFileHrefRefusesEscapes(t *testing.T) {
 	}
 	if got := x.ui.fileHref("https://cdn.example.com/a.png"); got != "https://cdn.example.com/a.png" {
 		t.Errorf("an absolute URL = %q", got)
+	}
+}
+
+// An upload's prompt speaks the request's language.
+func TestUploadFieldTranslated(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("de", string(i18nui.KeyFileUploadDropSingle), i18n.Message{Text: "DATEI HIER ABLEGEN"})
+	x := uploadsUI(t, true, withTranslator(i18n.NewTranslator(cat, "en")))
+	ctx := i18n.WithContext(x.ctx("/products/p1", ""), i18n.Locale{Tag: "de"})
+	body := string(x.ui.Record("products", "p1").RenderCtx(ctx))
+	if !strings.Contains(body, "DATEI HIER ABLEGEN") {
+		t.Fatalf("the upload prompt is not translated:\n%s", body)
 	}
 }

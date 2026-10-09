@@ -1692,6 +1692,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- An entity form's upload prompt speaks the request's language: the
+  file input now gets the request context.
 - A chip, a short id or a stat card's action no longer runs out of a
   narrow box. `headless.Tag` draws its label as its own part
   (`fui-tag__label`), which ends with an ellipsis when the chip is held
