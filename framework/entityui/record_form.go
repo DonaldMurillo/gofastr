@@ -660,7 +660,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.JSON:
 		return ui.TextArea(ui.TextAreaConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 6, Placeholder: ph,
-			Help: help, Required: required, Monospace: true,
+			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
 		return ui.NumberInput(ui.NumberInputConfig{

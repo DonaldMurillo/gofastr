@@ -125,10 +125,11 @@ const (
 	KeyTableSelectAll Key = "ui.table.selectAll"
 
 	// FilterToolbar
-	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
-	KeyFilterApply        Key = "ui.filterToolbar.apply"
-	KeyFilterReset        Key = "ui.filterToolbar.reset"
-	KeyShortcutSheetTitle Key = "ui.shortcutSheet.title" // "Keyboard shortcuts"
+	KeyFilterToolbarLabel  Key = "ui.filterToolbar.label"
+	KeyFilterApply         Key = "ui.filterToolbar.apply"
+	KeyFilterReset         Key = "ui.filterToolbar.reset"
+	KeyShortcutSheetTitle  Key = "ui.shortcutSheet.title"  // "Keyboard shortcuts"
+	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
 	// ColumnPicker's link names.
 	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
 	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
@@ -410,19 +411,20 @@ var Defaults = map[Key]string{
 	KeyTableSortBy:    "Sort by {column}",
 	KeyTableSelectAll: "Select all rows",
 
-	KeyFilterToolbarLabel: "Filters",
-	KeyFilterApply:        "Apply",
-	KeyFilterSortBy:       "Sort by",
-	KeyFilterClearAll:     "Clear all",
-	KeyFilterChipRemove:   "Remove filter {label}",
-	KeyFilterReset:        "Reset",
-	KeyShortcutSheetTitle: "Keyboard shortcuts",
-	KeyColumnShow:         "Show {column}",
-	KeyColumnHide:         "Hide {column}",
-	KeyColumnMoveUp:       "Move {column} earlier",
-	KeyColumnMoveDown:     "Move {column} later",
-	KeyFilterAll:          "All {label}",
-	KeyFilterAllPlain:     "All",
+	KeyFilterToolbarLabel:  "Filters",
+	KeyFilterApply:         "Apply",
+	KeyFilterSortBy:        "Sort by",
+	KeyFilterClearAll:      "Clear all",
+	KeyFilterChipRemove:    "Remove filter {label}",
+	KeyFilterReset:         "Reset",
+	KeyShortcutSheetTitle:  "Keyboard shortcuts",
+	KeyTextAreaInvalidJSON: "Enter valid JSON",
+	KeyColumnShow:          "Show {column}",
+	KeyColumnHide:          "Hide {column}",
+	KeyColumnMoveUp:        "Move {column} earlier",
+	KeyColumnMoveDown:      "Move {column} later",
+	KeyFilterAll:           "All {label}",
+	KeyFilterAllPlain:      "All",
 
 	KeySearchInputPlaceholder: "Search...",
 	KeySearchLabel:            "Search",

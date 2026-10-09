@@ -471,7 +471,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		markers []string
 	}{
 		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
-			"[data-hui-slider-output]", "[data-hui-range-slider]"}},
+			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
@@ -510,7 +510,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		markers []string
 	}{
 		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
-			"[data-hui-slider-output]", "[data-hui-range-slider]"}},
+			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
 		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",

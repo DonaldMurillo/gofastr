@@ -121,3 +121,14 @@ func TestDateFieldExtraAttrsOnInput(t *testing.T) {
 		t.Errorf("owned type lost:\n%s", open)
 	}
 }
+
+// A JSON text area carries the check's hook with its sentence.
+func TestTextAreaJSONCheck(t *testing.T) {
+	h := string(TextArea(TextAreaConfig{Name: "meta", Label: "Meta", JSON: true}))
+	if !strings.Contains(h, `data-hui-json="Enter valid JSON"`) {
+		t.Errorf("no JSON hook: %s", h)
+	}
+	if plain := string(TextArea(TextAreaConfig{Name: "notes", Label: "Notes"})); strings.Contains(plain, "data-hui-json") {
+		t.Errorf("a plain text area checks JSON: %s", plain)
+	}
+}

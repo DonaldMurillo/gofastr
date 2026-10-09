@@ -26,4 +26,4 @@ const ControlsBehaviorName = "headless-controls"
 // matters even without an output).
 var _ = uiregistry.RegisterBehavior(ControlsBehaviorName, controlsJS,
 	uiregistry.Markers("[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
-		"[data-hui-slider-output]", "[data-hui-range-slider]"))
+		"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"))

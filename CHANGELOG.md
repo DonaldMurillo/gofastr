@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.TextAreaConfig.JSON` checks the text as JSON in the browser as it
+  is typed (`headless.TextareaProps.JSON`, the `data-hui-json` hook of
+  headless-controls); entity forms' JSON fields use it.
 - A dashboard count that misses its deadline falls back to a bounded
   read (`entityui.UI.CountUpTo`, at most 10,000 ids in the caller's
   scope) instead of drawing "—".

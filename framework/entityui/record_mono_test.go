@@ -26,4 +26,8 @@ func TestJSONAndCodeInputsAreMono(t *testing.T) {
 	if n := strings.Count(h, "fui-textarea--mono"); n != 2 {
 		t.Fatalf("mono fields = %d, want meta and src:\n%s", n, h)
 	}
+	// The JSON field alone is checked as JSON in the browser.
+	if n := strings.Count(h, `data-hui-json="Enter valid JSON"`); n != 1 {
+		t.Errorf("JSON checks = %d, want the meta field's:\n%s", n, h)
+	}
 }

@@ -109,6 +109,9 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   no-store, refused cross-site, and gated by the host entity's read and
   the related entity's read and per-row Decider. `App.EntityUI` and the
   admin mount it beside `_bulk`.
+  A `JSON` field is a mono text area checked as JSON in the browser as
+  it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
+  save before it is sent; the server still validates.
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
