@@ -32,12 +32,27 @@ var countDeadline = 2 * time.Second
 // usually is not.
 const probeDeadline = time.Second
 
+// dashboardNew is the header's New button for Config.DashboardNew.
+func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
+	e, ok := b.exposedNamed(b.cfg.DashboardNew)
+	if b.cfg.DashboardNew == "" || !ok {
+		return ""
+	}
+	return ui.LinkButton(ui.LinkButtonConfig{
+		Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": b.singular(ctx, e)}),
+		Href:    b.entityBase(e) + "/create",
+		Variant: ui.ButtonPrimary,
+		Icon:    "plus",
+	})
+}
+
 // renderDashboard draws the dashboard.
 func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
 			Title:    i18nui.T(ctx, i18nui.KeyAdminDashboard),
 			Subtitle: i18nui.T(ctx, i18nui.KeyAdminDashboardSub),
+			Actions:  b.dashboardNew(ctx),
 		}),
 		resultNotice(ctx),
 	}

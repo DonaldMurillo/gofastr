@@ -124,3 +124,29 @@ func TestAttentionPreviewsWatchedViews(t *testing.T) {
 		}
 	}
 }
+
+// DashboardNew heads the dashboard with the entity's New button, the
+// prototype's page-level action; Init refuses an entity it does not
+// expose.
+func TestDashboardNew(t *testing.T) {
+	x := ordersEnv(t, Config{Entities: []string{"orders"}, DashboardNew: "orders"})
+	pageHeader := func(body string) string {
+		i := strings.Index(body, `class="fui-page-header"`)
+		if i < 0 {
+			t.Fatalf("no page header:\n%s", body)
+		}
+		return body[i : i+strings.Index(body[i:], "</header>")]
+	}
+	head := pageHeader(get(x.as(theAdmin), "/admin").Body.String())
+	if !strings.Contains(head, `href="/admin/entities/orders/create"`) || !strings.Contains(head, "New Order") {
+		t.Errorf("the dashboard header has no New Order:\n%s", head)
+	}
+	plain := ordersEnv(t, Config{Entities: []string{"orders"}})
+	if strings.Contains(pageHeader(get(plain.as(theAdmin), "/admin").Body.String()), "/create") {
+		t.Errorf("a header action drew without DashboardNew")
+	}
+	if _, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
+		Config{Entities: []string{"orders"}, DashboardNew: "nope"}, nil); err == nil {
+		t.Errorf("DashboardNew accepted an entity the admin does not expose")
+	}
+}

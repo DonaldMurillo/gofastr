@@ -182,6 +182,11 @@ type Config struct {
 	// previews, beside the recent activity.
 	Attention []Watch
 
+	// DashboardNew names an exposed entity whose New button heads the
+	// dashboard, the page's primary action ("New customer"). Empty draws
+	// none; the entity cards keep their own New either way.
+	DashboardNew string
+
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
@@ -387,6 +392,11 @@ func (b *Battery) checkConfig() error {
 	for i, m := range b.cfg.Metrics {
 		if err := b.checkMetric(m, ""); err != nil {
 			return fmt.Errorf("admin: Metrics[%d]: %w", i, err)
+		}
+	}
+	if n := b.cfg.DashboardNew; n != "" {
+		if _, ok := b.exposedNamed(n); !ok {
+			return fmt.Errorf("admin: DashboardNew %q is not an entity the admin exposes", n)
 		}
 	}
 	for i, w := range b.cfg.Attention {

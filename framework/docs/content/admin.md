@@ -187,6 +187,9 @@ admin.New(admin.Config{
               Where: `status = "past_due"`, Format: "money"}},
   },
   ```
+- **DashboardNew** names an exposed entity whose New button heads the
+  dashboard as its primary action (`DashboardNew: "customers"` draws
+  "New Customer"). `Init` refuses an entity the admin does not expose.
 - **Attention** is the Needs attention panel beside the recent activity.
   Each `Watch` names an entity and one of its declared list views
   (`View`); the panel previews the first `Rows` rows (5 by default, at

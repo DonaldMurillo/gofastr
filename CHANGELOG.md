@@ -8,6 +8,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `admin.Config.DashboardNew` heads the dashboard with one entity's New
+  button, the prototype's page-level action; Meridian's is New Customer.
 - Meridian's admin has a Revenue report (an `admin.Page` in the Billing
   group: MRR, collected, outstanding and failed payments, and three
   breakdowns), and its seed data carries payments, so an invoice's
