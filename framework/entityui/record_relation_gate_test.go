@@ -46,7 +46,7 @@ func TestRecordRefusedRelationIsMuted(t *testing.T) {
 		if strings.Contains(html, "Jane Author") || strings.Contains(html, ">usr-9q<") {
 			t.Fatalf("locked=%v: the refused relation leaked a label:\n%s", locked, html)
 		}
-		if !locked && !strings.Contains(html, `selected="" value="usr-9q">—</option>`) {
+		if !locked && (!strings.Contains(html, `name="author_id" type="hidden" value="usr-9q"`) || !strings.Contains(html, `value="—"`)) {
 			t.Fatalf("the picker dropped the kept value or its muted label:\n%s", html)
 		}
 	}

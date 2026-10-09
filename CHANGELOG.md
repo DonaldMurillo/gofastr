@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.Picker` picks one record from a server-searched list inside a
+  form: `headless.Combobox` gains `Pick` (a hidden input submits the
+  picked value; the search input is detached from the host form) and
+  `Control` (a host field labels it), and `headless.ComboboxRows` /
+  `ui.PickerRows` render an island answer. Entity forms draw every
+  relation with it, searched through the new `POST <api>/_pick?field=<field>`
+  (`entityui.UI.PickerHandler`), with open and New buttons beside it.
+  The capped 100-row relation select is gone.
 - `ui.DataTable` `Responsive: ui.ResponsiveRows` draws each row as a
   two-line phone row below 720px of container, placed by
   `Column.Phone` (`PhoneTitle`, `PhoneSubtitle`, `PhoneMeta`,

@@ -104,6 +104,7 @@ its own routes:
 | `POST /admin/api/<name>/{id}/_purge` | Delete permanently (`SoftDelete` only) |
 | `POST /admin/api/<name>/_bulk` | Bulk action |
 | `GET /admin/api/<name>/_export.csv` | CSV export |
+| `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
 | `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
 | `GET /admin/_count/<name>` | A dashboard count card (polled) |

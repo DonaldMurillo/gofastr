@@ -11,12 +11,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// relOpen matches the open link drawn beside a relation select.
+// relOpen matches the open link drawn beside a relation picker.
 var relOpen = regexp.MustCompile(`<a aria-label="Open Customer" [^>]*href="(/rec/customers/[^"]*)"`)
 
 // A relation with a value and a record screen draws a link to that
-// record beside its select.
-func TestRelationSelectOpensRecord(t *testing.T) {
+// record beside its picker.
+func TestRelationPickerOpensRecord(t *testing.T) {
 	x := newInvoiceUI(t)
 	x.ui = x.ui.WithRecordPath(recPath)
 	body := renderRecord(t, x, "inv-1", nil)
@@ -24,8 +24,8 @@ func TestRelationSelectOpensRecord(t *testing.T) {
 	if m == nil || m[1] != "/rec/customers/cus-1" {
 		t.Fatalf("no open link to the customer beside the select:\n%s", body)
 	}
-	if !strings.Contains(body, `class="fui-select__row"`) {
-		t.Fatalf("the link is not on the select's row:\n%s", body)
+	if !strings.Contains(body, `class="fui-picker"`) {
+		t.Fatalf("the link is not on the picker's row:\n%s", body)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestRelationOpenDeniedRow(t *testing.T) {
 		}
 		return access.DecisionAbstain
 	})
-	if body := string(b.RenderCtx(denied)); strings.Contains(body, `href="/rec/customers/`) {
+	if body := string(b.RenderCtx(denied)); strings.Contains(body, `href="/rec/customers/cus-1"`) {
 		t.Fatalf("SECURITY: a denied customer got an open link:\n%s", body)
 	}
 }
@@ -86,7 +86,22 @@ func TestRelationOpenRefusedRecord(t *testing.T) {
 	x := newTestUI(t, ents, rows, withAPI(map[string]string{"invoices": "/api/invoices", "customers": "/api/customers"}))
 	x.ui = x.ui.WithRecordPath(recPath)
 	body := renderRecord(t, x, "inv-1", nil)
-	if strings.Contains(body, `href="/rec/customers/`) {
+	if strings.Contains(body, `href="/rec/customers/cus-1"`) {
 		t.Fatalf("SECURITY: an unreadable customer got an open link:\n%s", body)
+	}
+}
+
+// A relation offers New beside the picker: a link to the related
+// entity's create screen, only for a caller who may create one.
+func TestRelationPickerOffersNew(t *testing.T) {
+	x := newInvoiceUI(t)
+	x.ui = x.ui.WithRecordPath(recPath)
+	body := renderRecord(t, x, "inv-1", nil)
+	if !strings.Contains(body, `href="/rec/customers/create"`) || !strings.Contains(body, `aria-label="New Customer"`) {
+		t.Fatalf("no New link beside the picker:\n%s", body)
+	}
+	anon := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(x.ctx("/rec/invoices/inv-1", "")))
+	if strings.Contains(anon, `href="/rec/customers/create"`) {
+		t.Fatalf("SECURITY: a caller who may not create customers got New:\n%s", anon)
 	}
 }

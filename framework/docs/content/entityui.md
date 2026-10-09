@@ -94,9 +94,18 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   leaves carries Undo for ten seconds, for a caller who may update the
   record: it posts the restore (`<write base>/<id>/_restore`, the trash
   view's route) and returns to the list. The bulk bar's Delete offers
-  it too (see "Bulk actions and export"). With `WithRecordPath`, a relation select holding a value draws
-  an open button beside it, linking to that record, when the caller's
-  own read of the related entity returns the row.
+  it too (see "Bulk actions and export"). A relation field is a
+  `ui.Picker`: focus lists the first 20 related records by title, typing
+  searches the related entity (its `SearchFields`, else its titles)
+  through `POST <api>/_pick?field=<field>`, and a note says when the list is
+  cut off. A hidden input submits the picked id. With `WithRecordPath`,
+  the picker draws an open button when it holds a value (when the
+  caller's own read of the related entity returns the row) and a New
+  button to the related create screen when the caller may create one.
+  `PickerHandler` serves the search: POST only, JSON only, 4 KB body,
+  no-store, refused cross-site, and gated by the host entity's read and
+  the related entity's read and per-row Decider. `App.EntityUI` and the
+  admin mount it beside `_bulk`.
 - **A create screen** (`appUI.Create("invoices")`): the same form,
   starting at each field's `Default`, posting a create to the entity's
   REST base. `?duplicate=<id>` prefills

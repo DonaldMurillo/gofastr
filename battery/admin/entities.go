@@ -257,6 +257,7 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	}
 	r.Post(api+"/_bulk", elevated(b.ui.BulkHandler(e.GetName())))
 	r.Get(api+"/_export.csv", elevated(b.ui.ExportHandler(e.GetName())))
+	r.Post(api+"/_pick", elevated(b.ui.PickerHandler(e.GetName())))
 	// Saved views belong to the caller and touch no entity row, but a
 	// view needs the entity's read permission, and the admin reads its
 	// lists elevated: the view is gated by the same read the list is.

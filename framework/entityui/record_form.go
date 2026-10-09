@@ -600,7 +600,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			},
 		})
 	case schema.Relation:
-		return fb.relationSelect(ctx, f, label, help, id, "")
+		return fb.relationPicker(ctx, f, label, help, id, "")
 	default:
 		// A blank text input cannot mean "keep": CRUD stores "" for
 		// String and Text, so a record form that carried this input
@@ -716,7 +716,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			},
 		})
 	case schema.Relation:
-		return fb.relationSelect(ctx, f, label, help, id, val)
+		return fb.relationPicker(ctx, f, label, help, id, val)
 	case schema.Image:
 		// The stored URL stays editable; a preview sits above it.
 		field := ui.TextField(ui.TextFieldConfig{
@@ -743,37 +743,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			},
 		})
 	}
-}
-
-// relationSelect draws a belongs-to picker: a Select of at most 100
-// related records read through that entity's own crud handle and read
-// gate, showing the pk and the title field.
-func (fb *formBuilder) relationSelect(ctx context.Context, f schema.Field, label, help, id, cur string) render.HTML {
-	opts := []ui.SelectOption{}
-	if cur == "" {
-		opts = append(opts, ui.SelectOption{Value: "", Text: i18nui.T(ctx, i18nui.KeyEntitySelect)})
-	}
-	related, refused := fb.relationOptions(ctx, f)
-	for _, o := range related {
-		opts = append(opts, ui.SelectOption{Value: o.id, Text: o.label, Selected: o.id == cur})
-	}
-	if cur != "" && !optionListed(opts, cur) {
-		// The current value was not among the first 100 (or the picker
-		// read none): offer it anyway so a submit cannot silently
-		// clear the column. Its label is the id when the caller may
-		// read the related entity (a legibility limit), and the em dash
-		// when it may not: never the raw foreign key of a refused entity.
-		text := cur
-		if refused {
-			text = "—"
-		}
-		opts = append([]ui.SelectOption{{Value: cur, Text: text, Selected: true}}, opts...)
-	}
-	return ui.Select(ui.SelectConfig{
-		Name: f.Name, Label: label, ID: id, Options: opts, Help: help,
-		Required: f.Required && !fb.masked[f.Name],
-		Action:   fb.relationOpen(ctx, f, cur),
-	})
 }
 
 // relationOpen links to the record a relation names, beside its
@@ -806,59 +775,6 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 		Icon:     "arrow-up-right",
 		IconOnly: true,
 	})
-}
-
-// optionListed reports whether one option already carries value.
-func optionListed(opts []ui.SelectOption, value string) bool {
-	for _, o := range opts {
-		if o.Value == value {
-			return true
-		}
-	}
-	return false
-}
-
-// relationOption is one row of a relation picker.
-type relationOption struct {
-	id    string
-	label string
-}
-
-// relationOptions reads the related entity's first 100 rows through
-// its own handler after its own read gate: a picker for an open entity
-// must not become a window onto a gated one. The read runs with hooks
-// so the labels show what a hooked read shows. refused reports that the
-// related entity is unknown or its read gate refused the caller.
-func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) (opts []relationOption, refused bool) {
-	other, err := fb.b.ui.entityFor(f.To)
-	if err != nil {
-		return nil, true
-	}
-	om, err := fb.b.ui.meta(other.GetName())
-	if err != nil {
-		return nil, true
-	}
-	if !canRead(ctx, om.ch) {
-		return nil, true
-	}
-	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Fields: om.readTitleFields(), Limit: 100, Sorts: []filter.ParsedSort{{Field: om.pk}}})
-	if err != nil {
-		return nil, false
-	}
-	titles := fb.b.ui.rowTitles(ctx, om, rows, 0)
-	out := make([]relationOption, 0, len(rows))
-	for i, r := range rows {
-		oid := cell(rowValue(r, om.pk))
-		if oid == "" {
-			continue
-		}
-		label := oid
-		if titles[i] != "" {
-			label = titles[i]
-		}
-		out = append(out, relationOption{id: oid, label: label})
-	}
-	return out, false
 }
 
 // kindInput draws the input a registered kind (or a built-in one)

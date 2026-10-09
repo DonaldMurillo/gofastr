@@ -345,7 +345,7 @@ schemas for entity CRUD routes; the app passes its route predicate so
 the served spec never documents CRUD paths registration did not mount
 (no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
 documented either way). `EntityOpenAPIWithBulk` takes a second
-predicate and also documents the `_bulk` and `_export.csv` routes
+predicate and also documents the `_bulk`, `_export.csv` and `_pick` routes
 `App.EntityUI` mounts; the served spec passes it. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no

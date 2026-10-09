@@ -4,9 +4,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 )
 
-// addBulkPaths documents the two routes App.EntityUI mounts beside an
-// entity's CRUD routes: the bulk bar's POST <path>/_bulk and the list's
-// GET <path>/_export.csv. Both refuse a caller who may not read the
+// addBulkPaths documents the routes App.EntityUI mounts beside an
+// entity's CRUD routes: the bulk bar's POST <path>/_bulk, the list's
+// GET <path>/_export.csv and the record form's POST <path>/_pick?field=<field>.
+// Each refuses a caller who may not read the
 // entity with 403, never 401, since the handler asks the read gate rather
 // than the session middleware.
 func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string, gated bool, errorRef map[string]any) {
@@ -67,7 +68,26 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	exportOp.AddResponse(422, "A list key or filter the list refuses, or more matches than the cap", errorRef)
 	exportOp.AddResponse(403, "Forbidden", errorRef)
 	exportOp.AddResponse(404, entityName+" has no export", errorRef)
-	for _, op := range []*openapi.Operation{bulkOp, exportOp} {
+	pickOp := openapi.NewOperation()
+	pickOp.Summary = "Search the records a relation field of " + entityName + " can point at"
+	pickOp.Description = "A record form's relation picker posts its search here. The answer is the picker's option rows as HTML: the related records whose search fields (or, with none, whose titles) match q, read under the caller's scope and the related entity's read gate, at most 20, then a note when there are more."
+	pickOp.OperationID = "pick_" + schemaName
+	pickOp.Tags = []string{tagName}
+	pickOp.AddParameter("field", "query", "A relation field of "+entityName, true, map[string]any{"type": "string"})
+	pickOp.SetRequestBody("application/json", map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"q": map[string]any{"type": "string", "description": "The search; empty lists the first records by title"}},
+	}, true)
+	pickOp.Responses[200] = map[string]any{
+		"description": "The option rows",
+		"content":     map[string]any{"text/html": map[string]any{"schema": map[string]any{"type": "string"}}},
+	}
+	pickOp.AddResponse(400, "Invalid request body", errorRef)
+	pickOp.AddResponse(403, "Forbidden, a cross-site post, or a related entity the caller may not read", errorRef)
+	pickOp.AddResponse(404, "Not an editable relation field", errorRef)
+	pickOp.AddResponse(413, "Request body too large", errorRef)
+	pickOp.AddResponse(415, "A body that is not JSON", errorRef)
+	for _, op := range []*openapi.Operation{bulkOp, exportOp, pickOp} {
 		if gated {
 			op.AddSecurity("bearerAuth", nil)
 			op.AddSecurity("cookieAuth", nil)
@@ -75,4 +95,5 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 	}
 	s.AddPath("POST", path+"/_bulk", *bulkOp)
 	s.AddPath("GET", path+"/_export.csv", *exportOp)
+	s.AddPath("POST", path+"/_pick", *pickOp)
 }

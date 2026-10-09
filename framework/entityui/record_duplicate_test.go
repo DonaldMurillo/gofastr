@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -23,7 +24,7 @@ func TestDuplicateBlanksUniqueIndex(t *testing.T) {
 	if regexp.MustCompile(`name="number"[^>]*value="INV-1"|value="INV-1"[^>]*name="number"`).MatchString(body) {
 		t.Errorf("the duplicate copied a number its unique index refuses:\n%s", body)
 	}
-	if !regexp.MustCompile(`<option[^>]*selected=""[^>]*value="cus-1"`).MatchString(body) {
+	if !strings.Contains(body, `name="customer_id" type="hidden" value="cus-1"`) {
 		t.Errorf("the duplicate dropped the customer:\n%s", body)
 	}
 	if !regexp.MustCompile(`name="memo"[^>]*>first note<`).MatchString(body) {
@@ -40,7 +41,7 @@ func TestDuplicateBlanksRelationIndex(t *testing.T) {
 	x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
 	body := string(x.ui.Create("invoices").Base("/rec/invoices").
 		RenderCtx(x.userCtx("/rec/invoices/create", "?duplicate=inv-1", "u1")))
-	if regexp.MustCompile(`<option[^>]*selected=""[^>]*value="cus-1"`).MatchString(body) {
+	if strings.Contains(body, `name="customer_id" type="hidden" value="cus-1"`) {
 		t.Errorf("the duplicate kept a customer its unique index refuses:\n%s", body)
 	}
 }
