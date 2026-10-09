@@ -106,6 +106,9 @@ type FilterSearch struct {
 	Placeholder string
 	// Label overrides the accessible name (default "Search").
 	Label string
+	// Shortcut is a chord ("/") that focuses the search from anywhere
+	// on the page outside a text field; a chip beside the input shows it.
+	Shortcut string
 }
 
 // HiddenField is one hidden input a GET toolbar form carries beside its
@@ -434,14 +437,21 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
+	id := "filter-search-" + slug(s.Name)
+	wrap := html.Attrs{"data-cui-internal": ""}
+	kids := []render.HTML{SearchInput(SearchInputConfig{
+		Name:        s.Name,
+		ID:          id,
+		Placeholder: placeholder,
+		ExtraAttrs:  extra,
+	})}
+	if s.Shortcut != "" {
+		wrap["data-hui-shortcut-focus"] = s.Shortcut
+		wrap["data-hui-shortcut-target"] = "#" + id
+		kids = append(kids, ShortcutHint(ShortcutHintConfig{Chord: s.Shortcut, Class: "fui-filter-toolbar__search-key"}))
+	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search",
-		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		SearchInput(SearchInputConfig{
-			Name:        s.Name,
-			ID:          "filter-search-" + slug(s.Name),
-			Placeholder: placeholder,
-			ExtraAttrs:  extra,
-		}))
+		ExtraAttrs: wrap}, kids...)
 }
 
 // renderPillFacet renders a facet as a wrapping radio-pill group inside
@@ -547,6 +557,23 @@ func filterToolbarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search {
   flex: 2 1 14rem;
+  position: relative;
+}
+/* The search's shortcut chip sits at the input's end while it is empty;
+   typed text (and the clear button with it) takes the place. Pointer
+   input has no use for it. */
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search-key {
+  position: absolute;
+  inset-inline-end: var(--spacing-md, 8px);
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search:has(input:not(:placeholder-shown)) .fui-filter-toolbar__search-key {
+  display: none;
+}
+@media (pointer: coarse) {
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search-key { display: none; }
 }
 /* Pill facets prefer their natural one-line width: max-content basis
    (no grow) so a group never fragments its pills inside a cramped cell

@@ -28,6 +28,7 @@ import (
 const (
 	navDrawer   = "admin-nav"
 	paletteName = "admin-palette"
+	keysName    = "admin-keys"
 )
 
 // mount registers the shell's screens on the UI host and the admin's
@@ -39,6 +40,7 @@ func (b *Battery) mount() {
 
 	b.screen(group, "", i18nui.KeyAdminDashboard, true, b.renderDashboard)
 	b.screen(group, "/search", i18nui.KeyAdminSearch, true, b.renderSearch)
+	b.screen(group, "/shortcuts", i18nui.KeyShortcutSheetTitle, false, b.renderShortcuts)
 	b.screen(group, "/account", i18nui.KeyAdminAccountSettings, false, b.renderAccount)
 	if b.cfg.Queue != nil {
 		b.screen(group, "/queue", i18nui.KeyAdminQueue, false, b.renderQueue)
@@ -69,6 +71,8 @@ func (b *Battery) mount() {
 	ui.MountSidebarFunc(mounter, b.sidebar)
 	_, palette := ui.CommandPalette(b.paletteConfig(context.Background()))
 	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix))
+	_, keys := ui.ShortcutSheet(b.keysConfig(context.Background()))
+	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix))
 }
 
 // underPrefix reports a path inside the admin.
@@ -191,11 +195,12 @@ func (b *Battery) layout() *appui.Layout {
 			return b.crumbs(ctx, m.Path())
 		})
 		trigger, _ := ui.CommandPalette(b.paletteConfig(ctx))
+		keys, _ := ui.ShortcutSheet(b.keysConfig(ctx))
 		toolbar := ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, Align: ui.AlignCenter, NoWrap: true},
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true, Shrink: true},
 				ui.SidebarDrawerTrigger(cfg), crumbs),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
-				trigger,
+				trigger, keys,
 				ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon, Ctx: ctx}),
 				b.accountMenu(ctx)),
 		)
@@ -221,6 +226,35 @@ func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 		FallbackHref: b.cfg.PathPrefix + "/search",
 		Ctx:          ctx,
 	}
+}
+
+// keysConfig is the keyboard help sheet, opened by "?", with the
+// shortcuts page as the scriptless path.
+func (b *Battery) keysConfig(ctx context.Context) ui.ShortcutSheetConfig {
+	return ui.ShortcutSheetConfig{
+		Name:         keysName,
+		FallbackHref: b.cfg.PathPrefix + "/shortcuts",
+		Items:        b.shortcuts(ctx),
+		Ctx:          ctx,
+	}
+}
+
+// shortcuts are the admin's keys, in the order a reader meets them.
+func (b *Battery) shortcuts(ctx context.Context) []ui.ShortcutItem {
+	return []ui.ShortcutItem{
+		{Chord: "Meta+K", Label: i18nui.T(ctx, i18nui.KeyAdminKeyPalette)},
+		{Chord: "/", Label: i18nui.T(ctx, i18nui.KeyAdminKeySearch)},
+		{Chord: "Mod+S", Label: i18nui.T(ctx, i18nui.KeyAdminKeySave)},
+		{Chord: "Escape", Label: i18nui.T(ctx, i18nui.KeyAdminKeyClose)},
+		{Chord: "?", Label: i18nui.T(ctx, i18nui.KeyAdminKeyHelp)},
+	}
+}
+
+// renderShortcuts is the shortcuts page, the help sheet's scriptless twin.
+func (b *Battery) renderShortcuts(ctx context.Context, _ map[string]string) render.HTML {
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.T(ctx, i18nui.KeyShortcutSheetTitle)}),
+		ui.ShortcutList(b.shortcuts(ctx)))
 }
 
 // title is the product name: Config.Title or the localized "Admin".

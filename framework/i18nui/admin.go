@@ -88,6 +88,11 @@ const (
 
 // Table columns on the ops pages.
 const (
+	KeyAdminKeyPalette    Key = "ui.admin.keyPalette"    // "Open the command palette"
+	KeyAdminKeySearch     Key = "ui.admin.keySearch"     // "Search the list"
+	KeyAdminKeySave       Key = "ui.admin.keySave"       // "Save the record"
+	KeyAdminKeyClose      Key = "ui.admin.keyClose"      // "Close a drawer or dialog"
+	KeyAdminKeyHelp       Key = "ui.admin.keyHelp"       // "Show these shortcuts"
 	KeyAdminColID         Key = "ui.admin.colID"         // "ID"
 	KeyAdminColJob        Key = "ui.admin.colJob"        // "Job"
 	KeyAdminColUpdated    Key = "ui.admin.colUpdated"    // "Updated"
@@ -282,6 +287,11 @@ var adminDefaults = map[Key]string{
 	KeyAdminVerbStateOverride:  "overrode the state of",
 	KeyAdminVerbTransition:     "changed the state of",
 	KeyAdminUpdatedAgo:         "Updated {ago}",
+	KeyAdminKeyPalette:         "Open the command palette",
+	KeyAdminKeySearch:          "Search the list",
+	KeyAdminKeySave:            "Save the record",
+	KeyAdminKeyClose:           "Close a drawer or dialog",
+	KeyAdminKeyHelp:            "Show these shortcuts",
 	KeyAdminColID:              "ID",
 	KeyAdminColJob:             "Job",
 	KeyAdminColUpdated:         "Updated",

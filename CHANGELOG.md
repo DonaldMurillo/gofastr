@@ -8,6 +8,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Keyboard help**: `ui.ShortcutSheet` is a modal listing an app's
+  keys, opened by `?`, with `ui.ShortcutList` for its scriptless page;
+  the admin mounts it (`GET /admin/shortcuts`). `ui.FilterSearch.Shortcut`
+  binds a chord to a toolbar search, and entity lists take `/`.
 - **Filter rows and column order on lists**: an entity list's Filters
   dropdown holds field / operator / value rows (`ui.FilterRows`), one per
   plain term of the filter plus a blank one; submitting them writes the

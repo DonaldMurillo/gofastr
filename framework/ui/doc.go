@@ -116,6 +116,7 @@
 //	Picker:               form field picking one record from a server-searched list
 //	FilterRows:           field / operator / value rows inside a list's filter form
 //	ColumnPicker:         a list's Columns dropdown: show, hide and move columns by link
+//	ShortcutSheet:        keyboard help modal opened by "?", and ShortcutList for its rows
 //	                       VariantSet output (typed sources + a stacked
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing

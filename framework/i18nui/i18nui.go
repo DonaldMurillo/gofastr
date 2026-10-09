@@ -128,6 +128,7 @@ const (
 	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
 	KeyFilterApply        Key = "ui.filterToolbar.apply"
 	KeyFilterReset        Key = "ui.filterToolbar.reset"
+	KeyShortcutSheetTitle Key = "ui.shortcutSheet.title" // "Keyboard shortcuts"
 	// ColumnPicker's link names.
 	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
 	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
@@ -415,6 +416,7 @@ var Defaults = map[Key]string{
 	KeyFilterClearAll:     "Clear all",
 	KeyFilterChipRemove:   "Remove filter {label}",
 	KeyFilterReset:        "Reset",
+	KeyShortcutSheetTitle: "Keyboard shortcuts",
 	KeyColumnShow:         "Show {column}",
 	KeyColumnHide:         "Hide {column}",
 	KeyColumnMoveUp:       "Move {column} earlier",

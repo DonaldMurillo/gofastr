@@ -183,3 +183,19 @@ func TestRelatedTabOneNew(t *testing.T) {
 		t.Errorf("%d of %d create links prefill the record, want 1 of 1:\n%s", pointed, all, section)
 	}
 }
+
+// The page's list search takes "/"; a keyed list (one of several on a
+// page) does not claim it.
+func TestListSearchTakesSlash(t *testing.T) {
+	cfg := ordersConfig()
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": cfg},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	if h := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); !strings.Contains(h, `data-hui-shortcut-focus="/"`) {
+		t.Errorf("the list search does not take /:\n%s", h)
+	}
+	if h := listHTML(t, x.ui.List("orders").Key("o"), x.ctx("/orders", "")); strings.Contains(h, `data-hui-shortcut-focus`) {
+		t.Errorf("a keyed list claimed /")
+	}
+}

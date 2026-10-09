@@ -174,3 +174,22 @@ func TestScreenRechecksTheGate(t *testing.T) {
 		t.Error("the screen did not elevate and draw for the admin")
 	}
 }
+
+// "?" opens the keyboard help sheet from every admin page; without
+// script its trigger is a link to the shortcuts page, which lists the
+// same keys. An entity list's search takes "/".
+func TestShortcutHelpSheet(t *testing.T) {
+	x := setup(t, nil, Config{}, nil)
+	body := get(x.as(theAdmin), "/admin").Body.String()
+	for _, want := range []string{`data-cui-open="admin-keys"`, `data-hui-shortcut-click="?"`, `href="/admin/shortcuts"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the shell misses %q", want)
+		}
+	}
+	page := get(x.as(theAdmin), "/admin/shortcuts").Body.String()
+	for _, want := range []string{"Keyboard shortcuts", "Open the command palette", "Search the list", "Show these shortcuts"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the shortcuts page misses %q", want)
+		}
+	}
+}

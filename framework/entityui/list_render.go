@@ -411,6 +411,11 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 	if len(m.e.Config.SearchFields) > 0 {
 		placeholder := i18nui.TVars(ctx, i18nui.KeyEntitySearch, map[string]string{"entity": m.plural(ctx)})
 		search = &ui.FilterSearch{Name: s.p.q, Value: s.search, Placeholder: placeholder, Label: placeholder}
+		if !b.embedded && !b.top && s.key == "" {
+			// The page's own list takes "/"; an embedded or keyed list
+			// (one of several) does not claim it.
+			search.Shortcut = "/"
+		}
 	}
 	var extra []render.HTML
 	applied := 0

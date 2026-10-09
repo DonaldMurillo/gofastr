@@ -56,6 +56,7 @@ not register fails boot.
 |---|---|
 | `GET /admin` | Dashboard: a count card per entity with when its newest record was written, failed jobs, recent activity, the app's cards |
 | `GET /admin/search?q=` | Search results: the palette's scriptless twin |
+| `GET /admin/shortcuts` | The keyboard shortcuts: the help sheet's scriptless twin |
 | `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
 | `GET /admin/entities/<name>` | Entity list |
 | `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
@@ -234,6 +235,14 @@ caller's scope, and lists the matching records. The palette posts to
 `POST <PathPrefix>/_palette`; the body is capped at 4 KiB and the query
 at 200 runes. Without JavaScript the field submits to
 `<PathPrefix>/search`.
+
+### Keyboard shortcuts
+
+`⌘K` opens the palette, `/` focuses the list's search, `⌘S` saves the
+record, Escape closes a drawer or dialog, and `?` opens the keyboard
+help sheet (`ui.ShortcutSheet`) that lists them. Without JavaScript the
+sheet's trigger links to `<PathPrefix>/shortcuts`, which lists the same
+keys.
 
 ## Operations pages
 
