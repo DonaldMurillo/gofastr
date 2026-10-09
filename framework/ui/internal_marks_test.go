@@ -676,6 +676,7 @@ var kitComponents = []kitComponent{
 	{name: "Counter", fn: Counter, prep: prepZero("Slice")},
 	{name: "DataTable", fn: DataTable, prep: prepSet("Pages", 3, "Page", 1)},
 	{name: "DateField", fn: DateField},
+	{name: "DateTimeField", fn: DateTimeField},
 	{name: "DetailList", fn: DetailList},
 	{name: "DiffViewer", fn: DiffViewer},
 	{name: "Divider", fn: Divider},

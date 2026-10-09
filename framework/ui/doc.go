@@ -66,6 +66,7 @@
 //	Counter:              signal-driven counter with +/− buttons
 //	DataTable:            sortable/paginated table (island-friendly)
 //	DateField:            typed labelled native date field with bounds
+//	DateTimeField:        typed labelled native date-and-time field with bounds and step
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise

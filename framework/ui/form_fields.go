@@ -143,6 +143,55 @@ func DateField(cfg DateFieldConfig) render.HTML {
 		cfg.Help, cfg.Error, cfg.Class, cfg.Required, cfg.Disabled, extra, owned)
 }
 
+// DateTimeFieldConfig configures a DateTimeField: a moment, a date and
+// a time of day in one value, in the HTML local date-time format
+// (2026-07-22T09:30).
+type DateTimeFieldConfig struct {
+	Name        string
+	Label       string
+	ID          string
+	Value       string
+	Placeholder string
+	Help        string
+	Error       string
+	Class       string
+	Required    bool
+	Disabled    bool
+	Min         string
+	Max         string
+	// Step is the precision in seconds: 1 shows seconds. Zero leaves
+	// the browser's default of one minute.
+	Step int
+
+	// ExtraAttrs forwards additional attributes onto the field's
+	// <input>. Keys the input owns are dropped, as DateField's are, and
+	// step.
+	ExtraAttrs html.Attrs
+}
+
+// DateTimeField renders a FormField containing an
+// input[type=datetime-local]: the browser owns the picker, the field
+// owns the label, the touch target and the focus ring, as DateField
+// and TimePicker do.
+func DateTimeField(cfg DateTimeFieldConfig) render.HTML {
+	id := fieldID("DateTimeField", cfg.Name, cfg.Label, cfg.ID)
+	owned := html.Attrs{}
+	if cfg.Min != "" {
+		owned["min"] = cfg.Min
+	}
+	if cfg.Max != "" {
+		owned["max"] = cfg.Max
+	}
+	if cfg.Step > 0 {
+		owned["step"] = strconv.Itoa(cfg.Step)
+	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "value", "placeholder", "min", "max", "step",
+		"required", "disabled", "aria-invalid", "aria-describedby")
+	return typedFormField(cfg.Label, cfg.Name, id, "datetime-local", cfg.Value, cfg.Placeholder,
+		cfg.Help, cfg.Error, cfg.Class, cfg.Required, cfg.Disabled, extra, owned)
+}
+
 func fieldID(api, name, label, id string) string {
 	if name == "" {
 		panic(fmt.Sprintf("ui: %s requires Name", api))

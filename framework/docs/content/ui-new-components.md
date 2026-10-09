@@ -100,6 +100,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **textfield**: `framework/ui.TextField`, typed labelled native text field with required, help, error, autocomplete, and length attributes
 - **numberfield**: `framework/ui.NumberField`, typed labelled native number field with explicit min/max/step bounds
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds
+- **datetimefield**: `framework/ui.DateTimeField`, typed labelled native date-and-time field (`datetime-local`) with min/max bounds and a step in seconds
 - **formsection**: `framework/ui.FormSection`, grouped fields with a shared heading + description
 - **formframe**: `framework/ui.FormFrame`, record form in two columns — a wide main column beside a narrow side rail (one of three named `SideWidth` sizes, each a modifier class reading a `--ui-form-frame-side-*` token) that drops under the main one below 48rem of the form's own width, a container query, so a drawer on a wide screen stacks and a full page sits side by side; the main column stops at 45rem, and `SidePanel` makes the rail a bordered panel that sticks beside the fields
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors

@@ -8,6 +8,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.DateTimeField`: a labelled native date-and-time field
+  (`datetime-local`) with min/max bounds and a step in seconds, the
+  peer of `ui.DateField` and `ui.TimePicker`. Entity forms draw
+  timestamp fields with it.
 - **Inline editing**: `ListBuilder.InlineEdit()` edits a table's plain
   cells in place (new `ui.InlineEdit`, a popup one-field form that PUTs
   over the runtime's form RPC and returns to the list), only for a

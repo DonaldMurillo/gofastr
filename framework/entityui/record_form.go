@@ -707,13 +707,9 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required,
 		})
 	case schema.Timestamp:
-		return ui.FormField(ui.FormFieldConfig{
-			Label: label, For: id, Help: help, Required: required,
-			Input: func(c headless.FieldControl) render.HTML {
-				return ui.Control(ui.ControlConfig{
-					Field: c, Type: "datetime-local", Name: f.Name, Value: timestampInputValue(val),
-				})
-			},
+		return ui.DateTimeField(ui.DateTimeFieldConfig{
+			Name: f.Name, Label: label, ID: id, Value: timestampInputValue(val),
+			Help: help, Required: required,
 		})
 	case schema.Relation:
 		return fb.relationPicker(ctx, f, label, help, id, val)

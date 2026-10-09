@@ -54,11 +54,32 @@ func TestDateFieldWiresDateBounds(t *testing.T) {
 	}
 }
 
+// A DateTimeField is a native datetime-local input; Step is in seconds
+// and a zero Step leaves the browser's minute default.
+func TestDateTimeFieldWiresBoundsAndStep(t *testing.T) {
+	h := string(DateTimeField(DateTimeFieldConfig{
+		Name: "paid_at", Label: "Paid at", Value: "2026-07-22T09:30",
+		Min: "2026-01-01T00:00", Max: "2026-12-31T23:59", Step: 1,
+	}))
+	for _, want := range []string{
+		`type="datetime-local"`, `value="2026-07-22T09:30"`,
+		`min="2026-01-01T00:00"`, `max="2026-12-31T23:59"`, `step="1"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("DateTimeField output missing %q: %s", want, h)
+		}
+	}
+	if h := string(DateTimeField(DateTimeFieldConfig{Name: "at", Label: "At"})); strings.Contains(h, "step=") {
+		t.Errorf("zero Step drew a step: %s", h)
+	}
+}
+
 func TestTypedFieldsRequireNameAndLabel(t *testing.T) {
 	for name, render := range map[string]func(){
 		"text":   func() { TextField(TextFieldConfig{Label: "Label"}) },
 		"number": func() { NumberField(NumberFieldConfig{Name: "n"}) },
 		"date":   func() { DateField(DateFieldConfig{}) },
+		"time":   func() { DateTimeField(DateTimeFieldConfig{Name: "at"}) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
