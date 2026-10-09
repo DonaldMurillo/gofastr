@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `i18nui.Pseudo` pseudo-localizes a string (accented, a third longer,
+  placeholders kept) and `i18nui.AddPseudo` puts every framework default
+  into a catalog under a pseudo tag such as en-XA, for overflow testing.
 - `entityui.Extension.Side` adds panels (`SidePanel`: Key, Title,
   Build) to a record's side column, after its details, each built as
   the caller and failing alone.
