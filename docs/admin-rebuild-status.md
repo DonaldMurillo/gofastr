@@ -1,22 +1,15 @@
 # Admin rebuild status
 
 As of 2026-10-09. The admin rebuild ships as five stacked PRs (gh stack #492).
-All five are green. The top PR (#495) has 29 local commits that have not been
-pushed. The admin still lacks phone list cards, a searchable relation picker,
-file upload, and a Queue page in Meridian.
+All five were green at the last check. The top PR (#495) has 56 commits on
+top of its pushed head (5b53d2af), plus this status update, that are not on its
+branch yet. They live
+on `wip/admin-shell-remote`, which has every gap from the last status closed.
 
 The approved design is the "D · Hybrid" prototype
-(https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL).
-
-## Parity round in progress
-
-Work continues on `wip/admin-shell-remote`. Landed so far: phone rows on
-lists, the searchable relation picker with New, uploads into storage,
-the Jobs page in Meridian with status, updated and last-error columns,
-filter rows and column reordering, the `/` key and the shortcut sheet,
-Create another and Copy API URL, the dashboard count fallback, and JSON
-checked in the browser. The sections below still describe the state
-before this round; they are rewritten when the round ends.
+(https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL). A copy sits at
+`docs/admin-prototype.html` for parity work; remove it before the branch
+lands on #495.
 
 ## PR stack
 
@@ -28,7 +21,7 @@ The PRs merge bottom up. Never rebase them; merge the base in instead.
 | #491 | P0: entity Display config, views, facets, boot validation | Open, green |
 | #493 | States: transitions, audit, overrides | Open, green |
 | #494 | entityui: lists, records, forms, bulk, saved views | Open, green |
-| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 29 commits unpushed |
+| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 56 commits waiting on `wip/admin-shell-remote` |
 
 At the last check every PR passed its 17 checks, showed 0 unresolved review
 threads, and was not behind its base or main. CodeRabbit skipped #494 and #495
@@ -36,13 +29,40 @@ and was rate-limited on the others, so those PRs have no bot review.
 
 Review dispositions for #495 are in its issue comment 6044570777.
 
-## Unpushed work on #495
+## Work waiting for #495
 
-Newest first, on top of 5b53d2af:
+Newest first, on top of 5b53d2af (merge commits left out):
 
+- dafa6476 feat(admin): the dashboard's primary New button
+- b879680f feat(meridian): a Revenue report and seeded payments
+- e1a21d37 feat(meridian): a Spanish catalog and a pseudo-locale overflow test
+- 00618528 feat(i18nui): a pseudo locale for overflow testing
+- d1007e5e feat(admin): the page theme is the account page's Look
+- 4715b885 fix(entityui): an upload's prompt is translated
+- 69182ad2 fix(ui): chips, short ids and stat-card actions fit a narrow box
+- d48d2147 feat(entityui): side panels on a record, and Meridian's Billing panel
+- 231f6cd6 feat(ui): DateTimeField, and entity timestamps use it
+- d6f30d44 feat(entityui): table cells edit in place
+- 1e70356d feat(entityui): a list switches between table and cards
+- 17fbef7d feat(admin): a Brutal page theme, picked from the toolbar
+- 1c03aee4 docs: note the parity round's progress in the status doc
+- 54f15e28 feat(ui): a JSON text area is checked as JSON while it is typed
+- 3e629c89 feat(admin): a late dashboard count falls back to a bounded read
+- fe0159c6 feat(entityui): the record menu offers Create another and Copy API URL
+- aeb5079f feat(admin): / focuses the list search and ? opens the keyboard help
+- 62a8b17f feat(entityui): filter rows and column reordering on lists
+- 1b5c32a0 fix(crud): a multipart form takes a bool's checkbox pair; the runtime stays in budget
+- dae667f5 feat(entityui): Image and File fields upload into storage
+- 72fd1918 feat(admin): the Jobs page shows status, updated and last error, and Meridian has one
+- 7c3ec12b style(entityui): gofmt the phone-row test
+- b7fcd0e0 feat(entityui)!: a relation field is a searchable picker with New
+- b8b50b7f feat(ui): Picker picks one record from a server-searched list
+- 89fe16f8 feat(ui): a DataTable can be two-line rows on a phone; entity lists use it
+- f46c6e3e docs: add the admin prototype for parity work
+- d0c3b2c2 docs: record where the admin rebuild stands
 - 675300cd feat(admin): the audit log names role, account and bulk changes
 - 2fc285b3 feat(meridian): billing and support roles, editable from the admin
-- c88168d1 feat(admin)!: the Roles page is a permission grid (renames `_revoke` to `_permissions`)
+- c88168d1 feat(admin)!: the Roles page is a permission grid
 - bbe8211b fix(ui): a DataTable card keeps a value of several parts together
 - acc6be96 fix(headless): the behaviour gates read the bell module
 - 6ec5c8fb feat(headless): the leave guard asks in the kit's dialog
@@ -72,29 +92,26 @@ Newest first, on top of 5b53d2af:
 
 ## Feature inventory
 
-Of 23 feature groups in the plan, 14 are done, 7 are partly done and 2 are
-missing.
+All 23 feature groups in the plan are done.
 
-| Feature | State | Gap |
-| --- | --- | --- |
-| Relation picker | Missing | A plain select of the first 100 records (`framework/entityui/record_form.go` `relationSelect`). No search, no "New", no warning when the list is cut off. |
-| Image and file fields | Missing | A preview above an editable URL text box. No upload into storage. |
-| Date and time inputs | Partial | Timestamps use the browser's `datetime-local` input, not `ui.TimePicker`. |
-| JSON fields | Partial | Validated by the server on save; nothing checks them in the browser first. |
-| Keyboard shortcuts | Partial | ⌘K, Escape and ⌘S work. The `/` search-focus key and the shortcut help sheet are not wired. |
-| Dashboard counts | Partial | Polling, hidden-tab pause and `10k+` work. A failed or late count shows "—" instead of an estimate. |
-| Extensions | Partial | No hook for a side panel on a record page. |
-| Translations | Partial | Admin and entity keys exist. No pseudo-locale test catches text that overflows the layout. |
-| Meridian dogfood | Partial | No revenue report, no Payments tab, no Spanish catalog. |
+Done this round: lists become two-line rows on a phone; a searchable
+relation picker with New, whose open button stacks the related record as a
+drawer (the prototype's peek); Image and File fields upload into storage;
+timestamps use `ui.DateTimeField`; JSON is checked in the browser; the `/`
+key and the shortcut sheet; a late dashboard count falls back to a bounded
+read; record side panels (`Extension.Side`); a pseudo locale with an overflow
+test; and in Meridian a Revenue report, seeded payments behind the invoice's
+Payments tab, a Spanish catalog and the Jobs page.
 
-Done: entity Display config, views and facets; States and transitions; form
-layouts, sections and read-only fields; lists (search, filters, sort, paging,
-empty states, mobile); record pages (related, activity, API, duplicate, trash);
-bulk actions with every-match caps, jobs and undo; saved views with owner and
-tenant isolation; the shell, sidebar, breadcrumbs, palette, theme and account;
-the queue, replay, audit log and Roles pages; entity tools and count endpoints;
-the security guards (authz, scope, masking, cross-site, body caps, no-store);
-generator, SDK and LLM metadata; removal of the old `/admin/e/` pages.
+Done before: entity Display config, views and facets; States and
+transitions; form layouts, sections and read-only fields; lists (search,
+filters, sort, paging, empty states); record pages (related, activity, API,
+duplicate, trash); bulk actions with every-match caps, jobs and undo; saved
+views with owner and tenant isolation; the shell, sidebar, breadcrumbs,
+palette, theme and account; the audit log and Roles pages; entity tools and
+count endpoints; the security guards (authz, scope, masking, cross-site, body
+caps, no-store); generator, SDK and LLM metadata; removal of the old
+`/admin/e/` pages.
 
 Deferred on purpose, not counted as gaps: version history and drafts, edit
 locks, preview, translated field values, locale formatting, RTL, single-record
@@ -103,61 +120,47 @@ rows, MCP action tooling.
 
 ## Prototype comparison
 
-This compares the source against the prototype. It is not a side-by-side
-screenshot check, which is still owed for every screen.
+Checked side by side with screenshots of Meridian (light, dark and a 375px
+phone) on 2026-10-09.
 
 | Surface | Matches the prototype | Differs |
 | --- | --- | --- |
-| Shell and navigation | Sidebar groups and counts, collapsible nav, breadcrumbs, ⌘K palette, theme toggle, account menu | — |
-| Dashboard | Metrics, entity cards, attention, recent activity, polling, per-card New | No page-level "New customer" button. The Queue card is absent in Meridian. |
-| Entity lists | Search, server-side sort and paging, saved views, counts, column visibility, bulk actions, CSV, New | Tables scroll sideways on a phone instead of becoming cards. No layout switch, no structured filter rows, no column reordering, no inline editing. |
-| Record drawer and forms | Drawer, previous and next stepping, related, activity and API tabs, leave guard, delete with undo, duplicate | No relation preview (PeekView). No "Create another" or "Copy API URL". |
-| Operations | Audit filters and diffs, Roles grid, User roles, account and password, confirmations, toasts, empty states | Queue not wired in Meridian. The queue page lacks Done and Running filters and Status, Updated and Last-error columns. |
-| Theme | Light, Auto and Dark | No Brutal theme; the admin uses `ui.ThemeToggle`, not `ui.ThemePicker`. |
+| Shell and navigation | Sidebar groups and counts, collapsible nav, breadcrumbs, ⌘K palette, theme toggle, account menu, `/` and `?` keys | The look (Default or Brutal) is on the account page, not in the account menu: a menu cannot hold a radio group. |
+| Dashboard | Metrics, entity cards with New, a page-level New Customer, attention, recent activity, failed jobs, polling | — |
+| Entity lists | Search, sort, paging, saved views, counts, columns (hide and reorder), filter rows, table and cards switch, inline editing, bulk actions, CSV, phone rows | — |
+| Record drawer and forms | Drawer, previous and next, related, activity and API tabs, leave guard, delete with undo, duplicate, Create another, Copy API URL, relation picker with New, related record stacked as a drawer, side panels | The prototype's side column is sticky; ours scrolls with the form. |
+| Operations | Jobs with status filters, updated and last-error columns, replay; audit filters and diffs; Roles grid; User roles; account and password | — |
+| Theme | Light, Auto and Dark; Default and Brutal | — |
 
-## Gaps ranked
+## Known test failures
 
-Worst for day-to-day usefulness first:
+These fail on this branch and on its base the same way; none comes from the
+admin work:
 
-1. Entity lists scroll sideways on a phone. `framework/entityui/list_table.go`
-   sets `Responsive: ui.ResponsiveScroll`. The card layout works (fixed in
-   bbe8211b), so this is a switch plus screenshots.
-2. The relation picker is a capped dropdown with no search, "New" or preview.
-3. Image and file fields have no upload.
-4. Meridian does not set `Queue` on `admin.Config`
-   (`examples/meridian/main.go`), so the demo has no Queue page; the queue page
-   also lacks the prototype's filters and columns.
-5. Filters are one query box, not field, operator and value rows. Columns can
-   be hidden but not reordered.
-6. Smaller items: the `/` key and shortcut help sheet; "Create another" and
-   "Copy API URL" on records; a dashboard count estimate on timeout; JSON
-   checked in the browser; the Brutal theme.
-7. Not built: inline table editing and a table/cards switch on lists.
+- `framework` TestContractsFixAdmitsPartialWritesOnFailure and
+  `framework/migrate` TestGenFileRerunAfterSnapshotFail: they count on a
+  write being refused, and the container runs as root.
+- `core-ui/runtime` TestTransitionPickedByDestination times out here.
+- `core-ui/runtime` TestInterceptForwardAfterBackLoadsPage failed once in a
+  full run and passed alone.
 
 ## Next steps
 
-Options for the next round:
+Before #495 is ready:
 
-- Fix gaps 1, 2 and 4, then push the batch (recommended). These are the first
-  things a person notices in the demo.
-- Push the 29 commits now and take the gaps as a follow-up round.
-- Work through the whole list before pushing. The largest option, and the stack
-  is more likely to fall behind main.
-
-Before #495 is ready, run once at the end of the batch:
-
-- [ ] Full suites: `./scripts/test-all.sh`.
+- [ ] Remove `docs/admin-prototype.html`.
+- [ ] Bring `wip/admin-shell-remote` onto `feat/admin-shell` (merge, never rebase).
 - [ ] Base check: `git fetch origin`, `git rev-list --count HEAD..origin/<base>`, merge the base in if behind.
 - [ ] Push `feat/admin-shell` with the full hook (never `--no-verify`).
 - [ ] Rewrite the #495 body from the commit list above, then `gh pr edit 495 --body-file`.
 - [ ] `./scripts/pr-review-findings.sh 495 --gate`, triage every thread, then watch CI.
 - [ ] Remove the stale `wip/drawer-steps` branch and worktree.
-- [ ] Screenshot every admin screen beside the prototype: light, dark and phone.
 
 ## Where things live
 
-- Code: branch `feat/admin-shell`. Find its checkout with `git worktree list`.
-- Demo: `examples/meridian`, built from that branch with its own SQLite
-  database and the admin at `/admin`. Sign in with the account seeded from
-  `ADMIN_SEED_PASSWORD`.
+- Code: `wip/admin-shell-remote`, to land on `feat/admin-shell`.
+- Demo: `examples/meridian`, with its own SQLite database and the admin at
+  `/admin`. Sign in with the account seeded from `ADMIN_SEED_PASSWORD`.
+  `MERIDIAN_PSEUDO_LOCALE=1` adds the en-XA pseudo locale; a Spanish browser
+  gets the Spanish catalog.
 - Prototype: https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL ("D · Hybrid").
