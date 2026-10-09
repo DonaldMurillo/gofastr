@@ -916,3 +916,45 @@ seed:
         issued_on: "2026-04-15"
         due_on: "2026-04-29"
 
+  - entity: payments
+    rows:
+      - invoice_id: "@invoices.number=INV-1001"
+        customer_id: "@customers.email=ada@acme.io"
+        amount: "99"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1002"
+        customer_id: "@customers.email=grace@globex.com"
+        amount: "299"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1004"
+        customer_id: "@customers.email=kj@umbrella.co"
+        amount: "99"
+        method: ach
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1006"
+        customer_id: "@customers.email=liskov@mit.edu"
+        amount: "99"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1008"
+        customer_id: "@customers.email=knuth@stanford.edu"
+        amount: "299"
+        method: wire
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1011"
+        customer_id: "@customers.email=knuth@stanford.edu"
+        amount: "299"
+        method: wire
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1003"
+        customer_id: "@customers.email=alan@initech.io"
+        amount: "29"
+        method: card
+        status: failed
+      - invoice_id: "@invoices.number=INV-1012"
+        customer_id: "@customers.email=kj@umbrella.co"
+        amount: "99"
+        method: card
+        status: failed
