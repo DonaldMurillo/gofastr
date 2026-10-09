@@ -8,6 +8,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- Meridian's admin has a Revenue report (an `admin.Page` in the Billing
+  group: MRR, collected, outstanding and failed payments, and three
+  breakdowns), and its seed data carries payments, so an invoice's
+  Related tab lists them.
 - Meridian speaks Spanish: `locales/es.json` translates the admin, the
   entity screens and its own entities, picked by Accept-Language. With
   `MERIDIAN_PSEUDO_LOCALE=1` it also offers en-XA, and

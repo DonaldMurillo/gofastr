@@ -53,5 +53,17 @@ func seedData() []seedEntity {
 			{"amount": "299", "customer_id": "@customers.email=knuth@stanford.edu", "due_on": "2026-05-02", "issued_on": "2026-04-18", "number": "INV-1011", "paid_on": "2026-04-20", "status": "paid"},
 			{"amount": "99", "customer_id": "@customers.email=kj@umbrella.co", "due_on": "2026-04-29", "issued_on": "2026-04-15", "number": "INV-1012", "status": "past_due"},
 		}},
+		// A payment for each paid invoice, and the failed attempts on two
+		// that went past due.
+		{Entity: "payments", Rows: []map[string]any{
+			{"amount": "99", "customer_id": "@customers.email=ada@acme.io", "invoice_id": "@invoices.number=INV-1001", "method": "card", "status": "succeeded"},
+			{"amount": "299", "customer_id": "@customers.email=grace@globex.com", "invoice_id": "@invoices.number=INV-1002", "method": "card", "status": "succeeded"},
+			{"amount": "99", "customer_id": "@customers.email=kj@umbrella.co", "invoice_id": "@invoices.number=INV-1004", "method": "ach", "status": "succeeded"},
+			{"amount": "99", "customer_id": "@customers.email=liskov@mit.edu", "invoice_id": "@invoices.number=INV-1006", "method": "card", "status": "succeeded"},
+			{"amount": "299", "customer_id": "@customers.email=knuth@stanford.edu", "invoice_id": "@invoices.number=INV-1008", "method": "wire", "status": "succeeded"},
+			{"amount": "299", "customer_id": "@customers.email=knuth@stanford.edu", "invoice_id": "@invoices.number=INV-1011", "method": "wire", "status": "succeeded"},
+			{"amount": "29", "customer_id": "@customers.email=alan@initech.io", "invoice_id": "@invoices.number=INV-1003", "method": "card", "status": "failed"},
+			{"amount": "99", "customer_id": "@customers.email=kj@umbrella.co", "invoice_id": "@invoices.number=INV-1012", "method": "card", "status": "failed"},
+		}},
 	}
 }
