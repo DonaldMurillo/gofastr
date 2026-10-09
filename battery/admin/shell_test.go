@@ -197,17 +197,22 @@ func TestShortcutHelpSheet(t *testing.T) {
 	}
 }
 
-// With Config.Themes the toolbar offers a page-theme picker beside the
-// light and dark toggle; without it, the toggle alone.
-func TestThemePickerInToolbar(t *testing.T) {
+// With Config.Themes the account page's Appearance card offers a
+// page-theme picker (the Look row) beside the light and dark toggle,
+// as the prototype's account menu does; the toolbar stays lean so a
+// phone's fits. Without Themes, the toggle alone.
+func TestThemePickerOnAccountPage(t *testing.T) {
 	brutal := style.RegisterThemeOverride(theme.Brutal())
 	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: brutal}}}, nil)
-	body := get(x.as(theAdmin), "/admin").Body.String()
-	if !strings.Contains(body, `data-hui-theme-picker=""`) || !strings.Contains(body, ">Brutal<") {
-		t.Errorf("no theme picker in the toolbar")
+	account := get(x.as(theAdmin), "/admin/account").Body.String()
+	if !strings.Contains(account, `data-hui-theme-picker=""`) || !strings.Contains(account, ">Brutal<") || !strings.Contains(account, ">Look<") {
+		t.Errorf("no Look row on the account page")
+	}
+	if strings.Contains(get(x.as(theAdmin), "/admin").Body.String(), "data-hui-theme-picker") {
+		t.Errorf("the toolbar still carries the theme picker")
 	}
 	plain := setup(t, nil, Config{}, nil)
-	if strings.Contains(get(plain.as(theAdmin), "/admin").Body.String(), "data-hui-theme-picker") {
+	if strings.Contains(get(plain.as(theAdmin), "/admin/account").Body.String(), "data-hui-theme-picker") {
 		t.Errorf("a theme picker drew with no Themes")
 	}
 }

@@ -26,7 +26,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `theme.Brutal()` re-skins the framework theme's tokens as
   neo-brutalism (square corners, 2px strokes, hard shadows in the
   border colour, a yellow primary, Archivo) in light and dark.
-  `admin.Config.Themes` offers page themes in the toolbar as a
+  `admin.Config.Themes` offers page themes on the account page as a
   `ui.ThemePicker`; Meridian offers Brutal.
 - `ui.TextAreaConfig.JSON` checks the text as JSON in the browser as it
   is typed (`headless.TextareaProps.JSON`, the `data-hui-json` hook of
@@ -1291,6 +1291,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- The admin's page-theme picker (`admin.Config.Themes`) moved from the
+  toolbar to the account page's Appearance card, as its Look row (new
+  key `ui.admin.look`). In a longer language the toolbar's picker
+  squeezed the phone's menu button under the search button.
 - The admin's User roles page pages through every account: a pager
   under the table turns pages through `?p=`. It read a bare `?offset=`
   that nothing on the page linked to; that parameter is gone.

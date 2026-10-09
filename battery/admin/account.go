@@ -26,7 +26,7 @@ func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render
 			Subtitle: i18nui.T(ctx, i18nui.KeyAdminAccountSub),
 		}),
 		b.profileCard(ctx),
-		appearanceCard(ctx),
+		b.appearanceCard(ctx),
 	}
 	if b.cfg.Auth != nil {
 		parts = append(parts, b.passwordCard(ctx))
@@ -69,17 +69,21 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	}, ui.DetailList(ui.DetailListConfig{Items: items}))
 }
 
-// appearanceCard is the theme choice, the same control and storage the
-// toolbar's toggle uses.
-func appearanceCard(ctx context.Context) render.HTML {
+// appearanceCard is the colour scheme, the same control and storage
+// the toolbar's toggle uses, and, with Config.Themes, the page's look.
+func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
+	items := []ui.DetailItem{{
+		Label: i18nui.T(ctx, i18nui.KeyAdminThemeLabel),
+		Value: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Ctx: ctx}),
+	}}
+	if look := b.themePicker(ctx); look != "" {
+		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminLook), Value: look})
+	}
 	return ui.Card(ui.CardConfig{
 		Heading:      i18nui.T(ctx, i18nui.KeyAdminAppearance),
 		HeadingLevel: 2,
 		Description:  i18nui.T(ctx, i18nui.KeyAdminAppearanceSub),
-	}, ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{
-		Label: i18nui.T(ctx, i18nui.KeyAdminThemeLabel),
-		Value: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Ctx: ctx}),
-	}}}))
+	}, ui.DetailList(ui.DetailListConfig{Items: items}))
 }
 
 // passwordCard changes the caller's password through the auth battery's

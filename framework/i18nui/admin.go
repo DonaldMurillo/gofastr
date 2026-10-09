@@ -36,6 +36,7 @@ const (
 	KeyAdminAppearance      Key = "ui.admin.appearance"      // "Appearance"
 	KeyAdminAppearanceSub   Key = "ui.admin.appearanceSub"   // "Applies in this browser."
 	KeyAdminThemeLabel      Key = "ui.admin.themeLabel"      // "Theme"
+	KeyAdminLook            Key = "ui.admin.look"            // "Look"
 	KeyAdminSecurity        Key = "ui.admin.security"        // "Password"
 	KeyAdminSecuritySub     Key = "ui.admin.securitySub"     // "Changing it signs you out everywhere else."
 	KeyAdminCurrentPassword Key = "ui.admin.currentPassword" // "Current password"
@@ -252,6 +253,7 @@ var adminDefaults = map[Key]string{
 	KeyAdminAppearance:         "Appearance",
 	KeyAdminAppearanceSub:      "Applies in this browser.",
 	KeyAdminThemeLabel:         "Theme",
+	KeyAdminLook:               "Look",
 	KeyAdminSecurity:           "Password",
 	KeyAdminSecuritySub:        "Changing it signs you out everywhere else.",
 	KeyAdminCurrentPassword:    "Current password", // not-a-secret: UI label

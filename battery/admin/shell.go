@@ -201,7 +201,6 @@ func (b *Battery) layout() *appui.Layout {
 				ui.SidebarDrawerTrigger(cfg), crumbs),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
 				trigger, keys,
-				b.themePicker(ctx),
 				ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon, Ctx: ctx}),
 				b.accountMenu(ctx)),
 		)
@@ -229,7 +228,8 @@ func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 	}
 }
 
-// themePicker offers Config.Themes beside the toggle; none draws nothing.
+// themePicker offers Config.Themes on the account page; none draws
+// nothing.
 func (b *Battery) themePicker(ctx context.Context) render.HTML {
 	if len(b.cfg.Themes) == 0 {
 		return ""

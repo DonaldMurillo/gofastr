@@ -82,10 +82,10 @@ type Config struct {
 	// so it never exposes credential tables. Ignored when Entities is set.
 	AllEntities bool
 
-	// Themes are the page themes the toolbar offers beside the light and
-	// dark toggle, as a ui.ThemePicker: each a theme registered with
-	// style.RegisterThemeOverride (theme.Brutal is one). Empty offers
-	// the toggle alone.
+	// Themes are the page themes the account page's Appearance card
+	// offers as its Look, a ui.ThemePicker beside the light and dark
+	// toggle: each a theme registered with style.RegisterThemeOverride
+	// (theme.Brutal is one). Empty offers the toggle alone.
 	Themes []ui.ThemeChoice
 
 	// Queue is the job queue the Jobs page and the dashboard's failed
