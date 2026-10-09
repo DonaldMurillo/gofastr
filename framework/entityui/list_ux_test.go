@@ -62,6 +62,7 @@ func TestListRowsOnPhones(t *testing.T) {
 		}
 	}
 }
+
 // A relation column and its form field label as the record they point
 // at: customer_id reads "Customer", never "Customer Id".
 func TestRelationFieldLabel(t *testing.T) {
