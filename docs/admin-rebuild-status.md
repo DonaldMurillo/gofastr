@@ -8,6 +8,16 @@ file upload, and a Queue page in Meridian.
 The approved design is the "D · Hybrid" prototype
 (https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL).
 
+## Parity round in progress
+
+Work continues on `wip/admin-shell-remote`. Landed so far: phone rows on
+lists, the searchable relation picker with New, uploads into storage,
+the Jobs page in Meridian with status, updated and last-error columns,
+filter rows and column reordering, the `/` key and the shortcut sheet,
+Create another and Copy API URL, the dashboard count fallback, and JSON
+checked in the browser. The sections below still describe the state
+before this round; they are rewritten when the round ends.
+
 ## PR stack
 
 The PRs merge bottom up. Never rebase them; merge the base in instead.
