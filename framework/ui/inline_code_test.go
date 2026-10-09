@@ -13,3 +13,10 @@ func TestInlineCodeEscapesText(t *testing.T) {
 		}
 	}
 }
+
+func TestInlineCodeDangerTone(t *testing.T) {
+	out := string(InlineCodeDanger(`smtp: 451 <greylisted>`))
+	if !strings.Contains(out, `class="fui-code fui-code--danger"`) || !strings.Contains(out, "&lt;greylisted&gt;") {
+		t.Errorf("InlineCodeDanger: %s", out)
+	}
+}

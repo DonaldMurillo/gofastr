@@ -148,7 +148,7 @@ func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
 	_, replay := b.replayable()
 	body := ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoFailedJobs), HeadingLevel: 3})
 	if len(jobs) > 0 {
-		body = b.jobsTable(ctx, jobs, b.cfg.PathPrefix, replay, 3, nil)
+		body = b.jobsTable(ctx, jobs, "failed", b.cfg.PathPrefix, replay, 3, nil)
 	}
 	cfg := ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}
 	if count != "" {

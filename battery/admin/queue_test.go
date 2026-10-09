@@ -59,7 +59,7 @@ func (b browseOnly) Stats(ctx context.Context) (queue.JobStats, error) { return 
 func failedJobs(ids ...string) []queue.Job {
 	out := make([]queue.Job, len(ids))
 	for i, id := range ids {
-		out[i] = queue.Job{ID: id, Type: "send.email", MaxAttempts: 3, Attempts: 3, CreatedAt: time.Now()}
+		out[i] = queue.Job{ID: id, Type: "send.email", MaxAttempts: 3, Attempts: 3, CreatedAt: time.Now(), Status: "failed"}
 	}
 	return out
 }
@@ -120,19 +120,61 @@ func TestQueueStatsErrorDropsCounts(t *testing.T) {
 	}
 }
 
-func TestQueueReplayOffersOnlyOnFailed(t *testing.T) {
-	q := &fakeQueue{jobs: failedJobs("j1", "j2")}
+// A failed row replays in every view, and the header replays every
+// failed job whenever there is one; nothing else replays.
+func TestQueueReplayOffersOnFailedRows(t *testing.T) {
+	jobs := append(failedJobs("j1", "j2"), queue.Job{ID: "p1", Type: "send.email", Status: "pending", CreatedAt: time.Now()})
+	q := &fakeQueue{jobs: jobs, stats: queue.JobStats{"failed": 2, "pending": 1}}
 	x := queueEnv(t, q)
-	failed := get(x.as(theAdmin), "/admin/queue?status=failed").Body.String()
-	if !strings.Contains(failed, `action="/admin/queue/_replay/j1"`) || !strings.Contains(failed, `action="/admin/queue/_replay_all"`) {
-		t.Fatalf("the failed view offers no replay:\n%s", failed)
+	for _, page := range []string{"/admin/queue?status=failed", "/admin/queue"} {
+		body := get(x.as(theAdmin), page).Body.String()
+		if !strings.Contains(body, `action="/admin/queue/_replay/j1"`) || !strings.Contains(body, `action="/admin/queue/_replay_all"`) {
+			t.Fatalf("%s offers no replay:\n%s", page, body)
+		}
+		if strings.Contains(body, "/_replay/p1") {
+			t.Errorf("%s offers replay on a pending job", page)
+		}
+		if !strings.Contains(body, "Replay 2 failed") {
+			t.Errorf("%s: the header does not count the failed jobs", page)
+		}
 	}
-	if all := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(all, "/_replay") {
-		t.Error("the All view offers replay")
+	q.stats = queue.JobStats{"pending": 1}
+	q.jobs = jobs[2:]
+	if body := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(body, "/_replay") {
+		t.Error("a queue with no failed job offers replay")
 	}
-	y := queueEnv(t, browseOnly{&fakeQueue{jobs: failedJobs("j1")}})
+	y := queueEnv(t, browseOnly{&fakeQueue{jobs: failedJobs("j1"), stats: queue.JobStats{"failed": 1}}})
 	if body := get(y.as(theAdmin), "/admin/queue?status=failed").Body.String(); strings.Contains(body, "/_replay") {
 		t.Error("a queue without Replay offers it")
+	}
+}
+
+// The page filters by every status with its count, and each row shows
+// its status, when it last changed and its last error.
+func TestQueueColumnsAndFilters(t *testing.T) {
+	updated := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	q := &fakeQueue{
+		jobs: []queue.Job{{ID: "j1", Type: "webhook.deliver", Status: "failed", Attempts: 5, MaxAttempts: 5,
+			UpdatedAt: updated, LastError: "webhook: 502 from https://hooks.example.com"}},
+		stats: queue.JobStats{"pending": 1, "claimed": 2, "failed": 1, "done": 9},
+	}
+	x := queueEnv(t, q)
+	body := get(x.as(theAdmin), "/admin/queue").Body.String()
+	for _, want := range []string{
+		"Pending (1)", "Running (2)", "Failed (1)", "Done (9)", "All (13)",
+		">Status<", ">Updated<", ">Last error<",
+		"webhook: 502 from https://hooks.example.com",
+		`datetime="2026-10-09T12:00:00Z"`,
+		">Failed<",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("queue page misses %q", want)
+		}
+	}
+	get(x.as(theAdmin), "/admin/queue?status=done")
+	get(x.as(theAdmin), "/admin/queue?status=claimed")
+	if got := q.statuses[len(q.statuses)-2:]; !slices.Equal(got, []string{"done", "claimed"}) {
+		t.Errorf("ListJobs saw %q", got)
 	}
 }
 

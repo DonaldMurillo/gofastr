@@ -52,6 +52,11 @@ type Column struct {
 	// column cannot both Fit and Wrap.
 	Fit bool
 
+	// Truncate holds a long value to one line of at most
+	// --ui-data-table-truncate-width (20rem), cut with an ellipsis: an
+	// error message, a URL. A column cannot Truncate and Wrap or Fit.
+	Truncate bool
+
 	// SelectAll makes the header a checkbox that checks or clears the
 	// row checkboxes named SelectAll in this table, and shows mixed
 	// when only some are checked. Header, when set, is its accessible
@@ -248,21 +253,24 @@ var dataTableClasses = headless.Classes{
 	headless.PartTableSelect: "fui-choice--checkbox fui-data-table__select",
 	headless.PartControl:     "fui-choice__input",
 
-	"header--fit":         "is-fit",
-	"header--center-fit":  "is-align-center is-fit",
-	"header--end-fit":     "is-align-end is-fit",
-	"cell--fit":           "is-fit",
-	"cell--center-fit":    "is-align-center is-fit",
-	"cell--end-fit":       "is-align-end is-fit",
-	"header--center":      "is-align-center",
-	"header--end":         "is-align-end",
-	"header--center-wrap": "is-align-center",
-	"header--end-wrap":    "is-align-end",
-	"cell--center":        "is-align-center",
-	"cell--end":           "is-align-end",
-	"cell--wrap":          "is-wrap",
-	"cell--center-wrap":   "is-align-center is-wrap",
-	"cell--end-wrap":      "is-align-end is-wrap",
+	"header--fit":          "is-fit",
+	"header--center-fit":   "is-align-center is-fit",
+	"header--end-fit":      "is-align-end is-fit",
+	"cell--fit":            "is-fit",
+	"cell--center-fit":     "is-align-center is-fit",
+	"cell--end-fit":        "is-align-end is-fit",
+	"header--center":       "is-align-center",
+	"header--end":          "is-align-end",
+	"header--center-wrap":  "is-align-center",
+	"header--end-wrap":     "is-align-end",
+	"cell--center":         "is-align-center",
+	"cell--end":            "is-align-end",
+	"cell--wrap":           "is-wrap",
+	"cell--center-wrap":    "is-align-center is-wrap",
+	"cell--end-wrap":       "is-align-end is-wrap",
+	"cell--truncate":       "is-truncate",
+	"header--end-truncate": "is-align-end",
+	"cell--end-truncate":   "is-align-end is-truncate",
 }
 
 // phoneSlots are the ResponsiveRows slots a column can name.
@@ -347,6 +355,12 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		}
 		if c.Wrap && c.Fit {
 			panic("ui: DataTable Column " + c.Key + " sets Fit and Wrap; a fitted column holds one line")
+		}
+		if c.Truncate && (c.Wrap || c.Fit) {
+			panic("ui: DataTable Column " + c.Key + " sets Truncate with Wrap or Fit; a truncated column is one capped line")
+		}
+		if c.Truncate {
+			variant = strings.TrimPrefix(variant+"-truncate", "-")
 		}
 		if c.Wrap {
 			variant = strings.TrimPrefix(variant+"-wrap", "-")

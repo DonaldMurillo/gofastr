@@ -89,6 +89,9 @@ const (
 // Table columns on the ops pages.
 const (
 	KeyAdminColID         Key = "ui.admin.colID"         // "ID"
+	KeyAdminColJob        Key = "ui.admin.colJob"        // "Job"
+	KeyAdminColUpdated    Key = "ui.admin.colUpdated"    // "Updated"
+	KeyAdminColLastError  Key = "ui.admin.colLastError"  // "Last error"
 	KeyAdminColType       Key = "ui.admin.colType"       // "Type"
 	KeyAdminColAttempts   Key = "ui.admin.colAttempts"   // "Attempts"
 	KeyAdminColPriority   Key = "ui.admin.colPriority"   // "Priority"
@@ -115,17 +118,18 @@ const (
 // The jobs page.
 const (
 	KeyAdminQueue            Key = "ui.admin.queue"            // "Jobs"
-	KeyAdminQueueSub         Key = "ui.admin.queueSub"         // "Background jobs by status."
+	KeyAdminQueueSub         Key = "ui.admin.queueSub"         // "Background jobs. Failed jobs ran out of retries and wait for a replay."
 	KeyAdminQueueStatus      Key = "ui.admin.queueStatus"      // "Status"
 	KeyAdminQueueAll         Key = "ui.admin.queueAll"         // "All"
 	KeyAdminQueuePending     Key = "ui.admin.queuePending"     // "Pending"
 	KeyAdminQueueClaimed     Key = "ui.admin.queueClaimed"     // "Running"
 	KeyAdminQueueFailed      Key = "ui.admin.queueFailed"      // "Failed"
+	KeyAdminQueueDone        Key = "ui.admin.queueDone"        // "Done"
 	KeyAdminQueueLoadFailed  Key = "ui.admin.queueLoadFailed"  // "Could not load jobs. Check the server logs for details."
 	KeyAdminQueueEmpty       Key = "ui.admin.queueEmpty"       // "No jobs"
 	KeyAdminQueueEmptyDesc   Key = "ui.admin.queueEmptyDesc"   // "No jobs match this filter."
 	KeyAdminReplay           Key = "ui.admin.replay"           // "Replay"
-	KeyAdminReplayAll        Key = "ui.admin.replayAll"        // "Replay all"
+	KeyAdminReplayAll        Key = "ui.admin.replayAll"        // "Replay {n} failed"
 	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job?"
 	KeyAdminReplayed         Key = "ui.admin.replayed"         // "Job queued again."
 	KeyAdminReplayedAll      Key = "ui.admin.replayedAll"      // "Failed jobs queued again."
@@ -279,6 +283,9 @@ var adminDefaults = map[Key]string{
 	KeyAdminVerbTransition:     "changed the state of",
 	KeyAdminUpdatedAgo:         "Updated {ago}",
 	KeyAdminColID:              "ID",
+	KeyAdminColJob:             "Job",
+	KeyAdminColUpdated:         "Updated",
+	KeyAdminColLastError:       "Last error",
 	KeyAdminColType:            "Type",
 	KeyAdminColAttempts:        "Attempts",
 	KeyAdminColPriority:        "Priority",
@@ -301,17 +308,18 @@ var adminDefaults = map[Key]string{
 	KeyAdminColRoutes:          "Routes / tools",
 	KeyAdminColLastExit:        "Last exit",
 	KeyAdminQueue:              "Jobs",
-	KeyAdminQueueSub:           "Background jobs by status.",
+	KeyAdminQueueSub:           "Background jobs. Failed jobs ran out of retries and wait for a replay.",
 	KeyAdminQueueStatus:        "Status",
 	KeyAdminQueueAll:           "All",
 	KeyAdminQueuePending:       "Pending",
 	KeyAdminQueueClaimed:       "Running",
 	KeyAdminQueueFailed:        "Failed",
+	KeyAdminQueueDone:          "Done",
 	KeyAdminQueueLoadFailed:    "Could not load jobs. Check the server logs for details.",
 	KeyAdminQueueEmpty:         "No jobs",
 	KeyAdminQueueEmptyDesc:     "No jobs match this filter.",
 	KeyAdminReplay:             "Replay",
-	KeyAdminReplayAll:          "Replay all",
+	KeyAdminReplayAll:          "Replay {n} failed",
 	KeyAdminReplayAllConfirm:   "Replay every failed job?",
 	KeyAdminReplayed:           "Job queued again.",
 	KeyAdminReplayedAll:        "Failed jobs queued again.",

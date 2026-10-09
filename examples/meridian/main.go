@@ -94,6 +94,9 @@ func main() {
 	})
 	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 	site := uiapp.NewApp(appName)
+	// The queue first: its bulk runner joins the entity UI's extensions,
+	// which RegisterGenerated builds the UI from.
+	setupQueue(fwApp, db)
 	RegisterGenerated(fwApp, site, db)
 	// SEO surface: sitewide description/OG defaults (per-screen values
 	// override, see screen_home.go / screen_pricing.go), a sitemap of the
@@ -132,7 +135,7 @@ func main() {
 	if db != nil {
 		fwApp.WithAuditLog(framework.AuditConfig{})
 	}
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)

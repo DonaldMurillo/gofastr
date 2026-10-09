@@ -8,6 +8,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Queue history**: a job `DBQueue.ListJobs` returns carries `Status`,
+  `UpdatedAt` and `LastError` (the worker keeps the error its last
+  failed attempt returned, scrubbed and cut to 500 runes), and
+  `queue.WithDoneRetention(d)` keeps acked jobs as `"done"` for `d`.
+  The admin's Jobs page filters by Pending, Running, Failed and Done
+  with counts, shows Status, Updated and Last error columns, replays
+  failed rows in every view, and draws phone rows on a phone.
+  `ui.DataTable` gains `Column.Truncate`, and `ui.InlineCodeDanger`
+  draws an error in the danger tone. Meridian runs a database queue
+  for its billing jobs and queued bulk runs, and its admin has the
+  Jobs page.
 - `ui.Picker` picks one record from a server-searched list inside a
   form: `headless.Combobox` gains `Pick` (a hidden input submits the
   picked value; the search input is detached from the host form) and

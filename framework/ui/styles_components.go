@@ -1260,6 +1260,11 @@ func dataTableCSS(_ style.Theme) string {
   white-space: normal;
   min-inline-size: var(--ui-data-table-wrap-width, 16rem);
 }
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate {
+  max-inline-size: var(--ui-data-table-truncate-width, 20rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }

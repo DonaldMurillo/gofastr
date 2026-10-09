@@ -65,7 +65,11 @@ type DBQueue struct {
 	// backoffMax. Zero base preserves the original "retry immediately"
 	// behaviour.
 	backoffBase time.Duration
-	backoffMax  time.Duration
+	// doneRetention keeps acked jobs as 'done' this long (0: delete on
+	// Ack); lastPrune is when pruneDone last swept, under mu.
+	doneRetention time.Duration
+	lastPrune     time.Time
+	backoffMax    time.Duration
 
 	// now is the clock used for claim timestamps, lease-expiry cutoffs, and
 	// scheduled_at math. Defaults to time.Now; tests substitute a fake clock
@@ -165,6 +169,21 @@ func WithBackoff(base, max time.Duration) DBQueueOption {
 	}
 }
 
+// WithDoneRetention keeps an acked job as status "done" for d instead of
+// deleting it, so an admin can list what ran; the claim loop deletes done
+// jobs older than d, at most once a minute. Zero (the default) deletes
+// on Ack, as before. A kept job still holds its ID, so a later Enqueue
+// of the same ID fails until the retention has passed.
+func WithDoneRetention(d time.Duration) DBQueueOption {
+	return func(q *DBQueue) { q.doneRetention = max(d, 0) }
+}
+
+// maxLastError caps the failed attempt's error a job keeps, in runes.
+const maxLastError = 500
+
+// donePruneEvery is how often the claim loop sweeps expired done jobs.
+const donePruneEvery = time.Minute
+
 // NewDBQueue constructs a DBQueue and ensures its backing table exists.
 // Probes the dialect once via SELECT version(); falls back to SQLite.
 // Panics if the table name contains unsafe characters.
@@ -234,8 +253,10 @@ func (q *DBQueue) ensureTable() error {
 		status        TEXT NOT NULL DEFAULT 'pending',
 		claimed_at    %s,
 		claim_token   TEXT NOT NULL DEFAULT '',
-		user_id       TEXT NOT NULL DEFAULT ''
-	)`, q.qt(), tsType, tsType, tsType)
+		user_id       TEXT NOT NULL DEFAULT '',
+		updated_at    %s,
+		last_error    TEXT NOT NULL DEFAULT ''
+	)`, q.qt(), tsType, tsType, tsType, tsType)
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
 	}
@@ -243,6 +264,9 @@ func (q *DBQueue) ensureTable() error {
 	// lease column existed. Ignore the error: re-running ADD COLUMN on a
 	// table that already has it is the only expected failure here.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
+	// updated_at the same way: a row from before it reads as never
+	// updated, and lists its created_at instead.
+	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN updated_at %s", q.qt(), tsType))
 	// Idempotent migrations for pre-existing tables: each adds its
 	// column where missing (Postgres via ADD COLUMN IF NOT EXISTS,
 	// SQLite via attempt-and-tolerate-duplicate).
@@ -262,6 +286,9 @@ func (q *DBQueue) ensureTable() error {
 	// user-attributed — the same answer as a job whose payload was
 	// never personal data.
 	if err := q.addTextColumn("user_id"); err != nil {
+		return err
+	}
+	if err := q.addTextColumn("last_error"); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
@@ -367,9 +394,9 @@ func (q *DBQueue) release(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='pending',
 			attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
-			scheduled_at = $1
-			WHERE id = $2 AND status='claimed' AND claim_token = $3`, q.qt()),
-		q.now().UTC().Add(gateDeferDelay), job.ID, job.ClaimToken)
+			scheduled_at = $1, updated_at = $2
+			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt()),
+		q.now().UTC().Add(gateDeferDelay), q.now().UTC(), job.ID, job.ClaimToken)
 	return err
 }
 
@@ -470,6 +497,9 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 	if err := q.deadLetterExpiredFinalClaims(ctx); err != nil {
 		return Job{}, err
 	}
+	if err := q.pruneDone(ctx); err != nil {
+		return Job{}, err
+	}
 	switch q.dialect {
 	case dialectPostgres:
 		return q.dequeuePostgres(ctx, lane, types)
@@ -534,6 +564,28 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 	return nil
 }
 
+// pruneDone deletes done jobs older than the retention, at most once per
+// donePruneEvery. The terminal status guard is its fence: a done row has
+// no live claim.
+func (q *DBQueue) pruneDone(ctx context.Context) error {
+	if q.doneRetention <= 0 {
+		return nil
+	}
+	now := q.now().UTC()
+	q.mu.Lock()
+	due := q.lastPrune.IsZero() || now.Sub(q.lastPrune) >= donePruneEvery
+	if due {
+		q.lastPrune = now
+	}
+	q.mu.Unlock()
+	if !due {
+		return nil
+	}
+	_, err := q.db.ExecContext(ctx, fmt.Sprintf(
+		`DELETE FROM %s WHERE status='done' AND updated_at <= $1`, q.qt()), now.Add(-q.doneRetention))
+	return err
+}
+
 func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []string) (Job, error) {
 	where, args := q.eligibleWhere(types, 3, lane)
 	// $1 is the claim timestamp (claimed_at = now) and $2 the fresh claim
@@ -544,7 +596,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 	// FOR UPDATE SKIP LOCKED is the canonical Postgres pattern: holds a
 	// row lock for the surrounding UPDATE, lets concurrent workers skip
 	// it instead of blocking.
-	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, claim_token=$2, attempts = attempts + 1
+	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, updated_at=$1, claim_token=$2, attempts = attempts + 1
 		WHERE id = (
 			SELECT id FROM %s
 			WHERE %s
@@ -611,7 +663,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	}
 	token := redisRandomID()
 	if _, err := tx.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, claim_token=$2, attempts = attempts + 1 WHERE id = $3`, q.qt()),
+		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, updated_at=$1, claim_token=$2, attempts = attempts + 1 WHERE id = $3`, q.qt()),
 		q.now().UTC(), token, job.ID,
 	); err != nil {
 		return Job{}, err
@@ -709,7 +761,16 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 // under it matches no row, so its late Ack cannot retire the re-claimant's
 // live work. Rows claimed before the column existed carry ”, which a caller
 // presenting no token still matches.
+//
+// Under WithDoneRetention the row is kept as status 'done' instead, under
+// the same fence, and pruneDone deletes it once the retention passes.
 func (q *DBQueue) Ack(ctx context.Context, job Job) error {
+	if q.doneRetention > 0 {
+		_, err := q.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s SET status='done', updated_at=$1 WHERE id = $2 AND status='claimed' AND claim_token = $3`, q.qt()),
+			q.now().UTC(), job.ID, job.ClaimToken)
+		return err
+	}
 	_, err := q.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2`, q.qt()),
 		job.ID, job.ClaimToken)
@@ -733,13 +794,34 @@ func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 // ownsClaim check. Rows predating the column carry ” and stay completable by
 // a caller presenting no token.
 func (q *DBQueue) Nack(ctx context.Context, job Job) error {
+	return q.nack(ctx, job, "")
+}
+
+// fail is the worker's Nack: it also keeps why the attempt failed, as the
+// job's LastError.
+func (q *DBQueue) fail(ctx context.Context, job Job, reason error) error {
+	msg := ""
+	if reason != nil {
+		msg = textsafe.ScrubControlBytes(reason.Error())
+		if r := []rune(msg); len(r) > maxLastError {
+			msg = string(r[:maxLastError-1]) + "…"
+		}
+	}
+	return q.nack(ctx, job, msg)
+}
+
+// nack settles a failed claim; lastError, when set, replaces the kept
+// error.
+func (q *DBQueue) nack(ctx context.Context, job Job, lastError string) error {
+	now := q.now().UTC()
 	if q.backoffBase <= 0 {
 		// No backoff: one round-trip. A CASE expression decides between
 		// requeue and dead-letter based on attempts vs max_attempts.
 		stmt := fmt.Sprintf(`UPDATE %s
-			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END
-			WHERE id = $1 AND claim_token = $2`, q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, job.ID, job.ClaimToken)
+			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
+			updated_at = $1, last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
+			WHERE id = $3 AND claim_token = $4`, q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
 		return err
 	}
 
@@ -756,13 +838,17 @@ func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 		return err
 	}
 	if attempts >= maxAttempts {
-		stmt := fmt.Sprintf("UPDATE %s SET status='failed' WHERE id = $1 AND claim_token = $2", q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, job.ID, job.ClaimToken)
+		stmt := fmt.Sprintf(`UPDATE %s SET status='failed', updated_at = $1,
+			last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
+			WHERE id = $3 AND claim_token = $4`, q.qt())
+		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
 		return err
 	}
-	next := q.now().UTC().Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
-	stmt := fmt.Sprintf("UPDATE %s SET status='pending', scheduled_at=$1 WHERE id = $2 AND claim_token = $3", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, next, job.ID, job.ClaimToken)
+	next := now.Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
+	stmt := fmt.Sprintf(`UPDATE %s SET status='pending', scheduled_at=$1, updated_at = $2,
+		last_error = CASE WHEN $3 = '' THEN last_error ELSE $3 END
+		WHERE id = $4 AND claim_token = $5`, q.qt())
+	_, err := q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
 	return err
 }
 
@@ -772,7 +858,7 @@ func (q *DBQueue) Nack(ctx context.Context, job Job) error {
 // unknown, pending, running, or claimed job matches no row and is a no-op, so
 // it can never double-run an in-flight job or resurrect a non-terminal one.
 func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
-	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1 WHERE id=$2 AND status='failed'", q.qt())
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
 	_, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
 	return err
 }
@@ -787,7 +873,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	}
 	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
-		max_attempts, created_at, scheduled_at FROM %s`, q.qt())
+		max_attempts, created_at, scheduled_at, status, updated_at, last_error FROM %s`, q.qt())
 	args := []any{}
 	if status != "" {
 		base += " WHERE status = $1"
@@ -805,9 +891,10 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	for rows.Next() {
 		var j Job
 		var payload string
-		var createdAt, scheduledAt any
+		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
-			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt); err != nil {
+			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
+			&j.Status, &updatedAt, &j.LastError); err != nil {
 			return nil, err
 		}
 		j.CreatedAt, err = query.ParseDBTime(createdAt)
@@ -817,6 +904,12 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 		j.ScheduledAt, err = query.ParseDBTime(scheduledAt)
 		if err != nil {
 			return nil, fmt.Errorf("queue: decode job %q scheduled_at: %w", j.ID, err)
+		}
+		j.UpdatedAt = j.CreatedAt
+		if updatedAt != nil {
+			if j.UpdatedAt, err = query.ParseDBTime(updatedAt); err != nil {
+				return nil, fmt.Errorf("queue: decode job %q updated_at: %w", j.ID, err)
+			}
 		}
 		j.Payload = []byte(payload)
 		out = append(out, j)
@@ -1061,7 +1154,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 					"max_attempts", job.MaxAttempts,
 					"err", err)
 			}
-			if err := q.Nack(ctx, job); err != nil {
+			if err := q.fail(ctx, job, err); err != nil {
 				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
 			}
 			continue

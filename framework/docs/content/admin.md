@@ -60,7 +60,7 @@ not register fails boot.
 | `GET /admin/entities/<name>` | Entity list |
 | `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
 | `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record) |
-| `GET /admin/queue` | Jobs, with `?status=` filter chips (needs `Queue`) |
+| `GET /admin/queue` | Jobs, with `?status=` filter chips and counts (needs `Queue`) |
 | `GET /admin/audit` | Audit log, newest first |
 | `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
 | `GET /admin/rbac/users` | User roles (needs `Auth`) |
@@ -264,7 +264,12 @@ app.RegisterBattery(admin.New(admin.Config{
 | `POST /admin/queue/_replay/{id}` | Re-queue one failed job |
 | `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
 
-Replay is offered on failed jobs when the queue supports it (`DBQueue`
+The Jobs page filters by All, Pending, Running, Failed and Done, each
+with its count, and lists each job's id, type, status, attempts, when
+it last changed and its last error (one line, cut with an ellipsis).
+Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
+Replay is offered on each failed row, and "Replay N failed" in the
+header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
 naming the actor. A failed list or stats read shows a generic notice and
 logs the driver error; the page never prints it. The Jobs page shows

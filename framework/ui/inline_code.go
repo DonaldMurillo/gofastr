@@ -20,6 +20,13 @@ func InlineCode(text string) render.HTML {
 		map[string]string{"class": "fui-code"}, render.Text(text)))
 }
 
+// InlineCodeDanger is InlineCode in the danger tone: an error message a
+// program returned, such as a job's last error.
+func InlineCodeDanger(text string) render.HTML {
+	return inlineCodeStyle.WrapHTML(render.Tag("code",
+		map[string]string{"class": "fui-code fui-code--danger"}, render.Text(text)))
+}
+
 var inlineCodeStyle = registry.RegisterStyle("ui-code", inlineCodeCSS)
 
 func inlineCodeCSS(_ style.Theme) string {
@@ -31,6 +38,12 @@ func inlineCodeCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   overflow-wrap: anywhere;
+}
+/* The danger tone mixes the hue toward the text colour, as the danger
+   badge does, so it keeps AA contrast on either scheme. */
+[data-cui-comp="ui-code"].fui-code--danger {
+  background: color-mix(in oklab, var(--color-danger, #DC2626) 10%, var(--color-surface, #fff) 90%);
+  color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
 }
 `
 }

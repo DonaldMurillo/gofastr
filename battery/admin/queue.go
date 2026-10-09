@@ -19,15 +19,18 @@ import (
 )
 
 // queueStatuses are the states the Jobs page filters by: DBQueue's
-// pending, claimed (in progress) and failed (terminal). Any other
-// ?status= reads as All, so request text never reaches ListJobs.
+// pending, claimed (running), failed (terminal) and done (kept under
+// queue.WithDoneRetention). Any other ?status= reads as All, so request
+// text never reaches ListJobs.
 var queueStatuses = []struct {
-	value string
-	label i18nui.Key
+	value   string
+	label   i18nui.Key
+	variant ui.StatusVariant
 }{
-	{"pending", i18nui.KeyAdminQueuePending},
-	{"claimed", i18nui.KeyAdminQueueClaimed},
-	{"failed", i18nui.KeyAdminQueueFailed},
+	{"pending", i18nui.KeyAdminQueuePending, ui.StatusNeutral},
+	{"claimed", i18nui.KeyAdminQueueClaimed, ui.StatusInfo},
+	{"failed", i18nui.KeyAdminQueueFailed, ui.StatusDanger},
+	{"done", i18nui.KeyAdminQueueDone, ui.StatusSuccess},
 }
 
 // queueStatus reads ?status= as one of queueStatuses, or "".
@@ -117,14 +120,14 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed))))
 	}
 	_, canReplay := b.replayable()
-	canReplay = canReplay && status == "failed"
-	if canReplay && len(jobs) > 0 {
+	if failed := stats["failed"]; canReplay && failed > 0 {
 		header = ui.PageHeader(ui.PageHeaderConfig{
 			Title:    i18nui.T(ctx, i18nui.KeyAdminQueue),
 			Subtitle: i18nui.T(ctx, i18nui.KeyAdminQueueSub),
 			Actions: b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay_all", page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminReplayAll), variant: ui.ButtonSecondary,
+				label:   i18nui.TVars(ctx, i18nui.KeyAdminReplayAll, map[string]string{"n": strconv.Itoa(failed)}),
+				variant: ui.ButtonSecondary,
 				confirm: i18nui.T(ctx, i18nui.KeyAdminReplayAllConfirm),
 			}),
 		})
@@ -144,7 +147,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		header,
 		resultNotice(ctx),
 		b.queueFilter(ctx, status, stats),
-		b.jobsTable(ctx, jobs, page, canReplay, 2, pager),
+		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager),
 	)
 }
 
@@ -162,14 +165,18 @@ func queueTotal(stats queue.JobStats, status string) int {
 }
 
 // queueFilter is the status filter: a GET form that navigates to
-// ?status=<value>, with each status's count beside it. A nil stats
-// shows no counts.
+// ?status=<value>, with each status's count beside it and the sum beside
+// All. A nil stats shows no counts.
 func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.JobStats) render.HTML {
-	opts := []ui.FacetOption{{Label: i18nui.T(ctx, i18nui.KeyAdminQueueAll), Value: ""}}
+	all := i18nui.T(ctx, i18nui.KeyAdminQueueAll)
+	if stats != nil {
+		all = fmt.Sprintf("%s (%d)", all, queueTotal(stats, ""))
+	}
+	opts := []ui.FacetOption{{Label: all, Value: ""}}
 	for _, st := range queueStatuses {
 		label := i18nui.T(ctx, st.label)
-		if n, ok := stats[st.value]; ok {
-			label = fmt.Sprintf("%s (%d)", label, n)
+		if stats != nil {
+			label = fmt.Sprintf("%s (%d)", label, stats[st.value])
 		}
 		opts = append(opts, ui.FacetOption{Label: label, Value: st.value})
 	}
@@ -187,31 +194,60 @@ func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.J
 	})
 }
 
-// jobsTable draws jobs, with pager under them when it is set. With
-// replay, each row replays its job and the answer returns to page.
-func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
+// jobStatusBadge names a job's state; a status the page does not know
+// (another backend's) reads as itself.
+func jobStatusBadge(ctx context.Context, status string) render.HTML {
+	for _, st := range queueStatuses {
+		if st.value == status {
+			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, st.label), Variant: st.variant})
+		}
+	}
+	if status == "" {
+		return render.Text("—")
+	}
+	return ui.StatusBadge(ui.StatusBadgeConfig{Label: status, Variant: ui.StatusNeutral})
+}
+
+// jobsTable draws jobs, with pager under them when it is set: the job,
+// its type, status, attempts, when it last changed and the error its
+// last failed attempt returned. listed is the status the jobs were
+// listed under ("" for All). With replay, each failed row replays its
+// job and the answer returns to page.
+func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
 	cols := []ui.Column{
-		{Key: "id", Header: i18nui.T(ctx, i18nui.KeyAdminColID)},
-		{Key: "type", Header: i18nui.T(ctx, i18nui.KeyAdminColType)},
+		{Key: "id", Header: i18nui.T(ctx, i18nui.KeyAdminColJob), Phone: ui.PhoneSubtitle},
+		{Key: "type", Header: i18nui.T(ctx, i18nui.KeyAdminColType), Phone: ui.PhoneTitle},
+		{Key: "status", Header: i18nui.T(ctx, i18nui.KeyAdminQueueStatus), Phone: ui.PhoneMeta},
 		{Key: "attempts", Header: i18nui.T(ctx, i18nui.KeyAdminColAttempts), Align: "end"},
-		{Key: "priority", Header: i18nui.T(ctx, i18nui.KeyAdminColPriority), Align: "end"},
-		{Key: "created", Header: i18nui.T(ctx, i18nui.KeyAdminColCreated)},
-		{Key: "scheduled", Header: i18nui.T(ctx, i18nui.KeyAdminColScheduled)},
+		{Key: "updated", Header: i18nui.T(ctx, i18nui.KeyAdminColUpdated), Phone: ui.PhoneDetail},
+		{Key: "error", Header: i18nui.T(ctx, i18nui.KeyAdminColLastError), Truncate: true},
 	}
 	if replay {
-		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end", Fit: true})
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end", Fit: true, Phone: ui.PhoneEnd})
 	}
 	rows := make([]ui.Row, len(jobs))
 	for i, j := range jobs {
-		cells := map[string]render.HTML{
-			"id":        ui.ShortID(ui.ShortIDConfig{Value: j.ID, Ctx: ctx}),
-			"type":      render.Text(j.Type),
-			"attempts":  render.Text(fmt.Sprintf("%d / %d", j.Attempts, j.MaxAttempts)),
-			"priority":  render.Text(strconv.Itoa(j.Priority)),
-			"created":   timeCell(j.CreatedAt),
-			"scheduled": timeCell(j.ScheduledAt),
+		status := j.Status
+		if status == "" {
+			status = listed
 		}
-		if replay {
+		updated := j.UpdatedAt
+		if updated.IsZero() {
+			updated = j.CreatedAt
+		}
+		lastErr := render.HTML(render.Text("—"))
+		if j.LastError != "" {
+			lastErr = ui.InlineCodeDanger(j.LastError)
+		}
+		cells := map[string]render.HTML{
+			"id":       ui.ShortID(ui.ShortIDConfig{Value: j.ID, Ctx: ctx}),
+			"type":     render.Text(j.Type),
+			"status":   jobStatusBadge(ctx, status),
+			"attempts": render.Text(fmt.Sprintf("%d / %d", j.Attempts, j.MaxAttempts)),
+			"updated":  agoCell(ctx, time.Now(), updated),
+			"error":    lastErr,
+		}
+		if replay && status == "failed" {
 			cells["actions"] = b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay/" + url.PathEscape(j.ID), page: page,
 				label: i18nui.T(ctx, i18nui.KeyAdminReplay), variant: ui.ButtonSecondary, small: true,
@@ -224,7 +260,7 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, page string, 
 		Rows:          rows,
 		Caption:       i18nui.T(ctx, i18nui.KeyAdminQueue),
 		CaptionHidden: true,
-		Responsive:    ui.ResponsiveScroll,
+		Responsive:    ui.ResponsiveRows,
 		Pagination:    pager,
 		Ctx:           ctx,
 		Empty: ui.EmptyStateConfig{
@@ -233,15 +269,6 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, page string, 
 			HeadingLevel: emptyLevel,
 		},
 	})
-}
-
-// timeCell draws a timestamp as a <time> with its machine-readable value.
-func timeCell(t time.Time) render.HTML {
-	if t.IsZero() {
-		return render.Text("—")
-	}
-	u := t.UTC()
-	return html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339)}, render.Text(u.Format("2006-01-02 15:04 UTC")))
 }
 
 // handleReplay re-queues one failed job and audits who did it.

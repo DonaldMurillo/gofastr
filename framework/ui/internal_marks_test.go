@@ -701,6 +701,7 @@ var kitComponents = []kitComponent{
 	{name: "HeroSplit", fn: HeroSplit},
 	{name: "Icon", fn: Icon},
 	{name: "InlineCode", fn: InlineCode},
+	{name: "InlineCodeDanger", fn: InlineCodeDanger},
 	{name: "InputGroup", fn: InputGroup, required: []string{"Input"}},
 	{name: "JSONViewer", fn: JSONViewer},
 	{name: "LineChart", fn: LineChart},

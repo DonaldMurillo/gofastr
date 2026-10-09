@@ -118,3 +118,41 @@ func TestDataTableRowsOnPhone(t *testing.T) {
 		t.Errorf("a wide rows-mode table is not a table: %v", got)
 	}
 }
+
+// A truncated column holds its value to one capped line with an
+// ellipsis; the table does not widen past its box for it.
+func TestDataTableTruncatedColumn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	th := theme.Default()
+	var css strings.Builder
+	for _, e := range registry.All() {
+		css.WriteString(e.CSSFor(th))
+		css.WriteString("\n")
+	}
+	head := "<style>" + th.CSSCustomProperties() + "\n" + css.String() + "</style>"
+	table := ui.DataTable(ui.DataTableConfig{
+		Columns: []ui.Column{{Key: "a", Header: "Job"}, {Key: "e", Header: "Last error", Truncate: true}},
+		Rows: []ui.Row{{Cells: map[string]render.HTML{
+			"a": render.Text("j1"),
+			"e": ui.InlineCodeDanger("webhook: 502 Bad Gateway from " + strings.Repeat("https://hooks.example.com/billing/", 6)),
+		}}},
+	})
+	srv := themeTestPageWithHead(t, head, `<div id="t" style="inline-size: 900px">`+string(table)+`</div>`)
+	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(1280, 800), prefersScheme("light"))
+	var got map[string]any
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const td = document.querySelector("#t td.is-truncate");
+		const sc = document.querySelector("#t .fui-data-table__scroll");
+		return {w: td.getBoundingClientRect().width, cut: td.scrollWidth > td.clientWidth, h: td.getBoundingClientRect().height, wide: sc.scrollWidth - sc.clientWidth};
+	})()`, &got)); err != nil {
+		t.Fatal(err)
+	}
+	if got["cut"] != true {
+		t.Errorf("the value was not cut: %v", got)
+	}
+	if wide, _ := got["wide"].(float64); wide > 1 {
+		t.Errorf("the table scrolls %vpx sideways", wide)
+	}
+}

@@ -43,6 +43,16 @@ type Job struct {
 	// Only the durable DBQueue persists it — the in-memory and Redis
 	// backends hold no erasable table.
 	UserID string `json:"user_id,omitempty"`
+
+	// Status, UpdatedAt and LastError are what a browsing backend
+	// (DBQueue's ListJobs) reports about a stored job: its state
+	// ("pending", "claimed", "failed", or "done" under
+	// WithDoneRetention), when that state last changed, and the error
+	// its last failed attempt returned (control bytes scrubbed, at most
+	// 500 runes). Enqueue ignores them.
+	Status    string    `json:"status,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
+	LastError string    `json:"last_error,omitempty"`
 }
 
 // Handler processes a job. Return a non-nil error to trigger a retry.
@@ -67,7 +77,8 @@ type Queue interface {
 }
 
 // JobStats is a snapshot of job counts grouped by status. The keys
-// are status names ("pending", "running", "failed", "dead").
+// are status names (DBQueue: "pending", "claimed", "failed", and
+// "done" under WithDoneRetention).
 type JobStats map[string]int
 
 // Browsable is the optional read-only inspection interface, implemented
