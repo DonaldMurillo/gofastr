@@ -753,6 +753,7 @@ var kitComponents = []kitComponent{
 	}},
 	{name: "ColumnPicker", fn: ColumnPicker},
 	{name: "ShortcutList", fn: ShortcutList},
+	{name: "SegmentedLinks", fn: SegmentedLinks, required: []string{"Href", "Text"}},
 	{name: "FilterRows", fn: FilterRows},
 	{name: "Picker", fn: Picker},
 	{name: "PickerRows", fn: PickerRows},

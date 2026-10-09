@@ -24,6 +24,8 @@ type listParams struct {
 	saved  string
 	// The filter rows' field, operator and value, repeated per row.
 	rowF, rowO, rowV string
+	// as is the layout the switch picks: "table" or "cards".
+	as string
 }
 
 func listParamsFor(key string) listParams {
@@ -40,6 +42,7 @@ func listParamsFor(key string) listParams {
 		rowF: param(key, "rf"),
 		rowO: param(key, "ro"),
 		rowV: param(key, "rv"),
+		as:   param(key, "as"),
 	}
 }
 

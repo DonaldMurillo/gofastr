@@ -218,7 +218,9 @@ _, _ = list, record
 
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
-none), `As("cards")`, `Where(field, value)` (pins a term inside the
+none), `As("cards")`, `LayoutSwitch()` (a Table / Cards switch in the
+toolbar, `ui.SegmentedLinks`, whose links set `<key>_as`; it then wins
+over `As` and the view's layout), `Where(field, value)` (pins a term inside the
 caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where
 record links hang off), `Heading(text, level)` (it also names the table,
 as a hidden caption, so two lists on one page are two named regions) and

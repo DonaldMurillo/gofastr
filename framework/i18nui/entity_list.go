@@ -28,6 +28,9 @@ const (
 	KeyEntityQueryBoxField Key = "ui.entity.queryBoxField" // "Filter expression"
 	// The filter rows: the group, each row's three controls and the
 	// operators' names.
+	KeyEntityLayout         Key = "ui.entity.layout"         // "Layout"
+	KeyEntityLayoutTable    Key = "ui.entity.layoutTable"    // "Table"
+	KeyEntityLayoutCards    Key = "ui.entity.layoutCards"    // "Cards"
 	KeyEntityFilterRows     Key = "ui.entity.filterRows"     // "Filter where"
 	KeyEntityFilterRowField Key = "ui.entity.filterRowField" // "Field"
 	KeyEntityFilterRowOp    Key = "ui.entity.filterRowOp"    // "Operator"
@@ -101,6 +104,9 @@ var entityListDefaults = map[Key]string{
 	KeyEntityFilterInvalidBody:  "The filter could not be applied. Check its text and try again.",
 
 	KeyEntityQueryBoxField:     "Filter expression",
+	KeyEntityLayout:            "Layout",
+	KeyEntityLayoutTable:       "Table",
+	KeyEntityLayoutCards:       "Cards",
 	KeyEntityFilterRows:        "Filter where",
 	KeyEntityFilterRowField:    "Field",
 	KeyEntityFilterRowOp:       "Operator",

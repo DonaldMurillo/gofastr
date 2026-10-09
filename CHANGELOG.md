@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ListBuilder.LayoutSwitch()` draws a Table / Cards switch (new
+  `ui.SegmentedLinks`) whose links set the list's `as` param; the admin
+  turns it on.
 - `theme.Brutal()` re-skins the framework theme's tokens as
   neo-brutalism (square corners, 2px strokes, hard shadows in the
   border colour, a yellow primary, Archivo) in light and dark.

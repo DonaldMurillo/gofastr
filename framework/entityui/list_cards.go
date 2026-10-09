@@ -100,6 +100,15 @@ func cardFieldsOf(s *listState) (out cardFieldSet) {
 	if out.title == "" {
 		out.title = s.m.titleField()
 	}
+	if s.m.d.Card == nil {
+		// With no Card declared, the first shown enum is the badge.
+		for _, c := range s.columns {
+			if f, ok := s.m.field(c); ok && f.Type == schema.Enum && c != out.title {
+				out.badge = c
+				break
+			}
+		}
+	}
 	if len(out.meta) == 0 {
 		for _, c := range s.columns {
 			if c == out.title || c == out.subtitle || c == out.badge {

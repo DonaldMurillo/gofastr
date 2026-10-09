@@ -108,6 +108,11 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 			}
 		}
 	}
+	if b.layoutSwitch {
+		if v := s.q.Get(s.p.as); v == "table" || v == "cards" {
+			s.as = v
+		}
+	}
 	switch s.as {
 	case "", "table", "cards":
 	default:
@@ -426,6 +431,9 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 		}
 	}
 	var tools []render.HTML
+	if sw := b.layoutSwitchControl(ctx, s); sw != "" {
+		tools = append(tools, sw)
+	}
 	if menu := b.columnsMenu(ctx, s); menu != "" {
 		tools = append(tools, menu)
 	}
@@ -466,6 +474,29 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 		Hidden:    hidden,
 		HideReset: hideReset,
 		Ctx:       ctx,
+	})
+}
+
+// layoutSwitchControl is the Table / Cards switch: two links into the as
+// param that keep the rest of the URL, sort included.
+func (b *ListBuilder) layoutSwitchControl(ctx context.Context, s *listState) render.HTML {
+	if !b.layoutSwitch {
+		return ""
+	}
+	href := func(as string) string {
+		q := s.carryWithSort(s.p.as)
+		q.Set(s.p.as, as)
+		return listHref(s.path, q)
+	}
+	cards := s.as == "cards"
+	return ui.SegmentedLinks(ui.SegmentedLinksConfig{
+		Label:    i18nui.T(ctx, i18nui.KeyEntityLayout),
+		IconOnly: true,
+		Items: []ui.SegmentLink{
+			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutTable), Icon: "list", Href: href("table"), Current: !cards},
+			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutCards), Icon: "grid", Href: href("cards"), Current: cards},
+		},
+		Ctx: ctx,
 	})
 }
 

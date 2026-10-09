@@ -117,6 +117,7 @@
 //	FilterRows:           field / operator / value rows inside a list's filter form
 //	ColumnPicker:         a list's Columns dropdown: show, hide and move columns by link
 //	ShortcutSheet:        keyboard help modal opened by "?", and ShortcutList for its rows
+//	SegmentedLinks:       a segmented strip of links, one current (a list's Table / Cards switch)
 //	                       VariantSet output (typed sources + a stacked
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing

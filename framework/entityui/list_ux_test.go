@@ -199,3 +199,32 @@ func TestListSearchTakesSlash(t *testing.T) {
 		t.Errorf("a keyed list claimed /")
 	}
 }
+
+// LayoutSwitch draws a Table / Cards switch whose links set the list's
+// as param; the list draws in the layout the URL names, and an unknown
+// value keeps the default.
+func TestListLayoutSwitch(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").LayoutSwitch()
+	table := listHTML(t, b, x.ctx("/orders", ""))
+	if !strings.Contains(table, `aria-label="Layout"`) || !strings.Contains(table, `href="/orders?as=cards"`) || !strings.Contains(table, "fui-data-table") {
+		t.Fatalf("no switch, or not a table:\n%s", table)
+	}
+	cards := listHTML(t, b, x.ctx("/orders", "?as=cards"))
+	if strings.Contains(cards, "fui-data-table__table") || !strings.Contains(cards, `href="/orders?as=table"`) {
+		t.Errorf("as=cards did not draw cards:\n%s", cards)
+	}
+	// With no Card declared, the status enum is each card's badge.
+	if !strings.Contains(cards, `data-cui-comp="ui-badge"`) {
+		t.Errorf("the cards carry no status badge:\n%s", cards)
+	}
+	if bad := listHTML(t, b, x.ctx("/orders", "?as=board")); !strings.Contains(bad, "fui-data-table__table") {
+		t.Errorf("an unknown layout did not keep the table")
+	}
+	if plain := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "?as=cards")); strings.Contains(plain, `aria-label="Layout"`) || !strings.Contains(plain, "fui-data-table__table") {
+		t.Errorf("a list without LayoutSwitch read as=")
+	}
+}

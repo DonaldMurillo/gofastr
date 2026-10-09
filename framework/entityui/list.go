@@ -38,7 +38,9 @@ type ListBuilder struct {
 	counts   bool
 	embedded bool
 	top      bool
-	actions  []render.HTML
+	// layoutSwitch draws the Table / Cards switch and reads the as param.
+	layoutSwitch bool
+	actions      []render.HTML
 }
 
 type listWhere struct {
@@ -66,6 +68,11 @@ func (b *ListBuilder) View(key string) *ListBuilder { b.view = key; return b }
 
 // As draws rows as "table" or "cards".
 func (b *ListBuilder) As(presentation string) *ListBuilder { b.as = presentation; return b }
+
+// LayoutSwitch draws a Table / Cards switch in the toolbar. Its links set
+// the list's as param (<key>_as), which then wins over As and the view's
+// layout; an unknown value is ignored.
+func (b *ListBuilder) LayoutSwitch() *ListBuilder { b.layoutSwitch = true; return b }
 
 // PageSize sets rows per page, capped by Pagination.MaxListLimit.
 func (b *ListBuilder) PageSize(n int) *ListBuilder { b.pageSize = n; return b }
