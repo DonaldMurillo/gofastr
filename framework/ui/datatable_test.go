@@ -490,3 +490,64 @@ func sortAnchorQuery(t *testing.T, h string) url.Values {
 	}
 	return q
 }
+
+// ─── Responsive rows mode ─────────────────────────────────────────
+
+// Rows mode tags each slotted column's cells with their phone slot and
+// the root with the modifier; a column with no slot carries none. A
+// slot keeps the column's alignment.
+func TestDataTable_ResponsiveRows_SlotsCells(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{
+			{Key: "name", Header: "Name", Phone: PhoneTitle},
+			{Key: "email", Header: "Email", Phone: PhoneSubtitle},
+			{Key: "status", Header: "Status", Phone: PhoneMeta},
+			{Key: "mrr", Header: "MRR", Phone: PhoneDetail, Align: "end"},
+			{Key: "owner", Header: "Owner"},
+		},
+		Rows: []Row{{Cells: map[string]render.HTML{
+			"name": render.Text("Ada"), "email": render.Text("ada@x.com"),
+			"status": render.Text("active"), "mrr": render.Text("$99"), "owner": render.Text("Sam"),
+		}}},
+		Responsive: ResponsiveRows,
+	}))
+	if !classTokenPresent(h, "fui-data-table--responsive-rows") {
+		t.Errorf("no rows modifier: %s", h)
+	}
+	for _, slot := range []string{"title", "subtitle", "meta", "detail"} {
+		if !classTokenPresent(h, "is-phone-"+slot) {
+			t.Errorf("no %s slot: %s", slot, h)
+		}
+	}
+	if !strings.Contains(h, `class="is-align-end is-phone-detail"`) {
+		t.Errorf("the detail cell lost its alignment: %s", h)
+	}
+	if n := strings.Count(h, "is-phone-"); n != 4 {
+		t.Errorf("want 4 slotted cells, got %d", n)
+	}
+}
+
+// A slot outside rows mode is inert: no attribute, no modifier.
+func TestDataTable_PhoneSlotNeedsRowsMode(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Phone: PhoneTitle}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("Ada")}}},
+	}))
+	if strings.Contains(h, "is-phone-") || strings.Contains(h, "responsive-rows") {
+		t.Errorf("a scroll table carries phone slots: %s", h)
+	}
+}
+
+// Rows mode with no title slot is a programming error: the phone row
+// would have no line that names the record.
+func TestDataTable_ResponsiveRowsNeedsTitle(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("rows mode without a PhoneTitle column did not panic")
+		}
+	}()
+	DataTable(DataTableConfig{
+		Columns:    []Column{{Key: "name", Header: "Name"}},
+		Responsive: ResponsiveRows,
+	})
+}

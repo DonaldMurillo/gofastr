@@ -42,22 +42,26 @@ func TestListRowMenu(t *testing.T) {
 	}
 }
 
-// A list stays a table at every width: below the breakpoint it scrolls
-// sideways in its own container instead of turning rows into cards.
-func TestListScrollsOnPhones(t *testing.T) {
+// On a phone a list is a column of two-line rows, never a table that
+// scrolls sideways: the title over the subtitle, the status badge over
+// the next column at the end, the selection box before and the row
+// menu after. Every other column stays off the phone row.
+func TestListRowsOnPhones(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},
 		map[string][]map[string]any{"orders": ordersRows()},
+		withAPI(map[string]string{"orders": "/api/orders"}),
 	)
-	h := listHTML(t, x.ui.List("orders"), x.ctx("/orders", ""))
-	if strings.Contains(h, "responsive-cards") {
-		t.Errorf("the list collapses into cards on phones:\n%s", h)
+	h := listHTML(t, x.ui.List("orders").Delete().Bulk(), x.ctx("/orders", ""))
+	if !strings.Contains(h, "fui-data-table--responsive-rows") {
+		t.Fatalf("the list does not collapse into phone rows:\n%s", h)
 	}
-	if !strings.Contains(h, "fui-data-table__scroll") {
-		t.Errorf("the table has no scroll container:\n%s", h)
+	for _, slot := range []string{"is-phone-lead", "is-phone-title", "is-phone-meta", "is-phone-subtitle", "is-phone-end"} {
+		if !strings.Contains(h, slot) {
+			t.Errorf("the phone row has no %s cell:\n%s", slot, h)
+		}
 	}
 }
-
 // A relation column and its form field label as the record they point
 // at: customer_id reads "Customer", never "Customer Id".
 func TestRelationFieldLabel(t *testing.T) {

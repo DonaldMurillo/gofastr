@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.DataTable` `Responsive: ui.ResponsiveRows` draws each row as a
+  two-line phone row below 720px of container, placed by
+  `Column.Phone` (`PhoneTitle`, `PhoneSubtitle`, `PhoneMeta`,
+  `PhoneDetail`, `PhoneLead`, `PhoneEnd`). Entity lists, and so the
+  admin, use it: a list on a phone no longer scrolls sideways.
 - `ui.InlineCode` draws a short piece of code inside text or a
   reference row (an operator, a field name, an example) as a `<code>`
   in the mono font on the soft surface. The entity list's query box

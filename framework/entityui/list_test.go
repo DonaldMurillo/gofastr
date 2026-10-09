@@ -247,7 +247,7 @@ func TestListLongTextColumnWraps(t *testing.T) {
 		}
 	}
 	x = newTestUI(t, map[string]entity.EntityConfig{"orders": cfg}, map[string][]map[string]any{"orders": ordersRows()})
-	if html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); strings.Count(html, `class="is-wrap"`) != 2 {
+	if html := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); strings.Count(html, `is-wrap`) != 2 {
 		t.Errorf("the long-text column's two cells do not wrap:\n%s", html)
 	}
 }

@@ -19,13 +19,14 @@ import (
 func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, rows []map[string]any, total int, known bool, page int) render.HTML {
 	labels := b.ui.resolveRowLabels(ctx, s, rows, s.columns)
 	linkCol := linkColumn(s)
+	phone := phoneSlots(s, linkCol)
 	cols := make([]ui.Column, 0, len(s.columns)+2)
 	if lb != nil {
-		cols = append(cols, ui.Column{Key: "_s", SelectAll: "ids", Fit: true})
+		cols = append(cols, ui.Column{Key: "_s", SelectAll: "ids", Fit: true, Phone: ui.PhoneLead})
 	}
 	for _, name := range s.columns {
 		f, _ := s.m.field(name)
-		col := ui.Column{Key: name, Header: s.m.label(ctx, name), Sortable: s.sortable(name) && !b.top}
+		col := ui.Column{Key: name, Header: s.m.label(ctx, name), Sortable: s.sortable(name) && !b.top, Phone: phone[name]}
 		if numericField(f) {
 			col.Align = "end"
 		}
@@ -37,7 +38,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	// restore and purge forms — while drawing no record link.
 	noLinks := b.noLinks || s.deletedView
 	if (!noLinks && !b.top) || s.deletedView {
-		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end", Fit: true})
+		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end", Fit: true, Phone: ui.PhoneEnd})
 	}
 
 	uiRows := make([]ui.Row, 0, len(rows))
@@ -69,7 +70,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	dt := ui.DataTableConfig{
 		Columns:    cols,
 		Rows:       uiRows,
-		Responsive: ui.ResponsiveScroll,
+		Responsive: ui.ResponsiveRows,
 		SortBy:     s.sortField,
 		SortDir:    ui.SortDir(sortDir(s.sortDesc)),
 		Path:       s.path,
@@ -111,6 +112,45 @@ func (s *listState) pagerQuery() map[string][]string {
 		}
 	}
 	return q
+}
+
+// phoneSlots places the shown columns on the two-line phone row: the
+// link column is the title, the card badge (or the first enum) the
+// meta at the end, the card subtitle (or the first other text column)
+// under the title, and the first number (or the next column) under
+// the meta. Every other column stays off the phone row; the record
+// page shows it.
+func phoneSlots(s *listState, linkCol string) map[string]ui.PhoneSlot {
+	out := map[string]ui.PhoneSlot{}
+	if linkCol == "" {
+		return out
+	}
+	out[linkCol] = ui.PhoneTitle
+	card := cardFieldsOf(s)
+	free := func(name string) bool { _, used := out[name]; return !used && s.shownColumn(name) }
+	pick := func(slot ui.PhoneSlot, prefer string, ok func(schema.Field) bool) {
+		if prefer != "" && free(prefer) {
+			out[prefer] = slot
+			return
+		}
+		for _, pass := range []bool{true, false} {
+			for _, name := range s.columns {
+				f, _ := s.m.field(name)
+				if free(name) && (!pass || ok(f)) {
+					out[name] = slot
+					return
+				}
+			}
+			if slot == ui.PhoneMeta {
+				return // no enum: the row keeps its end clear
+			}
+		}
+	}
+	pick(ui.PhoneMeta, card.badge, func(f schema.Field) bool { return f.Type == schema.Enum })
+	// Long text is a note, not a line that tells two records apart.
+	pick(ui.PhoneSubtitle, card.subtitle, func(f schema.Field) bool { return !numericField(f) && f.Type != schema.Text })
+	pick(ui.PhoneDetail, "", numericField)
+	return out
 }
 
 // linkColumn is the column whose cell links to the record: the title

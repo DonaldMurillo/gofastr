@@ -45,7 +45,11 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   (`.QueryBox()`), the columns menu (`.ColumnsMenu()`), the trash view
   (`.Deleted()`), saved views (`.SavedViews()`) and tab counts
   (`.TabCounts()`) — "Query box, columns menu, trash view, saved
-  views, tab counts" covers them.
+  views, tab counts" covers them. On a phone (below 720px) the table
+  becomes two-line rows (`ui.ResponsiveRows`): the title over the card
+  subtitle (or the first other text column), the card badge (or the
+  first enum) over the first number at the end, the checkbox before
+  and the row menu after. The other columns show on the record.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
   record's title, its state as the badge, and "Created … · Updated …"
   from its timestamps; a button per state move whose `From` holds the

@@ -58,6 +58,10 @@ type Column struct {
 	// name. A select-all column cannot sort. An empty table draws no
 	// box: there is nothing to select.
 	SelectAll string
+
+	// Phone places the column's cells in the compact phone row of a
+	// ResponsiveRows table. Ignored in every other mode.
+	Phone PhoneSlot
 }
 
 // Row is a single rendered table row. Cells map column Key → HTML.
@@ -98,6 +102,29 @@ const (
 	// cell's value is one .fui-data-table__value element, so a value
 	// of several parts stays together on its card line.
 	ResponsiveCards ResponsiveMode = "cards"
+
+	// ResponsiveRows collapses each row into a compact two-line row
+	// when the container is narrower than 720px: the PhoneTitle cell
+	// over the PhoneSubtitle cell, the PhoneMeta cell over the
+	// PhoneDetail cell at the end, the PhoneLead cell (a selection box)
+	// before them and the PhoneEnd cell (a row menu) after. Cells of a
+	// column with no Phone slot are not drawn on a phone. One column
+	// must be the PhoneTitle.
+	ResponsiveRows ResponsiveMode = "rows"
+)
+
+// PhoneSlot places a column's cells in a ResponsiveRows row on a
+// phone. The zero value leaves the column off the phone row.
+type PhoneSlot string
+
+const (
+	PhoneNone     PhoneSlot = ""
+	PhoneLead     PhoneSlot = "lead"
+	PhoneTitle    PhoneSlot = "title"
+	PhoneSubtitle PhoneSlot = "subtitle"
+	PhoneMeta     PhoneSlot = "meta"
+	PhoneDetail   PhoneSlot = "detail"
+	PhoneEnd      PhoneSlot = "end"
 )
 
 // DataTableConfig configures a DataTable.
@@ -181,7 +208,8 @@ type DataTableConfig struct {
 
 	// Responsive selects how the table behaves when its container is
 	// narrow. Default keeps horizontal scroll; ResponsiveCards
-	// collapses rows into labeled cards via container queries.
+	// collapses rows into labeled cards and ResponsiveRows into compact
+	// two-line rows, both via container queries.
 	Responsive ResponsiveMode
 
 	// Ctx carries the per-request context used to resolve i18n
@@ -237,6 +265,31 @@ var dataTableClasses = headless.Classes{
 	"cell--end-wrap":      "is-align-end is-wrap",
 }
 
+// phoneSlots are the ResponsiveRows slots a column can name.
+var phoneSlots = []PhoneSlot{PhoneLead, PhoneTitle, PhoneSubtitle, PhoneMeta, PhoneDetail, PhoneEnd}
+
+// The phone slot is the variant's last part: every alignment variant
+// gains one entry per slot, the cell adding is-phone-<slot> and the
+// header keeping its alignment.
+func init() {
+	base := map[headless.Part]string{"header--": "", "cell--": ""}
+	for k, v := range dataTableClasses {
+		if strings.HasPrefix(string(k), "header--") || strings.HasPrefix(string(k), "cell--") {
+			base[k+"-"] = v
+		}
+	}
+	for k, v := range base {
+		for _, slot := range phoneSlots {
+			key := k + "phone-" + headless.Part(slot)
+			if strings.HasPrefix(string(k), "cell--") {
+				dataTableClasses[key] = strings.TrimSpace(v + " is-phone-" + string(slot))
+			} else if v != "" {
+				dataTableClasses[key] = v
+			}
+		}
+	}
+}
+
 // DataTable renders the table: the headless primitive's structure,
 // roles and sort anchors under this package's class map, the styled
 // EmptyState in the primitive's empty slot, and the typed pager in
@@ -251,6 +304,15 @@ func cardValues(cells map[string]render.HTML) map[string]render.HTML {
 		out[k] = render.Tag("span", map[string]string{"class": "fui-data-table__value"}, v)
 	}
 	return out
+}
+
+func hasPhoneTitle(cols []Column) bool {
+	for _, c := range cols {
+		if c.Phone == PhoneTitle {
+			return true
+		}
+	}
+	return false
 }
 
 func DataTable(cfg DataTableConfig) render.HTML {
@@ -297,6 +359,14 @@ func DataTable(cfg DataTableConfig) render.HTML {
 			selectAll = ""
 		}
 		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, SelectAll: selectAll, Variant: variant}
+		if cfg.Responsive == ResponsiveRows && c.Phone != PhoneNone {
+			// The slot rides the variant, so the class map names it
+			// beside the column's alignment.
+			cols[i].Variant = strings.TrimPrefix(cols[i].Variant+"-phone-"+string(c.Phone), "-")
+		}
+	}
+	if cfg.Responsive == ResponsiveRows && !hasPhoneTitle(cfg.Columns) {
+		panic("ui: DataTable ResponsiveRows needs one Column with Phone: PhoneTitle; the phone row has no line that names the record")
 	}
 	rows := make([]headless.Row, len(cfg.Rows))
 	for i, r := range cfg.Rows {
@@ -344,8 +414,11 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	// The root's modifier classes travel as part attrs, which append
 	// to the class map's own root class rather than replacing it.
 	rootClass := cfg.Class
-	if cfg.Responsive == ResponsiveCards {
+	switch cfg.Responsive {
+	case ResponsiveCards:
 		rootClass = "fui-data-table--responsive-cards " + rootClass
+	case ResponsiveRows:
+		rootClass = "fui-data-table--responsive-rows " + rootClass
 	}
 	if len(cfg.Rows) == 0 {
 		rootClass = "is-empty " + rootClass

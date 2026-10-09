@@ -1453,6 +1453,92 @@ func dataTableCSS(_ style.Theme) string {
     display: block;
     text-align: start;
   }
+}
+
+/* Responsive-rows mode: below 720px of container each row is a
+   two-line row, the phone list of a record index. The slots are the
+   cells' is-phone-* classes; a cell with none is not drawn. */
+[data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__scroll {
+  container-type: inline-size;
+  overflow-x: auto;
+}
+
+@container (max-width: 720px) {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody {
+    display: block;
+    inline-size: 100%;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "lead title meta end" "lead subtitle detail end";
+    align-items: center;
+    column-gap: calc(var(--spacing-sm, 4px) * 3);
+    row-gap: var(--spacing-xs, 2px);
+    padding: calc(var(--spacing-sm, 4px) * 3) calc(var(--spacing-sm, 4px) * 3.5);
+    border-block-end: var(--stroke-thin, 1px) solid var(--color-border);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:last-child {
+    border-block-end: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td {
+    display: none;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[class*="is-phone-"] {
+    display: block;
+    block-size: auto;
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The checkbox and the row menu are controls, never clipped. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-lead {
+    grid-area: lead;
+    display: flex;
+    min-inline-size: max-content;
+    overflow: visible;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-title { grid-area: title; font-weight: var(--font-weight-medium); }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-subtitle {
+    grid-area: subtitle;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-meta { grid-area: meta; justify-self: end; }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-detail {
+    grid-area: detail;
+    justify-self: end;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-end {
+    grid-area: end;
+    min-inline-size: max-content;
+    overflow: visible;
+  }
+  /* A row with no subtitle or detail centres its one line. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-title:last-of-type { grid-row: 1 / span 2; }
+  /* The empty row's one spanning cell holds the empty state. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:has(> td[colspan]) {
+    display: block;
+    padding: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[colspan] {
+    display: block;
+    text-align: start;
+  }
 }`
 }
 
