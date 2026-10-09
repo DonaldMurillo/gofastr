@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- Meridian speaks Spanish: `locales/es.json` translates the admin, the
+  entity screens and its own entities, picked by Accept-Language. With
+  `MERIDIAN_PSEUDO_LOCALE=1` it also offers en-XA, and
+  `TestE2E_AdminPseudoLocaleOverflow` browses every admin screen in both
+  at desktop and phone widths and fails on overflow.
 - `i18nui.Pseudo` pseudo-localizes a string (accented, a third longer,
   placeholders kept) and `i18nui.AddPseudo` puts every framework default
   into a catalog under a pseudo tag such as en-XA, for overflow testing.

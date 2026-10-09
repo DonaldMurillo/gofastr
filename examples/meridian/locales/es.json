@@ -1,0 +1,892 @@
+{
+  "entity": {
+    "customers": {
+      "description": "Todas las cuentas que te pagan.",
+      "fields": {
+        "company": {
+          "label": "Empresa"
+        },
+        "created_at": {
+          "label": "Creado"
+        },
+        "email": {
+          "label": "Correo electrónico"
+        },
+        "logo": {
+          "label": "Logotipo"
+        },
+        "mrr": {
+          "label": "MRR"
+        },
+        "name": {
+          "label": "Nombre"
+        },
+        "status": {
+          "label": "Estado",
+          "values": {
+            "active": "Activo",
+            "canceled": "Cancelado",
+            "past_due": "Con atraso",
+            "trialing": "En prueba"
+          }
+        },
+        "updated_at": {
+          "label": "Actualizado"
+        }
+      },
+      "plural": "Clientes",
+      "singular": "cliente",
+      "views": {
+        "active": "Activos",
+        "past_due": "Con atraso"
+      }
+    },
+    "invoices": {
+      "description": "Todas las facturas emitidas, pagadas o no.",
+      "fields": {
+        "amount": {
+          "label": "Importe"
+        },
+        "created_at": {
+          "label": "Creado"
+        },
+        "customer_id": {
+          "label": "Cliente"
+        },
+        "due_on": {
+          "label": "Vence el"
+        },
+        "issued_on": {
+          "label": "Emitida el"
+        },
+        "number": {
+          "label": "Número"
+        },
+        "paid_on": {
+          "label": "Pagada el"
+        },
+        "status": {
+          "label": "Estado",
+          "values": {
+            "draft": "Borrador",
+            "open": "Abierta",
+            "paid": "Pagada",
+            "past_due": "Vencida",
+            "void": "Anulada"
+          }
+        },
+        "updated_at": {
+          "label": "Actualizado"
+        }
+      },
+      "plural": "Facturas",
+      "singular": "factura",
+      "transitions": {
+        "mark_paid": "Marcar como pagada",
+        "void": "Anular"
+      },
+      "views": {
+        "open": "Abiertas",
+        "past_due": "Vencidas"
+      }
+    },
+    "payments": {
+      "description": "El dinero que entra y los intentos fallidos.",
+      "fields": {
+        "amount": {
+          "label": "Importe"
+        },
+        "created_at": {
+          "label": "Creado"
+        },
+        "customer_id": {
+          "label": "Cliente"
+        },
+        "invoice_id": {
+          "label": "Factura"
+        },
+        "method": {
+          "label": "Método",
+          "values": {
+            "ach": "ACH",
+            "card": "Tarjeta",
+            "wire": "Transferencia"
+          }
+        },
+        "status": {
+          "label": "Estado",
+          "values": {
+            "failed": "Fallido",
+            "refunded": "Reembolsado",
+            "succeeded": "Cobrado"
+          }
+        },
+        "updated_at": {
+          "label": "Actualizado"
+        }
+      },
+      "plural": "Pagos",
+      "singular": "pago",
+      "views": {
+        "failed": "Fallidos"
+      }
+    },
+    "plans": {
+      "description": "A qué se puede suscribir un cliente.",
+      "fields": {
+        "active": {
+          "label": "Activo"
+        },
+        "created_at": {
+          "label": "Creado"
+        },
+        "interval": {
+          "label": "Periodo",
+          "values": {
+            "month": "Mensual",
+            "year": "Anual"
+          }
+        },
+        "name": {
+          "label": "Nombre"
+        },
+        "price": {
+          "label": "Precio"
+        },
+        "slug": {
+          "label": "Identificador"
+        },
+        "updated_at": {
+          "label": "Actualizado"
+        }
+      },
+      "plural": "Planes",
+      "singular": "plan"
+    },
+    "subscriptions": {
+      "description": "Quién está en qué plan y cuánto aporta.",
+      "fields": {
+        "created_at": {
+          "label": "Creado"
+        },
+        "customer_id": {
+          "label": "Cliente"
+        },
+        "mrr": {
+          "label": "MRR"
+        },
+        "plan_id": {
+          "label": "Plan"
+        },
+        "renews_on": {
+          "label": "Renovación"
+        },
+        "started_on": {
+          "label": "Inicio"
+        },
+        "status": {
+          "label": "Estado",
+          "values": {
+            "active": "Activa",
+            "canceled": "Cancelada",
+            "past_due": "Con atraso",
+            "trialing": "En prueba"
+          }
+        },
+        "updated_at": {
+          "label": "Actualizado"
+        }
+      },
+      "plural": "Suscripciones",
+      "singular": "suscripción",
+      "transitions": {
+        "activate": "Activar",
+        "cancel": "Cancelar"
+      },
+      "views": {
+        "active": "Activas",
+        "past_due": "Con atraso",
+        "trialing": "En prueba"
+      }
+    }
+  },
+  "ui": {
+    "action": {
+      "failed": "No se pudo guardar. Inténtalo de nuevo."
+    },
+    "admin": {
+      "account": "Cuenta",
+      "accountSettings": "Ajustes de la cuenta",
+      "accountSub": "Tu perfil, cómo ves el panel y tu contraseña.",
+      "activityBulkLine": "{actor} {verb} {count} {entity} en bloque",
+      "activityLine": "{actor} {verb} {record}",
+      "addRole": "Añadir un rol",
+      "appearance": "Apariencia",
+      "appearanceSub": "Se aplica en este navegador.",
+      "assignRefused": "No puedes asignar un rol superior al tuyo.",
+      "attention": "Requiere atención",
+      "attentionClear": "Nada requiere atención.",
+      "attentionList": "{entity} · {view}",
+      "audit": "Registro de auditoría",
+      "auditAnyEntity": "Cualquier entidad",
+      "auditAnyOp": "Cualquier operación",
+      "auditAssignRefused": "Se rechazó asignar {role}",
+      "auditBadFilter": "Se ignoró \"{param}\". No es un valor que acepte el filtro.",
+      "auditBulkDeleted": "Eliminados",
+      "auditBulkFailed": "{count} fallidos",
+      "auditBulkRecord": "{count} {entity}",
+      "auditBulkRestored": "Restaurados",
+      "auditBulkSkipped": "{count} omitidos",
+      "auditBulkUpdated": "Actualizados",
+      "auditEmpty": "No hay entradas de auditoría",
+      "auditEmptyDesc": "Los eventos de auditoría aparecerán aquí.",
+      "auditFrom": "Desde",
+      "auditGrantRefused": "Se rechazó conceder {permission}",
+      "auditGranted": "Se concedió {permission}",
+      "auditLoadFailed": "No se pudieron cargar las filas de auditoría. Revisa los registros del servidor.",
+      "auditNoRoles": "Sin roles",
+      "auditRevokeRefused": "Se rechazó revocar {permission}",
+      "auditRevoked": "Se revocó {permission}",
+      "auditRole": "Rol",
+      "auditSub": "Quién cambió qué, lo más reciente primero.",
+      "auditSystem": "Sistema",
+      "auditTo": "Hasta",
+      "auditUser": "Usuario",
+      "badInput": "Rellena todos los campos que pide el formulario.",
+      "brandSub": "Back office",
+      "bump": "Subir generación",
+      "capability": "Capacidad",
+      "cardNew": "Nuevo",
+      "changePassword": "Cambiar contraseña",
+      "circuitOpen": "Circuito abierto",
+      "colActions": "Acciones",
+      "colActor": "Autor",
+      "colAttempts": "Intentos",
+      "colChanges": "Cambios",
+      "colCreated": "Creado",
+      "colEntity": "Entidad",
+      "colGeneration": "Generación",
+      "colID": "ID",
+      "colJob": "Trabajo",
+      "colLastError": "Último error",
+      "colLastExit": "Última salida",
+      "colModule": "Módulo",
+      "colOperation": "Operación",
+      "colPriority": "Prioridad",
+      "colRecord": "Registro",
+      "colRestarts": "Reinicios",
+      "colRoles": "Roles",
+      "colRoutes": "Rutas / herramientas",
+      "colScheduled": "Programado",
+      "colState": "Estado",
+      "colTime": "Hora",
+      "colTrust": "Confianza",
+      "colType": "Tipo",
+      "colUpdated": "Actualizado",
+      "colUser": "Usuario",
+      "confirmPassword": "Confirma la nueva contraseña",
+      "countMany": "{count}+",
+      "currentPassword": "Contraseña actual",
+      "dashboard": "Panel",
+      "dashboardSub": "Todo lo que gestiona este panel, de un vistazo.",
+      "disable": "Desactivar",
+      "disableConfirm": "¿Desactivar {module}? Termina lo pendiente y deja de servir.",
+      "done": "Hecho.",
+      "editRoles": "Editar roles",
+      "email": "Correo electrónico",
+      "enable": "Activar",
+      "entities": "Entidades",
+      "failed": "No funcionó. Revisa los registros del servidor.",
+      "failedJobs": "Trabajos fallidos",
+      "grant": "Conceder",
+      "grantCell": "{role} tiene {permission}",
+      "grantRefused": "Solo puedes conceder o revocar un permiso que tienes.",
+      "granted": "Permiso concedido.",
+      "holdsEvery": "{role} tiene todos los permisos",
+      "keyClose": "Cerrar un panel o un diálogo",
+      "keyHelp": "Mostrar estos atajos",
+      "keyPalette": "Abrir la paleta de comandos",
+      "keySave": "Guardar el registro",
+      "keySearch": "Buscar en la lista",
+      "leaseFailing": "La concesión falla",
+      "look": "Estilo",
+      "moduleBumped": "Generación subida.",
+      "moduleDisabled": "Módulo desactivado.",
+      "moduleEnabled": "Módulo activado.",
+      "moduleFailed": "El módulo no aceptó el cambio. Revisa los registros del servidor.",
+      "moduleRefused": "No puedes gestionar módulos de proceso.",
+      "moduleRevoked": "Capacidad revocada.",
+      "modules": "Módulos",
+      "modulesSub": "Módulos de proceso y su ciclo de vida.",
+      "name": "Nombre",
+      "nav": "Navegación del panel",
+      "newPassword": "Nueva contraseña",
+      "newPasswordHelp": "Al menos {min} caracteres.",
+      "newRole": "Nuevo rol",
+      "noActivity": "Todavía no hay actividad.",
+      "noFailedJobs": "No hay trabajos fallidos.",
+      "noModules": "No hay módulos de proceso registrados.",
+      "noPassword": "Tu cuenta entra sin contraseña. Usa \"Olvidé mi contraseña\" en la página de acceso para crear una.",
+      "noPermissions": "No hay permisos que conceder",
+      "noPermissionsDesc": "Cada rol tiene todos los permisos. Registra las capacidades de la app en su política para concederlas una a una.",
+      "noRoles": "Sin roles",
+      "noRolesDesc": "Define los roles en la política de acceso de la app.",
+      "noUsers": "Sin usuarios",
+      "paletteEmpty": "Sin resultados.",
+      "paletteNew": "Añadir {entity}",
+      "palettePage": "Página",
+      "passwordChanged": "Contraseña cambiada",
+      "permission": "Permiso",
+      "permissionsSaved": "Permisos guardados.",
+      "profile": "Perfil",
+      "profileSub": "Con quién has iniciado sesión.",
+      "queue": "Trabajos",
+      "queueAll": "Todos",
+      "queueClaimed": "En curso",
+      "queueDone": "Terminados",
+      "queueEmpty": "No hay trabajos",
+      "queueEmptyDesc": "Ningún trabajo coincide con este filtro.",
+      "queueFailed": "Fallidos",
+      "queueLoadFailed": "No se pudieron cargar los trabajos. Revisa los registros del servidor.",
+      "queuePending": "Pendientes",
+      "queueStatus": "Estado",
+      "queueSub": "Trabajos en segundo plano. Los fallidos agotaron sus reintentos y esperan una repetición.",
+      "recent": "Actividad reciente",
+      "refused": "No puedes hacer eso.",
+      "replay": "Repetir",
+      "replayAll": "Repetir {n} fallidos",
+      "replayAllConfirm": "¿Repetir todos los trabajos fallidos?",
+      "replayed": "Trabajo en cola de nuevo.",
+      "replayedAll": "Trabajos fallidos en cola de nuevo.",
+      "revoke": "Revocar",
+      "revokeConfirm": "¿Revocar esta capacidad de {module}? Su generación sube y el proceso hijo se reinicia.",
+      "roles": "Roles",
+      "rolesSaved": "Roles guardados.",
+      "rolesSub": "Qué puede hacer cada rol.",
+      "savePermissions": "Guardar permisos",
+      "saveRoles": "Guardar roles",
+      "search": "Busca o salta a…",
+      "security": "Contraseña",
+      "securitySub": "Al cambiarla se cierra tu sesión en los demás sitios.",
+      "serves404": "Sirve 404",
+      "serves503": "Sirve 503",
+      "serving": "Sirviendo",
+      "sidebar": "Barra lateral del panel",
+      "signedInAs": "Sesión iniciada como {name}",
+      "systemNav": "Sistema",
+      "themeLabel": "Tema",
+      "title": "Administración",
+      "toolbar": "Barra de herramientas del panel",
+      "undeclared": "Sin declarar",
+      "unknownCapability": "Ese permiso no es uno que declare la app.",
+      "unverified": "Sin verificar",
+      "updatedAgo": "Actualizado {ago}",
+      "userRoles": "Roles de usuario",
+      "userRolesSub": "Qué roles tiene cada usuario.",
+      "usersLoadFailed": "No se pudieron cargar los usuarios. Revisa los registros del servidor.",
+      "verbBulk": "ejecutó una acción en bloque sobre",
+      "verbCreate": "creó",
+      "verbDelete": "eliminó",
+      "verbPurge": "purgó",
+      "verbRestore": "restauró",
+      "verbStateOverride": "forzó el estado de",
+      "verbTransition": "cambió el estado de",
+      "verbUpdate": "actualizó",
+      "verified": "Verificado",
+      "viewAll": "Ver todo",
+      "yourRoles": "Roles: {roles}"
+    },
+    "ago": {
+      "days": "hace {n} d",
+      "hours": "hace {n} h",
+      "minutes": "hace {n} min",
+      "now": "ahora mismo"
+    },
+    "auth": {
+      "email": "Correo electrónico",
+      "login": "Iniciar sesión",
+      "logout": "Cerrar sesión",
+      "password": "Contraseña",
+      "rememberMe": "Recordarme",
+      "signOut": "Cerrar sesión",
+      "signup": "Crear cuenta"
+    },
+    "backToTop": {
+      "label": "Volver arriba"
+    },
+    "banner": {
+      "dismiss": "Descartar"
+    },
+    "breadcrumbs": {
+      "label": "Ruta de navegación"
+    },
+    "carousel": {
+      "goTo": "Ir a la diapositiva {slide}",
+      "goToSlide": "Ir a la diapositiva {n}",
+      "next": "Diapositiva siguiente",
+      "pagination": "Paginación de diapositivas",
+      "previous": "Diapositiva anterior",
+      "slide": "Diapositiva {n} de {total}"
+    },
+    "change": {
+      "from": "de",
+      "to": "a"
+    },
+    "color": {
+      "pick": "Elegir %s"
+    },
+    "columnPicker": {
+      "hide": "Ocultar {column}",
+      "moveDown": "Mover {column} después",
+      "moveUp": "Mover {column} antes",
+      "show": "Mostrar {column}"
+    },
+    "combobox": {
+      "loading": "Cargando…",
+      "noResults": "Sin resultados",
+      "resultCount": "{n} resultados",
+      "resultsLabel": "resultados"
+    },
+    "commandPalette": {
+      "close": "Cerrar",
+      "navigate": "Navegar",
+      "open": "Abrir la paleta de comandos",
+      "placeholder": "Escribe un comando o busca…",
+      "select": "Elegir",
+      "title": "Paleta de comandos"
+    },
+    "copy": {
+      "copied": "Copiado",
+      "copy": "Copiar",
+      "link": "Copiar enlace",
+      "status": "Copiado: {name}",
+      "toClipboard": "Copiar al portapapeles"
+    },
+    "counter": {
+      "decrement": "Restar",
+      "increment": "Sumar",
+      "label": "Contador"
+    },
+    "dialog": {
+      "cancel": "Cancelar",
+      "close": "Cerrar",
+      "confirm": "Confirmar",
+      "confirmTitle": "¿Seguro?",
+      "delete": "Eliminar",
+      "save": "Guardar"
+    },
+    "dismiss": {
+      "titled": "Descartar: %s"
+    },
+    "drawer": {
+      "next": "Registro siguiente",
+      "open_page": "Abrir como página",
+      "prev": "Registro anterior"
+    },
+    "dropzone": {
+      "maxSize": "Máx. {n} MB.",
+      "maxSizeSuffix": " (máx. {n} MB)",
+      "promptMultiple": "Suelta archivos aquí o haz clic para elegirlos",
+      "promptSingle": "Suelta un archivo aquí o haz clic para elegirlo"
+    },
+    "empty": {
+      "description": "No hay elementos que mostrar.",
+      "title": "Aún no hay nada"
+    },
+    "entity": {
+      "accessDenied": "No tienes permiso para ver {entity}.",
+      "actionConfirm": "Se ejecuta sobre {title}.",
+      "actionConfirmTitle": "¿{action}?",
+      "actionRan": "Se ejecutó {action}.",
+      "activityCreated": "{actor} creó este registro",
+      "activityDeleted": "{actor} eliminó este registro",
+      "activityMoved": "{actor} ejecutó {action}",
+      "activityOther": "{actor}: {action}",
+      "activityOverride": "{actor} forzó el estado",
+      "activityReason": "Motivo: {reason}",
+      "activityRestored": "{actor} restauró este registro",
+      "activitySaved": "{actor} guardó este registro",
+      "activitySystem": "Sistema",
+      "activityUpdated": "{actor} hizo cambios",
+      "add": "Añadir {entity}",
+      "apiIndex": "Índice de la API (llm.md)",
+      "apiJsonTitle": "Este registro tal como lo devuelve la API",
+      "apiMcpOff": "Esta entidad no se expone por MCP.",
+      "apiMcpTitle": "Herramientas MCP",
+      "apiRecord": "Este registro",
+      "apiResource": "Recurso",
+      "apiRestOff": "Esta entidad no se expone por REST.",
+      "apiRestTitle": "REST",
+      "bulkAction": "Acción",
+      "bulkApply": "Aplicar",
+      "bulkBadFilter": "No se pudo aplicar el filtro, así que «todas las coincidencias» no está disponible.",
+      "bulkBadScope": "Elige a qué registros aplicarla.",
+      "bulkBar": "Acciones en bloque",
+      "bulkConfirm": "La acción se ejecuta sobre todas las filas del alcance elegido.",
+      "bulkDelete": "Eliminar",
+      "bulkDeleted": "{count} {entity} eliminados",
+      "bulkDone": "{done} hechos, {skipped} omitidos, {failed} fallidos",
+      "bulkEvery": "Todas las coincidencias ({count})",
+      "bulkEveryOverCap": "«Todas las coincidencias» se detiene en {cap} registros; filtra la lista antes.",
+      "bulkExport": "Exportar CSV",
+      "bulkFailed": "No se pudo ejecutar la acción.",
+      "bulkMove": "Mover: {move}",
+      "bulkNeedsUser": "Inicia sesión para ejecutar una acción sobre más de {cap} registros.",
+      "bulkNone": "No hay nada seleccionado que puedas cambiar.",
+      "bulkOverCap": "Selecciona como máximo {cap} registros a la vez.",
+      "bulkPage": "Esta página ({count})",
+      "bulkQueued": "{count} {entity} en cola",
+      "bulkRestored": "{count} {entity} restaurados",
+      "bulkScope": "Aplicar a",
+      "bulkSelect": "Seleccionar {title}",
+      "bulkSelected": "Filas seleccionadas",
+      "bulkSet": "Poner {field} en {value}",
+      "bulkStale": "La lista cambió desde que se mostró. Recárgala e inténtalo de nuevo.",
+      "bulkTitle": "¿Aplicar a {entity} elegidos?",
+      "bulkUnknown": "Esa acción no está disponible.",
+      "bulkUpdated": "{count} {entity} actualizados",
+      "cancel": "Cancelar",
+      "clearSearch": "Borrar la búsqueda y los filtros",
+      "columns": "Columnas",
+      "copyAPIURL": "Copiar URL de la API",
+      "copyLink": "Copiar enlace",
+      "count": "{count} {entity}",
+      "countOne": "1 {entity}",
+      "create": "Crear {entity}",
+      "createAnother": "Crear otro",
+      "created": "Registro creado",
+      "createdOn": "Creado el {date}",
+      "currency": "$",
+      "delete": "Eliminar",
+      "deleteConfirm": "No se puede deshacer.",
+      "deleteFailed": "No se pudo eliminar el registro.",
+      "deleteSoft": "Se puede restaurar después.",
+      "deleteTitle": "¿Eliminar este registro?",
+      "deleted": "Registro eliminado",
+      "deletedEmpty": "Aún no hay {entity} eliminados",
+      "deletedEmptyBody": "Las filas que elimines aparecerán aquí hasta que se restauren o se eliminen para siempre.",
+      "details": "Detalles",
+      "duplicate": "Duplicar",
+      "empty": "Aún no hay {entity}",
+      "emptyBody": "Aparecerán aquí cuando se creen.",
+      "filterInvalid": "Filtro no aplicado",
+      "filterInvalidBody": "No se pudo aplicar el filtro. Revisa el texto e inténtalo de nuevo.",
+      "filterOpEq": "es",
+      "filterOpGt": "mayor que",
+      "filterOpGte": "al menos",
+      "filterOpLike": "contiene",
+      "filterOpLt": "menor que",
+      "filterOpLte": "como máximo",
+      "filterOpNe": "no es",
+      "filterRowField": "Campo",
+      "filterRowOp": "Operador",
+      "filterRowValue": "Valor",
+      "filterRows": "Filtrar donde",
+      "id": "ID",
+      "inlineEdit": "Editar {field} de {title}",
+      "keepValue": "Déjalo en blanco para conservar el valor actual.",
+      "layout": "Vista",
+      "layoutCards": "Tarjetas",
+      "layoutTable": "Tabla",
+      "leaveGuard": "Tienes cambios sin guardar. Si sales ahora, se descartan.",
+      "leaveGuardAccept": "Descartar cambios",
+      "leaveGuardTitle": "¿Descartar los cambios sin guardar?",
+      "loadFailed": "No se pudo cargar {entity}",
+      "moveAccept": "{action}",
+      "moveConfirm": "Pasa de {from} a {to}.",
+      "moveConfirmTitle": "¿{action}?",
+      "moveFailed": "No se pudo {action}.",
+      "moved": "Registro actualizado",
+      "new": "Añadir {entity}",
+      "newValue": "Valor nuevo",
+      "no": "No",
+      "noActivity": "Todavía no hay actividad",
+      "noMatch": "Ningún registro de {entity} coincide",
+      "noMatchBody": "Prueba otra búsqueda o borra los filtros.",
+      "notFound": "No encontrado",
+      "notFoundBody": "Este registro de {entity} no existe.",
+      "notSet": "Sin definir",
+      "open": "Abrir {entity}",
+      "override": "Forzar estado",
+      "overrideBlank": "Hace falta un motivo.",
+      "overrideConfirm": "El cambio se salta el flujo y queda en el registro de auditoría con tu motivo.",
+      "overrideDenied": "No puedes forzar el estado de este registro de {entity}.",
+      "overrideDone": "Estado forzado",
+      "overrideFailed": "No se pudo forzar el estado.",
+      "overrideHelp": "Obligatorio, como máximo 500 caracteres. Queda en el registro de auditoría.",
+      "overrideLong": "El motivo supera los 500 caracteres.",
+      "overrideNoAudit": "Forzar el estado requiere un registro de auditoría en esta entidad.",
+      "overrideReason": "Motivo",
+      "overrideState": "Nuevo estado",
+      "overrideStateBad": "Ese estado no es uno que declare esta entidad.",
+      "overrideTitle": "¿Forzar el estado de este registro de {entity}?",
+      "pageSize": "Filas por página",
+      "pickerMore": "Se muestran los primeros {n}. Escribe para encontrar otros.",
+      "pickerSearch": "Buscar {entities}…",
+      "purge": "Eliminar para siempre",
+      "purgeConfirm": "Sale de la papelera y no se podrá restaurar.",
+      "purgeFailed": "No se pudo eliminar para siempre.",
+      "purgeTitle": "¿Eliminar este registro para siempre?",
+      "purged": "Registro eliminado para siempre",
+      "queryBoxExample": "Ejemplo",
+      "queryBoxField": "Expresión de filtro",
+      "queryBoxFields": "Campos",
+      "queryBoxHelp": "Compara un campo con un valor. Pon el texto entre comillas.",
+      "queryBoxJoin": "Unir",
+      "queryBoxOperators": "Operadores",
+      "readOnly": "Este registro de {entity} es de solo lectura.",
+      "recordSections": "Secciones",
+      "replace": "Reemplazar",
+      "replaceHint": "Al guardar el formulario se conserva. Escribe un valor nuevo y elige Reemplazar para cambiarlo.",
+      "restore": "Restaurar",
+      "restoreFailed": "No se pudo restaurar.",
+      "restored": "Registro restaurado",
+      "rowActions": "Acciones de {title}",
+      "save": "Guardar",
+      "saveFailed": "No se pudo guardar.",
+      "saved": "Guardado",
+      "savedBadCols": "Las columnas no se aplican a esta lista.",
+      "savedBadFilter": "El filtro no se aplica a esta lista.",
+      "savedDelete": "Eliminar vista",
+      "savedDeleteConfirm": "Se borran los filtros y las columnas de la vista; los registros se quedan.",
+      "savedDeleteTitle": "¿Eliminar esta vista guardada?",
+      "savedDeleted": "Vista eliminada.",
+      "savedGone": "Esta vista ya no se aplica",
+      "savedGoneBody": "Su filtro o sus columnas ya no encajan con esta lista. Se muestran todas las filas.",
+      "savedName": "Nombre de la vista",
+      "savedSave": "Guardar vista",
+      "savedSaved": "Vista guardada.",
+      "savedViews": "Vistas guardadas",
+      "search": "Buscar {entity}",
+      "select": "— Elegir —",
+      "set": "Definir",
+      "slotFailed": "No se pudo cargar esta sección",
+      "slotFailedBody": "Revisa los registros del servidor.",
+      "tabActivity": "Actividad",
+      "tabApi": "API",
+      "tabEdit": "Editar",
+      "tabRelated": "Relacionados",
+      "unchanged": "— sin cambios —",
+      "undo": "Deshacer",
+      "updatedOn": "Actualizado el {date}",
+      "view": "Ver",
+      "viewAll": "Todos",
+      "viewDeleted": "Eliminados",
+      "viewEmpty": "No hay {entity} en esta vista",
+      "viewEmptyBody": "Puede que las otras vistas tengan alguno.",
+      "views": "Vistas",
+      "yes": "Sí"
+    },
+    "fileUpload": {
+      "browse": "Examinar",
+      "dropzone": "Suelta archivos aquí o haz clic para elegirlos",
+      "dropzoneSingle": "Suelta un archivo aquí o haz clic para elegirlo",
+      "fileSelected": "{name} seleccionado.",
+      "filesSelected": "{n} archivos seleccionados: {names}.",
+      "maxSize": "Máx. {n} MB",
+      "remove": "Quitar"
+    },
+    "filterChipBar": {
+      "clearAll": "Borrar todo",
+      "removeFilter": "Quitar el filtro {label}"
+    },
+    "filterToolbar": {
+      "all": "Todos: {label}",
+      "allPlain": "Todos",
+      "apply": "Aplicar",
+      "label": "Filtros",
+      "reset": "Restablecer",
+      "sortBy": "Ordenar por"
+    },
+    "form": {
+      "error": "Se produjo un error",
+      "errorsSummary": "Corrige los campos marcados e inténtalo de nuevo.",
+      "hasErrors": "El formulario tiene errores",
+      "no": "No",
+      "reset": "Restablecer",
+      "save": "Guardar",
+      "sending": "Enviando…",
+      "submit": "Enviar",
+      "success": "Guardado correctamente",
+      "yes": "Sí"
+    },
+    "inlineEdit": {
+      "save": "Guardar",
+      "saved": "Guardado"
+    },
+    "json": {
+      "array": "Lista",
+      "object": "Objeto"
+    },
+    "lightbox": {
+      "download": "Descargar imagen",
+      "label": "Visor de imágenes",
+      "next": "Imagen siguiente",
+      "previous": "Imagen anterior"
+    },
+    "loading": "Cargando…",
+    "multiselect": {
+      "placeholder": "Elige…",
+      "removeLabel": "Quitar {label}"
+    },
+    "nav": {
+      "mobilePrimary": "Principal en móvil",
+      "primary": "Principal",
+      "toggle": "Mostrar u ocultar la navegación"
+    },
+    "notification": {
+      "countUnread": "%d notificaciones sin leer",
+      "dismiss": "Descartar notificación",
+      "empty": "No hay notificaciones nuevas"
+    },
+    "number": {
+      "decrement": "Restar a {label}",
+      "decrementLabelled": "Restar a %s",
+      "increment": "Sumar a {label}",
+      "incrementLabelled": "Sumar a %s"
+    },
+    "pagination": {
+      "label": "Paginación",
+      "next": "Siguiente",
+      "of": "de",
+      "page": "Página",
+      "previous": "Anterior",
+      "results": "resultados",
+      "showing": "Mostrando"
+    },
+    "passwordInput": {
+      "hide": "Ocultar contraseña",
+      "revealHide": "Ocultar",
+      "revealShow": "Mostrar",
+      "show": "Mostrar contraseña"
+    },
+    "polling": {
+      "live": "En directo"
+    },
+    "progress": {
+      "label": "Progreso"
+    },
+    "range": {
+      "high": "Máximo de %s",
+      "low": "Mínimo de %s",
+      "value": "%s a %s"
+    },
+    "rating": {
+      "choice": "%d de %d"
+    },
+    "repeater": {
+      "add": "Añadir elemento",
+      "remove": "Quitar",
+      "removeItem": "Quitar el elemento {index}",
+      "removeItemIndex": "Quitar el elemento %d"
+    },
+    "search": {
+      "clear": "Borrar la búsqueda",
+      "inputPlaceholder": "Buscar...",
+      "label": "Buscar",
+      "noResults": "Sin resultados",
+      "placeholder": "Buscar…"
+    },
+    "section": {
+      "label": "Sección"
+    },
+    "shortcutSheet": {
+      "title": "Atajos de teclado"
+    },
+    "sidebar": {
+      "collapse": "Contraer la navegación",
+      "collapseText": "Contraer",
+      "expand": "Expandir la navegación"
+    },
+    "sortable": {
+      "cancelled": "Cancelado.",
+      "conflictRefreshed": "Conflicto. Lista actualizada desde el servidor.",
+      "conflictReverted": "Conflicto. Se deshizo.",
+      "dragLabel": "Arrastrar %s",
+      "grabbed": "{label} agarrado. Flechas para mover, Espacio para soltar.",
+      "itemRole": "elemento ordenable",
+      "moved": "Movido a {list}, posición {position}.",
+      "position": "Posición {position} en {list}.",
+      "reverted": "No se pudo guardar. Se deshizo.",
+      "saved": "Orden guardado."
+    },
+    "sparkline": {
+      "noData": "Sin datos de tendencia"
+    },
+    "stepWizard": {
+      "back": "Atrás",
+      "next": "Continuar",
+      "step": "Paso {step}: {heading}",
+      "stepNameFormat": "Paso %d: %s",
+      "stepOf": "Paso {step} de {total}",
+      "stepOfFormat": "Paso %d de %d",
+      "submit": "Enviar"
+    },
+    "table": {
+      "dirAscending": "ascendente",
+      "dirDescending": "descendente",
+      "emptyDescription": "Ajusta los filtros o añade entradas nuevas.",
+      "filter": "Filtrar",
+      "loading": "Cargando…",
+      "noResults": "Sin resultados",
+      "noSort": "Quitar el orden",
+      "selectAll": "Seleccionar todas las filas",
+      "sortAscending": "Orden ascendente",
+      "sortBy": "Ordenar por {column}",
+      "sortDescending": "Orden descendente",
+      "sortedBy": "Ordenado por {column}, {direction}"
+    },
+    "tag": {
+      "remove": "Quitar {label}",
+      "removeLabelled": "Quitar %s"
+    },
+    "tagInput": {
+      "add": "Añadir %s",
+      "added": "{name} añadido",
+      "removed": "{name} quitado"
+    },
+    "textArea": {
+      "invalidJSON": "Escribe un JSON válido"
+    },
+    "themePicker": {
+      "default": "Predeterminado",
+      "label": "Tema"
+    },
+    "themeToggle": {
+      "auto": "Automático",
+      "colorScheme": "Esquema de color",
+      "dark": "Oscuro",
+      "light": "Claro",
+      "toggle": "Cambiar el esquema de color"
+    },
+    "toast": {
+      "error": "Error",
+      "info": "Información",
+      "success": "Hecho",
+      "warning": "Aviso"
+    },
+    "toc": {
+      "label": "En esta página"
+    },
+    "tone": {
+      "danger": "Error",
+      "info": "Información",
+      "success": "Hecho",
+      "warning": "Aviso"
+    },
+    "validation": {
+      "email": "Escribe un correo electrónico válido",
+      "max": "Debe ser como máximo {max}",
+      "maxLength": "Debe tener como máximo {max} caracteres",
+      "min": "Debe ser al menos {min}",
+      "minLength": "Debe tener al menos {min} caracteres",
+      "pattern": "Formato no válido",
+      "required": "Este campo es obligatorio",
+      "unique": "Este valor ya está en uso"
+    },
+    "validationSummary": {
+      "problem": "Hay un problema",
+      "title": "Corrige los siguientes errores:"
+    }
+  }
+}

@@ -61,7 +61,7 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption()}
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
