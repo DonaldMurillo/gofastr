@@ -8,6 +8,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- An entity record's menu offers Create another (with `Duplicate()`)
+  and Copy API URL, the record's REST address on this origin.
 - **Keyboard help**: `ui.ShortcutSheet` is a modal listing an app's
   keys, opened by `?`, with `ui.ShortcutList` for its scriptless page;
   the admin mounts it (`GET /admin/shortcuts`). `ui.FilterSearch.Shortcut`

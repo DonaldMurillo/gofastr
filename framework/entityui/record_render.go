@@ -388,12 +388,21 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	if !inDrawer(ctx) {
 		span, items = b.copyLink(ctx)
 	}
-	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
+	if b.dup && canCreate(ctx, m) {
+		if !m.d.NoDuplicate {
+			items = append(items, ui.MenuItem{
+				Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+				Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
+			})
+		}
 		items = append(items, ui.MenuItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
-			Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
+			Label: i18nui.T(ctx, i18nui.KeyEntityCreateAnother),
+			Href:  base + "/create",
 		})
 	}
+	apiSpan, apiItem := b.copyAPIURL(ctx, m)
+	span = render.Join(span, apiSpan)
+	items = append(items, apiItem...)
 	if len(danger) > 0 {
 		if len(items) > 0 {
 			items = append(items, ui.MenuItem{Separator: true})
@@ -433,6 +442,23 @@ func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuIte
 		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
 }
 
+// copyAPIURL is the record's REST address on this origin as a hidden
+// span and the menu row that copies it: only for an entity whose REST
+// routes mounted, and only with a request on the context.
+func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, []ui.MenuItem) {
+	base, ok := b.ui.restBase(m.e)
+	if !ok {
+		return "", nil
+	}
+	origin := requestOrigin(ctx)
+	if origin == "" {
+		return "", nil
+	}
+	id := "eui-rec-api"
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+url.PathEscape(b.id))),
+		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyAPIURL), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+}
+
 // absoluteURL is the request's absolute address without its query:
 // the record's shareable link. No request on the context is "".
 func absoluteURL(ctx context.Context) string {
@@ -452,6 +478,15 @@ func absoluteURL(ctx context.Context) string {
 		scheme = p
 	}
 	return scheme + "://" + r.Host + r.URL.Path
+}
+
+// requestOrigin is the request's scheme and host, absoluteURL's prefix.
+func requestOrigin(ctx context.Context) string {
+	r := appui.RequestFromContext(ctx)
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSuffix(absoluteURL(ctx), r.URL.Path)
 }
 
 // tab is one entry of the record's tab strip.

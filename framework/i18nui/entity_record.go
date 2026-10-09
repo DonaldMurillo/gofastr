@@ -30,6 +30,8 @@ const (
 	KeyEntityNoActivity         Key = "ui.entity.noActivity"         // "No activity yet"
 	// A relation picker: its search placeholder and the note after a
 	// cut-off list.
+	KeyEntityCreateAnother    Key = "ui.entity.createAnother"    // "Create another"
+	KeyEntityCopyAPIURL       Key = "ui.entity.copyAPIURL"       // "Copy API URL"
 	KeyEntityPickerSearch     Key = "ui.entity.pickerSearch"     // "Search {entities}…"
 	KeyEntityPickerMore       Key = "ui.entity.pickerMore"       // "Showing the first {n}. Type to find others."
 	KeyEntityReadOnly         Key = "ui.entity.readOnly"         // "This {entity} is read-only."
@@ -103,6 +105,8 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityKeepValue:          "Leave blank to keep the current value.",
 	KeyEntityNoActivity:         "No activity yet",
 	KeyEntityPickerSearch:       "Search {entities}…",
+	KeyEntityCreateAnother:      "Create another",
+	KeyEntityCopyAPIURL:         "Copy API URL",
 	KeyEntityPickerMore:         "Showing the first {n}. Type to find others.",
 	KeyEntityReadOnly:           "This {entity} is read-only.",
 	KeyEntityLeaveGuard:         "You have unsaved changes. Leaving now discards them.",

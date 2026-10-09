@@ -53,8 +53,11 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
   record's title, its state as the badge, and "Created … · Updated …"
   from its timestamps; a button per state move whose `From` holds the
-  stored value; one icon-only menu named for the record (Copy link, and
-  Duplicate and Delete where turned on); and on the Edit tab, Save. A
+  stored value; one icon-only menu named for the record (Copy link;
+  Copy API URL, the record's REST address on this origin, when its REST
+  routes mounted; with `Duplicate()` and a caller who may create,
+  Duplicate and Create another, the blank create screen; and Delete
+  where turned on); and on the Edit tab, Save. A
   move or app action declared `danger` is not a header button: it sits
   in the menu above Delete and runs only after a confirm dialog names it
   ("Void this invoice?" / "It moves from Draft to Paid."). Save

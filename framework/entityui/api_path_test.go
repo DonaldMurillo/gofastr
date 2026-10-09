@@ -37,6 +37,9 @@ func TestWithAPIPathMovesWrites(t *testing.T) {
 		}
 	}
 	for name, html := range map[string]string{"list": list, "record": rec} {
+		// The Copy API URL row names the public REST address on purpose,
+		// as the API tab does: an address to read, not a write.
+		html = strings.ReplaceAll(html, "http://example.com/api/invoices/inv-1", "")
 		if strings.Contains(strings.ReplaceAll(html, "/admin/api/", ""), "/api/invoices") {
 			t.Errorf("%s still points a write at the REST routes:\n%s", name, html)
 		}

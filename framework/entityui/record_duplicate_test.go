@@ -45,3 +45,27 @@ func TestDuplicateBlanksRelationIndex(t *testing.T) {
 		t.Errorf("the duplicate kept a customer its unique index refuses:\n%s", body)
 	}
 }
+
+// The record menu offers Create another (the entity's create screen)
+// beside Duplicate, and Copy API URL: the record's REST address on this
+// origin, held in a hidden span the copy reads.
+func TestRecordMenuCreateAnotherAndAPIURL(t *testing.T) {
+	x := newInvoiceUI(t)
+	body := renderRecord(t, x, "inv-1", func(b *RecordBuilder) { b.Duplicate() })
+	for _, want := range []string{
+		`href="/rec/invoices/create"`,
+		">Create another<",
+		">Copy API URL<",
+		`id="eui-rec-api"`,
+		`http://example.com/api/invoices/inv-1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the record menu misses %q:\n%s", want, body)
+		}
+	}
+	// No create, no Create another.
+	anon := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Duplicate().RenderCtx(x.ctx("/rec/invoices/inv-1", "")))
+	if strings.Contains(anon, ">Create another<") {
+		t.Errorf("a caller who may not create got Create another")
+	}
+}
