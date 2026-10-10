@@ -7,9 +7,8 @@ branch yet. They live on `wip/admin-shell-remote`, which has every gap from the
 last status closed.
 
 The approved design is the "D · Hybrid" prototype
-(https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL). A copy sits at
-`docs/admin-prototype.html` for parity work; remove it before the branch
-lands on #495.
+(https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL). The local copy used
+for parity work was removed before the branch landed on #495.
 
 ## PR stack
 
@@ -222,10 +221,10 @@ advisories (Go 1.27.2), the dupl baseline and fourteen `gofastr verify
 
 Before #495 is ready:
 
-- [ ] Remove `docs/admin-prototype.html`.
-- [ ] Bring `wip/admin-shell-remote` onto `feat/admin-shell` (merge, never rebase).
-- [ ] Base check: `git fetch origin`, `git rev-list --count HEAD..origin/<base>`, merge the base in if behind.
-- [ ] Push `feat/admin-shell` with the full hook (never `--no-verify`).
+- [x] Remove `docs/admin-prototype.html`.
+- [x] Bring `wip/admin-shell-remote` onto `feat/admin-shell` (merge, never rebase).
+- [x] Base check: `git fetch origin`, `git rev-list --count HEAD..origin/<base>`, merge the base in if behind.
+- [x] Push `feat/admin-shell` with the full hook (never `--no-verify`).
 - [ ] Rewrite the #495 body from the commit list above, then `gh pr edit 495 --body-file`.
 - [ ] `./scripts/pr-review-findings.sh 495 --gate`, triage every thread, then watch CI.
 - [ ] Remove the stale `wip/drawer-steps` branch and worktree.
