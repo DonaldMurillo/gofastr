@@ -157,6 +157,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 		Trend: updated,
 		Href:  b.entityBase(e),
 		Icon:  icon,
+		Tile:  true,
 		Action: ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.T(ctx, i18nui.KeyAdminCardNew),
 			Href:    b.entityBase(e) + "/create",

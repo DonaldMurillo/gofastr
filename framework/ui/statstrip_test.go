@@ -48,3 +48,14 @@ func TestStatCardPlainDropsItsFrame(t *testing.T) {
 		t.Error("a card is plain without asking")
 	}
 }
+
+// A tile card marks its root; the sheet lays the head out in two lines.
+func TestStatCardTile(t *testing.T) {
+	if !strings.Contains(string(StatCard(StatCardConfig{Label: "a", Value: "1", Icon: "users", Tile: true})), "fui-stat-card--tile") {
+		t.Error("no tile modifier")
+	}
+	css := statCardStyle.Entry().CSSFor(style.DefaultTheme())
+	if !strings.Contains(css, `grid-template-areas: "icon . action" "label label label"`) {
+		t.Errorf("the tile head is not two lines:\n%s", css)
+	}
+}

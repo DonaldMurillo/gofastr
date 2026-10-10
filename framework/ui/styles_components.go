@@ -886,6 +886,32 @@ func statCardCSS(_ style.Theme) string {
   flex: 1 1 auto;
   min-inline-size: 0;
 }
+/* Tile: the icon in a tinted square and the action share the first
+   line, the label sits under them. */
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "icon . action" "label label label";
+  row-gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__icon {
+  grid-area: icon;
+  justify-content: center;
+  align-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface-soft);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head > .fui-stat-card__label {
+  grid-area: label;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head > :not(.fui-stat-card__icon):not(.fui-stat-card__label) {
+  grid-area: action;
+}
 [data-cui-comp="ui-stat-card"] .fui-stat-card__icon {
   display: inline-flex;
   color: var(--color-text-muted);

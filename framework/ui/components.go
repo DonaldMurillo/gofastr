@@ -890,6 +890,11 @@ type StatCardConfig struct {
 	// inside a StatStrip, whose frame is the strip's.
 	Plain bool
 
+	// Tile draws the Icon in a tinted square tile on the head's first
+	// line with the Action at its end, and the label on the line under
+	// them: a dashboard's entity cards.
+	Tile bool
+
 	ID    string
 	Class string
 
@@ -943,7 +948,8 @@ func StatCard(cfg StatCardConfig) render.HTML {
 		Action:     cfg.Action,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
-		Parts:      rootClassParts(strings.TrimSpace(modifierClass("fui-stat-card--plain", cfg.Plain) + " " + cfg.Class)),
+		Parts: rootClassParts(strings.TrimSpace(modifierClass("fui-stat-card--plain", cfg.Plain) + " " +
+			modifierClass("fui-stat-card--tile", cfg.Tile) + " " + cfg.Class)),
 	}, statCardClasses))
 }
 

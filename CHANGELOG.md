@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `StatCardConfig.Tile` draws a card's icon in a tinted square at the
+  head's start, with its Action at the end and the label under them;
+  the admin's entity cards use it, as the prototype's do.
 - The admin's Jobs filter is a strip of links with counts ("Failed 2"),
   as in the prototype, not chips behind Apply. `ui.SegmentLink.Count`
   draws the figure; `ui.SegmentedLinks` keeps its own width and scrolls
