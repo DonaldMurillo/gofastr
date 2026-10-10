@@ -123,8 +123,10 @@ rows, MCP action tooling.
 
 ## Prototype comparison
 
-Checked side by side with screenshots of Meridian (light, dark and a 375px
-phone) on 2026-10-09.
+Features checked on 2026-10-09 against the prototype's source and
+Meridian screenshots (light, dark, 375px phone). A pixel comparison against
+the rendered prototype on 2026-10-10 found the visual differences listed
+under "Looks different" below.
 
 | Surface | Matches the prototype | Differs |
 | --- | --- | --- |
@@ -134,6 +136,30 @@ phone) on 2026-10-09.
 | Record drawer and forms | Drawer, previous and next, related, activity and API tabs, leave guard, delete with undo, duplicate, Create another, Copy API URL, relation picker with New, related record stacked as a drawer, side panels | The prototype's side column is sticky; ours scrolls with the form. |
 | Operations | Jobs with status filters, updated and last-error columns, replay; audit filters and diffs; Roles grid; User roles; account and password | — |
 | Theme | Light, Auto and Dark; Default and Brutal | — |
+
+## Looks different
+
+Same structure and features, different finish. Worst first:
+
+1. Bulk actions: the prototype floats a dark bar at the bottom ("1 selected ·
+   Set status · Copy CSV · Delete · ×"); ours inserts an Action and Apply to
+   form above the table.
+2. Dashboard: the prototype's metrics are one joined strip of four (Failed
+   jobs is the fourth) with coloured detail lines; ours are three separate
+   cards. Its lower half is two flat lists (Recent activity, Needs attention
+   with failed jobs folded in); ours adds a Failed jobs card and nests a
+   table per watched view.
+3. Inline editing: the prototype edits in the cell on double-click; ours
+   outlines the cell on hover and opens a small form on click.
+4. List toolbar: the prototype labels its layout switch (Table, Cards) and
+   puts it after Columns; ours is two icons between Filters and Columns. Its
+   footer shows "1–25 of 40", a per-page select and the pager.
+5. Density: prototype table rows are about 46px; ours about 53px.
+6. Queue filters: the prototype's are plain tabs ("Failed 3"); ours read
+   "Failed (2)" and need an Apply button.
+7. Small things: the entity cards put the icon in a tinted square above the
+   name; the active sidebar item is a white pill with a border, not a grey
+   fill; the avatar shows two initials.
 
 ## Known test failures
 
