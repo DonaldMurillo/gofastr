@@ -1016,14 +1016,32 @@ func sidebarCSS(_ style.Theme) string {
 @media (pointer: fine) {
   [data-cui-comp="ui-sidebar"] .fui-sidebar__inline { --ui-sidebar-row-height: 2.25rem; }
 }
+/* In a column of fixed height (a sticky ContentRow's nav, one screen
+   tall) the inline sidebar fills it and its nav scrolls in its own
+   region, so the brand stays put and the collapse row sits under the
+   links instead of painting over the last one. In a column that grows
+   with the page, 100% resolves to auto and nothing changes. */
 [data-cui-comp="ui-sidebar"] .fui-sidebar__inline {
   display: flex;
   flex-direction: column;
   min-block-size: 100%;
+  block-size: 100%;
   box-sizing: border-box;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
   min-width: var(--ui-sidebar-width, 220px);
+}
+/* The scroll region clips what its links draw outside their box (the
+   raised current link's ring, a focus outline), so it pads by the
+   focus ring's reach and takes the same back with a negative margin:
+   the links stay where they were. */
+[data-cui-comp="ui-sidebar"] .fui-sidebar__inline > .fui-sidebar__nav {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px));
+  margin: calc(-1 * (var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px)));
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__title {
   font-size: var(--text-xs, 0.75rem);

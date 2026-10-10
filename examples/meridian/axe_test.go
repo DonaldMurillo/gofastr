@@ -154,7 +154,7 @@ func axeReport(t *testing.T, label, path string, vs []axetest.Violation) bool {
 			if len(snippet) > 160 {
 				snippet = snippet[:160] + "…"
 			}
-			t.Errorf("    target=%v  html=%s", n.Target, snippet)
+			t.Errorf("    target=%v  html=%s\n%s", n.Target, snippet, n.FailureSummary)
 		}
 	}
 	return true

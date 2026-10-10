@@ -1765,6 +1765,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- A long sidebar no longer hides its last link behind the Collapse row:
+  in a fixed-height column (the admin's sticky nav) the nav scrolls in
+  its own region above it. axe's target-size check failed on Meridian's
+  User roles link once the Revenue report added a nav row.
 - A record form's side panel sticks below the admin's top bar, not behind
   it: `ui.ContentRow{Sticky: true}` sizes its toolbar to one control row
   and publishes that height as `--ui-sticky-top`, which `ui.FormFrame`'s

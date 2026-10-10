@@ -62,14 +62,18 @@ func TestContentRowStickyFrame(t *testing.T) {
 const nav=q('.fui-content-row__nav'), bar=q('.fui-content-row__toolbar');
 const n0=r(nav), b0=r(bar);
 if(Math.round(n0.height)!==innerHeight)return 'nav column is '+n0.height+'px, not one viewport';
-if(!(nav.scrollHeight>nav.clientHeight))return 'nav column does not overflow on its own';
+// The column scrolls its own overflow: itself, or (a sidebar filling
+// it) the sidebar's nav region inside it.
+const sc=[nav,...nav.querySelectorAll('*')].find(e=>e.scrollHeight>e.clientHeight+1&&/(auto|scroll)/.test(getComputedStyle(e).overflowY));
+if(!sc)return 'nav column does not overflow on its own';
 scrollTo(0, 2000);
 if(scrollY<1000)return 'the window did not scroll';
 const n1=r(nav), b1=r(bar);
 if(n1.top!==n0.top||n1.left!==n0.left)return 'nav column moved: '+n0.top+' -> '+n1.top;
 if(b1.top!==b0.top)return 'toolbar moved: '+b0.top+' -> '+b1.top;
-nav.scrollTop=300;
-if(nav.scrollTop<100)return 'nav column does not scroll';
+sc.scrollTop=300;
+if(sc.scrollTop<100)return 'nav column does not scroll';
+if(scrollY<1000)return 'scrolling the nav column moved the window';
 if(getComputedStyle(bar).backgroundColor==='rgba(0, 0, 0, 0)')return 'toolbar is see-through';
 if(document.documentElement.scrollWidth>innerWidth)return 'horizontal overflow';
 `)
@@ -119,6 +123,60 @@ if(scrollY<1000)return 'the window did not scroll';
 const b=r(bar), s=r(side);
 if(s.top<b.bottom)return 'the side panel ('+s.top+') sits under the toolbar (bottom '+b.bottom+')';
 if(s.top>b.bottom+40)return 'the side panel ('+s.top+') floats far below the toolbar (bottom '+b.bottom+')';
+return ""})()`, &result)); err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatal(result)
+	}
+}
+
+// A collapsible sidebar's Collapse row sits under its links, never over
+// them: in a Sticky row whose nav overflows, the links scroll in their
+// own region above the foot row, so no link is half hidden behind it
+// (axe's target-size found exactly that once a nav grew one row).
+func TestContentRowStickySidebarFootCoversNoLink(t *testing.T) {
+	site := app.NewApp("Sticky foot")
+	items := make([]ui.SidebarItem, 30)
+	for i := range items {
+		items[i] = ui.SidebarItem{Label: fmt.Sprintf("Item %d", i), Href: fmt.Sprintf("/i/%d", i)}
+	}
+	nav, _ := component.SafeRenderCtx(context.Background(), ui.Sidebar(ui.SidebarConfig{NavLabel: "Pages", Items: items, Variant: ui.SidebarCollapsible}))
+	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, Sidebar: nav, Toolbar: render.Text("Trail")},
+			html.Main(html.MainConfig{}, html.Paragraph(html.TextConfig{}, render.Text("Body")))))
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	defer srv.Close()
+	ctx := chromedptest.Context(t)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/"), chromedp.Poll(`!!window.__gofastr`, nil),
+		chromedp.Evaluate(`(()=>{
+const foot=document.querySelector('.fui-sidebar__collapse');
+if(!foot)return 'no collapse row';
+const f=foot.getBoundingClientRect();
+if(f.bottom>innerHeight+1)return 'the collapse row is below the screen: '+f.bottom;
+// A link's visible part is its box clipped to the nav's scroll
+// region; none of it may lie under the collapse row.
+const region=document.querySelector('.fui-sidebar__inline > .fui-sidebar__nav').getBoundingClientRect();
+for(const a of document.querySelectorAll('.fui-sidebar__inline a.fui-sidebar__link')){
+  const r=a.getBoundingClientRect();
+  const top=Math.max(r.top,region.top), bottom=Math.min(r.bottom,region.bottom);
+  if(bottom<=top)continue;
+  if(bottom>f.top+0.5&&top<f.bottom-0.5)return 'link '+a.textContent.trim()+' ('+top+'..'+bottom+' visible) lies under the collapse row ('+f.top+')';
+}
+const last=[...document.querySelectorAll('.fui-sidebar__inline a.fui-sidebar__link')].pop();
+last.scrollIntoView({block:'nearest'});
+const lr=last.getBoundingClientRect(), f2=foot.getBoundingClientRect();
+if(lr.bottom>f2.top+0.5)return 'the last link cannot be scrolled clear of the collapse row';
+if(scrollY!==0)return 'scrolling the nav moved the window';
 return ""})()`, &result)); err != nil {
 		t.Fatal(err)
 	}
