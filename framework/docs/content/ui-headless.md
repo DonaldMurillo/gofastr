@@ -531,6 +531,11 @@ families:
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
   the anchor's `aria-label` from it).
+- **headless-selection-copy** (`[data-hui-selection-copy]`): a
+  selection's Copy control fetches its same-origin URL with one `_id`
+  per checked row and writes the CSV answer to the clipboard, then
+  toasts. Its own module so pages without a bulk bar's Copy never load
+  it.
 - **headless-navigation** (`[data-hui-back-to-top]`,
   `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
   the document, the visibility mark, the focus return) and the theme

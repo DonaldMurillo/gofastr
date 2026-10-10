@@ -50,7 +50,7 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS, bellJS}
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS, bellJS, selectionCopyJS}
 
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,

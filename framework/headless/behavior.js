@@ -399,55 +399,13 @@
   // checked in its data-hui-selection-count slots. A select-all box is
   // not a row, nor is a box in a form inside the selection (a cell's
   // inline editor for a yes/no value).
-  function checkedRows(sel) {
-    const rows = [];
+  function countSelection(sel) {
+    let n = 0;
     for (const box of sel.querySelectorAll('input[type="checkbox"]:checked:not([data-hui-table-select-all])')) {
       const f = box.closest('form');
-      if (!f || !sel.contains(f)) rows.push(box);
+      if (!f || !sel.contains(f)) n++;
     }
-    return rows;
-  }
-
-  function countSelection(sel) {
-    const n = String(checkedRows(sel).length);
-    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = n;
-  }
-
-  // A selection's Copy control (data-hui-selection-copy) fetches its URL
-  // with one _id per checked row and writes the CSV to the clipboard,
-  // then toasts. The URL must be on the page's own origin: markup that
-  // names another is ignored, so injected markup cannot fill the
-  // clipboard from elsewhere. The clipboard write is handed the pending
-  // text at once (ClipboardItem with a promise), which keeps the click's
-  // user activation in browsers that demand it.
-  function copySelection(btn) {
-    const sel = btn.closest('[data-hui-selection]');
-    if (!sel) return;
-    const ids = checkedRows(sel).map((b) => b.value).filter(Boolean);
-    if (!ids.length) return;
-    let url;
-    try { url = new URL(btn.getAttribute('data-hui-selection-copy') || '', location.href); } catch (_) { return; }
-    if (url.origin !== location.origin) return;
-    for (const id of ids) url.searchParams.append('_id', id);
-    const toast = (cfg) => { if (NS.toast) NS.toast(cfg); };
-    const failed = () => toast({ title: btn.getAttribute('data-hui-selection-copy-failed') || '', variant: 'danger', ttl: 6000 });
-    const text = fetch(url.href, { credentials: 'same-origin' }).then((r) => {
-      if (!r.ok) throw new Error(String(r.status));
-      return r.text();
-    });
-    const clip = navigator.clipboard;
-    let done;
-    if (clip && clip.write && window.ClipboardItem) {
-      done = clip.write([new ClipboardItem({ 'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })) })]);
-    } else if (clip && clip.writeText) {
-      done = text.then((t) => clip.writeText(t));
-    } else {
-      text.catch(() => {});
-      failed();
-      return;
-    }
-    const said = (btn.getAttribute('data-hui-selection-copied') || '').replace('{n}', () => String(ids.length));
-    done.then(() => toast({ title: said, variant: 'success', ttl: 4000 }), failed);
+    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = String(n);
   }
 
   // ─── delegated listeners ────────────────────────────────────────
@@ -469,12 +427,6 @@
       page = c?.hasAttribute('data-hui-page'),
       attr = page ? 'data-hui-page' : 'data-hui-table-sort';
     NS._huiTableSwap = table && [attr, c.getAttribute(attr), table.parentNode, Date.now()];
-    const copy = t.closest('[data-hui-selection-copy]');
-    if (copy) {
-      e.preventDefault();
-      copySelection(copy);
-      return;
-    }
     const btn = t.closest('[data-hui-reveal]');
     if (btn) {
       e.preventDefault();

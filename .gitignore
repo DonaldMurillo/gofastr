@@ -162,6 +162,9 @@ kiln-*
 /static-site
 /rtc-call
 /webmcp-remote-assist
+# `go build` inside examples/meridian drops its binary beside the source;
+# a 36MB one reached the admin branch this way.
+/examples/meridian/meridian
 # Same race for cmd/<name>: `go build ./cmd/repolint` from the root drops a
 # 3.5MB binary at /repolint, which is neither a *-demo nor named above. A
 # review caught one sitting untracked. Enumerate the package dir, not the
