@@ -136,8 +136,8 @@ func inlineEditCSS(_ style.Theme) string {
   translate: 0 -50%;
   z-index: var(--z-dropdown, 100);
   inline-size: max-content;
-  min-inline-size: 12rem;
-  max-inline-size: min(26rem, 90vw);
+  min-inline-size: var(--ui-inline-edit-min-inline-size, 12rem);
+  max-inline-size: min(var(--ui-inline-edit-max-inline-size, 26rem), 90vw);
   padding: var(--spacing-xs, 2px);
   background: var(--color-surface);
   border: var(--stroke-thin, 1px) solid var(--color-border-strong, var(--color-border));

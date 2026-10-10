@@ -115,7 +115,7 @@ var columnPickerStyle = registry.RegisterStyle("ui-column-picker", columnPickerC
 
 func columnPickerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-column-picker"] {
-  min-inline-size: 15rem;
+  min-inline-size: var(--ui-column-picker-min-inline-size, 15rem);
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
@@ -155,8 +155,8 @@ func columnPickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-column-picker"] .fui-colpick__mark {
   display: inline-grid;
   place-items: center;
-  inline-size: 1.125rem;
-  block-size: 1.125rem;
+  inline-size: var(--ui-column-picker-mark-size, 1.125rem);
+  block-size: var(--ui-column-picker-mark-size, 1.125rem);
   border: var(--stroke-thin, 1px) solid var(--color-border-strong, var(--color-border));
   border-radius: var(--radii-sm, 6px);
 }
@@ -168,13 +168,13 @@ func columnPickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-column-picker"] .fui-colpick__move {
   display: inline-grid;
   place-items: center;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
+  inline-size: var(--ui-column-picker-move-size, 1.75rem);
+  block-size: var(--ui-column-picker-move-size, 1.75rem);
   border-radius: var(--radii-sm, 6px);
   color: var(--color-text-muted);
 }
 [data-cui-comp="ui-column-picker"] .fui-colpick__move[aria-disabled="true"] {
-  opacity: 0.35;
+  opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-column-picker"] .fui-colpick__reset {
   border-block-start: var(--stroke-thin, 1px) solid var(--color-border);

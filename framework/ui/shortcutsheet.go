@@ -162,7 +162,7 @@ func shortcutSheetCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
-  min-inline-size: min(26rem, calc(100vw - 2 * var(--spacing-lg, 16px)));
+  min-inline-size: min(var(--ui-shortcut-sheet-min-inline-size, 26rem), calc(100vw - 2 * var(--spacing-lg, 16px)));
 }
 [data-cui-comp="ui-shortcut-sheet"] .fui-shortcut-sheet__head {
   display: flex;
@@ -179,8 +179,8 @@ func shortcutSheetCSS(_ style.Theme) string {
 [data-cui-comp="ui-shortcut-sheet"] .fui-shortcut-sheet__close {
   display: inline-grid;
   place-items: center;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: var(--ui-shortcut-sheet-close-size, 2rem);
+  block-size: var(--ui-shortcut-sheet-close-size, 2rem);
   border: 0;
   border-radius: var(--radii-sm, 6px);
   background: transparent;

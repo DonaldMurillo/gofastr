@@ -266,6 +266,7 @@ func (q *DBQueue) ensureTable() error {
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
 	// updated_at the same way: a row from before it reads as never
 	// updated, and lists its created_at instead.
+	// best-effort: the column already existing is the only expected failure.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN updated_at %s", q.qt(), tsType))
 	// Idempotent migrations for pre-existing tables: each adds its
 	// column where missing (Postgres via ADD COLUMN IF NOT EXISTS,

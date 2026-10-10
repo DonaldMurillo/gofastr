@@ -898,8 +898,8 @@ func statCardCSS(_ style.Theme) string {
   grid-area: icon;
   justify-content: center;
   align-items: center;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: var(--ui-stat-card-tile-size, 2rem);
+  block-size: var(--ui-stat-card-tile-size, 2rem);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft);
   border: var(--stroke-thin, 1px) solid var(--color-border);
