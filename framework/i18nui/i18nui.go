@@ -215,6 +215,7 @@ const (
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
 	KeyCopyLink        Key = "ui.copy.link"
 	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
+	KeyDrawerOpenPanel Key = "ui.drawer.open_panel"
 	KeyDrawerPrev      Key = "ui.drawer.prev"
 	KeyDrawerNext      Key = "ui.drawer.next"
 
@@ -492,6 +493,7 @@ var Defaults = map[Key]string{
 	KeyCopyToClipboard: "Copy to clipboard",
 	KeyCopyLink:        "Copy link",
 	KeyDrawerOpenPage:  "Open as page",
+	KeyDrawerOpenPanel: "Open in panel",
 	KeyDrawerPrev:      "Previous record",
 	KeyDrawerNext:      "Next record",
 
@@ -978,7 +980,7 @@ func AllKeys() []Key {
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
 		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
-		KeyDrawerOpenPage, KeyDrawerPrev, KeyDrawerNext,
+		KeyDrawerOpenPage, KeyDrawerOpenPanel, KeyDrawerPrev, KeyDrawerNext,
 		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
 		KeyChangeFrom, KeyChangeTo,
 		KeyProgressLabel, KeyTagRemove,

@@ -51,9 +51,11 @@ type CopyButtonConfig struct {
 	// IconOnly hides the visible label but keeps the SR-only label
 	// (via AriaLabel or default). Use when the button is icon-only.
 	IconOnly bool
-	// Icon names the registered icon an IconOnly button draws ("link"
-	// for a copy-link control). Empty, or a name not registered, draws
-	// the copy glyph.
+	// Icon names a registered icon ("link" for a copy-link control).
+	// An IconOnly button draws it in place of the copy glyph; a
+	// labelled one draws it before the label, the way a Button with an
+	// Icon does. Empty, or a name not registered, draws the copy glyph
+	// on an IconOnly button and nothing on a labelled one.
 	Icon string
 	// Inline sits the button within a line of text (an id in a detail
 	// row): no border, fill or shadow until hover, muted, and a 24px
@@ -203,13 +205,16 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	// data-hui-copy-state).
 	var inner []render.HTML
 	if !cfg.IconOnly {
-		inner = []render.HTML{
+		if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+			inner = append(inner, html.Span(html.TextConfig{Class: "fui-copy-btn__icon", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
+				Icon(cfg.Icon, IconConfig{Size: "16"})))
+		}
+		inner = append(inner,
 			html.Span(html.TextConfig{Class: "fui-copy-btn__label"}, render.Text(label)),
 			html.Span(html.TextConfig{
 				Class:      "fui-copy-btn__copied",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(copied)),
-		}
+			}, render.Text(copied)))
 	} else {
 		// Icon-only: no visible label, just an inline check / clipboard glyph.
 		inner = []render.HTML{
@@ -270,7 +275,7 @@ func copyButtonCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
   min-height: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
   min-width: var(--ui-copy-btn-size, var(--spacing-touch-target, 44px));
   padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);

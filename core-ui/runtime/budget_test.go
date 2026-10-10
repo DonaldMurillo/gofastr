@@ -1091,7 +1091,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// dialog): each guarded close path hands the guard a retry that
 		// makes its move again after Discard. Pinned at the measured
 		// size plus 2 clearance.
-		"intercept": 3178,
+		// 3335 measured (2026-10-10, the record page's Open in panel):
+		// a data-cui-intercept-panel link hands its href to the router
+		// over the page's history entry and mounts the named record
+		// over the page it lands on. Pinned at the measured size plus 2
+		// clearance.
+		"intercept": 3337,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

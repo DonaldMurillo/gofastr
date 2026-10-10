@@ -8,6 +8,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- A record's full page goes back to the drawer, as the prototype's does:
+  with `RecordBuilder.Panel()` (the admin turns it on) the header heads
+  its actions with Copy link (out of the menu) and Open in panel. The
+  new runtime attribute `data-cui-intercept-panel="<path>"` on a link
+  loads the link's page (the list) in the current page's history entry
+  and opens the named record over it as the first intercept layer, so
+  Back from the drawer lands on the list; a record whose route does not
+  open over the link's page is a plain navigation. A labelled
+  `ui.CopyButton` with `Icon` draws the icon before its label.
 - The bulk bar copies the checked rows as CSV (Copy CSV), as the
   prototype's does: `ui.SelectionConfig.Copy` names a route that answers
   CSV for repeated `_id` parameters, and the headless behaviour

@@ -33,6 +33,7 @@ type RecordBuilder struct {
 	undo     bool
 	dup      bool
 	steps    bool
+	panel    bool
 	prefill  map[string]string
 }
 

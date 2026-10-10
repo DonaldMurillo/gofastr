@@ -60,7 +60,7 @@ not register fails boot.
 | `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
 | `GET /admin/entities/<name>` | Entity list |
 | `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
-| `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record) |
+| `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record; as a full page it offers Open in panel, back to the list with the record in a drawer) |
 | `GET /admin/queue` | Jobs, with `?status=` links and counts (needs `Queue`) |
 | `GET /admin/audit` | Audit log, newest first |
 | `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |

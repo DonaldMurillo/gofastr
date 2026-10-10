@@ -212,7 +212,7 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 			})
 		}
 	}
-	actions := b.actions(ctx, m, row, title, base, save)
+	actions := append(b.pageTools(ctx, base), b.actions(ctx, m, row, title, base, save)...)
 	if save {
 		actions = append(actions, saveButton(ctx, m, false))
 	}
@@ -382,10 +382,11 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 // RPC that lands on the list. The other moves and app actions stay
 // buttons beside it. Nothing to offer draws nothing.
 func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, danger []ui.MenuItem) render.HTML {
-	// A drawer's bar carries the copy link; the full page's menu does.
+	// A drawer's bar carries the copy link, and so does a Panel page's
+	// header; otherwise the full page's menu does.
 	var span render.HTML
 	var items []ui.MenuItem
-	if !inDrawer(ctx) {
+	if !inDrawer(ctx) && !b.panelPage(ctx) {
 		span, items = b.copyLink(ctx)
 	}
 	if b.dup && canCreate(ctx, m) {

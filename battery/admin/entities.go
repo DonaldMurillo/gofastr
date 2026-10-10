@@ -199,7 +199,7 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
 		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
-			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().
+			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().Panel().
 				API().Override().RenderCtx(ctx)
 		})
 		b.entityTitle(record, e, func(ctx context.Context, p map[string]string) string {

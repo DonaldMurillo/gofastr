@@ -334,6 +334,7 @@
   NS._intercept = function (path, hash) {
     const anchor = clicked;
     clicked = null;
+    if (claimPanel(anchor, path, hash)) return true;
     const d = decide(path, anchor);
     if (!d) return false;
     if (d.kind === 'query') {
@@ -366,6 +367,26 @@
       .catch(() => { if (e === epoch) fallbackNav(path, hash); });
     return true;
   };
+
+  // A link on a page marked data-cui-intercept-panel="<record>" is the
+  // drawer's open-as-page in reverse: its href is the page the record
+  // opens over (a list), so the list takes the page's history entry,
+  // the router loads it, and the record mounts as the first layer over
+  // it. Back from the layer lands on the list. Without the module, or
+  // when the record's route does not open over that page, the link is
+  // a plain navigation to the list.
+  let panel = null;
+  function claimPanel(anchor, path, hash) {
+    const rec = !layers.length && anchor && anchor.getAttribute('data-cui-intercept-panel');
+    if (!rec) return false;
+    const target = routeFor(pathOf(rec));
+    const o = routeFor(pathOf(path));
+    if (!target || !target.intercept || !o || !fromOK(target, o) || !NS._originOK?.(rec)) return false;
+    panel = { rec, under: path };
+    history.replaceState(null, '', path + (hash || ''));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    return true;
+  }
 
   // The rpc module asks this before a success navigation (a save that
   // names where to go next) made by node. When node sits in the top
@@ -492,7 +513,18 @@
   // A real client-side navigation took the URL: the stack's layers are
   // gone with the page they floated over. No history move — the
   // navigation itself owns the entry.
-  window.addEventListener('gofastr:navigate', closeAllNow);
+  // The navigation a data-cui-intercept-panel link handed over has
+  // landed on its page: open the record over it.
+  window.addEventListener('gofastr:navigate', () => {
+    closeAllNow();
+    const p = panel;
+    panel = null;
+    if (!p || location.pathname + location.search !== p.under) return;
+    const e = epoch;
+    fetchOverlay(p.rec, p.under)
+      .then((res) => { if (e === epoch && res && !layers.length) mountLayer(res, p.rec, '', p.under, null); })
+      .catch(() => {});
+  });
 
   document.addEventListener('keydown', (e) => {
     if (!layers.length || e.key !== 'Escape') return;

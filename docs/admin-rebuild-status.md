@@ -143,7 +143,7 @@ is left.
 | Shell and navigation | Sidebar groups and counts, collapsible nav, breadcrumbs, ⌘K palette, theme toggle, account menu, `/` and `?` keys | The look (Default or Brutal) is on the account page, not in the account menu: a menu cannot hold a radio group. |
 | Dashboard | Metrics as one strip, entity cards with New, a page-level New Customer, attention, recent activity, failed jobs, polling | — |
 | Entity lists | Search, sort, paging, saved views, counts, columns (hide and reorder), filter rows, table and cards switch, inline editing, bulk actions, CSV, phone rows | — |
-| Record drawer and forms | Drawer, previous and next, related, activity and API tabs, leave guard, delete with undo, duplicate, Create another, Copy API URL, relation picker with New, related record stacked as a drawer, side panels | The prototype's side column is sticky; ours scrolls with the form. |
+| Record drawer and forms | Drawer, previous and next, related, activity and API tabs, leave guard, delete with undo, duplicate, Create another, Copy API URL, relation picker with New, related record stacked as a drawer, side panels, Open in panel from the full page back to the drawer | The prototype's side column is sticky; ours scrolls with the form. |
 | Operations | Jobs with status filters, updated and last-error columns, replay; audit filters and diffs; Roles grid; User roles; account and password | — |
 | Theme | Light, Auto and Dark; Default and Brutal | — |
 

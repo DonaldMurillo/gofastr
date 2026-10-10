@@ -191,3 +191,47 @@ func TestRecordDrawerBar(t *testing.T) {
 		t.Errorf("the full page's menu lost its copy link:\n%s", p)
 	}
 }
+
+type panelRecordScreen struct {
+	component.ContextOnly
+	x *testUI
+}
+
+func (s *panelRecordScreen) SetParams(map[string]string) {}
+
+func (s *panelRecordScreen) RenderCtx(ctx context.Context) render.HTML {
+	return s.x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Panel().RenderCtx(ctx)
+}
+
+// With Panel the full page's header offers Copy link and Open in panel,
+// a link to the list naming the record as the panel to open over it,
+// and the menu drops its copy row. The drawer draws neither: its bar
+// has the way to the page.
+func TestRecordPanelPage(t *testing.T) {
+	x := newInvoiceUI(t)
+	a := app.NewApp("rec")
+	a.Register("/rec/invoices", &panelRecordScreen{x: x}, nil)
+	a.Register("/rec/invoices/:id", &panelRecordScreen{x: x}, nil, app.InterceptFrom("/rec/invoices", app.ScreenDrawer))
+	ctx := x.userCtx("/rec/invoices/inv-1", "", "u1")
+
+	page, err := a.RenderPartialResult(ctx, "/rec/invoices/inv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := string(page.HTML)
+	for _, want := range []string{`data-cui-intercept-panel="/rec/invoices/inv-1"`, `href="/rec/invoices"`, `>Open in panel<`, `data-cui-comp="ui-copy-btn"`, `http://example.com/rec/invoices/inv-1`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the full page lacks %s:\n%s", want, p)
+		}
+	}
+	if n := strings.Count(p, ">Copy link<"); n != 1 {
+		t.Errorf("the full page draws Copy link %d times, want once (the header, not the menu):\n%s", n, p)
+	}
+	drawer, err := a.RenderOverlayResult(ctx, "/rec/invoices/inv-1", "", app.ScreenDrawer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := string(drawer.HTML); strings.Contains(d, "data-cui-intercept-panel") || strings.Contains(d, "Open in panel") {
+		t.Errorf("the drawer draws Open in panel:\n%s", d)
+	}
+}

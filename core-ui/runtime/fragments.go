@@ -277,6 +277,7 @@ var moduleAttrs = map[string][]string{
 		"data-cui-intercept-close",
 		"data-cui-intercept-page",
 		"data-cui-intercept-swap",
+		"data-cui-intercept-panel",
 	},
 	// Lightbox's wiring (data-fui-lightbox*, data-fui-zoomed) moved to
 	// framework/ui/lightbox.js, a registered behaviour: its attributes

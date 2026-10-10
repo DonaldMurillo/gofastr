@@ -91,7 +91,13 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   The query arrives from the client, so it is parsed the way the list
   parses its own URL, and a sort the list refuses (a masked field's) is
   refused here too. A record past the first `EveryMatchCap` rows, or
-  outside the list, draws no steps. Delete asks first, and on an entity
+  outside the list, draws no steps. With `Panel()`, the record's full page
+  heads its actions with Copy link (out of the menu) and Open in panel:
+  a link to the list at `Base` marked `data-cui-intercept-panel`, which
+  loads the list in the page's place and opens the record over it as a
+  drawer, so Back from the drawer lands on the list. Turn it on only
+  where the record's route opens as a drawer over `Base`
+  (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
   with `Scope.SoftDelete` the confirm says the record can be restored.
   With `Undo()` (on the list builder too), the toast a soft delete
   leaves carries Undo for ten seconds, for a caller who may update the
@@ -257,7 +263,7 @@ page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
 `NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
-`Duplicate()`, `Steps()` and `Prefill(values)`.
+`Duplicate()`, `Steps()`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
