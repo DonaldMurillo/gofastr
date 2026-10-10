@@ -64,7 +64,10 @@ func FilterRows(cfg FilterRowsConfig) render.HTML {
 			filterRowSelect(id+"-o", cfg.OpName, cfg.OpLabel+" "+n, cfg.Operators, r.Op),
 			render.Join(
 				render.Tag("label", map[string]string{"for": id + "-v", "class": "fui-visually-hidden"}, render.Text(cfg.ValueLabel+" "+n)),
-				Control(ControlConfig{Field: headless.FieldControl{ID: id + "-v"}, Type: "text", Name: cfg.ValueName, Value: r.Value}),
+				// The input's look is the field sheet's (.fui-input); no
+				// FormField sits around it here, so the control carries the
+				// sheet's marker itself, the way each select carries its own.
+				formFieldStyle.WrapHTML(Control(ControlConfig{Field: headless.FieldControl{ID: id + "-v"}, Type: "text", Name: cfg.ValueName, Value: r.Value})),
 			),
 		))
 	}

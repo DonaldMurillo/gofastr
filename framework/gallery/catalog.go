@@ -1490,6 +1490,46 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Actions: []render.HTML{ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeSmall})},
 		})
 	}},
+	{"actionlist", "ActionList", "Navigation", "Link and button rows in a menu row's look, for a panel that is not a menu (an account panel).", func() render.HTML {
+		return ui.ActionList(ui.ActionListConfig{Label: "Account", Items: []ui.ActionListItem{
+			{Label: "Account settings", Href: "#account", Icon: "user"},
+			{Label: "Sign out", Href: "#sign-out", Icon: "log-out", Danger: true},
+		}})
+	}},
+	{"segmentedlinks", "SegmentedLinks", "Navigation", "A strip of links that reads as a segmented control, each with an optional count; the current one is marked.", func() render.HTML {
+		return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: "Job status", Items: []ui.SegmentLink{
+			{Text: "All", Href: "#all", Count: "40", Current: true},
+			{Text: "Running", Href: "#running", Count: "3"},
+			{Text: "Failed", Href: "#failed", Count: "2"},
+		}})
+	}},
+	{"statstrip", "StatStrip", "Data", "One to six figures in one frame, divided by rules: a dashboard's headline numbers.", func() render.HTML {
+		return ui.StatStrip(ui.StatStripConfig{Label: "This month", Cells: []render.HTML{
+			ui.StatCard(ui.StatCardConfig{Label: "Revenue", Value: "$48,210", Trend: "+6.1%", Direction: ui.TrendUp}),
+			ui.StatCard(ui.StatCardConfig{Label: "Open invoices", Value: "12"}),
+			ui.StatCard(ui.StatCardConfig{Label: "Failed jobs", Value: "2", Trend: "Needs a replay", Direction: ui.TrendDown}),
+		}})
+	}},
+	{"columnpicker", "ColumnPicker", "Data", "A list's Columns menu: show, hide and reorder columns through links, so the choice lives in the URL.", func() render.HTML {
+		return ui.ColumnPicker(ui.ColumnPickerConfig{ID: "demo-columns", Label: "Columns", ResetHref: "#reset", Columns: []ui.ColumnChoice{
+			{Label: "Number", Shown: true, Locked: true},
+			{Label: "Customer", Shown: true, ToggleHref: "#hide-customer", DownHref: "#customer-down"},
+			{Label: "Amount", Shown: true, ToggleHref: "#hide-amount", UpHref: "#amount-up"},
+			{Label: "Memo", ToggleHref: "#show-memo"},
+		}})
+	}},
+	{"filterrows", "FilterRows", "Forms", "Rows of field, operator and value that a list's filter form submits as its query.", func() render.HTML {
+		return ui.FilterRows(ui.FilterRowsConfig{
+			ID: "demo-filter", FieldName: "f", OpName: "op", ValueName: "v",
+			Legend: "Filters", FieldLabel: "Field", OpLabel: "Operator", ValueLabel: "Value",
+			Fields:    []ui.SelectOption{{Value: "status", Text: "Status"}, {Value: "amount", Text: "Amount"}},
+			Operators: []ui.SelectOption{{Value: "eq", Text: "is"}, {Value: "gt", Text: "greater than"}},
+			Rows:      []ui.FilterRow{{Field: "status", Op: "eq", Value: "open"}},
+		})
+	}},
+	{"datetimefield", "DateTimeField", "Forms", "A labelled date-and-time input (datetime-local) with help and error text.", func() render.HTML {
+		return ui.DateTimeField(ui.DateTimeFieldConfig{Name: "due_at", Label: "Due at", Value: "2026-10-12T09:30", Help: "Your local time."})
+	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},

@@ -46,7 +46,7 @@ func CleanName(name string) (string, error) {
 }
 
 // ensureNameColumn adds the display-name column to a table made before
-// it existed, as '' for every row.
+// it existed, as ” for every row.
 func (s *EntityUserStore) ensureNameColumn(ctx context.Context) error {
 	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''",
 		query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.Name))
