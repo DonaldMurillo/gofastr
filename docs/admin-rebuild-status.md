@@ -199,11 +199,24 @@ starting commit too, or come from the container:
   here does not report a fine pointer.
 - `examples/webmcp-remote-assist` TestRemoteAssistFlow: the known Chrome
   WebMCP `executeTool` change.
-- `internal/upgrade` and its `scan` packages failed only under
-  `GOTOOLCHAIN=go1.27.2`, which leaves the type-checker reading export
-  data from a newer compiler. They pass on the default toolchain.
+- `internal/upgrade` and its `scan` packages failed under Go 1.27.2:
+  golang.org/x/tools v0.48.0 could not read 1.27.2's export data. Fixed
+  on 2026-10-10 (a0b5c86d): the repo builds with `toolchain go1.27.2`
+  and x/tools v0.50.0, which also clears CI's vulncheck.
+- `framework/ui` TestInterceptDrawersStackOverlapped is flaky here
+  (about one run in two reads an all-black screenshot); it passes on CI.
 - `core-ui/runtime` TestTransitionPickedByDestination timed out alone
   here and on the starting commit; it passed in the full run.
+
+## CI on #496 (2026-10-10)
+
+PR #496 (`wip/admin-shell-remote` into main) was red on six checks. Fixed:
+the headless behaviour over its size budget (Copy CSV split into
+`headless-selection-copy`), gofmt, the embedded Meridian blueprint, nine
+components missing from the gallery, a racy Copy CSV browser test, the
+upgrade fixtures' sort probe (DataTable's value span), the stdlib
+advisories (Go 1.27.2), the dupl baseline and fourteen `gofastr verify
+--strict` errors (bare CSS literals in the new components).
 
 ## Next steps
 
