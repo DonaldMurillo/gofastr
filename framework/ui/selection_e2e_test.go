@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -156,8 +157,13 @@ func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
 	})
 	srv := menuTriggerAxeServer(t, string(sel))
 	browser := axetest.NewBrowser(t)
-	ctx, cancel := axetest.NewTab(t, browser)
+	ctx, cancel := axetest.NewTabContext(browser, 90*time.Second)
 	defer cancel()
+	// Open the tab on the tab's own context: chromedp attaches the target
+	// on the first Run, and a step's shorter context must not own it.
+	if err := chromedp.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
 	stub := `(() => {
 		window.__fetched = []; window.__clip = null; window.__toasts = [];
 		window.fetch = (u) => { window.__fetched.push(String(u)); return Promise.resolve(new Response('id,name\nr2,two\n', {status: 200})); };
@@ -173,9 +179,17 @@ func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
 	// Each step runs on its own and names itself on failure: a bare
 	// "context deadline exceeded" from one Run cannot say which action
 	// waited out the tab's budget.
+	// Each step gets its own budget under the tab's, so a step that
+	// stalls still leaves the tab alive to report the page, and each
+	// logs how long it took.
 	step := func(name string, actions ...chromedp.Action) {
 		t.Helper()
-		if err := chromedp.Run(ctx, actions...); err != nil {
+		began := time.Now()
+		sctx, scancel := context.WithTimeout(ctx, 15*time.Second)
+		defer scancel()
+		err := chromedp.Run(sctx, actions...)
+		t.Logf("step %s: %v", name, time.Since(began).Round(time.Millisecond))
+		if err != nil {
 			var state string
 			_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({mods: Object.keys((window.__gofastr||{}).loadedModules||{}), bar: !!document.querySelector('.fui-selection__bar') && document.querySelector('.fui-selection__bar').offsetParent !== null, copy: (document.querySelector('[data-hui-selection-copy]')||{}).outerHTML, fetched: window.__fetched, toasts: window.__toasts})`, &state))
 			t.Fatalf("%s: %v\npage: %s", name, err, state)
