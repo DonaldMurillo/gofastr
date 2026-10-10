@@ -89,7 +89,7 @@ func TestSelectionFloating(t *testing.T) {
 // the bar up.
 func TestSelectionIgnoresSelectAll(t *testing.T) {
 	css := selectionStyle.Entry().CSSFor(style.DefaultTheme())
-	if !strings.Contains(css, `:not([data-hui-table-select-all]):checked`) {
+	if !strings.Contains(css, `:not([data-hui-table-select-all]):not(.fui-selection__body form input):checked`) {
 		t.Errorf("the hide rule counts the select-all box:\n%s", css)
 	}
 }

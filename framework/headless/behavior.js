@@ -397,9 +397,14 @@
 
   // A selection (data-hui-selection) shows how many of its rows are
   // checked in its data-hui-selection-count slots. A select-all box is
-  // not a row.
+  // not a row, nor is a box in a form inside the selection (a cell's
+  // inline editor for a yes/no value).
   function countSelection(sel) {
-    const n = sel.querySelectorAll('input[type="checkbox"]:checked:not([data-hui-table-select-all])').length;
+    let n = 0;
+    for (const box of sel.querySelectorAll('input[type="checkbox"]:checked:not([data-hui-table-select-all])')) {
+      const f = box.closest('form');
+      if (!f || !sel.contains(f)) n++;
+    }
     for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = String(n);
   }
 

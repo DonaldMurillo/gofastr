@@ -101,3 +101,42 @@ func TestE2E_FloatingSelectionCountsAndClears(t *testing.T) {
 		t.Error("the bar stayed after Clear unchecked the rows")
 	}
 }
+
+// A checkbox in a form of the body's own (a cell's inline editor for a
+// yes/no field) is a value, not a row: checked, it neither shows the
+// bar nor counts.
+func TestE2E_SelectionIgnoresABodyFormsCheckbox(t *testing.T) {
+	sel := ui.Selection(ui.SelectionConfig{ID: "s", Floating: true, Form: "bulk",
+		Bar: render.HTML(`<form id="bulk"><button>Apply</button></form>`),
+		Body: render.HTML(`<label><input type="checkbox" name="ids" form="bulk" id="r1"> one</label>` +
+			`<form id="edit"><label><input type="checkbox" name="active" checked> Active</label></form>`),
+	})
+	srv := menuTriggerAxeServer(t, string(sel))
+	browser := axetest.NewBrowser(t)
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	var count string
+	var shown, shownWithRow bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
+			chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(`window.__gofastr._moduleScanners.headless(document)`, nil),
+		chromedp.Evaluate(`document.querySelector('.fui-selection__count').textContent.trim()`, &count),
+		chromedp.Evaluate(`document.querySelector('.fui-selection__bar').offsetParent !== null`, &shown),
+		chromedp.Click(`#r1`, chromedp.ByID),
+		chromedp.Evaluate(`document.querySelector('.fui-selection__bar').offsetParent !== null`, &shownWithRow),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if shown {
+		t.Error("the bar shows for a checked box in the body's own form")
+	}
+	if count != "0 selected" {
+		t.Errorf("the count reads %q, want \"0 selected\"", count)
+	}
+	if !shownWithRow {
+		t.Error("the bar stayed hidden with a row checked")
+	}
+}

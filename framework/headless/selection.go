@@ -22,7 +22,8 @@ type SelectionProps struct {
 	// Floating draws the bar after the rows, so it can be held to the
 	// bottom of the screen, and gives it the count of rows checked,
 	// which the behaviour writes into data-hui-selection-count. A
-	// select-all box (data-hui-table-select-all) is not a row.
+	// select-all box (data-hui-table-select-all) is not a row, nor is a
+	// box in a form inside the body (a cell's inline editor).
 	Floating bool
 	// Form is the id of the form the row checkboxes join. With
 	// Floating, the bar ends with a reset button for it: resetting the

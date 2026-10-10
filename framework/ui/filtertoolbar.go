@@ -702,9 +702,13 @@ func filterToolbarCSS(_ style.Theme) string {
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
   flex: none;
 }
+/* The tools keep their natural width but never more than the row's,
+   so on a narrow screen they wrap among themselves instead of pushing
+   the page sideways. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
   display: flex;
   flex-wrap: wrap;
+  max-inline-size: 100%;
   align-items: center;
   gap: var(--spacing-md, 8px);
 }

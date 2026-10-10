@@ -87,7 +87,8 @@ var selectionClasses = headless.Classes{
 var selectionStyle = registry.RegisterStyle("ui-selection", selectionCSS)
 
 // selectionCSS stacks the bar over the body and hides the bar while no
-// checkbox in the body is checked. Knob: --ui-selection-gap (the lg
+// row checkbox in the body is checked (a select-all box, or a box in a
+// form inside the body, is not a row). Knob: --ui-selection-gap (the lg
 // spacing) between the bar and the body.
 func selectionCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-selection"]).fui-selection {
@@ -97,7 +98,7 @@ func selectionCSS(_ style.Theme) string {
   min-inline-size: 0;
 }
 @supports selector(:has(*)) {
-  [data-cui-comp="ui-selection"]:not(:has(> .fui-selection__body input[type="checkbox"]:not([data-hui-table-select-all]):checked)) > .fui-selection__bar {
+  [data-cui-comp="ui-selection"]:not(:has(> .fui-selection__body input[type="checkbox"]:not([data-hui-table-select-all]):not(.fui-selection__body form input):checked)) > .fui-selection__bar {
     display: none;
   }
 }
