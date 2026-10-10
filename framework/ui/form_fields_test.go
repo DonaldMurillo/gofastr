@@ -93,54 +93,38 @@ func TestTypedFieldsRequireNameAndLabel(t *testing.T) {
 	}
 }
 
-func TestTextFieldExtraAttrsOnInput(t *testing.T) {
-	h := string(TextField(TextFieldConfig{
-		Name: "email", Label: "Email", ExtraAttrs: map[string]string{"data-test": "hook"},
-	}))
+// inputOpenTag is the first <input ...> open tag in h.
+func inputOpenTag(t *testing.T, h string) string {
+	t.Helper()
 	start := strings.Index(h, "<input")
 	if start < 0 {
 		t.Fatalf("no input element:\n%s", h)
 	}
-	open := h[start : start+strings.Index(h[start:], ">")+1]
-	if !strings.Contains(open, `data-test="hook"`) {
-		t.Errorf("input missing data-test:\n%s", open)
-	}
-	if !strings.Contains(open, `type="text"`) {
-		t.Errorf("owned type lost:\n%s", open)
-	}
+	return h[start : start+strings.Index(h[start:], ">")+1]
 }
 
-func TestNumberFieldExtraAttrsOnInput(t *testing.T) {
-	h := string(NumberField(NumberFieldConfig{
-		Name: "qty", Label: "Qty", ExtraAttrs: map[string]string{"data-test": "hook"},
-	}))
-	start := strings.Index(h, "<input")
-	if start < 0 {
-		t.Fatalf("no input element:\n%s", h)
-	}
-	open := h[start : start+strings.Index(h[start:], ">")+1]
-	if !strings.Contains(open, `data-test="hook"`) {
-		t.Errorf("input missing data-test:\n%s", open)
-	}
-	if !strings.Contains(open, `type="number"`) || !strings.Contains(open, `name="qty"`) {
-		t.Errorf("owned type/name lost:\n%s", open)
-	}
-}
-
-func TestDateFieldExtraAttrsOnInput(t *testing.T) {
-	h := string(DateField(DateFieldConfig{
-		Name: "when", Label: "When", ExtraAttrs: map[string]string{"data-test": "hook"},
-	}))
-	start := strings.Index(h, "<input")
-	if start < 0 {
-		t.Fatalf("no input element:\n%s", h)
-	}
-	open := h[start : start+strings.Index(h[start:], ">")+1]
-	if !strings.Contains(open, `data-test="hook"`) {
-		t.Errorf("input missing data-test:\n%s", open)
-	}
-	if !strings.Contains(open, `type="date"`) {
-		t.Errorf("owned type lost:\n%s", open)
+// A typed field's ExtraAttrs land on its input, beside the owned
+// attributes they may not displace.
+func TestTypedFieldExtraAttrsOnInput(t *testing.T) {
+	hook := map[string]string{"data-test": "hook"}
+	for _, c := range []struct {
+		name string
+		h    render.HTML
+		owns []string
+	}{
+		{"text", TextField(TextFieldConfig{Name: "email", Label: "Email", ExtraAttrs: hook}), []string{`type="text"`}},
+		{"number", NumberField(NumberFieldConfig{Name: "qty", Label: "Qty", ExtraAttrs: hook}), []string{`type="number"`, `name="qty"`}},
+		{"date", DateField(DateFieldConfig{Name: "when", Label: "When", ExtraAttrs: hook}), []string{`type="date"`}},
+	} {
+		open := inputOpenTag(t, string(c.h))
+		if !strings.Contains(open, `data-test="hook"`) {
+			t.Errorf("%s: input missing data-test:\n%s", c.name, open)
+		}
+		for _, w := range c.owns {
+			if !strings.Contains(open, w) {
+				t.Errorf("%s: owned %s lost:\n%s", c.name, w, open)
+			}
+		}
 	}
 }
 
