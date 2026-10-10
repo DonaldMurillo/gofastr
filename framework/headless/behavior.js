@@ -392,6 +392,15 @@
   }
   function armSelectAll(root) {
     for (const all of within(root, '[data-hui-table-select-all]')) syncSelectAll(all);
+    for (const sel of within(root, '[data-hui-selection]')) countSelection(sel);
+  }
+
+  // A selection (data-hui-selection) shows how many of its rows are
+  // checked in its data-hui-selection-count slots. A select-all box is
+  // not a row.
+  function countSelection(sel) {
+    const n = sel.querySelectorAll('input[type="checkbox"]:checked:not([data-hui-table-select-all])').length;
+    for (const slot of sel.querySelectorAll('[data-hui-selection-count]')) slot.textContent = String(n);
   }
 
   // ─── delegated listeners ────────────────────────────────────────
@@ -452,11 +461,19 @@
       syncSelectAll(t);
       return;
     }
+    const sel = t.type === 'checkbox' && t.closest('[data-hui-selection]');
+    if (sel) countSelection(sel);
     const x = t.type === 'checkbox' && t.name && t.closest('[data-hui-table]');
     if (!x) return;
     for (const all of x.querySelectorAll('[data-hui-table-select-all]')) {
       if (all.getAttribute('data-hui-table-select-all') === t.name) syncSelectAll(all);
     }
+  });
+
+  // A form reset clears its row checkboxes without a change event; the
+  // select-all boxes and the counts follow once the reset has run.
+  document.addEventListener('reset', function () {
+    setTimeout(function () { armSelectAll(document); }, 0);
   });
 
   document.addEventListener('action:rolled-back', function (e) {

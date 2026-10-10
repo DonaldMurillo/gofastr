@@ -48,6 +48,9 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		return ""
 	}
 	m := s.m
+	// Beside the table the bar floats under the rows as a pill, whose
+	// place names its controls; above cards it is a plain form.
+	floating := s.as != "cards"
 	actionOpts := make([]ui.SelectOption, 0, len(lb.actions))
 	for _, a := range lb.actions {
 		actionOpts = append(actionOpts, ui.SelectOption{Value: a.key, Text: a.label})
@@ -90,16 +93,18 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		hiddenInput("query", s.carry().Encode()),
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd},
 			ui.Select(ui.SelectConfig{
-				Name:    "action",
-				ID:      lb.form + "-action",
-				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkAction),
-				Options: actionOpts,
+				Name:        "action",
+				ID:          lb.form + "-action",
+				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkAction),
+				LabelHidden: floating,
+				Options:     actionOpts,
 			}),
 			ui.Select(ui.SelectConfig{
-				Name:    "scope",
-				ID:      lb.form + "-scope",
-				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkScope),
-				Options: scopes,
+				Name:        "scope",
+				ID:          lb.form + "-scope",
+				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkScope),
+				LabelHidden: floating,
+				Options:     scopes,
 			}),
 			ui.Button(ui.ButtonConfig{
 				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkApply),

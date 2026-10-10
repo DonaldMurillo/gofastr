@@ -204,10 +204,13 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		}
 		body = append(body, b.cards(ctx, s, rows, total, known, page))
 	case bar != "":
-		// The bar shows while a row is checked.
+		// The bar floats under the rows while one is checked.
 		body = append(body, ui.Selection(ui.SelectionConfig{
-			Bar:  bar,
-			Body: b.table(ctx, s, lb, rows, total, known, page),
+			Bar:      bar,
+			Body:     b.table(ctx, s, lb, rows, total, known, page),
+			Floating: true,
+			Form:     lb.form,
+			Ctx:      ctx,
 		}))
 	default:
 		body = append(body, b.table(ctx, s, lb, rows, total, known, page))

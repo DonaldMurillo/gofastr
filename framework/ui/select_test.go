@@ -153,3 +153,19 @@ func TestSelectHelpAndErrorBothVisible(t *testing.T) {
 		t.Errorf("the error must be drawn before the hint:\n%s", h)
 	}
 }
+
+// LabelHidden keeps the label for assistive tech and hides it from view:
+// the field root carries the modifier the field sheet hides it by.
+func TestSelectLabelHidden(t *testing.T) {
+	h := string(Select(SelectConfig{Name: "scope", Label: "Apply to", LabelHidden: true,
+		Options: []SelectOption{{Value: "a", Text: "A"}}}))
+	if !strings.Contains(h, "fui-field--label-hidden") || !strings.Contains(h, ">Apply to</label>") {
+		t.Errorf("no hidden-label modifier, or the label is gone:\n%s", h)
+	}
+	if strings.Contains(string(Select(SelectConfig{Name: "s", Label: "S", Options: []SelectOption{{Value: "a", Text: "A"}}})), "label-hidden") {
+		t.Error("a plain select carries the hidden-label modifier")
+	}
+	if css := formFieldCSS(style.DefaultTheme()); !strings.Contains(css, ".fui-field--label-hidden > .fui-field__label") {
+		t.Errorf("the field sheet does not hide the label:\n%s", css)
+	}
+}

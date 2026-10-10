@@ -790,6 +790,10 @@
     "section": {
       "label": "Sección"
     },
+    "selection": {
+      "clear": "Borrar la selección",
+      "count": "{n} seleccionados"
+    },
     "shortcutSheet": {
       "title": "Atajos de teclado"
     },

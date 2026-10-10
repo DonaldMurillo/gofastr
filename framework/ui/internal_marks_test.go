@@ -879,6 +879,7 @@ var kitComponents = []kitComponent{
 	{name: "headless.Table", fn: headless.Table},
 	{name: "headless.TableOfContents", fn: headless.TableOfContents},
 	{name: "headless.Tabs", fn: headless.Tabs},
+	{name: "headless.Selection", fn: headless.Selection, required: []string{"Bar", "Body"}},
 	{name: "headless.Tag", fn: headless.Tag},
 	{name: "headless.TagInput", fn: headless.TagInput},
 	{name: "headless.Textarea", fn: headless.Textarea},

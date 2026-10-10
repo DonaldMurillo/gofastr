@@ -522,6 +522,19 @@ func formFieldCSS(_ style.Theme) string {
   /* A long label wraps rather than widening its track. */
   overflow-wrap: break-word;
 }
+/* A label hidden from view stays the control's accessible name. */
+.fui-field--label-hidden > .fui-field__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.fui-field--label-hidden { grid-template-columns: minmax(0, 1fr); }
 /* The required mark is drawn from the state attribute: an asterisk
    whose alternative text is empty, so the label's accessible name
    stays clean (the parser is told the rule by the control's own

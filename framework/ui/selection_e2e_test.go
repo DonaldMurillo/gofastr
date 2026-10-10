@@ -53,3 +53,51 @@ func TestE2E_SelectionBarFollowsTheChecks(t *testing.T) {
 		t.Error("the bar stayed after the last check was cleared")
 	}
 }
+
+// A floating bar counts the checked rows (not the select-all box) as the
+// headless behaviour writes them,
+// sits under the rows held to the bottom of the screen, and its clear
+// button unchecks every row, which hides it again.
+func TestE2E_FloatingSelectionCountsAndClears(t *testing.T) {
+	sel := ui.Selection(ui.SelectionConfig{ID: "s", Floating: true, Form: "bulk",
+		Bar: render.HTML(`<form id="bulk"><button>Apply</button></form>`),
+		Body: render.HTML(`<div data-hui-table><label><input type="checkbox" id="all" data-hui-table-select-all="ids"> all</label>` +
+			`<label><input type="checkbox" name="ids" form="bulk" id="r1"> one</label>` +
+			`<label><input type="checkbox" name="ids" form="bulk" id="r2"> two</label></div>`),
+	})
+	srv := menuTriggerAxeServer(t, string(sel))
+	browser := axetest.NewBrowser(t)
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	var two, pos string
+	var shownAfter bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
+			chromedp.WithPollingTimeout(5*time.Second)),
+		// The select-all box checks both rows; their changes recount
+		// with it checked too, which must not add it.
+		chromedp.Click(`#all`, chromedp.ByID),
+		// The module's scan (what the kernel runs over inserted markup
+		// and after a navigation) recounts with the select-all box
+		// checked beside both rows.
+		chromedp.Evaluate(`window.__gofastr._moduleScanners.headless(document)`, nil),
+		chromedp.Evaluate(`document.querySelector('.fui-selection__count').textContent.trim()`, &two),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-selection__bar')).position`, &pos),
+		chromedp.Click(`.fui-selection__clear`, chromedp.ByQuery),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('.fui-selection__bar').offsetParent !== null`, &shownAfter),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if two != "2 selected" {
+		t.Errorf("the count reads %q, want \"2 selected\" (two rows, the select-all box not counted)", two)
+	}
+	if pos != "sticky" {
+		t.Errorf("the bar is %s, not held to the screen", pos)
+	}
+	if shownAfter {
+		t.Error("the bar stayed after Clear unchecked the rows")
+	}
+}

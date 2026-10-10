@@ -132,6 +132,8 @@ const (
 	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
 	KeyInlineEditSave      Key = "ui.inlineEdit.save"      // "Save"
 	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
+	KeySelectionCount      Key = "ui.selection.count"      // "{n} selected"
+	KeySelectionClear      Key = "ui.selection.clear"      // "Clear selection"
 	// ColumnPicker's link names.
 	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
 	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
@@ -423,6 +425,8 @@ var Defaults = map[Key]string{
 	KeyTextAreaInvalidJSON: "Enter valid JSON",
 	KeyInlineEditSave:      "Save",
 	KeyInlineEditSaved:     "Saved",
+	KeySelectionCount:      "{n} selected",
+	KeySelectionClear:      "Clear selection",
 	KeyColumnShow:          "Show {column}",
 	KeyColumnHide:          "Hide {column}",
 	KeyColumnMoveUp:        "Move {column} earlier",
@@ -983,6 +987,7 @@ func AllKeys() []Key {
 		KeyThemePicker, KeyThemeDefault,
 		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
 		KeyInlineEditSave, KeyInlineEditSaved,
+		KeySelectionCount, KeySelectionClear,
 		KeyColumnShow, KeyColumnHide,
 		KeyColumnMoveUp, KeyColumnMoveDown,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,

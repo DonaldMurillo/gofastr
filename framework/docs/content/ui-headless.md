@@ -351,7 +351,7 @@ Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
 Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
 Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
-Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
+Badge, Tag, Selection, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
@@ -398,11 +398,16 @@ the module `headless` at `/__gofastr/runtime/headless.js`, and the
 kernel loads it when one of its markers is on the page. The markers
 are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
 `[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
-`[data-hui-system]` and `[data-hui-table]`: one per behaviour, the
-root hook of each.
+`[data-hui-system]`, `[data-hui-table]` and `[data-hui-selection]`:
+one per behaviour, the root hook of each.
 
 What it does, one line per behaviour:
 
+- **selection** writes how many of a floating `Selection`'s rows are
+  checked into its `data-hui-selection-count` slot on every change, on
+  a form reset and on each scan; a select-all box is not a row. A CSS
+  counter cannot do it: a table is a size container, and the style
+  containment that brings walls the counter in.
 - **reveal** retypes the password input, swaps the button's text and
   accessible name from the `data-hui-show-*` and `data-hui-hide-*`
   attributes, and keeps focus and the caret where the reader left

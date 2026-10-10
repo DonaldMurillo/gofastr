@@ -546,6 +546,14 @@ the level is the caller's decision — a section under an h2 that renders an h2 
 a real select, because the platform's own picker is the one thing that already works on a phone, with a keyboard, and under every screen reader
 <select id="region" name="region"><option data-cui-internal="" value="us-east">US East</option><option data-cui-internal="" selected="" value="eu-west">EU West</option></select>
 
+=== Selection / above ===
+the bar sits above the rows it acts on and shows only while one is checked, so a list nobody is selecting from carries no action form
+<div><div><form id="bulk"></form></div><div><p>rows</p></div></div>
+
+=== Selection / floating ===
+a floating bar comes after the rows so it can stay in view at the bottom of the screen, says how many rows it acts on, and clears them by resetting their form, which needs no script
+<div data-hui-selection=""><div><p>rows</p></div><div><span data-cui-internal=""><span data-hui-selection-count="">0</span> selected</span><form id="bulk"></form><button aria-label="Clear selection" data-cui-internal="" form="bulk" type="reset"><span aria-hidden="true">×</span></button></div></div>
+
 === Sidebar / a persistent sidebar ===
 every leaf is a real link and every group a native details, so the whole navigation works with no script
 <div data-hui-sidebar="" data-hui-sidebar-variant="persistent"><div id="sidebar-inline"><h2 data-cui-internal="">Workspace</h2><div>Workspace: acme</div><nav aria-label="Primary"><ul><li><a aria-current="page" data-cui-activelink="" href="/"><span aria-hidden="true">◆</span><span data-cui-internal="">Home</span></a></li><li><details data-hui-disclosure="" data-hui-disclosure-persist="sidebar-inline-g1"><summary data-cui-internal=""><span>Settings</span></summary><ul data-cui-internal=""><li><a data-cui-activelink="" href="/settings/profile"><span>Profile</span></a></li><li><a data-cui-activelink="" href="/settings/team"><span>Team</span></a></li></ul></details></li></ul></nav><div>v1.2.3</div></div></div>

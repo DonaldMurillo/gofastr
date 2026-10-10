@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"strings"
 )
 
 // ─── Select ─────────────────────────────────────────────────────────
@@ -45,6 +46,9 @@ type SelectConfig struct {
 	Error string
 	ID    string
 	Class string
+	// LabelHidden keeps the label for assistive tech and hides it from
+	// view: a select in a toolbar or a bar whose place names it.
+	LabelHidden bool
 	// Action is a control drawn after the select on its row: a link to
 	// the chosen record, an add button. It is the caller's markup and
 	// stays reachable by an owned style sheet.
@@ -112,7 +116,7 @@ func Select(cfg SelectConfig) render.HTML {
 		Hint:     cfg.Help,
 		Error:    cfg.Error,
 		Required: cfg.Required,
-		Parts:    rootClassParts(cfg.Class),
+		Parts:    rootClassParts(strings.TrimSpace(modifierClass("fui-field--label-hidden", cfg.LabelHidden) + " " + cfg.Class)),
 	}, fieldClasses, control))
 }
 

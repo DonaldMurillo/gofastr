@@ -95,6 +95,8 @@ var stringsKeys = map[string]i18nui.Key{
 	// and their English is the component's own defaults.
 	"TableSortBy":    i18nui.KeyTableSortBy,
 	"TableSelectAll": i18nui.KeyTableSelectAll,
+	"SelectionCount": i18nui.KeySelectionCount,
+	"SelectionClear": i18nui.KeySelectionClear,
 	"TableSortedBy":  i18nui.KeyTableSortedBy,
 	"SortAscending":  i18nui.KeyTableDirAscending,
 	"SortDescending": i18nui.KeyTableDirDescending,

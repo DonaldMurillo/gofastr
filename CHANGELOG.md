@@ -8,6 +8,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.SelectionConfig.Floating` holds a list's bulk bar to the bottom
+  of the screen under the rows, as an inverse pill with "{n} selected"
+  and a clear button (`Form`), built on the new `headless.Selection`
+  (hooks `data-hui-selection`, `data-hui-selection-count`). Entity
+  tables use it, as the prototype does. `ui.SelectConfig.LabelHidden`
+  keeps a select's label for assistive tech and hides it from view.
 - `admin.Config.DashboardNew` heads the dashboard with one entity's New
   button, the prototype's page-level action; Meridian's is New Customer.
 - Meridian's admin has a Revenue report (an `admin.Page` in the Billing

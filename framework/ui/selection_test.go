@@ -55,3 +55,41 @@ func TestSelectionHidesOnlyWhereHasWorks(t *testing.T) {
 		t.Errorf("the bar's hide rule is not inside @supports selector(:has(*)):\n%s", css)
 	}
 }
+
+// A floating selection draws the rows first and the bar after them, so
+// the bar's count (a CSS counter of the checked rows) has seen every
+// row; the bar carries the count's word and, with Form, a reset button
+// that clears the rows joined to that form.
+func TestSelectionFloating(t *testing.T) {
+	out := string(Selection(SelectionConfig{ID: "s", Floating: true, Form: "bulk",
+		Bar:  render.HTML(`<form id="bulk"></form>`),
+		Body: render.HTML(`<table id="rows"></table>`),
+	}))
+	if strings.Index(out, "__body") > strings.Index(out, "__bar") {
+		t.Errorf("a floating bar is not after the body:\n%s", out)
+	}
+	for _, want := range []string{
+		`fui-selection--floating`,
+		`<span class="fui-selection__count" data-cui-internal=""><span data-hui-selection-count="">0</span> selected</span>`,
+		`data-hui-selection=""`,
+		`<button aria-label="Clear selection" class="fui-selection__clear" data-cui-internal="" form="bulk" type="reset">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("floating selection missing %q:\n%s", want, out)
+		}
+	}
+	plain := string(Selection(SelectionConfig{Floating: true,
+		Bar: render.HTML(`<p>bar</p>`), Body: render.HTML(`<p>body</p>`)}))
+	if strings.Contains(plain, `type="reset"`) {
+		t.Errorf("a clear button drew with no Form:\n%s", plain)
+	}
+}
+
+// The select-all box in a table header is not a row: it does not keep
+// the bar up.
+func TestSelectionIgnoresSelectAll(t *testing.T) {
+	css := selectionStyle.Entry().CSSFor(style.DefaultTheme())
+	if !strings.Contains(css, `:not([data-hui-table-select-all]):checked`) {
+		t.Errorf("the hide rule counts the select-all box:\n%s", css)
+	}
+}
