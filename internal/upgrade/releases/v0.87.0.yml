@@ -1,5 +1,5 @@
 version: v0.87.0
-title: Layer prefixes, headless form and toast hooks, docs tools opt-in, XS shadow and stroke tokens
+title: Theme reskin and tokens, entity Display and States, framework/entityui, the admin rebuilt on entityui, cui-* kernel prefixes, docs tools opt-in
 notes:
   - change: "the framework_docs_list / framework_docs_get / framework_docs_search MCP tools moved out of framework.WithMCPIntrospection into framework/docs/mcptools, registered through the new framework.WithMCPTools option; package framework no longer imports the docs corpus"
     breaking: true
