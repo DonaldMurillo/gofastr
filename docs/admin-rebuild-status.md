@@ -1,7 +1,7 @@
 # Admin rebuild status
 
-As of 2026-10-09. The admin rebuild ships as five stacked PRs (gh stack #492).
-All five were green at the last check. The top PR (#495) has 59 commits on
+As of 2026-10-10. The admin rebuild ships as five stacked PRs (gh stack #492).
+All five were green at the last check. The top PR (#495) has 68 commits on
 top of its pushed head (5b53d2af), plus this status update, that are not on its
 branch yet. They live on `wip/admin-shell-remote`, which has every gap from the
 last status closed.
@@ -21,7 +21,7 @@ The PRs merge bottom up. Never rebase them; merge the base in instead.
 | #491 | P0: entity Display config, views, facets, boot validation | Open, green |
 | #493 | States: transitions, audit, overrides | Open, green |
 | #494 | entityui: lists, records, forms, bulk, saved views | Open, green |
-| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 59 commits waiting on `wip/admin-shell-remote` |
+| #495 | Admin shell (`feat/admin-shell`) | Open, green on pushed head 5b53d2af; 68 commits waiting on `wip/admin-shell-remote` |
 
 At the last check every PR passed its 17 checks, showed 0 unresolved review
 threads, and was not behind its base or main. CodeRabbit skipped #494 and #495
@@ -33,6 +33,15 @@ Review dispositions for #495 are in its issue comment 6044570777.
 
 Newest first, on top of 5b53d2af (merge commits left out):
 
+- 292baa83 fix(ui): an inline editor's checkbox is not a selected row; toolbar tools wrap
+- a6ddb619 feat(admin): entity cards draw their icon in a tile, as the prototype's do
+- 741afefb feat(admin): the Jobs filter is a strip of links with counts
+- d7e141b5 feat(entityui): a list says how many rows show and offers rows per page
+- 36662a51 feat(entityui): a table cell's editor sits in the cell
+- b9189ada feat(admin): the dashboard's figures are one strip, and failed jobs need attention
+- f7505fc6 feat(ui): a list's bulk bar floats under the rows, as the prototype's does
+- d1a8267a docs: list where the admin still looks different from the prototype
+- f90ef59b docs: record the full test run in the admin status doc
 - 6a92d337 test(backoffice): the supplier field is a searchable picker
 - 82a088ac fix(meridian): the blueprint seeds the same payments as the app
 - 3a5564cf docs: the admin parity round is done; rewrite the status doc
@@ -125,13 +134,14 @@ rows, MCP action tooling.
 
 Features checked on 2026-10-09 against the prototype's source and
 Meridian screenshots (light, dark, 375px phone). A pixel comparison against
-the rendered prototype on 2026-10-10 found the visual differences listed
-under "Looks different" below.
+the rendered prototype on 2026-10-10 found seven visual differences. The
+same day closed them; "Looks different" below says how, and names what
+is left.
 
 | Surface | Matches the prototype | Differs |
 | --- | --- | --- |
 | Shell and navigation | Sidebar groups and counts, collapsible nav, breadcrumbs, ⌘K palette, theme toggle, account menu, `/` and `?` keys | The look (Default or Brutal) is on the account page, not in the account menu: a menu cannot hold a radio group. |
-| Dashboard | Metrics, entity cards with New, a page-level New Customer, attention, recent activity, failed jobs, polling | — |
+| Dashboard | Metrics as one strip, entity cards with New, a page-level New Customer, attention, recent activity, failed jobs, polling | — |
 | Entity lists | Search, sort, paging, saved views, counts, columns (hide and reorder), filter rows, table and cards switch, inline editing, bulk actions, CSV, phone rows | — |
 | Record drawer and forms | Drawer, previous and next, related, activity and API tabs, leave guard, delete with undo, duplicate, Create another, Copy API URL, relation picker with New, related record stacked as a drawer, side panels | The prototype's side column is sticky; ours scrolls with the form. |
 | Operations | Jobs with status filters, updated and last-error columns, replay; audit filters and diffs; Roles grid; User roles; account and password | — |
@@ -139,27 +149,37 @@ under "Looks different" below.
 
 ## Looks different
 
-Same structure and features, different finish. Worst first:
+The seven differences the 2026-10-10 pixel comparison found, and where
+each went. All screens re-shot in light, dark and at 375px.
 
-1. Bulk actions: the prototype floats a dark bar at the bottom ("1 selected ·
-   Set status · Copy CSV · Delete · ×"); ours inserts an Action and Apply to
-   form above the table.
-2. Dashboard: the prototype's metrics are one joined strip of four (Failed
-   jobs is the fourth) with coloured detail lines; ours are three separate
-   cards. Its lower half is two flat lists (Recent activity, Needs attention
-   with failed jobs folded in); ours adds a Failed jobs card and nests a
-   table per watched view.
-3. Inline editing: the prototype edits in the cell on double-click; ours
-   outlines the cell on hover and opens a small form on click.
-4. List toolbar: the prototype labels its layout switch (Table, Cards) and
-   puts it after Columns; ours is two icons between Filters and Columns. Its
-   footer shows "1–25 of 40", a per-page select and the pager.
-5. Density: prototype table rows are about 46px; ours about 53px.
-6. Queue filters: the prototype's are plain tabs ("Failed 3"); ours read
-   "Failed (2)" and need an Apply button.
-7. Small things: the entity cards put the icon in a tinted square above the
-   name; the active sidebar item is a white pill with a border, not a grey
-   fill; the avatar shows two initials.
+1. Bulk actions: done (f7505fc6). Entity tables float an inverse bar at
+   the bottom under the rows, "{n} selected", the action, Apply and a
+   clear button (`ui.SelectionConfig.Floating`, `headless.Selection`).
+2. Dashboard: done (b9189ada). The figures are one `ui.StatStrip` whose
+   fourth figure is Failed jobs ("Needs a replay", red). Failed jobs
+   moved into Needs attention, whose rows sit flat in the card.
+3. Inline editing: done (36662a51). The editor lies over the cell (the
+   field and Save on one line, no label, no pencil). It still opens on a
+   click, not a double-click: a double-click has no keyboard twin.
+4. List toolbar and footer: done (d7e141b5). Table / Cards is labelled and
+   after Columns; the footer shows "1–25 of 40", rows per page and the
+   pager.
+5. Density: no change needed. Rows are 44.5px under a mouse
+   (`ContentRow Dense` keys on `pointer: fine`); the 53px came from the
+   headless screenshot browser, which reports a coarse pointer. The
+   screenshot helper now takes `SHOT_POINTER=fine`.
+6. Queue filters: done (741afefb). A strip of links, "Failed 2", no Apply.
+7. Small things:
+   - Entity cards put the icon in a tinted tile: done (a6ddb619,
+     `StatCardConfig.Tile`).
+   - The active sidebar item is a grey fill, not a white pill with a
+     border. Left as is: the pill comes from the prototype's theme (a
+     white sidebar on a warm page); Meridian's tokens draw the kit's
+     active state, and a pill would be a theme option, not a fix.
+   - The avatar shows one initial. Left as is: the seeded admin has no
+     name (battery/auth users carry an email, not a display name), so
+     the avatar takes the email's first letter. A named account shows
+     two. Giving auth users a profile name is its own change.
 
 ## Known test failures
 
