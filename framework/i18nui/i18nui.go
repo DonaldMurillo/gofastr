@@ -134,6 +134,9 @@ const (
 	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
 	KeySelectionCount      Key = "ui.selection.count"      // "{n} selected"
 	KeySelectionClear      Key = "ui.selection.clear"      // "Clear selection"
+	KeySelectionCopy       Key = "ui.selection.copy"       // "Copy CSV"
+	KeySelectionCopied     Key = "ui.selection.copied"     // "Copied {n} rows as CSV"
+	KeySelectionCopyFailed Key = "ui.selection.copyFailed" // "The rows could not be copied."
 	// ColumnPicker's link names.
 	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
 	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
@@ -427,6 +430,9 @@ var Defaults = map[Key]string{
 	KeyInlineEditSaved:     "Saved",
 	KeySelectionCount:      "{n} selected",
 	KeySelectionClear:      "Clear selection",
+	KeySelectionCopy:       "Copy CSV",
+	KeySelectionCopied:     "Copied {n} rows as CSV",
+	KeySelectionCopyFailed: "The rows could not be copied.",
 	KeyColumnShow:          "Show {column}",
 	KeyColumnHide:          "Hide {column}",
 	KeyColumnMoveUp:        "Move {column} earlier",
@@ -988,6 +994,7 @@ func AllKeys() []Key {
 		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
 		KeyInlineEditSave, KeyInlineEditSaved,
 		KeySelectionCount, KeySelectionClear,
+		KeySelectionCopy, KeySelectionCopied, KeySelectionCopyFailed,
 		KeyColumnShow, KeyColumnHide,
 		KeyColumnMoveUp, KeyColumnMoveDown,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,

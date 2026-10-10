@@ -41,6 +41,10 @@ type SelectionConfig struct {
 	// Floating, the bar ends with a button that resets it, clearing
 	// the selection.
 	Form string
+	// Copy, with Floating, adds a "Copy CSV" button to the bar: it
+	// copies the checked rows as the CSV Copy answers for repeated _id
+	// parameters (an entity's export route, on the page's origin).
+	Copy string
 	// Ctx carries the request's language for the count and the clear
 	// button's name.
 	Ctx context.Context
@@ -63,25 +67,37 @@ func Selection(cfg SelectionConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	w := StringsFor(ctx)
+	var copyBtn render.HTML
+	if cfg.Copy != "" && cfg.Floating {
+		copyBtn = headless.Own(Button(ButtonConfig{
+			Label:   w.Resolve().SelectionCopy,
+			Icon:    "copy",
+			Variant: ButtonSecondary,
+		}))
+	}
 	return selectionStyle.WrapHTML(headless.Selection(headless.SelectionProps{
 		Bar:        cfg.Bar,
 		Body:       cfg.Body,
 		Floating:   cfg.Floating,
 		Form:       cfg.Form,
+		Copy:       copyBtn,
+		CopyURL:    cfg.Copy,
 		ID:         cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "class", "id"),
 		Parts:      rootClassParts(strings.TrimSpace(modifierClass("fui-selection--floating", cfg.Floating) + " " + cfg.Class)),
-		Strings:    StringsFor(ctx),
+		Strings:    w,
 	}, selectionClasses))
 }
 
 // selectionClasses dresses headless.Selection's parts.
 var selectionClasses = headless.Classes{
-	headless.PartRoot:    "fui-selection",
-	headless.PartBody:    "fui-selection__body",
-	headless.PartActions: "fui-selection__bar",
-	headless.PartStatus:  "fui-selection__count",
-	headless.PartControl: "fui-selection__clear",
+	headless.PartRoot:          "fui-selection",
+	headless.PartBody:          "fui-selection__body",
+	headless.PartActions:       "fui-selection__bar",
+	headless.PartStatus:        "fui-selection__count",
+	headless.PartControl:       "fui-selection__clear",
+	headless.PartSelectionCopy: "fui-selection__copy",
 }
 
 var selectionStyle = registry.RegisterStyle("ui-selection", selectionCSS)
@@ -142,6 +158,7 @@ func selectionCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold, 600);
   white-space: nowrap;
 }
+[data-cui-comp="ui-selection"] .fui-selection__copy { display: inline-flex; }
 [data-cui-comp="ui-selection"] .fui-selection__clear {
   font-size: var(--text-lg, 1.125rem);
   line-height: 1;

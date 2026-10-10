@@ -8,6 +8,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- The bulk bar copies the checked rows as CSV (Copy CSV), as the
+  prototype's does: `ui.SelectionConfig.Copy` names a route that answers
+  CSV for repeated `_id` parameters, and the headless behaviour
+  (`data-hui-selection-copy`) fetches it with the checked rows' ids,
+  writes it to the clipboard and toasts. The entity export route takes
+  `_id` (at most `InRequestCap`, through the caller's scope).
 - The admin's avatar opens the prototype's account panel: the name over
   the email and roles, the Theme switch and, with `Config.Themes`, the
   Look picker, then Account settings and Sign out. It is a

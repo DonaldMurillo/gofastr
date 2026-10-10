@@ -29,7 +29,18 @@ type SelectionProps struct {
 	// Floating, the bar ends with a reset button for it: resetting the
 	// form clears every row joined to it.
 	Form string
-	ID   string
+	// Copy, with Floating and CopyURL, is a control drawn after Bar
+	// that copies the checked rows as CSV (a "Copy CSV" button). The
+	// component wraps it in the hooks: pressing it, the behaviour
+	// fetches CopyURL with one _id per checked row, writes the answer
+	// to the clipboard and toasts.
+	Copy render.HTML
+	// CopyURL answers CSV for the rows named by repeated _id parameters
+	// (an entity's export route). It must be on the page's own origin:
+	// the behaviour refuses any other, so injected markup cannot fill
+	// the clipboard from elsewhere.
+	CopyURL string
+	ID      string
 	// ExtraAttrs land on the root; class, id and the hooks are the
 	// component's.
 	ExtraAttrs html.Attrs
@@ -63,6 +74,13 @@ func Selection(p SelectionProps, s Classes) render.HTML {
 			render.Text(after)),
 		p.Bar,
 	}
+	if strings.TrimSpace(string(p.Copy)) != "" && p.CopyURL != "" {
+		bar = append(bar, b.El("span", PartSelectionCopy, Internal(Attrs(map[string]string{
+			"data-hui-selection-copy":        p.CopyURL,
+			"data-hui-selection-copied":      w.SelectionCopied,
+			"data-hui-selection-copy-failed": w.SelectionCopyFailed,
+		})), p.Copy))
+	}
 	if p.Form != "" {
 		bar = append(bar, b.El("button", PartControl, Internal(Attrs(map[string]string{
 			"type": "reset", "form": p.Form, "aria-label": w.SelectionClear,
@@ -71,11 +89,15 @@ func Selection(p SelectionProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, root, body, b.El("div", PartActions, nil, bar...))
 }
 
+// PartSelectionCopy wraps a Selection's Copy control in its hooks.
+const PartSelectionCopy Part = "selection-copy"
+
 func init() {
 	Register(Spec{
 		Name:    "Selection",
-		Anatomy: []Part{PartRoot, PartBody, PartActions, PartStatus, PartControl},
-		Hooks:   []string{"data-hui-selection", "data-hui-selection-count"},
+		Anatomy: []Part{PartRoot, PartBody, PartActions, PartStatus, PartControl, PartSelectionCopy},
+		Hooks: []string{"data-hui-selection", "data-hui-selection-count",
+			"data-hui-selection-copy", "data-hui-selection-copied", "data-hui-selection-copy-failed"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Selection(SelectionProps{Floating: true, Form: "bulk", Parts: parts,
 				Bar:  render.HTML(`<form id="bulk"></form>`),
@@ -89,6 +111,18 @@ func init() {
 				HTML: Selection(SelectionProps{
 					Bar:  render.HTML(`<form id="bulk"></form>`),
 					Body: render.HTML(`<p>rows</p>`)}, s),
+			}, {
+				Name: "copy",
+				Why:  "a floating bar can copy the checked rows as CSV: the wrapper around the control names the export route and the toasts' words, and the behaviour gathers the checked rows' ids when it is pressed, since only the page knows them",
+				HTML: Selection(SelectionProps{Floating: true, Form: "bulk",
+					// The kit dresses the control it passes; the fixture borrows
+					// the clear button's class so it wears one only when a kit
+					// does.
+					Copy: render.Tag("button", Attrs(map[string]string{"type": "button", "class": s[PartControl]}),
+						render.Text((*Strings)(nil).Resolve().SelectionCopy)),
+					CopyURL: "/api/apps/_export.csv",
+					Bar:     render.HTML(`<form id="bulk"></form>`),
+					Body:    render.HTML(`<p>rows</p>`)}, s),
 			}, {
 				Name: "floating",
 				Why:  "a floating bar comes after the rows so it can stay in view at the bottom of the screen, says how many rows it acts on, and clears them by resetting their form, which needs no script",

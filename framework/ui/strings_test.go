@@ -126,6 +126,7 @@ func placeholderProbes() map[i18nui.Key]string {
 		i18nui.KeyFilesSelected:          "fr·{n} fichiers : {names}.",
 		i18nui.KeyTableSortBy:            "fr·Trier par {column}",
 		i18nui.KeySelectionCount:         "fr·{n} sélectionnés",
+		i18nui.KeySelectionCopied:        "fr·{n} lignes copiées en CSV",
 		i18nui.KeyTableSortedBy:          "fr·Trié par {column}, {direction}",
 		i18nui.KeyHuiCopyStatus:          "fr·{name} copié.",
 		i18nui.KeyHuiNumberDecrement:     "fr·Diminuer %s",

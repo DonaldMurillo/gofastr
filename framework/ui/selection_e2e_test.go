@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -138,5 +139,67 @@ func TestE2E_SelectionIgnoresABodyFormsCheckbox(t *testing.T) {
 	}
 	if !shownWithRow {
 		t.Error("the bar stayed hidden with a row checked")
+	}
+}
+
+// Copy CSV fetches the export route with one _id per checked row (not
+// the select-all box, not a box in a cell's own form), writes the answer
+// to the clipboard and toasts the count. A Copy URL on another origin
+// fetches nothing, so injected markup cannot fill the clipboard.
+func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
+	sel := ui.Selection(ui.SelectionConfig{ID: "s", Floating: true, Form: "bulk", Copy: "/api/apps/_export.csv",
+		Bar: render.HTML(`<form id="bulk"><button>Apply</button></form>`),
+		Body: render.HTML(`<div data-hui-table><label><input type="checkbox" id="all" data-hui-table-select-all="ids"> all</label>` +
+			`<label><input type="checkbox" name="ids" value="r1" form="bulk" id="r1"> one</label>` +
+			`<label><input type="checkbox" name="ids" value="r2" form="bulk" id="r2"> two</label>` +
+			`<form><input type="checkbox" name="active" value="edit" checked></form></div>`),
+	})
+	srv := menuTriggerAxeServer(t, string(sel))
+	browser := axetest.NewBrowser(t)
+	ctx, cancel := axetest.NewTab(t, browser)
+	defer cancel()
+	stub := `(() => {
+		window.__fetched = []; window.__clip = null; window.__toasts = [];
+		window.fetch = (u) => { window.__fetched.push(String(u)); return Promise.resolve(new Response('id,name\nr2,two\n', {status: 200})); };
+		Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+			write: (items) => items[0].getType('text/plain').then((b) => b.text()).then((t) => { window.__clip = t; }),
+			writeText: (t) => { window.__clip = t; return Promise.resolve(); },
+		}});
+		window.__gofastr.toast = (cfg) => { window.__toasts.push(cfg); return 't'; };
+	})()`
+	var fetched []string
+	var clip, toast string
+	var crossFetched int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
+			chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(stub, nil),
+		chromedp.Click(`#r2`, chromedp.ByID),
+		chromedp.Click(`[data-hui-selection-copy]`, chromedp.ByQuery),
+		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(3*time.Second)),
+		chromedp.Evaluate(`window.__fetched`, &fetched),
+		chromedp.Evaluate(`window.__clip`, &clip),
+		chromedp.Evaluate(`window.__toasts[0].title`, &toast),
+		chromedp.Evaluate(`document.querySelector('[data-hui-selection-copy]').setAttribute('data-hui-selection-copy', 'https://evil.example/x.csv'); window.__fetched = []`, nil),
+		chromedp.Click(`[data-hui-selection-copy]`, chromedp.ByQuery),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`window.__fetched.length`, &crossFetched),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(fetched) != 1 || !strings.HasSuffix(fetched[0], "/api/apps/_export.csv?_id=r2") {
+		t.Errorf("fetched %v, want the export route with _id=r2 alone", fetched)
+	}
+	if clip != "id,name\nr2,two\n" {
+		t.Errorf("the clipboard holds %q", clip)
+	}
+	if toast != "Copied 1 rows as CSV" {
+		t.Errorf("toast %q", toast)
+	}
+	if crossFetched != 0 {
+		t.Error("SECURITY: a Copy URL on another origin was fetched")
 	}
 }

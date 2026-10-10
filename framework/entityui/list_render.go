@@ -205,11 +205,20 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		body = append(body, b.cards(ctx, s, rows, total, known, page))
 	case bar != "":
 		// The bar floats under the rows while one is checked.
+		// Copy CSV reads the checked rows back through the export route,
+		// by id and under the caller's scope; it shows where the header's
+		// Export does (the route cannot see a Where pin or a saved
+		// view's filter, so a named id could reach past either).
+		var copyURL string
+		if bulkOn(m) && len(b.where) == 0 && s.savedID == "" && !s.deletedView {
+			copyURL = m.api + "/_export.csv"
+		}
 		body = append(body, ui.Selection(ui.SelectionConfig{
 			Bar:      bar,
 			Body:     b.table(ctx, s, lb, rows, total, known, page),
 			Floating: true,
 			Form:     lb.form,
+			Copy:     copyURL,
 			Ctx:      ctx,
 		}))
 	default:

@@ -800,6 +800,9 @@
     },
     "selection": {
       "clear": "Borrar la selección",
+      "copied": "Se copiaron {n} filas como CSV",
+      "copy": "Copiar CSV",
+      "copyFailed": "No se pudieron copiar las filas.",
       "count": "{n} seleccionados"
     },
     "shortcutSheet": {

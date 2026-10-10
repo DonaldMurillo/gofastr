@@ -1,22 +1,30 @@
 package entityui
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // exportKeyParam names the list key on an export link: the list query's
 // own parameters are namespaced by it.
 const exportKeyParam = "_list"
+
+// exportIDParam names one row to export. Repeated, the export holds
+// those rows (a bulk bar's Copy CSV of the checked rows) instead of the
+// list query's, at most InRequestCap.
+const exportIDParam = "_id"
 
 // ExportHandler serves GET <api>/_export.csv for the entity: every row the
 // list's query matches, as CSV, at most EveryMatchCap. The bulk bar links
@@ -48,7 +56,12 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		q.Del(exportKeyParam)
 		cols := exportColumns(m)
 		fields := append([]string{m.pk}, cols...)
-		rows, err := u.matchRows(crud.WithReadHooks(ctx), m, key, q, fields)
+		var rows []map[string]any
+		if named := q[exportIDParam]; len(named) > 0 {
+			rows, err = u.namedRows(ctx, m, named, fields)
+		} else {
+			rows, err = u.matchRows(crud.WithReadHooks(ctx), m, key, q, fields)
+		}
 		if err != nil {
 			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
 				writeBulkError(w, ref.status, ref.msg)
@@ -123,4 +136,20 @@ func exportFilename(table string) string {
 		return "export"
 	}
 	return b.String()
+}
+
+// namedRows reads the named rows' fields through the scoped CRUD handler
+// with read hooks, in primary-key order: a name the caller may not read
+// drops out. More than InRequestCap names, repeats counted, is refused.
+func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]map[string]any, error) {
+	if len(named) > InRequestCap {
+		return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+	}
+	ids := dedupeIDs(named)
+	return m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
+		Where:  &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
+		Fields: fields,
+		Sorts:  []filter.ParsedSort{{Field: m.pk}},
+		Limit:  len(ids),
+	})
 }

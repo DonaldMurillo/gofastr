@@ -151,6 +151,13 @@ type Strings struct {
 	SelectionCount string
 	// SelectionClear names the button that clears a selection.
 	SelectionClear string
+	// SelectionCopy names the button that copies a selection as CSV.
+	SelectionCopy string
+	// SelectionCopied is the toast after a copy, with {n} for the rows.
+	SelectionCopied string
+	// SelectionCopyFailed is the toast when the rows could not be
+	// copied.
+	SelectionCopyFailed string
 	// TableSortedBy says what a changed table is now sorted by, with
 	// {column} where the column's header goes and {direction} where
 	// the direction word goes. Rendered into data-hui-table-announcement
@@ -387,8 +394,11 @@ var defaultStrings = Strings{
 	TableSelectAll: "Select all rows",
 	// The i18nui catalog's own English for ui.selection.count and
 	// ui.selection.clear.
-	SelectionCount: "{n} selected",
-	SelectionClear: "Clear selection",
+	SelectionCount:      "{n} selected",
+	SelectionClear:      "Clear selection",
+	SelectionCopy:       "Copy CSV",
+	SelectionCopied:     "Copied {n} rows as CSV",
+	SelectionCopyFailed: "The rows could not be copied.",
 	// The i18nui catalog's own English for ui.table.sortedBy and the
 	// two direction words; the ui bridge's gate holds the two to the
 	// same bytes.

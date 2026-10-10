@@ -692,7 +692,12 @@ and so does an entity with no REST write routes.
   the list uses. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A
   list pinned with `Where` draws no Export link: the route reads the
-  query, and a pin is not in it.
+  query, and a pin is not in it. Repeated `_id=<id>` parameters replace
+  the query with those rows (at most `InRequestCap`, repeats counted),
+  still through the scoped handler, so a row the caller may not read
+  drops out. The floating bulk bar's **Copy CSV** uses it: it fetches
+  the checked rows' ids and writes the CSV to the clipboard. It shows
+  where Export does.
 
 Both routes mount on the router the entity's CRUD routes went on, so an
 entity registered with `App.GroupEntity` keeps its group's prefix and

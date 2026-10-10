@@ -550,6 +550,10 @@ a real select, because the platform's own picker is the one thing that already w
 the bar sits above the rows it acts on and shows only while one is checked, so a list nobody is selecting from carries no action form
 <div><div><form id="bulk"></form></div><div><p>rows</p></div></div>
 
+=== Selection / copy ===
+a floating bar can copy the checked rows as CSV: the wrapper around the control names the export route and the toasts' words, and the behaviour gathers the checked rows' ids when it is pressed, since only the page knows them
+<div data-hui-selection=""><div><p>rows</p></div><div><span data-cui-internal="">&lt;SelectionCount <span data-hui-selection-count="">0</span>&gt;</span><form id="bulk"></form><span data-cui-internal="" data-hui-selection-copied="&lt;SelectionCopied {n}&gt;" data-hui-selection-copy="/api/apps/_export.csv" data-hui-selection-copy-failed="&lt;SelectionCopyFailed&gt;"><button type="button">&lt;SelectionCopy&gt;</button></span><button aria-label="&lt;SelectionClear&gt;" data-cui-internal="" form="bulk" type="reset"><span aria-hidden="true">×</span></button></div></div>
+
 === Selection / floating ===
 a floating bar comes after the rows so it can stay in view at the bottom of the screen, says how many rows it acts on, and clears them by resetting their form, which needs no script
 <div data-hui-selection=""><div><p>rows</p></div><div><span data-cui-internal="">&lt;SelectionCount <span data-hui-selection-count="">0</span>&gt;</span><form id="bulk"></form><button aria-label="&lt;SelectionClear&gt;" data-cui-internal="" form="bulk" type="reset"><span aria-hidden="true">×</span></button></div></div>
