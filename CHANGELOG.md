@@ -8,6 +8,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- The admin's Jobs filter is a strip of links with counts ("Failed 2"),
+  as in the prototype, not chips behind Apply. `ui.SegmentLink.Count`
+  draws the figure; `ui.SegmentedLinks` keeps its own width and scrolls
+  inside itself when its box is narrower.
 - Entity lists end with "1–25 of 40" and, past one page, a rows-per-page
   menu (25, 50, 100, or the entity's `Display.PageSizes`; the new
   `<key>_per` param), as the prototype does. The Table / Cards switch is

@@ -24,7 +24,10 @@ type SegmentLink struct {
 	// Href is the segment's destination. Required.
 	Href string
 	// Icon is a registered icon drawn before the text.
-	Icon    string
+	Icon string
+	// Count is a muted figure after the text ("Failed 3"), part of the
+	// segment's name.
+	Count   string
 	Current bool
 }
 
@@ -63,6 +66,9 @@ func SegmentedLinks(cfg SegmentedLinksConfig) render.HTML {
 			attrs["title"] = it.Text
 		} else {
 			body = append(body, render.Text(it.Text))
+			if it.Count != "" {
+				body = append(body, render.Tag("span", map[string]string{"class": "fui-seglinks__count"}, render.Text(it.Count)))
+			}
 		}
 		kids = append(kids, render.Tag("a", attrs, body...))
 	}
@@ -83,6 +89,12 @@ var segmentedLinksStyle = registry.RegisterStyle("ui-segmented-links", segmented
 func segmentedLinksCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-segmented-links"]).fui-seglinks {
   display: inline-flex;
+  /* The strip keeps its own width in a flex column too, and a strip
+     wider than its box scrolls inside it instead of widening the page. */
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xs, 2px);
   border: var(--stroke-thin, 1px) solid var(--color-border);
@@ -99,8 +111,15 @@ func segmentedLinksCSS(_ style.Theme) string {
   color: var(--color-text-muted);
   text-decoration: none;
   font-size: var(--text-sm, 0.875rem);
+  flex: none;
+  white-space: nowrap;
 }
 [data-cui-comp="ui-segmented-links"] .fui-seglinks__item:hover { color: var(--color-text); }
+[data-cui-comp="ui-segmented-links"] .fui-seglinks__count {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-normal, 400);
+  font-variant-numeric: tabular-nums;
+}
 [data-cui-comp="ui-segmented-links"] .fui-seglinks__item[aria-current="true"] {
   background: var(--color-surface);
   color: var(--color-text);

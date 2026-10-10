@@ -77,7 +77,7 @@ func TestQueuePageListsJobsWithCounts(t *testing.T) {
 	}
 	x := queueEnv(t, q)
 	body := get(x.as(theAdmin), "/admin/queue").Body.String()
-	if !strings.Contains(body, "send.email") || !strings.Contains(body, "Pending (3)") {
+	if !strings.Contains(body, "send.email") || !strings.Contains(body, `Pending<span class="fui-seglinks__count">3</span>`) {
 		t.Fatalf("jobs page lacks the job or its count:\n%s", body)
 	}
 }
@@ -111,7 +111,7 @@ func TestQueueLoadFailureHidesDriverText(t *testing.T) {
 func TestQueueStatsErrorDropsCounts(t *testing.T) {
 	q := &fakeQueue{stats: queue.JobStats{"pending": 7, "failed": 4}, statsErr: errors.New("rows error mid-scan")}
 	x := queueEnv(t, q)
-	if body := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(body, "(7)") {
+	if body := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(body, "fui-seglinks__count") {
 		t.Error("the jobs page showed a count from a failed Stats")
 	}
 	q.jobs = failedJobs("j1")
@@ -161,7 +161,11 @@ func TestQueueColumnsAndFilters(t *testing.T) {
 	x := queueEnv(t, q)
 	body := get(x.as(theAdmin), "/admin/queue").Body.String()
 	for _, want := range []string{
-		"Pending (1)", "Running (2)", "Failed (1)", "Done (9)", "All (13)",
+		`Pending<span class="fui-seglinks__count">1</span>`, `Running<span class="fui-seglinks__count">2</span>`,
+		`Failed<span class="fui-seglinks__count">1</span>`, `Done<span class="fui-seglinks__count">9</span>`,
+		`All<span class="fui-seglinks__count">13</span>`,
+		// Each status is a link: picking one needs no Apply.
+		`href="/admin/queue?status=claimed"`,
 		">Status<", ">Updated<", ">Last error<",
 		"webhook: 502 from https://hooks.example.com",
 		`datetime="2026-10-09T12:00:00Z"`,

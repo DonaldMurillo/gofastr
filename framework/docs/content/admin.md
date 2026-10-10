@@ -61,7 +61,7 @@ not register fails boot.
 | `GET /admin/entities/<name>` | Entity list |
 | `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
 | `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record) |
-| `GET /admin/queue` | Jobs, with `?status=` filter chips and counts (needs `Queue`) |
+| `GET /admin/queue` | Jobs, with `?status=` links and counts (needs `Queue`) |
 | `GET /admin/audit` | Audit log, newest first |
 | `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
 | `GET /admin/rbac/users` | User roles (needs `Auth`) |
@@ -296,7 +296,8 @@ app.RegisterBattery(admin.New(admin.Config{
 | `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
 
 The Jobs page filters by All, Pending, Running, Failed and Done, each
-with its count, and lists each job's id, type, status, attempts, when
+a link with its count (a `ui.SegmentedLinks` strip, nothing to apply),
+and lists each job's id, type, status, attempts, when
 it last changed and its last error (one line, cut with an ellipsis).
 Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
 Replay is offered on each failed row, and "Replay N failed" in the

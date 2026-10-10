@@ -168,30 +168,32 @@ func queueTotal(stats queue.JobStats, status string) int {
 // ?status=<value>, with each status's count beside it and the sum beside
 // All. A nil stats shows no counts.
 func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.JobStats) render.HTML {
-	all := i18nui.T(ctx, i18nui.KeyAdminQueueAll)
-	if stats != nil {
-		all = fmt.Sprintf("%s (%d)", all, queueTotal(stats, ""))
-	}
-	opts := []ui.FacetOption{{Label: all, Value: ""}}
-	for _, st := range queueStatuses {
-		label := i18nui.T(ctx, st.label)
-		if stats != nil {
-			label = fmt.Sprintf("%s (%d)", label, stats[st.value])
+	// Each status is a link that keeps the page size and starts again at
+	// the first page; a count the queue could not give is left off.
+	href := func(status string) string {
+		q := url.Values{}
+		if status != "" {
+			q.Set("status", status)
 		}
-		opts = append(opts, ui.FacetOption{Label: label, Value: st.value})
+		if r := appui.RequestFromContext(ctx); r != nil && r.URL.Query().Has("limit") {
+			q.Set("limit", r.URL.Query().Get("limit"))
+		}
+		if len(q) == 0 {
+			return b.cfg.PathPrefix + "/queue"
+		}
+		return b.cfg.PathPrefix + "/queue?" + q.Encode()
 	}
-	return ui.FilterToolbar(ui.FilterToolbarConfig{
-		Action:    b.cfg.PathPrefix + "/queue",
-		HideReset: true,
-		Ctx:       ctx,
-		Facets: []ui.Facet{{
-			Name:    "status",
-			Label:   i18nui.T(ctx, i18nui.KeyAdminQueueStatus),
-			Kind:    ui.FacetPills,
-			Value:   current,
-			Options: opts,
-		}},
-	})
+	count := func(n int) string {
+		if stats == nil {
+			return ""
+		}
+		return strconv.Itoa(n)
+	}
+	items := []ui.SegmentLink{{Text: i18nui.T(ctx, i18nui.KeyAdminQueueAll), Count: count(queueTotal(stats, "")), Href: href(""), Current: current == ""}}
+	for _, st := range queueStatuses {
+		items = append(items, ui.SegmentLink{Text: i18nui.T(ctx, st.label), Count: count(stats[st.value]), Href: href(st.value), Current: current == st.value})
+	}
+	return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.T(ctx, i18nui.KeyAdminQueueStatus), Items: items, Ctx: ctx})
 }
 
 // jobStatusBadge names a job's state; a status the page does not know
