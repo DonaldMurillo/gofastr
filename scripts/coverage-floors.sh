@@ -34,6 +34,14 @@
 # feature moves coverage far more than 2 points. If you intentionally change
 # a bucket's coverage profile, re-measure and update the floor here in the
 # same commit.
+#
+# 2026-10-10: Go 1.27.2 counts statements differently from 1.27.0. The same
+# main-branch code measured lower under it (core/openapi 87.4 -> 85.4,
+# core/upload 80.6 -> 77.6, kiln/acp 80.2 -> 78.7), so eight floors were
+# re-baselined from CI's 1.27.2 run at measured - 1.5: core/openapi,
+# core/upload, examples/backoffice, framework (nomatch processmodule),
+# framework/axecov, harness/provider/internal/openai, harness/session and
+# kiln/acp. No test was removed.
 # 2026-08-21: ./framework/experimental/harness/client/tui re-baselined
 # 78.5 -> 68.9 after Go 1.27's `go fix` minmax analyzer collapsed if/else
 # clamping into min()/max() calls. The collapsed statements were COVERED, so
@@ -140,7 +148,7 @@ FLOORS="
 ./core/migrate/ 98.0
 ./core/moduleproto/ 81.2
 ./core/netguard/ 94.2
-./core/openapi/ 85.8
+./core/openapi/ 83.9
 ./core/query/ 94.3
 ./core/render/ 92.8
 ./core/router/ 90.7
@@ -148,14 +156,14 @@ FLOORS="
 ./core/static/ 80.1
 ./core/stream/ 89.5
 ./core/textsafe/ 97.0
-./core/upload/ 78.2
+./core/upload/ 76.4
 ./core/yaml/ 84.1
-./examples/backoffice/ 73.5
+./examples/backoffice/ 69.6
 ./framework/ 80.3 match:/processmodule
-./framework/ 95.5 nomatch:/processmodule
+./framework/ 93.8 nomatch:/processmodule
 ./framework/access/ 80.5
 ./framework/agentsinv/ 98.5
-./framework/axecov/ 84.5
+./framework/axecov/ 80.7
 ./framework/contracts/ 72.0
 ./framework/contracts/analyzers/ 70.5
 ./framework/cron/ 84.0
@@ -180,9 +188,9 @@ FLOORS="
 ./framework/experimental/harness/provider/ 79.7
 ./framework/experimental/harness/provider/credstore/ 77.5
 ./framework/experimental/harness/provider/helper/ 90.8
-./framework/experimental/harness/provider/internal/openai/ 74.5
+./framework/experimental/harness/provider/internal/openai/ 71.2
 ./framework/experimental/harness/secrets/ 84.5
-./framework/experimental/harness/session/ 75.3
+./framework/experimental/harness/session/ 73.5
 ./framework/experimental/harness/session/sqlite/ 74.6
 ./framework/experimental/harness/skill/ 78.3
 ./framework/experimental/harness/skill/skillmd/ 75.6
@@ -219,7 +227,7 @@ FLOORS="
 ./framework/uihost/internal/sessiontoken/ 93.7
 ./framework/uihost/uinoderender/ 87.7
 ./internal/fileperm/ 98.5
-./kiln/acp/ 79.0
+./kiln/acp/ 77.2
 ./kiln/agent/mcp/ 73.5
 ./kiln/effect/ 75.1
 ./kiln/expr/ 71.7
