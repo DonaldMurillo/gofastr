@@ -41,7 +41,8 @@
 # re-baselined from CI's 1.27.2 run at measured - 1.5: core/openapi,
 # core/upload, examples/backoffice, framework (nomatch processmodule),
 # framework/axecov, harness/provider/internal/openai, harness/session and
-# kiln/acp. No test was removed.
+# kiln/acp. framework/sdk followed (90.4 -> 86.8 on the same code). No
+# test was removed.
 # 2026-08-21: ./framework/experimental/harness/client/tui re-baselined
 # 78.5 -> 68.9 after Go 1.27's `go fix` minmax analyzer collapsed if/else
 # clamping into min()/max() calls. The collapsed statements were COVERED, so
@@ -217,7 +218,7 @@ FLOORS="
 ./framework/pluginhost/ 94.0
 ./framework/ratelimit/ 91.0
 ./framework/routegroup/ 85.4
-./framework/sdk/ 87.3
+./framework/sdk/ 85.3
 ./framework/sdkdocs/ 77.1
 ./framework/semcov/ 87.0
 ./framework/tenant/ 85.5
