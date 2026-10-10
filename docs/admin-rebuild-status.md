@@ -207,6 +207,11 @@ starting commit too, or come from the container:
 - `core-ui/runtime` TestTransitionPickedByDestination timed out alone
   here and on the starting commit; it passed in the full run.
 
+## Landed on #495 (2026-10-10)
+
+`feat/admin-shell` fast-forwarded to this branch (03f572c6); #495's body
+is rewritten and #496 is closed in favour of the stack.
+
 ## CI on #496 (2026-10-10)
 
 PR #496 (`wip/admin-shell-remote` into main) was red on six checks. Fixed:
@@ -225,8 +230,8 @@ Before #495 is ready:
 - [x] Bring `wip/admin-shell-remote` onto `feat/admin-shell` (merge, never rebase).
 - [x] Base check: `git fetch origin`, `git rev-list --count HEAD..origin/<base>`, merge the base in if behind.
 - [x] Push `feat/admin-shell` with the full hook (never `--no-verify`).
-- [ ] Rewrite the #495 body from the commit list above, then `gh pr edit 495 --body-file`.
-- [ ] `./scripts/pr-review-findings.sh 495 --gate`, triage every thread, then watch CI.
+- [x] Rewrite the #495 body from the commit list above, then `gh pr edit 495 --body-file`.
+- [x] `./scripts/pr-review-findings.sh 495 --gate`, triage every thread, then watch CI.
 - [x] Remove the stale `wip/drawer-steps` branch and worktree.
 
 ## Where things live
