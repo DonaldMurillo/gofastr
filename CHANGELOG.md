@@ -1746,6 +1746,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- A record form's side panel sticks below the admin's top bar, not behind
+  it: `ui.ContentRow{Sticky: true}` sizes its toolbar to one control row
+  and publishes that height as `--ui-sticky-top`, which `ui.FormFrame`'s
+  sticky `SidePanel` adds to its offset.
 - A list's bulk bar no longer shows for a checked box in a cell's inline
   editor (a yes/no field): a box in a form inside a `ui.Selection`'s body
   is not a row. A filter toolbar's tools wrap inside a narrow screen

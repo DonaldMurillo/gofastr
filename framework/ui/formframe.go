@@ -210,7 +210,9 @@ func formFrameCSS(_ style.Theme) string {
   /* Beside the fields the panel stays in view while they scroll. */
   [data-cui-comp="ui-form-frame"].fui-form-frame--side-panel .fui-form-frame__side {
     position: sticky;
-    inset-block-start: var(--spacing-lg, 16px);
+    /* Under a sticky toolbar (ContentRow Sticky publishes its height
+       as --ui-sticky-top), not behind it. */
+    inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px));
   }
 }`
 }

@@ -83,3 +83,46 @@ if(document.documentElement.scrollWidth>innerWidth)return 'phone overflow';
 `)
 	})
 }
+
+// A sticky panel inside a Sticky row (a FormFrame's side rail) stops
+// under the row's toolbar, not under the window's top edge where the
+// toolbar would paint over it.
+func TestContentRowStickyPanelClearsTheToolbar(t *testing.T) {
+	site := app.NewApp("Sticky panel")
+	fields := make([]render.HTML, 80)
+	for i := range fields {
+		fields[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Field %d", i)))
+	}
+	frame := ui.FormFrame(ui.FormFrameConfig{SidePanel: true, Main: fields,
+		Side: []render.HTML{html.Paragraph(html.TextConfig{}, render.Text("Details"))}})
+	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, Sidebar: render.Text("Nav"), Toolbar: render.Text("Trail")},
+			html.Main(html.MainConfig{}, frame)))
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	defer srv.Close()
+	ctx := chromedptest.Context(t)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/"), chromedp.Poll(`!!window.__gofastr`, nil),
+		chromedp.Evaluate(`(()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect();
+const bar=q('.fui-content-row__toolbar'), side=q('.fui-form-frame__side');
+if(getComputedStyle(side).position!=='sticky')return 'the side panel is not sticky';
+scrollTo(0, 1500);
+if(scrollY<1000)return 'the window did not scroll';
+const b=r(bar), s=r(side);
+if(s.top<b.bottom)return 'the side panel ('+s.top+') sits under the toolbar (bottom '+b.bottom+')';
+if(s.top>b.bottom+40)return 'the side panel ('+s.top+') floats far below the toolbar (bottom '+b.bottom+')';
+return ""})()`, &result)); err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatal(result)
+	}
+}

@@ -89,7 +89,10 @@ type ContentRowConfig struct {
 	// scroller, so the client router's scroll restore and fragment
 	// jumps keep working. The row assumes nothing above it scrolls into
 	// view first (no header band); for a header band with columns that
-	// scroll on their own, use Viewport. Setting both panics.
+	// scroll on their own, use Viewport. Setting both panics. The
+	// toolbar is one control row tall and the row publishes that height
+	// as --ui-sticky-top, so a sticky panel inside it (a FormFrame's
+	// SidePanel) stops under the toolbar rather than behind it.
 	Sticky bool
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
@@ -234,6 +237,13 @@ func contentRowCSS(_ style.Theme) string {
 /* Sticky: the toolbar row stays at the top of the window at every
    width, painted over the content that scrolls beneath it. */
 .fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
+/* The sticky toolbar is one control row tall (a control, its padding
+   and its rule), and the row publishes that height as --ui-sticky-top:
+   a sticky panel inside it (a FormFrame's side rail) stops under the
+   toolbar instead of under the window's edge, where the toolbar would
+   paint over it. */
+.fui-content-row--sticky { --ui-sticky-top: var(--ui-content-row-toolbar-height, calc(var(--spacing-touch-target, 44px) + 2 * var(--spacing-sm, 4px) + var(--stroke-thin, 1px))); }
+.fui-content-row--sticky .fui-content-row__toolbar { box-sizing: border-box; min-block-size: var(--ui-sticky-top); display: flex; flex-direction: column; justify-content: center; }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }
