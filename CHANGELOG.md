@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- The admin's avatar opens the prototype's account panel: the name over
+  the email and roles, the Theme switch and, with `Config.Themes`, the
+  Look picker, then Account settings and Sign out. It is a
+  `ui.Dropdown` with the new `Avatar` trigger, and its rows are the new
+  `ui.ActionList` (link and button rows in a menu row's look, for a
+  panel that is not a menu). `ThemeToggleConfig.Fill` and
+  `ThemePickerConfig.Fill` stretch a pill across its container. New
+  icons: `log-out`, `minimize`.
 - Users can carry a display name: `auth.NameStore` (`UserName`,
   `SetUserName`), implemented by `EntityUserStore` over a `name` column
   that `EnsureSchema` adds (`UserFieldMap.Name`), with `auth.CleanName`

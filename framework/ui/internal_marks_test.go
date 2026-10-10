@@ -638,6 +638,7 @@ func isSpace(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\
 
 // kitComponents is every component the marking gate renders.
 var kitComponents = []kitComponent{
+	{name: "ActionList", fn: ActionList, prep: prepSet("Items", []ActionListItem{{Label: "Account", Href: "/account"}})},
 	{name: "AnchoredRail", fn: AnchoredRail},
 	{name: "AnimatedCounter", fn: AnimatedCounter},
 	{name: "AspectRatioComponent", fn: AspectRatioComponent},
@@ -681,7 +682,11 @@ var kitComponents = []kitComponent{
 	{name: "DiffViewer", fn: DiffViewer},
 	{name: "Divider", fn: Divider},
 	{name: "DrawerBar", fn: DrawerBar, prep: prepSet("Path", "/x", "CopyURL", "http://example.com/x", "PageURL", "/x")},
-	{name: "Dropdown", fn: Dropdown, required: []string{"Content"}, prep: prepSet("Align", DropdownEnd, "Icon", "filter")},
+	{name: "Dropdown", fn: Dropdown, required: []string{"Content"}, prep: prepSet("Align", DropdownEnd, "Icon", "filter", "Avatar", nil)},
+	{name: "Dropdown/avatar", fn: Dropdown, required: []string{"Content"}, prep: func(args []reflect.Value) {
+		prepSet("Align", DropdownEnd)(args)
+		prepZero("Icon", "Count")(args)
+	}},
 	{name: "EmptyState", fn: EmptyState},
 	{name: "EmptyValue", fn: EmptyValue},
 	{name: "FactBox", fn: FactBox},

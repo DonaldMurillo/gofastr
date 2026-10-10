@@ -46,6 +46,11 @@ type DropdownConfig struct {
 	// Count, when above zero, draws a count badge after the label: the
 	// filters applied, the rows chosen.
 	Count int
+	// Avatar draws the trigger as that avatar alone: round, borderless,
+	// 2rem, with a focus ring (an account panel in an app bar). Label
+	// stays the trigger's accessible name, visually hidden. It panics
+	// beside Icon or Count, which dress a text trigger.
+	Avatar *AvatarConfig
 	// Content is the panel. Required.
 	Content render.HTML
 	// Align picks the panel's edge; empty is DropdownStart.
@@ -77,6 +82,38 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 		panic("ui: Dropdown Align must be DropdownStart or DropdownEnd, got " + strconv.Quote(string(align)))
 	}
 	trigger := []render.HTML{}
+	summaryClass := "fui-dropmenu__trigger"
+	if cfg.Avatar != nil {
+		if cfg.Icon != "" || cfg.Count > 0 {
+			panic("ui: Dropdown Avatar draws the trigger; drop Icon and Count")
+		}
+		summaryClass += " fui-dropmenu__trigger--avatar"
+		trigger = append(trigger, Avatar(*cfg.Avatar),
+			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)))
+	} else {
+		trigger = append(trigger, dropdownTextTrigger(cfg)...)
+	}
+	out := headless.Disclosure(headless.DisclosureProps{
+		// The trigger is built from strings, a registered icon and an
+		// avatar, so it is the component's own.
+		Summary:    headless.Own(render.Join(trigger...)),
+		Content:    cfg.Content,
+		Open:       cfg.Open,
+		Dismiss:    true,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "open", "class"),
+	}, headless.Classes{
+		headless.PartRoot:    cls("fui-dropmenu fui-dropmenu--"+string(align), cfg.Class),
+		headless.PartSummary: summaryClass,
+		headless.PartPanel:   "fui-dropmenu__panel",
+	})
+	return dropdownStyle.WrapHTML(out)
+}
+
+// dropdownTextTrigger is a text trigger: the icon, the label and the
+// count badge.
+func dropdownTextTrigger(cfg DropdownConfig) []render.HTML {
+	trigger := []render.HTML{}
 	if cfg.Icon != "" {
 		if !IconRegistered(cfg.Icon) {
 			panic("ui: Dropdown Icon " + strconv.Quote(cfg.Icon) + " is not a registered icon")
@@ -88,21 +125,7 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 		trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropmenu__count"},
 			render.Text(strconv.Itoa(cfg.Count))))
 	}
-	out := headless.Disclosure(headless.DisclosureProps{
-		// The trigger is built from strings and a registered icon, so
-		// it is the component's own.
-		Summary:    headless.Own(render.Join(trigger...)),
-		Content:    cfg.Content,
-		Open:       cfg.Open,
-		Dismiss:    true,
-		ID:         cfg.ID,
-		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "open", "class"),
-	}, headless.Classes{
-		headless.PartRoot:    cls("fui-dropmenu fui-dropmenu--"+string(align), cfg.Class),
-		headless.PartSummary: "fui-dropmenu__trigger",
-		headless.PartPanel:   "fui-dropmenu__panel",
-	})
-	return dropdownStyle.WrapHTML(out)
+	return trigger
 }
 
 var dropdownStyle = registry.RegisterStyle("ui-dropdown", dropdownCSS)
@@ -148,6 +171,23 @@ func dropdownCSS(_ style.Theme) string {
   outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-dropdown"] .fui-dropmenu__trigger svg { flex: none; color: var(--color-text-muted); }
+/* Avatar: the avatar is the whole trigger, round, with the focus ring
+   as the only chrome. A coarse pointer keeps the touch target. */
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger--avatar,
+[data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger--avatar:hover,
+[data-cui-comp="ui-dropdown"][open] > summary.fui-dropmenu__trigger--avatar {
+  justify-content: center;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--radii-full, 9999px);
+  background: transparent;
+  box-shadow: none;
+  --ui-avatar-size: 2rem;
+}
+@media (pointer: coarse) {
+  [data-cui-comp="ui-dropdown"] > summary.fui-dropmenu__trigger--avatar { min-inline-size: var(--spacing-touch-target, 44px); min-block-size: var(--spacing-touch-target, 44px); }
+}
 [data-cui-comp="ui-dropdown"] .fui-dropmenu__count {
   display: inline-flex;
   align-items: center;

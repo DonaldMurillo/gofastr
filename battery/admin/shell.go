@@ -10,6 +10,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -230,11 +231,11 @@ func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 
 // themePicker offers Config.Themes on the account page; none draws
 // nothing.
-func (b *Battery) themePicker(ctx context.Context) render.HTML {
+func (b *Battery) themePicker(ctx context.Context, fill bool) render.HTML {
 	if len(b.cfg.Themes) == 0 {
 		return ""
 	}
-	return ui.ThemePicker(ui.ThemePickerConfig{Themes: b.cfg.Themes, Ctx: ctx})
+	return ui.ThemePicker(ui.ThemePickerConfig{Themes: b.cfg.Themes, Fill: fill, Ctx: ctx})
 }
 
 // keysConfig is the keyboard help sheet, opened by "?", with the
@@ -459,36 +460,57 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 
 // ----- toolbar -----------------------------------------------------------------
 
-// accountMenu is the signed-in user, their roles, the account page,
-// and Sign out.
+// accountMenu is the avatar's panel, as the prototype draws it: who is
+// signed in (name, then email and roles), the colour scheme and, with
+// Config.Themes, the look, then the account page and Sign out. It is a
+// dropdown, not a menu: a role=menu panel holds only menu rows, and
+// this one holds the theme switches too.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	name := b.displayName(ctx)
-	items := []ui.MenuItem{
-		{Label: i18nui.TVars(ctx, i18nui.KeyAdminSignedInAs, map[string]string{"name": name}), Disabled: true},
+	var who []string
+	if email := userEmail(ctx); email != "" && email != name {
+		who = append(who, email)
 	}
 	if roles := callerHeldRoles(ctx); len(roles) > 0 {
-		items = append(items, ui.MenuItem{
-			Label:    i18nui.TVars(ctx, i18nui.KeyAdminYourRoles, map[string]string{"roles": strings.Join(roles, ", ")}),
-			Disabled: true,
-		})
+		who = append(who, strings.Join(roles, ", "))
 	}
-	items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
+	head := []render.HTML{html.Strong(html.TextConfig{}, render.Text(name))}
+	if len(who) > 0 {
+		head = append(head, ui.Muted(html.Small(html.TextConfig{}, render.Text(strings.Join(who, " · ")))))
+	}
+	section := func(label string, control render.HTML) render.HTML {
+		return ui.Stack(ui.StackConfig{Gap: ui.GapXS}, ui.Muted(html.Small(html.TextConfig{}, render.Text(label))), control)
+	}
+	parts := []render.HTML{
+		ui.Stack(ui.StackConfig{Gap: ui.GapNone, ExtraAttrs: html.Attrs{
+			"role":       "group",
+			"aria-label": i18nui.TVars(ctx, i18nui.KeyAdminSignedInAs, map[string]string{"name": name}),
+		}}, head...),
+		ui.Divider(ui.DividerConfig{}),
+		section(i18nui.T(ctx, i18nui.KeyAdminThemeLabel), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Fill: true, Ctx: ctx})),
+	}
+	if look := b.themePicker(ctx, true); look != "" {
+		parts = append(parts, section(i18nui.T(ctx, i18nui.KeyAdminLook), look))
+	}
+	rows := []ui.ActionListItem{{
 		Label: i18nui.T(ctx, i18nui.KeyAdminAccountSettings),
 		Href:  b.cfg.PathPrefix + "/account",
-	})
+		Icon:  "user",
+	}}
 	if b.cfg.SignOutPath != "" {
 		dest := b.cfg.LoginPath
 		if dest == "" {
 			dest = "/"
 		}
 		out := interactive.Post(b.cfg.SignOutPath).OnSuccess(interactive.Navigate(dest))
-		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out})
+		rows = append(rows, ui.ActionListItem{Label: i18nui.T(ctx, i18nui.KeySignOut), Do: &out, Icon: "log-out"})
 	}
-	return ui.Menu(ui.MenuConfig{
-		Label:    i18nui.T(ctx, i18nui.KeyAdminAccount),
-		Avatar:   &ui.AvatarConfig{Name: name},
-		Items:    items,
-		Position: ui.MenuBottomEnd,
+	parts = append(parts, ui.Divider(ui.DividerConfig{}), ui.ActionList(ui.ActionListConfig{Items: rows}))
+	return ui.Dropdown(ui.DropdownConfig{
+		Label:   i18nui.T(ctx, i18nui.KeyAdminAccount),
+		Avatar:  &ui.AvatarConfig{Name: name},
+		Align:   ui.DropdownEnd,
+		Content: ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...),
 	})
 }
 

@@ -29,6 +29,7 @@
 // Component inventory (alphabetical; kept complete by
 // TestDocGoInventoryComplete in inventory_test.go):
 //
+//	ActionList:           a list of link and button rows in a menu row's look, for a mixed panel
 //	AnchoredRail:         sticky in-page nav rail with scrollspy wiring
 //	AnimatedCounter:      scroll-triggered number tick animation
 //	AspectRatioComponent: CLS-safe aspect-ratio wrapper (alias: AspectRatio)

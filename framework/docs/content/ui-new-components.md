@@ -147,7 +147,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 ### Disclosure / surface widgets
 
 - **collapsible**: `framework/ui.Collapsible`, styled `<details>` with clickable summary + Escape-to-close
-- **dropdown**: `framework/ui.Dropdown`, a trigger button whose panel floats under it and holds any content (a list's filter fields, a "save view" form), where a `Menu` holds only command rows. A native `<details>` (headless `Disclosure` with `Dismiss`): it opens with no script and closes on a click outside, Escape, or a client-side navigation. `Icon` names a registered icon, `Count` draws a badge (the filters applied), `Align: ui.DropdownEnd` lines the panel up with the trigger's end edge. Fields inside a closed dropdown still submit with their form. Knobs: `--ui-dropdown-min-width`, `--ui-dropdown-max-width`; the viewport bounds both.
+- **actionlist**: `framework/ui.ActionList`, a short list of rows drawn as a menu's rows (full width, a touch target tall, the soft surface on hover and focus), each a link (`Href`) or a button carrying a built RPC (`Do`), with an optional registered `Icon` and `Danger`. It is the rows of a panel that also holds other controls, such as the admin's account `Dropdown` with its theme switches: a `Menu` panel is `role=menu` and may hold only menu rows, so a mixed panel's rows are a plain list Tab walks.
+- **dropdown**: `framework/ui.Dropdown`, a trigger button whose panel floats under it and holds any content (a list's filter fields, a "save view" form), where a `Menu` holds only command rows. A native `<details>` (headless `Disclosure` with `Dismiss`): it opens with no script and closes on a click outside, Escape, or a client-side navigation. `Icon` names a registered icon, `Count` draws a badge (the filters applied), `Align: ui.DropdownEnd` lines the panel up with the trigger's end edge, and `Avatar` draws the trigger as that avatar alone (the label kept as its accessible name; not beside `Icon` or `Count`), an account panel in an app bar. Fields inside a closed dropdown still submit with their form. Knobs: `--ui-dropdown-min-width`, `--ui-dropdown-max-width`; the viewport bounds both.
 - **modal**: `core-ui/widget/preset.Modal`, focus-trapped dialog with deeplink
 - **drawer**: `core-ui/widget/preset.Drawer`, edge-mounted sliding panel
 - **bottomsheet**: `core-ui/widget/preset.BottomSheet`, bottom-anchored Drawer variant
@@ -225,8 +226,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Status & banners
 
-- **themetoggle**: `framework/ui.ThemeToggle`, dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete
-- **themepicker**: `framework/ui.ThemePicker`, switches the whole page between the app theme and registered overrides (`style.RegisterThemeOverride`) by putting the override class on `<html>`; the choice persists per browser (see theming → "Page themes")
+- **themetoggle**: `framework/ui.ThemeToggle`, dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete; `Fill` stretches the pill across its container, the options sharing the width
+- **themepicker**: `framework/ui.ThemePicker`, switches the whole page between the app theme and registered overrides (`style.RegisterThemeOverride`) by putting the override class on `<html>`; the choice persists per browser (see theming → "Page themes"); `Fill` stretches its pill as `ThemeToggle`'s does
 - **backtotop**: `framework/ui.BackToTop`, fixed scroll affordance that appears after a threshold
 - **banner**: `framework/ui.Banner`, page-level persistent status strip
 - **callout**: `framework/ui.Callout`, persistent inline info / warning / danger / neutral block

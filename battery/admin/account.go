@@ -140,7 +140,7 @@ func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 		Label: i18nui.T(ctx, i18nui.KeyAdminThemeLabel),
 		Value: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill, Ctx: ctx}),
 	}}
-	if look := b.themePicker(ctx); look != "" {
+	if look := b.themePicker(ctx, false); look != "" {
 		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminLook), Value: look})
 	}
 	return ui.Card(ui.CardConfig{

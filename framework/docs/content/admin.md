@@ -212,11 +212,11 @@ admin.New(admin.Config{
       {Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount"}},
   },
   ```
-- **Themes** are page themes the account page's Appearance card offers
-  as its Look, a `ui.ThemePicker` (Default plus each choice) under the
-  light and dark choice, as the prototype's account menu does. The
-  toolbar keeps the light and dark toggle alone, so it fits a phone in
-  any language. Each is a theme registered with
+- **Themes** are page themes offered as the Look, a `ui.ThemePicker`
+  (Default plus each choice) under the light and dark choice, in the
+  avatar's account panel and on the account page's Appearance card. The
+  toolbar row keeps the light and dark toggle alone, so it fits a phone
+  in any language. Each is a theme registered with
   `style.RegisterThemeOverride`; `theme.Brutal()` is one. The choice is
   per browser.
 
@@ -230,7 +230,13 @@ admin.New(admin.Config{
 
 ### Account settings
 
-The account menu's "Account settings" opens `<PathPrefix>/account`, the
+The avatar opens the account panel, as the prototype's does: the
+signed-in user's name over their email and roles, the Theme switch and
+(with `Themes`) the Look picker, then Account settings and Sign out. It
+is a `ui.Dropdown` with an `Avatar` trigger, not a menu, because it
+holds the theme switches; its rows are a `ui.ActionList`.
+
+"Account settings" opens `<PathPrefix>/account`, the
 signed-in user's own page. It reads only the caller's record, so it is
 never elevated.
 

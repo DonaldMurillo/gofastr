@@ -1850,7 +1850,10 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
   background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #fff);
-}`
+}
+/* Fill: the pill spans its container and the options share it. */
+:where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--fill { display: flex; inline-size: 100%; box-sizing: border-box; }
+[data-cui-comp="ui-theme-toggle"].fui-theme-toggle--fill .fui-theme-toggle__option { flex: 1 1 0; }`
 }
 
 func backToTopCSS(_ style.Theme) string {

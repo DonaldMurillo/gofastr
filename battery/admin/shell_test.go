@@ -199,8 +199,9 @@ func TestShortcutHelpSheet(t *testing.T) {
 
 // With Config.Themes the account page's Appearance card offers a
 // page-theme picker (the Look row) beside the light and dark toggle,
-// as the prototype's account menu does; the toolbar stays lean so a
-// phone's fits. Without Themes, the toggle alone.
+// and the avatar's panel offers both, as the prototype's account menu
+// does, inside the closed panel so the toolbar row stays lean. Without
+// Themes, the toggle alone.
 func TestThemePickerOnAccountPage(t *testing.T) {
 	brutal := style.RegisterThemeOverride(theme.Brutal())
 	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: brutal}}}, nil)
@@ -208,8 +209,15 @@ func TestThemePickerOnAccountPage(t *testing.T) {
 	if !strings.Contains(account, `data-hui-theme-picker=""`) || !strings.Contains(account, ">Brutal<") || !strings.Contains(account, ">Look<") {
 		t.Errorf("no Look row on the account page")
 	}
-	if strings.Contains(get(x.as(theAdmin), "/admin").Body.String(), "data-hui-theme-picker") {
-		t.Errorf("the toolbar still carries the theme picker")
+	shell := get(x.as(theAdmin), "/admin").Body.String()
+	panel := regexp.MustCompile(`(?s)<details class="fui-dropmenu fui-dropmenu--end"[^>]*>.*?</details>`).FindString(shell)
+	for _, want := range []string{"fui-dropmenu__trigger--avatar", `data-hui-theme-picker=""`, ">Look<", ">Theme<", `role="radio"`, `href="/admin/account"`} {
+		if !strings.Contains(panel, want) {
+			t.Errorf("the account panel lacks %s:\n%s", want, panel)
+		}
+	}
+	if strings.Count(shell, "data-hui-theme-picker") != 1 {
+		t.Errorf("a theme picker draws outside the account panel")
 	}
 	plain := setup(t, nil, Config{}, nil)
 	if strings.Contains(get(plain.as(theAdmin), "/admin/account").Body.String(), "data-hui-theme-picker") {
