@@ -443,12 +443,14 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Fac
 			applied = 1
 		}
 	}
+	// Columns, then the layout switch at the end of the row, as the
+	// prototype lays them out.
 	var tools []render.HTML
-	if sw := b.layoutSwitchControl(ctx, s); sw != "" {
-		tools = append(tools, sw)
-	}
 	if menu := b.columnsMenu(ctx, s); menu != "" {
 		tools = append(tools, menu)
+	}
+	if sw := b.layoutSwitchControl(ctx, s); sw != "" {
+		tools = append(tools, sw)
 	}
 	if len(facets) == 0 && search == nil && len(extra) == 0 {
 		// Nothing to submit: the columns menu, if any, stands alone.
@@ -503,8 +505,7 @@ func (b *ListBuilder) layoutSwitchControl(ctx context.Context, s *listState) ren
 	}
 	cards := s.as == "cards"
 	return ui.SegmentedLinks(ui.SegmentedLinksConfig{
-		Label:    i18nui.T(ctx, i18nui.KeyEntityLayout),
-		IconOnly: true,
+		Label: i18nui.T(ctx, i18nui.KeyEntityLayout),
 		Items: []ui.SegmentLink{
 			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutTable), Icon: "list", Href: href("table"), Current: !cards},
 			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutCards), Icon: "grid", Href: href("cards"), Current: cards},

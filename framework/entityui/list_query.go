@@ -26,6 +26,8 @@ type listParams struct {
 	rowF, rowO, rowV string
 	// as is the layout the switch picks: "table" or "cards".
 	as string
+	// per is the rows per page the footer's menu picks.
+	per string
 }
 
 func listParamsFor(key string) listParams {
@@ -43,6 +45,7 @@ func listParamsFor(key string) listParams {
 		rowO: param(key, "ro"),
 		rowV: param(key, "rv"),
 		as:   param(key, "as"),
+		per:  param(key, "per"),
 	}
 }
 
@@ -210,8 +213,9 @@ func (s *listState) resolveSort(b *ListBuilder) {
 }
 
 // resolvePage reads ?page= and settles the page size: the builder's,
-// else the first Display.PageSizes entry, else 25, never above the
-// entity's Pagination.MaxListLimit.
+// else ?per= when it is a size on offer, else the first
+// Display.PageSizes entry, else 25, never above the entity's
+// Pagination.MaxListLimit.
 func (s *listState) resolvePage(b *ListBuilder) {
 	limit := b.pageSize
 	if limit <= 0 && len(s.m.d.PageSizes) > 0 {
@@ -219,6 +223,11 @@ func (s *listState) resolvePage(b *ListBuilder) {
 	}
 	if limit <= 0 {
 		limit = 25
+	}
+	// The footer's menu picks among the sizes on offer; anything else
+	// on the URL is ignored, never a size of its own.
+	if n, err := strconv.Atoi(s.q.Get(s.p.per)); err == nil && slices.Contains(s.pageSizes(b), n) {
+		limit = n
 	}
 	if max := s.maxListLimit(); max > 0 && limit > max {
 		limit = max
@@ -449,6 +458,35 @@ func (s *listState) ownsParam(name string) bool {
 	}
 	_, own := s.m.byName[field]
 	return own
+}
+
+// defaultPageSizes are the rows-per-page choices an entity with no
+// Display.PageSizes offers.
+var defaultPageSizes = []int{25, 50, 100}
+
+// pageSizes are the sizes the footer offers: the entity's
+// Display.PageSizes, else 25, 50 and 100, each within its
+// Pagination.MaxListLimit. A builder that fixed its size, a preview and
+// an embedded list offer none.
+func (s *listState) pageSizes(b *ListBuilder) []int {
+	if b.pageSize > 0 || b.top || b.embedded {
+		return nil
+	}
+	sizes := s.m.d.PageSizes
+	if len(sizes) == 0 {
+		sizes = defaultPageSizes
+	}
+	max := s.maxListLimit()
+	var out []int
+	for _, n := range sizes {
+		if n > 0 && (max <= 0 || n <= max) {
+			out = append(out, n)
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
 }
 
 // listHref renders path plus query.

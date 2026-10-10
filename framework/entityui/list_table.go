@@ -102,12 +102,47 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 			Ctx:       ctx,
 		}
 	}
+	if known && total > 0 && len(rows) > 0 && !b.top {
+		from := (page-1)*s.limit + 1
+		dt.Summary = i18nui.TVars(ctx, i18nui.KeyEntityRange, map[string]string{
+			"from":  formatNumber(float64(from), 0),
+			"to":    formatNumber(float64(from+len(rows)-1), 0),
+			"total": formatNumber(float64(total), 0),
+		})
+		dt.FooterTools = b.perPageMenu(ctx, s, total)
+	}
 	if s.inlineDrawn {
 		// The cells look like values; the line under the rows says they
 		// edit where they stand.
-		return render.Join(ui.DataTable(dt), ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyEntityInlineEditHint))))
+		dt.Note = i18nui.T(ctx, i18nui.KeyEntityInlineEditHint)
 	}
 	return ui.DataTable(dt)
+}
+
+// perPageMenu is the footer's rows-per-page menu: one link per size on
+// offer, back to the first page. A list that fits the smallest size
+// needs none.
+func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) render.HTML {
+	sizes := s.pageSizes(b)
+	if len(sizes) == 0 || total <= sizes[0] {
+		return ""
+	}
+	items := make([]ui.MenuItem, len(sizes))
+	for i, n := range sizes {
+		q := s.carryWithSort(s.p.page, s.p.per)
+		q.Set(s.p.per, strconv.Itoa(n))
+		items[i] = ui.MenuItem{Label: strconv.Itoa(n), Href: listHref(s.path, q)}
+	}
+	label := i18nui.T(ctx, i18nui.KeyEntityPageSize)
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
+		ui.Muted(render.Text(label)),
+		ui.Menu(ui.MenuConfig{
+			ID:       "eui-" + listIDSafe(s.key, s.m.name) + "-per",
+			Label:    strconv.Itoa(s.limit),
+			Items:    items,
+			Position: ui.MenuTopEnd,
+		}),
+	)
 }
 
 // inlineEditable is whether a cell of f may be edited in place: a plain

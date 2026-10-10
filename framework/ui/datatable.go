@@ -167,9 +167,10 @@ type DataTableConfig struct {
 	// SortDir is the active sort direction (asc/desc).
 	SortDir SortDir
 	// Summary is a sentence about the result window the caller owns,
-	// e.g. "Showing 8 of 10". Appended to the sort sentence the
-	// table's announcement carries after a sort swap: the table knows
-	// the sort, and only the caller knows the window.
+	// e.g. "1–25 of 40". It shows under the rows on the left, and is
+	// appended to the sort sentence the table's announcement carries
+	// after a sort swap: the table knows the sort, and only the caller
+	// knows the window.
 	Summary string
 
 	// Path is the screen's own path: each sort href is it plus the
@@ -220,6 +221,13 @@ type DataTableConfig struct {
 	// Flush drops the table's frame (border, corners, fill): rows that
 	// sit inside a card, whose frame is the card's.
 	Flush bool
+
+	// FooterTools sit under the rows on the right, before the pager:
+	// a rows-per-page menu.
+	FooterTools render.HTML
+	// Note is a short line of small print under the rows: how to use
+	// them ("Select a value to edit it in place.").
+	Note string
 
 	// Ctx carries the per-request context used to resolve i18n
 	// strings (empty-state labels, sort aria-labels, pagination
@@ -407,7 +415,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		empty = EmptyState(e)
 	}
 
-	var footer render.HTML
+	var footer, pager render.HTML
 	if cfg.Pagination != nil {
 		// In island mode, the pagination inherits the DataTable's
 		// endpoint and signal so sort and page hit the same handler.
@@ -423,10 +431,27 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		// it are this component's own, so the boundary sits on the
 		// wrapper (Pagination also marks its own list; a mark nested
 		// inside an already-marked wrapper is fine).
-		footer = html.Div(html.DivConfig{
-			Class:      "fui-data-table__footer",
-			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
-		}, Pagination(pag))
+		pager = Pagination(pag)
+	}
+	if pager != "" || cfg.Summary != "" || cfg.FooterTools != "" {
+		// The summary and the pager are this component's own; the
+		// tools are the caller's, so a footer holding them is not
+		// marked as a whole.
+		var summary render.HTML
+		if cfg.Summary != "" {
+			summary = html.Span(html.TextConfig{Class: "fui-data-table__summary", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Summary))
+		}
+		attrs := html.Attrs{}
+		if cfg.FooterTools == "" {
+			attrs["data-cui-internal"] = ""
+		} else if pager != "" {
+			pager = headless.Own(pager)
+		}
+		footer = html.Div(html.DivConfig{Class: "fui-data-table__footer", ExtraAttrs: attrs},
+			summary, cfg.FooterTools, pager)
+	}
+	if cfg.Note != "" {
+		footer = render.Join(footer, render.Tag("p", map[string]string{"class": "fui-data-table__note", "data-cui-internal": ""}, render.Text(cfg.Note)))
 	}
 
 	// The root's modifier classes travel as part attrs, which append

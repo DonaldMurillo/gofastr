@@ -637,6 +637,7 @@
       "queryBoxHelp": "Compara un campo con un valor. Pon el texto entre comillas.",
       "queryBoxJoin": "Unir",
       "queryBoxOperators": "Operadores",
+      "range": "{from}–{to} de {total}",
       "readOnly": "Este registro de {entity} es de solo lectura.",
       "recordSections": "Secciones",
       "replace": "Reemplazar",

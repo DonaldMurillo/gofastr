@@ -216,6 +216,14 @@ record := appUI.Record("invoices", "inv-42").Delete().RenderCtx(ctx)
 _, _ = list, record
 ```
 
+Under the rows a list says which rows show out of how many ("1–25 of
+40") and, when more rows exist than the smallest size, offers rows per
+page: the entity's `Display.PageSizes`, else 25, 50 and 100, each within
+`Pagination.MaxListLimit`. The menu's links set `<key>_per` and return to
+the first page; the param rides every other link like `as`, and a size
+not on offer is ignored. A builder's `PageSize`, a preview (`Top`) and
+an embedded list offer none.
+
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
 none), `As("cards")`, `InlineEdit()` (a table's plain cells, an enum, a bool, a

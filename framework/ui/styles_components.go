@@ -1397,7 +1397,22 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-data-table"] .fui-data-table__note {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted);
+}
+/* The summary takes the left; the tools and the pager hold the right. */
+[data-cui-comp="ui-data-table"] .fui-data-table__summary {
+  margin-inline-end: auto;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Responsive-cards mode (Container Queries).

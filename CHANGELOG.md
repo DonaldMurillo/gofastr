@@ -8,6 +8,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- Entity lists end with "1–25 of 40" and, past one page, a rows-per-page
+  menu (25, 50, 100, or the entity's `Display.PageSizes`; the new
+  `<key>_per` param), as the prototype does. The Table / Cards switch is
+  labelled and sits after Columns. `ui.DataTableConfig` shows `Summary`
+  under the rows, and gains `FooterTools` and `Note` (small print; the
+  inline-edit hint uses it).
 - Inline editing reads as editing in the cell: `ui.InlineEdit` lays its
   editor over the value (the field and Save on one line, no pencil),
   entityui draws that field with its label hidden (`LabelHidden`, new on

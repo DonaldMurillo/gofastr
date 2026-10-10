@@ -18,6 +18,7 @@ const (
 	KeyEntityViewAll       Key = "ui.entity.viewAll"       // "All"
 	KeyEntityRowActions    Key = "ui.entity.rowActions"    // "Actions for {title}"
 	KeyEntityPageSize      Key = "ui.entity.pageSize"      // "Rows per page"
+	KeyEntityRange         Key = "ui.entity.range"         // "{from}–{to} of {total}"
 	KeyEntityViews         Key = "ui.entity.views"         // "Views"
 	// KeyEntityFilterInvalidTitle and Body draw the callout when ?filter=
 	// text does not parse: the list still renders, without the filter.
@@ -100,6 +101,7 @@ var entityListDefaults = map[Key]string{
 	KeyEntityViewAll:       "All",
 	KeyEntityRowActions:    "Actions for {title}",
 	KeyEntityPageSize:      "Rows per page",
+	KeyEntityRange:         "{from}–{to} of {total}",
 	KeyEntityViews:         "Views",
 
 	KeyEntityFilterInvalidTitle: "Filter not applied",

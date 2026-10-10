@@ -569,3 +569,23 @@ func TestDataTableFlush(t *testing.T) {
 		t.Errorf("the flush rule does not drop the frame:\n%s", css)
 	}
 }
+
+// The footer carries the summary on the left and the caller's tools
+// before the pager; with neither and no pager there is no footer.
+func TestDataTableFooterSummaryAndTools(t *testing.T) {
+	cfg := DataTableConfig{Columns: []Column{{Key: "a", Header: "A"}}, Rows: []Row{{ID: "1", Cells: map[string]render.HTML{"a": "x"}}}}
+	if strings.Contains(string(DataTable(cfg)), "fui-data-table__footer") {
+		t.Error("a footer drew with nothing in it")
+	}
+	cfg.Summary = "1–1 of 1"
+	cfg.FooterTools = render.HTML(`<a href="/x?per=50">50</a>`)
+	h := string(DataTable(cfg))
+	sum, tools := strings.Index(h, "1–1 of 1"), strings.Index(h, `href="/x?per=50"`)
+	if sum < 0 || tools < sum {
+		t.Errorf("summary then tools, in the footer:\n%s", h)
+	}
+	cfg.Note = "Select a value."
+	if h := string(DataTable(cfg)); !strings.Contains(h, `<p class="fui-data-table__note" data-cui-internal="">Select a value.</p>`) {
+		t.Errorf("no note under the rows:\n%s", h)
+	}
+}
