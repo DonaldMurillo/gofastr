@@ -195,26 +195,33 @@ func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
 			t.Fatalf("%s: %v\npage: %s", name, err, state)
 		}
 	}
+	// Every poll checks on a timer, not chromedp's default
+	// requestAnimationFrame: on CI's headless Chrome the copy had fetched
+	// and toasted, yet the poll for the toast never answered, the
+	// throttled-tab case where frames stop ticking (axetest's Prepare
+	// notes it).
+	interval := chromedp.WithPollingInterval(50 * time.Millisecond)
 	step("load",
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
-			chromedp.WithPollingTimeout(5*time.Second)))
+			chromedp.WithPollingTimeout(5*time.Second), interval))
 	// Both behaviours must be bound before the stub replaces toast and
 	// before a click: the count module shows the floating bar, and the
 	// copy module owns the click. A fixed sleep raced them on a slow CI
 	// runner.
 	step("modules bound",
 		chromedp.Poll(`!!(window.__gofastr.loadedModules || {})['headless'] && !!(window.__gofastr.loadedModules || {})['headless-selection-copy']`, nil,
-			chromedp.WithPollingTimeout(10*time.Second)),
+			chromedp.WithPollingTimeout(10*time.Second), interval),
 		chromedp.Evaluate(stub, nil))
 	step("check a row",
 		chromedp.Evaluate(`document.getElementById('r2').click()`, nil),
 		chromedp.Poll(`document.querySelector('[data-hui-selection-copy]').offsetParent !== null`, nil,
-			chromedp.WithPollingTimeout(5*time.Second)))
+			chromedp.WithPollingTimeout(5*time.Second), interval))
 	step("copy",
 		chromedp.Evaluate(`document.querySelector('[data-hui-selection-copy]').click()`, nil),
-		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(5*time.Second), interval))
+	step("read the copy",
 		chromedp.Evaluate(`window.__fetched`, &fetched),
 		chromedp.Evaluate(`window.__clip`, &clip),
 		chromedp.Evaluate(`window.__toasts[0].title`, &toast))
