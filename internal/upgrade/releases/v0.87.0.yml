@@ -275,6 +275,13 @@ notes:
       strings:
         match: '/admin/e/'
     guidance: "Set Config.UI to the app's one entity UI, built after every entity registers: appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui). Without it, Init fails naming the exposed entities. Point links and tests at /admin/entities/<entity>, /admin/entities/<entity>/create and /admin/entities/<entity>/<id>, which replace the /new, /view/<id> and /edit/<id> screens; the record page holds the edit form. Move the admin's column and label choices to the entity's Display."
+  - change: "battery/admin's Roles page is a permission grid saved by one POST /admin/rbac/_permissions, which grants and revokes only what changed; POST /admin/rbac/_revoke is removed (_grant stays, for the Add a role form)"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        match: '/rbac/_revoke'
+    guidance: "A script or client that posted to <PathPrefix>/rbac/_revoke now gets 404. Post the whole grid to <PathPrefix>/rbac/_permissions instead (repeated role and permission fields name the grid, and one grant=<role index>:<permission index> per checked box; see admin.md, Roles), or revoke through your GrantStore in Go."
   - change: "battery/admin renders every page through the app's UI host: Init fails on an app without one, a queue- or audit-only admin included, and the admin's own stylesheet at /admin/admin.css is gone"
     breaking: true
     hits: review
