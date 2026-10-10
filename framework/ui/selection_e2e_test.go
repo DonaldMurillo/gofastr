@@ -170,33 +170,45 @@ func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
 	var fetched []string
 	var clip, toast string
 	var crossFetched int
-	if err := chromedp.Run(ctx,
+	// Each step runs on its own and names itself on failure: a bare
+	// "context deadline exceeded" from one Run cannot say which action
+	// waited out the tab's budget.
+	step := func(name string, actions ...chromedp.Action) {
+		t.Helper()
+		if err := chromedp.Run(ctx, actions...); err != nil {
+			var state string
+			_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({mods: Object.keys((window.__gofastr||{}).loadedModules||{}), bar: !!document.querySelector('.fui-selection__bar') && document.querySelector('.fui-selection__bar').offsetParent !== null, copy: (document.querySelector('[data-hui-selection-copy]')||{}).outerHTML, fetched: window.__fetched, toasts: window.__toasts})`, &state))
+			t.Fatalf("%s: %v\npage: %s", name, err, state)
+		}
+	}
+	step("load",
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
-			chromedp.WithPollingTimeout(5*time.Second)),
-		// Both behaviours must be bound before the stub replaces toast and
-		// before a click: the count module shows the floating bar, and
-		// the copy module owns the click. A fixed sleep raced them on a
-		// slow CI runner, so the click waited on a bar that never showed.
+			chromedp.WithPollingTimeout(5*time.Second)))
+	// Both behaviours must be bound before the stub replaces toast and
+	// before a click: the count module shows the floating bar, and the
+	// copy module owns the click. A fixed sleep raced them on a slow CI
+	// runner.
+	step("modules bound",
 		chromedp.Poll(`!!(window.__gofastr.loadedModules || {})['headless'] && !!(window.__gofastr.loadedModules || {})['headless-selection-copy']`, nil,
 			chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Evaluate(stub, nil),
-		chromedp.Click(`#r2`, chromedp.ByID),
+		chromedp.Evaluate(stub, nil))
+	step("check a row",
+		chromedp.Evaluate(`document.getElementById('r2').click()`, nil),
 		chromedp.Poll(`document.querySelector('[data-hui-selection-copy]').offsetParent !== null`, nil,
-			chromedp.WithPollingTimeout(5*time.Second)),
-		chromedp.Click(`[data-hui-selection-copy]`, chromedp.ByQuery),
-		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(3*time.Second)),
+			chromedp.WithPollingTimeout(5*time.Second)))
+	step("copy",
+		chromedp.Evaluate(`document.querySelector('[data-hui-selection-copy]').click()`, nil),
+		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(5*time.Second)),
 		chromedp.Evaluate(`window.__fetched`, &fetched),
 		chromedp.Evaluate(`window.__clip`, &clip),
-		chromedp.Evaluate(`window.__toasts[0].title`, &toast),
+		chromedp.Evaluate(`window.__toasts[0].title`, &toast))
+	step("copy from another origin",
 		chromedp.Evaluate(`document.querySelector('[data-hui-selection-copy]').setAttribute('data-hui-selection-copy', 'https://evil.example/x.csv'); window.__fetched = []`, nil),
-		chromedp.Click(`[data-hui-selection-copy]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('[data-hui-selection-copy]').click()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`window.__fetched.length`, &crossFetched),
-	); err != nil {
-		t.Fatal(err)
-	}
+		chromedp.Evaluate(`window.__fetched.length`, &crossFetched))
 	if len(fetched) != 1 || !strings.HasSuffix(fetched[0], "/api/apps/_export.csv?_id=r2") {
 		t.Errorf("fetched %v, want the export route with _id=r2 alone", fetched)
 	}
