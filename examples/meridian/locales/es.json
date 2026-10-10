@@ -487,6 +487,7 @@
     "drawer": {
       "next": "Registro siguiente",
       "open_page": "Abrir como página",
+      "open_panel": "Abrir en panel",
       "prev": "Registro anterior"
     },
     "dropzone": {
