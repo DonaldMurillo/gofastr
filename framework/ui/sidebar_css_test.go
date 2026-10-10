@@ -154,3 +154,21 @@ func TestDrawerCloseAndToggleInheritFont(t *testing.T) {
 		}
 	}
 }
+
+// RaisedCurrent draws the current page's link as a raised pill: the
+// surface, a hairline ring and a small shadow, not a grey fill.
+func TestSidebarRaisedCurrent(t *testing.T) {
+	items := []SidebarItem{{Label: "Home", Href: "/"}}
+	if out := string(sidebarComponent{cfg: SidebarConfig{RaisedCurrent: true, Variant: SidebarPersistent, Items: items}}.Render()); !strings.Contains(out, "fui-sidebar--raised-current") {
+		t.Errorf("no raised-current modifier:\n%s", out)
+	}
+	if out := string(sidebarComponent{cfg: SidebarConfig{Variant: SidebarPersistent, Items: items}}.Render()); strings.Contains(out, "fui-sidebar--raised-current") {
+		t.Error("the modifier rides a sidebar that did not ask for it")
+	}
+	want := `[data-cui-comp="ui-sidebar"].fui-sidebar--raised-current .fui-sidebar__link[aria-current="page"] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs), 0 0 0 var(--stroke-thin, 1px) var(--color-border);`
+	if css := sidebarCSS(style.Theme{}); !strings.Contains(css, want) {
+		t.Errorf("the raised current link rule is missing:\n%s", css)
+	}
+}

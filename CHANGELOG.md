@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- `ui.SidebarConfig.RaisedCurrent` draws the current page's link as a
+  raised pill (the surface, a hairline ring, a small shadow) instead of a
+  grey fill; the admin's nav uses it, as the prototype's does.
 - `StatCardConfig.Tile` draws a card's icon in a tinted square at the
   head's start, with its Action at the end and the label under them;
   the admin's entity cards use it, as the prototype's do.

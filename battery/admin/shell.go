@@ -318,6 +318,7 @@ func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) re
 		CurrentPath:           path,
 		Variant:               ui.SidebarCollapsible,
 		SectionLabels:         true,
+		RaisedCurrent:         true,
 		DrawerName:            navDrawer,
 		DrawerTitle:           b.title(ctx),
 		Prepend:               brand{b: b},

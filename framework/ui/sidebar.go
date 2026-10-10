@@ -236,6 +236,11 @@ type SidebarConfig struct {
 	// group closes, and the group's links flush under the label instead
 	// of indented (an app's nav split into Billing, Catalog, System).
 	SectionLabels bool
+	// RaisedCurrent draws the current page's link as a raised pill (the
+	// surface, a hairline ring and a small shadow) instead of a soft
+	// grey fill: an app shell's nav, where the current screen should
+	// read as the one on top.
+	RaisedCurrent bool
 
 	// DrawerBreakpoint picks the viewport width below which the
 	// sidebar collapses to its hamburger drawer instead of the inline
@@ -516,6 +521,9 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	drawerLabel := "Open navigation"
 	if cfg.SectionLabels {
 		classes[headless.PartRoot] += " fui-sidebar--section-labels"
+	}
+	if cfg.RaisedCurrent {
+		classes[headless.PartRoot] += " fui-sidebar--raised-current"
 	}
 	if cfg.Compact {
 		classes[headless.PartRoot] += " fui-sidebar--compact"
@@ -1089,6 +1097,12 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #09090B);
   font-weight: var(--font-weight-medium);
+}
+/* RaisedCurrent: the current link sits on the surface as a pill, ringed
+   by a hairline and lifted by the smallest shadow. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--raised-current .fui-sidebar__link[aria-current="page"] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs), 0 0 0 var(--stroke-thin, 1px) var(--color-border);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
