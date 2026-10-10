@@ -2383,6 +2383,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Host with the full textsafe set** (C1 and bidi runes included), which
   slog's JSON handler otherwise leaves raw in the logged line (#417).
 ### Security
+- The repo builds with Go 1.27.2 (`toolchain go1.27.2` in go.mod; the
+  `go 1.27.0` floor for apps is unchanged), which fixes the thirteen
+  standard-library advisories govulncheck reports against 1.27.0 (among
+  them GO-2026-6599 and GO-2026-6600 in html/template). golang.org/x/tools
+  moves to v0.50.0, which reads the export data Go 1.27.2 writes.
 - **`crud.WithReadHooks` applies the `BeforeList`/`BeforeGet` scopes.**
   Under the opt-in, `ListAll`, `CountAll` and `TypedQuery.Find`/`First`/
   `Count` run `BeforeList` and `GetOne` runs `BeforeGet`, ANDing the
