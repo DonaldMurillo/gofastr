@@ -8,6 +8,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- Inline editing reads as editing in the cell: `ui.InlineEdit` lays its
+  editor over the value (the field and Save on one line, no pencil),
+  entityui draws that field with its label hidden (`LabelHidden`, new on
+  `ui.TextFieldConfig`, `NumberFieldConfig`, `DateFieldConfig` and
+  `DateTimeFieldConfig`), an enum as a select and a whole number with no
+  stepper, and a line under the rows says "Select a value to edit it in
+  place." (`ui.entity.inlineEditHint`).
 - The admin dashboard follows the prototype: its figures are one
   `ui.StatStrip` (new: one frame around up to six figures, two columns
   on a phone) of plain cards (`StatCardConfig.Plain`), a Detail's

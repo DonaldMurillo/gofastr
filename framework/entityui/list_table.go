@@ -102,6 +102,11 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 			Ctx:       ctx,
 		}
 	}
+	if s.inlineDrawn {
+		// The cells look like values; the line under the rows says they
+		// edit where they stand.
+		return render.Join(ui.DataTable(dt), ui.Muted(render.Text(i18nui.T(ctx, i18nui.KeyEntityInlineEditHint))))
+	}
 	return ui.DataTable(dt)
 }
 
@@ -134,7 +139,8 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 	if !ok || cell(rowValue(raw, f.Name)) != cell(rowValue(row, f.Name)) {
 		return ""
 	}
-	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw}
+	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw, compact: true}
+	s.inlineDrawn = true
 	label := s.m.label(ctx, f.Name)
 	control := fb.typedInput(ctx, f, label, "", "eui-ie-"+listIDSafe(s.key, s.m.name)+"-"+strconv.Itoa(i)+"-"+f.Name)
 	return ui.InlineEdit(ui.InlineEditConfig{

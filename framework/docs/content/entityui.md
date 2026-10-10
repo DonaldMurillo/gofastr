@@ -223,7 +223,9 @@ number, a date or a short string, are edited in place through
 `ui.InlineEdit`: the form PUTs the one field to the record's write route
 and returns to the list; only for a caller who may update the row, never
 on a value a read hook masks, the title link, a state field or a locked
-one), `LayoutSwitch()` (a Table / Cards switch in the
+one. The editor is the field with its label hidden from view (an enum as
+a select, a whole number with no stepper) beside Save, and a line under
+the rows says "Select a value to edit it in place."), `LayoutSwitch()` (a Table / Cards switch in the
 toolbar, `ui.SegmentedLinks`, whose links set `<key>_as`; it then wins
 over `As` and the view's layout), `Where(field, value)` (pins a term inside the
 caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where

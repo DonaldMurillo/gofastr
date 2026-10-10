@@ -33,6 +33,10 @@ func TestListInlineEdit(t *testing.T) {
 		`data-cui-rpc-navigate="/invoices?sort=number"`,
 		`name="po"`,
 		`value="PO-7"`,
+		// The cell names the field, so its editor's label is hidden from
+		// view, and the line under the rows says the values edit in place.
+		`fui-field--label-hidden`,
+		"Select a value to edit it in place.",
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("inline edit misses %q:\n%s", want, h)
@@ -60,6 +64,9 @@ func TestListInlineEdit(t *testing.T) {
 	}
 	if strings.Contains(ro, `ui-inline-edit`) {
 		t.Errorf("SECURITY: a caller who may not update got an inline editor")
+	}
+	if strings.Contains(ro, "edit it in place") {
+		t.Errorf("the hint shows on a list with nothing to edit")
 	}
 	if plain := listHTML(t, x.ui.List("invoices"), x.userCtx("/invoices", "", "u1")); strings.Contains(plain, "ui-inline-edit") {
 		t.Errorf("a list without InlineEdit drew editors")

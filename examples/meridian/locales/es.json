@@ -586,6 +586,7 @@
       "filterRows": "Filtrar donde",
       "id": "ID",
       "inlineEdit": "Editar {field} de {title}",
+      "inlineEditHint": "Elige un valor para editarlo en su sitio.",
       "keepValue": "Déjalo en blanco para conservar el valor actual.",
       "layout": "Vista",
       "layoutCards": "Tarjetas",

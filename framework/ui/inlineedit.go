@@ -16,7 +16,8 @@ import (
 // ─── InlineEdit ────────────────────────────────────────────────────
 //
 // A value edited where it is shown: a table cell's value is the trigger
-// of a small popup holding a one-field form. Saving sends the field to
+// of an editor drawn over it, the field and a Save button on one line
+// (give the Control a hidden label: the cell names it). Saving sends the field to
 // Action over the runtime's form RPC (PUT by default) and, on success,
 // says Saved and navigates to Return, so the server redraws the page
 // with the stored value. Escape or a press outside closes it unsaved.
@@ -74,19 +75,19 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 	}
 	attrs := rpc.OnSuccessToast(saved).OnSuccess(interactive.Navigate(cfg.Return)).Attrs()
 	form := Form(FormConfig{
-		Action:      cfg.Action,
-		Method:      "POST",
-		SubmitLabel: save,
-		Ctx:         ctx,
-		ExtraAttrs:  attrs,
-	}, cfg.Control)
-	// The value is the caller's; the name and the pencil are ours.
-	internal := html.Attrs{"data-cui-internal": ""}
+		Action:     cfg.Action,
+		Method:     "POST",
+		HideSubmit: true,
+		Ctx:        ctx,
+		ExtraAttrs: attrs,
+	}, Cluster(ClusterConfig{Gap: GapSM, Align: AlignCenter, NoWrap: true},
+		cfg.Control,
+		headless.Own(Button(ButtonConfig{Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
+	))
+	// The value is the caller's; its name is ours.
 	summary := render.Join(
 		html.Span(html.TextConfig{Class: "fui-inline-edit__value"}, cfg.Display),
-		html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: internal}, render.Text(cfg.Label)),
-		html.Span(html.TextConfig{Class: "fui-inline-edit__icon", ExtraAttrs: html.Attrs{"data-cui-internal": "", "aria-hidden": "true"}},
-			Icon("pencil", IconConfig{Size: "14"})),
+		html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Label)),
 	)
 	out := headless.Disclosure(headless.DisclosureProps{
 		Summary:    summary,
@@ -104,8 +105,9 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 
 var inlineEditStyle = registry.RegisterStyle("ui-inline-edit", inlineEditCSS)
 
-// inlineEditCSS draws the trigger as the value itself, a pencil showing
-// on hover and focus, and the panel as the dropdown's floating surface.
+// inlineEditCSS draws the trigger as the value itself, tinted on hover
+// and focus, and the panel as an editor laid over the value: the field
+// and Save on one line, in the field's own frame colour.
 func inlineEditCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-inline-edit"]).fui-inline-edit {
   position: relative;
@@ -120,34 +122,26 @@ func inlineEditCSS(_ style.Theme) string {
   list-style: none;
 }
 [data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger::-webkit-details-marker { display: none; }
-[data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger:hover,
-[data-cui-comp="ui-inline-edit"][open] > .fui-inline-edit__trigger {
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-border-strong, var(--color-border));
+[data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger:hover {
+  background: var(--color-surface-soft, var(--color-surface));
 }
-[data-cui-comp="ui-inline-edit"] .fui-inline-edit__icon {
-  margin-inline-start: var(--spacing-xs, 2px);
-  vertical-align: middle;
-  color: var(--color-text-muted);
-  opacity: 0;
-}
-[data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger:hover .fui-inline-edit__icon,
-[data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger:focus-visible .fui-inline-edit__icon {
-  opacity: 1;
-}
-@media (pointer: coarse) {
-  [data-cui-comp="ui-inline-edit"] .fui-inline-edit__icon { opacity: 1; }
+[data-cui-comp="ui-inline-edit"] > .fui-inline-edit__trigger:focus-visible {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-inline-edit"] > .fui-inline-edit__panel {
   position: absolute;
-  inset-block-start: calc(100% + var(--spacing-xs, 2px));
-  inset-inline-start: 0;
+  inset-block-start: 50%;
+  inset-inline-start: calc(-1 * var(--spacing-md, 8px));
+  translate: 0 -50%;
   z-index: var(--z-dropdown, 100);
-  min-inline-size: 16rem;
-  max-inline-size: min(22rem, 90vw);
-  padding: var(--spacing-md, 8px);
+  inline-size: max-content;
+  min-inline-size: 12rem;
+  max-inline-size: min(26rem, 90vw);
+  padding: var(--spacing-xs, 2px);
   background: var(--color-surface);
-  border: var(--stroke-thin, 1px) solid var(--color-border);
-  border-radius: var(--radii-lg, 10px);
+  border: var(--stroke-thin, 1px) solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg);
   white-space: normal;
   text-align: start;

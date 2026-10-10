@@ -64,6 +64,9 @@ type listState struct {
 	// a list with InlineEdit, which edits a value only where the hooked
 	// and the stored one agree.
 	rawRows map[string]map[string]any
+	// inlineDrawn is set once a cell's editor is drawn, so the table
+	// says how to edit in place.
+	inlineDrawn bool
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that

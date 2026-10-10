@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,23 @@ func TestTextAreaJSONCheck(t *testing.T) {
 	}
 	if plain := string(TextArea(TextAreaConfig{Name: "notes", Label: "Notes"})); strings.Contains(plain, "data-hui-json") {
 		t.Errorf("a plain text area checks JSON: %s", plain)
+	}
+}
+
+// Each typed field takes LabelHidden: the label stays for assistive
+// tech, the root carries the modifier the field sheet hides it by.
+func TestTypedFieldsLabelHidden(t *testing.T) {
+	for name, h := range map[string]render.HTML{
+		"text":     TextField(TextFieldConfig{Name: "a", Label: "A", LabelHidden: true}),
+		"number":   NumberField(NumberFieldConfig{Name: "a", Label: "A", LabelHidden: true}),
+		"date":     DateField(DateFieldConfig{Name: "a", Label: "A", LabelHidden: true}),
+		"datetime": DateTimeField(DateTimeFieldConfig{Name: "a", Label: "A", LabelHidden: true}),
+	} {
+		if s := string(h); !strings.Contains(s, "fui-field--label-hidden") || !strings.Contains(s, ">A</label>") {
+			t.Errorf("%s: no hidden-label modifier, or the label is gone:\n%s", name, s)
+		}
+	}
+	if strings.Contains(string(TextField(TextFieldConfig{Name: "a", Label: "A"})), "label-hidden") {
+		t.Error("a plain field carries the hidden-label modifier")
 	}
 }

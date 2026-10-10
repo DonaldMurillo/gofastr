@@ -29,6 +29,7 @@ const (
 	// The filter rows: the group, each row's three controls and the
 	// operators' names.
 	KeyEntityInlineEdit     Key = "ui.entity.inlineEdit"     // "Edit {field} of {title}"
+	KeyEntityInlineEditHint Key = "ui.entity.inlineEditHint" // "Select a value to edit it in place."
 	KeyEntityLayout         Key = "ui.entity.layout"         // "Layout"
 	KeyEntityLayoutTable    Key = "ui.entity.layoutTable"    // "Table"
 	KeyEntityLayoutCards    Key = "ui.entity.layoutCards"    // "Cards"
@@ -106,6 +107,7 @@ var entityListDefaults = map[Key]string{
 
 	KeyEntityQueryBoxField:     "Filter expression",
 	KeyEntityInlineEdit:        "Edit {field} of {title}",
+	KeyEntityInlineEditHint:    "Select a value to edit it in place.",
 	KeyEntityLayout:            "Layout",
 	KeyEntityLayoutTable:       "Table",
 	KeyEntityLayoutCards:       "Cards",

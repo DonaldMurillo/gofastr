@@ -308,6 +308,10 @@ type formBuilder struct {
 	// form, in placement order; drawForm emits those forms after the
 	// record form, which must not submit them.
 	replace []string
+	// compact draws a control for a table cell's editor: its label
+	// hidden from view (the cell names it), an enum as a select and a
+	// whole number with no stepper buttons.
+	compact bool
 }
 
 // replaceFormID names the form a masked field's input and Replace
@@ -679,7 +683,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.String:
 		return ui.TextField(ui.TextFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
-			Help: help, Required: required,
+			Help: help, Required: required, LabelHidden: fb.compact,
 			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
 			ExtraAttrs: patternAttr(f.Pattern),
 		})
@@ -695,6 +699,13 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
+		if fb.compact {
+			step := 1.0
+			return ui.NumberField(ui.NumberFieldConfig{
+				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: true,
+				Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
+			})
+		}
 		return ui.NumberInput(ui.NumberInputConfig{
 			Name: f.Name, Label: label, ID: id, Value: intInputValue(val), Ctx: ctx,
 			Help: help, Required: required, Min: intBound(f.Min), Max: intBound(f.Max),
@@ -707,7 +718,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			step = 1e-9
 		}
 		return ui.NumberField(ui.NumberFieldConfig{
-			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, LabelHidden: fb.compact,
 			Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 		})
 	case schema.Bool:
@@ -717,10 +728,10 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// scalar, so false round-trips.
 		return render.Join(
 			html.Input(html.InputConfig{Type: "hidden", Name: f.Name, Value: "false"}),
-			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help}),
+			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
-		if len(f.Values) <= 4 && required {
+		if len(f.Values) <= 4 && required && !fb.compact {
 			return ui.SegmentedControl(ui.SegmentedControlConfig{
 				Name: f.Name, ID: id, Label: label,
 				Options:  enumSegments(ctx, fb.m, f),
@@ -728,7 +739,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			})
 		}
 		return ui.Select(ui.SelectConfig{
-			Name: f.Name, Label: label, ID: id, Help: help,
+			Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 			Placeholder: selectPlaceholder(ctx, f, required),
 			Options:     enumOptions(ctx, fb.m, f, val),
 			Required:    required,
@@ -736,7 +747,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.Date:
 		return ui.DateField(ui.DateFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: dateInputValue(val),
-			Help: help, Required: required,
+			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
 		return ui.DateTimeField(ui.DateTimeFieldConfig{
