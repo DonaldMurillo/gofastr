@@ -381,14 +381,20 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 		return
 	}
 	defer s.seatTable().ReleaseSeat(seat)
+	// Subscribe BEFORE the headers go out: the client treats the
+	// flushed 200 as "stream live" and may drive a turn at once, and
+	// Bus.broadcast delivers only to current subscribers, with no
+	// replay. Subscribing after the flush lost that turn whenever the
+	// handler was descheduled between the two (the ws twin's
+	// subscribe-before-dispatch rule).
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	ch := eng.Bus.Subscribe(ctx)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	ch := eng.Bus.Subscribe(ctx)
 	// Re-verify the token for the life of the stream. handle() verified
 	// it once at request time, but the loop below holds the stream open
 	// long after; Revoke(jti) must reach an open stream, not just fresh

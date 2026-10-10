@@ -1051,6 +1051,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A harness event stream carries the turn its client starts at once.**
+  The REST `/v1/sessions/<id>/events` stream and the web client's SSE
+  stream flushed their headers before subscribing to the session's bus,
+  and the bus delivers only to current subscribers. A client that drove
+  a turn the moment the stream opened lost that turn's events whenever
+  the handler was descheduled between the two. Both now subscribe
+  first, the order the WebSocket control surface already used.
 - **A `DataTable` in cards mode no longer clips its cells.** The table's
   52px row height is a minimum in table layout but an exact height once
   a cell becomes a flex box, so a cell taller than that (an empty state,
