@@ -227,7 +227,7 @@ Before #495 is ready:
 - [x] Push `feat/admin-shell` with the full hook (never `--no-verify`).
 - [ ] Rewrite the #495 body from the commit list above, then `gh pr edit 495 --body-file`.
 - [ ] `./scripts/pr-review-findings.sh 495 --gate`, triage every thread, then watch CI.
-- [ ] Remove the stale `wip/drawer-steps` branch and worktree.
+- [x] Remove the stale `wip/drawer-steps` branch and worktree.
 
 ## Where things live
 
