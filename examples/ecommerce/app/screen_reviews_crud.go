@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"net/http"
 )
@@ -20,9 +21,9 @@ func (s *ReviewsScreen) ScreenDescription() string  { return "Customer reviews a
 func (s *ReviewsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Customer Reviews")),
-		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithHeadingLevel(2).WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }
 
@@ -43,7 +44,7 @@ func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	fwApp.Router().HandleFunc("GET", "/api/tables/reviews/reviews", func(w http.ResponseWriter, r *http.Request) {
-		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
+		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithHeadingLevel(2).WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
 	})
 	site.Register("/reviews", &ReviewsScreen{}, appLayout)
 }

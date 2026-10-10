@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"net/http"
 )
@@ -20,9 +21,9 @@ func (s *CategoriesScreen) ScreenDescription() string  { return "Browse product 
 func (s *CategoriesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Categories")),
-		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithHeadingLevel(2).WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }
 
@@ -55,7 +56,7 @@ func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	fwApp.Router().HandleFunc("GET", "/api/tables/categories/categories", func(w http.ResponseWriter, r *http.Request) {
-		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
+		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithHeadingLevel(2).WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
 	})
 	site.Register("/categories", &CategoriesScreen{}, appLayout)
 }
