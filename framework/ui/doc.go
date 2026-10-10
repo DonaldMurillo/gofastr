@@ -159,6 +159,7 @@
 //	Spinner:              inline role="status" loading indicator
 //	Stack:                vertical layout with gap
 //	StatCard:             metric tile with label/value/trend
+//	StatStrip:            one frame around a row of figures, divided by hairlines
 //	StatusBadge:          small status pill (success/warning/danger/info/neutral)
 //	StatusPill:           compact status pill with optional leading dot
 //	StepRail:             sticky numbered nav for multi-step pages

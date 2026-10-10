@@ -147,7 +147,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		header,
 		resultNotice(ctx),
 		b.queueFilter(ctx, status, stats),
-		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager),
+		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
 	)
 }
 
@@ -213,7 +213,7 @@ func jobStatusBadge(ctx context.Context, status string) render.HTML {
 // last failed attempt returned. listed is the status the jobs were
 // listed under ("" for All). With replay, each failed row replays its
 // job and the answer returns to page.
-func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
+func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig, flush bool) render.HTML {
 	cols := []ui.Column{
 		{Key: "id", Header: i18nui.T(ctx, i18nui.KeyAdminColJob), Phone: ui.PhoneSubtitle},
 		{Key: "type", Header: i18nui.T(ctx, i18nui.KeyAdminColType), Phone: ui.PhoneTitle},
@@ -261,6 +261,7 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page 
 		Caption:       i18nui.T(ctx, i18nui.KeyAdminQueue),
 		CaptionHidden: true,
 		Responsive:    ui.ResponsiveRows,
+		Flush:         flush,
 		Pagination:    pager,
 		Ctx:           ctx,
 		Empty: ui.EmptyStateConfig{

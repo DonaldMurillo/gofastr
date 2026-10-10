@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- The admin dashboard follows the prototype: its figures are one
+  `ui.StatStrip` (new: one frame around up to six figures, two columns
+  on a phone) of plain cards (`StatCardConfig.Plain`), a Detail's
+  `admin.Metric.Tone` colours its line, and with a Queue the strip ends
+  with Failed jobs ("Needs a replay"). Failed jobs moved from their own
+  card into Needs attention, whose rows sit in the card unframed
+  (`ui.DataTableConfig.Flush`, `entityui.ListBuilder.Flush`). A
+  DataTable phone row with nothing to select keeps no empty lead column.
 - `ui.SelectionConfig.Floating` holds a list's bulk bar to the bottom
   of the screen under the rows, as an inverse pill with "{n} selected"
   and a clear button (`Form`), built on the new `headless.Selection`
@@ -1311,6 +1319,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   activity.
 
 ### Changed
+- `admin.Config.Metrics` holds at most six figures (five with a Queue),
+  the strip's size; a `Tone` on a top-level metric fails the boot.
 - The admin's page-theme picker (`admin.Config.Themes`) moved from the
   toolbar to the account page's Appearance card, as its Look row (new
   key `ui.admin.look`). In a longer language the toolbar's picker

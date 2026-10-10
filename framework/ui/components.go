@@ -886,6 +886,10 @@ type StatCardConfig struct {
 	// one more), outside the label's link.
 	Action render.HTML
 
+	// Plain draws no frame (border, fill, shadow, corners): a figure
+	// inside a StatStrip, whose frame is the strip's.
+	Plain bool
+
 	ID    string
 	Class string
 
@@ -939,7 +943,7 @@ func StatCard(cfg StatCardConfig) render.HTML {
 		Action:     cfg.Action,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
-		Parts:      rootClassParts(cfg.Class),
+		Parts:      rootClassParts(strings.TrimSpace(modifierClass("fui-stat-card--plain", cfg.Plain) + " " + cfg.Class)),
 	}, statCardClasses))
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 func ordersConfig() entity.EntityConfig {
@@ -148,5 +149,38 @@ func TestDashboardNew(t *testing.T) {
 	if _, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
 		Config{Entities: []string{"orders"}, DashboardNew: "nope"}, nil); err == nil {
 		t.Errorf("DashboardNew accepted an entity the admin does not expose")
+	}
+}
+
+// The figures are one ui.StatStrip of plain cards, a Detail's Tone
+// colours its line, and Init caps the strip at six figures.
+func TestMetricsAreOneStrip(t *testing.T) {
+	x := ordersEnv(t, Config{Entities: []string{"orders"}, Metrics: []Metric{
+		{Label: "Open orders", Entity: "orders", Where: `status = "open"`},
+		{Label: "Late", Entity: "orders", Where: `status = "late"`,
+			Detail: &Metric{Label: "owed", Agg: "sum", Field: "amount", Where: `status = "late"`, Format: "money", Tone: ui.TrendDown}},
+	}})
+	dash := get(x.as(theAdmin), "/admin").Body.String()
+	for _, want := range []string{`fui-stat-strip fui-stat-strip--2`, `fui-stat-card--plain`, `fui-stat-card__trend--down`} {
+		if !strings.Contains(dash, want) {
+			t.Errorf("the dashboard lacks %q:\n%s", want, dash)
+		}
+	}
+	if !strings.Contains(get(x.as(theAdmin), "/admin/_metric/1").Body.String(), `fui-stat-card--plain`) {
+		t.Error("a polled figure is not the strip's plain card")
+	}
+	seven := make([]Metric, 7)
+	for i := range seven {
+		seven[i] = Metric{Label: "x", Entity: "orders"}
+	}
+	for name, ms := range map[string][]Metric{
+		"seven figures":  seven,
+		"unknown tone":   {{Label: "x", Entity: "orders", Detail: &Metric{Label: "y", Tone: "sideways"}}},
+		"top-level tone": {{Label: "x", Entity: "orders", Tone: ui.TrendUp}},
+	} {
+		if _, _, err := trySetup(t, map[string]entity.EntityConfig{"orders": ordersConfig()},
+			Config{Entities: []string{"orders"}, Metrics: ms}, nil); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

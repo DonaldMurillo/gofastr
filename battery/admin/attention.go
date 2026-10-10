@@ -93,8 +93,13 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 			"view":   i18nui.ViewLabel(ctx, nil, w.Entity, v.Key, v.Label),
 		})
 		lists = append(lists, b.ui.List(w.Entity).Base(b.entityBase(e)).Key("attn"+strconv.Itoa(i)).
-			View(w.View).Columns(w.Columns...).Top(rows).Embedded().NoCreate().Heading(heading, 3).
+			View(w.View).Columns(w.Columns...).Top(rows).Embedded().Flush().NoCreate().Heading(heading, 3).
 			Actions(headerLink(i18nui.T(ctx, i18nui.KeyAdminViewAll), href)).RenderCtx(ctx))
+	}
+	if b.cfg.Queue != nil {
+		if jobs := b.failedJobs(ctx); jobs != "" {
+			lists = append(lists, jobs)
+		}
 	}
 	title := i18nui.T(ctx, i18nui.KeyAdminAttention)
 	if len(lists) == 0 {

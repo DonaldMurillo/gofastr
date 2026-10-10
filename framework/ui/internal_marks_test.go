@@ -781,6 +781,7 @@ var kitComponents = []kitComponent{
 	{name: "Spinner", fn: Spinner},
 	{name: "Stack", fn: Stack},
 	{name: "StatCard", fn: StatCard},
+	{name: "StatStrip", fn: StatStrip, prep: prepSet("Cells", []render.HTML{render.HTML("<p>figure</p>")})},
 	{name: "StatusBadge", fn: StatusBadge},
 	{name: "StatusPill", fn: StatusPill},
 	{name: "StepRail", fn: StepRail},

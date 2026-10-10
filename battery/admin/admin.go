@@ -175,7 +175,8 @@ type Config struct {
 	Cards []Card
 
 	// Metrics are the figures in the strip at the top of the dashboard,
-	// in order: counts and sums over exposed entities.
+	// in order: counts and sums over exposed entities. The strip holds
+	// six; with a Queue, the sixth is its Failed jobs figure.
 	Metrics []Metric
 
 	// Attention are the list views the dashboard's Needs attention panel
@@ -388,6 +389,13 @@ func (b *Battery) checkConfig() error {
 		if c.Poll < 0 {
 			return fmt.Errorf("admin: Cards[%d] (%s) has a negative Poll", i, c.Key)
 		}
+	}
+	most := maxFigures
+	if b.cfg.Queue != nil {
+		most--
+	}
+	if len(b.cfg.Metrics) > most {
+		return fmt.Errorf("admin: Metrics holds %d figures; the strip takes at most %d (%d, less one for the Failed jobs figure a Queue adds)", len(b.cfg.Metrics), most, maxFigures)
 	}
 	for i, m := range b.cfg.Metrics {
 		if err := b.checkMetric(m, ""); err != nil {

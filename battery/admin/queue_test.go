@@ -249,3 +249,30 @@ func TestQueueUnwiredHasNoPage(t *testing.T) {
 		t.Error("the sidebar links an unwired queue")
 	}
 }
+
+// With a Queue the strip ends with Failed jobs, linking to the failed
+// filter and saying it needs a replay; the failed rows, each with
+// Replay, sit in Needs attention, and there is no separate card.
+func TestDashboardFailedJobsFigure(t *testing.T) {
+	q := &fakeQueue{jobs: failedJobs("j1", "j2"), stats: queue.JobStats{"failed": 2}}
+	x := setup(t, nil, Config{Queue: q}, nil)
+	dash := get(x.as(theAdmin), "/admin").Body.String()
+	for _, want := range []string{"Failed jobs", `href="/admin/queue?status=failed"`, "Needs a replay", "fui-stat-card__trend--down", `data-cui-poll-src="/admin/_metric/jobs"`} {
+		if !strings.Contains(dash, want) {
+			t.Errorf("the dashboard lacks %q:\n%s", want, dash)
+		}
+	}
+	att := dash[strings.Index(dash, "Needs attention"):]
+	if !strings.Contains(att, "/admin/queue/_replay/j1") {
+		t.Errorf("the failed rows are not in Needs attention:\n%s", att)
+	}
+	if strings.Contains(dash, ">Failed jobs</h2>") {
+		t.Errorf("Failed jobs is still a card of its own too:\n%s", dash)
+	}
+	if body := get(x.as(theAdmin), "/admin/_metric/jobs").Body.String(); !strings.Contains(body, ">2<") {
+		t.Errorf("the polled figure = %q", body)
+	}
+	if rr := get(x.as(aReader), "/admin/_metric/jobs"); rr.Code != http.StatusForbidden {
+		t.Errorf("SECURITY: a reader read the jobs figure: %d", rr.Code)
+	}
+}

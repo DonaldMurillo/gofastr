@@ -217,6 +217,10 @@ type DataTableConfig struct {
 	// two-line rows, both via container queries.
 	Responsive ResponsiveMode
 
+	// Flush drops the table's frame (border, corners, fill): rows that
+	// sit inside a card, whose frame is the card's.
+	Flush bool
+
 	// Ctx carries the per-request context used to resolve i18n
 	// strings (empty-state labels, sort aria-labels, pagination
 	// labels). When nil, English fallbacks are returned.
@@ -433,6 +437,9 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		rootClass = "fui-data-table--responsive-cards " + rootClass
 	case ResponsiveRows:
 		rootClass = "fui-data-table--responsive-rows " + rootClass
+	}
+	if cfg.Flush {
+		rootClass = "fui-data-table--flush " + rootClass
 	}
 	if len(cfg.Rows) == 0 {
 		rootClass = "is-empty " + rootClass

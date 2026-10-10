@@ -62,6 +62,8 @@ const (
 	KeyAdminCardNew      Key = "ui.admin.cardNew"      // "New"
 	KeyAdminCountMany    Key = "ui.admin.countMany"    // "{count}+"
 	KeyAdminFailedJobs   Key = "ui.admin.failedJobs"   // "Failed jobs"
+	KeyAdminNeedsReplay  Key = "ui.admin.needsReplay"  // "Needs a replay"
+	KeyAdminMetrics      Key = "ui.admin.metrics"      // "Key figures"
 	KeyAdminNoFailedJobs Key = "ui.admin.noFailedJobs" // "No failed jobs."
 	KeyAdminRecent       Key = "ui.admin.recent"       // "Recent activity"
 	KeyAdminNoActivity   Key = "ui.admin.noActivity"   // "No activity yet."
@@ -271,6 +273,8 @@ var adminDefaults = map[Key]string{
 	KeyAdminCardNew:            "New",
 	KeyAdminCountMany:          "{count}+",
 	KeyAdminFailedJobs:         "Failed jobs",
+	KeyAdminNeedsReplay:        "Needs a replay",
+	KeyAdminMetrics:            "Key figures",
 	KeyAdminNoFailedJobs:       "No failed jobs.",
 	KeyAdminRecent:             "Recent activity",
 	KeyAdminNoActivity:         "No activity yet.",

@@ -37,6 +37,7 @@ type ListBuilder struct {
 	saved    bool
 	counts   bool
 	embedded bool
+	flush    bool
 	top      bool
 	// layoutSwitch draws the Table / Cards switch and reads the as param.
 	layoutSwitch bool
@@ -172,6 +173,10 @@ func (b *ListBuilder) TabCounts() *ListBuilder { b.counts = true; return b }
 // rows with no view tabs, search or filters, and a one-line empty
 // state when there are none. Sort and pager stay, keyed as ever.
 func (b *ListBuilder) Embedded() *ListBuilder { b.embedded = true; return b }
+
+// Flush draws the table without its frame: rows inside a card, whose
+// frame is the card's (a dashboard's Needs attention).
+func (b *ListBuilder) Flush() *ListBuilder { b.flush = true; return b }
 
 // Top previews the list: its first n rows in the view's own order, with
 // no pager, no sort controls and no row menu (each row still links to

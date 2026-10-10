@@ -482,7 +482,8 @@ _ = list.RenderCtx(ctx)
   header holding the heading, the row count and a small "Add
   <singular>" button, then the rows with no view tabs, search, filters
   or bulk selection, and a one-line empty state when there are none.
-  Sort and pager stay, keyed as ever.
+  Sort and pager stay, keyed as ever. `.Flush()` drops the table's
+  frame, for rows inside a card whose frame is the card's.
 
 - **A preview** (`.Top(n)`) shows the first `n` rows in the view's own
   order, with no pager, sort controls or row menu (each row still links

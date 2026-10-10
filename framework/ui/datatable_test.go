@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -550,4 +551,21 @@ func TestDataTable_ResponsiveRowsNeedsTitle(t *testing.T) {
 		Columns:    []Column{{Key: "name", Header: "Name"}},
 		Responsive: ResponsiveRows,
 	})
+}
+
+// Flush drops the table's frame, for rows that sit inside a card.
+func TestDataTableFlush(t *testing.T) {
+	cfg := DataTableConfig{Columns: []Column{{Key: "a", Header: "A"}}, Rows: []Row{{ID: "1", Cells: map[string]render.HTML{"a": "x"}}}}
+	if strings.Contains(string(DataTable(cfg)), "fui-data-table--flush") {
+		t.Error("a table is flush without asking")
+	}
+	cfg.Flush = true
+	if !strings.Contains(string(DataTable(cfg)), "fui-data-table--flush") {
+		t.Error("Flush drew no modifier")
+	}
+	css := dataTableStyle.Entry().CSSFor(style.DefaultTheme())
+	at := strings.Index(css, ".fui-data-table--flush .fui-data-table__scroll")
+	if at < 0 || !strings.Contains(css[at:at+200], "border: 0") {
+		t.Errorf("the flush rule does not drop the frame:\n%s", css)
+	}
 }

@@ -14,7 +14,7 @@ var adminMetrics = []admin.Metric{
 	{Label: "Active customers", Entity: "customers", Where: `status = "active"`, View: "active",
 		Detail: &admin.Metric{Label: "trialing", Where: `status = "trialing"`}},
 	{Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
-		Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount", Where: `status = "past_due"`, Format: "money"}},
+		Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount", Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
 }
 
 // adminAttention is the Needs attention panel beside the recent

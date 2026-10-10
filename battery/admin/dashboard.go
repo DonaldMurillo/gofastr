@@ -61,13 +61,10 @@ func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) rend
 	}
 	parts = append(parts, b.entityCards(ctx)...)
 	var ops []render.HTML
-	if b.cfg.Queue != nil {
-		ops = append(ops, b.failedJobsCard(ctx))
-	}
 	if b.db != nil {
 		ops = append(ops, b.recentCard(ctx))
 	}
-	if len(b.cfg.Attention) > 0 {
+	if len(b.cfg.Attention) > 0 || b.cfg.Queue != nil {
 		ops = append(ops, b.attentionCard(ctx))
 	}
 	if len(ops) > 0 {
@@ -170,31 +167,33 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	})
 }
 
-// failedJobsCard is the failed jobs count and the newest failures, each
-// with Replay.
-func (b *Battery) failedJobsCard(ctx context.Context) render.HTML {
-	title := i18nui.T(ctx, i18nui.KeyAdminFailedJobs)
-	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminQueue), b.cfg.PathPrefix+"/queue?status=failed")
+// failedJobs is Needs attention's failed jobs: the count, a link to
+// the failed filter and the newest rows, each with Replay. Nothing
+// failed draws nothing; a list the queue could not give says so.
+func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
 		b.logger().Error("admin: list failed jobs", "error", err)
-		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed))))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed)))
 	}
-	count := ""
+	if len(jobs) == 0 {
+		return ""
+	}
+	var count render.HTML
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
-		count = strconv.Itoa(stats["failed"])
+		count = ui.Muted(render.Text(strconv.Itoa(stats["failed"])))
 	}
 	_, replay := b.replayable()
-	body := ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoFailedJobs), HeadingLevel: 3})
-	if len(jobs) > 0 {
-		body = b.jobsTable(ctx, jobs, "failed", b.cfg.PathPrefix, replay, 3, nil)
-	}
-	cfg := ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}
-	if count != "" {
-		cfg.Description = count
-	}
-	return ui.Card(cfg, body)
+	return render.Join(
+		ui.PageHeader(ui.PageHeaderConfig{
+			Title:        i18nui.T(ctx, i18nui.KeyAdminFailedJobs),
+			Badge:        count,
+			Actions:      headerLink(i18nui.T(ctx, i18nui.KeyAdminViewAll), b.cfg.PathPrefix+"/queue?status=failed"),
+			HeadingLevel: 3,
+			Compact:      true,
+		}),
+		b.jobsTable(ctx, jobs, "failed", b.cfg.PathPrefix, replay, 3, nil, true),
+	)
 }
 
 // recentCard is the newest audit rows, scoped as the Audit log page is.

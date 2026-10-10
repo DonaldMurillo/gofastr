@@ -54,7 +54,7 @@ not register fails boot.
 
 | Route | Page |
 |---|---|
-| `GET /admin` | Dashboard: a count card per entity with when its newest record was written, failed jobs, recent activity, the app's cards |
+| `GET /admin` | Dashboard: the figures strip (with a Queue, Failed jobs last), a count card per entity with when its newest record was written, recent activity, Needs attention (watched views and failed jobs), the app's cards |
 | `GET /admin/search?q=` | Search results: the palette's scriptless twin |
 | `GET /admin/shortcuts` | The keyboard shortcuts: the help sheet's scriptless twin |
 | `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
@@ -172,11 +172,17 @@ admin.New(admin.Config{
 - **Metrics** are the strip at the top of the dashboard, above the
   entity cards: a count or a sum over an exposed entity, read in the
   admin's scope under the same 2-second deadline as the entity cards,
-  each polled from `GET <PathPrefix>/_metric/<index>`. `View` links the
-  figure to one of the entity's list views; `Detail` is a second figure
-  under the value, its label after the number. Boot fails on a metric
-  that could only ever draw "—": an unknown entity, agg, field, filter,
-  format, view or icon.
+  each polled from `GET <PathPrefix>/_metric/<index>`, all in one
+  `ui.StatStrip`. `View` links the figure to one of the entity's list
+  views; `Detail` is a second figure under the value, its label after
+  the number, and the Detail's `Tone` colours it (`ui.TrendDown` red,
+  `ui.TrendUp` green). With a `Queue`, the strip ends with a Failed jobs
+  figure (polled from `GET <PathPrefix>/_metric/jobs`) that links to the
+  failed filter and says "Needs a replay" while any wait. The strip
+  holds six figures, so `Metrics` holds at most six, five with a Queue.
+  Boot fails on a metric that could only ever draw "—": an unknown
+  entity, agg, field, filter, format, view or icon, and on a Tone
+  anywhere but a Detail.
 
   ```go
   Metrics: []admin.Metric{
@@ -184,7 +190,7 @@ admin.New(admin.Config{
           Where: `status = "active"`, Format: "money", View: "active"},
       {Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
           Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount",
-              Where: `status = "past_due"`, Format: "money"}},
+              Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
   },
   ```
 - **DashboardNew** names an exposed entity whose New button heads the
@@ -195,9 +201,11 @@ admin.New(admin.Config{
   (`View`); the panel previews the first `Rows` rows (5 by default, at
   most 20) of every watched view that has any, with `Columns` replacing
   the list's columns, a link to the full view, and no pager or sorting.
-  A view with no rows draws nothing; with none left the panel says
-  "Nothing needs attention." Boot fails on an unknown entity, view or
-  column.
+  A view with no rows draws nothing. With a `Queue` the panel also lists
+  the newest failed jobs, each with Replay, under a link to the failed
+  filter. With nothing left it says "Nothing needs attention." The rows
+  sit in the card with no table frame (`ListBuilder.Flush`). Boot fails
+  on an unknown entity, view or column.
 
   ```go
   Attention: []admin.Watch{
@@ -277,7 +285,7 @@ import "github.com/DonaldMurillo/gofastr/battery/queue"
 ```go
 q, _ := queue.NewDBQueue(db)
 app.RegisterBattery(admin.New(admin.Config{
-    Queue: q,  // the Jobs page and the dashboard's failed jobs
+    Queue: q,  // the Jobs page, the Failed jobs figure and Needs attention's failed jobs
     DB:    db, // the audit log; defaults to the app's DB
 }))
 ```

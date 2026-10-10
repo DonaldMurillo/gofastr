@@ -855,6 +855,18 @@ func statCardCSS(_ style.Theme) string {
   border-radius: var(--radii-xl);
   box-shadow: var(--shadow-xs);
 }
+[data-cui-comp="ui-stat-card"].fui-stat-card--plain {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* Two figures to a phone's row leave each half the width: a plain
+   figure steps its value down and its padding in so "$1,194.00" fits. */
+@media (max-width: 45rem) {
+  [data-cui-comp="ui-stat-card"].fui-stat-card--plain { padding: var(--spacing-lg, 16px); }
+  [data-cui-comp="ui-stat-card"].fui-stat-card--plain .fui-stat-card__value { font-size: var(--text-2xl); }
+}
 [data-cui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
@@ -1220,6 +1232,11 @@ func dataTableCSS(_ style.Theme) string {
   border-radius: var(--radii-lg);
   background: var(--color-surface);
 }
+[data-cui-comp="ui-data-table"].fui-data-table--flush .fui-data-table__scroll {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
 /* The scroll region is a keyboard tab stop (tabindex=0, so it can be
    scrolled by keyboard whenever it overflows), so its focus state
    must be visible. */
@@ -1509,6 +1526,15 @@ func dataTableCSS(_ style.Theme) string {
     row-gap: var(--spacing-xs, 2px);
     padding: calc(var(--spacing-sm, 4px) * 3) calc(var(--spacing-sm, 4px) * 3.5);
     border-block-end: var(--stroke-thin, 1px) solid var(--color-border);
+  }
+  /* A row with nothing to select keeps no empty lead column or gap. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:not(:has(> td.is-phone-lead)) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "title meta end" "subtitle detail end";
+  }
+  /* Flush rows line up with the card's own content. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows.fui-data-table--flush .fui-data-table__table tbody tr {
+    padding-inline: 0;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:last-child {
     border-block-end: 0;
