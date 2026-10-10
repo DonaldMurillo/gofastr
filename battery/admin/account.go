@@ -2,11 +2,14 @@ package admin
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -16,7 +19,10 @@ import (
 // the admin's theme in this browser, and their password. It reads only
 // the caller's own record, so it is not elevated.
 
-const passwordFormID = "admin-password-form"
+const (
+	passwordFormID = "admin-password-form"
+	nameFormID     = "admin-name-form"
+)
 
 // renderAccount draws <prefix>/account.
 func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render.HTML {
@@ -39,7 +45,8 @@ func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render
 // state when the store records one) and roles.
 func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	var items []ui.DetailItem
-	if name := userName(ctx); name != "" {
+	// With a name form the form shows the name; a row would repeat it.
+	if name := b.userName(ctx); name != "" && b.nameStore() == nil {
 		items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminName), Value: render.Text(name)})
 	}
 	if email := userEmail(ctx); email != "" {
@@ -62,11 +69,68 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 		roles = ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, tags...)
 	}
 	items = append(items, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyAdminRoles), Value: roles})
+	body := []render.HTML{ui.DetailList(ui.DetailListConfig{Items: items})}
+	if b.nameStore() != nil {
+		body = append(body, b.nameForm(ctx))
+	}
 	return ui.Card(ui.CardConfig{
 		Heading:      i18nui.T(ctx, i18nui.KeyAdminProfile),
 		HeadingLevel: 2,
 		Description:  i18nui.T(ctx, i18nui.KeyAdminProfileSub),
-	}, ui.DetailList(ui.DetailListConfig{Items: items}))
+	}, body...)
+}
+
+// nameForm sets the caller's display name, the name the account menu
+// and its avatar show. Saving returns to the page, so the shell redraws
+// with the new name.
+func (b *Battery) nameForm(ctx context.Context) render.HTML {
+	action := b.cfg.PathPrefix + "/account/_name"
+	return ui.Form(ui.FormConfig{
+		Action:      action,
+		ID:          nameFormID,
+		SubmitLabel: i18nui.T(ctx, i18nui.KeyAdminSaveName),
+		ExtraAttrs:  interactive.Post(action).OnSuccess(interactive.Navigate(b.cfg.PathPrefix + "/account")).Attrs(),
+	}, ui.TextField(ui.TextFieldConfig{
+		Name: "name", ID: nameFormID + "-name", Label: i18nui.T(ctx, i18nui.KeyAdminName),
+		Value: b.userName(ctx), Help: i18nui.T(ctx, i18nui.KeyAdminNameHelp),
+		AutoComplete: "name", MaxLength: auth.MaxNameRunes,
+	}))
+}
+
+// handleName stores the caller's display name. It names the caller
+// only: a user_id in the body is not read.
+func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
+	page := b.cfg.PathPrefix + "/account"
+	vals, ok := b.readOps(w, r, page)
+	if !ok {
+		return
+	}
+	store := b.nameStore()
+	actor := adminActorID(r.Context())
+	if store == nil || actor == "" {
+		b.refuse(w, r, page, http.StatusNotImplemented, "failed")
+		return
+	}
+	switch err := store.SetUserName(r.Context(), actor, vals.Get("name")); {
+	case errors.Is(err, auth.ErrInvalidName):
+		b.refuse(w, r, page, http.StatusBadRequest, "name-refused")
+		return
+	case err != nil:
+		b.logger().Error("admin: set name", "error", textsafe.ScrubControlBytes(err.Error()))
+		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		return
+	}
+	b.done(w, r, page, "name-saved")
+}
+
+// nameStore is the auth store's NameStore, or nil without Auth or a
+// store that keeps no name.
+func (b *Battery) nameStore() auth.NameStore {
+	if b.cfg.Auth == nil {
+		return nil
+	}
+	s, _ := b.cfg.Auth.UserStore().(auth.NameStore)
+	return s
 }
 
 // appearanceCard is the colour scheme, the same control and storage
@@ -165,15 +229,27 @@ func (b *Battery) hasPassword(ctx context.Context) (has, known bool) {
 	return v, true
 }
 
-// userName and userEmail read the signed-in user's name and email, or
-// "" when the user type carries none.
-func userName(ctx context.Context) string {
-	u, _ := handlerUser(ctx).(interface{ GetName() string })
-	if u == nil {
+// userName reads the signed-in user's display name: the user type's own
+// GetName, else the auth store's NameStore, else "".
+func (b *Battery) userName(ctx context.Context) string {
+	if u, _ := handlerUser(ctx).(interface{ GetName() string }); u != nil {
+		if name := u.GetName(); name != "" {
+			return name
+		}
+	}
+	store, actor := b.nameStore(), adminActorID(ctx)
+	if store == nil || actor == "" {
 		return ""
 	}
-	return u.GetName()
+	name, err := store.UserName(ctx, actor)
+	if err != nil {
+		return ""
+	}
+	return name
 }
+
+// userEmail reads the signed-in user's email, or "" when the user type
+// carries none.
 
 func userEmail(ctx context.Context) string {
 	u, _ := handlerUser(ctx).(interface{ GetEmail() string })

@@ -462,7 +462,7 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 // accountMenu is the signed-in user, their roles, the account page,
 // and Sign out.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
-	name := displayName(ctx)
+	name := b.displayName(ctx)
 	items := []ui.MenuItem{
 		{Label: i18nui.TVars(ctx, i18nui.KeyAdminSignedInAs, map[string]string{"name": name}), Disabled: true},
 	}
@@ -494,11 +494,11 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 
 // displayName names the signed-in user: their name, else their email,
 // else their id.
-func displayName(ctx context.Context) string {
+func (b *Battery) displayName(ctx context.Context) string {
 	if handlerUser(ctx) == nil {
 		return ""
 	}
-	return cmp.Or(userName(ctx), userEmail(ctx), adminActorID(ctx))
+	return cmp.Or(b.userName(ctx), userEmail(ctx), adminActorID(ctx))
 }
 
 // handlerUser is the signed-in user the auth middleware set, or nil.

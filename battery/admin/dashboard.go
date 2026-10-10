@@ -300,6 +300,7 @@ func (b *Battery) mountOps(r *router.Router) {
 	}
 	if b.cfg.Auth != nil {
 		post("/rbac/_assign", b.handleAssign)
+		post("/account/_name", b.handleName)
 	}
 	if b.cfg.ProcessModules != nil {
 		post("/modules/_enable", b.handleModuleEnable)

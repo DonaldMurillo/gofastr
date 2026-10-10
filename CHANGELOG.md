@@ -8,6 +8,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- Users can carry a display name: `auth.NameStore` (`UserName`,
+  `SetUserName`), implemented by `EntityUserStore` over a `name` column
+  that `EnsureSchema` adds (`UserFieldMap.Name`), with `auth.CleanName`
+  refusing control, bidi and zero-width characters and names over
+  `MaxNameRunes`. The admin's account page sets it
+  (`POST <PathPrefix>/account/_name`, the caller only), and the account
+  menu and avatar use it: Meridian's seeded admin reads "Admin Meridian",
+  AM, as in the prototype.
 - `ui.SidebarConfig.RaisedCurrent` draws the current page's link as a
   raised pill (the surface, a hairline ring, a small shadow) instead of a
   grey fill; the admin's nav uses it, as the prototype's does.

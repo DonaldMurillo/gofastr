@@ -49,7 +49,7 @@ func TestPageAccessRefuses(t *testing.T) {
 	built := 0
 	p := page("/billing", "Billing", func(*http.Request) (component.Component, error) { built++; return text("money"), nil })
 	p.Nav = &entity.EntityNav{}
-	p.Access = func(ctx context.Context) bool { return displayName(ctx) == "boss-1" }
+	p.Access = func(ctx context.Context) bool { return adminActorID(ctx) == "boss-1" }
 	x := setup(t, nil, Config{Pages: []Page{p}}, nil)
 	rr := get(x.as(theAdmin), "/admin/billing")
 	if rr.Code != http.StatusForbidden || strings.Contains(rr.Body.String(), "money") {

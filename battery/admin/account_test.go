@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -102,5 +103,51 @@ func TestAccountPageWithoutAuth(t *testing.T) {
 	}
 	if rr := get(x.as(nil), "/admin/account"); rr.Code == http.StatusOK {
 		t.Errorf("SECURITY: an anonymous caller read the account page: %d", rr.Code)
+	}
+}
+
+// The account page sets the caller's display name through the store's
+// NameStore, and the shell then names them by it: the account menu's
+// "Signed in as" and the avatar's two initials.
+func TestAccountNameNamesTheShell(t *testing.T) {
+	x, users, u := accountEnv(t)
+	ctx := context.Background()
+	other, err := users.CreateUser(ctx, "grace@example.com", "hash", []string{"user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := x.as(u)
+	form := regexp.MustCompile(`(?s)<form[^>]*id="admin-name-form".*?</form>`).FindString(get(h, "/admin/account").Body.String())
+	if !strings.Contains(form, `data-cui-rpc="/admin/account/_name"`) || !strings.Contains(form, `name="name"`) {
+		t.Fatalf("no name form posting to the account route: %s", form)
+	}
+	// A user_id rides along: the route names the caller, never it.
+	rr := post(h, "/admin/account/_name", url.Values{"name": {"  Ada Lovelace "}, "user_id": {other.GetID()}})
+	if rr.Code != http.StatusSeeOther || !strings.Contains(rr.Header().Get("Location"), "result=name-saved") {
+		t.Fatalf("save name: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+	if name, _ := users.UserName(ctx, u.GetID()); name != "Ada Lovelace" {
+		t.Errorf("the caller's name is %q", name)
+	}
+	if name, _ := users.UserName(ctx, other.GetID()); name != "" {
+		t.Errorf("SECURITY: the post named another user %q", name)
+	}
+	shell := get(h, "/admin").Body.String()
+	if !strings.Contains(shell, "Signed in as Ada Lovelace") {
+		t.Error("the account menu does not use the name")
+	}
+	if !strings.Contains(shell, ">AL<") {
+		t.Error("the avatar does not draw the name's two initials")
+	}
+	// A name with a control character is refused and changes nothing.
+	rr = post(h, "/admin/account/_name", url.Values{"name": {"Ada\nLovelace"}})
+	if !strings.Contains(rr.Header().Get("Location"), "result=name-refused") {
+		t.Errorf("a name with a newline: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+	if name, _ := users.UserName(ctx, u.GetID()); name != "Ada Lovelace" {
+		t.Errorf("a refused name changed the stored one to %q", name)
+	}
+	if rr := post(x.as(nil), "/admin/account/_name", url.Values{"name": {"Mallory"}}); rr.Code == http.StatusSeeOther && strings.Contains(rr.Header().Get("Location"), "name-saved") {
+		t.Error("SECURITY: an anonymous caller saved a name")
 	}
 }

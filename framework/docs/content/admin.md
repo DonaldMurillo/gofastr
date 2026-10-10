@@ -236,7 +236,11 @@ never elevated.
 
 - **Profile**: name and email, with a Verified or Unverified badge when
   the auth store implements `auth.EmailVerifiedChecker`, and the roles
-  the caller holds.
+  the caller holds. When the store implements `auth.NameStore` the name
+  is a form posting to `POST <PathPrefix>/account/_name`, which names
+  the caller only (a `user_id` in the body is not read) and refuses what
+  `auth.CleanName` refuses. The account menu and its avatar's initials
+  use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
   the browser like the toolbar's toggle.
 - **Password** (only with `Config.Auth`): current, new and confirm

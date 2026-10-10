@@ -389,6 +389,16 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 					log.Printf("WARN: admin %q seeded but its email was not marked verified: %v", "admin@meridian.dev", verr)
 				}
 			}
+			// A seeded admin gets a display name, so the admin's account
+			// menu and avatar read "Admin Meridian" / AM. Only while it has
+			// none: a name the admin chose on the account page stays.
+			if ns, ok := authCfg.UserStore.(auth.NameStore); ok && u != nil && slices.Contains(u.GetRoles(), "admin") {
+				if name, nerr := ns.UserName(context.Background(), u.GetID()); nerr == nil && name == "" {
+					if nerr := ns.SetUserName(context.Background(), u.GetID(), "Admin Meridian"); nerr != nil {
+						log.Printf("WARN: admin %q seeded without a display name: %v", "admin@meridian.dev", nerr)
+					}
+				}
+			}
 		} else {
 			log.Printf("WARN: ADMIN_SEED_PASSWORD is not set: admin %q was NOT seeded; on a fresh database the back-office login will fail", "admin@meridian.dev")
 		}

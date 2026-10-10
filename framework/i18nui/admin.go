@@ -30,6 +30,10 @@ const (
 	KeyAdminProfile         Key = "ui.admin.profile"         // "Profile"
 	KeyAdminProfileSub      Key = "ui.admin.profileSub"      // "Who you are signed in as."
 	KeyAdminName            Key = "ui.admin.name"            // "Name"
+	KeyAdminNameHelp        Key = "ui.admin.nameHelp"        // "Shown in the account menu. Leave it empty to show your email."
+	KeyAdminSaveName        Key = "ui.admin.saveName"        // "Save name"
+	KeyAdminNameSaved       Key = "ui.admin.nameSaved"       // "Name saved"
+	KeyAdminNameRefused     Key = "ui.admin.nameRefused"     // "Use a name of at most 100 characters, with no control characters."
 	KeyAdminEmail           Key = "ui.admin.email"           // "Email"
 	KeyAdminVerified        Key = "ui.admin.verified"        // "Verified"
 	KeyAdminUnverified      Key = "ui.admin.unverified"      // "Unverified"
@@ -249,6 +253,10 @@ var adminDefaults = map[Key]string{
 	KeyAdminProfile:            "Profile",
 	KeyAdminProfileSub:         "Who you are signed in as.",
 	KeyAdminName:               "Name",
+	KeyAdminNameHelp:           "Shown in the account menu. Leave it empty to show your email.",
+	KeyAdminSaveName:           "Save name",
+	KeyAdminNameSaved:          "Name saved",
+	KeyAdminNameRefused:        "Use a name of at most 100 characters, with no control characters.",
 	KeyAdminEmail:              "Email",
 	KeyAdminVerified:           "Verified",
 	KeyAdminUnverified:         "Unverified",
