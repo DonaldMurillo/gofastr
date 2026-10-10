@@ -175,9 +175,16 @@ func TestE2E_SelectionCopiesCheckedRows(t *testing.T) {
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Poll(`!!document.querySelector('style[data-cui-style="ui-selection"], link[data-cui-style="ui-selection"]')`, nil,
 			chromedp.WithPollingTimeout(5*time.Second)),
-		chromedp.Sleep(300*time.Millisecond),
+		// Both behaviours must be bound before the stub replaces toast and
+		// before a click: the count module shows the floating bar, and
+		// the copy module owns the click. A fixed sleep raced them on a
+		// slow CI runner, so the click waited on a bar that never showed.
+		chromedp.Poll(`!!(window.__gofastr.loadedModules || {})['headless'] && !!(window.__gofastr.loadedModules || {})['headless-selection-copy']`, nil,
+			chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(stub, nil),
 		chromedp.Click(`#r2`, chromedp.ByID),
+		chromedp.Poll(`document.querySelector('[data-hui-selection-copy]').offsetParent !== null`, nil,
+			chromedp.WithPollingTimeout(5*time.Second)),
 		chromedp.Click(`[data-hui-selection-copy]`, chromedp.ByQuery),
 		chromedp.Poll(`window.__toasts.length > 0`, nil, chromedp.WithPollingTimeout(3*time.Second)),
 		chromedp.Evaluate(`window.__fetched`, &fetched),
