@@ -170,6 +170,11 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	return q.client.LPush(ctx, q.queueName, data)
 }
 
+// redisRecoveryTimeout bounds one recovery write in Dequeue (restoring or
+// quarantining a job already popped off the main list). A var so tests can
+// shrink it.
+var redisRecoveryTimeout = 5 * time.Second
+
 // Dequeue pops a job from the Redis list and moves it to the processing queue.
 // If types are specified, only jobs matching one of those types are returned;
 // non-matching jobs are pushed back onto the list.
@@ -187,6 +192,19 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 // forever. A job whose attempts exceed MaxAttempts at claim is moved to the
 // dead-letter queue instead of being handed out again.
 func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
+	// RPop is destructive. Once an item has left the main list, caller
+	// cancellation must not cancel the rollback or quarantine write that
+	// gives it a durable next home. Each recovery write gets its own
+	// detached, bounded context, minted when the write is needed: a deadline
+	// started before RPop could expire while RPop ran and hand the restore an
+	// already-dead context, and a quarantine write that spent its deadline
+	// must not leave the rollback behind it none.
+	recoveryPush := func(list string, values ...any) error {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+		defer cancel()
+		return q.client.LPush(rctx, list, values...)
+	}
+
 	typeSet := make(map[string]struct{}, len(types))
 	for _, t := range types {
 		typeSet[t] = struct{}{}
@@ -195,15 +213,23 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	// Restoring a type-miss job is the same durability step as Nack's push:
 	// the job was already RPop'd off the main list, so a discarded error
 	// here leaves it in no list at all while Dequeue reports an ordinary
-	// empty queue. Surface the first failure instead.
+	// empty queue. Surface the failure instead. The skipped jobs go back in
+	// one LPush under one deadline: a push per job, each with its own
+	// deadline, could hold a worker for maxSkipDrain deadlines against a
+	// dead backend. LPush of several values inserts them in argument order,
+	// the same list order as pushing them one at a time.
 	requeueSkipped := func(skipped []string) error {
-		var firstErr error
-		for _, s := range skipped {
-			if err := q.client.LPush(ctx, q.queueName, s); err != nil && firstErr == nil {
-				firstErr = fmt.Errorf("restore skipped job: %w", err)
-			}
+		if len(skipped) == 0 {
+			return nil
 		}
-		return firstErr
+		values := make([]any, len(skipped))
+		for i, s := range skipped {
+			values[i] = s
+		}
+		if err := recoveryPush(q.queueName, values...); err != nil {
+			return fmt.Errorf("restore skipped jobs: %w", err)
+		}
+		return nil
 	}
 
 	var skipped []string
@@ -242,13 +268,21 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
 			// A malformed entry must not take down the valid jobs we already
 			// RPop'd: re-enqueue them, then quarantine the bad entry to the
-			// dead-letter queue instead of silently dropping it.
-			rerr := requeueSkipped(skipped)
-			_ = q.client.LPush(ctx, q.deadLetterQueue, data)
-			if rerr != nil {
-				return Job{}, errors.Join(fmt.Errorf("unmarshal job: %w", err), rerr)
+			// dead-letter queue instead of silently dropping it. If quarantine
+			// is unavailable, restore the malformed entry to the main list so
+			// it remains durable and observable on the next attempt.
+			resultErr := fmt.Errorf("unmarshal job: %w", err)
+			if qerr := recoveryPush(q.deadLetterQueue, data); qerr != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
+				if restoreErr := recoveryPush(q.queueName, data); restoreErr != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
+				}
 			}
-			return Job{}, fmt.Errorf("unmarshal job: %w", err)
+			rerr := requeueSkipped(skipped)
+			if rerr != nil {
+				resultErr = errors.Join(resultErr, rerr)
+			}
+			return Job{}, resultErr
 		}
 
 		// Check type filter.
@@ -274,13 +308,16 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// the restored job from redelivering forever once the
 			// backend heals).
 			dlqData, _ := json.Marshal(job)
-			if err := q.client.LPush(ctx, q.deadLetterQueue, dlqData); err != nil {
-				_ = q.client.LPush(ctx, q.queueName, string(dlqData))
+			if err := recoveryPush(q.deadLetterQueue, dlqData); err != nil {
+				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
+				if restoreErr := recoveryPush(q.queueName, dlqData); restoreErr != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
+				}
 				rerr := requeueSkipped(skipped)
 				if rerr != nil {
-					return Job{}, errors.Join(fmt.Errorf("dequeue: dead-letter exhausted job: %w", err), rerr)
+					resultErr = errors.Join(resultErr, rerr)
 				}
-				return Job{}, fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
+				return Job{}, resultErr
 			}
 			continue
 		}
@@ -304,12 +341,15 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// on a later Dequeue. If the restore itself fails the job is
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
-			_ = q.client.LPush(ctx, q.queueName, string(bumped))
+			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
+			if restoreErr := recoveryPush(q.queueName, string(bumped)); restoreErr != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
+			}
 			rerr := requeueSkipped(skipped)
 			if rerr != nil {
-				return Job{}, errors.Join(fmt.Errorf("dequeue: track in processing: %w", err), rerr)
+				resultErr = errors.Join(resultErr, rerr)
 			}
-			return Job{}, fmt.Errorf("dequeue: track in processing: %w", err)
+			return Job{}, resultErr
 		}
 
 		// Re-enqueue skipped jobs. The claimed job is already recorded in

@@ -93,6 +93,19 @@ func TestLimiter_StoreDelegates(t *testing.T) {
 	}
 }
 
+func TestLimiter_ScopeSeparatorCannotCollide(t *testing.T) {
+	var seen []string
+	store := recordingStore{allow: true, seen: &seen}
+	first := NewLimiter(Config{Store: store, Scope: "auth"})
+	second := NewLimiter(Config{Store: store, Scope: "auth|reset"})
+
+	first.Allow("reset|victim")
+	second.Allow("victim")
+	if len(seen) != 2 || seen[0] == seen[1] {
+		t.Fatalf("distinct scopes collided in shared store: %v", seen)
+	}
+}
+
 // TestMiddleware_BlocksAfterMaxAndSetsRetryAfter is the general-purpose
 // quickstart: wrap any handler, hammer one IP, the MaxAttempts+1th response is
 // 429 carrying a Retry-After header.

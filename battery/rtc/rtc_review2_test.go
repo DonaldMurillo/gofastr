@@ -109,9 +109,13 @@ func TestStatusPublishesOnceOnLane(t *testing.T) {
 
 	a, _ := join(t, b1, "room1", "pA")
 	defer a.close()
+	// pB joins only once S2 holds pA: joining first races pA's join
+	// mirror, and pB is then rightly sent a live join for pA ahead of
+	// the status frames counted below.
+	waitFor(t, 2*time.Second, func() bool { return hasPeer(s2, "room1", "pA") }, "S2 sees pA")
 	b, _ := join(t, b2, "room1", "pB")
 	defer b.close()
-	waitFor(t, 2*time.Second, func() bool { return hasPeer(s2, "room1", "pA") && hasPeer(s1, "room1", "pB") }, "rosters to converge")
+	waitFor(t, 2*time.Second, func() bool { return hasPeer(s1, "room1", "pB") }, "rosters to converge")
 	a.expectEnv(t, "join")
 	time.Sleep(100 * time.Millisecond)
 	before := counted.publishes.Load()

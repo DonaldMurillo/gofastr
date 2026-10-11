@@ -138,6 +138,21 @@ empty, for relative links). A scheme-relative or bare-host value
 fails boot next to the declaration instead of shipping inside an
 emailed reset, verify, or sign-in link.
 
+`PasswordResetPlugin` sends its email off the request path, so a known
+address answers as fast as an unknown one. Forgot-password puts the
+message on a bounded queue (1,024 entries) drained by eight workers;
+`BodyTemplate` and `EmailSender.Send` run on a worker, each send with
+a 30-second deadline. The client already has its 200 by then, so a
+delivery can be dropped, with a `password-reset email delivery queue
+full` or `... delivery stopped` warning (hashed address only), when
+the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
+(an `AuthPluginOnStop`, so `AuthManager.OnStop` calls it at app
+shutdown) cancels sends in flight, closes the queue and waits for the
+workers, bounded by the context it is given. Once stopped, the plugin
+queues nothing more and starts no new workers. `MagicLinkPlugin.OnStop`
+likewise stops its expired-token reaper, and an `OnStart` after
+`OnStop` is refused.
+
 ## What the host app implements
 
 `auth.UserStore` is the only required interface. It maps email/ID to
