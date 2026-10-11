@@ -52,12 +52,13 @@ func listParamsFor(key string) listParams {
 // listState is one list render's resolved request state: what the URL,
 // the builder and Display asked for, after every refusal rule ran.
 type listState struct {
-	m    *meta
-	key  string // the namespacing key, "" for the page's one unkeyed list
-	p    listParams
-	q    url.Values
-	path string // the page's own path, for sort/page/view links
-	base string // the record-link base, b.Base or the page path
+	m          *meta
+	key        string // the namespacing key, "" for the page's one unkeyed list
+	p          listParams
+	q          url.Values
+	path       string // the page's own path, for sort/page/view links
+	base       string // the record-link base, b.Base or the page path
+	createPath string // the complete create-screen path, empty when unavailable
 	// relBase is each relation column's related-record base, set when
 	// the UI has a record path for the related entity.
 	relBase map[string]string
@@ -136,19 +137,19 @@ func (s *listState) facets() []string {
 	return out
 }
 
-// createHref is New's link: <base>/create, carrying each Where pin as a
+// createHref is New's link, carrying each Where pin as a
 // ?prefill_<field>= so the create lands pointed at the list's context
 // (a payments list on an invoice creates a payment for that invoice).
 // The create screen ignores a pin its form may not set.
 func (s *listState) createHref() string {
 	if len(s.pins) == 0 {
-		return s.base + "/create"
+		return s.createPath
 	}
 	q := url.Values{}
 	for _, w := range s.pins {
 		q.Set("prefill_"+w.field, w.value)
 	}
-	return s.base + "/create?" + q.Encode()
+	return s.createPath + "?" + q.Encode()
 }
 
 // resolveColumns settles the columns a list shows: the builder's, else

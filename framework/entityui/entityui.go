@@ -86,6 +86,8 @@ type UI struct {
 	// recordPath is the base of an entity's record screens, nil when
 	// the UI links no relation to its record.
 	recordPath func(e *entity.Entity) (string, bool)
+	// createPath names the complete create screen path, nil for <base>/create.
+	createPath func(e *entity.Entity) (string, bool)
 	// actorName names an audit entry's actor, nil when entries show the
 	// stored id.
 	actorName func(ctx context.Context, id string) string
@@ -149,6 +151,35 @@ func (u *UI) WithRecordPath(path func(e *entity.Entity) (string, bool)) *UI {
 	c := *u
 	c.recordPath = path
 	return &c
+}
+
+// WithCreatePath returns a UI whose New, Duplicate, Create another and
+// relation-picker New links point to path(e), the complete create screen
+// path (for example "/deals/new"). Register the create screen at that same
+// path. The path must have no query or fragment; entityui adds duplicate
+// and prefill query parameters. Answer false or an empty path for an
+// entity with no create screen to hide its create links. Access gates
+// still apply. With no callback, links use the list/record Base + "/create".
+// A nil callback returns the UI unchanged.
+func (u *UI) WithCreatePath(path func(e *entity.Entity) (string, bool)) *UI {
+	if path == nil {
+		return u
+	}
+	c := *u
+	c.createPath = path
+	return &c
+}
+
+// createScreenPath is shared by every affordance opening a create screen.
+func (u *UI) createScreenPath(e *entity.Entity, base string) string {
+	if u.createPath != nil {
+		path, ok := u.createPath(e)
+		if !ok {
+			return ""
+		}
+		return path
+	}
+	return base + "/create"
 }
 
 // WithSavedViews returns a UI whose lists can keep named saved views in

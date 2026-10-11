@@ -164,7 +164,6 @@
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
-    let bodyIsFormData = false;
     // A form control that belongs to a form (every radio/input/select/
     // textarea with node.form set) carries its value exactly like a FORM
     // node: serialize the enclosing form so the handler sees name=value.
@@ -205,7 +204,6 @@
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
       } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
         body = fd;
-        bodyIsFormData = true;
       } else {
         // Repeated keys become arrays; one value stays scalar. getAll avoids
         // inherited names such as constructor and toString on the plain object.
@@ -227,9 +225,10 @@
     const wentry = widgetName && NS._widgets
       && Object.prototype.hasOwnProperty.call(NS._widgets, widgetName)
       && NS._widgets[widgetName];
-    const headers = _csrf({});
+    // Bodyless writes also need JSON content type; fetch owns multipart boundaries.
+    const headers = _csrf(body instanceof FormData || method === 'GET' || method === 'HEAD'
+      ? {} : { 'Content-Type': 'application/json' });
     if (widgetName) headers['X-FUI-Widget'] = widgetName;
-    if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
 
     // Signal-targeted requests stay clickable because their abort controller
     // makes rapid replacement safe. Other button/input triggers are disabled.

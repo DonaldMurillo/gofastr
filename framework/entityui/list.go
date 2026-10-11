@@ -98,7 +98,8 @@ func (b *ListBuilder) Where(field, value string) *ListBuilder {
 }
 
 // Base is the path record links hang off (<base>/<id>, <base>/create).
-// The default is the current request's path.
+// The default is the current request's path. Mount Create at <base>/create,
+// or use UI.WithCreatePath to choose another create screen path.
 func (b *ListBuilder) Base(path string) *ListBuilder { b.base = path; return b }
 
 // Heading replaces the list's heading text; level is 1 to 5 (0 means 1).

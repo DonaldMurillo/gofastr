@@ -220,6 +220,8 @@ The REST route is `POST <api>/<entity>/<id>/transitions/<key>`, mounted on
 a writable entity whose `States` hold at least one non-system move. It
 takes no body and requires the JSON content type, which a cross-site form
 cannot satisfy. The response is the moved record in Update's envelope.
+The entityui move buttons send that JSON header through the RPC runtime,
+including on bodyless POSTs; apps do not need middleware to add it.
 
 | Status | Means |
 | --- | --- |

@@ -83,6 +83,8 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		s.base = s.path
 	}
 
+	s.createPath = b.ui.createScreenPath(m.e, s.base)
+
 	if err := s.resolveColumns(b); err != nil {
 		return "", err
 	}
@@ -310,7 +312,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 		actions = append(actions, exportLink(ctx, s))
 	}
 	// The trash view creates nothing: there is no New in it.
-	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
+	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),
@@ -337,7 +339,7 @@ func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map
 		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
 	}
 	actions := slices.Clone(b.actions)
-	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
+	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityAdd, map[string]string{"entity": m.noun(ctx, false)}),
 			Href:    s.createHref(),

@@ -93,9 +93,13 @@ func (fb *formBuilder) relationNew(ctx context.Context, f schema.Field) render.H
 	if err != nil || !canCreate(ctx, om) {
 		return ""
 	}
+	createPath := fb.b.ui.createScreenPath(other, base)
+	if createPath == "" {
+		return ""
+	}
 	return ui.LinkButton(ui.LinkButtonConfig{
 		Label:    i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": om.singular(ctx)}),
-		Href:     base + "/create",
+		Href:     createPath,
 		Variant:  ui.ButtonSecondary,
 		Icon:     "plus",
 		IconOnly: true,

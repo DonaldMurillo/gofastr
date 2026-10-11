@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/browserpath"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // webmcpServer mounts a Host with four tools on a real router and
@@ -383,35 +384,9 @@ func TestBridgeReadsCSRFMetaAtDispatchTime(t *testing.T) {
 	assertToolResult(t, res, false, `{"msg":"OK"}`)
 }
 
-// execToolExpr looks the named tool handle up via getTools and executes
-// it with the given input object literal. executeTool takes the
-// RegisteredTool handle plus the input as a JSON string, and resolves
-// with the execute() return value JSON-stringified (Chromium 151
-// behavior, established empirically).
-// execToolExpr calls executeTool the way the browser at hand expects.
-// The origin-trial API changed its input shape between Chromium
-// releases: through 153 executeTool takes the input as a JSON string
-// and rejects an object with UnknownError "Failed to parse input
-// arguments"; from 156 it takes the object and rejects a string with
-// TypeError "invalid input object". The object is tried first, and
-// only the argument-parsing refusal falls back to the string, so a
-// genuine execution error is never retried or masked.
+// execToolExpr uses the shared browser compatibility helper.
 func execToolExpr(name, inputLiteral string) string {
-	return fmt.Sprintf(`(async () => {
-		const mc = document.modelContext || navigator.modelContext;
-		const tools = await mc.getTools();
-		const tool = tools.find(t => t.name === %q);
-		if (!tool) return JSON.stringify({missing: true});
-		const input = %s;
-		try {
-			return await mc.executeTool(tool, input);
-		} catch (err) {
-			if (err && err.name === 'UnknownError' && /parse input/.test(String(err.message))) {
-				return mc.executeTool(tool, JSON.stringify(input));
-			}
-			throw err;
-		}
-	})()`, name, inputLiteral)
+	return chromedptest.WebMCPExecuteExpr(name, inputLiteral)
 }
 
 func assertToolResult(t *testing.T, raw string, wantErr bool, wantText string) {

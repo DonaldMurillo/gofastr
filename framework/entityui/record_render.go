@@ -389,16 +389,16 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	if !inDrawer(ctx) && !b.panelPage(ctx) {
 		span, items = b.copyLink(ctx)
 	}
-	if b.dup && canCreate(ctx, m) {
+	if createPath := b.ui.createScreenPath(m.e, base); b.dup && createPath != "" && canCreate(ctx, m) {
 		if !m.d.NoDuplicate {
 			items = append(items, ui.MenuItem{
 				Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
-				Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
+				Href:  createPath + "?duplicate=" + url.QueryEscape(b.id),
 			})
 		}
 		items = append(items, ui.MenuItem{
 			Label: i18nui.T(ctx, i18nui.KeyEntityCreateAnother),
-			Href:  base + "/create",
+			Href:  createPath,
 		})
 	}
 	apiSpan, apiItem := b.copyAPIURL(ctx, m)

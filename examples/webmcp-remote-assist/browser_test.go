@@ -22,6 +22,8 @@ import (
 
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // assistBrowserCtx boots a browser for the test with the flags the flow
@@ -72,18 +74,9 @@ func evalAwait(ctx context.Context, expr string, out *string) error {
 		}))
 }
 
-// execTool drives the real WebMCP browser API: find the tool handle
-// by name and hand it to executeTool with the input as a JSON string,
-// which resolves with the execute() result JSON-stringified (Chromium
-// 151 behavior, the shape the webmcp package's own browser test uses).
+// execTool drives the real WebMCP API using the shared input-format helper.
 func execTool(ctx context.Context, name, inputJSON string) (string, error) {
-	expr := fmt.Sprintf(`(async () => {
-		const mc = document.modelContext || navigator.modelContext;
-		const tools = await mc.getTools();
-		const tool = tools.find(t => t.name === %q);
-		if (!tool) return JSON.stringify({error: "not registered"});
-		return mc.executeTool(tool, JSON.stringify(%s));
-	})()`, name, inputJSON)
+	expr := chromedptest.WebMCPExecuteExpr(name, inputJSON)
 	var raw string
 	if err := evalAwait(ctx, expr, &raw); err != nil {
 		return "", err

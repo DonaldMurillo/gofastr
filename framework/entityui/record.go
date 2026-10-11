@@ -43,6 +43,7 @@ func (u *UI) Record(entity, id string) *RecordBuilder {
 }
 
 // Create starts the create screen: the record form, empty, posting a create.
+// Mount it at <base>/create, or configure UI.WithCreatePath with its route.
 func (u *UI) Create(entity string) *RecordBuilder {
 	return &RecordBuilder{ui: u, entity: entity}
 }

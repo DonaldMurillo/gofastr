@@ -34,6 +34,49 @@ panics there, and so does a view with no `Where`, since
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
+## Mounting app-owned screens
+
+The builders draw components; your app registers their screen routes.
+For `List("deals").Base("/deals")`, the default contract is:
+
+| Screen | Route | Builder |
+| --- | --- | --- |
+| List | `/deals` | `appUI.List("deals").Base("/deals")` |
+| Create | `/deals/create` | `appUI.Create("deals").Base("/deals")` |
+| Record | `/deals/{id}` | `appUI.Record("deals", id).Base("/deals")` |
+
+Mount the exact create route: the default New, Duplicate, Create another,
+related-list Add and relation-picker New links use `<base>/create`.
+Mounting only `/deals/new` leaves those links pointing at a missing screen;
+with `/deals/{id}` registered, it can look like a missing record named
+"create". entityui cannot validate your app's screen registry at boot.
+
+To choose another route, use one create-path function for the screen
+registration and for the UI's links:
+
+```go
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var appUI *entityui.UI
+-->
+createPath := func(e *entity.Entity) (string, bool) {
+    return "/" + e.GetName() + "/new", true
+}
+appUI = appUI.WithCreatePath(createPath)
+```
+
+Register each `Create` screen at the path that function returns, and draw
+all your lists and records through the returned UI. `WithCreatePath` takes
+the complete path, with no query or fragment; entityui adds `duplicate`
+and `prefill_<field>` query parameters. It covers every create link,
+including empty states, row menus, Related lists and relation pickers
+whose related screens are configured with `WithRecordPath`.
+Answer false or an empty path for an entity with no create screen to hide
+its create links. The caller still needs create access. A nil callback
+keeps the UI unchanged; without a callback the default stays
+`<base>/create`. `WithAPIPath` changes write endpoints independently.
+
 ## What it draws
 
 - **A list** (`appUI.List("invoices")`): a `ui.DataTable` (or cards),
