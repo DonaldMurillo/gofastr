@@ -8,7 +8,7 @@ description: Auto-loads when working on a *host application* that imports the Go
 You're in a Go app that uses the GoFastr framework. The framework already
 ships ~70% of the surface a real app needs. Before writing anything new,
 **read this skill, the project's `AGENTS.md`, and the matching detail
-file under `agents/`**; they exist to keep you from reinventing what's
+file under `.agents/`**; they exist to keep you from reinventing what's
 already there.
 
 To run the app while you work, start `gofastr dev` once in the background
@@ -17,7 +17,7 @@ and leave it running: it rebuilds on every save and reloads the browser.
 `gofastr dev` sets `GOFASTR_DEV=1`.
 
 For UI work, also read and complete the project's `DESIGN.md` before selecting
-components, then open `agents/ui.md` and run
+components, then open `.agents/ui.md` and run
 `gofastr docs ui-composition-recipes`. The app owns product intent and
 information hierarchy; the framework supplies the structural and visual
 primitives. Render desktop/mobile in both schemes and revise the three weakest
@@ -49,11 +49,11 @@ those packages' owned sheets.
 
 `AGENTS.md` is a thin TOC of every framework primitive with its
 trigger phrases. When your task matches a row, open the linked file
-under `agents/` (e.g. `agents/battery-admin.md`) for the full
+under `.agents/` (e.g. `.agents/battery-admin.md`) for the full
 shape / import / don't-reinvent breakdown.
 
 If the project has no `AGENTS.md`, run `gofastr agents init` once to
-generate both the TOC and the `agents/` detail files.
+generate both the TOC and the `.agents/` detail files.
 
 Upgrading the framework: install the target CLI first (an old binary
 can't know newer migration notes), run `gofastr upgrade [--to vX.Y.Z]`
