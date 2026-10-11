@@ -60,6 +60,9 @@
 .links {
   display: grid;
   gap: var(--spacing-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 .links li { padding-block: 3px; }
 .links a {
