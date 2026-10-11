@@ -368,33 +368,28 @@ func (s *ExamplesScreen) ScreenDescription() string {
 func (s *ExamplesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ExamplesScreen) Render() render.HTML {
-	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
-		pageBody(exHero(), exRows()))
+	// The examples layer (sectionNavLayout) owns the frame and its
+	// padding; the page is just its content.
+	return pageBody(exHero(), exRows())
 }
 
 func exHero() render.HTML {
-	// The theme-layer showcase lives on this site rather than under
-	// examples/<slug>, so it links from the hub hero instead of joining
-	// exRowItems (whose row set the source-link gate pins). One link per
-	// registered route — the first primary, the rest secondary — derived
-	// from landingRoutes so a new theme cannot miss the hub.
-	buttons := make([]render.HTML, 0, len(landingRoutes))
-	for i, r := range landingRoutes {
-		variant := ui.ButtonSecondary
-		if i == 0 {
-			variant = ui.ButtonPrimary
-		}
-		buttons = append(buttons, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   "Headless landing · " + r.Name + " theme",
-			Href:    landingRoutePath(r.Segment),
-			Variant: variant,
-		}))
-	}
+	// The theme-layer showcases and the in-site demo apps are listed in
+	// the examples nav beside this page (examplesSectionMenuConfig,
+	// derived from landingRoutes, so a new theme cannot miss it); the
+	// hero points there instead of repeating them as buttons.
 	return ui.Hero(ui.HeroConfig{
-		Eyebrow:   fmt.Sprintf("Examples · %d apps", len(exRowItems())),
-		Title:     fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems())),
-		Subtitle:  "Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under examples/ in the repo. Run it with gofastr dev for rebuild-on-save, livereload, and the dev MCP tools; plain go run . works too.",
-		Actions:   buttons,
+		Eyebrow: fmt.Sprintf("Examples · %d apps", len(exRowItems())),
+		Title:   fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems())),
+		Lede: render.Join(
+			render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under "),
+			ui.InlineCode("examples/"),
+			render.Text(" in the repo. Run it with "),
+			ui.InlineCode("gofastr dev"),
+			render.Text(" for rebuild-on-save, livereload, and the dev MCP tools; plain "),
+			ui.InlineCode("go run ."),
+			render.Text(" works too. The in-site demo apps and the theme-layer showcases are in the menu."),
+		),
 		AriaLabel: "Examples",
 	})
 }
@@ -676,28 +671,24 @@ func (s *KilnScreen) ScreenDescription() string {
 func (s *KilnScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *KilnScreen) Render() render.HTML {
-	return container(ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
-		kHero(), kTimeline(), kCaps(), kCli(),
-	))
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
+		pageBody(kHero(), kTimeline(), kCaps(), kCli()))
 }
 
 // kInstallCmd is the one-line install shown in the hero and the CLI section.
 const kInstallCmd = "go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest"
 
 func kHero() render.HTML {
-	// The demo panel fills the hero's Media slot. The install command
-	// sits under the hero rather than in it: Hero's narrow-screen
-	// collapse is a bare 1fr track, so a long unbreakable line in the
-	// hero widens the page past the viewport. In the Stack it fills the
-	// column and scrolls inside its own frame, and the copy button
-	// carries it to the clipboard intact.
+	// The demo panel fills the hero's Media slot; the install command
+	// sits under the actions in the hero's Footer, scrolling inside its
+	// own frame on a phone, and the copy button carries it intact.
 	install := ui.CodeBlock(ui.CodeBlockConfig{
 		Filename: "install",
 		Language: "shell",
 		Lines:    []render.HTML{ln(pn("$ "), render.Text(kInstallCmd))},
 		ShowCopy: true,
 	})
-	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, ui.Hero(ui.HeroConfig{
+	return ui.Hero(ui.HeroConfig{
 		Eyebrow:   "kiln: agent build mode",
 		Title:     "Talk an app into being.",
 		Subtitle:  "Kiln is experimental: a separate binary that mounts a chat panel on your running GoFastr app. The agent calls typed tools; the in-memory IR mutates; the schema migrates; the app re-renders, all in-process. Freeze the journal when done to emit the canonical entity files you commit.",
@@ -707,7 +698,8 @@ func kHero() render.HTML {
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
 			experimentalPill(),
 		},
-	}), install)
+		Footer: install,
+	})
 }
 
 // kMessage is one turn in the demo chat: who spoke, what they said, and
