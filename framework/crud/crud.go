@@ -1128,29 +1128,32 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
-
-		// AfterGet over the response body. See the note on Create. A partial
-		// PUT/PATCH otherwise returns stored values for every field the
-		// caller did not send.
-		// A hook error degrades to the id, not a 500, the update is already
-		// committed. See identityOnly.
-		// A row the caller's ReadScope hides (GET answers 404) comes back as
-		// its id only: the write stands, the read-back does not leak it.
-		var resp map[string]any
-		if hidden {
-			resp = ch.identityOnly(result)
-		} else {
-			var hookErr error
-			resp, hookErr = ch.runResponseHooks(r, result)
-			if hookErr != nil {
-				log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
-				resp = ch.identityOnly(result)
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(singleResponse{Data: resp})
+		ch.writeUpdated(w, r, result, hidden)
 	}
+}
+
+// writeUpdated writes a committed update's response: the row through the
+// AfterGet hooks (see the note on Create; a partial PUT/PATCH otherwise
+// returns stored values for every field the caller did not send). A hook
+// error degrades to the id, not a 500, the update is already committed.
+// See identityOnly. A row the caller's ReadScope hides (GET answers 404)
+// comes back as its id only: the write stands, the read-back does not
+// leak it.
+func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, result map[string]any, hidden bool) {
+	var resp map[string]any
+	if hidden {
+		resp = ch.identityOnly(result)
+	} else {
+		var hookErr error
+		resp, hookErr = ch.runResponseHooks(r, result)
+		if hookErr != nil {
+			log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
+			resp = ch.identityOnly(result)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(singleResponse{Data: resp})
 }
 
 // Delete returns an http.HandlerFunc that deletes an entity by ID. If the
@@ -1226,6 +1229,12 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
+	// Ahead of the hook arm: a hook that hands back a reentrant move's
+	// refusal fails its write with the conflict, not a 400.
+	if errors.Is(err, ErrReentrantMove) {
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
@@ -1238,6 +1247,39 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 			"success": false,
 			"fields":  ve.Fields(),
 		})
+		return
+	}
+	if se, ok := errors.AsType[*StateError](err); ok {
+		// 422: the body is well-formed, but the state field changes only
+		// through a move. Field errors in the validation shape, so a form
+		// shows the message in place, plus the moves the caller can run.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   se.Error(),
+			"success": false,
+			"fields":  map[string][]string{se.Field: {se.Error()}},
+			"moves":   nonNil(se.Moves),
+		})
+		return
+	}
+	if tce, ok := errors.AsType[*TransitionConflictError](err); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   tce.Error(),
+			"success": false,
+			"current": tce.Current,
+			"moves":   nonNil(tce.Moves),
+		})
+		return
+	}
+	if tde, ok := errors.AsType[*transitionDeniedError](err); ok {
+		writeJSONError(w, http.StatusForbidden, tde.Error())
+		return
+	}
+	if errors.Is(err, ErrUnknownTransition) {
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if tme, ok := errors.AsType[*tenantMissingError](err); ok {

@@ -344,6 +344,10 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	// Normalize incoming keys (e.g. camelCase wire shapes) to canonical DB column names.
 	body := q.handler.unconvertMapKeys(fields)
+	// The state field and stamps move per record (states.go).
+	if err := q.handler.checkStateBulk(body); err != nil {
+		return 0, err
+	}
 
 	if err := q.handler.validateMediaURLs(body); err != nil {
 		return 0, err

@@ -9,9 +9,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
@@ -112,17 +116,26 @@ func cliFilterOps(t schema.FieldType) []cliFilterOp {
 	return ops
 }
 
+// cliTransition is one derived non-system move: the subcommand word (the
+// key), its route segment, and the help line. System moves have no route
+// and appear nowhere in generated clients.
+type cliTransition struct {
+	Key     string // the move's key: subcommand word and route segment
+	Summary string // the CLI help line
+}
+
 // cliEntity is the derived per-entity model: the shared manifest shape a
 // future SDK generator (issue #86) should consume rather than re-deriving
 // from raw declarations.
 type cliEntity struct {
-	Struct     string // Go type name in the client package (Posts)
-	Command    string // CLI command word (kebab of the table)
-	Table      string // route path segment
-	Verbs      []string
-	Fields     []cliField
-	Search     bool
-	SoftDelete bool
+	Struct      string // Go type name in the client package (Posts)
+	Command     string // CLI command word (kebab of the table)
+	Table       string // route path segment
+	Verbs       []string
+	Fields      []cliField
+	Transitions []cliTransition // non-system state moves, one command each
+	Search      bool
+	SoftDelete  bool
 }
 
 type cliSpec struct {
@@ -216,6 +229,15 @@ func runGenerateCLI(args []string) {
 // render, preserve custom.go, honor --force/--dry-run/--json, write.
 func emitCLIFiles(opts cliOptions, spec cliSpec) {
 	files := renderCLIFiles(spec)
+	if err := refuseDuplicateDecls(files); err != nil {
+		if opts.json {
+			printGeneratedErrorsJSON(err)
+		} else {
+			fail("%v", err)
+		}
+		osExit(1)
+		return
+	}
 	if err := validateOutputDir(opts.outDir); err != nil {
 		fail("%v", err)
 		osExit(1)
@@ -579,6 +601,10 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		Search:     len(decl.SearchFields) > 0,
 		SoftDelete: entityDeclarationScope(decl).SoftDelete,
 	}
+	// Stamps are server-set on every write path under enforced States, so
+	// they get no mutation flag. The state field keeps one: create shares
+	// the flag table and may start at an initial value.
+	stamps, _ := statesWriteDrops(decl.States)
 	for _, fd := range decl.Fields {
 		if fd.Name == "id" || fd.Hidden {
 			continue
@@ -596,7 +622,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			Flag:     strings.ReplaceAll(fd.Name, "_", "-"),
 			Type:     typ,
 			GoType:   goTypeForField(fd.Type),
-			ReadOnly: fd.ReadOnly,
+			ReadOnly: fd.ReadOnly || stamps[fd.Name],
 			NoQuery:  fd.NoQuery,
 			Values:   fd.Values,
 		}
@@ -621,6 +647,18 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 			f.FilterOps = cliFilterOps(sf.Type)
 		}
 		ent.Fields = append(ent.Fields, f)
+	}
+	// One command per non-system move (the route and the MCP tools serve
+	// the same set, Advisory entities included). System moves have no
+	// route and appear nowhere.
+	// The CLI's help prints the summary raw, so the declaration's state
+	// values reach it with terminal-control and bidi runes dropped.
+	for _, t := range crud.RoutableTransitions(decl.States) {
+		summary := "move " + decl.States.Field + " from " + strings.Join(t.From, " or ") + " to " + t.To
+		if t.Stamp != "" {
+			summary += ", stamps " + t.Stamp
+		}
+		ent.Transitions = append(ent.Transitions, cliTransition{Key: t.Key, Summary: textsafe.StripUnsafe(summary)})
 	}
 	return ent
 }
@@ -678,7 +716,29 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 			seen[name] = f.Snake
 		}
 	}
+	if err := validateDeclarationStates(decl); err != nil {
+		return cliEntity{}, fmt.Errorf("entity %q: %w", decl.Name, err)
+	}
 	return ent, nil
+}
+
+// validateDeclarationStates refuses a declaration whose states block the
+// app would refuse at boot. `gofastr gen cli/sdk` read hand-written
+// entities/*.go through packReadEntities — files that never passed
+// entity.Define — so the generators re-run the ONE boot check (the move-key
+// grammar, the reserved-name set, duplicates, the guarded columns) from
+// framework/entity instead of re-implementing any of it here. The boot
+// check runs Define first, so the guards see the injected
+// framework-managed columns the app sees.
+func validateDeclarationStates(decl framework.EntityDeclaration) error {
+	if decl.States == nil {
+		return nil
+	}
+	cfg, err := decl.Config()
+	if err != nil {
+		return err
+	}
+	return entity.ValidateStates(decl.Name, cfg)
 }
 
 // cliEnvPrefix turns a binary name into the UPPER_SNAKE env-var prefix:
@@ -727,10 +787,6 @@ func cliSelectionNote(opts cliOptions) string {
 	return " " + strings.Join(parts, " ")
 }
 
-// ---------------------------------------------------------------------------
-// Renderers
-// ---------------------------------------------------------------------------
-
 func renderCLIFiles(spec cliSpec) []generatedFile {
 	files := []generatedFile{
 		{name: "main.go", content: renderCLIMain(spec)},
@@ -745,14 +801,14 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 	if cliAnyVerb(spec, "list") || cliAnyVerb(spec, "get") || cliAnyVerb(spec, "delete") ||
 		cliAnyVerb(spec, "create") || cliAnyVerb(spec, "update") || cliAnyVerb(spec, "patch") ||
 		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
-		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") {
+		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") || cliAnyTransition(spec) {
 		files = append(files, generatedFile{
 			name:    "verbs.go",
 			content: renderCLIVerbsFile(spec),
 		})
 	}
 	for _, ent := range spec.Entities {
-		if len(ent.Verbs) == 0 {
+		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 {
 			continue
 		}
 		files = append(files, generatedFile{
@@ -854,7 +910,7 @@ func builtinCommands() []command {
 	}
 `, spec.Binary, spec.Selection, spec.Binary, spec.EnvPrefix, spec.APIPrefix, exampleCommandName(spec))
 	for _, ent := range spec.Entities {
-		if len(ent.Verbs) == 0 {
+		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 {
 			continue
 		}
 		fmt.Fprintf(&sb, "\tcmds = append(cmds, %sCommands()...)\n", lowerFirst(ent.Struct))
@@ -1411,7 +1467,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 
 	hasMutation := has("create") || has("update") || has("patch")
 	hasWrapper := has("list") || has("get") || has("delete") || has("batch-create") ||
-		has("batch-update") || has("batch-delete") || has("watch")
+		has("batch-update") || has("batch-delete") || has("watch") || len(ent.Transitions) > 0
 	// Import needs shrink with the shared verb bodies (verbs.go): this
 	// file holds the command table, the one-line wrappers, and the
 	// per-entity flag/field tables. Only the batch wrappers reference
@@ -1457,6 +1513,10 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		}
 		fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: run%s%s},\n",
 			ent.Command+" "+verb, summaries[verb], ent.Struct, verbFuncSuffix(verb))
+	}
+	for _, tr := range ent.Transitions {
+		fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: run%s%s},\n",
+			ent.Command+" "+tr.Key, tr.Summary, ent.Struct, toCamelCase(tr.Key))
 	}
 	sb.WriteString("\t}\n}\n\n")
 	if hasWrapper {
@@ -1507,6 +1567,10 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		fmt.Fprintf(&sb, "func run%sWatch(args []string) int {\n\treturn runWatchVerb(%q, (*client.Client).Watch%s, args)\n}\n\n",
 			ent.Struct, ent.Command+" watch", ent.Struct)
 	}
+	for _, tr := range ent.Transitions {
+		fmt.Fprintf(&sb, "func run%s%s(args []string) int {\n\treturn runTransitionVerb(%q, %q, %q, args)\n}\n\n",
+			ent.Struct, toCamelCase(tr.Key), ent.Command+" "+tr.Key, base, tr.Key)
+	}
 	return sb.String()
 }
 
@@ -1529,7 +1593,7 @@ func verbFuncSuffix(verb string) string {
 // verbs.go (runListVerb); this is the part that genuinely varies.
 func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
-	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, goCommentSafe(ent.Command))
 	fmt.Fprintf(sb, "var %sListFilters = []filterFlag{\n", p)
 	if ent.Search {
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", "q", "q", "free-text search over the declared search fields")
@@ -1561,7 +1625,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 		headers = append(headers, f.Snake)
 		keys = append(keys, f.Wire)
 	}
-	fmt.Fprintf(sb, "// Table columns for `%s list -o table`: %sListHeaders are the display\n// titles, %sListKeys the JSON wire keys each column reads.\n", ent.Command, p, p)
+	fmt.Fprintf(sb, "// Table columns for `%s list -o table`: %sListHeaders are the display\n// titles, %sListKeys the JSON wire keys each column reads.\n", goCommentSafe(ent.Command), p, p)
 	fmt.Fprintf(sb, "var (\n\t%sListHeaders = []string{%s}\n\t%sListKeys    = []string{%s}\n)\n\n", p, quoteList(headers), p, quoteList(keys))
 }
 
@@ -1573,7 +1637,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 // identifiers.
 func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
-	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
 	fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	for _, f := range ent.Fields {
 		if f.ReadOnly {
@@ -1607,6 +1671,17 @@ func cliFieldKindConst(goType string) string {
 	}
 }
 
+// cliAnyTransition reports whether any selected entity holds a non-system
+// move; it gates the shared transition body in verbs.go.
+func cliAnyTransition(spec cliSpec) bool {
+	for _, ent := range spec.Entities {
+		if len(ent.Transitions) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // cliAnyVerb reports whether any selected entity kept the verb; it gates
 // which shared bodies verbs.go needs.
 func cliAnyVerb(spec cliSpec, verb string) bool {
@@ -1638,6 +1713,7 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	batchJSON := cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update")
 	batchDel := cliAnyVerb(spec, "batch-delete")
 	watch := cliAnyVerb(spec, "watch")
+	transition := cliAnyTransition(spec)
 
 	var imports []string
 	if watch {
@@ -1649,10 +1725,10 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || del || batchDel || watch || mutation {
 		imports = append(imports, "\t\"fmt\"")
 	}
-	if list || get || del || batchDel || mutation {
+	if list || get || del || batchDel || mutation || transition {
 		imports = append(imports, "\t\"net/http\"")
 	}
-	if list || get || del || mutation {
+	if list || get || del || mutation || transition {
 		imports = append(imports, "\t\"net/url\"")
 	}
 	if batchDel {
@@ -1903,6 +1979,31 @@ func runDeleteVerb(cmd, base string, args []string) int {
 	}
 	fmt.Printf("deleted %s\n", id)
 	return 0
+}
+
+`)
+	}
+	if transition {
+		sb.WriteString(`// runTransitionVerb is the shared move body: take the positional id,
+// POST base/{id}/transitions/{key}, print the moved record. The route
+// takes no payload but requires the JSON content type (its cross-site
+// gate), so the request carries an empty JSON body.
+func runTransitionVerb(cmd, base, key string, args []string) int {
+	id, rest, ok := takeID(cmd, args)
+	if !ok {
+		return 2
+	}
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, rest)
+	if g == nil {
+		return code
+	}
+	var out singleResponse
+	path := base + "/" + url.PathEscape(id) + "/transitions/" + url.PathEscape(key)
+	if err := g.client.Do(g.ctx, http.MethodPost, path, map[string]any{}, &out); err != nil {
+		return apiFail(err)
+	}
+	return printJSON(out.Data)
 }
 
 `)

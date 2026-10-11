@@ -47,6 +47,9 @@ results, the harness contract) are exempt. The exemption list lives in
 
 - [Entity declarations](entity-declarations.md): JSON + Go field types
   and the runtime/code-gen loaders.
+- [States](states.md): `EntityConfig.States` gives an entity a state
+  machine the CRUD handler enforces: a guarded state field, moves as a
+  route, an MCP tool and a Go call.
 - [Batch endpoints](batch-endpoints.md): `_batch` POST / PATCH / DELETE
   with one-transaction semantics.
 - [Includes & eager loading](includes.md): `?include=` with scoped

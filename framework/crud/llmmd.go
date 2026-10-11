@@ -300,6 +300,33 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("    { \"index\": 1, \"error\": \"validation: ...\", \"fields\": { \"name\": [\"is required\"] } }\n")
 		b.WriteString("  ]\n")
 		b.WriteString("}\n```\n\n")
+
+		// States: the moves are write routes this mount registers (the
+		// transition route mounts with the write set), so the section
+		// lives inside the !ReadOnly guard with them. System moves have
+		// no route and stay unlisted.
+		if st := ent.Config.States; st != nil && len(RoutableTransitions(st)) > 0 {
+			b.WriteString("## States\n\n")
+			fmt.Fprintf(&b, "`%s` starts at one of: %s.\n\n", st.Field, quoteValues(st.InitialValues(fields)))
+			b.WriteString("| Move | Route | From → To | Stamp |\n")
+			b.WriteString("|------|-------|-----------|-------|\n")
+			for _, t := range RoutableTransitions(st) {
+				move := "`" + t.Key + "`"
+				if t.Label != "" {
+					move += " (" + t.Label + ")"
+				}
+				stamp := "—"
+				if t.Stamp != "" {
+					stamp = "`" + t.Stamp + "`"
+				}
+				fmt.Fprintf(&b, "| %s | `POST %s/{id}/transitions/%s` | `%s` → `%s` | %s |\n",
+					move, resourcePath, t.Key, strings.Join(t.From, "`, `"), t.To, stamp)
+			}
+			b.WriteString("\n")
+			if !st.Advisory {
+				fmt.Fprintf(&b, "`%s` and every stamp change only through these moves: a create may start at an initial value, and an update that sends the stored value back is not a change (any other write answers 422).\n\n", st.Field)
+			}
+		}
 	}
 
 	// SSE
@@ -568,6 +595,15 @@ func sanitizeDefault(v any) string {
 	default:
 		return fmt.Sprintf("%T", val)
 	}
+}
+
+// quoteValues renders each value in backticks for the markdown tables.
+func quoteValues(values []string) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = "`" + v + "`"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // relationTypeLabel returns a human-readable label for a relation type.

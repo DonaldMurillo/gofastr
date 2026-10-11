@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
@@ -131,6 +132,25 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		"results":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/BatchResult"}},
 	}))
 
+	// 409 body of a transition whose From does not hold the record's
+	// current value: the current value and the moves open from it.
+	s.AddSchema("TransitionConflict", objectSchemaWith(map[string]any{
+		"error":   map[string]any{"type": "string"},
+		"success": map[string]any{"type": "boolean"},
+		"current": map[string]any{"type": "string", "description": "The record's current state value."},
+		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The move keys open from the current value."},
+	}))
+
+	// 422 body of a create or update that tries to change the state field
+	// or a stamp outside a move: the field error in the validation shape,
+	// plus the moves the caller can run instead.
+	s.AddSchema("StateError", objectSchemaWith(map[string]any{
+		"error":   map[string]any{"type": "string"},
+		"success": map[string]any{"type": "boolean"},
+		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+	}))
+
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
@@ -250,7 +270,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		listRef := map[string]any{"$ref": "#/components/schemas/ListResponse"}
 		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
+		conflictRef := map[string]any{"$ref": "#/components/schemas/TransitionConflict"}
+		stateErrRef := map[string]any{"$ref": "#/components/schemas/StateError"}
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
+		// st is the entity's states block, nil without one. statesGuarded
+		// reports whether the CRUD handler enforces it: only then do the
+		// request schemas drop the guarded columns and the write operations
+		// answer 422. The moves are documented either way: the transition
+		// route is mounted for every non-system move, Advisory or not.
+		st := ent.Config.States
+		statesGuarded := st != nil && !st.Advisory
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
 		// A versioned entity's group prefix is mounted absolutely by the
@@ -382,11 +411,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		createOp.OperationID = "create_" + schemaName
 		createOp.Tags = []string{tagName}
 
-		// Create request body excludes auto-generated and read-only fields
-		createSchema := excludeFieldsByBehavior(entitySchema, fields)
+		// Create request body excludes auto-generated and read-only
+		// fields; enforced states narrow the state field's enum to the
+		// values a create may set and drop the stamps.
+		createSchema := requestSchema(entitySchema, fields, st, false)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			createOp.AddResponse(422, "Tried to set the state field to a non-initial value, or to set a stamp", stateErrRef)
+		}
 		if gated {
 			createOp.AddResponse(401, "Authentication required", errorRef)
 			createOp.AddResponse(403, "Forbidden", errorRef)
@@ -418,9 +452,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		updateOp.Summary = "Update " + entityName
 		updateOp.OperationID = "update_" + schemaName
 		updateOp.Tags = []string{tagName}
-		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
+		// An enforced states block removes the state field and the stamps
+		// from the update body: they change only through a move's route.
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			updateOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
+		}
 		if gated {
 			updateOp.AddResponse(401, "Authentication required", errorRef)
 			updateOp.AddResponse(403, "Forbidden", errorRef)
@@ -435,11 +474,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := excludeFieldsByBehavior(entitySchema, fields)
+		patchSchema := requestSchema(entitySchema, fields, st, true)
 		delete(patchSchema, "required")
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			patchOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
+		}
 		if gated {
 			patchOp.AddResponse(401, "Authentication required", errorRef)
 			patchOp.AddResponse(403, "Forbidden", errorRef)
@@ -465,6 +507,53 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
+
+		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
+		// The router mounts the transition route when States holds a
+		// non-system move, and the key is a literal segment, so the spec
+		// documents one operation per move — the same set
+		// RoutableTransitions serves, Advisory entities included (their
+		// moves stay callable). System moves have no route and appear
+		// nowhere.
+		for _, t := range crud.RoutableTransitions(st) {
+			label := t.Label
+			if label == "" {
+				label = t.Key
+			}
+			moveOp := openapi.NewOperation()
+			moveOp.Summary = strings.ToUpper(label[:1]) + label[1:] + " " + entityName
+			moveOp.OperationID = t.Key + "_" + schemaName
+			moveOp.Tags = []string{tagName}
+			desc := fmt.Sprintf("Move %s from %s to %s", st.Field, strings.Join(t.From, " or "), t.To)
+			if t.Stamp != "" {
+				desc += fmt.Sprintf(", stamping %s with the server's current UTC date/time", t.Stamp)
+			}
+			if t.Permission != "" {
+				desc += ". Requires the entity's update permission and " + t.Permission
+			}
+			// The route takes no payload but answers 415 unless the request
+			// carries the JSON content type (its cross-site-form gate), so the
+			// operation declares the body a caller must send: a required,
+			// property-free JSON object. Generated clients post exactly that.
+			moveOp.SetRequestBody("application/json", map[string]any{
+				"type":                 "object",
+				"maxProperties":        0,
+				"additionalProperties": false,
+			}, true)
+			desc += ". Sends no payload but requires Content-Type: application/json: POST the declared empty object, {}."
+			moveOp.Description = desc
+			moveOp.AddResponse(200, "Moved "+entityName+" (Update's envelope)", singleRef)
+			moveOp.AddResponse(403, "Forbidden", errorRef)
+			moveOp.AddResponse(404, entityName+" not found, or unknown move key", errorRef)
+			moveOp.AddResponse(409, "The record's current value is not one the move starts from", conflictRef)
+			moveOp.AddResponse(415, "Content-Type must be application/json", errorRef)
+			if gated {
+				moveOp.AddResponse(401, "Authentication required", errorRef)
+				moveOp.AddSecurity("bearerAuth", nil)
+				moveOp.AddSecurity("cookieAuth", nil)
+			}
+			s.AddPath("POST", path+"/:id/transitions/"+t.Key, *moveOp)
+		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
 		batchCreateBody := map[string]any{
@@ -496,7 +585,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
-				excludeFieldsByBehavior(entitySchema, fields),
+				requestSchema(entitySchema, fields, st, true),
 				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 			},
 		}
@@ -604,6 +693,73 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		})
 	}
 	return s
+}
+
+// requestSchema returns the write-request view of the entity schema:
+// excludeFieldsByBehavior, then the states rules. With enforced states
+// (declared and not Advisory) a create keeps the state field but narrows
+// its enum to the values a create may set, and drops every stamp; an
+// update drops the state field and the stamps entirely — they change
+// only through a move's own route. Without enforced states it is
+// excludeFieldsByBehavior unchanged.
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, update bool) map[string]any {
+	cp := excludeFieldsByBehavior(specSchema, fields)
+	if st == nil || st.Advisory {
+		return cp
+	}
+	byName := make(map[string]schema.Field, len(fields))
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	drop := map[string]bool{} // wire keys no write may carry
+	for _, t := range st.Transitions {
+		if t.Stamp == "" {
+			continue
+		}
+		if f, ok := byName[t.Stamp]; ok {
+			drop[wireKeyOf(f)] = true
+		}
+	}
+	stateKey := ""
+	if f, ok := byName[st.Field]; ok {
+		stateKey = wireKeyOf(f)
+	}
+	if update {
+		if stateKey != "" {
+			drop[stateKey] = true
+		}
+	}
+	props, ok := cp["properties"].(map[string]any)
+	if !ok {
+		return cp
+	}
+	for key := range drop {
+		delete(props, key)
+	}
+	if !update && stateKey != "" {
+		if p, ok := props[stateKey].(map[string]any); ok {
+			// Copy before narrowing: the property map is shared with the
+			// response schema, whose enum stays the field's full value set.
+			narrowed := make(map[string]any, len(p))
+			maps.Copy(narrowed, p)
+			narrowed["enum"] = st.InitialValues(fields)
+			props[stateKey] = narrowed
+		}
+	}
+	if reqs, ok := cp["required"].([]string); ok {
+		kept := make([]string, 0, len(reqs))
+		for _, r := range reqs {
+			if !drop[r] {
+				kept = append(kept, r)
+			}
+		}
+		if len(kept) > 0 {
+			cp["required"] = kept
+		} else {
+			delete(cp, "required")
+		}
+	}
+	return cp
 }
 
 // advertisedFilterOps is the spec's operator table: every

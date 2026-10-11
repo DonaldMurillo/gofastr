@@ -24,12 +24,22 @@ func TestCrudRoutePatternsMatchRegistration(t *testing.T) {
 		{"default", CrudRouteOptions{}},
 		{"no llm.md", CrudRouteOptions{NoLLMMD: true}},
 		{"read only", CrudRouteOptions{ReadOnly: true}},
-		{"read only, no llm.md", CrudRouteOptions{ReadOnly: true, NoLLMMD: true}},
+		{"states", CrudRouteOptions{States: statesInvoiceStates()}},
+		{"states, read only", CrudRouteOptions{ReadOnly: true, States: statesInvoiceStates()}},
+		{"states, no llm.md", CrudRouteOptions{NoLLMMD: true, States: statesInvoiceStates()}},
+		{"all-system states", CrudRouteOptions{States: &entity.StatesConfig{
+			Field:   "status",
+			Initial: []string{"draft"},
+			Transitions: []entity.Transition{
+				{Key: "mark_overdue", From: []string{"draft"}, To: "void", System: true},
+			},
+		}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ent := entity.Define("posts", entity.EntityConfig{
 				Name: "posts", Table: "posts",
 				Fields: []schema.Field{{Name: "title", Type: schema.String}},
+				States: tc.opts.States,
 			})
 			r := router.New()
 			RegisterCrudRoutes(r, NewCrudHandler(ent, nil), "/posts", tc.opts)

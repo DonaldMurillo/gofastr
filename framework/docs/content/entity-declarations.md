@@ -74,7 +74,9 @@ app.Entity("posts", framework.EntityConfig{
 That declaration has no `Exposure` block, and it still mounts the whole REST
 surface: `GET /posts`, `GET /posts/{id}`, `POST /posts`, `PUT` and `PATCH` on
 `/posts/{id}`, `DELETE /posts/{id}`, the batch endpoints on `/posts/_batch`,
-the `/posts/_events` stream, and `/posts/llm.md`. Route generation is **on by
+`POST /posts/{id}/transitions/{key}` when its `States` declare a non-system
+move (see [States](states.md)), the `/posts/_events` stream, and
+`/posts/llm.md`. Route generation is **on by
 default**: `Exposure.CRUD` is a `*bool`, and nil means generate. Omitting the
 block is not "declare no surface"; it is "take the default surface".
 
@@ -1377,7 +1379,10 @@ request:
 - **Keys.** View keys, form section keys and the nav group are lowercase
   ASCII slugs (`^[a-z][a-z0-9_]*$`, no dots), unique within their list, and
   not `all` or `deleted` (the screens own those). At most one view sets
-  `Default`.
+  `Default`. `entity.ValidKey(s)` reports whether a string follows this
+  grammar. `States` move keys follow a stricter one, checked with the rest
+  of the states block by `entity.ValidateStates` (see
+  [States](states.md)).
 - **The form.** Each item sets exactly one of field, row or section; a row
   holds one to three distinct fields; only a section carries `Items`,
   `Help` and `Collapsed`, and holds at least one item; sections nest at
@@ -1404,6 +1409,30 @@ translation keys Display's names produce (`entity.<entity>.*`,
 `nav.groups.<key>`) are listed on the
 [Internationalization](i18n.md) page.
 
+## States (a state machine)
+
+`EntityConfig.States` names the Enum field holding a record's state and the
+moves that change it. Unless `Advisory` is set, the CRUD handler refuses any
+write that changes the state field or a stamp outside a move. A create starts
+at an `Initial` value, an update writing the stored value back passes, and
+the change itself is one move: `POST /<entity>/{id}/transitions/<key>`, the
+MCP tool `<entity>_<key>`, or `RunTransition` in Go.
+
+```go
+States: &framework.StatesConfig{
+    Field:   "status",
+    Initial: []string{"draft"},
+    Transitions: []framework.Transition{
+        {Key: "issue", From: []string{"draft"}, To: "issued", Stamp: "issued_on"},
+    },
+}
+```
+
+The declaration key is `states`, snake_case inside it, unknown keys refused.
+Stamps, per-move permissions, System moves, the boot check, the audit trail
+and the `crud.WithStateOverride` escape hatch are on the
+[States](states.md) page.
+
 ## Code Generation
 
 Generate Go from a `gofastr.yml` blueprint:
@@ -1425,7 +1454,9 @@ This scaffolds the owned entity package into `entities/` at the module root:
   atomic `_batch` endpoints (`BatchCreate<Entity>` /
   `BatchUpdate<Entity>` / `BatchDelete<Entity>`, returning the
   `{committed, results[]}` envelope even on rollback), and the live
-  `_events` feed (`Watch<Entity>`, a blocking SSE loop). Setting the
+  `_events` feed (`Watch<Entity>`, a blocking SSE loop). For an entity
+  with `States`, the state field is read-only in the client and each
+  non-system move is one call ([States](states.md)). Setting the
   client's `Token` field sends it as `Authorization: Bearer <token>` on
   every request: pair with a scoped API token
   ([auth](auth.md#service-accounts--scoped-api-tokens)); leave empty for
@@ -1604,6 +1635,9 @@ When an entity sets `"mcp": true`, GoFastr registers CRUD tools:
 - `{entity}_create`
 - `{entity}_update`
 - `{entity}_delete`
+- `{entity}_<key>` for every non-system move its
+  [States](states.md) declare; the update permission gates it like
+  `{entity}_update`
 
 The tools use the same validation and CRUD handler behavior as HTTP routes.
 

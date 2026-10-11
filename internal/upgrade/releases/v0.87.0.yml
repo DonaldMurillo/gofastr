@@ -229,3 +229,11 @@ notes:
       fields:
         - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
     guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."
+  - change: "App.WithAuditLog (through EnsureAuditTable) adds a nullable reason TEXT column to an existing audit table at boot, for the reason a crud.WithStateOverride write records; a database role without ALTER TABLE on that table fails startup"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework.App.WithAuditLog
+        - gofastr/framework.EnsureAuditTable
+    guidance: "Nothing to do where the app's database role may alter the audit table: the column is added at boot, and replicas booting together all succeed. Where the runtime role cannot ALTER, add the column first with a migration role: ALTER TABLE audit_log ADD COLUMN reason TEXT (Postgres can say ADD COLUMN IF NOT EXISTS; name your own table if AuditConfig.Table sets one)."

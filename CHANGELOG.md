@@ -8,6 +8,61 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`EntityConfig.States` gives an entity a state machine.** The config
+  names the Enum field holding the state, the values a create may start
+  at, and the named moves that change it. Unless `Advisory` is set, the
+  state field and every stamp change only through a move, on every write
+  path: REST create/update, `_batch`, cascade writes, `UpsertOne`,
+  in-process `CreateOne`/`UpdateOne` and hooks. An update writing the
+  stored value back passes; any other change is a 422 naming the open
+  moves. `TypedQuery.UpdateAll` refuses a guarded column outright. A move
+  runs through `CrudHandler.RunTransition`, the route
+  `POST <api>/<entity>/<id>/transitions/<key>` (200/403/404/409/415), or
+  the MCP tool `<entity>_<key>`; a System move has no route or tool and
+  is Go-only. A move needs the entity's update permission plus its own
+  `Permission`, asked about the record, and writes an audit row with op
+  `transition:<key>`. Stamps set a Date or Timestamp field to the
+  server's UTC date or time. A hook cannot move the record whose write is
+  running it (`crud.ErrReentrantMove`, 409). On SQLite a move takes the write
+  lock before it reads, so the loser of a race between two connections
+  answers the 409 a Postgres race gives, and its hooks never run. A 409 or 422 names the stored state and
+  the open moves only to a caller whose `ReadScope` admits the record.
+  `App.ImportData` and `App.EraseUserData` stand outside the check. See
+  `framework/docs/content/states.md`.
+- **`crud.WithStateOverride` and the audit `reason` column.** Trusted Go
+  code (seeds, backfills, repair jobs) wraps its context in
+  `crud.WithStateOverride(ctx, reason)` to write a state field or stamp
+  outside a move. A non-empty reason and an audited entity
+  (`App.WithAuditLog`, which marks every version of a grouped entity) are
+  required, else the write is refused. An update under it, or an
+  `UpsertOne` under it that lands on an existing row, is audited with op
+  `state_override` and the reason in the new nullable `reason` column,
+  which `EnsureAuditTable` adds to an existing audit table; two replicas
+  booting on one old table both succeed. `UpsertOne`'s `DO UPDATE SET`
+  names a guarded column only when the caller sent it under an override
+  that passes, so an omitted state keeps the stored one. `WithServerWrites`
+  does not release the state field; `TypedQuery.UpdateAll` refuses guarded
+  columns even under the override.
+- **Generated clients carry the state moves.** OpenAPI, the MCP tools,
+  the Go client, the JS SDK and the CLI each gain one call per non-system
+  move, and the per-entity `EntityLLMMD` document gains a `## States`
+  section. Under enforced States the write shapes match what the server
+  accepts: stamps leave every write shape, the patch shapes drop the
+  state field, and the OpenAPI and MCP create bodies narrow the state
+  enum to the initial values. The SDK schema hash covers `States`, so a
+  changed move set changes the hash. Move keys are lowercase segments
+  joined by single underscores, each led by a letter, and may not take a
+  name the entity's own tools, client methods or SDK members use; the boot
+  error names the collision. `entity.ValidateStates` runs the states boot
+  check over a declaration, and the generators call it, so they refuse what
+  registration refuses. They also refuse two entities whose names meet in
+  one generated Go identifier (`orders` with move `mark_paid` and
+  `paid_orders` with move `mark` both make `client.MarkPaidOrders`), and
+  the CLI drops control and bidi characters from the move summaries its
+  help prints. A state field or stamp on `deleted_at` under soft
+  delete or on an auto-generated column is refused. A move's `Permission`
+  is held by name: `access.CanResourceExact` asks the Decider and then the
+  caller's own grants, and a Wildcard grant does not satisfy it.
 - **`EntityConfig.Display` carries an entity's screen hints.** One
   block holds what admin and generated screens read: singular and plural
   names, list columns, named views (a DSL `Where` and a `Sort`), facets,
@@ -879,6 +934,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a turn the moment the stream opened lost that turn's events whenever
   the handler was descheduled between the two. Both now subscribe
   first, the order the WebSocket control surface already used.
+- **`EnsureAuditTable` adds missing columns on SQLite.** An audit table
+  created before `tenant_id` existed kept running without it: SQLite has
+  no `ADD COLUMN IF NOT EXISTS`, and the fallback's probe reported the
+  missing column as present, so the call returned nil and the next
+  audit write failed on the missing column. The columns now come from the
+  catalog (`PRAGMA table_info`, `information_schema`) and each missing
+  one is added.
 - **The arrow keys move the choice in `ui.ThemeToggle`'s pill.** The
   pill is a radiogroup but answered only clicks and Tab; the arrow
   keys now move and pick, wrapping at either end, and the checked

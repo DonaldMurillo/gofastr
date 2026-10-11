@@ -105,6 +105,11 @@ type EntityConfig struct {
 	// accepts; see DisplayConfig for the boot check over every name it
 	// holds and where the query strings inside it are parsed.
 	Display *DisplayConfig
+	// States names the Enum field holding the record's state and the
+	// moves that change it. Unless Advisory is set the CRUD handler
+	// refuses any write that changes the field or a stamp outside a move;
+	// see StatesConfig. Nil means no states. Define copies it deeply.
+	States *StatesConfig
 	// Renames declares column renames (old name → new name) so the schema
 	// diff emits a non-destructive ALTER TABLE … RENAME COLUMN instead of a
 	// data-losing DROP of the old column + ADD of the new one. Rename is
@@ -310,6 +315,10 @@ type Entity struct {
 	// when registered via App.GroupEntity; empty for App.Entity (the tag
 	// defaults to the entity name in that case).
 	OpenAPITag string
+
+	// audited is 1 once an audit log records this entity's writes; see
+	// MarkAudited.
+	audited int32
 }
 
 // Define creates a new Entity with the given name and configuration.
@@ -694,6 +703,7 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 	// stays nil: nil means "every default", it is not a group Define
 	// populates.
 	c.Display = copyDisplayConfig(c.Display)
+	c.States = copyStatesConfig(c.States)
 	return c
 }
 
@@ -829,6 +839,11 @@ func (e *Entity) Validate() error {
 	// where the query DSL is in reach.
 	if e.Config.Display != nil {
 		if err := e.Config.Display.validate(e.Config.Name, e.Config.Fields, e.Config.Pagination); err != nil {
+			return err
+		}
+	}
+	if e.Config.States != nil {
+		if err := e.Config.States.validate(e.Config, e.PrimaryKey); err != nil {
 			return err
 		}
 	}
