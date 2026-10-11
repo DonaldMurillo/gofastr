@@ -31,7 +31,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// rpcEffectDemoSpec names the knobs of rpcEffectDemo: the demo-stage
+// rpcEffectDemoSpec names the knobs of rpcEffectDemo: the live-stage
 // button, the endpoint it POSTs, the effect fired on success, and the
 // surrounding prose + code sample shown above the stage.
 type rpcEffectDemoSpec struct {
@@ -57,19 +57,11 @@ func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 		interactive.Post(spec.endpoint).
 			OnSuccess(spec.effect(spec.effectArg)),
 	)
-	return html.Div(html.DivConfig{Class: "demo-stack"},
-		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.why)),
-		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.how)),
+	return stack(
+		html.Paragraph(html.TextConfig{}, render.Text(spec.why)),
+		html.Paragraph(html.TextConfig{}, render.Text(spec.how)),
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: spec.code}),
-		html.Div(html.DivConfig{Class: "demo-stage"},
-			html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-			html.Div(html.DivConfig{Class: "demo-stage__viewport"},
-				html.Div(html.DivConfig{Class: "demo-stack"},
-					html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.caption)),
-					ui.Cluster(ui.ClusterConfig{}, btn),
-				),
-			),
-		),
+		stage(spec.caption, row(btn)),
 	)
 }
 
@@ -86,7 +78,7 @@ func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 var Catalog = []Entry{
 	// ---------- Buttons & links ----------
 	{"button", "Button", "Buttons & links", "Primary action element with size + variant slots.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Button(ui.ButtonConfig{Label: "Primary", Variant: ui.ButtonPrimary}),
 			ui.Button(ui.ButtonConfig{Label: "Secondary", Variant: ui.ButtonSecondary}),
 			ui.Button(ui.ButtonConfig{Label: "Ghost", Variant: ui.ButtonGhost}),
@@ -94,7 +86,7 @@ var Catalog = []Entry{
 		)
 	}},
 	{"link", "Link", "Buttons & links", "Typed anchor with external-link affordances.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Link(ui.LinkConfig{Href: "/docs/", Text: "Internal link"}),
 			ui.Link(ui.LinkConfig{
 				Href:       "https://pkg.go.dev/",
@@ -104,33 +96,33 @@ var Catalog = []Entry{
 		)
 	}},
 	{"copybutton", "CopyButton", "Buttons & links", "Copies text from a target selector to clipboard.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			html.Div(html.DivConfig{ID: "copy-demo-source"}, render.Text("hello world")),
 			ui.CopyButton(ui.CopyButtonConfig{Target: "#copy-demo-source", Label: "Copy hello"}),
 		)
 	}},
 	{"shortcuthint", "ShortcutHint", "Buttons & links", "Inline keyboard-shortcut chip.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.ShortcutHint(ui.ShortcutHintConfig{Chord: "Mod+K"}),
 			ui.ShortcutHint(ui.ShortcutHintConfig{Chord: "Shift+/"}),
 		)
 	}},
 	{"themetoggle", "ThemeToggle", "Buttons & links", "Cycles data-color-scheme between dark/light/auto.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),
 			ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel}),
 			ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill}),
 		)
 	}},
 	{"themepicker", "ThemePicker", "Buttons & links", "Switches the whole page to a registered theme override and remembers the choice.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: "Square", Theme: squareTheme}}}),
 		)
 	}},
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Tag(ui.TagConfig{Label: "neutral"}),
 			ui.Tag(ui.TagConfig{Label: "success", Variant: ui.StatusSuccess}),
 			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
@@ -145,7 +137,7 @@ var Catalog = []Entry{
 		)
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.StatusBadge(ui.StatusBadgeConfig{Label: "Online", Variant: ui.StatusSuccess}),
 			ui.StatusBadge(ui.StatusBadgeConfig{Label: "Degraded", Variant: ui.StatusWarning}),
 			ui.StatusBadge(ui.StatusBadgeConfig{Label: "Offline", Variant: ui.StatusDanger}),
@@ -178,13 +170,13 @@ var Catalog = []Entry{
 		})
 	}},
 	{"spinner", "Spinner", "Feedback", "Indeterminate progress indicator.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Spinner(ui.SpinnerConfig{}),
 			ui.Spinner(ui.SpinnerConfig{Size: ui.SpinnerLg}),
 		)
 	}},
 	{"skeleton", "SkeletonPresets", "Feedback", "Shimmer placeholders while content loads.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.SkeletonAvatar(ui.SkeletonAvatarConfig{}),
 			ui.SkeletonRow(ui.SkeletonRowConfig{}),
 			ui.SkeletonRow(ui.SkeletonRowConfig{}),
@@ -206,11 +198,11 @@ var Catalog = []Entry{
 
 	// ---------- Layout ----------
 	{"card", "Card", "Layout", "Surface with optional header / footer; whole-card link when Href is set.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.Card(ui.CardConfig{
 				Heading:     "A typical card",
 				Description: "Header + body + footer slots; theme-skinned automatically.",
-				Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
+				Footer:      row(ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
 			}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme."))),
 			// Interactive variant: with Href the whole shell becomes a
 			// focusable <a class="fui-card fui-card--interactive">.
@@ -228,9 +220,9 @@ var Catalog = []Entry{
 	}},
 	{"stack", "Stack", "Layout", "Vertical flex stack with gap token.", func() render.HTML {
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Top")),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Middle")),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Bottom")),
+			tile(render.Text("Top")),
+			tile(render.Text("Middle")),
+			tile(render.Text("Bottom")),
 		)
 	}},
 	{"listdetail", "ListDetail", "Layout", "Scrollable list beside a routed detail slot; stacked on phones.", func() render.HTML {
@@ -246,9 +238,9 @@ var Catalog = []Entry{
 	}},
 	{"grid", "Grid", "Layout", "CSS Grid with min column width + gap tokens.", func() render.HTML {
 		return ui.Grid(ui.GridConfig{Min: "12rem", Gap: ui.GapMD},
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 1")),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 2")),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Cell 3")),
+			tile(render.Text("Cell 1")),
+			tile(render.Text("Cell 2")),
+			tile(render.Text("Cell 3")),
 		)
 	}},
 	{"cluster", "Cluster", "Layout", "Horizontal flex with wrap.", func() render.HTML {
@@ -278,7 +270,7 @@ var Catalog = []Entry{
 	}},
 	{"aspectratio", "AspectRatio", "Layout", "Maintains aspect ratio for media boxes.", func() render.HTML {
 		return ui.AspectRatioComponent(ui.AspectRatioConfig{Ratio: ui.AspectRatio16_9},
-			html.Div(html.DivConfig{Class: "fact full"}, render.Text("16:9 box")),
+			ui.Box(ui.BoxConfig{Pad: ui.BoxPadMD, Surface: true, Outlined: true}, render.Text("16:9 box")),
 		)
 	}},
 	{"workbench", "Workbench", "Layout", "Inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest. An <iframe> in the pane fills it edge to edge. Stacks below 720px.", func() render.HTML {
@@ -286,17 +278,17 @@ var Catalog = []Entry{
 			ui.ColorField(ui.ColorFieldConfig{Name: "primary", Value: "#4F46E5", SwatchLabel: "Primary"}),
 			ui.ColorField(ui.ColorFieldConfig{Name: "accent", Value: "#0891B2", SwatchLabel: "Accent"}),
 		)
-		pane := html.Div(html.DivConfig{Class: "demo-row"},
+		pane := row(
 			html.Paragraph(html.TextConfig{}, render.Text("The pane fills the remaining space.")))
-		// A short rail width and the .demo-viewport wrapper: the component is
-		// viewport-height by design, which inside a catalog card would eat the
-		// page. Both the class and its rule live in this package (css.go).
-		return html.Div(html.DivConfig{Class: "demo-viewport"},
+		// A short rail width inside a bounded Box: the component is
+		// viewport-height by design, which inside a catalog page would eat
+		// the page. The Box caps the window and scrolls the rest.
+		return ui.Box(ui.BoxConfig{Bounded: true},
 			ui.Workbench(ui.WorkbenchConfig{RailWidth: ui.WorkbenchRailNarrow, Rail: rail, Pane: pane}))
 	}},
 	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
 		primary := html.Div(html.DivConfig{},
-			html.Div(html.DivConfig{Class: "demo-row"},
+			row(
 				interactive.OpenPaneOnClick(ui.Button(ui.ButtonConfig{
 					Label:   "Open details",
 					Variant: ui.ButtonSecondary,
@@ -308,7 +300,7 @@ var Catalog = []Entry{
 				ui.Link(ui.LinkConfig{Href: "/examples/workspace", Text: "→ Full-page master-detail workspace example"})),
 		)
 		secondary := html.Div(html.DivConfig{},
-			html.Div(html.DivConfig{Class: "demo-row"},
+			row(
 				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Details")),
 				interactive.ClosePaneOnClick(ui.Button(ui.ButtonConfig{
 					Label:   "Close",
@@ -326,7 +318,7 @@ var Catalog = []Entry{
 	}},
 	{"sticky", "Sticky", "Layout", "Sticky-positioned wrapper.", func() render.HTML {
 		return ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop, Offset: ui.StickyOffsetLg},
-			html.Div(html.DivConfig{Class: "fact"}, render.Text("Stick scroll past me")),
+			tile(render.Text("Stick scroll past me")),
 		)
 	}},
 
@@ -384,7 +376,7 @@ var Catalog = []Entry{
 		)
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.Pagination(ui.PaginationConfig{Page: 2, Pages: 8, PageParam: "page", AriaLabel: "Middle-page example"}),
 			// First-page variant: the Previous boundary renders disabled.
 			ui.Pagination(ui.PaginationConfig{Page: 1, Pages: 8, PageParam: "page", AriaLabel: "First-page example"}),
@@ -418,7 +410,7 @@ var Catalog = []Entry{
 		// The items are explicit and the headings they name render in
 		// the same demo, so every link resolves and the no-script
 		// reader gets the whole list.
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.TableOfContents(ui.TOCConfig{
 				Target: "main", Sticky: true,
 				Items: []ui.TOCItem{
@@ -519,9 +511,9 @@ var Catalog = []Entry{
 			Body:         "This permanently removes the record.",
 			RPCPath:      "#",
 		})
-		return html.Div(html.DivConfig{Class: "demo-stack"},
-			trigger,
-			html.Div(html.DivConfig{Class: "fact"},
+		return stack(
+			row(trigger),
+			note(
 				render.Text("ConfirmAction returns a trigger HTML + a modal builder; mount the modal once at app startup via widget.Mount."),
 			),
 		)
@@ -598,9 +590,9 @@ var Catalog = []Entry{
 		// The same frame at two container widths: the switch reads the
 		// frame's own inline size (a container query), so the wide box
 		// sits side by side and the narrow box stacks on the same page.
-		return html.Div(html.DivConfig{Class: "demo-stack"},
-			html.Div(html.DivConfig{Class: "demo-measure-wide"}, frame),
-			html.Div(html.DivConfig{Class: "demo-measure-narrow"}, frame))
+		return stackWide(
+			ui.Container(ui.ContainerConfig{Start: true}, frame),
+			ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow, Start: true}, frame))
 	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
 		return ui.Select(ui.SelectConfig{
@@ -669,7 +661,7 @@ var Catalog = []Entry{
 		// Wrapped in a <form> so the same-tick Enter guard has a real
 		// submit target to suppress (Enter commits a chip without
 		// submitting; a later genuine submit still proceeds).
-		return render.Tag("form", map[string]string{"class": "demo-stack"},
+		return render.Tag("form", nil,
 			ui.TagInput(ui.TagInputConfig{Name: "tags", Label: "Tags", Values: []string{"go", "framework", "agent"}}),
 		)
 	}},
@@ -777,7 +769,7 @@ var Catalog = []Entry{
 		// The rows and their controls live in the caller's form: the
 		// add/remove controls are named submit buttons, so a plain
 		// POST walks the same path the island does.
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater", "class": "demo-stack"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater"},
 			ui.FormRepeater(ui.FormRepeaterConfig{
 				Name:  "links",
 				Items: [][]render.HTML{{row(0)}, {row(1)}},
@@ -791,7 +783,7 @@ var Catalog = []Entry{
 				Label: fmt.Sprintf("Guest %d", i+1),
 			})
 		}
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater", "class": "demo-stack"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater"},
 			ui.Repeater(ui.RepeaterConfig{
 				Name:     "guests",
 				Label:    "Guests",
@@ -803,7 +795,7 @@ var Catalog = []Entry{
 
 	// ---------- Data ----------
 	{"datatable", "DataTable", "Data", "Sortable + paginated data table island.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
+		return note(
 			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See the DataTable docs for the full island-RPC wiring pattern."),
 		)
 	}},
@@ -862,7 +854,7 @@ const page = await api.posts.list({ limit: 25 });`},
 		})
 	}},
 	{"avatar", "Avatar", "Data", "User picture or initials, with an optional presence dot.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Avatar(ui.AvatarConfig{Name: "Donald Murillo"}),
 			ui.Avatar(ui.AvatarConfig{Name: "Claude"}),
 			ui.Avatar(ui.AvatarConfig{Name: "Ada Online", Status: ui.AvatarOnline}),
@@ -880,9 +872,9 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"thumbnail", "Thumbnail", "Data", "Square image preview for a table cell or a record's photo field.", func() render.HTML {
 		src, err := demoMockup(160, 160).PNG().DataURL()
 		if err != nil {
-			return html.Div(html.DivConfig{Class: "fact"}, render.Text("Demo image could not be encoded."))
+			return note(render.Text("Demo image could not be encoded."))
 		}
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Small", Size: ui.ThumbnailSM}),
 			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Medium"}),
 			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
@@ -899,7 +891,7 @@ const page = await api.posts.list({ limit: 25 });`},
 		}})
 	}},
 	{"statcard", "StatCard", "Data", "Metric tile with trend.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.StatCard(ui.StatCardConfig{Label: "Active users", Value: "12,483", Trend: "+8.2%", Direction: ui.TrendUp}),
 			ui.StatCard(ui.StatCardConfig{Label: "Errors / hr", Value: "47", Trend: "−12%", Direction: ui.TrendDown}),
 			ui.StatCard(ui.StatCardConfig{Label: "Latency p99", Value: "142ms", Trend: "stable", Direction: ui.TrendFlat}),
@@ -960,19 +952,19 @@ const page = await api.posts.list({ limit: 25 });`},
 		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: "/__gofastr/app.css", Width: 320, Height: 180, Alt: "placeholder"})
 	}},
 	{"icon", "Icon", "Media", "Bundled SVG icon set with named lookup.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.Icon("check", ui.IconConfig{AriaLabel: "Check"}),
 			ui.Icon("x", ui.IconConfig{AriaLabel: "Close"}),
 			ui.Icon("search", ui.IconConfig{AriaLabel: "Search"}),
 		)
 	}},
 	{"gallery", "Gallery", "Media", "Image grid with lightbox.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
+		return note(
 			render.Text("Gallery wraps OptimizedImage thumbnails + Lightbox. Live demo needs image sources."),
 		)
 	}},
 	{"lightbox", "Lightbox", "Media", "Modal viewer for images.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
+		return note(
 			render.Text("Lightbox is a widget you mount once + open from an island click."),
 		)
 	}},
@@ -1015,11 +1007,10 @@ const page = await api.posts.list({ limit: 25 });`},
 		)
 	}},
 	{"toggle", "Toggle Switch", "Inputs", "Boolean toggle: client-side signal flip, no RPC.", func() render.HTML {
-		row := html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.SignalToggle(ui.SignalToggleConfig{SignalName: "demo-toggle"}),
 			interactive.BindText(render.Tag("span", nil, render.Text("false")), "demo-toggle"),
 		)
-		return row
 	}},
 	// ---------- Wizards + cross-cutting affordances ----------
 	// StepWizard/ProgressSteps are Wizards; the rest below are
@@ -1055,7 +1046,7 @@ const page = await api.posts.list({ limit: 25 });`},
 		)
 	}},
 	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle: commit, untoggle, mutex groups.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.Cluster(ui.ClusterConfig{},
 				ui.ToggleAction(ui.ToggleActionConfig{
 					Endpoint:         "/__site/toggle/noop",
@@ -1090,7 +1081,7 @@ const page = await api.posts.list({ limit: 25 });`},
 			// the OptimisticAction fetch (the runtime is fire-and-
 			// forget). The two buttons exercise both reconciliation
 			// paths against the same field: one commits, one rolls back.
-			return html.Div(html.DivConfig{Class: "demo-stack"},
+			return stack(
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `ui.OptimisticAction(ui.OptimisticActionConfig{
     Endpoint:     "/api/rename/validate",
     IdleLabel:    "Save",
@@ -1102,7 +1093,7 @@ const page = await api.posts.list({ limit: 25 });`},
 					ID:    "opt-edit-name",
 					Value: "Acme Corp",
 				}),
-				html.Div(html.DivConfig{Class: "demo-row"},
+				row(
 					ui.OptimisticAction(ui.OptimisticActionConfig{
 						Endpoint:     "/__site/optimistic/edit/ok",
 						IdleLabel:    "Save",
@@ -1115,7 +1106,7 @@ const page = await api.posts.list({ limit: 25 });`},
 						Variant:      ui.ButtonSecondary,
 					}),
 				),
-				html.Div(html.DivConfig{Class: "fact"},
+				note(
 					render.Text("Click Save: the button flips to “Saved ✓” optimistically, the 2xx keeps it committed. Click Save (reject): the button flips, then shakes and reverts when the 4xx lands. To transmit the actual input value, wrap the field in a form with interactive.OnSubmit (see the optimistic-ui doc, Recipe 2)."),
 				),
 			)
@@ -1133,7 +1124,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"optimisticslow", "Optimistic Slow + Failure", "Optimistic UI",
 		"Pending state, commit after delay, rollback + shake on failure, with a NetworkRetryBanner.",
 		func() render.HTML {
-			return html.Div(html.DivConfig{Class: "demo-stack"},
+			return stack(
 				ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{
 					HealthEndpoint: "/__gofastr/health",
 				}),
@@ -1147,7 +1138,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
     IdleLabel:    "Save (will fail)",
     SuccessLabel: "Saving…",
 })`}),
-				html.Div(html.DivConfig{Class: "demo-row"},
+				row(
 					ui.OptimisticAction(ui.OptimisticActionConfig{
 						Endpoint:     "/__site/optimistic/slow",
 						IdleLabel:    "Save (slow)",
@@ -1160,18 +1151,18 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 						Variant:      ui.ButtonSecondary,
 					}),
 				),
-				html.Div(html.DivConfig{Class: "fact"},
+				note(
 					render.Text("Save (slow) exercises the pending window: the button is aria-busy + disabled for ~2s, then commits. Save (will fail) flips optimistically, then shakes and reverts when the 4xx lands. Neither auto-retries; for durable retries use a queue + idempotency key."),
 				),
 			)
 		}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette, wired in nav (try it).", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
+		return note(
 			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair: mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
 	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
+		return note(
 			render.Text("GlobalSearch is the inline alternative to CommandPalette. Needs an RPC search endpoint."),
 		)
 	}},
@@ -1189,18 +1180,18 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				{Title: "New release: v0.x.y", Time: "1h ago"},
 			},
 		})
-		return html.Div(html.DivConfig{Class: "demo-stack"},
-			trigger,
-			html.Div(html.DivConfig{Class: "fact"},
+		return stack(
+			row(trigger),
+			note(
 				render.Text("NotificationBell returns a trigger HTML + a popover widget; mount the popover once at app startup via widget.Mount."),
 			),
 		)
 	}},
 	{"pipelineimage", "PipelineImage", "Media", "Image processed through the framework's image pipeline.", func() render.HTML {
 		demo := pipelineImageDemo()
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			demo.image,
-			html.Div(html.DivConfig{Class: "fact"},
+			note(
 				render.Text("Left to right: the "+demo.hash+" BlurHash decoded to a placeholder, "+
 					"and the same image with that placeholder stacked behind it. "+
 					"The placeholder is server-rendered markup: no JavaScript decodes anything in the browser."),
@@ -1220,11 +1211,11 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				interactive.Post("/__site/interactive/counter").
 					OnSuccess(interactive.SetSignal("demo-counter")),
 			)
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
+			return stack(
+				html.Paragraph(html.TextConfig{},
 					render.Text("You have a counter, a vote button, or any UI where a click should update a number or string on screen, without a full page reload. The server owns the state; the browser just displays the latest value."),
 				),
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
+				html.Paragraph(html.TextConfig{},
 					render.Text("Put data-cui-rpc on a button and data-cui-rpc-signal on the same element. Add a data-cui-signal span wherever you want the response to appear. The runtime POSTs, parses JSON or text, and pushes the result into every matching signal node."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
@@ -1232,21 +1223,12 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
     interactive.Post("/api/like").
         OnSuccess(interactive.SetSignal("like-count")),
 )`}),
-				html.Div(html.DivConfig{Class: "demo-stage"},
-					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
-						html.Div(html.DivConfig{Class: "demo-stack"},
-							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click the button: the number updates from the server. No page reload."),
-							),
-							html.Div(html.DivConfig{Class: "demo-row"},
-								btn,
-								interactive.BindText(render.Tag("span", map[string]string{
-									"data-cui-flash-on-update": "",
-									"class":                    "demo-signal-out",
-								}, render.Text("0")), "demo-counter"),
-							),
-						),
+				stage("Click the button: the number updates from the server. No page reload.",
+					row(
+						btn,
+						interactive.BindText(render.Tag("strong", map[string]string{
+							"data-cui-flash-on-update": "",
+						}, render.Text("0")), "demo-counter"),
 					),
 				),
 			)
@@ -1295,11 +1277,11 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 						interactive.ResetForm(),
 					),
 			)
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
+			return stack(
+				html.Paragraph(html.TextConfig{},
 					render.Text("A comment form, a search box, a quick-add field: submit without losing scroll position or context. The server processes it and returns a snippet (confirmation text, rendered item, status message) that appears right below the form."),
 				),
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
+				html.Paragraph(html.TextConfig{},
 					render.Text("Put data-cui-rpc on a <form> element. The runtime intercepts the submit, POSTs fields as JSON, and writes the response into the signal. Add data-cui-rpc-reset to clear the form after success so the user can submit again."),
 				),
 				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnSubmit(
@@ -1313,19 +1295,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
             interactive.ResetForm(),
         ),
 )`}),
-				html.Div(html.DivConfig{Class: "demo-stage"},
-					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
-						html.Div(html.DivConfig{Class: "demo-stack"},
-							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Type a message and press Send. The response appears below; the form clears."),
-							),
-							form,
-							interactive.BindHTML(render.Tag("div", map[string]string{
-								"class": "demo-signal-out",
-							}), "demo-form-result"),
-						),
-					),
+				stage("Type a message and press Send. The response appears below; the form clears.",
+					form,
+					interactive.BindHTML(render.Tag("div", nil), "demo-form-result"),
 				),
 			)
 		}},
@@ -1354,26 +1326,34 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"scroll-reveal", "Scroll Reveal", "Clientside Interactivity",
 		"Elements fade in as they scroll into view: IntersectionObserver, no JS needed.",
 		func() render.HTML {
-			box := render.Tag("div", map[string]string{
-				"class": "demo-reveal-box",
-			}, render.Text("This box fades up when you scroll to it."))
-			return interactive.Reveal(box, "fade-up")
+			// Reveal stamps its attributes on the root it is handed, so the
+			// framed box sits inside a plain wrapper of its own.
+			box := html.Div(html.DivConfig{},
+				ui.Box(ui.BoxConfig{Pad: ui.BoxPadXL, Outlined: true},
+					render.Text("This box fades up when you scroll to it.")))
+			// A viewport-tall hint first, so the box starts below the
+			// fold and the reveal is something the reader scrolls to see.
+			return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+				ui.Center(ui.CenterConfig{MinHeight: "viewport"},
+					ui.Muted(render.Text("Scroll down: the box below fades up as it enters the view."))),
+				interactive.Reveal(box, "fade-up"))
 		}},
 
 	{"signal-animate", "Signal Animate", "Clientside Interactivity",
 		"Toggle a CSS class when a signal changes; the same primitive drives several transition styles. Each example is one signal + one class.",
 		func() render.HTML {
-			example := func(sig, cls, panelClass, label, copy string) render.HTML {
-				panel := render.Tag("div", map[string]string{"class": panelClass}, render.Text(copy))
-				return html.Div(html.DivConfig{Class: "demo-stack"},
+			example := func(sig, cls, panelID, label, copy string) render.HTML {
+				panel := html.Div(html.DivConfig{ID: panelID},
+					ui.Box(ui.BoxConfig{Pad: ui.BoxPadMD, Outlined: true}, render.Text(copy)))
+				return stack(
 					ui.Cluster(ui.ClusterConfig{},
 						interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig)),
 					interactive.AnimateOnSignal(panel, sig, cls),
 				)
 			}
-			return html.Div(html.DivConfig{Class: "demo-stack-lg"},
-				example("demo-anim-slide", "fui-expanded", "demo-animate-panel", "Toggle slide-down", "Slides open via max-height."),
-				example("demo-anim-fade", "is-shown", "demo-animate-fade", "Toggle fade-in", "Fades and lifts in (opacity + transform)."),
+			return stackWide(
+				example("demo-anim-slide", "is-open", "demo-animate-panel", "Toggle is-open", "While the signal is on, this panel carries the is-open class. The transition is the app's own, keyed on that class."),
+				example("demo-anim-fade", "is-shown", "demo-animate-fade", "Toggle is-shown", "A second signal and a second class: is-shown, on this panel only."),
 			)
 		}},
 
@@ -1386,17 +1366,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				render.Tag("a", map[string]string{"href": "#"}, render.Text("Duplicate")),
 				render.Tag("a", map[string]string{"href": "#"}, render.Text("Delete")),
 			)
-			// Reserve vertical room so the open menu fits inside the demo
-			// frame (.demo-stage clips overflow for its rounded corners).
-			return html.Div(html.DivConfig{Class: "demo-dropdown-room"},
-				interactive.Dropdown(trigger, panel))
+			return interactive.Dropdown(trigger, panel)
 		}},
 
 	{"section-menu", "Section Menu", "Clientside Interactivity",
 		"Grouped, collapsible navigation: a sticky rail on desktop, a framework drawer (backdrop + click-outside close + focus trap) on mobile (< 900px). Powers the docs + components nav. Active item highlighted; auto-closes on navigation.",
 		func() render.HTML {
-			return html.Div(html.DivConfig{Class: "demo-section-menu"},
-				interactive.SectionMenu(DemoSectionMenuConfig()))
+			return interactive.SectionMenu(DemoSectionMenuConfig())
 		}},
 
 	{"signal-store", "Signal Store", "Clientside Interactivity",
@@ -1409,23 +1385,23 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}),
 					name, val)
 			}
-			producers := html.Div(html.DivConfig{Class: "demo-row"},
+			producers := row(
 				mkBtn("Rename to Globex", "Globex"),
 				mkBtn("Rename to Initech", "Initech"),
 				mkBtn("Reset", "Acme Corp"),
 			)
-			consumers := html.Div(html.DivConfig{Class: "demo-stack"},
-				DemoCompany.Bind(ctx, "div", map[string]string{"id": "store-consumer-heading", "class": "demo-store-heading"}),
+			consumers := stack(
+				DemoCompany.Bind(ctx, "h3", map[string]string{"id": "store-consumer-heading"}),
 				html.Paragraph(html.TextConfig{},
 					render.Text("Inline mention: "),
 					DemoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),
 				),
 				html.Paragraph(html.TextConfig{},
 					render.Text("Footer badge: "),
-					DemoCompany.Bind(ctx, "span", map[string]string{"class": "demo-signal-out", "id": "store-consumer-badge"}),
+					DemoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-badge"}),
 				),
 			)
-			return html.Div(html.DivConfig{Class: "demo-stack"}, producers, consumers)
+			return stack(producers, consumers)
 		}},
 
 	// ---------- Ported from examples/website (site is now the only example app) ----------
@@ -1436,7 +1412,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		// The pattern package retired with the move: the anatomy is
 		// headless.Disclosure's now, dressed here with the same shape
 		// the pattern rendered.
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "What's included in the free plan?"},
 				html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, community support, and all core features."))),
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "Can I export my data?", Open: true},
@@ -1461,7 +1437,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		})
 	}},
 	{"progress", "Progress", "Feedback", "Native <progress> wrapper: determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
+		return stack(
 			ui.Progress(ui.ProgressConfig{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
 			ui.Progress(ui.ProgressConfig{Value: 18, Max: 100, Label: "Storage used", ShowLabel: true, Description: "18% of 1 TB"}),
 			ui.Progress(ui.ProgressConfig{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
@@ -1475,7 +1451,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"modal", "Modal", "Overlays", "Center-mounted dialog: backdrop, focus trap, Escape, URL deeplinking.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open modal", Variant: ui.ButtonPrimary}), "site-demo-modal"),
 			interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit user #42", Variant: ui.ButtonSecondary, ExtraAttrs: html.Attrs{"data-cui-deeplink": "user_id=42"}}), "site-demo-modal"),
 		)
@@ -1534,7 +1510,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},
 	{"toast", "Toast", "Feedback", "Stacked notifications: client (data-cui-toast) or server (X-Gofastr-Toast header).", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary}), interactive.Toast{Variant: "success", Title: "Saved", Body: "Triggered from JS, no round-trip.", TTLMs: 5000}),
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary}), interactive.Toast{Variant: "info", Title: "FYI", Body: "Body text + five-second TTL.", TTLMs: 5000}),
 			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary, ExtraAttrs: interactive.Post("/__site/toast/push").WithBody("{}").Attrs()}),
@@ -1558,7 +1534,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"herosplit", "HeroSplit", "Marketing", "Two-column hero: copy on one side, media on the other.", func() render.HTML {
 		return ui.HeroSplit(ui.HeroSplitConfig{
-			Copy: html.Div(html.DivConfig{Class: "demo-stack"},
+			Copy: stack(
 				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Typed Go, all the way down.")),
 				html.Paragraph(html.TextConfig{}, render.Text("Compose screens and APIs from the same declaration.")),
 				ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary})),
@@ -1581,7 +1557,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"authcard", "AuthCard", "Marketing", "Centered card shell for login / register / reset forms.", func() render.HTML {
 		return ui.AuthCard(ui.AuthCardConfig{
 			Title: "Sign in",
-			Body: html.Div(html.DivConfig{Class: "demo-stack"},
+			Body: stack(
 				ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email",
 					Input: func(c headless.FieldControl) render.HTML {
 						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
@@ -1598,7 +1574,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 
 	// ---------- Tags & badges (additions) ----------
 	{"statuspill", "StatusPill", "Tags & badges", "Compact status pill with optional leading dot.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.StatusPill(ui.StatusPillConfig{Label: "Stable", Dot: true}),
 			ui.StatusPill(ui.StatusPillConfig{Label: "Beta", Tone: ui.StatusPillAccent, Dot: true}),
 		)
@@ -1613,7 +1589,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}})
 	}},
 	{"factbox", "FactBox", "Data", "Single labelled fact: a compact label + value pair.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return row(
 			ui.FactBox(ui.FactBoxConfig{Label: "Uptime", Value: "99.98%"}),
 			ui.FactBox(ui.FactBoxConfig{Label: "Requests", Value: "1.2M", Style: ui.FactStyleValueFirst}),
 		)
@@ -1743,12 +1719,13 @@ panel := html.Div(html.DivConfig{},
 )
 interactive.Dropdown(trigger, panel)`,
 
-	"scroll-reveal": `box := html.Div(html.DivConfig{Class: "card"},
-    render.Text("Fades up when scrolled into view."))
+	"scroll-reveal": `box := html.Div(html.DivConfig{},
+    ui.Box(ui.BoxConfig{Pad: ui.BoxPadXL, Outlined: true},
+        render.Text("Fades up when scrolled into view.")))
 interactive.Reveal(box, "fade-up") // or "fade-in", "slide-left", "slide-right"`,
 
 	"signal-animate": `// One signal drives a CSS class toggle: wire any transition you like.
-panel := html.Div(html.DivConfig{Class: "panel"}, render.Text("…"))
+panel := html.Div(html.DivConfig{ID: "panel"}, render.Text("…"))
 interactive.AnimateOnSignal(panel, "open", "is-shown")
 interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: "Toggle"}), "open")`,
 

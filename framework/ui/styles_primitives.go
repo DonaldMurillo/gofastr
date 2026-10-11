@@ -117,6 +117,12 @@ func layoutCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
 }
+/* Bounded: a scrolling window at a fixed cap. Knob: --ui-box-bounded-size. */
+:where([data-cui-comp="ui-layout"]).fui-box--bounded {
+  max-block-size: var(--ui-box-bounded-size, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 [data-cui-comp="ui-layout"].fui-box--pad-sm { padding: var(--spacing-sm, 4px); }
 [data-cui-comp="ui-layout"].fui-box--pad-md { padding: var(--spacing-md, 8px); }
 [data-cui-comp="ui-layout"].fui-box--pad-lg { padding: var(--spacing-lg, 16px); }

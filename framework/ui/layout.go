@@ -301,8 +301,14 @@ type BoxConfig struct {
 	Pad      BoxPad // padding (none | sm | md | lg | xl)
 	Surface  bool   // when true, applies the surface background + border-radius
 	Outlined bool   // when true, applies a 1px border (pairs well with Surface=false)
-	ID       string
-	Class    string
+	// Bounded caps the box's block size at the --ui-box-bounded-size
+	// knob (20rem by default) and scrolls whatever overflows it. It is a
+	// window onto content taller than the place it sits: a long log or
+	// list in a panel, or a component that is viewport-height by design
+	// (Workbench, a Screen stack) previewed inside a page.
+	Bounded bool
+	ID      string
+	Class   string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the box's root <div>.
@@ -326,6 +332,9 @@ func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	}
 	if cfg.Outlined {
 		cls += " fui-box--outlined"
+	}
+	if cfg.Bounded {
+		cls += " fui-box--bounded"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class

@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -38,8 +37,7 @@ import (
 // browser will send, exactly what runThemeEdit does after net.Listen.
 //
 // It mirrors runThemeEdit's host wiring, which newTestServer does NOT: the
-// contrast probes are only measurable once contrastProbeCSS is injected, and
-// the gallery demos need gallery.BaseCSS. A browser test that drives the
+// contrast probes are only measurable once contrastProbeCSS is injected. A browser test that drives the
 // preview iframe must build the host the way the real tool does.
 func newBrowserThemeServer(t *testing.T) (*themeEditServer, *httptest.Server) {
 	t.Helper()
@@ -50,7 +48,7 @@ func newBrowserThemeServer(t *testing.T) (*themeEditServer, *httptest.Server) {
 	base := uitheme.Default()
 	a := app.NewApp("theme-edit-browser").WithTheme(base)
 	a.Register("/preview", &galleryPreviewScreen{}, nil)
-	host := uihost.New(a, uihost.WithCustomCSS(gallery.BaseCSS(base)+previewChromeCSS+contrastProbeCSS()))
+	host := uihost.New(a, uihost.WithCustomCSS(previewChromeCSS+contrastProbeCSS()))
 	srv := &themeEditServer{
 		host:    host,
 		base:    base,
@@ -86,7 +84,7 @@ func newBrowserThemeServerWithDelayedVariantCSS(t *testing.T, delay time.Duratio
 	base := uitheme.Default()
 	a := app.NewApp("theme-edit-browser-delayed").WithTheme(base)
 	a.Register("/preview", &galleryPreviewScreen{}, nil)
-	host := uihost.New(a, uihost.WithCustomCSS(gallery.BaseCSS(base)+previewChromeCSS+contrastProbeCSS()))
+	host := uihost.New(a, uihost.WithCustomCSS(previewChromeCSS+contrastProbeCSS()))
 	srv := &themeEditServer{
 		host:    host,
 		base:    base,
