@@ -217,16 +217,18 @@ func buttonCSS(t style.Theme) string {
 }
 
 func codeBlockCSS(_ style.Theme) string {
-	// Uses the dedicated code-surface tokens (defined in style.Theme
-	// defaults) so dark mode can override them independently of the
-	// page Text/Background pair. Light-mode fallback values keep the
-	// classic "dark inkwell" feel; dark-mode apps redefine the tokens
-	// in their app stylesheet under [data-color-scheme="dark"].
+	// Uses the dedicated code-surface tokens (style.ColorSet.CodeSurface/
+	// CodeText/CodeBorder) and the syntax slots (style.Theme.Code, dark
+	// values in Theme.DarkCode), so a theme re-skins or dark-adapts code
+	// independently of the page Text/Background pair. The stock values
+	// keep the classic "dark inkwell" in both schemes.
 	//
 	// Knobs: --ui-code-block-status-size (7px) sizes the head's status
 	// dot; --ui-code-block-gutter-width (28px) sizes the numbered line
 	// gutter, and the body's numbered padding, the band margins and the
-	// ::before anchor are calc()s over it.
+	// ::before anchor are calc()s over it; --ui-code-block-tab-size (4)
+	// sets how wide a tab indent renders (Go source is tab-indented, and
+	// the browser default of 8 pushes nested code off the panel).
 	return `[data-cui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
@@ -240,6 +242,7 @@ func codeBlockCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-relaxed, 1.6);
   white-space: pre;
+  tab-size: var(--ui-code-block-tab-size, 4);
   -webkit-text-size-adjust: 100%;
 }
 [data-cui-comp="ui-code-block"] .tok-kw     { color: var(--tk-kw, #C792EA); }
@@ -340,7 +343,10 @@ func codeBlockCSS(_ style.Theme) string {
   top: 0;
   width: var(--ui-code-block-gutter-width, 28px);
   text-align: right;
-  color: var(--color-text-subtle, #71717A);
+  /* Derived from the code pair, not the page's text-subtle: the gutter
+     sits on the code surface, which a theme may keep dark on a light
+     page or re-skin light, and the number must recede on either. */
+  color: var(--ui-code-block-gutter-color, color-mix(in oklab, var(--color-code-text, #E4E4E7) 45%, var(--color-code-surface, #18181B)));
   font-size: var(--text-xs, 0.75rem);
   user-select: none;
 }

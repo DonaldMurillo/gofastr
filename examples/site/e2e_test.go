@@ -1271,7 +1271,7 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
-			const cta = document.querySelector('.hero__ctas');
+			const cta = document.querySelector('[aria-label="Hero"] a[href="/get-started"]');
 			const headerTargets = [...document.querySelectorAll('[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle')]
 				.map(el => el.getBoundingClientRect())
 				.filter(rect => rect.width > 0 && rect.height > 0)

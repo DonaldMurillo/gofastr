@@ -1,20 +1,20 @@
 package main
 
 // =============================================================================
-// Go source rendered as a hand-tokenized code block. The chrome (filename
-// header, status dot, line count, the real copy button) and the line-number
-// gutter are now owned by the framework's ui.CodeBlock; this file keeps only
-// the Go-specific tokenizer.
+// Thin adapter over the kit's code display. ui.CodeBlock owns the chrome
+// (filename header, status dot, line count, copy button), the line-number
+// gutter, and the token palette: the .tk-* classes the helpers below emit
+// are the same ones ui.HighlightLines emits, colored by ui.CodeBlock's
+// stylesheet from the theme's Code slots (--tk-*, dark values in
+// Theme.DarkCode). The site ships no CSS for any of it.
 //
-// Why hand-tokenized instead of go/parser → highlighter: the design wants
-// pixel-accurate control over which identifiers are styled as `tk-fn` (the
-// function-call call sites) vs `tk-type` (`framework.Config`, etc.). A
-// generic AST highlighter would mis-bucket those by Go's grammar. The blocks
-// are short, the trade-off is fine. The token palette (.tk-*) lives in
-// styles.go because it is intentionally site-specific.
+// The hand-tokenized helpers (kw/fn_/str_/pn/ty/com + ln) stay for blocks
+// that want exact control over which identifiers read as calls vs types;
+// raw source can instead go through codeBlockScroll or ui.CodeTabs, which
+// highlight with ui.HighlightLines.
 //
-// All token helpers escape user-supplied strings via render.Text. Literals
-// passed at compile time go through the same path, no special case.
+// All token helpers escape their strings via render.Text, literals
+// included, so there is no special case.
 // =============================================================================
 
 import (
@@ -60,9 +60,9 @@ func ln(parts ...render.HTML) render.HTML {
 	return render.Join(parts...)
 }
 
-// Token helpers. One per syntax class. All produce <span class="tk-X">…</span>
-// matching the v2 token palette. Plain text outside any token uses
-// render.Text directly.
+// Token helpers. One per syntax class. Each produces <span class="tk-X">…</span>,
+// the kit's token class for that role (ui.CodeBlock colors it). Plain text
+// outside any token uses render.Text directly.
 func kw(s string) render.HTML   { return render.Tag("span", attrClass("tk-kw"), render.Text(s)) }
 func fn_(s string) render.HTML  { return render.Tag("span", attrClass("tk-fn"), render.Text(s)) }
 func str_(s string) render.HTML { return render.Tag("span", attrClass("tk-str"), render.Text(s)) }
