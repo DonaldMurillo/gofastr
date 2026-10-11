@@ -1,28 +1,21 @@
 package main
 
 // =============================================================================
-// Home, top-level outline (matches pages/home-v2.html in the design bundle):
+// Home, top-level outline:
 //
-//   HERO        version tag · h1 with amber span · 2 ledes · 2 CTAs · install
-//               RHS: code block (blog/main.go, hand-tokenized in code_block.go)
+//   HERO        status pill · h1 · lede · CTAs · install command · agent lede
+//               RHS: ui.CodeTabs with the three README Quickstart programs
 //   §01         the numbers: countable claims, measured or test-gated
-//   §02         server-rendered UI: SSR/islands model | screen mock
+//   §02         server-rendered UI: the SSR/islands model beside a sample
+//               list screen built from real kit components
 //   §03         explore grid, 6 route cards into the main areas of the site
 //   §04         built with gofastr, production app + the Meridian flagship
 //
-// Sections live inside <main> only; the top bar and colophon are the
-// site's own siteheader / sitefooter packages. Built with core-ui/html
-// (Heading, Link, UnorderedList, ListItem, DescriptionList…) so attribute
-// escaping and landmark roles come from typed builders. Page-local layout
-// classes (.hero__grid, .arch-card, .agents__split, etc.) are styled in
-// styles.go via the typed StyleSheet DSL, no raw CSS strings.
-//
-// Framework component fit-check: ui.Container / ui.Card / ui.Tag were
-// considered. Each ships its own visual chrome that diverges from the v2
-// tokens, so adopting them here would either fight the design or require
-// shadowing their CSS. The right time to extract is when a second consumer
-// needs the same pattern, the porting target then is framework/ui/SiteCard,
-// framework/ui/AccentTag, etc.
+// Everything is composed from framework/ui on the stock theme: HeroSplit,
+// Section, Container, Stack, Cluster, Grid, Card, StatCard, DataTable,
+// CodeTabs, CodeBlock, InlineCode. The page ships no CSS and no class of
+// its own; the top bar and colophon are the site's owned siteheader /
+// sitefooter packages.
 // =============================================================================
 
 import (
@@ -51,72 +44,81 @@ func (s *HomeScreen) ScreenDescription() string {
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *HomeScreen) Render() render.HTML {
-	return render.Join(
-		heroSection(),
-		numbersSection(),
-		realAppSection(),
-		exploreSection(),
-		builtWithSection(),
-	)
+	// One wide container owns the page column and its rhythm under the
+	// header and above the footer; the Stack owns the space between
+	// sections.
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
+		ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+			heroSection(),
+			numbersSection(),
+			realAppSection(),
+			exploreSection(),
+			builtWithSection(),
+		))
 }
 
-// container is the site's max-width wrapper. Delegates to
-// ui.Container(ContainerWide), the wide cap is set to 1240px on the
-// theme (createTheme: t.Layout.WideWidth).
+// container is the site's max-width wrapper: ui.Container at the theme's
+// wide width (the stock Layout.WideWidth).
 func container(children ...render.HTML) render.HTML {
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide}, children...)
 }
 
+// installCommand is the hero's one-line install, pinned to this build's
+// release tag (or main on a development build).
+func installCommand() string {
+	return "go install github.com/DonaldMurillo/gofastr/cmd/gofastr@" + siteInstallTarget()
+}
+
 // -----------------------------------------------------------------------------
-// HERO: two-col grid, copy on the left, code block on the right.
+// HERO: ui.HeroSplit, copy on the left, the Quickstart programs on the right.
 // -----------------------------------------------------------------------------
 
 func heroSection() render.HTML {
-	preAlphaTag := html.Div(
-		html.DivConfig{Class: "mb-lg"},
-		ui.StatusPill(ui.StatusPillConfig{Label: "early · " + versionLabel(), Tone: ui.StatusPillAccent, Dot: true}),
+	title := html.Heading(html.HeadingConfig{Level: 1},
+		render.Text("Full-stack Go that doesn't get in the way of you or your agents."),
 	)
 
-	title := html.Heading(html.HeadingConfig{Level: 1, Class: "hero__title"},
-		render.Text("Full-stack Go that doesn't get in the way of "),
-		html.Span(html.TextConfig{Class: "amber"}, render.Text("you or your agents")),
-		render.Text("."),
-	)
-
-	lede1 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
+	lede1 := html.Paragraph(html.TextConfig{},
 		html.Strong(html.TextConfig{}, render.Text("GoFastr")),
 		render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
 		html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
 		render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
 	)
-	lede2 := html.Paragraph(html.TextConfig{Class: "hero__lede"},
+	lede2 := html.Paragraph(html.TextConfig{},
 		render.Text("During development, "),
-		html.Code(html.TextConfig{}, render.Text("gofastr dev")),
+		ui.InlineCode("gofastr dev"),
 		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
 	)
 
-	ctas := html.Div(html.DivConfig{Class: "hero__ctas"},
+	ctas := ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD},
 		ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
 		ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
 	)
 
-	install := html.Div(html.DivConfig{Class: "hero__install", ExtraAttrs: html.Attrs{"tabindex": "0"}},
-		html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
-		render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/gofastr@"+siteInstallTarget()),
-	)
+	// The install line is a real code block: copyable, keyboard
+	// scrollable on a phone, and escaped like any other sample.
+	install := ui.CodeBlock(ui.CodeBlockConfig{
+		Code:     installCommand(),
+		Language: "shell",
+		Filename: "terminal",
+		ShowCopy: true,
+	})
 
 	// Keep the primary path before the deeper agent story. On phones the CTA
-	// now lands in the first viewport; desktop readers still get the detail.
-	copy := render.Join(preAlphaTag, title, lede1, ctas, install, lede2)
-
-	return html.Section(html.SectionConfig{Class: "hero", Label: "Hero"},
-		container(ui.HeroSplit(ui.HeroSplitConfig{
-			Copy:  copy,
-			Media: heroCodeTabs(),
-			Ratio: ui.HeroSplitMediaWide,
-			Class: "hero-home",
-		})),
+	// lands in the first viewport; desktop readers still get the detail.
+	copy := ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.Cluster(ui.ClusterConfig{},
+			ui.StatusPill(ui.StatusPillConfig{Label: "early · " + versionLabel(), Tone: ui.StatusPillAccent, Dot: true}),
+		),
+		title, lede1, ctas, install, lede2,
 	)
+
+	return ui.HeroSplit(ui.HeroSplitConfig{
+		Copy:      copy,
+		Media:     heroCodeTabs(),
+		Ratio:     ui.HeroSplitMediaWide,
+		AriaLabel: "Hero",
+	})
 }
 
 // The three hero programs: core-only (stdlib primitives), framework +
@@ -319,28 +321,44 @@ var embeddedDocCount = sync.OnceValue(func() string {
 	return strconv.Itoa(n)
 })
 
-func numbersSection() render.HTML {
-	stat := func(value, label, check string) render.HTML {
-		return html.Div(html.DivConfig{Class: "num-card"},
-			html.Span(html.TextConfig{Class: "num-card__value"}, render.Text(value)),
-			html.Span(html.TextConfig{Class: "num-card__label"}, render.Text(label)),
-			html.Paragraph(html.TextConfig{Class: "num-card__check"}, render.Text(check)),
-		)
-	}
+// numberClaim is one countable claim: the value, what it counts, and how a
+// reader can check it.
+type numberClaim struct{ value, label, check string }
 
-	grid := html.Div(html.DivConfig{Class: "num__grid"},
-		stat(measuredRuntimeGz(), "of client JavaScript, gzipped",
-			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."),
-		stat(embeddedDocCount(), "docs embedded in every binary",
-			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."),
-		stat("5", "MCP tools per entity",
-			"list, get, create, update, delete. Each dispatches through the app router, so the caller's login and permissions apply."),
-		stat("2", "databases",
-			"SQLite and Postgres. No MySQL, no Mongo."),
-		stat("1", "binary to deploy",
-			"go build emits it. No Node, no platform, no telemetry."),
-		stat("0", "npm packages",
-			"There is no package.json in the repo. The client runtime is checked-in JS the binary serves."),
+func numberClaims() []numberClaim {
+	return []numberClaim{
+		{measuredRuntimeGz(), "of client JavaScript, gzipped",
+			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."},
+		{embeddedDocCount(), "docs embedded in every binary",
+			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."},
+		{"5", "MCP tools per entity",
+			"list, get, create, update, delete. Each dispatches through the app router, so the caller's login and permissions apply."},
+		{"2", "databases",
+			"SQLite and Postgres. No MySQL, no Mongo."},
+		{"1", "binary to deploy",
+			"go build emits it. No Node, no platform, no telemetry."},
+		{"0", "npm packages",
+			"There is no package.json in the repo. The client runtime is checked-in JS the binary serves."},
+	}
+}
+
+// numbersSection: the six claims as three ui.MetricBands of two, each
+// signal a label, its value, and the sentence that says how to check it.
+// Pairs keep every band even: one row on a desktop, two columns on a
+// phone, no odd signal spanning a row.
+func numbersSection() render.HTML {
+	claims := numberClaims()
+	band := func(label string, cs []numberClaim) render.HTML {
+		items := make([]ui.MetricBandItem, 0, len(cs))
+		for _, c := range cs {
+			items = append(items, ui.MetricBandItem{Label: c.label, Value: c.value, Hint: c.check})
+		}
+		return ui.MetricBand(ui.MetricBandConfig{Label: label, Items: items})
+	}
+	bands := ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		band("Measured by this binary", claims[:2]),
+		band("Agents and databases", claims[2:4]),
+		band("Deploy and dependencies", claims[4:]),
 	)
 
 	head := sectionHead(
@@ -348,21 +366,20 @@ func numbersSection() render.HTML {
 		render.Text("Each value is measured by this running binary or enforced by a test in the repo. Nothing here is an adjective."),
 	)
 
-	return sectionWrap("01 / the numbers", "The numbers", head, grid)
+	return sectionWrap("01 / the numbers", "The numbers", head, bands)
 }
 
 // -----------------------------------------------------------------------------
 // §02: Server-rendered UI. Most Go frameworks stop at the API; GoFastr renders
 // the pages too, on the server, with a small JS runtime that hydrates in place
-// and turns in-page changes into island calls. The screen mock shows the shape;
-// the left column explains the model. Blueprint is a one-line aside, not the
-// section's story.
+// and turns in-page changes into island calls. The sample screen shows the
+// shape; the left column explains the model.
 // -----------------------------------------------------------------------------
 
 func realAppSection() render.HTML {
 	li := func(children ...render.HTML) render.HTML { return html.ListItem(html.ListItemConfig{}, children...) }
 
-	left := html.Div(html.DivConfig{Class: "realapp__left"},
+	left := ui.Stack(ui.StackConfig{Gap: ui.GapMD},
 		html.Paragraph(html.TextConfig{},
 			render.Text("Most Go frameworks stop at the API. GoFastr renders the pages too: on the server, in Go, with no React or Vue on the client."),
 		),
@@ -374,67 +391,59 @@ func realAppSection() render.HTML {
 		),
 	)
 
-	grid := html.Div(html.DivConfig{Class: "realapp__grid"}, left, screenMock())
-
 	head := sectionHead(
 		"Server-rendered screens, not just an API.",
 		render.Text("Below is the shape of a server-rendered screen: a data table with status badges and a create button, built from framework/ui components and served as plain HTML."),
 	)
 
-	return sectionWrap("02 / server-rendered UI", "Server-rendered UI", head, grid)
+	return sectionWrap("02 / server-rendered UI", "Server-rendered UI", head,
+		ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapXL}, left, screenMock()))
 }
 
-// screenMock is a static, faithful preview of a server-rendered list screen
-// (Meridian's /customers): a page header plus a server-rendered data table with
-// formatted cells and status badges. It is not wired to live data, it shows
-// the SHAPE of a server-rendered screen, so the homepage can demonstrate "a
-// real screen" without standing up the entity + RPC a live DataTable island
-// requires.
+// screenMock is a sample of a server-rendered list screen (Meridian's
+// /customers), composed from the same kit components the real screen
+// uses: a Card framing a static DataTable with formatted cells and
+// status badges. It is not wired to live data, so the homepage shows
+// the SHAPE of a real screen without standing up the entity + RPC a
+// live DataTable island requires.
 func screenMock() render.HTML {
 	badge := func(label string, tone ui.StatusVariant) render.HTML {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: label, Variant: tone})
 	}
-	cell := func(c render.HTML) render.HTML { return html.TD(html.TDConfig{}, c) }
-	th := func(s string) render.HTML { return html.TH(html.THConfig{}, render.Text(s)) }
-	row := func(name, plan, mrr, status string, tone ui.StatusVariant) render.HTML {
-		return html.TableRow(html.TableRowConfig{},
-			cell(render.Text(name)),
-			cell(render.Text(plan)),
-			cell(html.Span(html.TextConfig{Class: "mock-mrr"}, render.Text(mrr))),
-			cell(badge(status, tone)),
-		)
+	row := func(name, plan, mrr, status string, tone ui.StatusVariant) ui.Row {
+		return ui.Row{Cells: map[string]render.HTML{
+			"name":   render.Text(name),
+			"plan":   render.Text(plan),
+			"mrr":    render.Text(mrr),
+			"status": badge(status, tone),
+		}}
 	}
 
-	table := html.Table(html.TableConfig{Class: "mock-table"},
-		html.Thead(html.TableSectionConfig{},
-			html.TableRow(html.TableRowConfig{}, th("Name"), th("Plan"), th("MRR"), th("Status")),
-		),
-		html.Tbody(html.TableSectionConfig{},
+	table := ui.DataTable(ui.DataTableConfig{
+		Caption:       "Customers",
+		CaptionHidden: true,
+		Flush:         true,
+		Responsive:    ui.ResponsiveRows,
+		Columns: []ui.Column{
+			{Key: "name", Header: "Name", Phone: ui.PhoneTitle},
+			{Key: "plan", Header: "Plan", Phone: ui.PhoneSubtitle},
+			{Key: "mrr", Header: "MRR", Align: "end", Phone: ui.PhoneDetail},
+			{Key: "status", Header: "Status", Phone: ui.PhoneEnd},
+		},
+		Rows: []ui.Row{
 			row("Acme Corp", "pro", "$1,240", "active", ui.StatusSuccess),
 			row("Globex", "enterprise", "$8,900", "active", ui.StatusSuccess),
 			row("Initech", "free", "$0", "churned", ui.StatusNeutral),
 			row("Umbrella", "pro", "$2,150", "active", ui.StatusSuccess),
-		),
-	)
+		},
+	})
 
-	return html.Div(html.DivConfig{Class: "screen-mock"},
-		html.Div(html.DivConfig{Class: "screen-mock__bar"},
-			html.Span(html.TextConfig{Class: "dot"}),
-			html.Span(html.TextConfig{Class: "dot"}),
-			html.Span(html.TextConfig{Class: "dot"}),
-			html.Span(html.TextConfig{Class: "screen-mock__url"}, render.Text("meridian.local/customers")),
-		),
-		html.Div(html.DivConfig{Class: "screen-mock__body"},
-			html.Div(html.DivConfig{Class: "screen-mock__head"},
-				html.Heading(html.HeadingConfig{Level: 3}, render.Text("Customers")),
-				html.Span(html.TextConfig{Class: "mock-new"}, render.Text("+ New customer")),
-			),
-			table,
-		),
-		html.Paragraph(html.TextConfig{Class: "screen-mock__cap"},
-			render.Text("/customers: a server-rendered screen from framework/ui, in plain Go you own."),
-		),
-	)
+	return ui.Card(ui.CardConfig{
+		Heading:     "Customers",
+		Description: "meridian.local/customers",
+		Action:      ui.Button(ui.ButtonConfig{Label: "New customer", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeSmall, Disabled: true}),
+		Footer:      ui.Muted(render.Text("/customers: a server-rendered screen from framework/ui, in plain Go you own.")),
+	}, table)
 }
 
 // -----------------------------------------------------------------------------
@@ -444,38 +453,43 @@ func screenMock() render.HTML {
 // route on the site.
 // -----------------------------------------------------------------------------
 
-func exploreSection() render.HTML {
-	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
-	card := func(href, eyebrow, title string, desc render.HTML) render.HTML {
-		return html.LinkHTML(html.LinkHTMLConfig{
-			Href:  href,
-			Class: "ex-card",
-			Content: render.Join(
-				html.Span(html.TextConfig{Class: "path"}, render.Text(eyebrow)),
-				html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
-				html.Paragraph(html.TextConfig{}, desc),
-			),
-		})
+// routeCard is one linked card: the whole outlined Card is the link, its
+// heading the destination, the body what is there, and the footer the
+// packages or path it covers.
+func routeCard(href, eyebrow, title string, desc render.HTML, external bool) render.HTML {
+	var attrs html.Attrs
+	if external {
+		attrs = html.Attrs{"rel": "external"}
 	}
+	return ui.Card(ui.CardConfig{
+		Href:       href,
+		Heading:    title,
+		Variant:    ui.CardOutlined,
+		Footer:     ui.Muted(render.Text(eyebrow)),
+		ExtraAttrs: attrs,
+	}, ui.Stack(ui.StackConfig{TrimMargins: true}, html.Paragraph(html.TextConfig{}, desc)))
+}
 
-	grid := html.Div(html.DivConfig{Class: "ex__grid"},
-		card("/primitives", "core · core-ui", "The primitives",
-			render.Join(render.Text("Router, query builder, schema, "), codeText("render"), render.Text(", the MCP server, HTML primitives, and signals. These are stdlib-first Go packages you can use on their own.")),
+func exploreSection() render.HTML {
+	code := ui.InlineCode
+	grid := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
+		routeCard("/primitives", "core · core-ui", "The primitives",
+			render.Join(render.Text("Router, query builder, schema, "), code("render"), render.Text(", the MCP server, HTML primitives, and signals. These are stdlib-first Go packages you can use on their own.")), false,
 		),
-		card("/framework", "framework · framework/ui", "Framework",
-			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations, framework/ui components, and theming."),
+		routeCard("/framework", "framework · framework/ui", "Framework",
+			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations, framework/ui components, and theming."), false,
 		),
-		card("/agents", "mcp · llm.md · well-known", "Agent-ready",
-			render.Join(render.Text("Per-entity MCP tools, auto "), codeText("llm.md"), render.Text(", tools that read the running app, and the agent-discovery endpoints your app serves.")),
+		routeCard("/agents", "mcp · llm.md · well-known", "Agent-ready",
+			render.Join(render.Text("Per-entity MCP tools, auto "), code("llm.md"), render.Text(", tools that read the running app, and the agent-discovery endpoints your app serves.")), false,
 		),
-		card("/interactivity", "ssr · islands · signals", "Interactivity",
-			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE. There is no client framework to ship."),
+		routeCard("/interactivity", "ssr · islands · signals", "Interactivity",
+			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE. There is no client framework to ship."), false,
 		),
-		card("/generator", "generate", "The code generator",
-			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."),
+		routeCard("/generator", "generate", "The code generator",
+			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."), false,
 		),
-		card("/examples", "examples/", "The example apps",
-			render.Text(fmt.Sprintf("%d runnable reference apps, including a blog, a SaaS console, a storefront, an API tour, an entity admin, a process-isolated module, a WebMCP support console, and this site. Each starts with one command.", len(exRowItems()))),
+		routeCard("/examples", "examples/", "The example apps",
+			render.Text(fmt.Sprintf("%d runnable reference apps, including a blog, a SaaS console, a storefront, an API tour, an entity admin, a process-isolated module, a WebMCP support console, and this site. Each starts with one command.", len(exRowItems()))), false,
 		),
 	)
 
@@ -490,31 +504,14 @@ func exploreSection() render.HTML {
 // -----------------------------------------------------------------------------
 // §04: Built with GoFastr. Real apps running on the framework: a production
 // tool (external) and the generated flagship. Proof it ships real software,
-// not just demos. Reuses the .ex-card / .ex__grid classes from the explore grid.
+// not just demos. Same route cards as the explore grid.
 // -----------------------------------------------------------------------------
 
 func builtWithSection() render.HTML {
-	card := func(href, eyebrow, title string, desc render.HTML, external bool) render.HTML {
-		attrs := html.Attrs{}
-		if external {
-			attrs["rel"] = "external"
-		}
-		return html.LinkHTML(html.LinkHTMLConfig{
-			Href:       href,
-			Class:      "ex-card",
-			ExtraAttrs: attrs,
-			Content: render.Join(
-				html.Span(html.TextConfig{Class: "path"}, render.Text(eyebrow)),
-				html.Heading(html.HeadingConfig{Level: 3}, render.Text(title)),
-				html.Paragraph(html.TextConfig{}, desc),
-			),
-		})
-	}
-
-	grid := html.Div(html.DivConfig{Class: "ex__grid"},
-		card("https://barcode.donaldmurillo.com/", "in production", "Barcode & QR Code Maker",
+	grid := ui.Grid(ui.GridConfig{Min: "18rem", Gap: ui.GapLG},
+		routeCard("https://barcode.donaldmurillo.com/", "in production", "Barcode & QR Code Maker",
 			render.Text("A live tool, no signup required, to generate and read barcodes and QR codes as PNG, SVG, or PDF, with CSV/Excel batch export, a REST API, and an MCP server."), true),
-		card("/examples#meridian", "examples/meridian", "Meridian: SaaS console",
+		routeCard("/examples#meridian", "examples/meridian", "Meridian: SaaS console",
 			render.Text("The flagship is a billing console with customers, subscriptions, invoices, MRR, and charts, plus its marketing site, auth, and admin. It was seeded from one gofastr.yml and has been hand-evolved since."), false),
 	)
 
@@ -526,27 +523,28 @@ func builtWithSection() render.HTML {
 	return sectionWrap("04 / built with gofastr", "Built with GoFastr", head, grid)
 }
 
+// -----------------------------------------------------------------------------
 // Shared section helpers.
 // -----------------------------------------------------------------------------
 
-// sectionHead: h2 + lede paragraph, two-column at desktop, stacked at mobile
-// (the responsive collapse lives in styles.go's @media block).
+// sectionHead is a section's h2 over its lede, stacked with the kit's
+// small gap. Base typography styles both; the lede reads muted.
 func sectionHead(title string, lede render.HTML) render.HTML {
-	return html.Header(html.HeaderConfig{Class: "section__head"},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapSM, TrimMargins: true},
 		html.Heading(html.HeadingConfig{Level: 2}, render.Text(title)),
-		html.Paragraph(html.TextConfig{}, lede),
+		html.Paragraph(html.TextConfig{}, ui.Muted(lede)),
 	)
 }
 
-// sectionWrap, site adapter over ui.Section. The framework component owns
-// the <section> landmark, the decorative numeric eyebrow, and the
-// scroll-margin that keeps an anchored section clear of the sticky header;
-// the site only supplies the eyebrow text, accessible name, the v2 framing
-// class, and its max-width container.
+// sectionWrap is a compact ui.Section: it owns the <section> landmark
+// (named by ariaLabel), the decorative numeric eyebrow, and the scroll
+// margin that keeps an anchored section clear of the sticky header. The
+// caller's page container and Stack own the column and the spacing
+// between sections.
 func sectionWrap(num, ariaLabel string, head, body render.HTML) render.HTML {
 	return ui.Section(ui.SectionConfig{
 		Eyebrow: num,
 		Label:   ariaLabel,
-		Class:   "section-v2",
-	}, container(head, body))
+		Compact: true,
+	}, head, body)
 }

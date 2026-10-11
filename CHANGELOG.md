@@ -14,6 +14,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
   site header (`--size-header-height` plus the rail's gap).
 
+### Changed
+- **`ui.HighlightLines` knows more languages.** Go now classes named
+  types in type position (`type Pong`, `Pong{`, `*http.Request`,
+  `[]schema.Field`); JS/TS, SQL, shell, YAML and JSON get their own
+  keyword sets, comment syntax and key classing instead of the generic
+  comments-strings-numbers pass. `text`/`plain` stay untokenized.
+  See `gofastr docs ui-new-components` → Syntax highlighting.
+- **`ui.CodeBlock` renders a tab four columns wide**
+  (`--ui-code-block-tab-size`) and draws the line-number gutter from
+  the code colors (`--ui-code-block-gutter-color`), not the page's
+  `--color-text-subtle`.
+
 ### Fixed
 - `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
   track on phones, so a long unbreakable line in the media column no
