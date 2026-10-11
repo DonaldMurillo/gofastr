@@ -216,6 +216,18 @@ func (c *capturedTokens) tokenFor(email string) string {
 	return u.Query().Get("token")
 }
 
+// waitToken polls tokenFor until a URL arrives or d passes, for emails
+// a worker sends after the request returns.
+func (c *capturedTokens) waitToken(email string, d time.Duration) string {
+	deadline := time.Now().Add(d)
+	for {
+		if tok := c.tokenFor(email); tok != "" || time.Now().After(deadline) {
+			return tok
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 	emails := newCapturedTokens()
 	resets := newCapturedTokens()
@@ -411,9 +423,11 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("/auth/forgot-password: %d", code)
 	}
-	resetToken := resets.tokenFor("alice@e2e.test")
+	// The reset email is queued and sent by a worker, so it can land
+	// after the handler answers.
+	resetToken := resets.waitToken("alice@e2e.test", 5*time.Second)
 	if resetToken == "" {
-		t.Fatalf("no reset URL captured: %#v", resets.urls)
+		t.Fatalf("no reset URL captured within 5s: %q", resets.urlFor("alice@e2e.test"))
 	}
 
 	// 16. Reset password
