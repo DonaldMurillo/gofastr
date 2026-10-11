@@ -20,6 +20,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	cdruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -720,6 +721,9 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	// the surface fill, and the others are transparent.
 	var firstFill, secondFillInitial string
 	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(hlSettleTransitions, nil, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}),
 		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).backgroundColor`, &firstFill),
 		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).backgroundColor`, &secondFillInitial),
 	); err != nil {
@@ -762,8 +766,14 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	// Regression (frozen-highlight bug): the active indicator must MOVE to
 	// the second button: its fill now matches the original first-tab
 	// fill, and the first button's no longer does.
+	// The tabs transition their fill, and Chromium serializes a colour
+	// still mid-transition in oklab, so let it finish before comparing
+	// against the settled oklch fill read above.
 	var firstAfter, secondAfter string
 	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(hlSettleTransitions, nil, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}),
 		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).backgroundColor`, &firstAfter),
 		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).backgroundColor`, &secondAfter),
 	); err != nil {
