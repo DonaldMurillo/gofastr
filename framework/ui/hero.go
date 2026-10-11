@@ -24,9 +24,18 @@ type HeroConfig struct {
 	Title string
 	// Subtitle is the supporting lede under the title.
 	Subtitle string
+	// Lede is a rich supporting lede: inline markup (strong, a code
+	// span, a link) rendered in the lede paragraph. It replaces
+	// Subtitle when both are set. Inline content only: it renders
+	// inside a <p>.
+	Lede render.HTML
 	// Actions are the call-to-action elements (usually ui.LinkButton),
 	// laid out in a wrapping row beneath the lede.
 	Actions []render.HTML
+	// Footer is content under the actions, inside the copy column and
+	// as wide as it: an install command, a byline, a stats line, a
+	// second paragraph. Optional.
+	Footer render.HTML
 	// Media is an optional visual rendered beside the copy. When set, the
 	// hero becomes a two-column split; when empty it's a single column.
 	Media render.HTML
@@ -45,13 +54,14 @@ type HeroConfig struct {
 // Hero renders a single-column (or copy+media split) hero section.
 func Hero(cfg HeroConfig) render.HTML {
 	// Eyebrow/Title/Subtitle draw from strings alone, so the pill,
-	// title and lede never hold a caller's markup — but Actions does.
-	// With Actions present, copy holds a slot beside them, so each is
-	// marked on its own; with no Actions, copy holds nothing but its
-	// own parts, so copy itself is marked instead and they are left
-	// unmarked to avoid marking twice inside the same subtree.
+	// title and plain lede never hold a caller's markup — but Actions,
+	// Lede and Footer do. With any of those present, copy holds a slot
+	// beside its own parts, so each own part is marked on its own;
+	// with none, copy holds nothing but its own parts, so copy itself
+	// is marked instead and they are left unmarked to avoid marking
+	// twice inside the same subtree.
 	var copyOwn, partsOwn html.Attrs
-	if len(cfg.Actions) > 0 {
+	if len(cfg.Actions) > 0 || cfg.Lede != "" || cfg.Footer != "" {
 		partsOwn = html.Attrs{"data-cui-internal": ""}
 	} else {
 		copyOwn = html.Attrs{"data-cui-internal": ""}
@@ -69,11 +79,17 @@ func Hero(cfg HeroConfig) render.HTML {
 		copyParts = append(copyParts, pill)
 	}
 	copyParts = append(copyParts, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-hero__title", ExtraAttrs: partsOwn}, render.Text(cfg.Title)))
-	if cfg.Subtitle != "" {
+	if cfg.Lede != "" {
+		// Caller markup: the paragraph is a slot, not marked internal.
+		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "fui-hero__lede"}, cfg.Lede))
+	} else if cfg.Subtitle != "" {
 		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "fui-hero__lede", ExtraAttrs: partsOwn}, render.Text(cfg.Subtitle)))
 	}
 	if len(cfg.Actions) > 0 {
 		copyParts = append(copyParts, html.Div(html.DivConfig{Class: "fui-hero__actions"}, cfg.Actions...))
+	}
+	if cfg.Footer != "" {
+		copyParts = append(copyParts, html.Div(html.DivConfig{Class: "fui-hero__footer"}, cfg.Footer))
 	}
 	copy := html.Div(html.DivConfig{Class: "fui-hero__copy", ExtraAttrs: copyOwn}, copyParts...)
 
@@ -143,6 +159,15 @@ func heroCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   margin-top: var(--spacing-xs, 2px);
 }
+[data-cui-comp="ui-hero"] .fui-hero__footer {
+  align-self: stretch;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 8px);
+  color: var(--color-text-muted, inherit);
+}
+[data-cui-comp="ui-hero"] .fui-hero__footer > p { margin: 0; }
 [data-cui-comp="ui-hero"] .fui-hero__media img {
   inline-size: 100%;
   height: auto;

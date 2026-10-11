@@ -243,7 +243,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Marketing & page sections
 
-- **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media)
+- **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media); `Lede` takes inline markup in place of `Subtitle`, `Footer` holds content under the actions (an install line, a byline, stats)
 - **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios
 - **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight; cards placed directly in a `ui.Grid` that holds only plans share their row lines, so prices and feature lists start level across a row; a card in a wrapper cell or a mixed grid keeps its own rows
 - **authcard**: `framework/ui.AuthCard`, centered card shell for login / register / reset forms (title + alert + body + footer)

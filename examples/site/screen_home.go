@@ -74,27 +74,6 @@ func installCommand() string {
 // -----------------------------------------------------------------------------
 
 func heroSection() render.HTML {
-	title := html.Heading(html.HeadingConfig{Level: 1},
-		render.Text("Full-stack Go that doesn't get in the way of you or your agents."),
-	)
-
-	lede1 := html.Paragraph(html.TextConfig{},
-		html.Strong(html.TextConfig{}, render.Text("GoFastr")),
-		render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
-		html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
-		render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
-	)
-	lede2 := html.Paragraph(html.TextConfig{},
-		render.Text("During development, "),
-		ui.InlineCode("gofastr dev"),
-		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
-	)
-
-	ctas := ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD},
-		ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
-		ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
-	)
-
 	// The install line is a real code block: copyable, keyboard
 	// scrollable on a phone, and escaped like any other sample.
 	install := ui.CodeBlock(ui.CodeBlockConfig{
@@ -103,20 +82,30 @@ func heroSection() render.HTML {
 		Filename: "terminal",
 		ShowCopy: true,
 	})
-
-	// Keep the primary path before the deeper agent story. On phones the CTA
-	// lands in the first viewport; desktop readers still get the detail.
-	copy := ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-		ui.Cluster(ui.ClusterConfig{},
-			ui.StatusPill(ui.StatusPillConfig{Label: "early · " + versionLabel(), Tone: ui.StatusPillAccent, Dot: true}),
-		),
-		title, lede1, ctas, install, lede2,
+	agents := html.Paragraph(html.TextConfig{},
+		render.Text("During development, "),
+		ui.InlineCode("gofastr dev"),
+		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
 	)
 
-	return ui.HeroSplit(ui.HeroSplitConfig{
-		Copy:      copy,
+	// Keep the primary path before the deeper agent story: the actions
+	// sit right under the lede, so on phones the CTA lands in the first
+	// viewport; the install line and the agent note follow.
+	return ui.Hero(ui.HeroConfig{
+		Eyebrow: "early · " + versionLabel(),
+		Title:   "Full-stack Go that doesn't get in the way of you or your agents.",
+		Lede: render.Join(
+			html.Strong(html.TextConfig{}, render.Text("GoFastr")),
+			render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
+			html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
+			render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
+		),
+		Actions: []render.HTML{
+			ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
+			ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonGhost, Size: ui.ButtonSizeLarge}),
+		},
+		Footer:    render.Join(install, agents),
 		Media:     heroCodeTabs(),
-		Ratio:     ui.HeroSplitMediaWide,
 		AriaLabel: "Hero",
 	})
 }
