@@ -173,7 +173,7 @@ func stepRailCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
-[data-cui-comp="ui-step-rail"].fui-step-rail--below-header {
+:where([data-cui-comp="ui-step-rail"]).fui-step-rail--below-header {
   inset-block-start: var(--ui-step-rail-top, calc(var(--size-header-height, 56px) + var(--spacing-xl, 24px)));
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
