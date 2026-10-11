@@ -722,7 +722,7 @@ func expandRaw(q url.Values, raw json.RawMessage) {
 
 // sanitizeFilter reduces a child-supplied filter object to the keys that name
 // a declared, non-Hidden, non-NoQuery field of ent, optionally suffixed with
-// a comparison operator the filter DSL recognizes (_gt/_gte/_lt/_lte/_like/_in).
+// a comparison operator the filter DSL recognizes (_ne/_gt/_gte/_lt/_lte/_like/_in).
 // Control keys (include/trashed/where/limit/sort/fields/q/…), Hidden/NoQuery
 // field names, and undeclared names are dropped so they can never reach the
 // CRUD list query string. This is the F2 fix: it mirrors the allow-list
@@ -770,7 +770,7 @@ func queryableFieldKeys(ent *entity.Entity) map[string]bool {
 			if k == "" {
 				continue
 			}
-			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
+			for _, suffix := range []string{"", "_ne", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
 				allowed[k+suffix] = true
 			}
 		}

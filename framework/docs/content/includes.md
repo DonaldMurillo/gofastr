@@ -42,7 +42,7 @@ The response embeds the loaded relations inline under each parent row:
 includes := path ("," path)*
 path     := segment ("." segment)*
 segment  := name [ "(" filter ("," filter)* ")" ]
-filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_like"|"_in")? "=" value
+filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_ne"|"_like"|"_in")? "=" value
 ```
 
 - Top-level commas separate sibling includes.
@@ -89,6 +89,7 @@ filters:
 | `_gte`   | `>=`            |
 | `_lt`    | `<`             |
 | `_lte`   | `<=`            |
+| `_ne`    | `!=` (same NULL semantics as `=`: a NULL column matches neither) |
 | `_like`  | literal `contains`: `LIKE '%value%' ESCAPE '\'` with the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
 | `_in`    | `IN (...)`. Separator differs by surface: a top-level or `?rel.field_in=` query param takes COMMA-separated values, while a scoped include filter `include=rel(field_in=a\|b)` takes pipe-separated ones, because a comma already separates the filters inside the parentheses |
 

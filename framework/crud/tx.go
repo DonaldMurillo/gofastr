@@ -16,7 +16,13 @@ import (
 // fn receives a derived context carrying the *sql.Tx (accessible via
 // db.TxFromContext) and a tx-bound copy of the handler, its DB field points
 // at the transaction so all queries within fn participate.
+//
+// Every write enters here, so this is where an audit operation override
+// stops: a hook that writes during a restore or purge calls back in
+// through inTx, and its write records its own operation even when it
+// names the same record.
 func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch *CrudHandler) error) error {
+	ctx = withoutAuditOperation(ctx)
 	// Reuse an ambient transaction already in the context (e.g. one opened by
 	// App.InTx). This is what lets several CRUD operations, and any
 	// hand-written query-builder SQL run on the same tx, compose into one

@@ -272,7 +272,7 @@ func TestNoQueryFieldOmitsFilterParams(t *testing.T) {
 	})
 	doc := EntityOpenAPI(reg(e), "Test", "1.0.0", nil).Build()
 	op := getMap(t, getMap(t, getMap(t, doc, "paths"), "/cards"), "get")
-	for _, name := range []string{"card_number", "card_number_like", "card_number_in", "cardNumber"} {
+	for _, name := range []string{"card_number", "card_number_ne", "card_number_like", "card_number_in", "cardNumber"} {
 		if findParam(op["parameters"], name) != nil {
 			t.Errorf("NoQuery column advertised as filter parameter %q; the runtime answers it with a 400", name)
 		}

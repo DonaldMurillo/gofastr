@@ -671,24 +671,61 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	sb.WriteString("The base URL must include the API prefix when the server mounts one (e.g. `/api`).\n\n")
 	sb.WriteString("## Filtering, sorting, pagination\n\n")
 	sb.WriteString("List methods take `url.Values`. Query parameter names are the **snake_case**\ncolumn names (responses are camelCase: that asymmetry is the server's contract):\n\n")
-	// Skip NoQuery columns when picking the example. The server refuses them
-	// on every filter surface, so Fields[0] taken blindly documents a request
-	// that answers 400, from the snippet whose whole job is to demonstrate
-	// the casing contract working. Mirrors the JS README above.
-	filterField := ""
-	for i := range first.Fields {
-		if !first.Fields[i].NoQuery {
-			filterField = first.Fields[i].Snake
-			break
-		}
+	// Pick the example column and operator the same way every surface
+	// now does — from filter.OpSuitsType — so the snippet never shows a
+	// `_gte` on a field whose type refuses it (a Bool or JSON column,
+	// which answers 400 from the very snippet meant to demonstrate the
+	// contract). NoQuery columns are skipped as before. A spec whose
+	// every queryable column refuses the range operators gets the
+	// plain-equality example.
+	exampleField, filterOp := sdkExampleFilter(first.Fields)
+	filterField := "id"
+	if exampleField != nil {
+		filterField = exampleField.Snake
 	}
-	if filterField == "" {
-		filterField = "id"
+	if filterOp == "" {
+		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality; _ne and _in suit every column\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, first.Struct)
+	} else {
+		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, filterField+filterOp, first.Struct)
 	}
-	fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", filterField, filterField+"_gte", first.Struct)
 	sb.WriteString("Validation errors return `*APIError`; its `Body` holds the JSON envelope\n`{\"error\", \"success\", \"code\", \"fields\"}` where `fields` keys are snake_case\ncolumn names.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()
+}
+
+// sdkExampleFilter picks the readme's example filter column and
+// operator: the first queryable field whose type accepts a range
+// comparison (filter.OpSuitsType, the one predicate every filter
+// surface applies, via the CLI model's derived operator set) with
+// "_gte", else the first queryable field with "" (equality suits every
+// type), else nil. A `_gte` example on a Bool or JSON column would be
+// a request the server answers 400.
+func sdkExampleFilter(fields []cliField) (field *cliField, op string) {
+	for i := range fields {
+		if !fields[i].NoQuery && cliFieldAcceptsGte(fields[i]) {
+			f := fields[i]
+			return &f, "_gte"
+		}
+	}
+	for i := range fields {
+		if !fields[i].NoQuery {
+			f := fields[i]
+			return &f, ""
+		}
+	}
+	return nil, ""
+}
+
+// cliFieldAcceptsGte reports whether the field's derived operator set
+// contains the greater-or-equal suffix — the same derivation the CLI's
+// list table uses, so the readmes and the CLI cannot disagree.
+func cliFieldAcceptsGte(f cliField) bool {
+	for _, op := range f.FilterOps {
+		if op.Param == "_gte" {
+			return true
+		}
+	}
+	return false
 }
 
 // sdkGenerator adapts `generate sdk` to the codegen registry so a generator

@@ -109,6 +109,47 @@ Composite cursors (`EntityConfig.Pagination.CursorFields`) have no single-value
 DSL form, so `after()` on such an entity returns an error rather than
 silently paging from the start; use the HTTP cursor API for those.
 
+## Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`
+
+Beside the chained agent syntax sits a second, smaller parser for filter
+TEXT — the form a list view's `Where`, the admin's filter chips and the
+`?filter=` URL parameter carry. `ParsePredicate(text, fields)` returns a
+`*filter.Predicate` that has already passed `filter.ValidatePredicate`
+against the entity's fields; it never builds SQL and never touches
+`BuildDSLQuery`, which applies no row scope. Hand the tree to the CRUD
+handler's in-process list (`crud.ListOptions.Where`), where the scopes
+wrap it.
+
+```
+expr     := and_expr ("or" and_expr)*
+and_expr := term ("and" term)*
+term     := "(" expr ")" | field op value
+op       := "=" | "!=" | "<" | ">" | "<=" | ">=" | "contains" | "in"
+value    := "quoted \" \\ string" | number | true | false | [ value, … ]
+```
+
+```
+status = "open"
+amount >= 10000
+status in ["open", "past_due"] and due_on < "2026-10-01"
+(kind = "company" or vat_number != "") and active = true
+```
+
+Keywords are case-insensitive and `and` binds tighter than `or`.
+`contains` is a literal substring match: the `%`, `_` and escape
+characters in the value are escaped and the clause carries `ESCAPE`, so
+`contains "50%"` matches a literal 50%, not a wildcard. Blank text
+returns `(nil, nil)`; input over 8 KiB is refused; every error names its
+byte offset and quotes at most a short, control-byte-scrubbed excerpt.
+Field names must be plain identifiers and are checked against the
+entity's fields (unknown, Hidden and NoQuery names are refused, and an
+operator that does not suit the field's type — `contains` on an Int, say
+— is refused with it).
+
+`dsl.ParseSort(text, fields)` is the sibling for sort text
+(`due_on ASC`, `amount DESC, number ASC`): `filter.ParsedSort` values
+under the same field rules as `?sort=`, ASC by default, at most 16 keys.
+
 ## Errors the parser rejects
 
 - Unknown entity: `users.where(...)` when `users` isn't registered.

@@ -32,7 +32,7 @@ audit hooks bind to no entities.
 CREATE TABLE audit_log (
     id          TEXT       PRIMARY KEY,
     entity      TEXT       NOT NULL,
-    op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete'
+    op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete' | 'restore' | 'purge'
     record_id   TEXT       NOT NULL,
     actor_id    TEXT,                  -- nullable
     tenant_id   TEXT,                  -- nullable; current tenant at write time
@@ -58,6 +58,16 @@ idempotently: an `audit_log` table created by an older binary gets a
 nullable `tenant_id` added on the next `EnsureAuditTable`, with existing
 rows left untouched. See [multi-tenant](multi-tenant.md) for the
 tenant-scoped query pattern.
+
+`restore` and `purge` come from the soft-delete operations
+(`crud.RestoreOne`, `crud.PurgeOne`): they run the ordinary update and
+delete hook chains, and the operation they carry on the context — keyed
+to the one entity and record being restored or purged — reaches that
+record's audit row, so the trail says what actually happened rather than
+"update"/"delete". A hook that writes another entity's row mid-restore
+still gets that row's own operation: only the CRUD handler sets an
+override, and app code cannot write an arbitrary operation name into the
+trail.
 
 ## Configuration
 

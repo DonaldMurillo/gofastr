@@ -8,6 +8,107 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`EntityConfig.Display` carries an entity's screen hints.** One
+  block holds what admin and generated screens read: singular and plural
+  names, list columns, named views (a DSL `Where` and a `Sort`), facets,
+  the record form (main and side columns, rows, sections), card fields,
+  nav placement, per-field `Label`, `Help`, `Placeholder`, `Locked`,
+  `Omit` and `ShowWhen`, page sizes, and `NoDuplicate` / `NoBulk`. nil
+  means every default. `App.Entity` and `App.GroupEntity` check every
+  name when the entity registers and refuse, naming the offender: unknown
+  or Hidden fields, NoQuery fields in facets, bad or reserved keys
+  (`all`, `deleted`), duplicate view, section, column, facet or
+  page-size entries, empty sections, a view `As` other than `table` or
+  `cards`, `Omit`, `Locked` or `ShowWhen` on a Required field with no
+  default (a locked or hidden-away control never submits, so no form
+  could create the record), page sizes above
+  `Pagination.MaxListLimit`, a view `Where` the query DSL refuses, a
+  view `Sort` outside the `?sort=` grammar (parsed with `dsl.ParseSort`,
+  one grammar for views and URLs alike), and a `ShowWhen` that is
+  anything but one `field = value` or `field in [...]` term over an
+  editable Enum or Bool field whose values it names. The config is
+  deep-copied at registration and decodes strictly from JSON. Changing
+  it never changes the SDK schema hash.
+- **`framework/i18nui` translates the display names**: `EntitySingular`,
+  `EntityPlural`, `EntityDescription`, `FieldLabel`, `FieldHelp`,
+  `FieldValueLabel`, `ViewLabel`, `TransitionLabel`, `SectionLabel` and
+  `NavGroupLabel` read `entity.<entity>.*` and `nav.groups.<key>`
+  catalog keys, then the Display value, then the derived fallback — the
+  entity name singularized and title-cased for `EntitySingular` (so
+  `invoices` labels one record "Invoice", never "Invoices"), title-cased
+  for `EntityPlural`.
+- **Filter text: `dsl.ParsePredicate` and `dsl.ParseSort`.**
+  `ParsePredicate(text, fields)` parses `status in ["open", "past_due"]
+  and due_on < "2026-10-01"` into a `*filter.Predicate` that has passed
+  `filter.ValidatePredicate`; `ParseSort` parses `amount DESC, number
+  ASC`. Neither builds SQL. `contains` escapes `%`, `_` and the escape
+  character, so it matches literally. `filter.ValidatePredicate` runs the
+  `?where=` checks over a predicate built in Go and returns a resolved
+  deep copy — the input tree is never written to, so one parsed view can
+  be shared across goroutines.
+- **A not-equal filter.** `?field_ne=`, `ne` in `?where=` trees,
+  `?rel.field_ne=` and include-scoped `field_ne=`. A NULL column matches
+  neither `=` nor `!=`. OpenAPI specs, generated CLIs (`--<field>-ne`),
+  the SDK docs and readmes, `llm.md` and the process-module broker
+  carry it, and every one of those surfaces derives its per-field
+  operator set from `filter.OpSuitsType` — the same predicate the
+  parser applies — so no surface offers a filter the server answers
+  400, or hides one it accepts. Registration also refuses a queryable
+  field whose name or wire name is another's plus an operator suffix
+  (`status` beside `status_ne`): the suffix wins the parse, so
+  `?status_ne=` would filter `status` and the `status_ne` column could
+  never be filtered; the CLI generator refuses the same pair as a flag
+  collision instead of panicking inside flag.FlagSet.
+- **`crud.ListOptions.Where`, `.Filters` and `.Fields`** on `ListAll`
+  and `CountAll`. `Where` is a validated predicate ANDed inside every
+  owner, tenant and soft-delete scope, so an `or` in it cannot widen
+  past them, and hand-built `Filters` pass the same operator/type rule
+  `?field_<op>=` passes (a `like` on an Int column is refused).
+  `Fields` projects the listed columns (unknown and
+  Hidden refused, `id` always included).
+- **`CrudHandler.RestoreOne` and `CrudHandler.PurgeOne`** for
+  soft-delete entities, in-process only. Both ask the update or delete
+  permission and the resource Decider about the one record (a refusal is
+  wrapped in `crud.ErrForbidden`), run the update or delete hooks, emit
+  the entity event and write an audit row with operation `restore` or
+  `purge` — keyed to the one entity and record (`crud.AuditOperationFor`
+  reads the override back), so a hook's nested write of another
+  entity's row still audits as its own operation.
+  Purge refuses a live row (`crud.ErrNotSoftDeleted`), so it never skips
+  the soft delete; a row the caller cannot see answers not found (a
+  `CrossOwnerRead` grant does not lift restore or purge). Only the CRUD
+  handler names an audit operation; app code cannot write one.
+- **`ui.FormFrame`** lays out a record form in a wide main column and a
+  narrow side column, switching on the form's own width (container
+  query at 48rem) and stacking below it. `SideWidth` names one of three
+  widths — `FormFrameSideNarrow` (12rem), the default (16rem) and
+  `FormFrameSideWide` (22rem), each a modifier class whose registered
+  CSS reads the `--ui-form-frame-side-narrow` / `-wide` tokens, so a
+  theme retunes them and no inline style attribute ships for the
+  default CSP to strip. An unknown name panics at render.
+- **`ui.ConditionalField.WhenValues`** shows its children while the
+  watched field holds any of the listed values
+  (`headless.ConditionalFieldProps.Values`, carried as one JSON `data-hui-when-in` attribute).
+- **Intercepted drawers stack.** A link inside an open drawer to a
+  route intercepted from the drawer's own route opens another drawer
+  over it, up to four. A fifth open is refused with a toast and changes
+  nothing. Lower drawers keep their DOM, unsaved edits included, and go
+  inert; Back and Escape close one layer at a time. Stacked drawers
+  overlap at the inline end, each `--ui-intercept-stack-step` (default
+  `--spacing-2xl`) narrower than the one under it, and every layer casts
+  the scrim over the layers under it, so the lower ones show as strips.
+- **A list inside a drawer stays in the drawer.** A link that changes
+  only the drawer's own query (sort, page, filter) re-renders the
+  drawer, one history entry per click, instead of navigating the page
+  under it.
+- **`data-hui-leave-guard` on a form asks before its unsaved edits are
+  lost**: to a link, Back or Forward, a drawer's Escape or close
+  control, or a reload. It asks only when the move discards the form,
+  so opening a related drawer over a changed record does not ask.
+  `data-hui-leave-guard-message` sets the question. The form cleans on
+  a successful submit or a reset; a refused submit marks it changed
+  again (the rpc module now dispatches `gofastr:formresult` with
+  `detail.ok` on the form).
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
@@ -507,6 +608,35 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   other user's create, and the 409 reveals that the value exists.
 
 ### Changed
+- **BREAKING: filter operators must suit the column type.** `like`
+  works only on String, Text, Enum and UUID columns, and `gt`, `gte`,
+  `lt` and `lte` are refused on Bool and JSON, with a 400 naming the
+  operator, the key and the type. Every filter surface applies the one
+  rule (`filter.CheckOpType`): flat `?field_<op>=` params, `?where=`,
+  Go-built predicates, relation filters and include-scoped filters. A
+  client that sent `?count_like=5` sends `?count=5` or `?count_in=`;
+  a range over a JSON column (`?meta_gt=`) has no meaning a request
+  value can express, so it is refused on both dialects rather than
+  depending on Postgres's JSONB cast.
+- **BREAKING: `crud.ListOptions.Filters` is validated.** A hand-built
+  filter on `ListAll`/`CountAll` that names an unknown, Hidden or
+  NoQuery column, or an operator the column's type refuses (a `like`
+  on an Int), now returns an error instead of reaching SQL, and a
+  `WireName` resolves to its column. The checks are the ones the
+  `?field_<op>=` parser applies; in-process callers lose nothing the
+  HTTP surface ever had. `gofastr upgrade` lists the call sites.
+- **BREAKING: `i18nui.LabelForField` is removed.** Call
+  `i18nui.FieldLabel(ctx, tr, entity, field, display)`, which reads the
+  catalog key `entity.<entity>.fields.<field>.label`. The old
+  `entity.<entity>.field.<field>` key no longer translates; move those
+  catalog entries. `gofastr upgrade` lists the callers.
+- **BREAKING: `ui.WorkbenchConfig.RailWidth` takes a named width.** It
+  is a `ui.WorkbenchRailWidth`: `WorkbenchRailNarrow` (240px), the
+  default (320px) or `WorkbenchRailWide` (480px), each a modifier class
+  reading the `--ui-workbench-rail-narrow` / `-wide` token. The old
+  free-form length went out as an inline `style` attribute, which the
+  default CSP strips, so the knob never took effect on a strict host. An
+  unknown value panics at render. `gofastr upgrade` lists the callers.
 - **BREAKING: owned sheets read line height, letter spacing and opacity
   from the new tokens.** The owned-style check (`gofastr gen styles`,
   `gofastr verify`) compares `line-height`, `letter-spacing` and

@@ -74,6 +74,7 @@
 //	FilterToolbar:        URL-driven filter/sort/search control strip
 //	Form:                 opinionated <form> wrapper with submit + errors
 //	FormField:            labelled input with required + help + error states
+//	FormFrame:            two-column record-form frame, side rail dropping under on its own width
 //	FormRepeater:         dynamic list of repeating field groups
 //	FormSection:          grouped fields with heading + description
 //	Gallery:              Grid/Strip/Masonry thumbnail surface

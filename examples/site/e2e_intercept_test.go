@@ -132,7 +132,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 		chromedp.Sleep(2*time.Second),
 		chromedp.Location(&urlOpen),
 		chromedp.Evaluate(overlay, &overlayOpen),
-		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay]')?.getAttribute('data-cui-intercept-as') || ""`, &overlayAs),
+		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay] > :last-child')?.getAttribute('data-cui-intercept-as') || ""`, &overlayAs),
 		chromedp.Evaluate(`document.querySelector('[data-cui-intercept-overlay]')?.textContent || ""`, &overlayText),
 		// The list is still mounted underneath, that is what makes the
 		// close cheap and the scroll position survive.

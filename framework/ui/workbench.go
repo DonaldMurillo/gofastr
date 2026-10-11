@@ -2,6 +2,7 @@ package ui
 
 import (
 	"maps"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -27,12 +28,14 @@ import (
 
 // WorkbenchConfig configures a Workbench.
 type WorkbenchConfig struct {
-	// RailWidth overrides the rail's fixed inline size. One plain CSS
-	// length (number + unit, e.g. "480px", or a var(--token)
-	// reference); anything else drops the custom property and the CSS
-	// default applies. Defaults to 320px, which fits a label above a
-	// control comfortably.
-	RailWidth string
+	// RailWidth picks one of the rail widths the kit ships:
+	// WorkbenchRailNarrow (240px), the default (320px, which fits a
+	// label above a control comfortably) and WorkbenchRailWide (480px).
+	// Each is a modifier class reading the --ui-workbench-rail-narrow /
+	// -wide token, so a theme moves a width without an inline style
+	// attribute a strict CSP would strip. Any other value panics at
+	// render.
+	RailWidth WorkbenchRailWidth
 	// Rail is the left column. It scrolls independently of the pane, so a
 	// long control list never pushes the pane off screen.
 	Rail render.HTML
@@ -45,30 +48,38 @@ type WorkbenchConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and style (RailWidth owns the inline custom
-	// property).
+	// ID), data-cui-*, and style.
 	ExtraAttrs html.Attrs
 }
+
+// WorkbenchRailWidth is one of the named rail widths.
+type WorkbenchRailWidth string
+
+const (
+	// WorkbenchRailDefault is the 320px rail.
+	WorkbenchRailDefault WorkbenchRailWidth = ""
+	// WorkbenchRailNarrow is the 240px rail.
+	WorkbenchRailNarrow WorkbenchRailWidth = "narrow"
+	// WorkbenchRailWide is the 480px rail.
+	WorkbenchRailWide WorkbenchRailWidth = "wide"
+)
 
 // Workbench renders the two-pane inspector shell.
 func Workbench(cfg WorkbenchConfig) render.HTML {
 	cls := "fui-workbench"
+	switch cfg.RailWidth {
+	case WorkbenchRailDefault:
+	case WorkbenchRailNarrow, WorkbenchRailWide:
+		cls += " fui-workbench--rail-" + string(cfg.RailWidth)
+	default:
+		panic("ui.Workbench: unknown RailWidth " + strconv.Quote(string(cfg.RailWidth)) + "; use WorkbenchRailNarrow, WorkbenchRailWide or the default")
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
 	attrs := html.Attrs{"class": cls}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
-	}
-	if w := cssLengthOr(cfg.RailWidth, ""); w != "" {
-		// Set the rail width as a scoped custom property rather than an
-		// inline width, so the CSS keeps ownership of how the value is
-		// used and a strict-CSP host still gets no inline style
-		// attribute it has to allow. One plain CSS length only
-		// (cssLengthOr): a declaration list in request-derived config
-		// would otherwise ship verbatim as live page CSS. See
-		// core-ui/check/noinlinescripts.go.
-		attrs["style"] = "--ui-workbench-rail: " + w
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 	railAttrs := html.Attrs{"class": "fui-workbench__rail"}
@@ -110,6 +121,15 @@ func workbenchCSS(_ style.Theme) string {
   box-sizing: border-box;
   background-color: var(--color-surface, #fff);
   border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+}
+
+/* Named rail widths. The modifier sets the --ui-workbench-rail knob from
+   its own token, so a theme can move one width without an inline style. */
+[data-cui-comp="ui-workbench"].fui-workbench--rail-narrow {
+  --ui-workbench-rail: var(--ui-workbench-rail-narrow, 240px);
+}
+[data-cui-comp="ui-workbench"].fui-workbench--rail-wide {
+  --ui-workbench-rail: var(--ui-workbench-rail-wide, 480px);
 }
 
 [data-cui-comp="ui-workbench"] .fui-workbench__pane {

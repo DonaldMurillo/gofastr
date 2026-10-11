@@ -91,10 +91,13 @@ type options struct {
 
 type pkg struct {
 	ImportPath   string
+	Name         string
 	Dir          string
 	Deps         []string
 	TestImports  []string
 	XTestImports []string
+	TestGoFiles  []string
+	XTestGoFiles []string
 }
 
 type stringList []string
@@ -336,7 +339,7 @@ func format(o options, all []pkg, set map[string]bool) []string {
 }
 
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Dir,Deps,TestImports,XTestImports"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}
@@ -360,7 +363,45 @@ func listPackages(root, tags string) ([]pkg, error) {
 		}
 		pkgs = append(pkgs, p)
 	}
+	if err := addCommandRuns(pkgs); err != nil {
+		return nil, err
+	}
 	return pkgs, nil
+}
+
+// addCommandRuns records a test that runs one of the module's commands
+// as a test import of that command. A test that shells out to
+// `go run <module>/cmd/gofastr` depends on the generator's source as
+// much as an import would, but go list sees no edge: examples/meridian's
+// generated-tree gate stayed out of the affected set when the CLI
+// generator changed, and the stale tree surfaced only in CI. The edge is
+// read from the full import path spelled as a Go string literal in the
+// package's test files.
+func addCommandRuns(pkgs []pkg) error {
+	var mains []string
+	for _, p := range pkgs {
+		if p.Name == "main" {
+			mains = append(mains, p.ImportPath)
+		}
+	}
+	if len(mains) == 0 {
+		return nil
+	}
+	for i := range pkgs {
+		p := &pkgs[i]
+		for _, name := range append(slices.Clone(p.TestGoFiles), p.XTestGoFiles...) {
+			src, err := os.ReadFile(filepath.Join(p.Dir, name))
+			if err != nil {
+				return fmt.Errorf("read %s: %w", filepath.Join(p.Dir, name), err)
+			}
+			for _, m := range mains {
+				if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
+					p.TestImports = append(p.TestImports, m)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // changedFiles asks git for the change set: the working tree (staged and

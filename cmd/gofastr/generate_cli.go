@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // `gofastr generate cli` emits a customer-facing terminal client for the
@@ -55,16 +57,59 @@ type cliOptions struct {
 
 // cliField is the derived per-field model the renderers consume.
 type cliField struct {
-	Snake      string // declaration name (snake_case)
-	Wire       string // JSON wire key (camelCase)
-	Flag       string // CLI flag name (kebab-case)
-	Type       string // normalized declaration type
-	GoType     string // string|int|float64|bool|map[string]any
-	ReadOnly   bool   // excluded from mutation flags
-	NoQuery    bool   // excluded from ALL filter flags (server rejects them)
-	Comparable bool   // gets -gt/-gte/-lt/-lte range filter flags
-	Likeable   bool   // gets a -like filter flag
-	Values     []string
+	Snake    string // declaration name (snake_case)
+	Wire     string // JSON wire key (camelCase)
+	Flag     string // CLI flag name (kebab-case)
+	Type     string // normalized declaration type
+	GoType   string // string|int|float64|bool|map[string]any
+	ReadOnly bool   // excluded from mutation flags
+	NoQuery  bool   // excluded from ALL filter flags (server rejects them)
+	// FilterOps are the suffixed operator flags the list verb offers,
+	// derived once from filter.FilterSuffixes ∩ filter.OpSuitsType.
+	FilterOps []cliFilterOp
+	Values    []string
+}
+
+// cliFilterOp is one suffixed operator flag behind `<command> list`:
+// the dash spelling joined to the field flag (--status-ne), the
+// underscore spelling joined to the column for the query param
+// (status_ne), and the help fragment naming the operator.
+type cliFilterOp struct {
+	Flag  string
+	Param string
+	Help  string
+}
+
+// cliOpHelp names each operator in help text.
+var cliOpHelp = map[filter.FilterOp]string{
+	filter.OpNe:   "not equal",
+	filter.OpGt:   "greater than",
+	filter.OpGte:  "greater than or equal",
+	filter.OpLt:   "less than",
+	filter.OpLte:  "less than or equal",
+	filter.OpLike: "contains",
+}
+
+// cliFilterOps derives the operator flags a field's list verb offers
+// from filter.FilterSuffixes ∩ filter.OpSuitsType — the one type
+// predicate every server filter surface applies — so the CLI can never
+// offer a flag the list handler answers 400, nor hide one it accepts
+// (the old hardcoded Comparable/Likeable lists did both). OpIn suits
+// every type and is folded into the bare equality flag (a comma list),
+// so it contributes no flag of its own.
+func cliFilterOps(t schema.FieldType) []cliFilterOp {
+	var ops []cliFilterOp
+	for _, s := range filter.FilterSuffixes {
+		if s.Op == filter.OpIn || !filter.OpSuitsType(s.Op, t) {
+			continue
+		}
+		ops = append(ops, cliFilterOp{
+			Flag:  "-" + strings.TrimPrefix(s.Suffix, "_"),
+			Param: s.Suffix,
+			Help:  cliOpHelp[s.Op],
+		})
+	}
+	return ops
 }
 
 // cliEntity is the derived per-entity model: the shared manifest shape a
@@ -557,14 +602,23 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		}
 		// A NoQuery field stays on the CLI for reads and writes; only its
 		// filter flags are suppressed, because the server answers every one
-		// of them with 400 "cannot be filtered".
+		// of them with 400 "cannot be filtered". The operator set comes
+		// from the one predicate every filter surface applies, so a flag
+		// the server refuses (--flag-like on a Bool) is never emitted.
+		// fd.Field() resolves the canonical schema type; an unknown type
+		// string reads as String, the same tolerance goTypeForField has
+		// always had here (the generated app's own registration refuses
+		// the declaration).
 		if !f.NoQuery {
-			switch typ {
-			case "int", "integer", "float", "number", "decimal", "timestamp", "datetime", "date":
-				f.Comparable = true
-			case "string", "text":
-				f.Likeable = true
+			sf, err := fd.Field()
+			if err != nil {
+				// An unknown type string is a declaration error the
+				// generated app's own registration refuses; the CLI
+				// derives its flags the way it always has — as a text
+				// column, goTypeForField's default arm.
+				sf = schema.Field{Type: schema.String}
 			}
+			f.FilterOps = cliFilterOps(sf.Type)
 		}
 		ent.Fields = append(ent.Fields, f)
 	}
@@ -605,12 +659,14 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 		if ident := toCamelCase(f.Flag); !token.IsIdentifier(ident) {
 			return cliEntity{}, fmt.Errorf("entity %q: field %s does not derive a valid Go identifier (it is emitted as generated variable names); rename it to letters, digits and underscores starting with a letter", decl.Name, f.Snake)
 		}
+		// The full flag set the list verb registers for this field,
+		// derived from the same FilterOps the emitter uses, so the
+		// duplicate check can never miss a flag that ships (it missed
+		// -ne: a spec with `status` and `status_ne` passed validation
+		// and panicked flag.FlagSet at runtime).
 		flags := []string{f.Flag}
-		if f.Comparable {
-			flags = append(flags, f.Flag+"-gt", f.Flag+"-gte", f.Flag+"-lt", f.Flag+"-lte")
-		}
-		if f.Likeable {
-			flags = append(flags, f.Flag+"-like")
+		for _, op := range f.FilterOps {
+			flags = append(flags, f.Flag+op.Flag)
 		}
 		for _, name := range flags {
 			if cliReservedFlags[name] {
@@ -1490,13 +1546,12 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
 		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, f.Snake, help)
-		if f.Comparable {
-			for _, op := range []string{"gt", "gte", "lt", "lte"} {
-				fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-"+op, f.Snake+"_"+op, "filter: "+f.Snake+" "+op)
-			}
-		}
-		if f.Likeable {
-			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-like", f.Snake+"_like", "filter: "+f.Snake+" contains")
+		// One row per operator the field's type accepts, from the same
+		// FilterOps derivation: the table cannot name a param the server
+		// refuses, and a new operator in filter.FilterSuffixes lands
+		// here without a second list.
+		for _, op := range f.FilterOps {
+			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+op.Flag, f.Snake+op.Param, "filter: "+f.Snake+" "+op.Help)
 		}
 	}
 	sb.WriteString("}\n\n")

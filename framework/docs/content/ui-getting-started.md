@@ -357,6 +357,33 @@ the wrapper element and nothing else, because policy, params, `Load`, and
 content are identical on both paths. The origin is compared by resolved
 screen, so `/products?page=2&sort=name` still counts as the list.
 
+Related records stack. An intercepted link clicked inside an open
+drawer opens its target as a new drawer over the current one — declare
+it the same way, with the screen below as the origin:
+
+```go
+site.Register("/customers/{id}", &CustomerScreen{}, nil,
+    app.InterceptFrom("/invoices/{id}", app.ScreenDrawer))
+```
+
+At most four drawers sit on top of each other, each a step narrower
+than the one under it so the lower ones show as a dimmed strip; a fifth
+open is refused with a toast and changes nothing. Lower drawers keep
+their DOM — unsaved edits survive — and go inert; Back,
+Escape and the close button close only the top one and hand focus back
+to the control that opened it. A link that changes only the drawer's
+own query (`?sort=…&page=…`) re-renders inside the drawer instead of
+navigating the page under it.
+
+Put `data-hui-leave-guard` on a form whose unsaved edits should ask
+before the user leaves them (the record form is the usual case): while
+the form is changed, following a link away from it, going Back past
+it, closing its drawer with Escape, and reloading the page all ask
+first. Opening a related record in a drawer over it does not ask: the
+form stays where it was, edits included. The form cleans itself on
+a successful submit or a reset. `data-hui-leave-guard-message` carries
+the question's words; the default is "You have unsaved changes."
+
 Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
 only when some route declares an intercept), and the runtime module loads
 only when the route manifest contains one; an app with no intercepting

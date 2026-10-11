@@ -1413,6 +1413,16 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// entity's operations under the version's tag instead of the bare name.
 	e.OpenAPITag = g.OpenAPITag()
 
+	// The same Display boot check App.Entity runs: a bad view Where or
+	// ShowWhen refuses the registration here, not at first screen render.
+	if err := validateDisplayQueries(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
+	// And the same operator-suffix collision refusal App.Entity runs:
+	// group-scoped routes parse ?field_<op>= exactly the same way.
+	if err := checkFilterSuffixCollisions(e); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
 	if a.DB != nil {
 		e.SetDB(a.DB)
 	}
@@ -2281,6 +2291,15 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // A check that only exists at commit time reintroduces the partial
 // registration this split exists to prevent.
 func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
+	if err := validateDisplayQueries(ent); err != nil {
+		return err
+	}
+	// A queryable field whose name is another's plus an operator suffix
+	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
+	// filter, not an error; refuse it at the same gate.
+	if err := checkFilterSuffixCollisions(ent); err != nil {
+		return err
+	}
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
 	// by an existing route, by a CRUD route this same call is about to
 	// mount, or by a sibling endpoint on this same declaration, would

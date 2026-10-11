@@ -96,6 +96,15 @@ type EntityConfig struct {
 	// entirely). Reserved list controls are always allowed and need not be
 	// listed here.
 	AllowedFilterParams []string
+
+	// Display holds the screen hints for this entity: names, columns,
+	// views, form layout, nav placement and per-field drawing hints. It is
+	// a pointer config like Scope: nil means every default, and Define
+	// copies it deeply so a caller that edits its value afterwards changes
+	// nothing the app checked or serves. It never widens what the API
+	// accepts; see DisplayConfig for the boot check over every name it
+	// holds and where the query strings inside it are parsed.
+	Display *DisplayConfig
 	// Renames declares column renames (old name → new name) so the schema
 	// diff emits a non-destructive ALTER TABLE … RENAME COLUMN instead of a
 	// data-losing DROP of the old column + ADD of the new one. Rename is
@@ -679,6 +688,12 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 		timestamps := *c.Timestamps
 		c.Timestamps = &timestamps
 	}
+	// Display is copied deeply, like the groups above, so a caller that
+	// keeps a handle on its value (an app-level var, a declaration struct)
+	// cannot change what the app validated at registration or serves. Nil
+	// stays nil: nil means "every default", it is not a group Define
+	// populates.
+	c.Display = copyDisplayConfig(c.Display)
 	return c
 }
 
@@ -806,6 +821,17 @@ func (e *Entity) Validate() error {
 		}
 	}
 
+	// Display names fields, views, sections and a nav group; every name is
+	// checked here so a typo or a stale name after a rename fails the
+	// app at boot, naming the offender, instead of rendering a blank
+	// column or a broken form per request. Query strings inside Display
+	// (a view's Where, a field's ShowWhen) are parsed by App.Entity,
+	// where the query DSL is in reach.
+	if e.Config.Display != nil {
+		if err := e.Config.Display.validate(e.Config.Name, e.Config.Fields, e.Config.Pagination); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

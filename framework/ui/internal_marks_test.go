@@ -642,6 +642,7 @@ var kitComponents = []kitComponent{
 	{name: "Form", fn: Form},
 	{name: "FormField", fn: FormField},
 	{name: "FormFieldFor", fn: FormFieldFor},
+	{name: "FormFrame", fn: FormFrame},
 	{name: "FormRepeater", fn: FormRepeater},
 	{name: "FormSection", fn: FormSection},
 	{name: "Gallery", fn: Gallery},

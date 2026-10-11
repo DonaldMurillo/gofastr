@@ -28,6 +28,13 @@ type (
 	RowPredicate            = entity.RowPredicate
 	RowPredicateDeclaration = entity.RowPredicateDeclaration
 	FieldDeclaration        = entity.FieldDeclaration
+	DisplayConfig           = entity.DisplayConfig
+	EntityNav               = entity.EntityNav
+	ListView                = entity.ListView
+	EntityForm              = entity.EntityForm
+	FormItem                = entity.FormItem
+	CardFields              = entity.CardFields
+	FieldDisplay            = entity.FieldDisplay
 	Relation                = entity.Relation
 	RelationType            = entity.RelationType
 	OnDeleteAction          = entity.OnDeleteAction

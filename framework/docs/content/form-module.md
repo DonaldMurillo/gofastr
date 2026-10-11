@@ -25,7 +25,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | RadioGroup | `ui.RadioGroup(RadioGroupConfig)` | ✓ (fieldset) | — |
 | CheckboxGroup | `ui.CheckboxGroup(CheckboxGroupConfig)` | ✓ (fieldset) | — |
 | ValidationSummary | `ui.ValidationSummary(ValidationSummaryConfig)` | — | — |
-| ConditionalField | `ui.ConditionalField(ConditionalFieldConfig)` | — | ✓ toggle (headless module) |
+| ConditionalField | `ui.ConditionalField(ConditionalFieldConfig)` | — | ✓ toggle (headless module); one value (`WhenValue`) or any of a list (`WhenValues`) |
 | StepWizard | `ui.StepWizard(StepWizardConfig)` | — | — |
 | FormRepeater | `ui.FormRepeater(FormRepeaterConfig)` | — | — |
 
@@ -37,7 +37,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | Component | Function | Purpose |
 |-----------|----------|---------|
 | Form | `ui.Form(FormConfig)` | `<form>` with action, method, optional FieldErrors; `SubmitFullWidth` makes the actions row a block column so the primary button spans the card (mobile-first auth/wizard forms) |
-| FormSection | `ui.FormSection(FormSectionConfig)` | Fieldset grouping with heading |
+| FormFrame | `ui.FormFrame(FormFrameConfig)` | Two-column record-form frame: a wide main column beside a narrow side rail, stacking on the form's own width |
 | FormField | `ui.FormField(FormFieldConfig)` | Label + input + help/error wrapper |
 | FormFieldFor | `ui.FormFieldFor(errs, name, config)` | FormField with per-field error from FieldErrors |
 | TextField | `ui.TextField(TextFieldConfig)` | Self-labelled native text input with typed common attributes |
@@ -116,6 +116,62 @@ ui.ConditionalField(ui.ConditionalFieldConfig{
     Children: []render.HTML{...},
 })
 ```
+
+The `in` condition shows the region while the watched field holds ANY
+of a list of values (`WhenValues`, carried as one JSON attribute,
+`data-hui-when-in`, so a value containing a comma, a quote or a
+bracket stays one value). Select, radio-group and checkbox controllers
+drive it exactly as they drive the single value: the checked radio's
+value, the checkbox's value when checked, any other control's value.
+`WhenValue` and `WhenValues` are mutually exclusive; neither empty
+values nor an empty list are accepted, for the same reason the single
+value refuses the empty string.
+
+```go
+ui.Select(ui.SelectConfig{
+    Name: "notify", Label: "Notify",
+    Options: []ui.SelectOption{
+        {Value: "none", Text: "Never"},
+        {Value: "email", Text: "Email"},
+        {Value: "webhook", Text: "Webhook"},
+    },
+})
+ui.ConditionalField(ui.ConditionalFieldConfig{
+    WhenName: "notify",
+    WhenValues: []string{"email", "webhook"},
+    Children: []render.HTML{...},
+})
+```
+
+### Record form frame
+
+A record form in two columns: the bulk of the fields in a wide main
+column, short controllers (status, owner, dates) in a narrow side
+rail. The frame switches on its OWN width — a container query, not a
+viewport media query — so the same form sits side by side on a full
+page and stacks in a drawer on a wide screen. Below 48rem of the
+frame's width the side column drops under the main one; the rail's
+width is one of three named sizes — `SideWidth:
+ui.FormFrameSideNarrow` (12rem), the default (16rem) and
+`ui.FormFrameSideWide` (22rem) — each a modifier class whose
+registered CSS reads the `--ui-form-frame-side-narrow` / `-wide`
+tokens, so a theme retunes them. Either column may be empty: an
+empty `Side` leaves the main column full width, and an empty `Main`
+leaves the side column full width.
+
+Note that `ui.Form` caps its own measure at `--ui-form-max` (42rem by
+default), which sits below the split point: a record page that wants
+the rail widens the form (`--ui-form-max`) or draws the frame outside
+the capped form element.
+
+```go
+ui.Form(ui.FormConfig{Action: "/customers/42", ID: "customer"},
+    ui.FormFrame(ui.FormFrameConfig{
+        Main: []render.HTML{numberField, amountField, datesSection},
+        Side: []render.HTML{statusField, customerField},
+    }))
+```
+
 
 ### Step wizard
 

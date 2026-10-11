@@ -50,7 +50,7 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS}
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS, leaveguardJS}
 
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,
@@ -223,28 +223,30 @@ var sheetHooks = map[string]string{
 // in framework/ui's own tests. Same discipline as hostHooks: the
 // reason is mandatory and the list is checked against the module
 var adapterHooks = map[string]string{
-	"data-hui-pane-close":      "a trigger that closes a pane, rendered by core-ui/interactive's pane helpers",
-	"data-hui-pane-swap":       "a trigger that swaps the open pane, rendered by core-ui/interactive's pane helpers",
-	"data-hui-pane-key":        "a pane trigger's deep-link key, rendered by core-ui/interactive's PaneKey",
-	"data-hui-shortcut-focus":  "a chord that focuses its target, rendered by ui.GlobalSearch / ui.CommandPalette on the search wrapper",
-	"data-hui-shortcut-click":  "a chord that clicks its target, rendered by ui.ShortcutHint (BindTarget) and host chrome like the site header",
-	"data-hui-shortcut-target": "the selector naming a chord's focus/click target, rendered by ui.GlobalSearch beside its focus chord",
-	"data-hui-shortcut-hint":   "ShortcutHint's own marker when BindTarget is set: names the element the chord will click",
-	"data-hui-copy":            "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
-	"data-hui-copy-target":     "the copied element's id, rendered by ui.CopyButton",
-	"data-hui-copy-name":       "the copied thing's name for the status sentence, rendered by ui.CopyButton",
-	"data-hui-copy-label":      "an optional label span a host renders inside its own copy button for the module to swap the copied text into; ui.CopyButton does not render it (its two label spans swap by CSS on data-hui-copy-state)",
-	"data-hui-copy-copied":     "the button's copied label, rendered by ui.CopyButton",
-	"data-hui-copy-back":       "the label restored after the copied flash, rendered by ui.CopyButton",
-	"data-hui-copy-sentence":   "the status sentence shape with {name}, rendered by ui.CopyButton",
-	"data-hui-copy-status":     "the polite status region, rendered by ui.CopyButton",
-	"data-hui-theme-toggle":    "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
-	"data-hui-theme-option":    "one scheme option control, rendered by ui.ThemeToggle",
-	"data-hui-theme-cycle":     "the single-button cycler, rendered by ui.ThemeToggle",
-	"data-hui-theme-picker":    "the page-theme group wrapper, rendered by ui.ThemePicker (a Button composition, no theme primitive by binding decision)",
-	"data-hui-theme-pick":      "one page-theme option naming its override class, rendered by ui.ThemePicker",
-	"data-hui-network-retry":   "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
-	"data-hui-copy-toast":      "the toast-on-copy config, rendered by ui.CopyButton on the button",
+	"data-hui-pane-close":          "a trigger that closes a pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-swap":           "a trigger that swaps the open pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-key":            "a pane trigger's deep-link key, rendered by core-ui/interactive's PaneKey",
+	"data-hui-shortcut-focus":      "a chord that focuses its target, rendered by ui.GlobalSearch / ui.CommandPalette on the search wrapper",
+	"data-hui-shortcut-click":      "a chord that clicks its target, rendered by ui.ShortcutHint (BindTarget) and host chrome like the site header",
+	"data-hui-shortcut-target":     "the selector naming a chord's focus/click target, rendered by ui.GlobalSearch beside its focus chord",
+	"data-hui-shortcut-hint":       "ShortcutHint's own marker when BindTarget is set: names the element the chord will click",
+	"data-hui-copy":                "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
+	"data-hui-copy-target":         "the copied element's id, rendered by ui.CopyButton",
+	"data-hui-copy-name":           "the copied thing's name for the status sentence, rendered by ui.CopyButton",
+	"data-hui-copy-label":          "an optional label span a host renders inside its own copy button for the module to swap the copied text into; ui.CopyButton does not render it (its two label spans swap by CSS on data-hui-copy-state)",
+	"data-hui-copy-copied":         "the button's copied label, rendered by ui.CopyButton",
+	"data-hui-copy-back":           "the label restored after the copied flash, rendered by ui.CopyButton",
+	"data-hui-copy-sentence":       "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-status":         "the polite status region, rendered by ui.CopyButton",
+	"data-hui-theme-toggle":        "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
+	"data-hui-theme-option":        "one scheme option control, rendered by ui.ThemeToggle",
+	"data-hui-theme-cycle":         "the single-button cycler, rendered by ui.ThemeToggle",
+	"data-hui-theme-picker":        "the page-theme group wrapper, rendered by ui.ThemePicker (a Button composition, no theme primitive by binding decision)",
+	"data-hui-theme-pick":          "one page-theme option naming its override class, rendered by ui.ThemePicker",
+	"data-hui-network-retry":       "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
+	"data-hui-copy-toast":          "the toast-on-copy config, rendered by ui.CopyButton on the button",
+	"data-hui-leave-guard":         "the leave-guard mark a form carries for this package's headless-leaveguard module; the forms that render it are the record screens and kit forms, no headless primitive owns a whole form",
+	"data-hui-leave-guard-message": "the leave guard's ask words, rendered beside the mark by the same record-screen form builder",
 }
 
 var hostHooks = map[string]string{

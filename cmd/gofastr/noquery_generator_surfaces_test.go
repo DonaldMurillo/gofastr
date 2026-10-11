@@ -31,8 +31,8 @@ func TestEntityModelPreservesNoQueryAndSuppressesFilterKinds(t *testing.T) {
 	if !field.NoQuery {
 		t.Fatal("buildEntityModel dropped NoQuery")
 	}
-	if field.Likeable || field.Comparable {
-		t.Fatalf("NoQuery field gained filter kinds: %+v", field)
+	if len(field.FilterOps) != 0 {
+		t.Fatalf("NoQuery field gained operator flags: %+v", field.FilterOps)
 	}
 }
 
