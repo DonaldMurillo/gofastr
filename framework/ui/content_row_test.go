@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -144,14 +143,8 @@ func TestContentRowBelowHeaderRequiresSticky(t *testing.T) {
 	ContentRow(ContentRowConfig{BelowHeader: true}, render.Text("main"))
 }
 
-// The main column is whatever the caller composes: a child that is not
-// the nav or the aside (here a wrapper around main and a footer) takes
-// the remaining width, not just a bare main slot.
-func TestContentRowGrowsAnyMainChild(t *testing.T) {
-	css := contentRowCSS(style.Theme{})
-	if !strings.Contains(css, ".fui-content-row > :not(.fui-content-row__nav):not(.fui-content-row__aside) { flex: 1 1 auto; min-width: 0; }") {
-		t.Errorf("the row should grow every main-column child:\n%s", css)
-	}
+// BelowHeader marks the root so the sticky frame offsets by the header.
+func TestContentRowBelowHeaderMarksRoot(t *testing.T) {
 	out := renderRow(t, ContentRowConfig{Sticky: true, BelowHeader: true}, render.HTML("<main>M</main>"))
 	if !strings.Contains(out, "fui-content-row--below-header") {
 		t.Errorf("BelowHeader should mark the root:\n%s", out)

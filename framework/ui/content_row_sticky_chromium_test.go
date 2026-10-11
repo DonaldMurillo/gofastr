@@ -188,9 +188,9 @@ return ""})()`, &result)); err != nil {
 
 // A BelowHeader row under a sticky page header pins its nav column
 // below the header (never behind it), the rest of the viewport tall,
-// and a main column the app composes (main plus its footer in a Stack)
-// takes the width beside the nav, so the footer never runs under it.
-func TestContentRowStickyBelowHeaderWithFooter(t *testing.T) {
+// while the window scrolls the page; the page footer below the row
+// keeps the full width.
+func TestContentRowStickyBelowHeader(t *testing.T) {
 	site := app.NewApp("Below header")
 	items := make([]ui.SidebarItem, 40)
 	for i := range items {
@@ -205,9 +205,8 @@ func TestContentRowStickyBelowHeaderWithFooter(t *testing.T) {
 	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 		header,
 		ui.ContentRow(ui.ContentRowConfig{Sticky: true, BelowHeader: true, Sidebar: nav},
-			ui.Stack(ui.StackConfig{Gap: ui.GapNone, Justify: ui.JustifyBetween},
-				html.Main(html.MainConfig{}, paras...),
-				html.Footer(html.FooterConfig{ContentInfo: true}, render.Text("Colophon")))))
+			html.Main(html.MainConfig{}, paras...)),
+		html.Footer(html.FooterConfig{ContentInfo: true}, render.Text("Colophon")))
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
 	host := uihost.New(site)
 	fw := framework.NewApp()
@@ -225,15 +224,11 @@ func TestContentRowStickyBelowHeaderWithFooter(t *testing.T) {
 const hh=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-header-height'))||56;
 const nav=q('.fui-content-row__nav'), foot=q('footer');
 if(Math.round(r(nav).height)!==Math.round(innerHeight-hh))return 'nav column is '+r(nav).height+'px, not the viewport less the '+hh+'px header';
-if(foot.parentElement.parentElement!==q('.fui-content-row'))return 'the footer is not in the main column';
-if(Math.abs(r(foot).right-innerWidth)>1)return 'the main column does not reach the row end: '+r(foot).right;
 scrollTo(0, 1500);
 if(scrollY<1000)return 'the window did not scroll';
 if(Math.round(r(nav).top)!==Math.round(hh))return 'nav column top is '+r(nav).top+', not under the '+hh+'px header';
-scrollTo(0, document.documentElement.scrollHeight);
-const f=r(foot), n=r(nav);
-if(f.left<n.right-0.5)return 'the footer ('+f.left+') runs under the nav column (right '+n.right+')';
-if(Math.round(n.top)!==Math.round(hh))return 'nav column left its place at the page end: '+n.top;
+if(Math.round(r(nav).height)!==Math.round(innerHeight-hh))return 'nav column is '+r(nav).height+'px once scrolled';
+if(Math.round(r(foot).left)!==0||Math.round(r(foot).width)!==innerWidth)return 'the footer is not full width: '+r(foot).left+' / '+r(foot).width;
 return ""})()`, &result)); err != nil {
 		t.Fatal(err)
 	}

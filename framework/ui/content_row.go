@@ -225,11 +225,7 @@ func contentRowCSS(_ style.Theme) string {
 	// grows instead, so inside ui.Stack{Screen: true} it takes whatever
 	// the header and footer leave and the nav column reaches the footer.
 	return `.fui-content-row { display: flex; align-items: stretch; flex: 1 0 auto; }
-/* The main column is whatever the caller passes: a bare main slot, or
-   the app's own composition around it (the slot and a footer in a
-   Stack). Every child that is not the nav or the aside takes the
-   remaining width. */
-.fui-content-row > :not(.fui-content-row__nav):not(.fui-content-row__aside) { flex: 1 1 auto; min-width: 0; }
+.fui-content-row > main, .fui-content-row > .layout-content { flex: 1 1 auto; min-width: 0; }
 .fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
 .fui-content-row__workspace { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; }
 .fui-content-row__workspace > main, .fui-content-row__workspace > .layout-content { flex: 1 1 auto; min-inline-size: 0; }

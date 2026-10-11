@@ -971,31 +971,22 @@ func registerScreens(site *app.App) {
 	site.Register("/seo-bundle", &SEOBundleScreen{}, nil)
 
 	// Components, registered through a ScreenGroup so every /components/*
-	// page shares one shell. The group is Standalone: its layout is the
-	// whole page frame, not a row nested inside the default layout,
-	// because the colophon moves into the content column here. The
-	// multi-level ComponentsSidebar is pinned on the left under the
-	// sticky header (Sticky + BelowHeader) and scrolls on its own; the
-	// page and its footer scroll past it on the right. The framework's
-	// runtime detects sibling-nav inside the group (via
-	// data-cui-screen-group on the layout wrapper) and swaps ONLY the
-	// content cell, so the sidebar, and its scroll position, stay in
-	// place across navigations, no full reload.
+	// page shares an inner layout. The inner layout puts the multi-level
+	// ComponentsSidebar in the sidebar slot; the framework's runtime
+	// detects sibling-nav inside the group (via data-cui-screen-group on
+	// the layout wrapper) and swaps ONLY the inner content cell, the
+	// sidebar stays in place across navigations, no full reload.
 	componentsLayout := app.NewLayout("components", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			siteHeader(ctx),
-			// The main column is the site's own composition: the page,
-			// then the colophon under it, spaced apart so a short page
-			// still ends with the colophon at the bottom of the screen.
-			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true},
-				ui.Stack(ui.StackConfig{Gap: ui.GapNone, Justify: ui.JustifyBetween},
-					l.Primary(),
-					siteFooter(),
-				)),
-		)
+		// The row (not a second screen-tall stack: this layer nests
+		// inside the default layout's page column) arranges the
+		// multi-level sidebar beside the primary slot. Sticky +
+		// BelowHeader pin the sidebar under the site header at the
+		// height of what's left of the viewport, scrolling on its own
+		// while the page scrolls; the colophon stays full width below.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
 	})
-	componentsGroup := app.NewScreenGroup("/components", componentsLayout).Standalone()
+	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
 		WithTitle("Components").
 		WithDescription("Every framework/ui constructor, one page each."), nil)
