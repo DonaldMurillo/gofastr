@@ -107,13 +107,14 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 	}
 
 	// Primary pane: the support queue.
-	rows := make([]render.HTML, 0, len(wsTickets)+1)
-	rows = append(rows, html.Heading(html.HeadingConfig{Level: 2, Class: "ws-title"},
-		render.Text("Support queue")))
+	rows := make([]render.HTML, 0, len(wsTickets))
 	for _, t := range wsTickets {
 		rows = append(rows, workspaceRow(t))
 	}
-	primary := html.Div(html.DivConfig{Class: "ws-list"}, rows...)
+	primary := ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Support queue")),
+		ui.Stack(ui.StackConfig{Gap: ui.GapXS}, rows...),
+	)
 
 	// Secondary pane: a header + the ticket region. Filled server-side
 	// when the URL names a ticket; otherwise the RPC fills it on click.
@@ -125,13 +126,13 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 	if ticketLinked {
 		ticketRegion = renderTicketDetail(openTicket)
 	}
-	secondary := html.Div(html.DivConfig{},
+	secondary := ui.Stack(ui.StackConfig{},
 		paneHeader("Ticket", "secondary"),
 		interactive.BindHTML(render.Tag("div", nil, ticketRegion), "ws-ticket"),
 	)
 
 	// Tertiary pane: the RPC-filled customer region.
-	tertiary := html.Div(html.DivConfig{},
+	tertiary := ui.Stack(ui.StackConfig{},
 		paneHeader("Customer", "tertiary"),
 		interactive.BindHTML(render.Tag("div", nil, ui.EmptyState(ui.EmptyStateConfig{
 			Title:        "No customer open",
@@ -140,17 +141,15 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 		})), "ws-customer"),
 	)
 
-	intro := html.Div(html.DivConfig{Class: "ws-intro"},
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Support workspace")),
-		html.Paragraph(html.TextConfig{Class: "ws-lede"}, render.Text(
-			"A master-detail layout on ui.PaneHost. Clicking a ticket loads its detail into the pane beside the list via an RPC without page navigation, and “View customer” fills a third pane the same way. Narrow the window to see the pane become an overlay drawer.")),
-	)
-
-	return html.Div(html.DivConfig{Class: "ws-page"},
-		intro,
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow: "Example · Pane host",
+			Title:   "Support workspace",
+			Subtitle: "A master-detail layout on ui.PaneHost. Clicking a ticket loads its detail into the pane beside the list via an RPC without page navigation, and “View customer” fills a third pane the same way. " +
+				"Narrow the window to see the pane become an overlay drawer.",
+		}),
 		ui.PaneHost(ui.PaneHostConfig{
 			ID:             "workspace",
-			Class:          "ws-host",
 			Primary:        primary,
 			Secondary:      secondary,
 			Tertiary:       tertiary,
@@ -162,31 +161,34 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
-// workspaceRow is one clickable ticket row. A semantic <button> (not an
-// <a>, so there's no navigation to intercept) carrying two independent
-// delegated behaviors: data-hui-pane-open-control reveals the secondary pane and
-// data-cui-rpc GETs the detail into the ws-ticket signal region.
-// The ticket pane is addressable, so its rows carry a pane key: clicking
-// one writes ?pane=secondary:<id>, and Back replays it by re-clicking
-// this same button, which re-runs the RPC and refills the region.
+// workspaceRow is one ticket row: a semantic <button> (not an <a>, so
+// there's no navigation to intercept) after the ticket's status. The
+// button carries two independent delegated behaviors:
+// data-hui-pane-open-control reveals the secondary pane and data-cui-rpc
+// GETs the detail into the ws-ticket signal region. The ticket pane is
+// addressable, so the button carries a pane key: clicking it writes
+// ?pane=secondary:<id>, and Back replays it by re-clicking this same
+// button, which re-runs the RPC and refills the region.
 func workspaceRow(t wsTicket) render.HTML {
 	action := interactive.Get("/__site/workspace/ticket?id=" + t.ID).OnSuccess(interactive.SetSignal("ws-ticket"))
-	return interactive.PaneKey(render.Tag("button", html.MergeAttrs(map[string]string{
-		"type":                       "button",
-		"class":                      "ws-row",
-		"aria-label":                 "Open ticket " + t.ID + ": " + t.Subject,
-		"data-hui-pane-open-control": "secondary",
-	}, action.Attrs()),
-		render.Tag("span", map[string]string{"class": "ws-row__id"}, render.Text("#"+t.ID)),
-		render.Tag("span", map[string]string{"class": "ws-row__subject"}, render.Text(t.Subject)),
-		ui.StatusBadge(ui.StatusBadgeConfig{Label: t.StatusLabel, Variant: t.Status}),
-	), t.ID)
+	open := interactive.PaneKey(ui.Button(ui.ButtonConfig{
+		Label:      "#" + t.ID + " " + t.Subject,
+		AriaLabel:  "Open ticket " + t.ID + ": " + t.Subject,
+		Variant:    ui.ButtonGhost,
+		ExtraAttrs: html.MergeAttrs(html.Attrs{"data-hui-pane-open-control": "secondary"}, action.Attrs()),
+	}), t.ID)
+	return ui.Card(ui.CardConfig{Variant: ui.CardRow},
+		ui.Cluster(ui.ClusterConfig{Align: ui.AlignCenter, Gap: ui.GapSM},
+			ui.StatusBadge(ui.StatusBadgeConfig{Label: t.StatusLabel, Variant: t.Status}),
+			open,
+		),
+	)
 }
 
 // paneHeader is the title + Close button strip at the top of a side pane.
 func paneHeader(title, pane string) render.HTML {
-	return html.Div(html.DivConfig{Class: "ws-pane-head"},
-		html.Heading(html.HeadingConfig{Level: 2, Class: "ws-pane-title"}, render.Text(title)),
+	return ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, Align: ui.AlignCenter},
+		html.Heading(html.HeadingConfig{Level: 2}, render.Text(title)),
 		interactive.ClosePaneOnClick(ui.Button(ui.ButtonConfig{
 			Label:   "Close",
 			Variant: ui.ButtonGhost,
@@ -199,33 +201,33 @@ func paneHeader(title, pane string) render.HTML {
 // region as trusted server HTML.
 func renderTicketDetail(t wsTicket) render.HTML {
 	cust := wsCustomers[t.CustomerID]
-	return html.Div(html.DivConfig{Class: "ws-detail"},
-		html.Heading(html.HeadingConfig{Level: 3, Class: "ws-detail__subject"}, render.Text(t.Subject)),
-		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
+	return ui.Stack(ui.StackConfig{},
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text(t.Subject)),
+		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
 			{Label: "Ticket", Value: render.Text("#" + t.ID)},
 			{Label: "Status", Value: ui.StatusBadge(ui.StatusBadgeConfig{Label: t.StatusLabel, Variant: t.Status})},
 			{Label: "Priority", Value: render.Text(t.Priority)},
 			{Label: "Requester", Value: render.Text(t.Requester)},
 			{Label: "Customer", Value: render.Text(cust.Name)},
 		}}),
-		html.Paragraph(html.TextConfig{Class: "ws-detail__body"}, render.Text(t.Body)),
-		ui.Button(ui.ButtonConfig{
+		html.Paragraph(html.TextConfig{}, render.Text(t.Body)),
+		ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{
 			Label:   "View customer",
 			Variant: ui.ButtonSecondary,
 			ExtraAttrs: html.MergeAttrs(html.Attrs{"data-hui-pane-open-control": "tertiary"},
 				interactive.Get("/__site/workspace/customer?id="+t.CustomerID).OnSuccess(interactive.SetSignal("ws-customer")).Attrs()),
-		}),
+		})),
 	)
 }
 
 // renderCustomerDetail builds the HTML fragment the customer RPC returns.
 func renderCustomerDetail(c wsCustomer) render.HTML {
-	return html.Div(html.DivConfig{Class: "ws-detail"},
-		html.Heading(html.HeadingConfig{Level: 3, Class: "ws-detail__subject"}, render.Text(c.Name)),
-		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
+	return ui.Stack(ui.StackConfig{},
+		html.Heading(html.HeadingConfig{Level: 3}, render.Text(c.Name)),
+		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
 			{Label: "Plan", Value: render.Text(c.Plan)},
 			{Label: "Activity", Value: render.Text(c.OpenTickets)},
 		}}),
-		html.Paragraph(html.TextConfig{Class: "ws-detail__body"}, render.Text(c.Note)),
+		html.Paragraph(html.TextConfig{}, render.Text(c.Note)),
 	)
 }

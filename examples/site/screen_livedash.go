@@ -407,8 +407,8 @@ func renderDashFeed(s liveDashData) render.HTML {
 		events = events[len(events)-liveDashFeedCap:]
 	}
 	if len(events) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
-			render.Text("No activity yet. Events will appear here as they arrive."))
+		return html.Paragraph(html.TextConfig{},
+			ui.Muted(render.Text("No activity yet. Events will appear here as they arrive.")))
 	}
 	return ui.Timeline(ui.TimelineConfig{Events: events})
 }
@@ -511,9 +511,9 @@ func renderDashConsole(ctx context.Context) render.HTML {
 		Description:  "A store.Computed slice derives this label from two client-side signals. The +/- buttons mutate them locally; the reducer runs in the browser and the pill updates live. No RPC, no round-trip.",
 	},
 		controls,
-		html.Div(html.DivConfig{Role: "status", AriaLabel: "Operational status"},
+		html.Div(html.DivConfig{Role: "status", AriaLabel: "Operational status"}, ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart},
 			statusPill,
-			html.Paragraph(html.TextConfig{Class: "fui-muted"},
+			html.Paragraph(html.TextConfig{}, ui.Muted(
 				render.Text("Open "+strconv.Itoa(open)+" · Acknowledged "),
 				// Live-bound count: dashIncidentsAckd.Bind emits a
 				// <span data-cui-signal="dash.incidentsAckd"> that the
@@ -521,11 +521,9 @@ func renderDashConsole(ctx context.Context) render.HTML {
 				// button's data-cui-signal-inc fires. Without this
 				// bind the click increments the signal but the visible
 				// count stays at the SSR-painted 0 forever.
-				dashIncidentsAckd.Bind(ctx, "span", map[string]string{
-					"class": "fui-muted",
-				}),
-			),
-		),
+				dashIncidentsAckd.Bind(ctx, "span", nil),
+			)),
+		)),
 	)
 }
 
@@ -544,7 +542,7 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	snap := liveDash.snapshot()
 
 	// The site layout already owns the document's sole <main> landmark.
-	return html.Div(html.DivConfig{Class: "livedash-page"},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		// Connection-health banner. Sits above the content. It follows
 		// the connection the framework reports (the offline
 		// SystemBanner contract); the Retry button probes
@@ -556,97 +554,84 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 			Description:    "The dashboard's SSE stream went quiet. Your last-known values are still on screen; reconnect to refresh.",
 			RetryLabel:     "Reconnect",
 		}),
-		container(
-			ui.PageHeader(ui.PageHeaderConfig{
-				Eyebrow:  "Example · Live dashboards",
-				Title:    "Queue ops: live dashboard",
-				Subtitle: "A realistic ops dashboard composed from existing primitives: SSE island push for metric StatCards, a bounded Timeline activity feed, a keyed jobs DataTable, a store.Computed status label, and the connection-health banner. See /docs/live-dashboards for the composition guide.",
-			}),
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow:  "Example · Live dashboards",
+			Title:    "Queue ops: live dashboard",
+			Subtitle: "A realistic ops dashboard composed from existing primitives: SSE island push for metric StatCards, a bounded Timeline activity feed, a keyed jobs DataTable, a store.Computed status label, and the connection-health banner. See /docs/live-dashboards for the composition guide.",
+		}),
 
-			// Metric StatCards island. The ticker pushes fresh HTML for
-			// this slot every tick; the runtime swaps its innerHTML.
-			// NOT an aria-live region, high-frequency numeric updates
-			// must not flood assistive tech. The polite lane is the
-			// activity feed below.
+		// Metric StatCards island. The ticker pushes fresh HTML for
+		// this slot every tick; the runtime swaps its innerHTML.
+		// NOT an aria-live region, high-frequency numeric updates
+		// must not flood assistive tech. The polite lane is the
+		// activity feed below.
+		html.Div(html.DivConfig{
+			ExtraAttrs: html.Attrs{"data-island": liveDashStatsID},
+			AriaLabel:  "Live metrics",
+		}, renderDashStats(snap)),
+
+		// The poll-rung contrast. The stats above are rung 4 of the
+		// reactivity ladder (SSE push: the ticker pushes HTML the
+		// moment it changes); this card is rung 3 (data-cui-poll:
+		// the browser re-fetches a server-rendered fragment on an
+		// interval). Same markup pipeline, no connection, no
+		// fanout, any replica answers the GET.
+		ui.Card(ui.CardConfig{
+			Heading:      "The same metrics, polled",
+			HeadingLevel: 2,
+			Description:  "This block is rung 3 of the reactivity ladder: data-cui-poll re-fetches a server-rendered fragment every 5 seconds. No SSE, no held connection, no fanout: any replica answers the GET. The stat cards above are rung 4: the server pushes the moment a tick lands. See /docs/reactivity for when each rung fits.",
+		},
 			html.Div(html.DivConfig{
-				Class:      "livedash-stats-slot",
-				ExtraAttrs: html.Attrs{"data-island": liveDashStatsID},
-				AriaLabel:  "Live metrics",
-			}, renderDashStats(snap)),
+				AriaLabel: "Polled metrics",
+				ExtraAttrs: html.Attrs{
+					"data-cui-poll":     "5s",
+					"data-cui-poll-src": "/__site/livedash/poll-fragment",
+				},
+			}, renderDashPollCards(snap)),
+		),
 
-			// The poll-rung contrast. The stats above are rung 4 of the
-			// reactivity ladder (SSE push: the ticker pushes HTML the
-			// moment it changes); this card is rung 3 (data-cui-poll:
-			// the browser re-fetches a server-rendered fragment on an
-			// interval). Same markup pipeline, no connection, no
-			// fanout, any replica answers the GET.
-			ui.Card(ui.CardConfig{
-				Heading:      "The same metrics, polled",
-				HeadingLevel: 2,
-				Description:  "This block is rung 3 of the reactivity ladder: data-cui-poll re-fetches a server-rendered fragment every 5 seconds. No SSE, no held connection, no fanout: any replica answers the GET. The stat cards above are rung 4: the server pushes the moment a tick lands. See /docs/reactivity for when each rung fits.",
-			},
+		// Two cards: activity feed + jobs. Each card's heading is SSR-only
+		// chrome ABOVE the data-island slot. The island wraps ONLY the
+		// replaceable content (Timeline/DataTable); on push the runtime
+		// does island.innerHTML = payload, so anything that must survive
+		// a tick (the heading) lives OUTSIDE the slot.
+		ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapLG},
+			// Activity feed, the polite announcement lane. role=status
+			// implies aria-live=polite; the data-island slot is the
+			// stable parent so changes inside it get announced without
+			// the slot itself flickering.
+			ui.Card(ui.CardConfig{Heading: "Activity feed", HeadingLevel: 2},
 				html.Div(html.DivConfig{
-					AriaLabel: "Polled metrics",
-					ExtraAttrs: html.Attrs{
-						"data-cui-poll":     "5s",
-						"data-cui-poll-src": "/__site/livedash/poll-fragment",
-					},
-				}, renderDashPollCards(snap)),
+					ExtraAttrs: html.Attrs{"data-island": liveDashFeedID},
+					Role:       "status",
+					AriaLabel:  "Recent activity",
+				}, renderDashFeed(snap)),
 			),
 
-			// Two-column grid: activity feed (left) + jobs (right).
-			// Each region is a wrapper that holds an SSR-only heading
-			// sibling ABOVE the data-island slot. The island wraps ONLY
-			// the replaceable content (Timeline/DataTable); on push the
-			// runtime does island.innerHTML = payload, so anything that
-			// must survive a tick (the heading) lives OUTSIDE the slot.
-			ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapLG},
-				// Activity feed, the polite announcement lane. role=status
-				// implies aria-live=polite; the data-island slot is the
-				// stable parent so changes inside it get announced without
-				// the slot itself flickering.
-				html.Div(html.DivConfig{},
-					html.Heading(html.HeadingConfig{Level: 2, Class: "livedash-region-title"},
-						render.Text("Activity feed")),
-					html.Div(html.DivConfig{
-						Class:      "livedash-feed-slot",
-						ExtraAttrs: html.Attrs{"data-island": liveDashFeedID},
-						Role:       "status",
-						AriaLabel:  "Recent activity",
-					}, renderDashFeed(snap)),
-				),
-
-				// Jobs table. The heading is a sibling of the data-island
-				// slot so the push only swaps the table, not the title.
-				// Row.ID keys rows so successive pushes differ only on
-				// changed rows.
-				html.Div(html.DivConfig{},
-					html.Heading(html.HeadingConfig{Level: 2, Class: "livedash-region-title"},
-						render.Text("Jobs")),
-					html.Div(html.DivConfig{
-						Class:      "livedash-jobs-slot",
-						ExtraAttrs: html.Attrs{"data-island": liveDashJobsID},
-						AriaLabel:  "Job status",
-					}, renderDashJobs(snap)),
-				),
+			// Jobs table. Row.ID keys rows so successive pushes differ
+			// only on changed rows.
+			ui.Card(ui.CardConfig{Heading: "Jobs", HeadingLevel: 2},
+				html.Div(html.DivConfig{
+					ExtraAttrs: html.Attrs{"data-island": liveDashJobsID},
+					AriaLabel:  "Job status",
+				}, renderDashJobs(snap)),
 			),
+		),
 
-			// Operator console, the one signal-bound region on the page.
-			renderDashConsole(ctx),
+		// Operator console, the one signal-bound region on the page.
+		renderDashConsole(ctx),
 
-			// How-it-works notes (no live data; static prose).
-			html.Div(html.DivConfig{Class: "livedash-notes"},
-				html.Heading(html.HeadingConfig{Level: 2}, render.Text("How this is wired")),
-				html.UnorderedList(html.ListConfig{},
-					html.ListItem(html.ListItemConfig{},
-						render.Text("Open this page in a second browser (or private window). Both see the same metric ticks because the push is broadcast to every session on the "+liveDashTopic+" presence topic.")),
-					html.ListItem(html.ListItemConfig{},
-						render.Text("SSE is best-effort: a dropped frame is gone. The dashboard reconstructs on reconnect: point a fetch at /__site/livedash/refresh?island=stats to reconcile.")),
-					html.ListItem(html.ListItemConfig{},
-						render.Text("On an authenticated app you would set host.Islands.AuthorizeTopic to gate "+liveDashTopic+" by tenant: the push wiring is identical, only the ACL changes.")),
-					html.ListItem(html.ListItemConfig{},
-						render.Text("Metric StatCards are NOT aria-live (high-frequency numbers would flood screen readers); the activity feed carries the polite-announcement lane.")),
-				),
+		// How-it-works notes (no live data; static prose).
+		ui.Section(ui.SectionConfig{Heading: "How this is wired", Compact: true},
+			html.UnorderedList(html.ListConfig{},
+				html.ListItem(html.ListItemConfig{},
+					render.Text("Open this page in a second browser (or private window). Both see the same metric ticks because the push is broadcast to every session on the "+liveDashTopic+" presence topic.")),
+				html.ListItem(html.ListItemConfig{},
+					render.Text("SSE is best-effort: a dropped frame is gone. The dashboard reconstructs on reconnect: point a fetch at /__site/livedash/refresh?island=stats to reconcile.")),
+				html.ListItem(html.ListItemConfig{},
+					render.Text("On an authenticated app you would set host.Islands.AuthorizeTopic to gate "+liveDashTopic+" by tenant: the push wiring is identical, only the ACL changes.")),
+				html.ListItem(html.ListItemConfig{},
+					render.Text("Metric StatCards are NOT aria-live (high-frequency numbers would flood screen readers); the activity feed carries the polite-announcement lane.")),
 			),
 		),
 	)

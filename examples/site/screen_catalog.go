@@ -64,26 +64,33 @@ func (s *CatalogScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *CatalogScreen) RenderCtx(_ context.Context) render.HTML {
 	rows := make([]render.HTML, 0, len(catalogItems))
 	for _, it := range catalogItems {
-		rows = append(rows, html.LinkHTML(html.LinkHTMLConfig{
-			Href:  "/examples/catalog/" + it.ID,
-			Class: "cat-row",
-			Content: render.Join(
-				render.Tag("span", map[string]string{"class": "cat-row__name"}, render.Text(it.Name)),
-				render.Tag("span", map[string]string{"class": "cat-row__meta"}, render.Text(it.Category+" \u00b7 "+it.Price)),
-			),
+		// A row card is one keyboard-focusable link to the item's own
+		// route; the soft navigation from this list presents it as a
+		// drawer (InterceptFrom on the detail's registration).
+		rows = append(rows, ui.Card(ui.CardConfig{
+			Variant:      ui.CardRow,
+			Heading:      it.Category,
+			HeadingLevel: 2,
+			Description:  it.Name + " \u00b7 " + it.Price,
+			Href:         "/examples/catalog/" + it.ID,
 		}))
 	}
 
-	return html.Div(html.DivConfig{Class: "cat-page"},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title: "Catalog",
+			Eyebrow: "Example · Intercepting route",
+			Title:   "Catalog",
 			Subtitle: "Click a product: its own route opens as a drawer over this list. " +
 				"Press Escape or Back to close. The list never reloaded. Open the same URL " +
 				"in a new tab and it renders as a full page.",
 		}),
-		html.Div(html.DivConfig{Class: "cat-list"}, rows...),
+		ui.Stack(ui.StackConfig{ID: catalogListID, Gap: ui.GapSM}, rows...),
 	)
 }
+
+// catalogListID names the list region; the intercept e2e test watches it
+// stay mounted behind the drawer.
+const catalogListID = "catalog-list"
 
 // ── detail ──────────────────────────────────────────────────────────
 
@@ -113,30 +120,30 @@ func (s *CatalogItemScreen) ScreenDescription() string {
 func (s *CatalogItemScreen) RenderCtx(_ context.Context) render.HTML {
 	it, ok := catalogByID(s.id)
 	if !ok {
-		return html.Div(html.DivConfig{Class: "cat-detail"},
+		return ui.Stack(ui.StackConfig{},
 			ui.EmptyState(ui.EmptyStateConfig{
 				Title:        "No such product",
 				Description:  "That catalog id does not exist.",
 				HeadingLevel: 2,
+				Action:       ui.Link(ui.LinkConfig{Href: "/examples/catalog", Text: "Back to the catalog"}),
 			}),
-			html.Link(html.LinkConfig{Href: "/examples/catalog", Text: "Back to the catalog"}),
 		)
 	}
 
-	return html.Div(html.DivConfig{Class: "cat-detail"},
-		html.Heading(html.HeadingConfig{Level: 1, Class: "cat-detail__name"}, render.Text(it.Name)),
-		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
+	return ui.Stack(ui.StackConfig{},
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(it.Name)),
+		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
 			{Label: "Category", Value: render.Text(it.Category)},
 			{Label: "Price", Value: render.Text(it.Price)},
 		}}),
-		html.Paragraph(html.TextConfig{Class: "cat-detail__blurb"}, render.Text(it.Blurb)),
+		html.Paragraph(html.TextConfig{}, render.Text(it.Blurb)),
 		// data-cui-intercept-close is inert on the standalone page and
 		// closes the drawer when this render is the overlay, so one
 		// markup tree serves both presentations.
-		ui.Button(ui.ButtonConfig{
+		ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{
 			Label:      "Close",
 			Variant:    ui.ButtonGhost,
 			ExtraAttrs: html.Attrs{"data-cui-intercept-close": ""},
-		}),
+		})),
 	)
 }

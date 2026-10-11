@@ -45,8 +45,8 @@ const (
 // the initial paint and every update produce identical markup.
 func renderPresenceRoster(members []island.PresenceMember) render.HTML {
 	if len(members) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "presence-empty"},
-			render.Text("No one is here yet. Open this page in a second browser to see a viewer appear live."))
+		return html.Paragraph(html.TextConfig{}, ui.Muted(
+			render.Text("No one is here yet. Open this page in a second browser to see a viewer appear live.")))
 	}
 	avatars := make([]ui.AvatarConfig, len(members))
 	for i, m := range members {
@@ -75,37 +75,36 @@ func (s *PresenceScreen) Render() render.HTML {
 	}
 
 	// The site layout already owns the document's sole <main> landmark.
-	return html.Div(html.DivConfig{Class: "presence-demo-page"},
-		container(
-			ui.PageHeader(ui.PageHeaderConfig{
-				Eyebrow: "Example · Live presence",
-				Title:   "Who's viewing this page, right now",
-				Subtitle: "A live roster built on the SSE presence topic. Each open connection joins the " +
-					"\"presence-demo\" topic; the server pushes an updated avatar stack to every viewer when " +
-					"someone joins or leaves.",
-			}),
-			// The live roster island. On a roster change the runtime swaps this
-			// slot's innerHTML with a fresh AvatarGroup (see OnPresenceChange in
-			// setupServer). role=status so screen readers announce changes.
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow: "Example · Live presence",
+			Title:   "Who's viewing this page, right now",
+			Subtitle: "A live roster built on the SSE presence topic. Each open connection joins the " +
+				"\"presence-demo\" topic; the server pushes an updated avatar stack to every viewer when " +
+				"someone joins or leaves.",
+		}),
+		// The live roster island. On a roster change the runtime swaps this
+		// slot's innerHTML with a fresh AvatarGroup (see OnPresenceChange in
+		// setupServer). role=status so screen readers announce changes.
+		ui.Card(ui.CardConfig{Heading: "Viewing now", HeadingLevel: 2},
 			html.Div(html.DivConfig{
-				Class:      "presence-roster-slot",
 				ExtraAttrs: html.Attrs{"data-island": presenceRosterIslandID},
 				Role:       "status",
 				AriaLabel:  "Currently viewing this page",
 			}, renderPresenceRoster(members)),
-			html.Div(html.DivConfig{Class: "presence-notes"},
-				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Try it")),
-				html.UnorderedList(html.ListConfig{},
-					html.ListItem(html.ListItemConfig{}, render.Text("Open this URL in a second browser (or a private window). A second avatar appears within a second.")),
-					html.ListItem(html.ListItemConfig{}, render.Text("Close the second tab. Its avatar drops from the roster.")),
-					html.ListItem(html.ListItemConfig{}, render.Text("Two tabs of the SAME browser share one session, so they show as one viewer (correct: it's the same person).")),
-				),
-				html.Heading(html.HeadingConfig{Level: 2}, render.Text("How identity works")),
-				html.Paragraph(html.TextConfig{},
-					render.Text("The name under each avatar is SERVER-DERIVED. On an authenticated app it comes from the request-context user (battery/auth); this demo site has no auth, so each browser gets a stable pseudo-identity synthesized from its session id. A client can name a topic but can never claim another user's identity.")),
-				html.Paragraph(html.TextConfig{},
-					render.Text("Single-replica: the roster reflects only connections on THIS server. Cross-replica roster aggregation is future work.")),
+		),
+		ui.Section(ui.SectionConfig{Heading: "Try it", Compact: true},
+			html.UnorderedList(html.ListConfig{},
+				html.ListItem(html.ListItemConfig{}, render.Text("Open this URL in a second browser (or a private window). A second avatar appears within a second.")),
+				html.ListItem(html.ListItemConfig{}, render.Text("Close the second tab. Its avatar drops from the roster.")),
+				html.ListItem(html.ListItemConfig{}, render.Text("Two tabs of the SAME browser share one session, so they show as one viewer (correct: it's the same person).")),
 			),
+		),
+		ui.Section(ui.SectionConfig{Heading: "How identity works", Compact: true},
+			html.Paragraph(html.TextConfig{},
+				render.Text("The name under each avatar is SERVER-DERIVED. On an authenticated app it comes from the request-context user (battery/auth); this demo site has no auth, so each browser gets a stable pseudo-identity synthesized from its session id. A client can name a topic but can never claim another user's identity.")),
+			html.Paragraph(html.TextConfig{},
+				render.Text("Single-replica: the roster reflects only connections on THIS server. Cross-replica roster aggregation is future work.")),
 		),
 	)
 }

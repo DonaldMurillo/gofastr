@@ -208,12 +208,10 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 	// innerHTML swapped at least once. The fix moves the region <h2>
 	// OUT of the slot to a sibling position, so the heading must still
 	// be present in the parent wrapper. Read the title via JS so we
-	// explicitly assert "the h2 is a sibling of the data-island, not
-	// a child of it", walking parentElement then querySelector'ing
-	// for the h2 fails if the h2 is missing OR if it ended up inside
-	// the slot (parentElement would be the grid cell either way; the
-	// querySelector('h2') picks up the heading wherever it lives in
-	// the wrapper).
+	// explicitly assert "the h2 is in the region's card, not inside
+	// the data-island": walking to the enclosing ui.Card and reading its
+	// h2 fails if the h2 is missing OR if it ended up inside the slot
+	// (the el.contains check).
 	var feedTitle, jobsTitle string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/examples/live-dashboard?presence="+liveDashTopic),
@@ -226,15 +224,15 @@ func TestE2E_LiveDashboard_RegionHeadingsSurviveSSEPush(t *testing.T) {
 		chromedp.Sleep(1600*time.Millisecond),
 		chromedp.Evaluate(`(() => {
 			const el = document.querySelector('[data-island="`+liveDashFeedID+`"]');
-			const wrap = el ? el.parentElement : null;
-			const h = wrap ? wrap.querySelector('h2.livedash-region-title') : null;
-			return h ? h.textContent : '';
+			const wrap = el ? el.closest('[data-cui-comp="ui-card"]') : null;
+			const h = wrap ? wrap.querySelector('h2') : null;
+			return h && !el.contains(h) ? h.textContent.trim() : '';
 		})()`, &feedTitle),
 		chromedp.Evaluate(`(() => {
 			const el = document.querySelector('[data-island="`+liveDashJobsID+`"]');
-			const wrap = el ? el.parentElement : null;
-			const h = wrap ? wrap.querySelector('h2.livedash-region-title') : null;
-			return h ? h.textContent : '';
+			const wrap = el ? el.closest('[data-cui-comp="ui-card"]') : null;
+			const h = wrap ? wrap.querySelector('h2') : null;
+			return h && !el.contains(h) ? h.textContent.trim() : '';
 		})()`, &jobsTitle),
 	); err != nil {
 		t.Fatalf("live-dashboard heading-survive run: %v", err)
