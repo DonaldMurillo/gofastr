@@ -136,19 +136,11 @@ func rootTokens(ss *style.StyleSheet) {
 			"--t-4xl", "52px",
 			"--t-5xl", "72px",
 
-			// Framework component theming. core-ui/interactive + framework/ui
-			// components (Counter, Toggle, Collapsible, Tabs, Dropdown) are
-			// styled with --fui-* custom properties and fall back to LIGHT
-			// hardcoded colors when a host leaves them unset, which is why
-			// the dropdown menu rendered white on this dark theme. Aliasing
-			// them to the site's --color-* tokens (which flip with
-			// data-color-scheme) themes every framework component correctly
-			// in both modes from one place.
-			"--fui-surface", "var(--color-surface)",
-			"--fui-foreground", "var(--color-text)",
-			"--fui-border", "var(--color-border)",
-			"--fui-primary", "var(--color-primary)",
-			"--fui-muted", "var(--color-text-muted)",
+			// No --fui-* aliases here: every component reads --fui-x, then
+			// the matching --color-x. An alias set on the root resolves
+			// there, so a ui.Themed panel inherited the root scheme's
+			// colours: the headless dashboard's collapsible drew light-scheme
+			// text on its dark preview card.
 
 			// Primary-as-TEXT token. On the dark default the bright amber
 			// already reads ~9:1, so it aliases primary; the light block
@@ -159,8 +151,6 @@ func rootTokens(ss *style.StyleSheet) {
 			// light-mode primary dips under 4.5:1.
 			"--color-primary-text", "var(--color-primary)",
 			"--ui-pricing-card-badge-fg", "var(--color-primary-text)",
-			// --fui-muted-bg: the soft surface fill (chips, hover washes).
-			"--fui-muted-bg", "var(--color-surface-soft)",
 
 			// Semantic status hues. The framework defaults (Success #15803D,
 			// Danger #DC2626, Warning #A16207, Info #2563EB) are tuned to hit

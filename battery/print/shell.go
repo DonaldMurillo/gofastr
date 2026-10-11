@@ -175,6 +175,8 @@ func renderShell(in shellInput) string {
 // design tokens via var(--*) with fallbacks so the document looks right
 // whether or not the host's app.css is linked, strips shadows/backgrounds
 // for ink economy under @media print, and ships page-break utilities.
+//
+// Knobs: --ui-print-doc-max-width (820px) — the screen-preview column.
 const printBaseCSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
@@ -182,21 +184,21 @@ html, body { margin: 0; padding: 0; }
 body.print-doc {
   font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
   font-size: 12pt;
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   color: var(--color-text, #111827);
   background: var(--color-background, #ffffff);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 body.print-doc h1, body.print-doc h2, body.print-doc h3 {
-  line-height: 1.2;
+  line-height: var(--leading-tight, 1.2);
   margin: 0 0 0.4em;
 }
 body.print-doc table { width: 100%; border-collapse: collapse; }
 body.print-doc th, body.print-doc td {
   text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
 }
 body.print-doc img { max-width: 100%; }
 .page-break { break-after: page; page-break-after: always; }
@@ -206,7 +208,7 @@ body.print-doc img { max-width: 100%; }
 @media screen {
   .print-only { display: none; }
   .screen-only { display: block; }
-  body.print-doc { max-width: 820px; margin: 24px auto; padding: 0 16px; }
+  body.print-doc { max-width: var(--ui-print-doc-max-width, 820px); margin: var(--spacing-xl, 24px) auto; padding: 0 var(--spacing-lg, 16px); }
 }
 @media print {
   body.print-doc { max-width: none; margin: 0; padding: 0; }

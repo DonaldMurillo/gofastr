@@ -345,7 +345,7 @@ func revealCSS(_ style.Theme) string {
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="fade-up"].cui-hidden{transform:translateY(24px)}` +
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-left"].cui-hidden{transform:translateX(24px)}` +
 		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-right"].cui-hidden{transform:translateX(-24px)}` +
-		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s ease,transform .6s ease}` +
+		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s var(--easing-ease-in-out, ease),transform .6s var(--easing-ease-in-out, ease)}` +
 		`@media (prefers-reduced-motion:reduce){[data-cui-comp="cui-reveal"].cui-hidden{opacity:1;transform:none}[data-cui-comp="cui-reveal"].cui-revealed{transition:none}}`
 }
 
@@ -421,11 +421,13 @@ func dropdownCSS(_ style.Theme) string {
 	// links/buttons are styled as menu items. Without this the panel
 	// renders as a flat, full-width, unstyled strip (functional but not a
 	// dropdown).
+	//
+	// Knobs: --ui-dropdown-min-width (11rem).
 	return `[data-cui-comp="cui-dropdown"]{position:relative;display:inline-block}` +
-		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + 4px);left:0;min-width:11rem;background:var(--fui-surface, var(--color-surface, #fff));border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:var(--spacing-sm, .25rem);z-index:50}` +
-		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) .75rem;border-radius:.375rem;color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + var(--spacing-sm, 4px));left:0;min-width:var(--ui-dropdown-min-width, 11rem);background:var(--fui-surface, var(--color-surface, #fff));border:var(--stroke-thin, 1px) solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md, 8px);box-shadow:var(--shadow-md, 0 8px 24px rgba(0,0,0,.12));padding:var(--spacing-sm, .25rem);z-index:var(--z-dropdown, 100)}` +
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:left;padding:var(--spacing-md, .5rem) calc(var(--spacing-sm, 4px) * 3);border-radius:var(--radii-sm, 6px);color:var(--fui-foreground, var(--color-text, #0f172a));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:hover,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9))}` +
-		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px}`
+		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:calc(-1 * var(--stroke-focus-offset, 2px))}`
 }
 
 // AnimateOnSignal wraps an element so it gets a CSS class when a signal

@@ -103,3 +103,17 @@ func TestLineChartExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("line chart root missing data-test:\n%s", root)
 	}
 }
+
+// The peak and trough sit a stroke's width inside the plot, so the
+// viewBox does not shave them, and three hairlines give the scale.
+func TestLineChartInsetsLineAndDrawsGrid(t *testing.T) {
+	h := string(LineChart(LineChartConfig{Height: 100, Series: []LineSeries{
+		{Name: "S", Values: []float64{0, 10}},
+	}}))
+	if c := classTokenCount(h, "fui-line-chart__grid"); c != 3 {
+		t.Errorf("want 3 gridlines, got %d:\n%s", c, h)
+	}
+	if !strings.Contains(h, `d="M0,96 L360,4"`) {
+		t.Errorf("line should run from y=96 to y=4 inside a 100px plot:\n%s", h)
+	}
+}

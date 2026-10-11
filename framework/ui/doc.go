@@ -117,6 +117,7 @@
 //	Radio:                labelled radio with FieldErrors wiring
 //	RadioGroup:           <fieldset> of radios with shared label + errors
 //	RangeSlider:          dual-thumb range with cross-clamp
+//	Rating:               read-only score as a row of glyphs (role=img)
 //	RatingInput:          1-N star/heart rating input
 //	RecordSummary:        dominant record/event summary with bounded support rail
 //	Repeater:             dynamic add/remove item list with min/max limits
@@ -159,6 +160,7 @@
 //	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
+//	ThemePicker:          whole-page switch between registered theme overrides
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
 //	Timeline:             vertical event rail
 //	TimePicker:           styled native <input type=time>

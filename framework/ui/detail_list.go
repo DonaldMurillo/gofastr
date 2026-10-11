@@ -88,12 +88,15 @@ func DetailList(cfg DetailListConfig) render.HTML {
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)
 
 func detailListCSS(_ style.Theme) string {
+	// Knobs: --ui-detail-list-max-width (44rem) caps the list's
+	// measure (the label-column knob sits on the row rule below).
 	return `[data-cui-comp="ui-detail-list"] {
   display: flex;
   flex-direction: column;
   container-type: inline-size;
-  max-width: 44rem;
+  max-width: var(--ui-detail-list-max-width, 44rem);
   margin: 0;
+  font-size: var(--text-sm, 0.875rem);
 }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__row {
   display: grid;
@@ -103,18 +106,18 @@ func detailListCSS(_ style.Theme) string {
   grid-template-columns: var(--ui-detail-list-label-track, minmax(7rem, 13rem)) 1fr;
   gap: var(--spacing-lg, 16px);
   align-items: baseline;
-  padding: var(--spacing-sm, 4px) 0;
-  border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  padding: var(--spacing-md, 8px) 0;
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
 }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__label {
   margin: 0;
   color: var(--color-text-muted, inherit);
-  font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__value {
   margin: 0;
   color: var(--color-text, inherit);
+  font-weight: var(--font-weight-medium);
 }
 @container (max-width: 30rem) {
   [data-cui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }

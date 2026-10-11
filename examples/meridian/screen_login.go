@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"database/sql"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -20,8 +21,8 @@ func (s *LoginScreen) ScreenDescription() string  { return "" }
 func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
-		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
+		ui.AuthCard(ui.AuthCardConfig{Title: "Sign in to Meridian", Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in", SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}), ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: "current-password"})

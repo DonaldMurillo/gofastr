@@ -109,7 +109,7 @@ func workbenchCSS(_ style.Theme) string {
   padding: var(--spacing-md, 8px);
   box-sizing: border-box;
   background-color: var(--color-surface, #fff);
-  border-inline-end: 1px solid var(--color-border, #e4e4e7);
+  border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
 }
 
 [data-cui-comp="ui-workbench"] .fui-workbench__pane {
@@ -141,7 +141,7 @@ func workbenchCSS(_ style.Theme) string {
     inline-size: 100%;
     overflow-y: visible;
     border-inline-end: none;
-    border-block-end: 1px solid var(--color-border, #e4e4e7);
+    border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   }
   [data-cui-comp="ui-workbench"] .fui-workbench__pane {
     block-size: 70vh;

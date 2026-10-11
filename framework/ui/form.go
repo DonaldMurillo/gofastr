@@ -388,22 +388,25 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 var validationSummaryStyle = registry.RegisterStyle("ui-validation-summary", validationSummaryCSS)
 
 func validationSummaryCSS(_ style.Theme) string {
+	// Knobs: --ui-validation-summary-link-min-height (24px) is the
+	// error link's row floor.
 	return `.fui-validation-summary {
   display: grid;
   gap: var(--spacing-sm, 4px);
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-inline-start: 4px solid var(--color-danger, #DC2626);
-  border-radius: var(--fui-field-radius);
-  background: color-mix(in oklab, var(--color-danger, #DC2626) 8%, var(--color-surface, #FFFFFF) 92%);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
+  /* The destructive-alert shape Banner uses: the danger hue tints the
+     hairline and the title, with no side stripe. */
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #DC2626) 35%, var(--color-border, #E4E4E7));
+  border-radius: var(--radii-lg, 10px);
+  background: var(--color-surface, #FFFFFF);
 }
 .fui-validation-summary:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-validation-summary__title {
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   margin: 0;
   color: var(--color-danger, #DC2626);
 }
@@ -417,7 +420,7 @@ func validationSummaryCSS(_ style.Theme) string {
 .fui-validation-summary__list a {
   display: inline-flex;
   align-items: center;
-  min-block-size: 24px;
+  min-block-size: var(--ui-validation-summary-link-min-height, 24px);
   color: var(--color-danger, #DC2626);
   text-decoration: underline;
 }

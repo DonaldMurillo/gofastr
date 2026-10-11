@@ -881,8 +881,8 @@ func sidebarCSS(_ style.Theme) string {
 	return `.fui-sidebar-native { min-inline-size: 0; }
 .fui-sidebar-native__mobile { display: none; }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
-[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
-[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-primary); border-inline-start-color: var(--color-primary); }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: var(--stroke-thin, 1px) solid transparent; }
+[data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-text); font-weight: var(--font-weight-medium); border-inline-start-color: var(--color-text); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
 [data-cui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
@@ -909,7 +909,7 @@ func sidebarCSS(_ style.Theme) string {
   justify-content: center;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -926,31 +926,35 @@ func sidebarCSS(_ style.Theme) string {
   justify-self: end;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-sm, 4px);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
   cursor: pointer;
   font-size: var(--text-xl, 1.25rem);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
   display: none;
 }
+/* Knobs: --ui-sidebar-width (220px) is the expanded inline column's
+   width (min-width and width); --ui-sidebar-rail-width (64px) is the
+   collapsed icon rail's width (the collapsible collapsed state and the
+   auto-hide rest state). */
 [data-cui-comp="ui-sidebar"] .fui-sidebar__inline {
   display: grid;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
-  min-width: 220px;
+  min-width: var(--ui-sidebar-width, 220px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__title {
-  font-size: var(--text-sm, 0.875rem);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-muted, #52525B);
+  padding-inline: var(--spacing-md, 8px);
   margin: 0;
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__list,
@@ -987,15 +991,18 @@ func sidebarCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
-  color: var(--color-text, #18181B);
+  border-radius: var(--radii-sm, 6px);
+  color: var(--color-text-muted, #52525B);
+  font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
   min-height: var(--spacing-touch-target, 44px);
   cursor: pointer;
+  transition: background-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:hover,
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link:focus-visible {
   /* Visible focus ring on BOTH the default and the active
@@ -1004,16 +1011,17 @@ func sidebarCSS(_ style.Theme) string {
      (equal specificity, later source) overrode the focus background, and
      outline:none removed the ring — so a keyboard user could not see
      focus land on the current page's nav item. */
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__link[aria-current="page"] {
-  /* Use the primary + primary-fg token pair so contrast is guaranteed
-     AA regardless of theme. The previous 12%-primary tinted bg + raw
-     primary text failed contrast for some primary hues. */
-  background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
-  font-weight: var(--font-weight-semibold);
+  /* The neutral surface-soft + text pair: contrast holds in every
+     theme because both are neutrals, and the current page reads as
+     selected without a saturated slab. (A 12%-primary tint with raw
+     primary text failed contrast for some primary hues.) */
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
@@ -1024,11 +1032,11 @@ func sidebarCSS(_ style.Theme) string {
 [data-cui-comp="ui-sidebar"] .fui-sidebar__footer {
   margin-top: auto;
   padding-top: var(--spacing-md, 8px);
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__prepend {
   padding-bottom: var(--spacing-md, 8px);
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 /* The drawer body has no column padding (each nav row pads itself), so
    the title, Prepend and footer take the rows' inline inset: their text
@@ -1045,8 +1053,8 @@ func sidebarCSS(_ style.Theme) string {
   padding-inline: calc(var(--spacing-sm) + 1px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__inline {
-  min-width: 64px;
-  width: 64px;
+  min-width: var(--ui-sidebar-rail-width, 64px);
+  width: var(--ui-sidebar-rail-width, 64px);
   padding-inline: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__collapse {
@@ -1105,8 +1113,8 @@ func sidebarCSS(_ style.Theme) string {
    the reveal restores the persistent column's sizing. The framework
    ships this styling (one styling surface — hosts write no CSS). */
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline {
-  min-width: 64px;
-  width: 64px;
+  min-width: var(--ui-sidebar-rail-width, 64px);
+  width: var(--ui-sidebar-rail-width, 64px);
   padding-inline: var(--spacing-sm, 4px);
   transition: width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
     min-width var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
@@ -1114,8 +1122,8 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:hover .fui-sidebar__inline,
 [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:focus-within .fui-sidebar__inline {
-  min-width: 220px;
-  width: 220px;
+  min-width: var(--ui-sidebar-width, 220px);
+  width: var(--ui-sidebar-width, 220px);
   padding-inline: var(--spacing-lg, 16px);
 }
 /* Rest-state chrome rules apply only while NOT revealed: on hover
@@ -1163,7 +1171,7 @@ func sidebarCSS(_ style.Theme) string {
      row's padding IS the inset): the brand lines up with the first
      row's icon instead of starting 8px deeper. */
   padding: var(--spacing-md, 8px) var(--spacing-md, 8px);
-  border-bottom: 1px solid var(--color-border, #E4E4E7);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-sidebar__drawer-brand {
   font-weight: var(--font-weight-bold);
@@ -1181,7 +1189,7 @@ func sidebarCSS(_ style.Theme) string {
   flex: 0 0 auto;
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -1194,8 +1202,8 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 .fui-sidebar__drawer-close:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline { transition: none; }

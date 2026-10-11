@@ -207,7 +207,7 @@ func TestLightOnlyOverrideWarns(t *testing.T) {
 
 	Default(Overrides{Primary: "#0E7490"})
 	out := buf.String()
-	want := `theme: Primary is set for light (#0E7490) but not in Dark; dark mode keeps the framework's #A5B4FC. Set Dark.Primary, or Dark: &theme.Overrides{} to silence this.`
+	want := `theme: Primary is set for light (#0E7490) but not in Dark; dark mode keeps the framework's #FAFAFA. Set Dark.Primary, or Dark: &theme.Overrides{} to silence this.`
 	if !strings.Contains(out, want) {
 		t.Errorf("light-only override warning missing or wrong:\ngot:  %s\nwant: %s", out, want)
 	}
@@ -262,8 +262,8 @@ func TestDefaultShipsAdaptiveDarkPalette(t *testing.T) {
 	css := th.CSSCustomProperties()
 	for _, want := range []string{
 		`:root[data-color-scheme="dark"]`,
-		`--color-background: #111113;`,
-		`--color-primary: #A5B4FC;`,
+		`--color-background: #09090B;`,
+		`--color-primary: #FAFAFA;`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("adaptive theme CSS missing %q\n%s", want, css)

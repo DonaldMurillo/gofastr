@@ -468,15 +468,24 @@ func filterToolbarCSS(_ style.Theme) string {
 /* Pill facet — fieldset reset + legend as a field label. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
   padding: 0;
-  margin-block-end: var(--spacing-xs, 2px);
+  /* The same label-to-control gap a Field row uses, so the legend
+     lines up with the Status and Sort labels beside it. */
+  margin-block-end: var(--fui-density-gap, var(--spacing-md, 8px));
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
+/* Segmented control: the options sit in one soft track whose outer
+   height is the 44px control height, so the group lines up with the
+   search field and the Apply button beside it; the checked option is a
+   raised surface chip inside the track. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-sm, 4px);
+  border-radius: var(--radii-lg, 10px);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill {
   display: inline-flex;
@@ -485,22 +494,19 @@ func filterToolbarCSS(_ style.Theme) string {
   /* nowrap: a multi-word label stays on one line — pills wrap between
      themselves, never mid-label (the "Waiting On Customer" → 3 lines bug). */
   white-space: nowrap;
-  min-block-size: var(--spacing-touch-target, 44px);
+  min-block-size: calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: 999px;
-  background: var(--color-surface, #FFFFFF);
+  border-radius: var(--radii-md, 8px);
+  background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   user-select: none;
-  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
-              color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
-              border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+  transition: background-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
-  color: var(--color-text, #18181B);
-  border-color: var(--color-text-muted, #a1a1aa);
+  color: var(--color-text, #09090B);
 }
 /* Visually hide the radio; the pill label is the visible control. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-input {
@@ -515,14 +521,13 @@ func filterToolbarCSS(_ style.Theme) string {
   border: 0;
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:checked) {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
-  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface, #FFFFFF);
+  color: var(--color-text, #09090B);
+  box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 
 /* Single-column stack when the toolbar itself (not the viewport) is

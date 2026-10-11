@@ -89,6 +89,11 @@ func Slider(cfg SliderConfig) render.HTML {
 var sliderStyle = registry.RegisterStyle("ui-slider", sliderCSS)
 
 func sliderCSS(_ style.Theme) string {
+	// Knobs: --ui-slider-track-height (6px, the runnable track's bar),
+	// --ui-slider-thumb-size (20px, the WebKit thumb) and
+	// --ui-slider-thumb-size-moz (18px, the Firefox thumb, whose box
+	// swallows the border differently). The WebKit thumb's centring
+	// margin is calc() over the track and thumb knobs.
 	return `[data-cui-comp="ui-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -105,7 +110,7 @@ func sliderCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   min-inline-size: 3ch;
   text-align: end;
 }
@@ -127,48 +132,50 @@ func sliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-slider"] .fui-slider__input:focus { outline: none; }
 /* WebKit + Blink */
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-runnable-track {
-  height: 6px;
+  height: var(--ui-slider-track-height, 6px);
   background: var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
-  margin-top: -7px;
+  width: var(--ui-slider-thumb-size, 20px);
+  height: var(--ui-slider-thumb-size, 20px);
+  border-radius: var(--radii-full, 9999px);
+  background: var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
+  margin-top: calc((var(--ui-slider-track-height, 6px) - var(--ui-slider-thumb-size, 20px)) / 2);
   cursor: pointer;
-  transition: transform 100ms ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:active::-webkit-slider-thumb {
   transform: scale(1.15);
 }
 /* Firefox */
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-track {
-  height: 6px;
+  height: var(--ui-slider-track-height, 6px);
   background: var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-slider"] .fui-slider__input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  width: var(--ui-slider-thumb-size-moz, 18px);
+  height: var(--ui-slider-thumb-size-moz, 18px);
+  border-radius: var(--radii-full, 9999px);
+  background: var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
 [data-cui-comp="ui-slider"] .fui-slider__input:focus-visible::-moz-range-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
 }
 
 [data-cui-comp="ui-slider"].is-disabled .fui-slider__input {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

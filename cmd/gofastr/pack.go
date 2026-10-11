@@ -2382,12 +2382,14 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 // into a shared helper (screen + island endpoint reusing one config) still
 // reverses.
 //
-// Two root shapes are accepted. The generator emits
-// `html.Div(html.DivConfig{…}, children…)`, the design system's 1:1 tag
-// primitive. Apps generated before that switch (and hand-written screens
-// that never moved) use `render.Tag("div", attrs, children…)`. pack has to
-// read both or it silently returns no blocks for the other one, which is
-// how a round-trip loses screens.
+// Three root shapes are accepted. The generator emits the screen stack,
+// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, children…)`, for a screen with
+// blocks, wrapped in `html.Div(html.DivConfig{…data-component…}, stack)`
+// when the screen has actions. Apps generated before that used
+// `html.Div(html.DivConfig{…}, children…)`, and older ones (and
+// hand-written screens that never moved) `render.Tag("div", attrs,
+// children…)`. pack has to read all three or it silently returns no
+// blocks for the others, which is how a round-trip loses screens.
 func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []BlueprintBlock {
 	if fn.Body == nil {
 		return nil
@@ -2402,7 +2404,7 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 			continue
 		}
 		// Index of the first child argument: render.Tag takes (tag, attrs)
-		// first, html.Div takes a single config.
+		// first, html.Div and ui.Stack take a single config.
 		firstChild := -1
 		switch callSel(call) {
 		case "render.Tag":
@@ -2413,9 +2415,22 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 			if len(call.Args) >= 1 {
 				firstChild = 1
 			}
+		case "ui.Stack":
+			// Only the generator's own screen stack: a hand-written root
+			// stack with its own Align or Justify would lose them.
+			if isScreenStack(call) {
+				firstChild = 1
+			}
 		}
 		if firstChild < 0 {
 			continue
+		}
+		// An html.Div whose one child is the screen stack is the actions
+		// wrapper: the blocks are the stack's children.
+		if callSel(call) == "html.Div" && len(call.Args) == 2 {
+			if inner, ok := call.Args[1].(*ast.CallExpr); ok && isScreenStack(inner) {
+				call, firstChild = inner, 1
+			}
 		}
 		var out []BlueprintBlock
 		for _, arg := range call.Args[firstChild:] {
@@ -2426,6 +2441,29 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 		return out
 	}
 	return nil
+}
+
+// isScreenStack reports whether call is the generator's screen stack,
+// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, …)` (blueprintScreenStackOpen),
+// as opposed to a stack block an author placed on the screen.
+func isScreenStack(call *ast.CallExpr) bool {
+	if callSel(call) != "ui.Stack" || len(call.Args) < 1 {
+		return false
+	}
+	lit, ok := call.Args[0].(*ast.CompositeLit)
+	if !ok || len(lit.Elts) != 1 {
+		return false
+	}
+	kv, ok := lit.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return false
+	}
+	key, ok := kv.Key.(*ast.Ident)
+	if !ok || key.Name != "Gap" {
+		return false
+	}
+	sel, ok := kv.Value.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "GapXL"
 }
 
 // packHelperReturns indexes top-level zero-arg functions with a single
@@ -2559,10 +2597,12 @@ func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.
 		b.Props["gap"] = gap
 	}
 	if kind == "stack" || kind == "cluster" {
-		if align := reverseAlign(astSelName(cfg["Align"])); align != "" && align != "start" {
+		// The generator emits Align/Justify only when the block set them,
+		// so a present field is a prop, start included.
+		if align := reverseAlign(astSelName(cfg["Align"])); align != "" {
 			b.Props["align"] = align
 		}
-		if justify := reverseJustify(astSelName(cfg["Justify"])); justify != "" && justify != "start" {
+		if justify := reverseJustify(astSelName(cfg["Justify"])); justify != "" {
 			b.Props["justify"] = justify
 		}
 	}

@@ -8,6 +8,131 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
+  `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
+  `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
+  border, divider, inset ring and focus outline reads them, pill shapes
+  read `--radii-full`, transitions `--duration-fast/normal/slow` and
+  stacking layers `--z-*`, so a theme alone can redraw the kit: thick
+  borders, square corners and hard shadows need no component CSS. A
+  value is `"0"` or a non-negative px/rem/em length. The set is
+  optional: an unset stroke emits the default width, so a `theme.go`
+  written before strokes existed keeps its borders and every
+  `var(--stroke-*)` reader resolves. Strokes reach `ApplyTokens` (an
+  unset stroke there takes its default, so it can be edited),
+  `theme edit`'s write-back,
+  `.tokens.css` (`--stroke-*`, `syntax: "<length>"`), the plugin
+  host's token bridge and the GOFASTR1807/1808 checks
+  (`border-width`, `outline-width`, `outline-offset` and
+  `column-rule-width` compare against strokes). The kit's transitions
+  moved onto the nearest duration step (100–200ms → fast, 220ms →
+  normal), and the skip link, navigation toast and progress strip now
+  sit one layer above `--z-toast` instead of at 9999. The
+  `button.radius: pill` component option now emits
+  `var(--radii-full)`. A new `gofastr verify` rule, GOFASTR1823, keeps
+  the kit that way: a bare border, outline or ring width, outline
+  offset, px radius, duration up to 500ms or z-index above 10 in
+  design-system CSS is an error, with a literal inside a `var()`
+  fallback or a token-reading `calc()` allowed. The contract catalog
+  holds 78 rules.
+- **The whole kit is themeable from one `:root` block.** Three optional
+  token groups join `Strokes`: `Theme.Leading` (`--leading-tight` 1.2,
+  `--leading-snug` 1.4, `--leading-normal` 1.5, `--leading-relaxed`
+  1.6), `Theme.Tracking` (`--tracking-tighter` -0.03em through
+  `--tracking-wider` 0.08em) and `Theme.Opacities` (`--opacity-faint`
+  0.2, `--opacity-disabled` 0.5, `--opacity-muted` 0.6). `Theme.Knobs`
+  (`map[string]string`, keys `ui-…`) sets per-component knobs in the
+  theme's own `:root` block and in a scoped theme's block, and reaches
+  `ThemeHash`, `ApplyTokens` and `ThemeToTokens` (under `knob.`) and
+  `theme edit`'s write-back. Every kit padding, margin, gap, font size,
+  line height, letter spacing, opacity, shadow, colour and component
+  dimension now reads a token or a `--ui-<component>-<part>` knob with
+  its old value as the fallback, and a theme reaches all of it. A value
+  that sat between steps snaps to the nearest token: opacities 0.55,
+  0.45 and 0.18 draw at 0.6, 0.5 and 0.2, line heights 1.15, 1.25, 1.45
+  and 1.65 move by 0.05, and two letter spacings move by under 0.01em.
+  Filled and soft buttons draw their border in the new
+  `--ui-button-edge` knob (default `transparent`). Clickable surfaces
+  take shared press knobs (`--ui-press-hover-translate`,
+  `--ui-press-active-translate`, `--ui-press-hover-shadow`,
+  `--ui-press-active-shadow`), so one theme setting lifts buttons,
+  interactive cards and tags, gallery items, the back-to-top and copy
+  buttons, the carousel arrows, the menu trigger and the standalone
+  theme toggle on hover and presses them flat on click; each also has
+  its own `--ui-<component>-hover-*` / `-active-*` knob, and
+  `--ui-button-shadow` sets a button's resting shadow. Button labels,
+  badges, tags and eyebrows take a letter-case knob (`--ui-button-case`,
+  `--ui-badge-case`, `--ui-tag-case`, `--ui-status-pill-case`,
+  `--ui-pricing-card-badge-case`, `--ui-<component>-eyebrow-case`).
+  `ui.Stack`, `ui.Cluster` and `ui.Grid` read their gaps from
+  `--ui-layout-gap-<step>` knobs over the spacing tokens, and a
+  `ui.Section` body reads `--ui-section-body-gap` and a `ui.Carousel`
+  track `--ui-carousel-gap`, each over the matching layout step, so one
+  theme setting widens the room between cards without widening any
+  padding. The defaults draw what they drew before. GOFASTR1823 widens
+  to match: spacing, position offsets, sizes, type, opacity, box shadows
+  and colour literals in design-system CSS are errors, with `em`, `%`,
+  `ch` and viewport lengths, zero and 1px hairlines allowed, and
+  `framework/dev` held to the stroke, radius, motion and layer arms
+  only. The new groups reach `.tokens.css` (`--leading-*`,
+  `--tracking-*`, `--opacity-*`), the plugin host's token bridge and the
+  GOFASTR1807/1808 checks; an unset slot in one of them emits the
+  default theme's value, so a `var(--leading-*)` with no fallback still
+  resolves. GOFASTR1807 reads a number the way the browser does (`.6`,
+  `1.60` and `-.01em` are `0.6`, `1.6` and `-0.01em`) and checks
+  `padding-inline`, `padding-block`, `margin-inline`, `margin-block` and
+  their start and end sides against `--spacing-*`. GOFASTR1823 also
+  refuses an ease keyword or `cubic-bezier()` (read `--easing-*`;
+  `linear` and `steps()` pass), a numeric, `bold` or `normal` font
+  weight (`--font-weight-*`), the `font` shorthand's literal size, line
+  height and weight, a transition delay up to 500ms, and `grid-gap` and
+  scroll margins and paddings. The kit's transitions read
+  `var(--easing-ease-in-out, ease)` (or the matching named curve), so the
+  default theme draws them on `cubic-bezier(0.4, 0, 0.2, 1)` instead of
+  CSS's `ease`. `--ui-spinner-size`, `--ui-gallery-cols`,
+  `--ui-gallery-min`, `--ui-rating-glyph` and `--ui-rating-cell` reach
+  the component from a theme: each component used to set the knob on
+  its own root, which beat the theme's value on every instance.
+- **`ui.ThemePicker` switches the whole page between themes.** Register
+  each extra theme with `style.RegisterThemeOverride` and list it in
+  `ThemePickerConfig.Themes`; the picker draws as `ui.ThemeToggle`'s
+  pill, with a Default option for the app's own theme, and the arrow
+  keys move the choice as in a native radio set. The server draws
+  Default checked until the runtime reads the stored choice, and a row
+  too narrow for every label scrolls the pill's track instead of
+  widening the page. Picking a theme
+  puts its `cui-theme-<hash>` class on `<html>` in place, stores it in
+  `localStorage["gofastr.theme"]`, and the color-scheme bootstrap puts
+  it back before first paint on the next load
+  (`window.__gofastr_theme.set(class)` is the script API). Override
+  CSS now also names `:root.cui-theme-<hash>` in each block, so the
+  class works on `<html>` and its dark palette follows
+  `ui.ThemeToggle`. The theming guide lists what a page theme does not
+  reach: fonts it does not load, overrides with no dark palette, a
+  stored choice that resets when the theme's values change, and the
+  server rendering the app theme.
+- **`headless.CounterProps.Display`** renders a counter's value alone,
+  with no step buttons, no group role and no live region, so the tick-up
+  animation is not read out frame by frame. `ui.AnimatedCounter` sets
+  it: a number that animates in is read, not operated. Display with a
+  `Name` panics, since a figure is not a form field, and a value past
+  2^53-1, which a JavaScript number would round, renders unanimated.
+- **`resource.Config.HeadingLevel` and `WithHeadingLevel`** set the list
+  title's heading level, 1 to 5 (0 means 1; any other value panics at
+  render rather than print a second `<h1>`). The
+  blueprint generator sets 2 on an entity list that a block ahead of it
+  on the screen already gives an `<h1>` (a dashboard's page header), so
+  the page keeps exactly one.
+- **`ui.Rating`** draws a read-only score as a row of glyphs: a
+  testimonial's stars, a product's average. It is one `role="img"` with
+  a localized "4 out of 5" name, sized to its glyphs, and takes a
+  `ui.RatingDisplayConfig` (`ui.RatingConfig` stays RatingInput's). It
+  shares RatingInput's Shape, Size and `--ui-rating-color`. A disabled
+  RatingInput announced a form control and spaced its stars on 44px tap
+  targets.
+- **Component knobs** `--ui-form-max` (`ui.Form`'s maximum width,
+  42rem), `--ui-copy-btn-*` (`ui.CopyButton`'s size and colours) and
+  `--ui-status-pill-font`.
 - **`gofastr docs serve`**: browse the docs website offline. The first
   run downloads the static export of the docs site for the binary's
   release, verifies its SHA-256, and caches it in the user cache
@@ -382,6 +507,79 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   other user's create, and the 409 reveals that the value exists.
 
 ### Changed
+- **BREAKING: owned sheets read line height, letter spacing and opacity
+  from the new tokens.** The owned-style check (`gofastr gen styles`,
+  `gofastr verify`) compares `line-height`, `letter-spacing` and
+  `opacity` against `--leading-*`, `--tracking-*` and `--opacity-*`, so
+  `line-height: 1.6` or `letter-spacing: -0.01em` in a `.style.css` is a
+  GOFASTR1807 error and that sheet's Go is not generated. The
+  sitefooter and siteheader sheets the blueprint wrote carry both; `gofastr
+  upgrade` lists them. Write `var(--leading-relaxed)` and
+  `var(--tracking-snug)` and re-run `gofastr gen styles`.
+- **BREAKING: the default theme is reskinned to a neutral zinc look.**
+  `style.DefaultTheme()` and `theme.Default()` now use a near-black
+  primary (`#18181B`, was indigo `#4F46E5`) on a white page, one
+  hairline border and one soft surface, with a matching dark palette
+  (near-white primary on `#09090B`). Fonts lead with the system stack
+  (`Inter` and `JetBrains Mono` remain only as later fallbacks), radii
+  are 6/8/10/14px (were 4/8/12/16) and the shadows are softer.
+  Three more tokens change value: `--color-accent` is blue `#2563EB`
+  in both themes (was violet `#7C3AED` in `style.DefaultTheme()`, cyan
+  `#0891B2` in `theme.Default()`, whose dark accent is now `#60A5FA`,
+  was `#67E8F9`); `--color-secondary` is a light fill `#F4F4F5` under
+  near-black `--color-secondary-fg` (was grey `#6B7280` under white);
+  and `--color-border-strong` is `#D4D4D8` (was `#A1A1AA`), a hover
+  edge rather than a 3:1 control edge, so host CSS that drew a control
+  border with it should move to `--color-text-subtle`.
+  `style.ShadowSet` gains an `XS` token (`--shadow-xs`), the lift under
+  a resting control, and like every token it is required: a theme built
+  field by field without `style.DefaultTheme()` must add `Shadows.XS` or
+  `Validate` refuses it. A `theme.go` written by an earlier
+  `gofastr theme init` or `gofastr theme edit` is such a theme and
+  panics at boot (`Theme.Shadows.XS: Shadow.Value is empty`) until it
+  gains `XS`; `gofastr upgrade` lists it.
+  Set `theme.Overrides.Primary` to keep a brand colour. Components follow
+  one set of rules: every focus ring is
+  `2px solid var(--color-text-subtle)` (about twenty sheets drew it in
+  the brand colour, the form repeater's remove button danger red, and
+  the slider thumbs a primary halo; the range slider also boxed its
+  whole track in the browser's own outline); checkbox and
+  radio borders clear WCAG's 3:1 for controls; primary and danger
+  buttons shade on hover under every button treatment; an inline
+  `ui.Link` is underlined, since the neutral primary is the text's own
+  colour; status badges, tags and chips are soft fills; and text
+  controls go back to 16px below the md breakpoint so iOS does not zoom
+  into a focused field. `ui.Form` is capped at 42rem (`--ui-form-max`;
+  it was full width), with 16px between fields (was 8px) and 24px above
+  its actions (was 16px).
+  Buttons, inputs, cards, tables, forms, the
+  Collapsible accordion, sliders, the code block head, Timeline,
+  LineChart (grid lines, inset plot), Carousel (arrows in a gutter beside
+  the slide), PricingCard (a ring marks the featured plan; cards in a row
+  share one height; the "Recommended" badge rides the plan name's line,
+  so the featured card's price lines up with its neighbours'), Carousel
+  slides per view (VisiblePerView is now a ceiling: a carousel narrower
+  than 40rem shows at most two slides and one narrower than 26rem shows
+  one, full width, with its arrows dropped for the dots and a swipe;
+  one with `NoDots` keeps its arrows, its only pointer control),
+  the rating glyphs (`--ui-rating-color` defaults to amber `#D97706`;
+  the dark `--color-warning` painted stars brown; set on an ancestor,
+  it reaches every rating under it, whatever its shape) and the
+  section menu (a hairline rule under each group, on the inline-start
+  side in either direction) are restyled to match. A checked
+  `ui.SignalToggle` thumb takes `--color-primary-fg`, since a white
+  thumb vanished on the near-white dark primary. Tags and badges keep their own
+  width inside a flex column.
+- **Resource screens** draw Back and Cancel as ghost buttons beside the
+  other page actions, and a related list's title is an `<h2>` under the
+  detail page's `<h1>`.
+- **Generated blueprint screens** stack their blocks in
+  `ui.Stack{Gap: GapXL}`, so a page header, stat grid and table get
+  vertical rhythm. Generated auth forms use a full-width submit button
+  and the generated theme toggle is the icon variant.
+- **`ui.ContentRow`**'s stacked phone nav band takes main's inline
+  gutter, so the menu trigger lines up with the page content instead of
+  sitting in the viewport corner.
 - **Generated `CLAUDE.md`, `AGENTS.md` and the `gofastr-host` skill now
   open with the dev loop**: start `gofastr dev` once and leave it
   running, because `go run .` never sets `GOFASTR_DEV=1` and so never
@@ -544,6 +742,107 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- **A harness event stream carries the turn its client starts at once.**
+  The REST `/v1/sessions/<id>/events` stream and the web client's SSE
+  stream flushed their headers before subscribing to the session's bus,
+  and the bus delivers only to current subscribers. A client that drove
+  a turn the moment the stream opened lost that turn's events whenever
+  the handler was descheduled between the two. Both now subscribe
+  first, the order the WebSocket control surface already used.
+- **The arrow keys move the choice in `ui.ThemeToggle`'s pill.** The
+  pill is a radiogroup but answered only clicks and Tab; the arrow
+  keys now move and pick, wrapping at either end, and the checked
+  option is the group's one Tab stop. The server draws Auto checked,
+  so the group has a checked option and one Tab stop before the
+  runtime reads the stored scheme.
+- **A theme's `--ui-gallery-gap` reaches `ui.Gallery`.** The gallery
+  set the knob on its own root, which shadowed any value a theme wrote
+  on `:root`. It now reads the knob, falling back to
+  `--ui-layout-gap-md`, and each `Gap` preset reads its layout step.
+- **`ui.SegmentedControl` holds one width as the selection moves.** The
+  checked option sets its label semibold, and every column is as wide
+  as the widest label, so a pricing toggle grew and shrank between
+  "Monthly" and a longer "Annual" label. Each label now reserves its
+  semibold width.
+- **A theme-toggle pill keeps its labels in a crowded row.** In a
+  375px site header the pill shrank with the row and its rounded
+  overflow cut off the last label. It now holds its labels' width. Its
+  option buttons also carry `data-cui-internal`, so an owned style
+  sheet's scope stops at them as it does at every other piece of kit
+  markup.
+- **A theme can set any radius step to 0.** `Theme.Validate` refused
+  `Radii.SM`, `MD`, `LG` or `XL` at 0 (only the `none` step could be
+  0), so a square theme could not flatten `--radii-sm` and the rest.
+  Every step now accepts 0; a negative radius is still refused.
+- **`ui.InputGroup` and `ui.SearchInput` addons pad on the correct side
+  in a right-to-left page.** Their padding was physical, so "$" and
+  "USD" sat against the border under `dir="rtl"`.
+- **`ui.Section` holds its column's width around wide content.** Its
+  grid and its body's used auto columns, which size to their content: a
+  Carousel track reports its whole strip, so a three-up carousel pushed
+  the band to 1812px inside a 1056px page, and a code block's longest
+  line pushed a phone section past the screen. Both now use one
+  `minmax(0, 1fr)` column.
+- **A theme-less generated marketing app has a dark mode.** The
+  blueprint emitted `style.DefaultTheme()`, the light-only core-ui
+  baseline, so under a dark OS preference the page declared
+  `color-scheme: dark` and painted white. It now emits
+  `theme.Default()`. An app with a declared `app.theme` keeps the light
+  baseline, so a stock dark palette never replaces its brand colours.
+- **A DataTable header row has no hairline seams** between cells at
+  fractional widths in Chromium.
+- **A carousel's dots follow a manual scroll and count positions.** A
+  swipe, trackpad or scrollbar drag moved the track while the dots
+  stayed on the last clicked slide; the active slide and dot now update
+  when the scroll settles. With three slides in view, six slides had six
+  dots, two of which named places the track cannot reach. The module now
+  hides the dots past the last reachable position (four here), stops
+  Next and End there, and re-counts when the track or a slide resizes.
+  Only whole slides count as in view, so a track showing two and a half
+  slides still reaches the last one, and rotation wraps from the last
+  position to the first. Moving to a slide (dot, arrow, key or
+  autoplay) scrolls only the track: `scrollIntoView` also scrolled the
+  page, so an autoplaying carousel below the fold pulled the reader
+  down to it on every turn. A carousel nested in another's slide keeps
+  its slides and dots to itself (the outer Next marked an inner slide),
+  and a carousel under a scaled or zoomed ancestor counts its
+  positions right.
+- **`ui.ProgressSteps` connectors join the markers.** Each line ran
+  from its own step's edge, a column short of the previous marker, so
+  the rail read as loose dashes. It now runs marker to marker, in a
+  right-to-left page too, and the line leading on from the current step
+  stays untinted.
+- **`ui.AvatarGroup` overlaps like a stack.** The overlap was about 10%
+  of an avatar's width; it is now about a quarter at every size.
+- **A row of `ui.PricingCard`s lines up.** A plan whose description
+  wrapped painted its price, features and button a line below its
+  neighbours'. Cards placed directly in a `ui.Grid` that holds only
+  plans now share their row lines (CSS subgrid), so each part starts
+  level across the row; a card anywhere else keeps its own rows.
+- **`ui.BackToTop` anchors bottom-right by default.** The zero
+  `Position` was documented as bottom-right but added no corner class,
+  so the fixed button stayed where it fell in the page, over content.
+- **A `FullWidth` `ui.Sparkline` keeps a thin line.** Stretching the
+  chart across a column stretched its stroke too, about four times its
+  width in a 470px card.
+- **`ui.SegmentedControl` keeps its own width** in a stack or section
+  body instead of stretching across the column, and gives way to a
+  column narrower than its per-count minimum: three options were 352px
+  wide in a 300px phone column and scrolled the page sideways.
+- **Cards in a `ui.Carousel` row share a height.** The track stretched
+  every slide to the tallest, but a card inside a slide kept its own
+  height, so a short quote's card ended above its neighbours'. A slide's
+  lone child now fills it, drawing its focus ring inside its edge
+  where the slide does not clip it; a slide with several (an image and
+  its caption) stacks them from the top.
+- **A blueprint `stack` with no `align` stretches its children.** The
+  generator emitted `Align: ui.AlignStart` (and `Justify:
+  ui.JustifyStart`) for an unset prop, so every child shrank to its
+  content: a `pricing` block in a stack held one card per row down a
+  wide page. Unset `align`/`justify` on a `stack` or `cluster` now
+  keeps the component's default (stretch for a stack, centre for a
+  cluster); an explicit `align: start` is still emitted and packs back
+  to the blueprint.
 - **`battery/rtc`: a socket never hears a join for a peer its snapshot
   already lists** (since v0.83.0). The room channel delivers at least
   once, so a join published before a socket's snapshot could still
@@ -903,6 +1202,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Host with the full textsafe set** (C1 and bidi runes included), which
   slog's JSON handler otherwise leaves raw in the logged line (#417).
 ### Security
+- The repo builds with Go 1.27.2 (`toolchain go1.27.2` in go.mod; the
+  `go 1.27.0` floor for apps is unchanged), which fixes the thirteen
+  standard-library advisories govulncheck reports against 1.27.0 (among
+  them GO-2026-6599 and GO-2026-6600 in html/template). golang.org/x/tools
+  moves to v0.50.0, which reads the export data Go 1.27.2 writes.
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
   operation's `Exposure.Access` permission as a `WithToolGate` gate. A

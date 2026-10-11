@@ -14,6 +14,18 @@ func TestAnimatedCounterSSRRendersFinalValue(t *testing.T) {
 	}
 }
 
+// A figure that animates in is not a stepper: the move onto
+// headless.Counter shipped its −/+ buttons with it, and its group role
+// and live region, which named it "Counter" and read out each frame.
+func TestAnimatedCounterHasNoStepButtons(t *testing.T) {
+	h := string(AnimatedCounter(AnimatedCounterConfig{To: 12483}))
+	for _, gone := range []string{"<button", "data-cui-signal-inc", `role="group"`, "aria-live", "aria-label"} {
+		if strings.Contains(h, gone) {
+			t.Errorf("AnimatedCounter renders %q; a figure is not a control:\n%s", gone, h)
+		}
+	}
+}
+
 func TestAnimatedCounterEmitsRuntimeMarkers(t *testing.T) {
 	h := string(AnimatedCounter(AnimatedCounterConfig{To: 99, From: 10, DurationMs: 800}))
 	if !strings.Contains(h, `data-hui-counter-animate=""`) {

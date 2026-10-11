@@ -120,17 +120,20 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 var comboboxStyle = registry.RegisterStyle("ui-combobox", comboboxCSS)
 
 func comboboxCSS(_ style.Theme) string {
+	// Knobs: --ui-combobox-max-width (24rem) caps the control;
+	// --ui-combobox-listbox-max-height (18rem) caps the open list.
 	return `:where([data-cui-comp="ui-combobox"]).fui-combobox {
   position: relative;
   display: block;
   inline-size: 100%;
-  max-inline-size: 24rem;
+  max-inline-size: var(--ui-combobox-max-width, 24rem);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__label {
   display: block;
-  margin-block-end: var(--spacing-xs, 2px);
+  margin-block-end: var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #4b5563);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__form {
   display: block;
@@ -139,34 +142,39 @@ func comboboxCSS(_ style.Theme) string {
 [data-cui-comp="ui-combobox"] .fui-combobox__input {
   inline-size: 100%;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #d0d0d8);
+  padding: 0 calc(var(--spacing-sm, 4px) * 3);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
-  color: var(--color-text, #111);
+  color: var(--color-text, #09090B);
+  box-shadow: var(--shadow-xs);
   font: inherit;
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
   box-sizing: border-box;
 }
+[data-cui-comp="ui-combobox"] .fui-combobox__input::placeholder { color: var(--color-text-subtle); }
 [data-cui-comp="ui-combobox"] .fui-combobox__input:focus-visible {
-  outline: none;
-  border-color: var(--color-primary, #4F46E5);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) {
+  [data-cui-comp="ui-combobox"] .fui-combobox__input { font-size: var(--text-base, 1rem); }
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__listbox {
   position: absolute;
   inset-inline-start: 0;
   inset-inline-end: 0;
   margin: var(--spacing-sm, 4px) 0 0 0;
-  padding: var(--spacing-sm, 4px) 0;
+  padding: var(--spacing-sm, 4px);
   list-style: none;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #d0d0d8);
-  border-radius: var(--radii-md, 8px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  max-block-size: 18rem;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-lg, 10px);
+  box-shadow: var(--shadow-md);
+  max-block-size: var(--ui-combobox-listbox-max-height, 18rem);
   overflow-y: auto;
-  z-index: 50;
+  z-index: var(--z-dropdown, 100);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__listbox[hidden] { display: none; }
 [data-cui-comp="ui-combobox"] .fui-combobox__option[hidden] {
@@ -180,8 +188,10 @@ func comboboxCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__option {
   display: block;
-  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  color: var(--color-text, #111);
+  padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
+  border-radius: var(--radii-sm, 6px);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   user-select: none;
 }

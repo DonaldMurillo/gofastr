@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"net/http"
@@ -21,9 +22,9 @@ func (s *OrdersScreen) ScreenDescription() string  { return "View and manage ord
 func (s *OrdersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *OrdersScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Orders")),
-		appResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithEmpty("No orders yet.").WithIsland("/api/tables/orders/orders").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithHeadingLevel(2).WithEmpty("No orders yet.").WithIsland("/api/tables/orders/orders").WithIslandPolicy(resource.PublicIsland()).List(ctx),
 	)
 }
 
@@ -38,7 +39,7 @@ func (s *OrderDetailScreen) ScreenDescription() string     { return "View order 
 func (s *OrderDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Order Details")),
 		appResources["orders"].Detail(ctx, s.id),
 	)
@@ -55,7 +56,7 @@ func (s *OrdersEditScreen) ScreenSEO() uihost.SEO         { return uihost.SEO{} 
 func (s *OrdersEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
 func (s *OrdersEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		appResources["orders"].Form(ctx, s.id),
 	)
 }
@@ -100,7 +101,7 @@ func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 		},
 	}
 	fwApp.Router().HandleFunc("GET", "/api/tables/orders/orders", func(w http.ResponseWriter, r *http.Request) {
-		appResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithEmpty("No orders yet.").WithIsland("/api/tables/orders/orders").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
+		appResources["orders"].WithColumns("order_number", "customer_name", "status", "total").WithLimit(20).WithHeading("Recent Orders").WithHeadingLevel(2).WithEmpty("No orders yet.").WithIsland("/api/tables/orders/orders").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
 	})
 	site.Register("/orders", &OrdersScreen{}, appLayout)
 }

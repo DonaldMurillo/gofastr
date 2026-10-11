@@ -30,8 +30,24 @@
     // order (a nested carousel's track is inside a slide of this one).
     return root.querySelector('[data-hui-carousel-track]');
   }
+  // slidesOf and dotsOf keep to this carousel's own parts: a carousel
+  // nested in a slide carries slides and dots of its own, which a
+  // descendant query would count as this one's.
   function slidesOf(root) {
-    return Array.from(root.querySelectorAll('[data-hui-carousel-track] > [aria-label]'));
+    const track = trackOf(root);
+    return track ? Array.from(track.children).filter(function (el) { return el.hasAttribute('aria-label'); }) : [];
+  }
+  function dotsOf(root) {
+    return Array.from(root.querySelectorAll('[data-hui-carousel-goto]'))
+      .filter(function (d) { return d.closest('[data-hui-carousel]') === root; });
+  }
+
+  // scaleOf converts layout pixels (clientWidth, scrollLeft) to the
+  // visual pixels getBoundingClientRect reports: they differ under a
+  // scaled or zoomed ancestor.
+  function scaleOf(track) {
+    const w = track.offsetWidth;
+    return w ? track.getBoundingClientRect().width / w : 1;
   }
   function currentOf(root) {
     const slides = slidesOf(root);
@@ -41,18 +57,111 @@
     return 0;
   }
 
-  // setActive marks exactly one slide and its dot, scrolls the track,
-  // and re-says the status through the server's sentence shape.
+  // perViewOf is how many slides the track shows at once, read from
+  // the layout: the sheet decides it (VisiblePerView, narrowed by a
+  // container query), so the module measures instead of trusting a
+  // number from the server. The track's width over one slide's pitch
+  // (slide plus gap) counts a gap as no part of a slide, and only whole
+  // slides count: a peeking half slide rounded up hid the last
+  // position. The pixel of slack absorbs subpixel layout.
+  function perViewOf(root) {
+    const track = trackOf(root);
+    const slides = slidesOf(root);
+    if (!track || slides.length < 2) return 1;
+    const a = slides[0].getBoundingClientRect();
+    const b = slides[1].getBoundingClientRect();
+    const pitch = Math.abs(b.left - a.left);
+    if (!pitch || !a.width) return 1;
+    const k = scaleOf(track);
+    const per = Math.floor((track.clientWidth * k + pitch - a.width + k) / pitch);
+    return Math.max(1, Math.min(slides.length, per));
+  }
+
+  // lastIndexOf is the last slide the track can bring to its start:
+  // with three in view, six slides have four positions (0..3).
+  function lastIndexOf(root) {
+    return Math.max(0, slidesOf(root).length - perViewOf(root));
+  }
+
+  // indexAtScroll is the slide sitting at the track's start edge after
+  // a scroll the module did not drive (a swipe, a trackpad, a drag of
+  // the scrollbar). A track scrolled to its end reports the last
+  // position even when snapping left it a pixel short.
+  function indexAtScroll(root) {
+    const track = trackOf(root);
+    const slides = slidesOf(root);
+    if (!track || slides.length === 0) return 0;
+    const last = lastIndexOf(root);
+    const max = track.scrollWidth - track.clientWidth;
+    if (max > 0 && Math.abs(track.scrollLeft) >= max - 1) return last;
+    const rtl = getComputedStyle(track).direction === 'rtl';
+    const box = track.getBoundingClientRect();
+    const inset = track.clientLeft * scaleOf(track);
+    const edge = rtl ? box.right - inset : box.left + inset;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i <= last; i++) {
+      const r = slides[i].getBoundingClientRect();
+      const d = Math.abs((rtl ? r.right : r.left) - edge);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  // syncDots shows one dot per position, not per slide, so no dot
+  // names a place the track cannot reach. The server renders a dot per
+  // slide (the no-script anchors each jump to their slide); the module
+  // hides the extras once it can measure, and again on every resize.
+  function syncDots(root) {
+    const last = lastIndexOf(root);
+    for (const dot of dotsOf(root)) {
+      dot.hidden = parseInt(dot.getAttribute('data-hui-carousel-goto'), 10) > last;
+    }
+    if (currentOf(root) > last) mark(root, last);
+  }
+
+  // setActive clamps to the reachable positions, marks the slide and
+  // scrolls the track to it.
   function setActive(root, idx) {
     const slides = slidesOf(root);
     if (slides.length === 0) return;
-    idx = ((idx % slides.length) + slides.length) % slides.length;
+    idx = Math.max(0, Math.min(idx, lastIndexOf(root)));
+    mark(root, idx);
+    const track = trackOf(root);
+    const sl = slides[idx];
+    if (!track || !sl) return;
+    // The track scrolls itself, never scrollIntoView: that scrolls every
+    // ancestor too, so a rotating carousel below the fold pulled the
+    // page down to it. The slide's leading edge is its right one in RTL,
+    // where scrollLeft runs negative; the delta has the right sign in
+    // either direction.
+    // Rects are visual pixels; scrollLeft takes layout ones.
+    const rtl = getComputedStyle(track).direction === 'rtl';
+    const k = scaleOf(track);
+    const box = track.getBoundingClientRect();
+    const r = sl.getBoundingClientRect();
+    const inset = track.clientLeft * k;
+    const delta = (rtl ? r.right - (box.right - inset) : r.left - (box.left + inset)) / k;
+    if (Math.abs(delta) < 1) return;
+    try {
+      track.scrollTo({ left: track.scrollLeft + delta, behavior: REDUCED && REDUCED.matches ? 'auto' : 'smooth' });
+    } catch (_) {
+      track.scrollLeft += delta;
+    }
+  }
+
+  // mark makes exactly one slide and its dot current and re-says the
+  // status through the server's sentence shape. It never scrolls: the
+  // scroll-settle path calls it for a position the track already has.
+  function mark(root, idx) {
+    const slides = slidesOf(root);
+    if (slides.length === 0) return;
     for (let i = 0; i < slides.length; i++) {
       const on = i === idx;
       if (on) slides[i].setAttribute('aria-current', 'true');
       else slides[i].removeAttribute('aria-current');
     }
-    for (const dot of root.querySelectorAll('[data-hui-carousel-goto]')) {
+    for (const dot of dotsOf(root)) {
       if (parseInt(dot.getAttribute('data-hui-carousel-goto'), 10) === idx) {
         dot.setAttribute('aria-current', 'true');
       } else {
@@ -61,10 +170,6 @@
     }
     const track = trackOf(root);
     if (track) {
-      const sl = slides[idx];
-      if (sl && track.scrollLeft !== sl.offsetLeft - track.offsetLeft) {
-        try { sl.scrollIntoView({ block: 'nearest', inline: 'start', behavior: REDUCED && REDUCED.matches ? 'auto' : 'smooth' }); } catch (_) {}
-      }
       // The status sentence: the format and total travel on the
       // -fmt hook ("<sentence>|<total>"); the words stay the server's.
       const pack = track.getAttribute('data-hui-carousel-status-fmt');
@@ -111,7 +216,8 @@
 
   function stepOnce(root) {
     if (!root.isConnected || paused(root)) return;
-    setActive(root, currentOf(root) + 1);
+    const next = currentOf(root) + 1;
+    setActive(root, next > lastIndexOf(root) ? 0 : next);
   }
 
   function armRotation(root) {
@@ -152,8 +258,10 @@
 
   // ─── controls ────────────────────────────────────────────────────
 
+  // clampStep bounds a step to the reachable positions, wrapping when
+  // the loop flag rides the root and refusing (-1) otherwise.
   function clampStep(root, idx) {
-    const n = slidesOf(root).length;
+    const n = lastIndexOf(root) + 1;
     const loop = root.hasAttribute('data-hui-carousel-loop');
     if (idx < 0 || idx >= n) return loop ? ((idx % n) + n) % n : -1;
     return idx;
@@ -200,12 +308,50 @@
     if (e.key === 'ArrowRight') to = clampStep(root, cur + ((rtl) ? -1 : 1));
     else if (e.key === 'ArrowLeft') to = clampStep(root, cur + ((rtl) ? 1 : -1));
     else if (e.key === 'Home') to = 0;
-    else if (e.key === 'End') to = slidesOf(root).length - 1;
+    else if (e.key === 'End') to = lastIndexOf(root);
     if (to >= 0) {
       e.preventDefault();
       setActive(root, to);
     }
   });
+
+  // ─── manual scrolling ────────────────────────────────────────────
+  //
+  // A swipe, a trackpad or the scrollbar moves the track with no click
+  // the module sees. Scroll does not bubble, so one capturing listener
+  // on the document catches every track; the mark waits for the scroll
+  // to settle (scrollend where the engine has it, a short quiet timer
+  // otherwise) so the dots do not flicker through every slide passed.
+  function settle(track) {
+    const root = track.closest('[data-hui-carousel]');
+    if (root) mark(root, indexAtScroll(root));
+  }
+  function onScroll(e) {
+    const track = e.target;
+    if (!track || !track.matches || !track.matches('[data-hui-carousel-track]')) return;
+    if (e.type === 'scrollend') {
+      clearTimeout(track.__huiSettle);
+      settle(track);
+      return;
+    }
+    clearTimeout(track.__huiSettle);
+    track.__huiSettle = setTimeout(function () { settle(track); }, 120);
+  }
+  document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+  document.addEventListener('scrollend', onScroll, { capture: true, passive: true });
+
+  // The positions change with the track's width or a slide's (a
+  // container query drops slides per view on a narrow column), so each
+  // carousel's dots re-sync when its track or first slide resizes.
+  const sized = new WeakSet();
+  const resizer = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(function (entries) {
+      for (const en of entries) {
+        const root = en.target.closest('[data-hui-carousel]');
+        if (root) syncDots(root);
+      }
+    })
+    : null;
 
   // ─── the arrival pass ────────────────────────────────────────────
 
@@ -213,6 +359,12 @@
     const scope = root && root.querySelectorAll ? root : document;
     for (const el of within(scope, '[data-hui-carousel]')) {
       armRotation(el);
+      syncDots(el);
+      if (resizer) {
+        for (const box of [trackOf(el), slidesOf(el)[0]]) {
+          if (box && !sized.has(box)) { sized.add(box); resizer.observe(box); }
+        }
+      }
     }
     syncDetachWatcher();
   }

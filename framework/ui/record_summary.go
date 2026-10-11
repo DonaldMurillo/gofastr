@@ -208,6 +208,8 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 var recordSummaryStyle = registry.RegisterStyle("ui-record-summary", recordSummaryCSS)
 var metricBandStyle = registry.RegisterStyle("ui-metric-band", metricBandCSS)
 
+// Knobs (beside the accent and title-size knobs set on the rules):
+// --ui-record-summary-copy-max-width (54rem) caps the copy column.
 func recordSummaryCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-record-summary", t).
 		Rule("&").Set(
@@ -215,9 +217,11 @@ func recordSummaryCSS(t style.Theme) string {
 		"gap", "var(--spacing-lg, 16px)",
 		"padding", "clamp(var(--spacing-lg, 16px), 4vw, var(--spacing-2xl, 32px))",
 		"background", "var(--color-surface, #fff)",
-		"border", "1px solid var(--color-border, #e4e4e7)",
-		"border-inline-start", "4px solid var(--ui-record-summary-accent, var(--color-primary, currentColor))",
-		"border-radius", "var(--radii-lg, 12px)",
+		// The tone tints the hairline rather than painting a side stripe;
+		// the status pill carries the loud signal.
+		"border", "var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-record-summary-accent, var(--color-border, #e4e4e7)) 35%, var(--color-border, #e4e4e7))",
+		"border-radius", "var(--radii-xl, 14px)",
+		"box-shadow", "var(--shadow-xs)",
 	).End().
 		Rule("&.fui-record-summary--info").Set("--ui-record-summary-accent", "var(--color-info, var(--color-primary, currentColor))").End().
 		Rule("&.fui-record-summary--success").Set("--ui-record-summary-accent", "var(--color-success, var(--color-primary, currentColor))").End().
@@ -226,22 +230,22 @@ func recordSummaryCSS(t style.Theme) string {
 		Rule(".fui-record-summary__status").Set("display", "flex", "align-items", "center", "min-inline-size", "0").End().
 		Rule(".fui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 16px)", "min-inline-size", "0").End().
 		Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr) minmax(15rem, 0.55fr)", "align-items", "start").End().
-		Rule(".fui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "54rem").End().
-		Rule(".fui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
+		Rule(".fui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "var(--ui-record-summary-copy-max-width, 54rem)").End().
+		Rule(".fui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
 		Rule(".fui-record-summary__aside").Set("min-inline-size", "0", "max-inline-size", "100%", "color", "var(--color-text-muted, currentColor)").End().
-		Rule(".fui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "{font-weight.bold}", "letter-spacing", "0.08em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
-		Rule(".fui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, calc(var(--text-3xl, 1.875rem) * 1.2))", "line-height", "1.08", "letter-spacing", "-0.025em", "color", "var(--color-text, currentColor)").End().
-		Rule(".fui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "1.6").End().
+		Rule(".fui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "font-weight", "{font-weight.medium}", "color", "var(--color-text-muted, currentColor)", "text-transform", "var(--ui-record-summary-eyebrow-case, none)").End().
+		Rule(".fui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-3xl, 1.875rem))", "font-weight", "{font-weight.semibold}", "line-height", "var(--leading-tight, 1.2)", "letter-spacing", "var(--tracking-tighter, -0.03em)", "color", "var(--color-text, currentColor)").End().
+		Rule(".fui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "var(--leading-relaxed, 1.6)").End().
 		Rule(".fui-record-summary__highlight").Set("min-inline-size", "0").End().
 		Rule(".fui-record-summary__metrics").Set("min-inline-size", "0").End().
-		Rule(".fui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".fui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End().
 		Rule(".fui-record-summary__footer-copy").Set("min-inline-size", "0", "color", "var(--color-text-muted, currentColor)").End().
 		Rule(".fui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 4px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
 		Rule(":where(& .fui-record-summary__actions) > [data-cui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&").Set("gap", "var(--spacing-md, 8px)", "padding", "var(--spacing-lg, 16px)").End()
 			s.Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 8px)").End()
-			s.Rule(".fui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 8px)", "border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule(".fui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 8px)", "border-inline-start", "0", "border-block-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End()
 			s.Rule(".fui-record-summary__actions").Set("order", "-1", "inline-size", "100%").End()
 			s.Rule(".fui-record-summary__title").Set("font-size", "var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))", "max-inline-size", "18ch").End()
 			s.Rule(".fui-record-summary__footer").Set("align-items", "flex-start", "flex-direction", "column").End()
@@ -251,24 +255,24 @@ func recordSummaryCSS(t style.Theme) string {
 
 func metricBandCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-metric-band", t).
-		Rule("&").Set("display", "grid", "margin", "0", "padding", "0", "border-block", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule("&").Set("display", "grid", "margin", "0", "padding", "0", "border-block", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End().
 		Rule("&.fui-metric-band--1").Set("grid-template-columns", "1fr").End().
 		Rule("&.fui-metric-band--2").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End().
 		Rule("&.fui-metric-band--3").Set("grid-template-columns", "repeat(3, minmax(0, 1fr))").End().
 		Rule("&.fui-metric-band--4").Set("grid-template-columns", "repeat(4, minmax(0, 1fr))").End().
 		Rule("&.fui-metric-band--5").Set("grid-template-columns", "repeat(5, minmax(0, 1fr))").End().
 		Rule("&.fui-metric-band--6").Set("grid-template-columns", "repeat(6, minmax(0, 1fr))").End().
-		Rule(".fui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 2px)", "min-inline-size", "0", "padding", "var(--spacing-md, 8px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".fui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 2px)", "min-inline-size", "0", "padding", "var(--spacing-md, 8px)", "border-inline-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End().
 		Rule(".fui-metric-band__item:first-child").Set("border-inline-start", "0").End().
-		Rule(".fui-metric-band__label").Set("order", "2", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "{font-weight.semibold}", "letter-spacing", "0.04em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
-		Rule(".fui-metric-band__value").Set("order", "1", "margin", "0", "font-size", "var(--text-lg, 1.125rem)", "font-weight", "{font-weight.bold}", "font-variant-numeric", "tabular-nums", "color", "var(--color-text, currentColor)").End().
+		Rule(".fui-metric-band__label").Set("order", "2", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "{font-weight.medium}", "color", "var(--color-text-muted, currentColor)").End().
+		Rule(".fui-metric-band__value").Set("order", "1", "margin", "0", "font-size", "var(--text-lg, 1.125rem)", "font-weight", "{font-weight.semibold}", "font-variant-numeric", "tabular-nums", "color", "var(--color-text, currentColor)").End().
 		Rule(".fui-metric-band__hint").Set("order", "3", "margin", "0", "font-size", "var(--text-xs, 0.75rem)", "color", "var(--color-text-muted, currentColor)").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&.fui-metric-band--2, &.fui-metric-band--3, &.fui-metric-band--4, &.fui-metric-band--5, &.fui-metric-band--6").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
-			s.Rule(".fui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule(".fui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End()
 			// Column divider for the two-up phone grid. A single-item band's
 			// sole item is odd AND full-width, no divider to paint.
-			s.Rule("&:not(.fui-metric-band--1) .fui-metric-band__item:nth-child(odd)").Set("border-inline-end", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule("&:not(.fui-metric-band--1) .fui-metric-band__item:nth-child(odd)").Set("border-inline-end", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End()
 			s.Rule(".fui-metric-band__item:first-child, .fui-metric-band__item:nth-child(2)").Set("border-block-start", "0").End()
 			s.Rule("&.fui-metric-band--3 .fui-metric-band__item:last-child, &.fui-metric-band--5 .fui-metric-band__item:last-child").Set("grid-column", "1 / -1", "align-items", "center", "text-align", "center", "border-inline-end", "0").End()
 		}).

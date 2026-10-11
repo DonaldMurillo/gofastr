@@ -130,7 +130,7 @@ func codeTabsCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {
   display: flex;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--color-border, #E5E7EB);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E5E7EB);
   margin-bottom: 0;
 }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab {
@@ -140,16 +140,16 @@ func codeTabsCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-base, 1rem);
   color: var(--color-text-muted, #6B7280);
-  border-bottom: 2px solid transparent;
+  border-bottom: var(--stroke-thick, 2px) solid transparent;
   margin-bottom: -1px; /* overlap the strip's 1px border-bottom */
-  transition: color 150ms ease, border-color 150ms ease;
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   white-space: nowrap;
   text-decoration: none;
 }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:hover { color: var(--color-text, #1F2937); }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
   border-radius: var(--radii-md, 8px);
 }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__panels {
@@ -159,7 +159,7 @@ func codeTabsCSS(_ style.Theme) string {
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
 `)
 	for i := range headless.TabsMaxPanels() {
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:var(--font-weight-semibold)}`,
+		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #18181B);border-bottom-color:var(--color-primary, #18181B);font-weight:var(--font-weight-semibold)}`,
 			i, i))
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-cui-tab-index="%d"]{display:block}`,
 			i, i))

@@ -105,14 +105,14 @@ func breadcrumbsCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
   color: var(--color-text-muted, #6B7280);
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link {
   color: var(--color-text-muted, #6B7280);
   text-decoration: none;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link:hover {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   text-decoration: underline;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {

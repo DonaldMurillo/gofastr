@@ -101,13 +101,14 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 var toolbarStyle = registry.RegisterStyle("ui-toolbar", toolbarCSS)
 
 func toolbarCSS(_ style.Theme) string {
+	// Knobs: --ui-toolbar-separator-height (20px) is the group divider.
 	return `[data-cui-comp="ui-toolbar"] {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-sm, 4px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   flex-wrap: wrap;
 }
@@ -127,7 +128,7 @@ func toolbarCSS(_ style.Theme) string {
   content: "";
   display: inline-block;
   width: 1px;
-  height: 20px;
+  height: var(--ui-toolbar-separator-height, 20px);
   background: var(--color-border, #E4E4E7);
   margin-inline-start: var(--spacing-md, 8px);
 }`

@@ -61,6 +61,20 @@ func TestCounterRefusesAReservedSignalAndBadStep(t *testing.T) {
 	refuse(t, "Signal", func() {
 		Counter(CounterProps{Label: "Qty"}, nil)
 	})
+	refuse(t, "not a form field", func() {
+		Counter(CounterProps{Signal: "n", Display: true, Name: "n"}, nil)
+	})
+}
+
+// Past 2^53-1 a JavaScript number rounds, so the tick-up would end on
+// a figure the server never sent: such a counter renders unanimated.
+func TestCounterHugeValueSkipsAnimation(t *testing.T) {
+	from := 0
+	huge := Counter(CounterProps{Signal: "n", Display: true, Value: 1<<53 + 1, AnimateFrom: &from}, nil)
+	hasNot(t, huge, "data-hui-counter-animate", "a value past 2^53-1 kept the animation that would round it")
+	has(t, huge, ">9007199254740993</span>", "the SSR text is not the exact figure")
+	edge := Counter(CounterProps{Signal: "n", Display: true, Value: 1<<53 - 1, AnimateFrom: &from}, nil)
+	has(t, edge, `data-hui-counter-animate=""`, "2^53-1 is exact in JavaScript and should animate")
 }
 
 // A label of spaces names nothing: the emptiness judgment trims, so

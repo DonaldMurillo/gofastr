@@ -76,10 +76,16 @@ func inputGroupCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: stretch;
   max-inline-size: 100%;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
+}
+/* The group is the control: it takes the focus ring its input would. */
+.fui-input-group:focus-within {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-input-group > input,
 .fui-input-group > select {
@@ -87,32 +93,40 @@ func inputGroupCSS(_ style.Theme) string {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
+  font-size: var(--text-sm, 0.875rem);
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   color: var(--color-text, #18181B);
   min-block-size: var(--fui-density-control-h);
   min-width: 0;
 }
+.fui-input-group > input::placeholder { color: var(--color-text-subtle); }
 .fui-input-group > input:focus-visible,
 .fui-input-group > select:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: -2px;
+  outline: none;
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) {
+  .fui-input-group > input,
+  .fui-input-group > select { font-size: var(--text-base, 1rem); }
 }
 .fui-input-group .fui-input-group__prepend,
 .fui-input-group .fui-input-group__append {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 var(--spacing-md, 8px);
-  background: var(--color-surface-soft, #F4F4F5);
+  /* Addons sit inside the field in muted text, the way a unit or a
+     currency symbol reads in print; no gray slab, no divider. */
+  padding-block: 0;
+  padding-inline: calc(var(--spacing-sm, 4px) * 3) 0;
+  background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   white-space: nowrap;
   user-select: none;
-  border-right: 1px solid var(--color-border, #E4E4E7);
 }
-.fui-input-group .fui-input-group__append {
-  border-right: 0;
-  border-left: 1px solid var(--color-border, #E4E4E7);
-}`
+.fui-input-group .fui-input-group__prepend + input,
+.fui-input-group .fui-input-group__prepend + select { padding-inline-start: var(--spacing-md, 8px); }
+.fui-input-group .fui-input-group__append { padding-inline: 0 calc(var(--spacing-sm, 4px) * 3); }
+.fui-input-group input:has(+ .fui-input-group__append),
+.fui-input-group select:has(+ .fui-input-group__append) { padding-inline-end: var(--spacing-md, 8px); }`
 }

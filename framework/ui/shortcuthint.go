@@ -250,10 +250,10 @@ func shortcutHintCSS(_ style.Theme) string {
   justify-content: center;
   min-inline-size: 1.5em;
   block-size: 1.5em;
-  padding: 0 6px;
-  border: 1px solid var(--color-border, #d0d0d8);
-  border-bottom-width: 2px;
-  border-radius: var(--radii-sm, 4px);
+  padding: 0 calc(var(--spacing-sm, 4px) * 1.5);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-bottom-width: var(--stroke-thick, 2px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);

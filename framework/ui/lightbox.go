@@ -191,11 +191,12 @@ const lightboxDownloadIcon render.HTML = `<svg width="22" height="22" viewBox="0
 var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 
 func lightboxCSS(_ style.Theme) string {
+	// Knobs: --ui-lightbox-max-width (1200px) caps the viewer column.
 	return `[data-cui-comp="ui-lightbox"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   place-items: center;
-  inline-size: min(90vw, 1200px);
+  inline-size: min(90vw, var(--ui-lightbox-max-width, 1200px));
 }
 [data-cui-comp="ui-lightbox"] .fui-lightbox__figure {
   margin: 0;
@@ -245,7 +246,7 @@ func lightboxCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--spacing-touch-target, 44px);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
   border: 0;
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
@@ -258,7 +259,7 @@ func lightboxCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-lightbox"] .fui-lightbox__nav:focus-visible,
 [data-cui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }`
 }

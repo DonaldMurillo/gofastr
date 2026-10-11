@@ -76,17 +76,22 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)
 
 func statusPillCSS(_ style.Theme) string {
+	// Knobs: --ui-status-pill-dot-size (6px) sizes the status dot and
+	// --ui-status-pill-case (none) sets the label's letter case (beside
+	// the frame knobs below).
 	return `[data-cui-comp="ui-status-pill"] {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  gap: calc(var(--spacing-sm, 4px) * 1.5);
+  padding: var(--spacing-xs, 2px) calc(var(--spacing-sm, 4px) * 2.5);
+  font-family: var(--ui-status-pill-font, inherit);
   font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-medium);
+  text-transform: var(--ui-status-pill-case, none);
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);
-  border: 1px solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
+  border: var(--stroke-thin, 1px) solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
   border-radius: var(--radii-full, 9999px);
 }
 /* Author-origin display beats the UA's [hidden]{display:none}, so a
@@ -97,15 +102,17 @@ func statusPillCSS(_ style.Theme) string {
   display: none;
 }
 [data-cui-comp="ui-status-pill"] .fui-status-pill__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
+  width: var(--ui-status-pill-dot-size, 6px);
+  height: var(--ui-status-pill-dot-size, 6px);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-text-subtle, currentColor);
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent {
-  color: var(--color-primary, currentColor);
-  border-color: var(--ui-status-pill-accent-border, var(--color-primary, currentColor));
-  background: var(--ui-status-pill-accent-bg, color-mix(in oklch, var(--color-primary, currentColor) 8%, var(--color-surface, transparent)));
+  /* Accent is carried by the dot and the full-strength text; the frame
+     stays a hairline so a near-black primary never draws a heavy ring. */
+  color: var(--color-text, currentColor);
+  border-color: var(--ui-status-pill-accent-border, var(--color-border, rgba(0,0,0,0.1)));
+  background: var(--ui-status-pill-accent-bg, var(--color-surface-soft, var(--color-surface, transparent)));
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {
   background: var(--color-primary, currentColor);

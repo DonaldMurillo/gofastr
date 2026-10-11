@@ -1,5 +1,9 @@
 package desktopui
 
+//gofastr:allow-file(GOFASTR1808) the desktop shell renders under its own theme
+// (theme.go, radii 4/8/12/16), so these radius fallbacks restate that scale, not
+// style.DefaultTheme's 6/8/10/14 the rule judges them against.
+
 import (
 	"context"
 	"strconv"

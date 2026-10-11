@@ -288,12 +288,12 @@ func notificationBellCSS(_ style.Theme) string {
    rule won the colour: a white glyph on light grey (dark: near-black on
    dark grey) the moment the popover opened under the pointer. */
 [data-cui-comp="ui-notification-bell"].is-popover-trigger-active {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 [data-cui-comp="ui-notification-bell"]:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-notification-bell"] .fui-notification-bell__icon {
   /* The badge's containing block: anchoring it to the GLYPH's
@@ -309,13 +309,13 @@ func notificationBellCSS(_ style.Theme) string {
   /* Outward from the glyph's top-end corner: a single digit covers
      ~15% of the 20px glyph, a two-digit count ~24% (≤ a quarter),
      and the overshoot stays inside the 44px button's 12px margins. */
-  inset-block-start: -12px;
-  inset-inline-end: -10px;
+  inset-block-start: var(--ui-notification-bell-badge-inset-block, -12px);
+  inset-inline-end: var(--ui-notification-bell-badge-inset-inline, -10px);
   box-sizing: border-box;
-  min-inline-size: 18px;
-  block-size: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
+  min-inline-size: var(--ui-notification-bell-badge-size, 18px);
+  block-size: var(--ui-notification-bell-badge-size, 18px);
+  padding: 0 calc(var(--spacing-sm, 4px) * 1.25);
+  border-radius: var(--radii-full, 9999px);
   /* Status token pair — the default --color-danger is the same
      #B91C1C (red-700, ≥6.4:1 vs white), so the themed value and the
      axe-safe fallback agree; themed apps recolor the badge via their
@@ -327,28 +327,31 @@ func notificationBellCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-surface, #FFFFFF);
 }
 /* Hide the badge when its bound signal value is empty. */
 [data-cui-comp="ui-notification-bell"] .fui-notification-bell__badge:empty {
   display: none;
 }
 
-/* Popover panel — wraps the dropped notification list. */
+/* Popover panel — wraps the dropped notification list.
+   Knobs: --ui-notification-bell-badge-inset-block (-12px) and
+   -inset-inline (-10px) offset the badge off the glyph's corner;
+   --ui-notification-bell-badge-size (18px) is its round body;
+   --ui-notification-bell-panel-min-width (18rem) and
+   --ui-notification-bell-panel-max-width (24rem) bound the panel. */
 .fui-notification-bell__panel {
   display: grid;
   gap: var(--spacing-sm, 4px);
-  min-inline-size: 18rem;
-  max-inline-size: 24rem;
+  min-inline-size: var(--ui-notification-bell-panel-min-width, 18rem);
+  max-inline-size: var(--ui-notification-bell-panel-max-width, 24rem);
   padding: var(--spacing-md, 8px);
 }
 .fui-notification-bell__title {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #52525B);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text, #09090B);
 }
 .fui-notification-bell__empty {
   margin: 0;
@@ -367,13 +370,16 @@ func notificationBellCSS(_ style.Theme) string {
 .fui-notification-bell__row {
   margin: 0;
 }
+/* Unread rows sit on the soft surface in medium weight; a side stripe
+   is the look the rest of the kit has dropped. */
 .fui-notification-bell__row.is-unread .fui-notification-bell__row-link {
-  border-inline-start: 3px solid var(--color-primary, #4F46E5);
+  background: var(--color-surface-soft, #F4F4F5);
+  font-weight: var(--font-weight-medium);
 }
 .fui-notification-bell__row-link {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
@@ -398,7 +404,7 @@ a.fui-notification-bell__row-link:hover {
   margin: var(--spacing-xs, 2px) 0 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }`
 }
 

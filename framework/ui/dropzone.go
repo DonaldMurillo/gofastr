@@ -265,6 +265,8 @@ func dropzoneIcon() string {
 var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
 
 func dropzoneCSS(_ style.Theme) string {
+	// Knobs: --ui-drop-preview-size (72px) is the thumbnail box in the
+	// preview strip (width and height).
 	return `.fui-drop {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -278,22 +280,22 @@ func dropzoneCSS(_ style.Theme) string {
   justify-items: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
-  border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border: var(--stroke-thick, 2px) dashed var(--color-border, #E4E4E7);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   text-align: center;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-drop[data-hui-drop-over] .fui-drop__zone,
 .fui-drop__label-wrap:hover .fui-drop__zone {
-  border-color: var(--color-primary, #4F46E5);
-  background: color-mix(in srgb, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF));
+  border-color: var(--color-primary, #18181B);
+  background: color-mix(in srgb, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF));
   border-style: solid;
 }
 /* Slight lift for tactile feedback while a drag is over. */
 .fui-drop[data-hui-drop-over] .fui-drop__icon {
   transform: translateY(-2px);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 .fui-drop__input {
   position: absolute;
@@ -307,12 +309,12 @@ func dropzoneCSS(_ style.Theme) string {
   border: 0;
 }
 .fui-drop__input:focus-visible + .fui-drop__icon {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 4px;
-  border-radius: var(--radii-sm, 4px);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(2 * var(--stroke-focus-offset, 2px));
+  border-radius: var(--radii-sm, 6px);
 }
 .fui-drop__icon {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 .fui-drop__label {
   margin: 0;
@@ -333,7 +335,7 @@ func dropzoneCSS(_ style.Theme) string {
   gap: 1px;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   justify-items: start;
 }
 .fui-drop__list:empty { display: none; }
@@ -348,12 +350,12 @@ func dropzoneCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 .fui-drop__preview {
-  width: 72px;
-  height: 72px;
-  border-radius: var(--radii-sm, 4px);
+  width: var(--ui-drop-preview-size, 72px);
+  height: var(--ui-drop-preview-size, 72px);
+  border-radius: var(--radii-sm, 6px);
   background: var(--color-surface-soft, #F4F4F5);
   object-fit: cover;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-drop__help {
   margin: 0;
@@ -369,7 +371,7 @@ func dropzoneCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
 }
 .fui-drop.is-disabled .fui-drop__zone {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

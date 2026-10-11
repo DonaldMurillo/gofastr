@@ -117,8 +117,8 @@ code.
 | Rule | Severity | Fires on |
 |---|---|---|
 | `GOFASTR1806` | error | `var(--name)` naming a token neither the theme nor a `*.tokens.css` declares (in a `*.style.css`, reported once, by the owned-style check; a `var()` fallback does not waive it there) |
-| `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem` |
-| `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, text or duration token at a value the theme does not declare |
+| `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem`, `outline-offset: 2px` where `--stroke-focus-offset` is `2px` |
+| `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, stroke, text or duration token at a value the theme does not declare |
 | `GOFASTR1810` | error | a selector naming a kit class (`.cui-*`, `.hui-*`, `.fui-*`) or a `[data-cui-*]` attribute |
 | `GOFASTR1811` | error | `!important` |
 | `GOFASTR1812` | error | a raw width in `@media` (`min-width: 768px`); write `(--above-md)` or `(--below-lg)`. Raw widths stay legal in `@container` |
@@ -129,8 +129,48 @@ code.
 | `GOFASTR1818` | error | a screen's or layout's style handle used outside its own package and the one that attaches it |
 | `GOFASTR1819` | error | in `app.style.css`: a selector whose subject is not a class, or a custom property declaration |
 | `GOFASTR1820` | error | any owned sheet declaring a custom property named like a theme token (`--color-primary`) |
-| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #4F46E5` where `--color-primary` is `#4F46E5` |
+| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #18181B` where `--color-primary` is `#18181B` |
 | `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
+
+`GOFASTR1823` (error) guards the kit itself, the design-system trees
+(`core-ui/`, `framework/ui/`, `framework/uihost/`, `battery/` and the
+rest GOFASTR1807 reads there). GOFASTR1807 judges a value whole, so
+`border: 1px solid var(--color-border)` passes it, and a `padding: 6px`
+matches no token at all. GOFASTR1823 reads inside every declaration, in
+stylesheet strings and in builder `Set` pairs, and refuses a look value
+written as a literal:
+
+| Property | Reads |
+|---|---|
+| border, outline and inset-ring widths, outline offset | `--stroke-*` |
+| border radius (px or rem) | `--radii-*` |
+| transition duration or delay, or animation duration, up to 500ms | `--duration-*` |
+| `ease`, `ease-in`, `ease-out`, `ease-in-out` or `cubic-bezier()` in a transition or animation | `--easing-*` |
+| z-index above 10 | `--z-*` |
+| padding, margin, gap, `grid-gap`, scroll margin and padding | `--spacing-*`; an off-step value is `calc(var(--spacing-sm, 4px) * n)` |
+| top, right, bottom, left, inset | `--spacing-*` or a `--ui-<component>-<part>` knob |
+| width, height, inline-size, block-size, their min/max, flex-basis | a `--ui-<component>-<part>` knob or a `--size-*` token |
+| font size | `--text-*` |
+| font weight (a number, `bold` or `normal`) | `--font-weight-*`; an off-step weight is `calc(var(--font-weight-semibold, 600) + 50)` |
+| the `font` shorthand's size, `/line-height` and weight | `--text-*`, `--leading-*`, `--font-weight-*` |
+| line height (a number other than 0 and 1, or a length) | `--leading-*` |
+| letter spacing | `--tracking-*` |
+| opacity between 0 and 1 | `--opacity-*` or a knob |
+| box shadow with a colour or a length over 1px | `--shadow-*` or a knob |
+| colour, background, border, fill, stroke, text-shadow with hex, `rgb()`, `hsl()`, `oklch()`, `white` or `black` | `--color-*` or a knob |
+
+Write the token or knob with today's value as the fallback,
+`var(--stroke-thin, 1px) solid` or `width: var(--ui-checkbox-box-size,
+18px)`, so the kit still draws with no theme loaded. A literal inside a
+`var()` fallback or inside a `calc()` that reads a token
+(`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero, 1px hairlines
+and visually hidden boxes, `em`, `%`, `ch` and viewport lengths,
+`line-height` 0 and 1, `opacity` 0 and 1, `linear` and `steps()`
+timing, local stacking orders, loop periods over 500ms and
+`animation-delay` (a loop's stagger). `@media` conditions are never
+read (`var()` is invalid there). Dev tooling under `framework/dev/` is
+held to the width, radius, motion and layer rows only: its chrome is not
+an app theme's.
 
 `GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
 a handle method is called inside the `Class` field of a `framework/ui`

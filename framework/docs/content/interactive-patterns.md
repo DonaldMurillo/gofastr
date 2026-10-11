@@ -149,6 +149,9 @@ by clicking the close button.
 navigation module (`headless-navigation`, through the
 `data-hui-theme-*` hooks) persists the preference in `localStorage`
 and toggles the `color-scheme` meta + root attribute.
+`framework/ui.ThemePicker` is its sibling for whole-page themes: the
+same module puts a registered override's class on `<html>` and
+persists it (theming → "Page themes: `ui.ThemePicker`").
 
 ### Scroll spy
 

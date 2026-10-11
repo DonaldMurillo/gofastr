@@ -68,6 +68,7 @@ func Progress(cfg ProgressConfig) render.HTML {
 var progressStyle = registry.RegisterStyle("ui-progress", progressCSS)
 
 func progressCSS(_ style.Theme) string {
+	// Knobs: --ui-progress-bar-height (0.5rem) is the track thickness.
 	return `[data-cui-comp="ui-progress"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -81,7 +82,7 @@ func progressCSS(_ style.Theme) string {
   appearance: none;
   -webkit-appearance: none;
   inline-size: 100%;
-  block-size: 0.5rem;
+  block-size: var(--ui-progress-bar-height, 0.5rem);
   border: 0;
   border-radius: var(--radii-full, 9999px);
   background: var(--color-border, #E5E7EB);
@@ -92,12 +93,12 @@ func progressCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   border-radius: var(--radii-full, 9999px);
-  transition: inline-size 200ms ease;
+  transition: inline-size var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar::-moz-progress-bar {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-progress"] .fui-progress__desc {

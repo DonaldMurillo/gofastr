@@ -91,6 +91,11 @@ ink, so set the `-fg` token when the dark fill needs a different one.
 A theme with only a `dark:` map is still emitted.
 Generated apps call `site.WithTheme(...)`, so the values are emitted
 through `/__gofastr/app.css` as computed CSS custom properties.
+A declared `app.theme` starts from the light-only `style.DefaultTheme()`
+and has a dark scheme only when `app.theme.dark` declares one, so a
+stock dark palette never replaces the brand. With no `app.theme`, a
+marketing app starts from `theme.Default()` and follows the OS into
+the framework's dark palette.
 
 **Fonts are self-hosted, not CDN-linked.** The generated app ships a
 strict Content-Security-Policy (`default-src 'self'`) that deliberately
@@ -698,8 +703,19 @@ The public seam is:
   `Field.Type`, `Field.Values`, and `Field.NoQuery` control display and query
   behavior; `Relation.Display` names the related record's label field.
 - `Config.WithColumns`, `WithSearch`, `WithLimit`, `WithCreate`, `WithEdit`,
-  `WithFilters`, `WithHeading`, `WithEmpty`, `WithActions`, and `WithIsland`:
-  value-copy options for one screen without changing the registry entry.
+  `WithFilters`, `WithHeading`, `WithHeadingLevel`, `WithEmpty`, `WithActions`,
+  and `WithIsland`: value-copy options for one screen without changing the
+  registry entry. `WithHeadingLevel(2)` (`Config.HeadingLevel`) makes the list
+  title a section heading, for a list that sits under a page that already has
+  its `<h1>`. Levels 1 to 5 are honoured (0 means 1) and any other value
+  panics at render; the empty state's title sits one level below. The generator sets 2 on
+  an entity list when a block ahead of it on the screen renders an
+  `<h1>` (a page header, a hero, an auth card, a form or detail page, a
+  level-1 heading, or another list), such as a dashboard's recent rows
+  under its page header. Layouts render no `<h1>`, so any other list
+  keeps its title as the page's.
+- The detail page's Back action and the form's Cancel action are ghost
+  buttons (`ui.ButtonGhost`), so they share the action row's height.
 - `Config.List`, `Table`, `Detail`, and `Form`: screen-rendering entry points;
   `TableHandler` serves an island table refresh.
 - `resource.Registry`: the per-app config map plus dashboard helpers
@@ -785,7 +801,10 @@ Any screen body can compose the framework's UI components directly via block
 
 The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
-`no_wrap`); `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
+`no_wrap`). An unset `align` or `justify` keeps the component's default: a
+`stack` stretches its children across the column, a `cluster` packs them at
+the row's start and centres them vertically on its line. Set `align: start` to let a stack's children keep their natural
+width. `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
 variant with a `12rem` default minimum. Spacing must use the shared
 `none|xs|sm|md|lg|xl|2xl` tokens; blueprints do not create a second styling system.
 

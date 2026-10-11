@@ -154,9 +154,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 	}
 	lineH := 12.0
+	// labelGap clears the first label line off the baseline: a 12px
+	// line box set 12px under it puts the cap height on the rule.
+	const labelGap = 6.0
 	bottomGutter := 0.0
 	if cfg.ShowLabels {
-		bottomGutter = float64(maxLines)*lineH + 4
+		bottomGutter = float64(maxLines)*lineH + labelGap + 4
 	}
 
 	plotW := float64(w) - axisGutter
@@ -306,7 +309,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		sb.WriteString(ftoa(drawW))
 		sb.WriteString(`" height="`)
 		sb.WriteString(ftoa(barH))
-		sb.WriteString(`" rx="3" class="`)
+		sb.WriteString(`" rx="4" class="`)
 		sb.WriteString(barCls)
 		sb.WriteString(`" data-cui-internal=""`)
 		if fill != "" {
@@ -336,7 +339,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		// Category label(s) under the bar, wrapped onto multiple lines.
 		if cfg.ShowLabels && b.Label != "" {
 			lines := wrapped[i]
-			ly := baseY + lineH
+			ly := baseY + lineH + labelGap
 			sb.WriteString(`<text x="`)
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
@@ -501,17 +504,18 @@ func wrapChartLabel(label string, maxChars int) []string {
 var barChartStyle = registry.RegisterStyle("ui-bar-chart", barChartCSS)
 
 func barChartCSS(_ style.Theme) string {
+	// Knobs: --ui-bar-chart-bar-hover-opacity (0.85) is the hover dim.
 	return `[data-cui-comp="ui-bar-chart"] {
   display: block;
   max-inline-size: 100%;
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar {
-  transition: opacity 120ms ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
-  opacity: 0.85;
+  opacity: var(--ui-bar-chart-bar-hover-opacity, 0.85);
 }
-.fui-bar-chart__bar--primary { fill: var(--color-primary, #4F46E5); }
+.fui-bar-chart__bar--primary { fill: var(--color-primary, #18181B); }
 .fui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
 .fui-bar-chart__bar--success { fill: var(--color-success, #16A34A); }
 .fui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
@@ -524,12 +528,12 @@ func barChartCSS(_ style.Theme) string {
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__grid {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__value {
   font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  fill: var(--color-text, #18181B);
+  font-weight: var(--font-weight-medium);
+  fill: var(--color-text-muted, #52525B);
   font-variant-numeric: tabular-nums;
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__label {
@@ -537,8 +541,8 @@ func barChartCSS(_ style.Theme) string {
   fill: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__axis-label {
-  font-size: 0.68rem;
-  fill: var(--color-text-muted, #52525B);
+  font-size: var(--text-xs, 0.75rem);
+  fill: var(--color-text-subtle, #71717A);
   font-variant-numeric: tabular-nums;
 }`
 }

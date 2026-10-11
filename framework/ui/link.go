@@ -100,10 +100,17 @@ func linkCSS(_ style.Theme) string {
   cursor: pointer;
 }
 [data-cui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
+/* An inline link sits in prose, where the neutral primary is the text's
+   own colour: the underline is what tells it from its sentence (WCAG
+   1.4.1). Action and muted links sit outside prose and stay bare. */
+:where([data-cui-comp="ui-link"], .fui-link):not(.fui-link--action, .fui-link--muted) {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
 [data-cui-comp="ui-link"]:focus-visible, .fui-link:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: var(--radii-sm, 4px);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
+  border-radius: var(--radii-sm, 6px);
 }
 
 /* Action variant — 44×44 tap target so the link can sit beside a

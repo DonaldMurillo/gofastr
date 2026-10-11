@@ -1281,15 +1281,18 @@ as `404.html` at the root (see `framework/docs/content/static-export.md`).
 
 The framework's design tokens live in `core-ui/style.Theme`, a
 **typed Go struct** with a fixed canonical field set: `Colors`,
-`Spacing`, `Radii`, `Fonts`, `Breakpoints`, `Shadows`, `ZIndex`,
-`Durations`, `Typography`. Every token carries a `Name` (the CSS
+`Spacing`, `Radii`, `Strokes`, `Leading`, `Tracking`, `Opacities`,
+`Fonts`, `Breakpoints`, `Shadows`, `ZIndex`, `Durations`, `Easings`,
+`Typography`, `FontWeights`, `Layout`, `Code`, plus the `Knobs` map.
+`Strokes`, `Leading`, `Tracking`, `Opacities` and `Code` are optional:
+an unset slot emits the default theme's value. Every token carries a `Name` (the CSS
 custom property identifier) and a `Value` (the concrete value):
 
 ```go
 t := style.DefaultTheme()
-t.Colors.Primary // → style.Color{Name: "primary", Value: "#4F46E5"}
+t.Colors.Primary // → style.Color{Name: "primary", Value: "#18181B"}
 t.Colors.Primary.CSS()   // → "var(--color-primary)"
-t.Colors.Primary.Value   // → "#4F46E5"
+t.Colors.Primary.Value   // → "#18181B"
 ```
 
 ### The var-only contract

@@ -805,7 +805,7 @@ body {
   background-color: var(--color-background, #fff);
   color: var(--color-text, #18181b);
   font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
@@ -863,18 +863,18 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 }
 .skip-link:focus {
   position: fixed !important;
-  top: 8px; left: 8px;
+  top: var(--spacing-md, 8px); left: var(--spacing-md, 8px);
   width: auto; height: auto;
-  padding: 8px 16px;
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
   overflow: visible;
   clip: auto;
   white-space: normal;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
-  border-radius: var(--radii-sm, 4px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
+  border-radius: var(--radii-sm, 6px);
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
   text-decoration: none;
 }
 /* SPA-nav failure toast — shown when loadPage can't fetch the new
@@ -882,10 +882,10 @@ main[tabindex="-1"]:focus:not(:focus-visible),
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
 .cui-nav-toast {
   position: fixed;
-  right: 16px; bottom: 16px;
-  z-index: 9999;
-  max-width: calc(100vw - 32px);
-  padding: 12px 16px;
+  right: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
+  z-index: var(--z-toast, 500);
+  max-width: calc(100vw - var(--spacing-2xl, 32px));
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* Reuses the theme's always-dark inkwell pair rather than hardcoding a
      palette or inventing an inverse-surface token. CodeSurface/CodeText are
      deliberately non-inverting and contrast-tuned in both schemes, which is
@@ -894,11 +894,11 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #FAFAFA);
   border-radius: var(--radii-md, 8px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10));
   opacity: 0;
   transform: translateY(8px);
-  transition: opacity 0.18s, transform 0.18s;
+  transition: opacity var(--duration-fast, 150ms), transform var(--duration-fast, 150ms);
   pointer-events: none;
 }
 .cui-nav-toast.is-visible {
@@ -916,7 +916,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   }
 }
 @keyframes cui-flash {
-  from { background-color: color-mix(in srgb, var(--color-primary, #4F46E5) 25%, transparent); }
+  from { background-color: color-mix(in srgb, var(--color-primary, #18181B) 25%, transparent); }
 }
 /* Progress indicator on slow SPA navigation. The bar tracks the theme's
    primary color via the token — a literal hex here would keep the bar
@@ -933,16 +933,18 @@ html[aria-busy="true"] {
 // drops it in favor of frameworkPageLoadingCSS when the host sets a
 // page-wide loading component (WithPageLoading): two simultaneous
 // page-wide indicators is never what an author meant.
+//
+// Knobs: --ui-nav-progress-height (2px, the strip's thickness).
 const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   content: '';
   position: fixed;
   inset: 0 0 auto 0;
-  height: 2px;
+  height: var(--ui-nav-progress-height, 2px);
   background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
   animation: fui-nav-progress 1s linear infinite;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   pointer-events: none;
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
@@ -959,7 +961,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
 const frameworkPageLoadingCSS = `[data-fui-page-loading] {
   visibility: hidden;
   opacity: 0;
-  transition: opacity .18s ease, visibility .18s;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), visibility var(--duration-fast, 150ms);
   pointer-events: none;
 }
 html[aria-busy="true"] [data-fui-page-loading] {
@@ -981,13 +983,13 @@ const frameworkDimCSS = `
    NOT dimmed — the loading content replaces the old content, dimming
    it would double the signal. */
 [data-cui-outlet], [data-cui-area], [data-cui-layout-slot] {
-  transition: opacity .12s ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-outlet][aria-busy="true"],
 [data-cui-area][aria-busy="true"],
 [data-cui-layout-slot][aria-busy="true"] {
-  opacity: .55;
-  transition-delay: .12s;
+  opacity: var(--opacity-muted, 0.6);
+  transition-delay: var(--duration-fast, 150ms);
 }
 [data-cui-outlet][data-cui-loadstate],
 [data-cui-area][data-cui-loadstate],
@@ -1004,12 +1006,12 @@ const frameworkDimCSS = `
 [data-cui-outlet][data-cui-loadstate="shown"],
 [data-cui-area][data-cui-loadstate="shown"],
 [data-cui-layout-slot][data-cui-loadstate="shown"] {
-  animation: fui-load-in .18s ease both;
+  animation: fui-load-in var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 [data-cui-outlet][data-cui-loadstate="exit"],
 [data-cui-area][data-cui-loadstate="exit"],
 [data-cui-layout-slot][data-cui-loadstate="exit"] {
-  animation: fui-load-out .18s ease both;
+  animation: fui-load-out var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 @keyframes fui-load-in { from { opacity: 0; } }
 @keyframes fui-load-out { to { opacity: 0; } }

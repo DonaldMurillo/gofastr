@@ -26,10 +26,10 @@ func counterCSS(_ style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-[data-cui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
-		`[data-cui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.375rem;background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
+[data-cui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:var(--spacing-md, 8px)}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:var(--ui-counter-btn-size, 2rem);height:var(--ui-counter-btn-size, 2rem);border:var(--stroke-thin, 1px) solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-sm, 6px);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background var(--duration-fast, 150ms),border-color var(--duration-fast, 150ms)}` +
 		`[data-cui-comp="fui-counter"] .fui-counter__btn:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9));border-color:var(--fui-primary, var(--color-primary, #3b82f6))}` +
-		`[data-cui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px}` +
+		`[data-cui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px)}` +
 		`[data-cui-comp="fui-counter"] .fui-counter__value{min-width:2ch;text-align:center;font-variant-numeric:tabular-nums;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a))}`
 }
 

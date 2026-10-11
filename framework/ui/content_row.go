@@ -169,11 +169,11 @@ func contentRowCSS(_ style.Theme) string {
 	// the header and footer leave and the nav column reaches the footer.
 	return `.fui-content-row { display: flex; align-items: stretch; flex: 1 0 auto; }
 .fui-content-row > main, .fui-content-row > .layout-content { flex: 1 1 auto; min-width: 0; }
-.fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: 1px solid var(--color-border, #e4e4e7); }
+.fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
 .fui-content-row__workspace { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; }
 .fui-content-row__workspace > main, .fui-content-row__workspace > .layout-content { flex: 1 1 auto; min-inline-size: 0; }
-.fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: 1px solid var(--color-border); }
-.fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: 1px solid var(--color-border); }
+.fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
+.fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
@@ -184,7 +184,7 @@ func contentRowCSS(_ style.Theme) string {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl, 24px);
-  padding: clamp(24px, 3vw, 40px);
+  padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
 }
 ` + md.viewportCSS() + md.stackCSS() + lg.viewportCSS() + lg.stackCSS()
 }
@@ -222,8 +222,13 @@ func (b rowBreakpointCSS) viewportCSS() string {
 func (b rowBreakpointCSS) stackCSS() string {
 	css := fmt.Sprintf(`@media (max-width: %s) {
   :where(.fui-content-row):SCOPE: { display: block; }
-  .fui-content-row:SCOPE: .fui-content-row__nav { border-right: none; border-bottom: 1px solid var(--color-border, #e4e4e7); }
-  .fui-content-row:SCOPE: .fui-content-row__aside { border-inline-start: none; border-block-start: 1px solid var(--color-border); }
+  .fui-content-row:SCOPE: .fui-content-row__nav { border-right: none; border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
+  /* The stacked nav band holds the menu trigger. It takes main's inline
+     gutter, so the trigger lines up with the page content instead of
+     sitting flush in the viewport corner. */
+  .fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10)); }
+  .fui-content-row--viewport.fui-content-row--has-nav:SCOPE: .fui-content-row__nav { padding: var(--spacing-sm, 4px) var(--spacing-md, 8px); }
+  .fui-content-row:SCOPE: .fui-content-row__aside { border-inline-start: none; border-block-start: var(--stroke-thin, 1px) solid var(--color-border); }
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > main,
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > .layout-content { padding: var(--spacing-md); }
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace .layout-content .layout-content { padding: 0; gap: 0; }
@@ -231,7 +236,7 @@ func (b rowBreakpointCSS) stackCSS() string {
      outside the column (a NativeMobile sidebar whose trigger the page
      header hosts), so the stacked band renders empty and must not draw
      its separator. */
-  .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; }
+  .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; padding: 0; }
 }
 `, b.maxw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)

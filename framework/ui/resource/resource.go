@@ -87,23 +87,32 @@ type RelatedList struct {
 // Config drives the server-rendered list + detail + form screens for
 // one entity.
 type Config struct {
-	Entity      string
-	Title       string
-	Singular    string
-	BasePath    string // app route, e.g. "/app/customers"
-	APIPath     string // auto-CRUD JSON endpoint, e.g. "/api/customers"
-	Crud        DataSource
-	Fields      []Field
-	Search      string
-	Filters     []Filter // facet filters rendered as a toolbar above the table
-	PageSize    int
-	Relations   map[string]Relation
-	CanCreate   bool          // List shows "New"; a /new create form is mounted
-	CanEdit     bool          // Detail shows Edit + Delete; a /{id}/edit form is mounted
-	Heading     string        // overrides the list's title (the block's text:)
-	EmptyText   string        // overrides the empty-state description (the block's empty_text:)
-	Related     []RelatedList // reverse relations surfaced on the detail page
-	Transitions []Transition  // status-transition workflow buttons on the detail page
+	Entity    string
+	Title     string
+	Singular  string
+	BasePath  string // app route, e.g. "/app/customers"
+	APIPath   string // auto-CRUD JSON endpoint, e.g. "/api/customers"
+	Crud      DataSource
+	Fields    []Field
+	Search    string
+	Filters   []Filter // facet filters rendered as a toolbar above the table
+	PageSize  int
+	Relations map[string]Relation
+	CanCreate bool   // List shows "New"; a /new create form is mounted
+	CanEdit   bool   // Detail shows Edit + Delete; a /{id}/edit form is mounted
+	Heading   string // overrides the list's title (the block's text:)
+	// HeadingLevel is the list title's heading level (default 1, the
+	// list as the page). Set 2 when the list is a block under a page that
+	// already has its <h1>, a dashboard's recent rows, so the outline
+	// gets one <h1> and the title sizes as a section. 0 means 1; 1 to 5
+	// are honoured and any other value panics at render, since falling
+	// back to 1 would print the second <h1> the field exists to prevent.
+	// The empty state's title takes the next level down, so 5 is the
+	// deepest that leaves it a heading.
+	HeadingLevel int
+	EmptyText    string        // overrides the empty-state description (the block's empty_text:)
+	Related      []RelatedList // reverse relations surfaced on the detail page
+	Transitions  []Transition  // status-transition workflow buttons on the detail page
 
 	// ExtraActions are appended to the list page header's action cluster
 	// (e.g. a data-cui-open trigger for a quick-add modal).
@@ -197,9 +206,26 @@ func (c Config) WithFilters(fs ...Filter) Config { c.Filters = fs; return c }
 // WithEdit shows Edit + Delete on the detail screen (a /{id}/edit form is mounted).
 func (c Config) WithEdit() Config { c.CanEdit = true; return c }
 
-// WithHeading overrides the list's title; WithEmpty overrides the empty-state text.
+// WithHeading overrides the list's title.
 func (c Config) WithHeading(s string) Config { c.Heading = s; return c }
-func (c Config) WithEmpty(s string) Config   { c.EmptyText = s; return c }
+
+// WithHeadingLevel sets the list title's heading level (Config.HeadingLevel).
+func (c Config) WithHeadingLevel(n int) Config { c.HeadingLevel = n; return c }
+
+// headingLevel is the list title's level: HeadingLevel, or 1 when it
+// is unset.
+func (c Config) headingLevel() int {
+	switch {
+	case c.HeadingLevel == 0:
+		return 1
+	case c.HeadingLevel >= 1 && c.HeadingLevel <= 5:
+		return c.HeadingLevel
+	}
+	panic(fmt.Sprintf("resource: %s: HeadingLevel %d is out of range — 1 to 5 (0 means 1); the empty state takes the level below", c.Entity, c.HeadingLevel))
+}
+
+// WithEmpty overrides the empty-state text.
+func (c Config) WithEmpty(s string) Config { c.EmptyText = s; return c }
 
 // WithActions appends extra page-header actions to the list screen.
 func (c Config) WithActions(a ...render.HTML) Config {
@@ -369,7 +395,7 @@ func (c Config) List(ctx context.Context) render.HTML {
 	if c.Heading != "" {
 		title = c.Heading
 	}
-	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: countLabel(total, c.Singular, c.Title), Actions: actions})}
+	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: title, Subtitle: countLabel(total, c.Singular, c.Title), Actions: actions, HeadingLevel: c.headingLevel()})}
 	// When facets are configured, search folds into the one filter toolbar
 	// (rendered below, once relation options are resolved) so the screen is a
 	// single GET form. Otherwise keep the standalone search box unchanged.
@@ -501,7 +527,7 @@ func (c Config) table(ctx context.Context, total int, known bool) render.HTML {
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
 		Query: query,
-		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
+		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: c.headingLevel() + 1},
 	}
 	if c.IslandPath != "" {
 		// Island mode: the sort anchors and the pager's page anchors
@@ -720,7 +746,9 @@ func (c Config) Detail(ctx context.Context, id string) render.HTML {
 				OnErrorToast("Could not delete this " + c.Singular + ".").Attrs()}),
 		)
 	}
-	actions = append(actions, ui.Link(ui.LinkConfig{Href: c.BasePath, Text: "← Back", Variant: ui.LinkMuted}))
+	// A ghost button, not a bare link: it shares the action row's height
+	// and baseline, so the row reads as one set of controls.
+	actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{Label: "Back", Href: c.BasePath, Variant: ui.ButtonGhost, Icon: "chevron-left"}))
 	body := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Cluster(ui.ClusterConfig{}, actions...)}),
 		ui.DetailList(ui.DetailListConfig{Items: items}),
@@ -752,12 +780,13 @@ func (c Config) relatedList(ctx context.Context, rl RelatedList, id string) rend
 		Filters: []filter.ParsedFilter{{Field: rl.ForeignKey, Op: filter.OpEq, Value: id}},
 		Limit:   10,
 	})
-	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: countLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title)})
+	// A related list sits under the detail page's own <h1>.
+	head := ui.PageHeader(ui.PageHeaderConfig{Title: rl.Title, Subtitle: countLabel(len(rows), strings.TrimSuffix(rl.Title, "s"), rl.Title), HeadingLevel: 2})
 	if err != nil {
 		return render.Join(head, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger, Title: "Couldn't load " + rl.Title}, render.Text("See server logs.")))
 	}
 	if len(rows) == 0 {
-		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added.", HeadingLevel: 2}))
+		return render.Join(head, ui.EmptyState(ui.EmptyStateConfig{Title: "No " + strings.ToLower(rl.Title) + " yet", Description: "They will appear here once added.", HeadingLevel: 3}))
 	}
 	relLabels := relatedRelationLabels(ctx, rl.Relations)
 	cols := make([]ui.Column, 0, len(rl.Fields)+1)
@@ -893,7 +922,7 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 	}
 	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
 	return render.Join(
-		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.Link(ui.LinkConfig{Href: back, Text: "← Cancel", Variant: ui.LinkMuted})}),
+		ui.PageHeader(ui.PageHeaderConfig{Title: title, Actions: ui.LinkButton(ui.LinkButtonConfig{Label: "Cancel", Href: back, Variant: ui.ButtonGhost})}),
 		form,
 	)
 }

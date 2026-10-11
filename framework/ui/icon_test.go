@@ -7,7 +7,7 @@ import (
 
 func TestIcon_BuiltInsRegistered(t *testing.T) {
 	for _, name := range []string{
-		"check", "close", "menu", "chevron-up", "chevron-down",
+		"check", "close", "menu", "search", "chevron-up", "chevron-down",
 		"chevron-left", "chevron-right",
 		"info", "warning", "danger", "success",
 	} {

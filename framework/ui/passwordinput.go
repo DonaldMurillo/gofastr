@@ -121,57 +121,69 @@ func passwordInputCSS(_ style.Theme) string {
 	return `.fui-password {
   display: flex;
   align-items: stretch;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
+}
+/* The shell is the control: typing in the input rings the whole field. */
+.fui-password:has(.fui-password__input:focus-visible) {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-password__input {
   flex: 1;
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
+  font-size: var(--text-sm, 0.875rem);
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
   min-block-size: var(--fui-density-control-h);
   min-inline-size: 0;
 }
+.fui-password__input::placeholder { color: var(--color-text-subtle); }
 .fui-password__input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: -2px;
+  outline: none;
 }
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) { .fui-password__input { font-size: var(--text-base, 1rem); } }
+/* A ghost button inset in the field, not a gray slab bolted on. */
 .fui-password__reveal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: var(--fui-density-control-h);
+  align-self: center;
+  margin-inline-end: var(--spacing-sm, 4px);
+  min-block-size: calc(var(--fui-density-control-h) - 2 * var(--spacing-sm, 4px));
   min-inline-size: var(--spacing-touch-target, 44px);
   padding-inline: var(--spacing-md, 8px);
-  background: var(--color-surface-soft, #F4F4F5);
+  background: transparent;
   border: 0;
-  border-inline-start: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-sm, 6px);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
   user-select: none;
 }
 .fui-password__reveal:hover {
-  background: var(--color-border, #E4E4E7);
+  background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
 }
 .fui-password__reveal:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: -2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: 0;
 }
 .fui-password__reveal:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
 /* The invalid state arrives as data-invalid on the shell (the input
    inside has no border of its own to colour). */
 .fui-password[data-invalid] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }`
 }

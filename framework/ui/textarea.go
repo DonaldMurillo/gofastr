@@ -119,32 +119,35 @@ var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)
 func textAreaCSS(_ style.Theme) string {
 	return `.fui-textarea {
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  font-size: var(--text-sm, 0.875rem);
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
+  box-shadow: var(--shadow-xs);
   resize: vertical;
   min-block-size: var(--fui-density-control-h);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 .fui-textarea[data-cui-autogrow] {
   /* Autogrow rules the height; user resize would fight the JS. */
   resize: none;
   overflow: hidden;
 }
+.fui-textarea::placeholder { color: var(--color-text-subtle); }
 .fui-textarea:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
-  border-color: var(--color-primary, #4F46E5);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-textarea[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-textarea:disabled {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
-}`
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) { .fui-textarea { font-size: var(--text-base, 1rem); } }`
 }

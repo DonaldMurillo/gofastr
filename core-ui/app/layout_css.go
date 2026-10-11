@@ -33,7 +33,7 @@ func InterceptOverlayCSS() string {
   color: var(--color-text, #18181b);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(20px, 3vw, 32px);
+  padding: clamp(calc(var(--spacing-sm, 4px) * 5), 3vw, var(--spacing-2xl, 32px));
   box-shadow: var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
 }
 /* Drawer: docked to the inline end, full height. */
@@ -41,16 +41,16 @@ func InterceptOverlayCSS() string {
 [data-cui-intercept-as="drawer"] > * {
   width: min(var(--ui-intercept-drawer-w, 480px), 100%);
   height: 100%;
-  border-inline-start: 1px solid var(--color-border, #e4e4e7);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
 }
 /* Sheet: docked to the bottom, capped so the page stays visible above. */
 [data-cui-intercept-as="sheet"] { align-items: flex-end; }
 [data-cui-intercept-as="sheet"] > * {
   width: 100%;
   max-height: var(--ui-intercept-sheet-h, 85vh);
-  border-top: 1px solid var(--color-border, #e4e4e7);
-  border-start-start-radius: var(--radii-lg, 12px);
-  border-start-end-radius: var(--radii-lg, 12px);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+  border-start-start-radius: var(--radii-lg, 10px);
+  border-start-end-radius: var(--radii-lg, 10px);
 }
 /* Below the drawer breakpoint a side drawer is a poor fit; present it
    as a sheet instead. Matches the pane-host collapse at the same width. */
@@ -61,15 +61,15 @@ func InterceptOverlayCSS() string {
     height: auto;
     max-height: var(--ui-intercept-sheet-h, 85vh);
     border-inline-start: none;
-    border-top: 1px solid var(--color-border, #e4e4e7);
-    border-start-start-radius: var(--radii-lg, 12px);
-    border-start-end-radius: var(--radii-lg, 12px);
+    border-top: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+    border-start-start-radius: var(--radii-lg, 10px);
+    border-start-end-radius: var(--radii-lg, 10px);
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  [data-cui-intercept-overlay] > * { animation: cui-intercept-in 160ms ease-out; }
+  [data-cui-intercept-overlay] > * { animation: cui-intercept-in var(--duration-overlay-enter, 200ms) var(--easing-ease-out, ease-out); }
   @keyframes cui-intercept-in {
-    from { transform: translateY(8px); opacity: 0.6; }
+    from { transform: translateY(8px); opacity: var(--opacity-muted, 0.6); }
     to   { transform: none; opacity: 1; }
   }
 }

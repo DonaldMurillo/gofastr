@@ -277,11 +277,11 @@ func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 		{Label: "Invoices", Href: "/app/invoices"},
 		{Label: "Admin", Href: "/admin", Roles: []string{"admin"}},
 	}}
-	footer := []render.HTML{ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})}
+	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		footer = append(footer, ui.SignOut(ui.SignOutConfig{Next: "/"}))
+		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
 	}
-	cfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, footer...)
+	cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	return cfg
 }
 

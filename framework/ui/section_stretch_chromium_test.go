@@ -87,3 +87,48 @@ func TestSectionHeadStaysOnBodyWhenStretched(t *testing.T) {
 		t.Errorf("stretched section: heading to body is %.1fpx, want %.1fpx as in an unstretched one", m["stretched"], m["solo"])
 	}
 }
+
+// A Section's grid had an auto column, which sizes to its content's
+// min-content width. A horizontal scroller (a Carousel track) reports
+// its whole strip as min-content, so a three-up carousel in a Section
+// pushed the section to 1812px inside a 1056px page column (caught
+// screenshotting a long landing page). The section must hold its
+// column's width and let the scroller scroll.
+func TestSectionHoldsWidthAroundScroller(t *testing.T) {
+	// The scroller sits inside a plain wrapper, as a Carousel's track sits
+	// inside its root: the grid item itself does not clip.
+	strip := `<div><div style="overflow-x:auto"><div style="display:flex;gap:16px">` +
+		strings.Repeat(`<div style="flex:0 0 500px;height:40px"></div>`, 4) + `</div></div></div>`
+	page := `<div style="width:600px">` +
+		string(Section(SectionConfig{ID: "s", Heading: "Stories"}, render.HTML(strip))) + `</div>`
+	css := sectionStyle.Entry().CSSFor(theme.Default())
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
+<style>body{margin:0}
+%s</style>%s`, css, page)
+	}))
+	defer srv.Close()
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.WSURLReadTimeout(90*time.Second),
+			chromedp.NoSandbox, chromedp.WindowSize(800, 600))...)
+	defer cancelAlloc()
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	defer cancelTimeout()
+
+	var w float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.Evaluate(`document.querySelector('#s .fui-section__body').getBoundingClientRect().width`, &w),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(w-600) > 1 {
+		t.Errorf("section body around a scroller is %.1fpx wide, want its 600px column", w)
+	}
+}

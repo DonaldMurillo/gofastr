@@ -217,7 +217,7 @@ func sourceListCSS(_ style.Theme) string {
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
   /* Keyboard focus ring in the accent, the Mac focus-ring read. */
-  outline: 2px solid var(--color-accent, #7C3AED);
+  outline: var(--stroke-focus, 2px) solid var(--color-accent, #7C3AED);
   outline-offset: var(--spacing-xs, 2px);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {

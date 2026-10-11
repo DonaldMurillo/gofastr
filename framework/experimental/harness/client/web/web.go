@@ -139,16 +139,18 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.seatTable().ReleaseSeat(seat)
+	// Subscribe BEFORE the headers go out: the browser may act the
+	// moment the stream opens, and the bus has no replay for events
+	// broadcast before a subscriber registers.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	ch := s.bus.Subscribe(ctx)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering if proxied
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	ch := s.bus.Subscribe(ctx)
 	for {
 		select {
 		case <-ctx.Done():

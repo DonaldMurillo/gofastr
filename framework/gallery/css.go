@@ -25,6 +25,11 @@ func ContributeCSS(ss *style.StyleSheet) {
 		Set("display", "flex",
 			"flex-direction", "column",
 			"gap", "var(--spacing-md)").End()
+	// A list that stacks rows is a stack, not prose: no bullets, no indent.
+	ss.Rule("ul.demo-stack").
+		Set("list-style", "none",
+			"margin", "0",
+			"padding", "0").End()
 	ss.Rule(".demo-stack-lg").
 		Set("display", "flex",
 			"flex-direction", "column",

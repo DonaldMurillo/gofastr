@@ -4,7 +4,9 @@
 // # Theme, the typed design system
 //
 // A Theme is a Go struct of typed token value types (Color, Spacing,
-// Radius, Font, etc.). Every primitive token is required; passing a
+// Radius, Font, etc.). Every primitive token is required except the
+// optional groups (Strokes, Leading, Tracking, Opacities, Code): an
+// unset slot in one of those emits the default theme's value. Passing a
 // half-populated Theme to app.WithTheme panics at startup with a path
 // to the missing field. Names auto-derive from struct-field paths
 // (Colors.PrimaryFg → "primary-fg") via AutoFillNames so authors only
@@ -84,12 +86,18 @@
 //	             Border, BorderStrong,
 //	             Danger, DangerFg, Success, Warning, Info, Accent
 //	Spacing:     XS, SM, MD, LG, XL, XXL, XXXL  (pixels)
-//	Radii:       None, SM, MD, LG, XL, Full     (pixels)
+//	Radii:       None, SM, MD, LG, XL, Full     (pixels, 0 allowed)
+//	Strokes:     Thin, Thick, Focus, FocusOffset (CSS lengths; optional,
+//	             unset strokes emit the default widths)
+//	Leading:     Tight, Snug, Normal, Relaxed   (line heights; optional)
+//	Tracking:    Tighter, Tight, Snug, Wide, Wider (letter spacing; optional)
+//	Opacities:   Faint, Disabled, Muted         (0-1; optional)
 //	Fonts:       Body, Heading, Mono            (font-family stacks)
 //	Breakpoints: SM, MD, LG, XL, XXL            (pixels)
-//	Shadows:     None, SM, MD, LG, XL           (box-shadow values)
+//	Shadows:     None, XS, SM, MD, LG, XL       (box-shadow values)
 //	ZIndex:      Dropdown, Sticky, Modal, Popover, Toast
-//	Durations:   Fast, Normal, Slow             (time.Duration)
+//	Durations:   Fast, Normal, Slow, …          (time.Duration)
+//	Easings:     EaseOut, EaseIn, EaseInOut, Spring (timing functions)
 //	Typography:  XS, SM, Base, LG, XL, XXL, XXXL  (font-size strings)
 //	FontWeights: Normal, Medium, Semibold, Bold (FontWeight, 1-1000)
 //	Layout:      TouchTarget                    (Spacing, WCAG 2.5.5)

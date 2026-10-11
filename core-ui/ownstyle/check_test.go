@@ -129,6 +129,18 @@ func TestCheckHardcodedTokenValues(t *testing.T) {
 		// A trailing comment is not part of the value a browser reads,
 		// so this is still exactly the token value.
 		{".a{padding:16px /* lg */}", "1:12"},
+		// Line widths are stroke tokens.
+		{".a{border-width:1px}", "1:17 error GOFASTR1807 1px is --stroke-thin; write var(--stroke-thin)"},
+		{".a{outline-offset:2px}", "1:19 error GOFASTR1807 2px is --stroke-focus"},
+		// A number is read the way the browser reads it: a missing
+		// leading zero, a trailing zero or a sign do not hide a token.
+		{".a{opacity:.6}", "1:12 error GOFASTR1807 .6 is --opacity-muted"},
+		{".a{line-height:1.60}", "1:16 error GOFASTR1807 1.60 is --leading-relaxed"},
+		{".a{letter-spacing:-.01em}", "1:19 error GOFASTR1807 -.01em is --tracking-snug"},
+		{".a{padding:+16.0px}", "1:12 error GOFASTR1807 +16.0px is --spacing-lg"},
+		// The logical spacing properties are spacing too.
+		{".a{padding-inline:16px}", "1:19 error GOFASTR1807 16px is --spacing-lg"},
+		{".a{margin-block-start:16px}", "1:23 error GOFASTR1807 16px is --spacing-lg"},
 	}
 	for _, tc := range cases {
 		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
@@ -150,6 +162,23 @@ func TestCheckHardcodedTokenValues(t *testing.T) {
 	}
 }
 
+// A theme may spell a token's number any way the browser reads: a
+// muted opacity of ".60" still owns 0.6 in a sheet.
+func TestCheckThemeNumberSpelling(t *testing.T) {
+	tokens := defaultTokens(t)
+	if _, ok := tokens["opacity-muted"]; !ok {
+		t.Fatal("token map has no opacity-muted")
+	}
+	tokens["opacity-muted"] = ".60"
+	ds := Check("t.style.css", ".a{opacity:0.6}", KindScoped, tokens)
+	for _, d := range ds {
+		if d.Rule == RuleHardcodedTokenValue && strings.Contains(d.String(), "--opacity-muted") {
+			return
+		}
+	}
+	t.Fatalf("0.6 against a .60 token: want 1807 naming --opacity-muted, got %s", joinDiags(ds))
+}
+
 func TestCheckFallbackDrift(t *testing.T) {
 	cases := []struct {
 		src  string
@@ -162,6 +191,8 @@ func TestCheckFallbackDrift(t *testing.T) {
 		// .5s is 500ms... spacing only goes to 48px; use a duration.
 		{".a{transition-duration:var(--duration-normal, 250ms)}", ""},
 		{".a{transition-duration:var(--duration-normal, 400ms)}", "1:24"},
+		{".a{border-width:var(--stroke-thin, 1px)}", ""},
+		{".a{border-width:var(--stroke-thin, 2px)}", "1:17"},
 		// Colour fallbacks are author's degraded-mode choices.
 		{".a{color:var(--color-text, #18181B)}", ""},
 		// Complex fallbacks are left alone.

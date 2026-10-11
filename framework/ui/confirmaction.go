@@ -285,9 +285,10 @@ func confirmActionCSS(_ style.Theme) string {
 	// paints the panel surface for every modal body. This component
 	// only constrains its own width and lays out its internals:
 	// duplicating the panel props would double-pad the dialog.
+	// Knobs: --ui-confirm-action-max-width (28rem) caps the dialog body.
 	return `[data-cui-comp="ui-confirm-action"] {
   display: block;
-  max-inline-size: 28rem;
+  max-inline-size: var(--ui-confirm-action-max-width, 28rem);
 }
 [data-cui-comp="ui-confirm-action"] .fui-confirm-action__title {
   margin: 0 0 var(--spacing-sm, 4px) 0;
@@ -298,7 +299,7 @@ func confirmActionCSS(_ style.Theme) string {
 [data-cui-comp="ui-confirm-action"] .fui-confirm-action__body {
   margin: 0 0 var(--spacing-lg, 16px) 0;
   color: var(--color-text-muted, #4b5563);
-  line-height: 1.45;
+  line-height: var(--leading-normal, 1.5);
 }
 [data-cui-comp="ui-confirm-action"] .fui-confirm-action__actions {
   display: flex;

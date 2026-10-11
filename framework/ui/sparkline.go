@@ -220,7 +220,7 @@ func sparklineCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-sparkline"] {
   display: inline-block;
   vertical-align: middle;
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-sparkline"] .fui-sparkline__line {
   fill: none;
@@ -228,10 +228,13 @@ func sparklineCSS(_ style.Theme) string {
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
+  /* FullWidth stretches the viewBox with preserveAspectRatio none; the
+     stroke stays 1.5px instead of stretching with it. */
+  vector-effect: non-scaling-stroke;
 }
 [data-cui-comp="ui-sparkline"] .fui-sparkline__area {
   fill: currentColor;
-  opacity: 0.18;
+  opacity: var(--opacity-faint, 0.2);
   stroke: none;
 }
 

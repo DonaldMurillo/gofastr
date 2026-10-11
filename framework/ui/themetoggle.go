@@ -175,12 +175,20 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		rootAttrs["id"] = cfg.ID
 	}
 
+	// Auto ships checked and is the one Tab stop, the first-visit
+	// state; the runtime re-checks from the stored scheme.
 	optBtn := func(label, opt string) render.HTML {
+		checked, tab := "false", "-1"
+		if opt == "auto" {
+			checked, tab = "true", "0"
+		}
 		return render.Tag("button", map[string]string{
 			"type":                  "button",
 			"class":                 "fui-theme-toggle__option",
+			"data-cui-internal":     "",
 			"data-hui-theme-option": opt,
-			"aria-checked":          "false",
+			"aria-checked":          checked,
+			"tabindex":              tab,
 			"role":                  "radio",
 		}, render.Text(label))
 	}

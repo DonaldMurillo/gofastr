@@ -608,6 +608,7 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-widget").
 		Set(
 			"position", "fixed",
+			//gofastr:allow(GOFASTR1823) dev and agent widgets sit above every app layer, so no theme z step may move them
 			"z-index", "2147483600",
 			"font-family", "{fonts.body}",
 			"color", "{colors.text}",
@@ -625,11 +626,17 @@ func widgetCSS(def Definition) string {
 		End()
 
 	// Position presets: 6 corner/edge points + 2 full-width banners.
+	// Knobs: the 20px viewport offsets read the spacing scale;
+	// --ui-widget-drawer-width (360px) caps the edge drawers,
+	// --ui-widget-modal-min-width (20rem) / --ui-widget-modal-max-width
+	// (36rem) size the centered modal panel, --ui-widget-drag-handle-width
+	// (40px) / --ui-widget-drag-handle-height (4px) the sheet drag handle,
+	// and --ui-scrim (rgba(0,0,0,0.45)) the shared backdrop colour.
 	for _, p := range []struct{ cls, top, right, bottom, left string }{
-		{"cui-pos-bottom-right", "", "20px", "20px", ""},
-		{"cui-pos-bottom-left", "", "", "20px", "20px"},
-		{"cui-pos-top-right", "20px", "20px", "", ""},
-		{"cui-pos-top-left", "20px", "", "", "20px"},
+		{"cui-pos-bottom-right", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)", ""},
+		{"cui-pos-bottom-left", "", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)"},
+		{"cui-pos-top-right", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)", "", ""},
+		{"cui-pos-top-left", "calc(var(--spacing-sm, 4px) * 5)", "", "", "calc(var(--spacing-sm, 4px) * 5)"},
 		{"cui-pos-top", "0", "0", "", "0"},
 		{"cui-pos-bottom", "", "0", "0", "0"},
 	} {
@@ -652,10 +659,10 @@ func widgetCSS(def Definition) string {
 	// the viewport's top-center or bottom-center. transform centers
 	// the element regardless of its width.
 	ss.Rule(".cui-pos-top-center").
-		Set("top", "20px", "left", "50%", "transform", "translateX(-50%)").
+		Set("top", "calc(var(--spacing-sm, 4px) * 5)", "left", "50%", "transform", "translateX(-50%)").
 		End()
 	ss.Rule(".cui-pos-bottom-center").
-		Set("bottom", "20px", "left", "50%", "transform", "translateX(-50%)").
+		Set("bottom", "calc(var(--spacing-sm, 4px) * 5)", "left", "50%", "transform", "translateX(-50%)").
 		End()
 
 	// Edge mounts (drawer-style). Background + shadow so the drawer
@@ -663,7 +670,7 @@ func widgetCSS(def Definition) string {
 	// lets long content scroll inside the drawer.
 	ss.Rule(".cui-pos-edge-left").
 		Set("top", "0", "left", "0", "bottom", "0",
-			"width", "min(360px, 90vw)",
+			"width", "min(var(--ui-widget-drawer-width, 360px), 90vw)",
 			"background", "{colors.surface}",
 			"box-shadow", "{shadows.xl}",
 			"overflow", "auto",
@@ -671,7 +678,7 @@ func widgetCSS(def Definition) string {
 		End()
 	ss.Rule(".cui-pos-edge-right").
 		Set("top", "0", "right", "0", "bottom", "0",
-			"width", "min(360px, 90vw)",
+			"width", "min(var(--ui-widget-drawer-width, 360px), 90vw)",
 			"background", "{colors.surface}",
 			"box-shadow", "{shadows.xl}",
 			"overflow", "auto",
@@ -730,7 +737,8 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-backdrop").
 		Set(
 			"position", "fixed", "inset", "0",
-			"background", "rgba(0,0,0,0.45)",
+			"background", "var(--ui-scrim, rgba(0,0,0,0.45))",
+			//gofastr:allow(GOFASTR1823) one below the widget layer above, outside the theme's z steps for the same reason
 			"z-index", "2147483599",
 			"animation", "cui-backdrop-in {durations.overlay-enter} {easings.ease-out}",
 		).
@@ -778,12 +786,12 @@ func widgetCSS(def Definition) string {
 	ss.Rule(`.cui-pos-center > .cui-panel:not(:has(> .cui-slot > .cui-slot-bare))`).
 		Set(
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 			"box-shadow", "{shadows.xl}",
-			"min-inline-size", "min(20rem, 100%)",
-			"max-inline-size", "min(36rem, 100%)",
+			"min-inline-size", "min(var(--ui-widget-modal-min-width, 20rem), 100%)",
+			"max-inline-size", "min(var(--ui-widget-modal-max-width, 36rem), 100%)",
 			"max-block-size", "100%",
 			"overflow", "auto",
 		).
@@ -796,10 +804,10 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-widget-drag-handle").
 		Set(
 			"display", "block",
-			"width", "40px",
-			"height", "4px",
-			"margin", "8px auto 4px",
-			"border-radius", "2px",
+			"width", "var(--ui-widget-drag-handle-width, 40px)",
+			"height", "var(--ui-widget-drag-handle-height, 4px)",
+			"margin", "var(--spacing-md, 8px) auto var(--spacing-sm, 4px)",
+			"border-radius", "calc({radii.sm} / 3)",
 			"background", "{colors.border}",
 			"touch-action", "none",
 			"cursor", "grab",
@@ -835,17 +843,20 @@ func widgetCSS(def Definition) string {
 	// draw a directional arrow back to the trigger via a ::before
 	// pseudo-element. All values come from the canonical theme so a
 	// single token tweak retunes every popover surface.
+	// Knobs: --ui-popover-max-width (360px), --ui-popover-arrow-size
+	// (12px, both axes of the ::before arrow; the ±7px edge insets are
+	// half the arrow plus the popover border, as a calc over both).
 	// Popover root keeps overflow visible so the arrow ::before (sitting
-	// outside the root's box at -7px) renders. The scroll cap moves
-	// to the inner .cui-slot below, a tall slot scrolls inside the
-	// popover, the arrow stays visible.
+	// outside the root's box, half the arrow past the border) renders.
+	// The scroll cap moves to the inner .cui-slot below, a tall slot
+	// scrolls inside the popover, the arrow stays visible.
 	ss.Rule("[data-cui-widget][data-cui-popover-side]").
 		Set("border-radius", "{radii.md}",
 			"box-shadow", "{shadows.lg}",
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
-			"max-inline-size", "min(360px, calc(100vw - 32px))",
-			"max-block-size", "calc(100vh - 32px)",
+			"border", "{strokes.thin} solid {colors.border}",
+			"max-inline-size", "min(var(--ui-popover-max-width, 360px), calc(100vw - var(--spacing-2xl, 32px)))",
+			"max-block-size", "calc(100vh - var(--spacing-2xl, 32px))",
 			"display", "flex",
 			"flex-direction", "column").
 		End()
@@ -862,37 +873,37 @@ func widgetCSS(def Definition) string {
 	ss.Rule(`[data-cui-widget][data-cui-popover-side]::before`).
 		Set("content", "''",
 			"position", "absolute",
-			"inline-size", "12px",
-			"block-size", "12px",
+			"inline-size", "var(--ui-popover-arrow-size, 12px)",
+			"block-size", "var(--ui-popover-arrow-size, 12px)",
 			"background", "{colors.surface}",
-			"border-inline-start", "1px solid {colors.border}",
-			"border-block-start", "1px solid {colors.border}").
+			"border-inline-start", "{strokes.thin} solid {colors.border}",
+			"border-block-start", "{strokes.thin} solid {colors.border}").
 		End()
 	// side="top" → popover sits ABOVE trigger → arrow at its
 	// bottom edge, pointing DOWN.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="top"]::before`).
-		Set("inset-block-end", "-7px",
+		Set("inset-block-end", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(225deg)").
 		End()
 	// side="bottom" → popover sits BELOW trigger → arrow at its
 	// top edge, pointing UP.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="bottom"]::before`).
-		Set("inset-block-start", "-7px",
+		Set("inset-block-start", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(45deg)").
 		End()
 	// side="left" → popover sits LEFT of trigger → arrow at its
 	// right edge, pointing RIGHT.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="left"]::before`).
-		Set("inset-inline-end", "-7px",
+		Set("inset-inline-end", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(135deg)").
 		End()
 	// side="right" → popover sits RIGHT of trigger → arrow at its
 	// left edge, pointing LEFT.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="right"]::before`).
-		Set("inset-inline-start", "-7px",
+		Set("inset-inline-start", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(-45deg)").
 		End()
@@ -906,7 +917,7 @@ func widgetCSS(def Definition) string {
 		Set("background", "{colors.primary}",
 			"color", "{colors.primary-fg}",
 			"border-color", "{colors.primary}",
-			"box-shadow", "0 0 0 3px color-mix(in oklab, {colors.primary} 25%, transparent)").
+			"box-shadow", "0 0 0 calc(1.5 * {strokes.focus}) color-mix(in oklab, {colors.primary} 25%, transparent)").
 		End()
 
 	// Keyframes + reduced-motion suppression. Emitted as raw CSS
