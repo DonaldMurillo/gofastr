@@ -4,8 +4,8 @@ package main
 // screens_pages.go, the remaining v2 site pages. Each Render mirrors the
 // corresponding prototype at /tmp/gofastr-design/gofastr/project/pages/*.html.
 // Built with core-ui/html primitives so escaping + landmark roles are typed.
-// Page-local CSS classes live in styles_pages.go and resolve through the
-// shared theme.
+// Pages compose framework/ui components on the stock theme; the site
+// ships no stylesheet of its own.
 //
 // The pages share helpers from screen_home.go (container, sectionHead,
 // sectionWrap) and from code_block.go (codeBlock, kw, fn_, str_, pn, ty, com).

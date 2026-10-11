@@ -198,7 +198,6 @@ func setupServer() *framework.App {
 	markdownNeg := true
 
 	host := uihost.New(site,
-		uihost.WithCustomCSS(createStyleSheet(t)),
 		uihost.WithNotFoundScreen(&NotFoundScreen{}),
 		// Per-screen markdown surface (/llm-pages.md + /<screen>/llm.md). The
 		// site has no per-user data shapes to leak, so publishing it is safe.
