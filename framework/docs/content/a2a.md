@@ -222,6 +222,15 @@ are `a2a.Config` knobs (`TerminalTaskRetention`, `MaxPushConfigsPerTask`;
 the optional `a2a.RetentionTrimmer` Store interface both built-in
 stores implement.
 
+Skill-handler runs are bounded per owner too:
+`Config.MaxConcurrentRunsPerOwner` caps how many runs one owner may
+have going at once, `returnImmediately` runs included (0 = 16,
+negative = unlimited for deployments that bound runs elsewhere). A new
+message past the cap, or a resume of an `INPUT_REQUIRED` task while
+every slot is taken, is refused with `-32004`
+(`maximum concurrent task runs reached`) before anything is written:
+no task row is created and the paused task stays as it was.
+
 ### Streaming
 
 `SendStreamingMessage` and `SubscribeToTask` answer

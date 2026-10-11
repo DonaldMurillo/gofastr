@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -95,4 +96,64 @@ func TestForgotPasswordReturnsBeforeEmailDelivery(t *testing.T) {
 		t.Fatalf("AuthManager.OnStop did not stop email delivery workers: %v", err)
 	}
 	close(sender.release)
+}
+
+type countingPasswordResetSender struct{ sends atomic.Int32 }
+
+func (s *countingPasswordResetSender) Send(context.Context, string, string) error {
+	s.sends.Add(1)
+	return nil
+}
+
+// After OnStop, a forgot-password request queues nothing and starts no
+// workers: shutdown is final, so a late request cannot respawn delivery.
+func TestPasswordResetDeliveryRefusedAfterStop(t *testing.T) {
+	sender := &countingPasswordResetSender{}
+	p := NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", EmailSender: sender})
+	if err := p.OnStop(context.Background()); err != nil {
+		t.Fatalf("OnStop: %v", err)
+	}
+	p.queueResetEmail(context.Background(), "late@example.com", "http://localhost/reset")
+
+	p.deliveryMu.Lock()
+	started, queued := p.deliveryStarted, len(p.deliveryQueue)
+	p.deliveryMu.Unlock()
+	if started || queued != 0 {
+		t.Fatalf("delivery after stop: workers started=%v, queued=%d; want none", started, queued)
+	}
+	if n := sender.sends.Load(); n != 0 {
+		t.Fatalf("sender called %d time(s) after stop", n)
+	}
+}
+
+// A full queue drops the delivery instead of blocking the forgot-password
+// handler, which would turn mail backpressure into a timing oracle and a
+// stuck request.
+func TestPasswordResetDeliveryDroppedWhenQueueFull(t *testing.T) {
+	p := NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", EmailSender: &countingPasswordResetSender{}})
+	// Started with no workers and one slot, so the second delivery finds
+	// the queue full.
+	p.deliveryQueue = make(chan passwordResetDelivery, 1)
+	p.deliveryStarted = true
+	p.deliveryCtx, p.deliveryCancel = context.WithCancel(context.Background())
+	defer p.deliveryCancel()
+
+	p.queueResetEmail(context.Background(), "a@example.com", "http://localhost/reset?a")
+	done := make(chan struct{})
+	go func() {
+		p.queueResetEmail(context.Background(), "b@example.com", "http://localhost/reset?b")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		<-p.deliveryQueue // unblock the stuck send so the goroutine exits
+		t.Fatal("queueResetEmail blocked on a full delivery queue")
+	}
+	if got := len(p.deliveryQueue); got != 1 {
+		t.Fatalf("queue holds %d deliveries, want the first one only", got)
+	}
+	if d := <-p.deliveryQueue; d.to != "a@example.com" {
+		t.Fatalf("queued delivery is for %q, want the first request", d.to)
+	}
 }

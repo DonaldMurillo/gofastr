@@ -170,6 +170,11 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	return q.client.LPush(ctx, q.queueName, data)
 }
 
+// redisRecoveryTimeout bounds one recovery write in Dequeue (restoring or
+// quarantining a job already popped off the main list). A var so tests can
+// shrink it.
+var redisRecoveryTimeout = 5 * time.Second
+
 // Dequeue pops a job from the Redis list and moves it to the processing queue.
 // If types are specified, only jobs matching one of those types are returned;
 // non-matching jobs are pushed back onto the list.
@@ -189,10 +194,16 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) {
 	// RPop is destructive. Once an item has left the main list, caller
 	// cancellation must not cancel the rollback or quarantine write that
-	// gives it a durable next home. Bound detached cleanup so a failed Redis
-	// backend cannot hold this call forever.
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cleanupCancel()
+	// gives it a durable next home. Each recovery write gets its own
+	// detached, bounded context, minted when the write is needed: a deadline
+	// started before RPop could expire while RPop ran and hand the restore an
+	// already-dead context, and a quarantine write that spent its deadline
+	// must not leave the rollback behind it none.
+	recoveryPush := func(list string, values ...any) error {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), redisRecoveryTimeout)
+		defer cancel()
+		return q.client.LPush(rctx, list, values...)
+	}
 
 	typeSet := make(map[string]struct{}, len(types))
 	for _, t := range types {
@@ -206,7 +217,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	requeueSkipped := func(skipped []string) error {
 		var firstErr error
 		for _, s := range skipped {
-			if err := q.client.LPush(cleanupCtx, q.queueName, s); err != nil && firstErr == nil {
+			if err := recoveryPush(q.queueName, s); err != nil && firstErr == nil {
 				firstErr = fmt.Errorf("restore skipped job: %w", err)
 			}
 		}
@@ -253,9 +264,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// is unavailable, restore the malformed entry to the main list so
 			// it remains durable and observable on the next attempt.
 			resultErr := fmt.Errorf("unmarshal job: %w", err)
-			if qerr := q.client.LPush(cleanupCtx, q.deadLetterQueue, data); qerr != nil {
+			if qerr := recoveryPush(q.deadLetterQueue, data); qerr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
-				if restoreErr := q.client.LPush(cleanupCtx, q.queueName, data); restoreErr != nil {
+				if restoreErr := recoveryPush(q.queueName, data); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
 				}
 			}
@@ -289,9 +300,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// the restored job from redelivering forever once the
 			// backend heals).
 			dlqData, _ := json.Marshal(job)
-			if err := q.client.LPush(cleanupCtx, q.deadLetterQueue, dlqData); err != nil {
+			if err := recoveryPush(q.deadLetterQueue, dlqData); err != nil {
 				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
-				if restoreErr := q.client.LPush(cleanupCtx, q.queueName, dlqData); restoreErr != nil {
+				if restoreErr := recoveryPush(q.queueName, dlqData); restoreErr != nil {
 					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
 				}
 				rerr := requeueSkipped(skipped)
@@ -323,7 +334,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
 			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
-			if restoreErr := q.client.LPush(cleanupCtx, q.queueName, string(bumped)); restoreErr != nil {
+			if restoreErr := recoveryPush(q.queueName, string(bumped)); restoreErr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
 			}
 			rerr := requeueSkipped(skipped)

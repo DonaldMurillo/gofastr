@@ -141,16 +141,7 @@ func TestDelimiterComponentsDoNotCollide(t *testing.T) {
 
 func TestLegacyCredentialKeysRemainReadableAndMigrateOnWrite(t *testing.T) {
 	s := newStore(t)
-	s.mu.Lock()
-	s.loaded = true
-	s.data = storeData{Entries: map[string]string{"openrouter|default": "legacy-secret"}}
-	if err := s.saveLocked(); err != nil {
-		s.mu.Unlock()
-		t.Fatal(err)
-	}
-	s.loaded = false
-	s.data = storeData{}
-	s.mu.Unlock()
+	seedLegacy(t, s, map[string]string{"openrouter|default": "legacy-secret"})
 
 	if got, err := s.Get("openrouter", "default"); err != nil || got != "legacy-secret" {
 		t.Fatalf("legacy Get = (%q, %v), want legacy-secret", got, err)
@@ -163,6 +154,75 @@ func TestLegacyCredentialKeysRemainReadableAndMigrateOnWrite(t *testing.T) {
 	}
 	if _, exists := s.data.Entries["openrouter|default"]; exists {
 		t.Fatal("legacy key remained after the pair was updated")
+	}
+}
+
+// seedLegacy writes entries in the pre-v1 "provider|account" layout.
+func seedLegacy(t *testing.T, s *EncryptedFileStore, entries map[string]string) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loaded = true
+	s.data = storeData{Entries: entries}
+	if err := s.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	s.loaded = false
+	s.data = storeData{}
+}
+
+// A legacy key with two '|' could have been written by either split, so
+// neither pair reads it; each is told to re-enter, and re-entering on the
+// right pair replaces it.
+func TestAmbiguousLegacyKeyNeedsReentry(t *testing.T) {
+	s := newStore(t)
+	seedLegacy(t, s, map[string]string{"p|a|b": "legacy-secret"})
+
+	for _, pair := range []Entry{{"p|a", "b"}, {"p", "a|b"}} {
+		got, err := s.Get(pair.Provider, pair.Account)
+		if !errors.Is(err, ErrAmbiguousLegacyKey) {
+			t.Fatalf("Get(%q, %q) = (%q, %v), want ErrAmbiguousLegacyKey", pair.Provider, pair.Account, got, err)
+		}
+	}
+	entries, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[Entry]bool{}
+	for _, e := range entries {
+		seen[e] = true
+	}
+	if len(entries) != 2 || !seen[Entry{"p|a", "b"}] || !seen[Entry{"p", "a|b"}] {
+		t.Fatalf("List() = %#v, want both candidate pairs of the ambiguous key", entries)
+	}
+
+	if err := s.Put("p|a", "b", "reentered"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Get("p|a", "b"); err != nil || got != "reentered" {
+		t.Fatalf("Get after re-entry = (%q, %v), want reentered", got, err)
+	}
+	if _, err := s.Get("p", "a|b"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other candidate after re-entry: err = %v, want ErrNotFound", err)
+	}
+	if _, exists := s.data.Entries["p|a|b"]; exists {
+		t.Fatal("ambiguous legacy key remained after re-entry")
+	}
+}
+
+// Delete on a candidate pair removes the ambiguous legacy entry too.
+func TestDeleteRemovesAmbiguousLegacyKey(t *testing.T) {
+	s := newStore(t)
+	seedLegacy(t, s, map[string]string{"p|a|b": "legacy-secret"})
+	if err := s.Delete("p|a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("List() after Delete = %#v, want empty", entries)
 	}
 }
 

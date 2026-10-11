@@ -138,3 +138,21 @@ func TestMemoryMagicLinkStoreReapsExpiredOnMint(t *testing.T) {
 		t.Fatalf("memory token store retained stale rows after a mint: stale=%v live=%v count=%d", staleRetained, liveRetained, retained)
 	}
 }
+
+// Stopping is final: an OnStart after OnStop is refused and launches no
+// reaper, so a late start cannot leak a goroutine past shutdown.
+func TestMagicLinkPluginRefusesStartAfterStop(t *testing.T) {
+	plugin := NewMagicLinkPlugin(MagicLinkConfig{BaseURL: "https://example.com"})
+	if err := plugin.OnStop(context.Background()); err != nil {
+		t.Fatalf("OnStop: %v", err)
+	}
+	if err := plugin.OnStart(context.Background()); err == nil {
+		t.Fatal("OnStart after OnStop returned nil, want a refusal")
+	}
+	plugin.lifecycleMu.Lock()
+	started, stopCh := plugin.started, plugin.stopCh
+	plugin.lifecycleMu.Unlock()
+	if started || stopCh != nil {
+		t.Fatalf("refused start still launched the reaper (started=%v, stopCh set=%v)", started, stopCh != nil)
+	}
+}

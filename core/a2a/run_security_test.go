@@ -234,6 +234,54 @@ func TestOwnerCannotExceedConcurrentRunLimit(t *testing.T) {
 	}
 }
 
+// A resume is a run too: an owner whose slots are all taken cannot
+// restart a paused task, and the refusal leaves the task as it was.
+func TestResumeRefusedAtConcurrentRunLimit(t *testing.T) {
+	h := newHarness(t, nil)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	var calls atomic.Int32
+	h.setHandler(func(_ context.Context, tc TaskContext) error {
+		if calls.Add(1) == 1 {
+			return tc.RequireInput(TextPart("need input"))
+		}
+		<-release
+		return tc.Complete(TextPart("done"))
+	})
+
+	paused := h.send("alice")
+	if paused.Status.State != TaskStateInputRequired {
+		t.Fatalf("setup task state = %s, want INPUT_REQUIRED", paused.Status.State)
+	}
+	const runLimit = 16
+	running := make([]*Task, 0, runLimit)
+	for range runLimit {
+		running = append(running, h.send("alice", map[string]any{"returnImmediately": true}))
+	}
+
+	_, e, _ := h.call("alice", MethodSendMessage, map[string]any{
+		"message": map[string]any{
+			"taskId": paused.ID, "role": "ROLE_USER",
+			"parts": []any{map[string]any{"text": "continue"}},
+		},
+	})
+	if e.Error == nil || e.Error.Code != CodeUnsupportedOperation || !strings.Contains(e.Error.Message, "maximum concurrent task runs") {
+		t.Fatalf("resume at the run limit error = %+v, want the -32004 run-limit refusal", e.Error)
+	}
+	stored, err := h.srv.store.GetTask(context.Background(), "alice", paused.ID)
+	if err != nil || stored.Task.Status.State != TaskStateInputRequired || len(stored.Task.History) != len(paused.History) {
+		t.Fatalf("refused resume disturbed the paused task: %s history=%d, want %d (%v)",
+			stored.Task.Status.State, len(stored.Task.History), len(paused.History), err)
+	}
+
+	unblock()
+	for _, task := range running {
+		h.waitTask("alice", task.ID, TaskStateCompleted, 3*time.Second)
+	}
+}
+
 func TestResumeWithRemovedSkillReleasesRunRegistration(t *testing.T) {
 	h := newHarness(t, nil)
 	h.setHandler(func(_ context.Context, tc TaskContext) error {

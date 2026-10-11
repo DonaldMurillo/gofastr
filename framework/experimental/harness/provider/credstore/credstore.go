@@ -118,13 +118,14 @@ func (s *EncryptedFileStore) Get(provider, account string) (string, error) {
 		return v, nil
 	}
 	key := legacyCredentialKey(provider, account)
-	entry, ok := parseLegacyCredentialKey(key)
-	if !ok || entry.Provider != provider || entry.Account != account {
-		return "", ErrNotFound
-	}
 	v, ok := s.data.Entries[key]
 	if !ok {
 		return "", ErrNotFound
+	}
+	if legacyKeyAmbiguous(key) {
+		// "p|a|b" was written by ("p|a", "b") or ("p", "a|b"); the
+		// legacy format cannot say which, so neither pair may read it.
+		return "", fmt.Errorf("%w: %q", ErrAmbiguousLegacyKey, key)
 	}
 	return v, nil
 }
@@ -139,10 +140,10 @@ func (s *EncryptedFileStore) Put(provider, account, secret string) error {
 		s.data.Entries = make(map[string]string)
 	}
 	s.data.Entries[credentialKey(provider, account)] = secret
-	legacyKey := legacyCredentialKey(provider, account)
-	if entry, ok := parseLegacyCredentialKey(legacyKey); ok && entry.Provider == provider && entry.Account == account {
-		delete(s.data.Entries, legacyKey)
-	}
+	// The re-entered secret supersedes the legacy entry, ambiguous or
+	// not: in the legacy format every pair that maps to this key shared
+	// one slot, and a Put by any of them overwrote it.
+	delete(s.data.Entries, legacyCredentialKey(provider, account))
 	return s.saveLocked()
 }
 
@@ -153,10 +154,7 @@ func (s *EncryptedFileStore) Delete(provider, account string) error {
 		return err
 	}
 	delete(s.data.Entries, credentialKey(provider, account))
-	legacyKey := legacyCredentialKey(provider, account)
-	if entry, ok := parseLegacyCredentialKey(legacyKey); ok && entry.Provider == provider && entry.Account == account {
-		delete(s.data.Entries, legacyKey)
-	}
+	delete(s.data.Entries, legacyCredentialKey(provider, account))
 	return s.saveLocked()
 }
 
@@ -170,6 +168,11 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 	for k := range s.data.Entries {
 		if entry, ok := parseCredentialKey(k); ok {
 			out = append(out, entry)
+		} else if !strings.HasPrefix(k, "v1:") && legacyKeyAmbiguous(k) {
+			// List every pair that could own an ambiguous legacy key:
+			// Get on any of them answers ErrAmbiguousLegacyKey, and a
+			// Put or Delete on any of them replaces it.
+			out = append(out, legacyCandidates(k)...)
 		}
 	}
 	return out, nil
@@ -202,12 +205,30 @@ func parseCredentialKey(key string) (Entry, bool) {
 	return parseLegacyCredentialKey(key)
 }
 
+// parseLegacyCredentialKey splits an unambiguous "provider|account" key.
+// A key with more than one '|' has several possible splits and is not
+// parsed; see legacyCandidates.
 func parseLegacyCredentialKey(key string) (Entry, bool) {
 	provider, account, ok := strings.Cut(key, "|")
-	if !ok {
+	if !ok || legacyKeyAmbiguous(key) {
 		return Entry{}, false
 	}
 	return Entry{Provider: provider, Account: account}, true
+}
+
+func legacyKeyAmbiguous(key string) bool {
+	return strings.Count(key, "|") > 1
+}
+
+// legacyCandidates returns every (provider, account) split of a legacy key.
+func legacyCandidates(key string) []Entry {
+	var out []Entry
+	for i := 0; i < len(key); i++ {
+		if key[i] == '|' {
+			out = append(out, Entry{Provider: key[:i], Account: key[i+1:]})
+		}
+	}
+	return out
 }
 
 // loadLocked reads and decrypts the store on first use.
@@ -319,3 +340,9 @@ func decrypt(key, b64 []byte) ([]byte, error) {
 
 // ErrNotFound is returned by Get when the (provider, account) pair has no entry.
 var ErrNotFound = errors.New("credstore: not found")
+
+// ErrAmbiguousLegacyKey is returned by Get when the only entry for the pair
+// is a legacy "provider|account" key holding more than one '|': the old
+// format cannot say which pair wrote it, so the secret is not handed to
+// either. Re-enter it with Put (or remove it with Delete) on the right pair.
+var ErrAmbiguousLegacyKey = errors.New("credstore: ambiguous legacy credential key; re-enter the credential")

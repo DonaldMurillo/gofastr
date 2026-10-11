@@ -7,6 +7,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- `a2a.Config.MaxConcurrentRunsPerOwner` caps one owner's concurrent
+  skill-handler runs, resumes included (0 = 16, negative = no cap).
+- `PasswordResetPlugin.OnStop` stops the reset-email workers at
+  shutdown; reset email now goes out from a bounded queue, off the
+  request path.
+- `credstore.ErrAmbiguousLegacyKey`: a legacy `provider|account` key
+  with more than one `|` is no longer handed to the first split; `Get`
+  asks for re-entry and `Put`/`Delete` on any pair that could own it
+  replace it.
+
+### Fixed
+- `battery/queue` Redis `Dequeue` starts each recovery write's deadline
+  when the write is needed, so a slow `RPop` or a hung dead-letter push
+  no longer leaves a popped job in no list.
+
 ## [0.87.0] - 2026-10-10
 
 **BREAKING.** v0.87.0 reskins the default theme, gives entities screen

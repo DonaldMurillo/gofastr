@@ -388,7 +388,6 @@ func (p *MagicLinkPlugin) reapExpiredTokensContext(ctx context.Context) {
 
 // OnStop ends the reaper goroutine. It implements AuthPluginOnStop so the
 // manager stops it as part of application shutdown.
-// manager stops it as part of application shutdown. It implements AuthPluginOnStop so the\n// manager stops it as part of application shutdown.
 func (p *MagicLinkPlugin) OnStop(ctx context.Context) error {
 	p.lifecycleMu.Lock()
 	if !p.stopped {

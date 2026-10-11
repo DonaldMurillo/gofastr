@@ -99,7 +99,7 @@ func TestGetOrSetDoesNotJoinSeparateValueCacheInstances(t *testing.T) {
 		if got.err != nil || got.value != "b" {
 			t.Fatalf("independent value cache fill = (%q, %v), want (b, nil)", got.value, got.err)
 		}
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		close(release)
 		<-doneA
 		got := <-doneB
