@@ -300,9 +300,9 @@ func setupServer() *framework.App {
 
 	// SectionMenu mobile drawers, the docs + components navs each mount a
 	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
-	// + focus trap, all from the framework widget). The inline rails render
-	// the same config per page.
-	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
+	// + focus trap, all from the framework widget). The section layers'
+	// rails render the same configs.
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(examplesSectionMenuConfig()))
@@ -919,13 +919,11 @@ func registerScreens(site *app.App) {
 	site.Router.ScreenGroup(hubs)
 
 	site.Register("/get-started", &GetStartedScreen{}, nil)
-	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
-	// One catch-all route serves every doc page. DocPageScreen resolves
-	// the entry from the slug (SetParams), 404s unknown slugs (Load),
-	// and enumerates every page via StaticPaths so export, sitemap,
-	// llm.md, and the strict coverage gate stay in sync with the
-	// catalog, the same URL set the old per-slug loop emitted.
-	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
+	// The docs section: /docs/ and the /docs/{path...} catch-all share
+	// the docs layer (docs nav, crumbs, pager, rail; layout.go), so a
+	// doc-to-doc navigation swaps the article and its fills and keeps
+	// the nav. See registerDocsGroup (docs_catalog.go).
+	registerDocsGroup(site)
 
 	// The examples section: the reference-app index and the in-site demo
 	// apps share the examples nav column (layout.go), so moving between
