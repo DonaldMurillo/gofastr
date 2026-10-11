@@ -1898,11 +1898,13 @@ The credstore file is at `~/.config/gofastr/harness/creds.enc`.
 Entries are keyed by provider and account encoded separately, so a
 `|` inside either one cannot make two pairs share a slot. Files written
 before that change used `provider|account` keys. A legacy key with one
-`|` is still read and moves to the new key on the next `add` or
-`delete`. A legacy key with more than one `|` (`p|a|b`) could belong to
-`p|a`/`b` or to `p`/`a|b`, so neither pair reads it: `Get` returns
-`credstore.ErrAmbiguousLegacyKey`, `list` shows every pair that could
-own it, and `add` or `delete` on any of those pairs replaces it.
+`|` is still read. `add` on its pair writes the new key and drops the
+legacy one; `delete` removes both, and the credential with them. A
+legacy key with more than one `|` (`p|a|b`) could belong to `p|a`/`b`
+or to `p`/`a|b`, so neither pair reads it: `Get` returns
+`credstore.ErrAmbiguousLegacyKey` and `list` shows every pair that
+could own it. `add` on any of those pairs replaces the legacy entry;
+`delete` on any of them removes it.
 
 **Note on env-var vs credstore:** The harness also reads API keys
 from `OPENROUTER_API_KEY` and `ZAI_API_KEY` environment variables

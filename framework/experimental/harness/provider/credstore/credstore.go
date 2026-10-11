@@ -168,10 +168,12 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 	for k := range s.data.Entries {
 		if entry, ok := parseCredentialKey(k); ok {
 			out = append(out, entry)
-		} else if !strings.HasPrefix(k, "v1:") && legacyKeyAmbiguous(k) {
+		} else if legacyKeyAmbiguous(k) {
 			// List every pair that could own an ambiguous legacy key:
 			// Get on any of them answers ErrAmbiguousLegacyKey, and a
-			// Put or Delete on any of them replaces it.
+			// Put or Delete on any of them replaces it. An encoded key
+			// never holds '|', so a legacy provider spelled "v1:..."
+			// lands here too.
 			out = append(out, legacyCandidates(k)...)
 		}
 	}

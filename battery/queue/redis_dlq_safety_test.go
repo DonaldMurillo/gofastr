@@ -326,3 +326,46 @@ func TestRedisHungQuarantineStillRestoresJob(t *testing.T) {
 		t.Fatalf("malformed job lost after a hung quarantine write (main=%d)", mainLen)
 	}
 }
+
+// mainPushCounter counts LPush calls that target the main list.
+type mainPushCounter struct {
+	RedisClient
+	mainPushes int
+}
+
+func (f *mainPushCounter) LPush(ctx context.Context, key string, values ...any) error {
+	if key == "test" {
+		f.mainPushes++
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+// Skipped jobs go back in one LPush, so a dead backend costs one recovery
+// deadline per Dequeue, not one per skipped job, and the list keeps its
+// order.
+func TestRedisSkippedJobsRestoredInOneBatch(t *testing.T) {
+	r := newMockRedis()
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2", "s3"} {
+		data, _ := json.Marshal(Job{ID: id, Type: "other", MaxAttempts: 3})
+		_ = r.LPush(ctx, "test", data)
+	}
+	r.mu.Lock()
+	before := append([]string(nil), r.lists["test"]...)
+	r.mu.Unlock()
+
+	client := &mainPushCounter{RedisClient: r}
+	q := NewRedisQueue(client, "test")
+	if _, err := q.Dequeue(ctx, "wanted"); !errors.Is(err, ErrNoJob) {
+		t.Fatalf("Dequeue = %v, want ErrNoJob", err)
+	}
+	if client.mainPushes != 1 {
+		t.Fatalf("skipped jobs restored with %d LPush calls, want 1", client.mainPushes)
+	}
+	r.mu.Lock()
+	after := append([]string(nil), r.lists["test"]...)
+	r.mu.Unlock()
+	if strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatalf("restore changed list order:\nbefore %q\nafter  %q", before, after)
+	}
+}

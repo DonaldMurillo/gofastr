@@ -210,6 +210,27 @@ func TestAmbiguousLegacyKeyNeedsReentry(t *testing.T) {
 	}
 }
 
+// A legacy provider spelled "v1:..." is not an encoded key (encoded keys
+// hold no '|'), so an ambiguous one still lists its candidate pairs.
+func TestListShowsAmbiguousLegacyKeyWithV1Prefix(t *testing.T) {
+	s := newStore(t)
+	seedLegacy(t, s, map[string]string{"v1:x|a|b": "legacy-secret"})
+	entries, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[Entry]bool{}
+	for _, e := range entries {
+		seen[e] = true
+	}
+	if len(entries) != 2 || !seen[Entry{"v1:x|a", "b"}] || !seen[Entry{"v1:x", "a|b"}] {
+		t.Fatalf("List() = %#v, want both candidate pairs of the v1:-prefixed legacy key", entries)
+	}
+	if _, err := s.Get("v1:x|a", "b"); !errors.Is(err, ErrAmbiguousLegacyKey) {
+		t.Fatalf("Get on a candidate pair: err = %v, want ErrAmbiguousLegacyKey", err)
+	}
+}
+
 // Delete on a candidate pair removes the ambiguous legacy entry too.
 func TestDeleteRemovesAmbiguousLegacyKey(t *testing.T) {
 	s := newStore(t)

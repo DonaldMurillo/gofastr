@@ -213,15 +213,23 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 	// Restoring a type-miss job is the same durability step as Nack's push:
 	// the job was already RPop'd off the main list, so a discarded error
 	// here leaves it in no list at all while Dequeue reports an ordinary
-	// empty queue. Surface the first failure instead.
+	// empty queue. Surface the failure instead. The skipped jobs go back in
+	// one LPush under one deadline: a push per job, each with its own
+	// deadline, could hold a worker for maxSkipDrain deadlines against a
+	// dead backend. LPush of several values inserts them in argument order,
+	// the same list order as pushing them one at a time.
 	requeueSkipped := func(skipped []string) error {
-		var firstErr error
-		for _, s := range skipped {
-			if err := recoveryPush(q.queueName, s); err != nil && firstErr == nil {
-				firstErr = fmt.Errorf("restore skipped job: %w", err)
-			}
+		if len(skipped) == 0 {
+			return nil
 		}
-		return firstErr
+		values := make([]any, len(skipped))
+		for i, s := range skipped {
+			values[i] = s
+		}
+		if err := recoveryPush(q.queueName, values...); err != nil {
+			return fmt.Errorf("restore skipped jobs: %w", err)
+		}
+		return nil
 	}
 
 	var skipped []string
