@@ -149,7 +149,7 @@ func heroCSS(_ style.Theme) string {
   border-radius: var(--radii-lg, 10px);
 }
 @media (max-width: 980px) {
-  :where([data-cui-comp="ui-hero"]).fui-hero--split { grid-template-columns: 1fr; gap: var(--spacing-lg, 16px); }
+  :where([data-cui-comp="ui-hero"]).fui-hero--split { grid-template-columns: minmax(0, 1fr); gap: var(--spacing-lg, 16px); }
 }
 `
 }

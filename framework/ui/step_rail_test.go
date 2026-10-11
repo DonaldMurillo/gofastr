@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestStepRailRendersItemsAndMarksActive(t *testing.T) {
@@ -153,5 +155,22 @@ func TestStepRailExtraAttrsOnRoot(t *testing.T) {
 	}
 	if !strings.Contains(root, `role="complementary"`) {
 		t.Errorf("owned role must win over ExtraAttrs:\n%s", root)
+	}
+}
+
+// BelowHeader moves the sticky rail under a sticky site header; the
+// default keeps the plain spacing offset for pages without one.
+func TestStepRailBelowHeaderOffset(t *testing.T) {
+	items := []StepRailItem{{Number: "01", Anchor: "a", Label: "A"}}
+	plain := string(StepRail(StepRailConfig{Items: items, ActiveIndex: -1}))
+	if classTokenPresent(plain, "fui-step-rail--below-header") {
+		t.Errorf("default rail must not carry the below-header modifier:\n%s", plain)
+	}
+	below := string(StepRail(StepRailConfig{Items: items, ActiveIndex: -1, BelowHeader: true}))
+	if !classTokenPresent(below, "fui-step-rail--below-header") {
+		t.Errorf("BelowHeader rail must carry the modifier:\n%s", below)
+	}
+	if css := stepRailCSS(style.Theme{}); !strings.Contains(css, ".fui-step-rail--below-header {\n  inset-block-start: var(--ui-step-rail-top, calc(var(--size-header-height") {
+		t.Errorf("below-header modifier must offset by --size-header-height:\n%s", css)
 	}
 }

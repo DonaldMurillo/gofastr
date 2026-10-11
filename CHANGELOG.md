@@ -7,6 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
+  (danger tone, `--ui-terminal-block-err-color` knob), beside
+  `TerminalOut` and `TerminalOK`.
+- `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
+  site header (`--size-header-height` plus the rail's gap).
+
+### Fixed
+- `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
+  track on phones, so a long unbreakable line in the media column no
+  longer widens the page past the viewport.
+- `ui.Card` headings and descriptions wrap long unbreakable tokens
+  (a query string, a URL) instead of overflowing the card.
+
 ## [0.87.0] - 2026-10-10
 
 **BREAKING.** v0.87.0 reskins the default theme, gives entities screen

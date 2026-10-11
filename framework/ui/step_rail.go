@@ -49,6 +49,11 @@ type StepRailConfig struct {
 	// instead of plain text, so a "stuck? ask here" pointer is
 	// actually clickable.
 	MetaHref string
+	// BelowHeader offsets the sticky rail by the theme's
+	// --size-header-height, so it stops under a sticky site header
+	// instead of sliding behind it. Leave it off when the page has no
+	// sticky header.
+	BelowHeader bool
 	// Class is appended to the fui-step-rail wrapper.
 	Class string
 
@@ -142,7 +147,11 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
-	cls := joinNonEmpty("fui-step-rail", cfg.Class)
+	base := "fui-step-rail"
+	if cfg.BelowHeader {
+		base += " fui-step-rail--below-header"
+	}
+	cls := joinNonEmpty(base, cfg.Class)
 	attrs["class"] = cls
 	attrs["role"] = "complementary"
 	attrs["aria-label"] = aria
@@ -163,6 +172,9 @@ func stepRailCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
+}
+[data-cui-comp="ui-step-rail"].fui-step-rail--below-header {
+  inset-block-start: var(--ui-step-rail-top, calc(var(--size-header-height, 56px) + var(--spacing-xl, 24px)));
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;

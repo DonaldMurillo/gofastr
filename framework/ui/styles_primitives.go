@@ -234,11 +234,13 @@ func cardCSS(t style.Theme) string {
   letter-spacing: var(--tracking-snug, -0.01em);
   line-height: calc(var(--leading-snug, 1.4) - 0.1);
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 [data-cui-comp="ui-card"] .fui-card__description {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 [data-cui-comp="ui-card"] .fui-card__body {
   padding: var(--spacing-xl, 24px);
