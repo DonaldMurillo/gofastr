@@ -14,6 +14,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `HeroConfig.Lede` (inline markup in place of `Subtitle`) and
   `HeroConfig.Footer` (content under the actions: an install line,
   a byline, a stats line).
+- `SectionConfig.Band` gives a section without an eyebrow the
+  page-band treatment (display-size heading, more air under the head).
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
   site header (`--size-header-height` plus the rail's gap).
 
