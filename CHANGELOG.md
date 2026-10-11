@@ -7,6 +7,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+
+- `gofastr init` writes the generated agent detail files to a hidden
+  `.agents/` folder instead of a visible `agents/` folder beside the
+  app's packages; `AGENTS.md`, `CLAUDE.md` and the gofastr-host skill
+  link there. `gofastr agents sync` and `gofastr init --reinit` move an
+  existing project over: they delete the old generated files in
+  `agents/` (only files with the auto-generated header) and remove the
+  folder once nothing else is in it.
+- `ui.ContentRowConfig.BelowHeader` (with `Sticky`) pins the nav column
+  under a sticky page header, the rest of the viewport tall.
+  `interactive.SectionMenuConfig.FillColumn` makes the menu fill that
+  column. The site's `/components` menu now stays put while the page
+  scrolls.
+
 ## [0.87.0] - 2026-10-10
 
 **BREAKING.** v0.87.0 reskins the default theme, gives entities screen

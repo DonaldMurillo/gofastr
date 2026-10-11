@@ -207,7 +207,7 @@ bin/
 		osExit(1)
 	}
 
-	// Write AGENTS.md (thin TOC) + agents/ detail files so AI agents
+	// Write AGENTS.md (thin TOC) + .agents/ detail files so AI agents
 	// working on this project find the framework primitives instead
 	// of reinventing them. Refresh later with `gofastr agents sync`.
 	if err := os.WriteFile(filepath.Join(name, "AGENTS.md"), buildAgentsMD(), 0o644); err != nil {
@@ -215,7 +215,7 @@ bin/
 		osExit(1)
 	}
 	if err := writeAgentDetailFiles(name); err != nil {
-		fail("Failed to write agents/ details: %v", err)
+		fail("Failed to write .agents/ details: %v", err)
 		osExit(1)
 	}
 
@@ -286,7 +286,7 @@ bin/
 	fmt.Println("    CLAUDE.md            : Claude Code entry point; links to AGENTS.md + skill")
 	fmt.Println("    AGENTS.md            : Top-level TOC; refresh with `gofastr agents sync`")
 	fmt.Println("    DESIGN.md            : App-owned product and composition direction")
-	fmt.Println("    agents/              : Auto-generated per-battery detail files linked from AGENTS.md")
+	fmt.Println("    .agents/             : Auto-generated per-battery detail files linked from AGENTS.md")
 	fmt.Println("    .claude/skills/      : Claude Code skill (safe to delete if you only use Cursor/Aider)")
 	fmt.Println()
 	printInitNextSteps(name, noEntity)
@@ -801,7 +801,7 @@ This project uses the [GoFastr](https://github.com/DonaldMurillo/gofastr) framew
 
 - **[AGENTS.md](AGENTS.md)**: TOC of every framework primitive with trigger
   phrases. When your task matches a row, open the linked detail file under
-  ` + "`" + `agents/` + "`" + ` for the full shape/import/don't-reinvent breakdown.
+  ` + "`" + `.agents/` + "`" + ` for the full shape/import/don't-reinvent breakdown.
 - **[DESIGN.md](DESIGN.md)**: app-owned product direction. Complete its user
   task, density, hierarchy, composition, and mobile decisions before choosing
   UI components.
@@ -824,7 +824,7 @@ built in: no internet needed, always matches your installed version.
 
 ## Refreshing after a framework upgrade
 
-` + "`" + `gofastr agents sync` + "`" + `: refreshes AGENTS.md and agents/ detail files.
+` + "`" + `gofastr agents sync` + "`" + `: refreshes AGENTS.md and .agents/ detail files.
 
 ## Adding to this project
 
@@ -929,7 +929,7 @@ capability upstream.
 // It does NOT touch Go source files, go.mod, or git.
 //
 // Behavior per file:
-//   - agents/*:   always overwritten (framework-owned)
+//   - .agents/*:   always overwritten (framework-owned)
 //   - .claude/skills/gofastr-host/*: always overwritten (framework-owned)
 //   - AGENTS.md:  uses sync logic (preserves user content outside markers)
 //   - CLAUDE.md:  overwrites if unmodified; prompts if user changed it
@@ -937,12 +937,12 @@ capability upstream.
 func runReinit(dir string, force bool) {
 	fmt.Printf("\n  %s AI onboarding files in %s\n\n", bold("Refreshing"), bold(dir))
 
-	// 1. agents/ detail files: always overwrite.
+	// 1. .agents/ detail files: always overwrite.
 	if err := writeAgentDetailFiles(dir); err != nil {
-		fail("Failed to refresh agents/ details: %v", err)
+		fail("Failed to refresh .agents/ details: %v", err)
 		osExit(1)
 	}
-	info("  ✓ agents/ detail files refreshed")
+	info("  ✓ .agents/ detail files refreshed")
 
 	// 2. .claude/skills/gofastr-host/: always overwrite.
 	if err := writeHostSkill(dir); err != nil {

@@ -26,7 +26,7 @@ each command to the doc that covers it.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `agents/`.
+  and the per-battery detail files under `.agents/`.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.

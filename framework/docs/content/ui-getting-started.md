@@ -39,7 +39,7 @@ myapp/
   .gitignore
   CLAUDE.md          # AI-agent entry point (links to AGENTS.md + skill)
   AGENTS.md          # Framework feature TOC with trigger phrases
-  agents/            # Per-battery detail files linked from AGENTS.md
+  .agents/           # Per-battery detail files linked from AGENTS.md
   .claude/skills/    # Claude Code skill for framework conventions
 ```
 

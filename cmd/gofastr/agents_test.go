@@ -9,7 +9,7 @@ import (
 )
 
 // AGENTS.md is now a thin TOC. Full per-section content lives under
-// agents/. The TOC must reference every inventory entry by section
+// .agents/. The TOC must reference every inventory entry by section
 // title and link to its detail file, but the FULL body must NOT inline.
 func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	got := buildAgentsMD()
@@ -22,12 +22,12 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 
 	// TOC header + at least one row.
 	mustContain(t, body, "| Section | Use this when | Details |")
-	mustContain(t, body, "**framework**")         // row exists
-	mustContain(t, body, "**ui**")                // component-catalog row exists
-	mustContain(t, body, "**battery/admin**")     // row exists
-	mustContain(t, body, "(agents/framework.md)") // link to detail
-	mustContain(t, body, "(agents/ui.md)")
-	mustContain(t, body, "(agents/battery-admin.md)")
+	mustContain(t, body, "**framework**")          // row exists
+	mustContain(t, body, "**ui**")                 // component-catalog row exists
+	mustContain(t, body, "**battery/admin**")      // row exists
+	mustContain(t, body, "(.agents/framework.md)") // link to detail
+	mustContain(t, body, "(.agents/ui.md)")
+	mustContain(t, body, "(.agents/battery-admin.md)")
 	mustContain(t, body, "RecordSummary + MetricBand")
 	mustContain(t, body, "description to one or two sentences")
 	mustContain(t, body, "compact Aside")
@@ -40,10 +40,10 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	// the preamble). Its presence here would mean we regressed to
 	// inlining. `**Import:**` is the same.
 	if strings.Contains(body, "**Shape:**") {
-		t.Fatalf("AGENTS.md inlines '**Shape:**' code blocks — those belong in agents/<name>.md detail files")
+		t.Fatalf("AGENTS.md inlines '**Shape:**' code blocks — those belong in .agents/<name>.md detail files")
 	}
 	if strings.Contains(body, "**Import:**") {
-		t.Fatalf("AGENTS.md inlines '**Import:**' lines — those belong in agents/<name>.md detail files")
+		t.Fatalf("AGENTS.md inlines '**Import:**' lines — those belong in .agents/<name>.md detail files")
 	}
 
 	// Size sanity: TOC should be small. Full inlined version was ~500
@@ -63,11 +63,11 @@ func TestWriteAgentDetailFilesPopulatesDir(t *testing.T) {
 		t.Fatalf("writeAgentDetailFiles: %v", err)
 	}
 	for _, name := range []string{
-		"agents/framework.md",
-		"agents/ui.md",
-		"agents/battery-admin.md",
-		"agents/battery-auth.md",
-		"agents/battery-log.md", // the one we added
+		".agents/framework.md",
+		".agents/ui.md",
+		".agents/battery-admin.md",
+		".agents/battery-auth.md",
+		".agents/battery-log.md", // the one we added
 	} {
 		path := filepath.Join(dir, name)
 		body, err := os.ReadFile(path)
@@ -87,15 +87,15 @@ func TestWriteAgentDetailFilesPopulatesDir(t *testing.T) {
 	}
 }
 
-// User has their own agents/some-doc.md sitting alongside ours;
+// User has their own .agents/some-doc.md sitting alongside ours;
 // writeAgentDetailFiles must NOT touch it. Coexistence: we own
 // our filenames, they own theirs.
 func TestWriteAgentDetailFilesLeavesUnrelatedUserFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	userPath := filepath.Join(dir, "agents", "my-onboarding.md")
+	userPath := filepath.Join(dir, ".agents", "my-onboarding.md")
 	userContent := []byte("# My team's onboarding\n\nhand-written\n")
 	if err := os.WriteFile(userPath, userContent, 0o644); err != nil {
 		t.Fatal(err)
@@ -114,16 +114,16 @@ func TestWriteAgentDetailFilesLeavesUnrelatedUserFiles(t *testing.T) {
 	}
 }
 
-// User has agents/framework.md as their own hand-written doc (name
+// User has .agents/framework.md as their own hand-written doc (name
 // collision with our generated file). writeAgentDetailFiles must
 // REFUSE to clobber: return an error naming the conflicting path
 // and suggesting a fix. Better a loud failure than silent overwrite.
 func TestWriteAgentDetailFilesRefusesToClobberUserFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	collisionPath := filepath.Join(dir, "agents", "framework.md")
+	collisionPath := filepath.Join(dir, ".agents", "framework.md")
 	userBody := []byte("# my hand-written framework notes\n\nDO NOT CLOBBER\n")
 	if err := os.WriteFile(collisionPath, userBody, 0o644); err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestWriteAgentDetailFilesIncludeAutoGenHeader(t *testing.T) {
 	if err := writeAgentDetailFiles(dir); err != nil {
 		t.Fatalf("writeAgentDetailFiles: %v", err)
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "agents/battery-admin.md"))
+	body, err := os.ReadFile(filepath.Join(dir, ".agents/battery-admin.md"))
 	if err != nil {
 		t.Fatalf("read battery-admin.md: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestExtractUseWhenStripsBoilerplate(t *testing.T) {
 }
 
 // Walks battery/ on disk and asserts every battery dir is represented
-// in the generated AGENTS.md TOC + has a detail file under agents/.
+// in the generated AGENTS.md TOC + has a detail file under .agents/.
 // Catches the "new battery shipped without agents.md / blank import"
 // failure mode that the old hard-coded allow-list ratified instead of
 // detecting.
@@ -240,12 +240,12 @@ func TestEveryBatteryDirHasAgentsSection(t *testing.T) {
 			continue
 		}
 		// TOC row + detail-link.
-		tocLink := "agents/battery-" + e.Name() + ".md"
+		tocLink := ".agents/battery-" + e.Name() + ".md"
 		if !strings.Contains(tocBody, tocLink) {
 			t.Errorf("battery/%s/ exists but TOC entry linking to %s is missing from AGENTS.md — add agents.{go,md} and blank-import the package in cmd/gofastr/agents.go (or add it to the allow-list with a reason)", e.Name(), tocLink)
 		}
 		// Detail file present + non-empty.
-		detailPath := filepath.Join(detailDir, "agents", "battery-"+e.Name()+".md")
+		detailPath := filepath.Join(detailDir, ".agents", "battery-"+e.Name()+".md")
 		if info, err := os.Stat(detailPath); err != nil || info.Size() == 0 {
 			t.Errorf("battery/%s/ detail file %s missing or empty", e.Name(), detailPath)
 		}
@@ -253,7 +253,7 @@ func TestEveryBatteryDirHasAgentsSection(t *testing.T) {
 }
 
 // The on-disk agents.md content must actually reach the generated
-// detail file under agents/ (catches a blank-import that fires init()
+// detail file under .agents/ (catches a blank-import that fires init()
 // but ends up with empty Markdown because the embed path is stale).
 func TestBatteryAgentsMDContentReachesDetailFile(t *testing.T) {
 	detailDir := t.TempDir()
@@ -278,7 +278,7 @@ func TestBatteryAgentsMDContentReachesDetailFile(t *testing.T) {
 		if head == "" {
 			continue
 		}
-		detailPath := filepath.Join(detailDir, "agents", "battery-"+e.Name()+".md")
+		detailPath := filepath.Join(detailDir, ".agents", "battery-"+e.Name()+".md")
 		body, err := os.ReadFile(detailPath)
 		if err != nil {
 			continue
@@ -376,4 +376,53 @@ func mustContain(t *testing.T, body, needle string) {
 	if !strings.Contains(body, needle) {
 		t.Fatalf("AGENTS.md missing %q:\n%s", needle, body)
 	}
+}
+
+// Earlier releases wrote the detail files to a visible agents/ folder
+// beside the app's packages. A sync moves them to .agents/: the old
+// generated copies are deleted, a hand-written file there survives,
+// and the folder goes only once nothing of the user's is left in it.
+func TestWriteAgentDetailFilesRemovesLegacyGeneratedFolder(t *testing.T) {
+	stale := []byte(autoGenSentinel + ": stale -->\n\nold body\n")
+	write := func(t *testing.T, path string, body []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("only generated files", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, filepath.Join(dir, "agents", "framework.md"), stale)
+		write(t, filepath.Join(dir, "agents", "battery-gone.md"), stale)
+		if err := writeAgentDetailFiles(dir); err != nil {
+			t.Fatalf("writeAgentDetailFiles: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "agents")); !os.IsNotExist(err) {
+			t.Fatalf("legacy agents/ should be gone, stat err = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".agents", "framework.md")); err != nil {
+			t.Fatalf(".agents/framework.md not written: %v", err)
+		}
+	})
+
+	t.Run("hand-written file kept", func(t *testing.T) {
+		dir := t.TempDir()
+		mine := []byte("# our notes\n")
+		write(t, filepath.Join(dir, "agents", "framework.md"), stale)
+		write(t, filepath.Join(dir, "agents", "notes.md"), mine)
+		if err := writeAgentDetailFiles(dir); err != nil {
+			t.Fatalf("writeAgentDetailFiles: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "agents", "framework.md")); !os.IsNotExist(err) {
+			t.Fatalf("stale generated agents/framework.md should be removed, stat err = %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, "agents", "notes.md"))
+		if err != nil || string(got) != string(mine) {
+			t.Fatalf("hand-written agents/notes.md changed or lost: %q, %v", got, err)
+		}
+	})
 }

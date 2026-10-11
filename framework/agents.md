@@ -207,7 +207,7 @@ a running server, or "is this app healthy". See the
 - A JS BlurHash decoder: `image.BlurHashDataURL` decodes server-side and
   `ui.PipelineImage` paints it with no JavaScript.
 - Hand-rolled markup or CSS: `framework/ui` ships ~100 components;
-  see the `ui` row of AGENTS.md (`agents/ui.md`) and
+  see the `ui` row of AGENTS.md (`.agents/ui.md`) and
   `gofastr docs ui-new-components`.
 - A hand-rolled page shell or per-screen chrome: `core-ui/app`'s tree
   layouts own the shell (`NewLayout` + outlets); see the section

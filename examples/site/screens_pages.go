@@ -160,7 +160,7 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step("s2", "02", "Scaffold", "~45s",
-		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + agents/, CLAUDE.md), then initializes git.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
 			ok("✓ Created project blog in ./blog/: main.go, screens.go, entities/entities.go, gofastr.isolation.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
@@ -224,7 +224,7 @@ func gsBody() render.HTML {
 				html.ListItem(html.ListItemConfig{}, render.Text("A versioned SQL migration, already applied")),
 				html.ListItem(html.ListItemConfig{}, render.Text("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)")),
 				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes, and the framework docs through framework_docs_search (the generated main.go registers them), so your coding agent reads the running app")),
-				html.ListItem(html.ListItemConfig{}, render.Text("AGENTS.md + agents/ + DESIGN.md, generated for the agent you build with")),
+				html.ListItem(html.ListItemConfig{}, render.Text("AGENTS.md + .agents/ + DESIGN.md, generated for the agent you build with")),
 			),
 		),
 	)
