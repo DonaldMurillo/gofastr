@@ -24,7 +24,7 @@ import (
 
 const (
 	hlComfortableH = "44px" // --spacing-touch-target at comfortable density
-	hlComfortableR = "6px"  // the site theme's --radii-md
+	hlComfortableR = "8px"  // the stock theme's --radii-md
 	hlCompactH     = "36px" // compact density control height
 	hlSquareR      = "0px"  // square radius
 )
@@ -129,7 +129,7 @@ func TestE2E_HeadlessLanding_ThemeVariables(t *testing.T) {
 		seg, wantClass                      string
 		wantH, wantR, wantButtonR, wantPrim string
 	}{
-		{"default", landingRefFramework.Class(), hlComfortableH, hlComfortableR, hlComfortableR, "oklch(0.82 0.155 78)"},
+		{"default", landingRefFramework.Class(), hlComfortableH, hlComfortableR, hlComfortableR, "#18181B"},
 		{"dense", landingRefDense.Class(), hlCompactH, hlSquareR, "0", "#0F766E"},
 	} {
 		t.Run(tc.seg, func(t *testing.T) {

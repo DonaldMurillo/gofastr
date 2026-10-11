@@ -50,7 +50,7 @@ func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 	return urls, cancel
 }
 
-// Visiting / (home page) must NOT trigger fetches for runtime
+// Visiting a page with no hooks (/philosophy) must NOT trigger fetches for runtime
 // modules whose markers aren't on the page. The site mounts a
 // site-wide toast stack on every page, so headless-feedback.js (the
 // toast runtime) is legitimately loaded; it is excluded. The split's
@@ -70,7 +70,10 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		network.Enable(),
-		chromedp.Navigate(base+"/"),
+		// /philosophy is prose, a TOC and a table: no headless or menu
+		// hook. (The home page no longer qualifies: its customers mock is
+		// a ui.DataTable, whose data-hui-table hook needs the module.)
+		chromedp.Navigate(base+"/philosophy"),
 		// Wait through DOMContentLoaded + the marker scanner + one
 		// idle frame. Anything fetched after this is overflow we
 		// don't want.
@@ -79,7 +82,7 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// The home page has no headless hooks, no menu, those modules
+	// The page has no headless hooks, no menu, those modules
 	// should not load. (toasts load legitimately because of the
 	// site-wide widget above; sse does not load at all — the home page
 	// takes no pushes.)
@@ -87,7 +90,7 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 		urls.Range(func(k, _ any) bool {
 			u := k.(string)
 			if strings.Contains(u, "/runtime/"+mod+".js") {
-				t.Errorf("home page should NOT fetch %s module; got %s", mod, u)
+				t.Errorf("/philosophy should NOT fetch %s module; got %s", mod, u)
 			}
 			return true
 		})

@@ -1391,7 +1391,10 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 				mkBtn("Reset", "Acme Corp"),
 			)
 			consumers := stack(
-				DemoCompany.Bind(ctx, "h3", map[string]string{"id": "store-consumer-heading"}),
+				// The binding announces itself (role=status), which a
+				// heading may not carry: bind a span inside the heading.
+				html.Heading(html.HeadingConfig{Level: 3},
+					DemoCompany.Bind(ctx, "span", map[string]string{"id": "store-consumer-heading"})),
 				html.Paragraph(html.TextConfig{},
 					render.Text("Inline mention: "),
 					DemoCompany.Bind(ctx, "strong", map[string]string{"id": "store-consumer-inline"}),

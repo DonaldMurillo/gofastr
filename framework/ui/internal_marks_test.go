@@ -800,6 +800,7 @@ var kitComponents = []kitComponent{
 	{name: "TagInput", fn: TagInput},
 	{name: "TerminalBlock", fn: TerminalBlock},
 	{name: "TerminalOK", fn: TerminalOK},
+	{name: "TerminalErr", fn: TerminalErr},
 	{name: "TerminalOut", fn: TerminalOut},
 	{name: "TextArea", fn: TextArea},
 	{name: "TextField", fn: TextField},
