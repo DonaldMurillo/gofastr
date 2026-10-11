@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -35,10 +36,12 @@ import (
 //	│     /examples/presence /examples/live-dashboard
 //	├── g:/plugins/    plugins    registry nav column + primary
 //	│     /plugins /plugins/:name
+//	├── g:/docs/       docs       docs nav · crumbs outlet · primary ·
+//	│     /docs/ /docs/{path...}  pager outlet · rail outlet (docpage.Layer)
 //	└── g:/components/ components (components.go)
 //
-// Everything else (home, docs, get started, kiln, seo, reader, the headless
-// theme showcases) renders straight in the main layer.
+// Everything else (home, get started, kiln, philosophy, seo, reader, the
+// headless theme showcases) renders straight in the main layer.
 // =============================================================================
 
 // mainLayout is the site frame: the page-tall stack with the sticky banner
@@ -86,6 +89,43 @@ func sectionNavLayout(name string, menu func() interactive.SectionMenuConfig) *a
 		// name fail landmark-unique.
 		return ui.ContentRow(ui.ContentRowConfig{Sidebar: interactive.SectionMenu(menu())}, l.Primary())
 	})
+}
+
+// docsOutlets are the docs layer's per-route regions. An outlet handle
+// binds to exactly one layout, so they are minted with it.
+type docsOutlets struct {
+	// Crumbs sits above the article: each doc page fills its trail; the
+	// index leaves it empty and the cell takes no room.
+	Crumbs *app.Outlet
+	// Pager sits under the article: each doc page fills its
+	// previous/next cards.
+	Pager *app.Outlet
+	// Rail is the right column: the index fills it with its intent rail;
+	// a doc page leaves it empty and the column collapses.
+	Rail *app.Outlet
+}
+
+// docsLayout frames /docs/ and every /docs/<slug> page: the site's owned
+// docpage shell around the docs nav, the outlets and the primary slot.
+// The nav is static chrome (the whole catalog, ~110 links), so the layer
+// keeps it, and its scroll, across doc-to-doc navigations; the runtime's
+// active-link sweep marks the current doc. Only the primary and the
+// outlet fills travel on a sibling navigation.
+func docsLayout() (*app.Layout, docsOutlets) {
+	o := docsOutlets{
+		Crumbs: app.NewOutlet("crumbs"),
+		Pager:  app.NewOutlet("pager"),
+		Rail:   app.NewOutlet("rail"),
+	}
+	return app.NewLayout("docs", app.LayoutSpec{Outlets: []*app.Outlet{o.Crumbs, o.Pager, o.Rail}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return docpage.Layer(docpage.LayerConfig{
+			Nav:    interactive.SectionMenu(docsSectionMenuConfig()),
+			Crumbs: l.Place(o.Crumbs),
+			Body:   l.Primary(),
+			Pager:  l.Place(o.Pager),
+			Rail:   l.Place(o.Rail),
+		})
+	}), o
 }
 
 // examplesSectionMenuConfig is the /examples section nav: the reference-app

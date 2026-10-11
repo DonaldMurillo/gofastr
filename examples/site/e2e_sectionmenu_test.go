@@ -29,7 +29,11 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__trigger')).display`, &triggerDisplay),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail')).display`, &railDisplay),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__link.is-active')).borderLeftColor`, &activeBorder),
+		// The docs rail is static chrome in the docs layer: the runtime's
+		// active-link sweep marks the current doc (aria-current), not the
+		// server, so wait for the mark on the current page's link.
+		chromedp.WaitReady(`.cui-section-menu__rail a.cui-section-menu__link[href="/docs/entity-declarations"][aria-current="page"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail .cui-section-menu__link[aria-current="page"]')).borderLeftColor`, &activeBorder),
 	); err != nil {
 		t.Fatalf("desktop rail: %v", err)
 	}

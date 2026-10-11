@@ -132,3 +132,65 @@ func TestE2E_SectionLayers_LeavingSectionDropsLayer(t *testing.T) {
 		t.Error("the plugins layer survived navigating to a hub; the chains share only the main layer")
 	}
 }
+
+// Docs: a doc-to-doc navigation keeps the docs layer. The docs nav (the
+// whole catalog in one SectionMenu) is the same node afterwards, keeps
+// the scroll the reader gave it, and moves its current-page mark; the
+// article, the crumbs and the pager follow the route as the primary and
+// the layer's outlet fills.
+func TestE2E_SectionLayers_DocsNavKeptAcrossDocs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	flat := flatDocs()
+	dest := flat[len(flat)-3] // far down the rail, so reaching it means scrolling it
+	const layer = `[data-cui-layout-key="g:/docs/:docs"]`
+	// The rail is found by its own name, not through the layer, so a
+	// regression that draws the nav per screen fails the kept/scroll
+	// assertions below instead of timing out on a missing layer.
+	const rail = `nav[aria-label="Documentation sections"] .cui-section-menu__rail`
+	destLink := rail + ` a[href="/docs/` + dest.Slug + `"]`
+
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	var path, crumbs, current, prevHref string
+	var kept bool
+	var scrollBefore, scrollAfter float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/docs/query-dsl"),
+		chromedp.WaitReady(rail, chromedp.ByQuery),
+		waitModule("window.__gofastr && window.__gofastr.loadedModules"),
+		chromedp.Evaluate(`(()=>{const r=document.querySelector(`+jsString(rail)+`); r.__keepTag=1; r.scrollTop=r.scrollHeight; return r.scrollTop})()`, &scrollBefore),
+		chromedp.Evaluate(`document.querySelector(`+jsString(destLink)+`).click()`, nil),
+		chromedp.Sleep(900*time.Millisecond),
+		chromedp.Evaluate(`location.pathname`, &path),
+		chromedp.Evaluate(`(document.querySelector(`+jsString(rail)+`) || {}).__keepTag === 1`, &kept),
+		chromedp.Evaluate(`(document.querySelector(`+jsString(rail)+`) || {scrollTop: -1}).scrollTop`, &scrollAfter),
+		chromedp.Evaluate(`(document.querySelector(`+jsString(rail+` a[aria-current="page"]`)+`) || {}).getAttribute ? document.querySelector(`+jsString(rail+` a[aria-current="page"]`)+`).getAttribute("href") : ""`, &current),
+		chromedp.Evaluate(`(document.querySelector(`+jsString(layer+` [data-cui-outlet$="#crumbs"]`)+`) || {textContent: ""}).textContent`, &crumbs),
+		chromedp.Evaluate(`(()=>{const a=document.querySelector(`+jsString(layer+` [data-cui-outlet$="#pager"] a`)+`);return a?a.getAttribute("href"):""})()`, &prevHref),
+	); err != nil {
+		t.Fatalf("docs layer nav: %v", err)
+	}
+	if path != "/docs/"+dest.Slug {
+		t.Fatalf("path = %q, want /docs/%s", path, dest.Slug)
+	}
+	if !kept {
+		t.Error("the docs nav was rebuilt on a doc-to-doc navigation; only the article and the outlet fills should swap")
+	}
+	if scrollBefore <= 0 {
+		t.Fatalf("the docs rail did not scroll (scrollTop %v): the test cannot prove scroll is kept", scrollBefore)
+	}
+	if scrollAfter != scrollBefore {
+		t.Errorf("docs rail scrollTop = %v after the navigation, want the reader's %v", scrollAfter, scrollBefore)
+	}
+	if current != "/docs/"+dest.Slug {
+		t.Errorf("rail current link = %q, want /docs/%s (the active-link sweep did not move the mark)", current, dest.Slug)
+	}
+	if !strings.Contains(crumbs, dest.Title) {
+		t.Errorf("crumbs after nav = %q, want the destination's title %q: the crumbs fill did not follow the route", crumbs, dest.Title)
+	}
+	if want := "/docs/" + flat[len(flat)-4].Slug; prevHref != want {
+		t.Errorf("pager's first card = %q, want the previous doc %q: the pager fill did not follow the route", prevHref, want)
+	}
+}
