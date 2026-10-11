@@ -39,11 +39,6 @@ type SQLMagicLinkTokenStore struct {
 	lastSweep time.Time
 }
 
-// magicLinkSweepInterval is how often the mint path reaps expired rows.
-// It matches the default TokenTTL (15 minutes): the longest an abandoned
-// row lingers after any later mint is one TTL window.
-const magicLinkSweepInterval = 15 * time.Minute
-
 // NewSQLMagicLinkTokenStore creates the token table (IF NOT EXISTS) and returns
 // the store. Pass an optional table name; defaults to "magic_link_tokens".
 func NewSQLMagicLinkTokenStore(db *sql.DB, table ...string) (*SQLMagicLinkTokenStore, error) {

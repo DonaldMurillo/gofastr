@@ -143,9 +143,14 @@ type magicLinkEntry struct {
 
 // MemoryMagicLinkTokenStore is a goroutine-safe in-memory MagicLinkTokenStore.
 type MemoryMagicLinkTokenStore struct {
-	mu     sync.RWMutex
-	tokens map[string]*magicLinkEntry
+	mu        sync.RWMutex
+	tokens    map[string]*magicLinkEntry
+	lastSweep time.Time
 }
+
+// magicLinkSweepInterval bounds how long abandoned in-memory and SQL token
+// rows stay after they expire when later token mints continue.
+const magicLinkSweepInterval = 15 * time.Minute
 
 // NewMemoryMagicLinkTokenStore returns a fresh in-memory token store.
 func NewMemoryMagicLinkTokenStore() *MemoryMagicLinkTokenStore {
@@ -161,10 +166,15 @@ func (m *MemoryMagicLinkTokenStore) CreateToken(_ context.Context, email string,
 	}
 	token := hex.EncodeToString(b)
 
+	now := time.Now()
 	m.mu.Lock()
 	m.tokens[token] = &magicLinkEntry{
 		email:     email,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
+	}
+	if now.Sub(m.lastSweep) >= magicLinkSweepInterval {
+		purgeMatching(m.tokens, func(e *magicLinkEntry) bool { return !now.Before(e.expiresAt) })
+		m.lastSweep = now
 	}
 	m.mu.Unlock()
 
@@ -184,7 +194,7 @@ func (m *MemoryMagicLinkTokenStore) RedeemToken(_ context.Context, token string)
 	// Always delete, single-use regardless of expiry
 	delete(m.tokens, token)
 
-	if time.Now().After(entry.expiresAt) {
+	if !time.Now().Before(entry.expiresAt) {
 		return "", ErrTokenNotFound
 	}
 	return entry.email, nil
@@ -196,7 +206,7 @@ func (m *MemoryMagicLinkTokenStore) PeekToken(_ context.Context, token string) (
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entry, ok := m.tokens[token]
-	if !ok || time.Now().After(entry.expiresAt) {
+	if !ok || !time.Now().Before(entry.expiresAt) {
 		return "", ErrTokenNotFound
 	}
 	return entry.email, nil
@@ -215,7 +225,7 @@ func (m *MemoryMagicLinkTokenStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return purgeMatching(m.tokens, func(e *magicLinkEntry) bool { return now.After(e.expiresAt) }), nil
+	return purgeMatching(m.tokens, func(e *magicLinkEntry) bool { return !now.Before(e.expiresAt) }), nil
 }
 
 // MagicLinkPlugin implements AuthPlugin and AuthPluginRoutes for passwordless
@@ -230,11 +240,15 @@ type MagicLinkPlugin struct {
 	// form can post back to the same path the link was mounted under.
 	basePath string
 
-	// stopCh is closed by OnStop to end the token-reaping goroutine
-	// OnStart launched. stopOnce makes a double OnStop (or OnStop without
-	// OnStart) safe.
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	// lifecycleMu protects the optional token reaper's one-start/one-stop
+	// lifecycle when the manager receives repeated lifecycle calls.
+	lifecycleMu  sync.Mutex
+	started      bool
+	stopped      bool
+	stopCh       chan struct{}
+	reaperCtx    context.Context
+	reaperCancel context.CancelFunc
+	reaperDone   chan struct{}
 }
 
 // NewMagicLinkPlugin creates a new magic-link plugin with the given config.
@@ -303,20 +317,42 @@ func (p *MagicLinkPlugin) RegisterRoutes(r *router.Router, basePath string) {
 // accumulate until the disk fills. The SQL store also sweeps lazily on
 // its mint path; this ticker is the belt to that braces and the ONLY
 // reaper a memory-backed store gets.
-func (p *MagicLinkPlugin) OnStart(_ context.Context) error {
+func (p *MagicLinkPlugin) OnStart(ctx context.Context) error {
+	p.lifecycleMu.Lock()
+	if p.stopped {
+		p.lifecycleMu.Unlock()
+		return errors.New("auth: magic-link plugin cannot start after it has stopped")
+	}
+	if p.started {
+		p.lifecycleMu.Unlock()
+		return nil
+	}
+
 	interval := p.config.TokenTTL
 	if interval < time.Minute {
 		interval = time.Minute
 	}
-	p.stopCh = make(chan struct{})
+	stopCh := make(chan struct{})
+	reaperCtx, reaperCancel := context.WithCancel(ctx)
+	reaperDone := make(chan struct{})
+	p.stopCh = stopCh
+	p.reaperCtx = reaperCtx
+	p.reaperCancel = reaperCancel
+	p.reaperDone = reaperDone
+	p.started = true
+	p.lifecycleMu.Unlock()
+
 	ticker := time.NewTicker(interval)
 	go func() {
 		defer ticker.Stop()
+		defer close(reaperDone)
 		for {
 			select {
 			case <-ticker.C:
-				p.reapExpiredTokens()
-			case <-p.stopCh:
+				p.reapExpiredTokensContext(reaperCtx)
+			case <-stopCh:
+				return
+			case <-reaperCtx.Done():
 				return
 			}
 		}
@@ -329,6 +365,10 @@ func (p *MagicLinkPlugin) OnStart(_ context.Context) error {
 // would otherwise unwind the reaper goroutine and crash the process
 // (recovercallback).
 func (p *MagicLinkPlugin) reapExpiredTokens() {
+	p.reapExpiredTokensContext(context.Background())
+}
+
+func (p *MagicLinkPlugin) reapExpiredTokensContext(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			// Scrub before the log (textsafe.Recovered): a panicking
@@ -337,7 +377,7 @@ func (p *MagicLinkPlugin) reapExpiredTokens() {
 				"plugin", "magic-link", "panic", textsafe.Recovered(rec))
 		}
 	}()
-	if n, err := p.tokenStore.Cleanup(context.Background()); err != nil {
+	if n, err := p.tokenStore.Cleanup(ctx); err != nil {
 		slog.Warn("magic-link: token store cleanup failed",
 			"plugin", "magic-link", "err", err.Error())
 	} else if n > 0 {
@@ -346,14 +386,29 @@ func (p *MagicLinkPlugin) reapExpiredTokens() {
 	}
 }
 
-// OnStop ends the reaper goroutine.
-func (p *MagicLinkPlugin) OnStop() error {
-	p.stopOnce.Do(func() {
-		if p.stopCh != nil {
+// OnStop ends the reaper goroutine. It implements AuthPluginOnStop so the
+// manager stops it as part of application shutdown.
+func (p *MagicLinkPlugin) OnStop(ctx context.Context) error {
+	p.lifecycleMu.Lock()
+	if !p.stopped {
+		p.stopped = true
+		if p.started {
 			close(p.stopCh)
+			p.reaperCancel()
 		}
-	})
-	return nil
+	}
+	done := p.reaperDone
+	p.lifecycleMu.Unlock()
+
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // sendHandler handles POST {basePath}/magic-link/send.

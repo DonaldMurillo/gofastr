@@ -562,6 +562,38 @@ Generator and CLI:
   generated `.gitignore` covers `bin/` and SQLite files.
 - The v0.86.0 upgrade notes name every removed export.
 
+Security hardening (audit findings 83–100):
+
+- Forgot-password sends its email from a bounded queue on eight
+  workers, off the request path, so a known address answers as fast as
+  an unknown one. `PasswordResetPlugin.OnStop` stops the workers. A
+  full queue or a stopped plugin drops the delivery with a warning.
+- Expired sessions and magic-link tokens are swept on later writes, at
+  most once per interval, and the OAuth state map has a hard ceiling:
+  at capacity, callbacks fail closed until expired states are cleared.
+- `MagicLinkPlugin` starts its token reaper once, and an `OnStart`
+  after `OnStop` is refused.
+- `a2a.Config.MaxConcurrentRunsPerOwner` caps one owner's concurrent
+  runs, resumes included (0 = 16, negative = no cap).
+- `cache.GetOrSet` reports a backend error at either read instead of
+  running the loader, and a value-typed cache no longer shares another
+  instance's fill.
+- The Redis queue's `Dequeue` gives each restore or quarantine write
+  its own deadline, so a popped job is never left in no list.
+- `battery/relay` checks every address a name resolves to at dial
+  time, closing the DNS-rebinding path, and no longer dials through an
+  environment proxy.
+- `SSEWriter.SetRetry` takes seconds and writes milliseconds, capped
+  at `math.MaxInt64`.
+- Cron runs when either a restricted day-of-month or a restricted
+  weekday matches, as standard cron does, and a huge step no longer
+  overflows into unrelated schedule bits.
+- `ratelimit.NamespaceScope` encodes `|` and `%` so a scope and a key
+  can no longer run together.
+- `credstore` keys encode provider and account separately. An
+  ambiguous legacy key returns `credstore.ErrAmbiguousLegacyKey` until
+  the credential is entered again.
+
 ## Common mistakes
 
 - **Bumping `go.mod` before running the report.** `gofastr upgrade` then

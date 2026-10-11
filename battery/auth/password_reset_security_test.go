@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -272,10 +273,17 @@ func (s *countingResetTokenStore) Cleanup(ctx context.Context) (int, error) {
 	return s.inner.Cleanup(ctx)
 }
 
-type countingResetSender struct{ sends int }
+type countingResetSender struct {
+	sends atomic.Int64
+	sent  chan struct{}
+}
 
 func (s *countingResetSender) Send(context.Context, string, string) error {
-	s.sends++
+	s.sends.Add(1)
+	select {
+	case s.sent <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -306,7 +314,7 @@ func TestForgotPasswordBranchWorkParity(t *testing.T) {
 	})
 	mgr.Use(NewCorePlugin())
 	tokens := &countingResetTokenStore{inner: NewMemoryMagicLinkTokenStore()}
-	sender := &countingResetSender{}
+	sender := &countingResetSender{sent: make(chan struct{}, 4)}
 	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL:     "http://localhost",
 		TokenTTL:    time.Hour,
@@ -341,10 +349,15 @@ func TestForgotPasswordBranchWorkParity(t *testing.T) {
 	}
 
 	post("known@example.com")
-	knownMints, knownSends := tokens.creations, sender.sends
+	select {
+	case <-sender.sent:
+	case <-time.After(time.Second):
+		t.Fatal("known reset email was not delivered")
+	}
+	knownMints, knownSends := tokens.creations, sender.sends.Load()
 	post("nobody@example.com")
 	unknownMints := tokens.creations - knownMints
-	unknownSends := sender.sends - knownSends
+	unknownSends := sender.sends.Load() - knownSends
 
 	// The store round-trip is the branch-dependent work that CAN be
 	// equalized, and it is the expensive half. The unknown branch mints an

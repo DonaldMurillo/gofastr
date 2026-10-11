@@ -104,6 +104,7 @@ func TestMemoryMagicLinkTokenStore_UnknownTokenFails(t *testing.T) {
 
 func TestMemoryMagicLinkTokenStore_Cleanup(t *testing.T) {
 	store := NewMemoryMagicLinkTokenStore()
+	store.lastSweep = time.Now() // Keep the mint sweep out of this test; it covers explicit Cleanup.
 	ctx := context.Background()
 
 	// Create one expired and one fresh token

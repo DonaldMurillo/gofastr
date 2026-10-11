@@ -216,6 +216,7 @@ func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 	db := openPGForBattery(t)
 	store := NewEntitySessionStore(db, "sessions")
 	ctx := context.Background()
+	store.lastSweep = time.Now() // Keep Create's opportunistic sweep out of this Cleanup test.
 
 	tok, err := newSessionToken()
 	if err != nil {

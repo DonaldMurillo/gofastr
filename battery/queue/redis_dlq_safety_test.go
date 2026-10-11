@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // dlqFailingRedis injects failures into LPush calls that target the
@@ -63,6 +64,95 @@ func TestRedisExhaustedJobSurvivesDLQFailure(t *testing.T) {
 	r.mu.Unlock()
 	if deadLen != 1 {
 		t.Fatalf("healed DLQ push should have dead-lettered the job, dead list = %d", deadLen)
+	}
+}
+
+// A malformed job has no processing record after RPop, so a failed
+// quarantine write must restore it to the main list and surface the error.
+func TestRedisMalformedJobSurvivesDLQFailure(t *testing.T) {
+	r := newMockRedis()
+	ctx := context.Background()
+	_ = r.LPush(ctx, "test", "{malformed")
+
+	fail := &dlqFailingRedis{RedisClient: r, dlqErr: errors.New("dlq down")}
+	q := NewRedisQueue(fail, "test")
+	if _, err := q.Dequeue(ctx); err == nil || errors.Is(err, ErrNoJob) {
+		t.Fatalf("Dequeue must surface the quarantine failure, got: %v", err)
+	}
+
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	deadLen := len(r.lists["test:dead"])
+	r.mu.Unlock()
+	if deadLen != 0 {
+		t.Fatalf("dead list has %d entries despite failing pushes", deadLen)
+	}
+	if mainLen != 1 {
+		t.Fatalf("malformed job should be restored while quarantine is unavailable, main list = %d", mainLen)
+	}
+
+	fail.dlqErr = nil
+	if _, err := q.Dequeue(ctx); err == nil {
+		t.Fatal("healed dequeue should still report malformed JSON")
+	}
+	r.mu.Lock()
+	deadLen = len(r.lists["test:dead"])
+	mainLen = len(r.lists["test"])
+	r.mu.Unlock()
+	if deadLen != 1 || mainLen != 0 {
+		t.Fatalf("healed quarantine should move malformed job to DLQ (dead=%d main=%d)", deadLen, mainLen)
+	}
+}
+
+type cancelAfterPopRedis struct {
+	RedisClient
+	cancel context.CancelFunc
+}
+
+func (f *cancelAfterPopRedis) RPop(ctx context.Context, key string) (string, error) {
+	data, err := f.RedisClient.RPop(ctx, key)
+	if err == nil {
+		f.cancel()
+	}
+	return data, err
+}
+
+func (f *cancelAfterPopRedis) HSet(ctx context.Context, key string, values ...any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.RedisClient.HSet(ctx, key, values...)
+}
+
+func (f *cancelAfterPopRedis) LPush(ctx context.Context, key string, values ...any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+// Once RPop succeeds, caller cancellation cannot be allowed to cancel the
+// rollback write if recording the processing lease then fails.
+func TestRedisCanceledDequeueRestoresPoppedJob(t *testing.T) {
+	r := newMockRedis()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	job := Job{ID: "claimed", Type: "email", MaxAttempts: 3}
+	data, _ := json.Marshal(job)
+	_ = r.LPush(context.Background(), "test", data)
+
+	client := &cancelAfterPopRedis{RedisClient: r, cancel: cancel}
+	q := NewRedisQueue(client, "test")
+	if _, err := q.Dequeue(ctx); err == nil {
+		t.Fatal("Dequeue should report the canceled claim write")
+	}
+
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	processingLen := len(r.hashes["test:processing"])
+	r.mu.Unlock()
+	if mainLen != 1 || processingLen != 0 {
+		t.Fatalf("popped job must be restored (main=%d processing=%d)", mainLen, processingLen)
 	}
 }
 
@@ -150,5 +240,132 @@ func TestRedisSkippedJobLossIsReported(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "restore skipped job") {
 		t.Errorf("error should name the failed restore, got: %v", err)
+	}
+}
+
+// slowRecoveryRedis stretches RPop past the recovery deadline, fails the
+// processing write, and can make dead-letter pushes hang until their
+// context ends. Every LPush refuses a dead context, as a real client does.
+type slowRecoveryRedis struct {
+	RedisClient
+	popDelay time.Duration
+	failHSet bool
+	hangDead bool
+}
+
+func (f *slowRecoveryRedis) RPop(ctx context.Context, key string) (string, error) {
+	data, err := f.RedisClient.RPop(ctx, key)
+	if err == nil {
+		time.Sleep(f.popDelay)
+	}
+	return data, err
+}
+
+func (f *slowRecoveryRedis) HSet(ctx context.Context, key string, values ...any) error {
+	if f.failHSet {
+		return errors.New("processing write failed")
+	}
+	return f.RedisClient.HSet(ctx, key, values...)
+}
+
+func (f *slowRecoveryRedis) LPush(ctx context.Context, key string, values ...any) error {
+	if f.hangDead && strings.HasSuffix(key, ":dead") {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+func shrinkRecoveryTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	prev := redisRecoveryTimeout
+	redisRecoveryTimeout = d
+	t.Cleanup(func() { redisRecoveryTimeout = prev })
+}
+
+// The recovery deadline starts when a recovery write is needed, not before
+// RPop: an RPop that outlasts it must still leave the restore a live context.
+func TestRedisSlowPopStillRestoresJob(t *testing.T) {
+	shrinkRecoveryTimeout(t, 50*time.Millisecond)
+	r := newMockRedis()
+	data, _ := json.Marshal(Job{ID: "slow", Type: "email", MaxAttempts: 3})
+	_ = r.LPush(context.Background(), "test", data)
+
+	q := NewRedisQueue(&slowRecoveryRedis{RedisClient: r, popDelay: 100 * time.Millisecond, failHSet: true}, "test")
+	_, err := q.Dequeue(context.Background())
+	if err == nil || strings.Contains(err.Error(), "restore popped job") {
+		t.Fatalf("Dequeue should report only the processing write failure, got: %v", err)
+	}
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	r.mu.Unlock()
+	if mainLen != 1 {
+		t.Fatalf("popped job lost after a slow RPop (main=%d)", mainLen)
+	}
+}
+
+// A quarantine write that spends its whole deadline must not spend the
+// rollback's: the restore behind it gets a deadline of its own.
+func TestRedisHungQuarantineStillRestoresJob(t *testing.T) {
+	shrinkRecoveryTimeout(t, 50*time.Millisecond)
+	r := newMockRedis()
+	_ = r.LPush(context.Background(), "test", "{malformed")
+
+	q := NewRedisQueue(&slowRecoveryRedis{RedisClient: r, hangDead: true}, "test")
+	_, err := q.Dequeue(context.Background())
+	if err == nil || strings.Contains(err.Error(), "restore malformed job") {
+		t.Fatalf("Dequeue should report only the quarantine failure, got: %v", err)
+	}
+	r.mu.Lock()
+	mainLen := len(r.lists["test"])
+	r.mu.Unlock()
+	if mainLen != 1 {
+		t.Fatalf("malformed job lost after a hung quarantine write (main=%d)", mainLen)
+	}
+}
+
+// mainPushCounter counts LPush calls that target the main list.
+type mainPushCounter struct {
+	RedisClient
+	mainPushes int
+}
+
+func (f *mainPushCounter) LPush(ctx context.Context, key string, values ...any) error {
+	if key == "test" {
+		f.mainPushes++
+	}
+	return f.RedisClient.LPush(ctx, key, values...)
+}
+
+// Skipped jobs go back in one LPush, so a dead backend costs one recovery
+// deadline per Dequeue, not one per skipped job, and the list keeps its
+// order.
+func TestRedisSkippedJobsRestoredInOneBatch(t *testing.T) {
+	r := newMockRedis()
+	ctx := context.Background()
+	for _, id := range []string{"s1", "s2", "s3"} {
+		data, _ := json.Marshal(Job{ID: id, Type: "other", MaxAttempts: 3})
+		_ = r.LPush(ctx, "test", data)
+	}
+	r.mu.Lock()
+	before := append([]string(nil), r.lists["test"]...)
+	r.mu.Unlock()
+
+	client := &mainPushCounter{RedisClient: r}
+	q := NewRedisQueue(client, "test")
+	if _, err := q.Dequeue(ctx, "wanted"); !errors.Is(err, ErrNoJob) {
+		t.Fatalf("Dequeue = %v, want ErrNoJob", err)
+	}
+	if client.mainPushes != 1 {
+		t.Fatalf("skipped jobs restored with %d LPush calls, want 1", client.mainPushes)
+	}
+	r.mu.Lock()
+	after := append([]string(nil), r.lists["test"]...)
+	r.mu.Unlock()
+	if strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatalf("restore changed list order:\nbefore %q\nafter  %q", before, after)
 	}
 }

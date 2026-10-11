@@ -34,6 +34,10 @@ const (
 	// TerminalTaskRetention / Config.MaxPushConfigsPerTask; 0 = these).
 	defaultTerminalTaskRetention = 64
 	defaultMaxPushConfigsPerTask = 8
+	// defaultMaxConcurrentRunsPerOwner bounds handler goroutines started
+	// by one authenticated owner. TaskTimeout limits their lifetime; this
+	// limit bounds how many can be live at once.
+	defaultMaxConcurrentRunsPerOwner = 16
 	// keepAliveEvery paces the SSE comment line while a stream waits
 	// for the task's next event, so proxies do not idle the connection
 	// out from under a long-running skill.
@@ -109,6 +113,11 @@ type Config struct {
 	// bound streams elsewhere.
 	MaxStreamSeatsPerOwner int
 
+	// MaxConcurrentRunsPerOwner bounds the concurrent skill-handler runs
+	// one owner may start, including ReturnImmediately runs. 0 = 16;
+	// negative disables the cap for deployments that bound runs elsewhere.
+	MaxConcurrentRunsPerOwner int
+
 	// StreamSeatOverflow selects what an owner at MaxStreamSeatsPerOwner
 	// does with their next stream: stream.SeatOverflowRefuse (the
 	// default) answers 429 at connect; stream.SeatOverflowEvictOldest
@@ -148,9 +157,10 @@ type Server struct {
 	// MaxStreamSeatsPerOwner / StreamSeatOverflow; seats is the registry
 	// both stream families (SubscribeToTask and SendStreamingMessage)
 	// admit through.
-	maxStreamSeats     int
-	streamSeatOverflow stream.SeatOverflowPolicy
-	seats              *streamSeatRegistry
+	maxStreamSeats            int
+	streamSeatOverflow        stream.SeatOverflowPolicy
+	seats                     *streamSeatRegistry
+	maxConcurrentRunsPerOwner int
 
 	// allowedOrigins mirrors core/mcp's allow list: Origins that name a
 	// foreign authority yet may still reach the dispatcher. Guarded by
@@ -162,8 +172,9 @@ type Server struct {
 	now   func() time.Time
 	newID func() string
 
-	mu   sync.Mutex
-	runs map[string]*run
+	mu          sync.Mutex
+	runs        map[string]*run
+	runsByOwner map[string]int
 }
 
 // run tracks one in-process task run: the context CancelTask reaches,
@@ -171,6 +182,7 @@ type Server struct {
 // closed (after the final event is published) when the run settles.
 type run struct {
 	id     string
+	owner  string
 	cancel context.CancelFunc
 	bus    *taskBus
 	done   chan struct{}
@@ -225,6 +237,10 @@ func NewServer(cfg Config) (*Server, error) {
 	if maxPush == 0 {
 		maxPush = defaultMaxPushConfigsPerTask
 	}
+	maxConcurrentRuns := cfg.MaxConcurrentRunsPerOwner
+	if maxConcurrentRuns == 0 {
+		maxConcurrentRuns = defaultMaxConcurrentRunsPerOwner
+	}
 	maxHist := cfg.MaxHistory
 	if maxHist <= 0 {
 		maxHist = defaultMaxHistory
@@ -241,30 +257,32 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
 	return &Server{
-		skills:             slices.Clone(cfg.Skills),
-		byID:               byID,
-		store:              store,
-		router:             router,
-		owner:              cfg.Owner,
-		extended:           cfg.ExtendedCard,
-		push:               newPusher(cfg.Push, log),
-		log:                log,
-		maxBody:            maxBody,
-		timeout:            timeout,
-		maxHist:            maxHist,
-		defPage:            defPage,
-		maxPage:            maxPage,
-		maxTerminalTasks:   maxTerminal,
-		maxPushConfigs:     maxPush,
-		keepAlive:          keepAliveEvery,
-		pollEvery:          pollEvery,
-		maxStreamSeats:     cfg.MaxStreamSeatsPerOwner,
-		streamSeatOverflow: cfg.StreamSeatOverflow,
-		seats:              newStreamSeatRegistry(),
-		allowedOrigins:     slices.Clone(cfg.AllowedOrigins),
-		now:                time.Now,
-		newID:              newUUID,
-		runs:               map[string]*run{},
+		skills:                    slices.Clone(cfg.Skills),
+		byID:                      byID,
+		store:                     store,
+		router:                    router,
+		owner:                     cfg.Owner,
+		extended:                  cfg.ExtendedCard,
+		push:                      newPusher(cfg.Push, log),
+		log:                       log,
+		maxBody:                   maxBody,
+		timeout:                   timeout,
+		maxHist:                   maxHist,
+		defPage:                   defPage,
+		maxPage:                   maxPage,
+		maxTerminalTasks:          maxTerminal,
+		maxPushConfigs:            maxPush,
+		keepAlive:                 keepAliveEvery,
+		pollEvery:                 pollEvery,
+		maxStreamSeats:            cfg.MaxStreamSeatsPerOwner,
+		streamSeatOverflow:        cfg.StreamSeatOverflow,
+		seats:                     newStreamSeatRegistry(),
+		maxConcurrentRunsPerOwner: maxConcurrentRuns,
+		allowedOrigins:            slices.Clone(cfg.AllowedOrigins),
+		now:                       time.Now,
+		newID:                     newUUID,
+		runs:                      map[string]*run{},
+		runsByOwner:               map[string]int{},
 	}, nil
 }
 
@@ -579,24 +597,37 @@ func (s *Server) clampPageSize(n *int) int {
 
 // ---- run registry -----------------------------------------------------
 
-// claimRun registers a placeholder run for taskID and returns it, or
-// nil when a run is already registered. Claiming BEFORE the WORKING
-// transition is what makes two concurrent resuming messages on one task
-// fail cleanly instead of interleaving writes.
-func (s *Server) claimRun(taskID string) *run {
+type runClaimResult uint8
+
+const (
+	runClaimed runClaimResult = iota
+	runClaimTaskAlreadyActive
+	runClaimOwnerAtLimit
+)
+
+// claimRun registers a placeholder run for taskID and owner. Claiming
+// BEFORE the WORKING transition prevents concurrent resumes from
+// interleaving writes; counting claims under the same lock bounds the
+// owner's handler goroutines across all tasks.
+func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.runs[taskID]; exists {
-		return nil
+		return nil, runClaimTaskAlreadyActive
+	}
+	if s.maxConcurrentRunsPerOwner >= 0 && s.runsByOwner[owner] >= s.maxConcurrentRunsPerOwner {
+		return nil, runClaimOwnerAtLimit
 	}
 	rn := &run{
 		id:     taskID,
+		owner:  owner,
 		cancel: func() {},
 		bus:    newTaskBus(s.log),
 		done:   make(chan struct{}),
 	}
 	s.runs[taskID] = rn
-	return rn
+	s.runsByOwner[owner]++
+	return rn, runClaimed
 }
 
 func (s *Server) runFor(taskID string) *run {
@@ -610,6 +641,11 @@ func (s *Server) releaseRun(rn *run) {
 	defer s.mu.Unlock()
 	if s.runs[rn.id] == rn {
 		delete(s.runs, rn.id)
+		if s.runsByOwner[rn.owner] <= 1 {
+			delete(s.runsByOwner, rn.owner)
+		} else {
+			s.runsByOwner[rn.owner]--
+		}
 	}
 }
 
@@ -670,6 +706,15 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, req *rpcRequ
 	if aerr := s.validateInbound(&p); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
+	}
+	// Refuse streaming before prepareSend creates or claims a task. A writer
+	// without Flush cannot stream, and preparing first left a submitted task
+	// plus a run registration behind after the -32004 response.
+	if streaming {
+		if _, ok := w.(http.Flusher); !ok {
+			s.writeResult(w, req.ID, nil, ErrUnsupportedOperation("streaming requires a flushing ResponseWriter"))
+			return
+		}
 	}
 	t, rn, h, aerr := s.prepareSend(r, owner, &p)
 	if aerr != nil {
@@ -802,6 +847,18 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		CreatedAt: s.now(),
 		UpdatedAt: s.now(),
 	}
+	var rn *run
+	if rerr == nil {
+		var result runClaimResult
+		rn, result = s.claimRun(taskID, owner)
+		if result == runClaimOwnerAtLimit {
+			return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
+		}
+		if result != runClaimed {
+			// A freshly minted UUID cannot collide; treat as unrecoverable.
+			return nil, nil, nil, Errorf(CodeInternalError, "internal error")
+		}
+	}
 	// Store the push config BEFORE the task row, and compensate with a
 	// delete if the task insert then fails. The opposite order left a
 	// half-built send behind when the config insert failed: an
@@ -812,6 +869,9 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 	if cfg := pushConfigOf(p); cfg != nil {
 		cfg.TaskID = taskID // the task id did not exist when the client built the request
 		if aerr := s.storePushConfig(r.Context(), owner, cfg); aerr != nil {
+			if rn != nil {
+				s.releaseRun(rn)
+			}
 			return nil, nil, nil, aerr
 		}
 	}
@@ -824,6 +884,9 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 				s.log.Error("a2a: delete push config after failed task create", "taskId", taskID, "err", derr)
 			}
 		}
+		if rn != nil {
+			s.releaseRun(rn)
+		}
 		return nil, nil, nil, Errorf(CodeInternalError, "internal error")
 	}
 	t := newTaskRun(s, rec, msg, r, owner)
@@ -835,11 +898,6 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 			return nil, nil, nil, Errorf(CodeInternalError, "internal error")
 		}
 		return t, nil, nil, nil
-	}
-	rn := s.claimRun(taskID)
-	if rn == nil {
-		// A freshly minted UUID cannot collide; treat as unrecoverable.
-		return nil, nil, nil, Errorf(CodeInternalError, "internal error")
 	}
 	return t, rn, h, nil
 }
@@ -872,9 +930,12 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	}
 	// Claim before the WORKING write: the claim is what a second
 	// message to the same interrupted task hits.
-	rn := s.claimRun(taskID)
-	if rn == nil {
+	rn, claimResult := s.claimRun(taskID, owner)
+	if claimResult == runClaimTaskAlreadyActive {
 		return nil, nil, nil, ErrUnsupportedOperation(fmt.Sprintf("task %s is running", taskID))
+	}
+	if claimResult == runClaimOwnerAtLimit {
+		return nil, nil, nil, ErrUnsupportedOperation("maximum concurrent task runs reached")
 	}
 	if cfg := pushConfigOf(p); cfg != nil {
 		cfg.TaskID = taskID
@@ -900,6 +961,7 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 		if err := t.Reject(TextPart(fmt.Sprintf("no skill named %q; available: %s", rec.SkillID, strings.Join(s.skillIDs(), ", ")))); err != nil {
 			s.log.Error("a2a: reject resume without skill", "taskId", taskID, "err", err)
 		}
+		s.finishRun(rn)
 		return t, nil, nil, nil
 	}
 	return t, rn, sk.Handler, nil

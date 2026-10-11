@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,29 @@ import (
 
 // failingResetSender is an EmailSender that always fails delivery. It
 // stands in for an SMTP/SES outage during the password-reset flow.
+type resetLogCapture struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	notify chan struct{}
+}
+
+func (c *resetLogCapture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	n, err := c.buf.Write(p)
+	c.mu.Unlock()
+	select {
+	case c.notify <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
+func (c *resetLogCapture) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
+}
+
 type failingResetSender struct{}
 
 func (failingResetSender) Send(_ context.Context, _, _ string) error {
@@ -31,9 +55,9 @@ func (failingResetSender) Send(_ context.Context, _, _ string) error {
 // a production deploy with a misconfigured sender silently lost every
 // reset request.
 func TestReset_FailingSenderIsLogged(t *testing.T) {
-	var buf bytes.Buffer
+	capture := &resetLogCapture{notify: make(chan struct{}, 4)}
 	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(capture, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	store := newUserStoreWithPassword()
@@ -72,7 +96,12 @@ func TestReset_FailingSenderIsLogged(t *testing.T) {
 		t.Fatalf("response must stay 200 (anti-enumeration); got %d", w.Code)
 	}
 	// (b) Server-side visibility: the failure must reach the log.
-	if !strings.Contains(buf.String(), "password-reset email send failed") {
-		t.Fatalf("failing sender must leave a server-side log record; got: %q", buf.String())
+	deadline := time.After(time.Second)
+	for !strings.Contains(capture.String(), "password-reset email send failed") {
+		select {
+		case <-capture.notify:
+		case <-deadline:
+			t.Fatalf("failing sender must leave a server-side log record; got: %q", capture.String())
+		}
 	}
 }

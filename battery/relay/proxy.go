@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
 // requestDeadline bounds one proxied request end to end. The effective
@@ -67,12 +70,16 @@ type reverseProxy = httputil.ReverseProxy
 // One transport, one connection pool: per-route pools would multiply
 // idle sockets by the number of vendors for no benefit.
 func newTransport() *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 	return &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		// An environment proxy resolves the destination outside this process,
+		// bypassing the relay's dial-time internal-address check. The relay
+		// connects directly and validates every address returned for the fixed
+		// upstream before opening a socket.
+		DialContext:           guardedDialContext(net.DefaultResolver.LookupIPAddr, dialer.DialContext),
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   16,
 		IdleConnTimeout:       90 * time.Second,
@@ -81,6 +88,65 @@ func newTransport() *http.Transport {
 		ResponseHeaderTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
+}
+
+// guardedDialContext validates request-time DNS results before dialing.
+// Construction-time checks alone do not stop DNS rebinding (including a name
+// that was temporarily unresolvable when the Relay was created).
+func guardedDialContext(
+	lookup func(context.Context, string) ([]net.IPAddr, error),
+	dial func(context.Context, string, string) (net.Conn, error),
+) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		ips := []net.IPAddr{}
+		if ip := net.ParseIP(host); ip != nil {
+			ips = append(ips, net.IPAddr{IP: ip})
+		} else {
+			ips, err = lookup(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("relay: upstream host resolved to no addresses")
+		}
+
+		loopbackName := isLoopbackHost(host)
+		for _, candidate := range ips {
+			if candidate.IP == nil ||
+				(loopbackName && !candidate.IP.IsLoopback()) ||
+				(!loopbackName && netguard.IsInternal(candidate.IP)) {
+				return nil, fmt.Errorf("relay: upstream host resolved to an internal address")
+			}
+		}
+
+		var lastErr error
+		for _, candidate := range ips {
+			ip := candidate.IP.String()
+			if candidate.Zone != "" {
+				ip += "%" + candidate.Zone
+			}
+			conn, err := dial(ctx, network, net.JoinHostPort(ip, port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // handler wraps one route's proxy with the request-side guards:

@@ -36,6 +36,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +74,12 @@ import (
 // the limit by degrading its backend. One store instance can back several
 // limiters: keys are namespaced by Scope.
 //
+// NamespaceScope encodes delimiter bytes in a Store scope so the scope/key
+// boundary stays unambiguous even when a host or caller includes "|" or "%".
+func NamespaceScope(scope string) string {
+	return strings.NewReplacer("%", "%25", "|", "%7C").Replace(scope)
+}
+
 // Scope namespaces this limiter's keys inside a shared Store. Set it explicitly
 // when several limiters share one Store so their keys never collide. Ignored
 // when Store is nil.
@@ -232,7 +239,7 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 	}
 	key = foldKey(key)
 	if rl.cfg.Store != nil {
-		ok, retry, err := rl.cfg.Store.Allow(ctx, rl.cfg.Scope+"|"+key, rl.cfg)
+		ok, retry, err := rl.cfg.Store.Allow(ctx, NamespaceScope(rl.cfg.Scope)+"|"+key, rl.cfg)
 		if err != nil {
 			return false, storeErrRetryAfter, err
 		}

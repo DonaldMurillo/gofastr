@@ -105,9 +105,14 @@ var ErrSessionNotFound = errors.New("auth: session not found")
 // for single-instance deployments and tests. Tokens are 32 cryptographically
 // random bytes base64'd, mirroring what most cookie auth systems use.
 type MemorySessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
+	mu        sync.RWMutex
+	sessions  map[string]*Session
+	lastSweep time.Time
 }
+
+// sessionSweepInterval bounds how long expired sessions remain after later
+// session creation continues.
+const sessionSweepInterval = 15 * time.Minute
 
 // NewMemorySessionStore returns a fresh, empty MemorySessionStore.
 func NewMemorySessionStore() *MemorySessionStore {
@@ -146,6 +151,10 @@ func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.D
 	// resulting read/write overlap.
 	m.mu.Lock()
 	m.sessions[tok] = sess
+	if now.Sub(m.lastSweep) >= sessionSweepInterval {
+		purgeMatching(m.sessions, func(s *Session) bool { return !now.Before(s.ExpiresAt) })
+		m.lastSweep = now
+	}
 	cp := *sess
 	m.mu.Unlock()
 	return &cp, nil

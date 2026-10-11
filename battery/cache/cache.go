@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -46,8 +47,9 @@ type Item struct {
 type Loader func(ctx context.Context) (any, error)
 
 // getOrSetGroup collapses concurrent GetOrSet misses for the same
-// (cache instance, key) so the loader runs exactly once under contention
-// (cache-stampede / thundering-herd protection).
+// pointer-backed cache instance and key. Value-backed Cache implementations
+// have no stable identity available through the interface, so they skip
+// singleflight rather than risk joining a different instance's fill.
 var getOrSetGroup singleflight.Group
 
 // GetOrSet returns the cached value for key, deserialized into dest. On a miss
@@ -68,11 +70,11 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// Fast path: already cached.
 	if err := c.Get(ctx, key, dest); err == nil {
 		return nil
+	} else if !errors.Is(err, ErrCacheMiss) {
+		return err
 	}
 
-	// Collapse concurrent misses per cache instance + key.
-	flightKey := fmt.Sprintf("%p:%s", c, key)
-	_, err, _ := getOrSetGroup.Do(flightKey, func() (any, error) {
+	fill := func() (any, error) {
 		// The flight is detached from any single caller: whichever
 		// goroutine wins the race, its request context must not own
 		// the shared fill. Under the leader's raw context, one caller
@@ -86,6 +88,8 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 		// queued for the singleflight slot.
 		if err := c.Get(flightCtx, key, dest); err == nil {
 			return nil, nil
+		} else if !errors.Is(err, ErrCacheMiss) {
+			return nil, err
 		}
 		val, lerr := loader(flightCtx)
 		if lerr != nil {
@@ -95,7 +99,17 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 			return nil, serr
 		}
 		return nil, nil
-	})
+	}
+	var err error
+	if flightKey, ok := cacheFlightKey(c, key); ok {
+		_, err, _ = getOrSetGroup.Do(flightKey, fill)
+	} else {
+		// A value implementation may be a map- or slice-backed cache, so
+		// formatting its interface value cannot produce reliable instance
+		// identity. Fill directly instead of letting separate instances
+		// with the same type/key share a result.
+		_, err = fill()
+	}
 	if err != nil {
 		return err
 	}
@@ -103,6 +117,14 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// Read back so every waiter (including the leader) fills dest from the
 	// canonical cached representation.
 	return c.Get(ctx, key, dest)
+}
+
+func cacheFlightKey(c Cache, key string) (string, bool) {
+	v := reflect.ValueOf(c)
+	if !v.IsValid() || v.Kind() != reflect.Pointer || v.IsNil() {
+		return "", false
+	}
+	return fmt.Sprintf("%T:%x:%s", c, v.Pointer(), key), true
 }
 
 // config holds cache configuration set via options.
