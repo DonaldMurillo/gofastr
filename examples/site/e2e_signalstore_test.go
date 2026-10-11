@@ -221,10 +221,10 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 		var h float64
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(base+"/components/signal-store"),
-			chromedp.WaitReady(`.demo-row button`, chromedp.ByQuery),
+			chromedp.WaitReady(`button[data-cui-signal-set]`, chromedp.ByQuery),
 			// a real button: sized + (filled OR bordered), not bare text
-			chromedp.Evaluate(`(()=>{const b=document.querySelector('.demo-row button');const c=getComputedStyle(b);return (c.backgroundColor!=='rgba(0, 0, 0, 0)'||c.borderStyle!=='none')})()`, &styled),
-			chromedp.Evaluate(`document.querySelector('.demo-row button').getBoundingClientRect().height`, &h),
+			chromedp.Evaluate(`(()=>{const b=document.querySelector('button[data-cui-signal-set]');const c=getComputedStyle(b);return (c.backgroundColor!=='rgba(0, 0, 0, 0)'||c.borderStyle!=='none')})()`, &styled),
+			chromedp.Evaluate(`document.querySelector('button[data-cui-signal-set]').getBoundingClientRect().height`, &h),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -318,12 +318,12 @@ func TestE2E_InteractiveComponents_RenderCorrectly(t *testing.T) {
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(base+"/components/"+slug),
 				chromedp.WaitReady("body", chromedp.ByQuery),
-				chromedp.Evaluate(`!!document.querySelector('.doc-usage')`, &hasCode),
+				chromedp.Evaluate(`!!document.querySelector('#example pre')`, &hasCode),
 			); err != nil {
 				t.Fatalf("%s: %v", slug, err)
 			}
 			if !hasCode {
-				t.Errorf("/components/%s shows no example code (.doc-usage missing)", slug)
+				t.Errorf("/components/%s shows no example code (#example section missing)", slug)
 			}
 		}
 	})
@@ -428,9 +428,11 @@ func TestE2E_ScrollRevealAnimates(t *testing.T) {
 	}
 }
 
-// TestE2E_SignalAnimateExpands proves the signal→class animation: toggling
-// the signal adds the class and the panel's computed max-height grows from
-// 0 to its expanded value.
+// TestE2E_SignalAnimateExpands proves the signal→class contract of
+// interactive.AnimateOnSignal: toggling the signal adds the named class to
+// the panel, and toggling again removes it. The transition itself is the
+// app's own CSS keyed on that class; the site ships no CSS, so the test
+// pins the class the runtime owns rather than a max-height the site drew.
 func TestE2E_SignalAnimateExpands(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -438,22 +440,29 @@ func TestE2E_SignalAnimateExpands(t *testing.T) {
 	base := siteE2EServer(t)
 	ctx := siteBrowserCtx(t)
 
-	var collapsedMaxH, expandedMaxH string
+	const hasOpen = `document.getElementById('demo-animate-panel').classList.contains('is-open')`
+	var before, on, off bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-animate"),
-		chromedp.WaitReady(`.demo-animate-panel`, chromedp.ByQuery),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.demo-animate-panel')).maxHeight`, &collapsedMaxH),
+		chromedp.WaitReady(`#demo-animate-panel`, chromedp.ByQuery),
+		chromedp.Evaluate(hasOpen, &before),
 		chromedp.Click(`[data-cui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.demo-animate-panel')).maxHeight`, &expandedMaxH),
+		chromedp.Evaluate(hasOpen, &on),
+		chromedp.Click(`[data-cui-signal-toggle="demo-anim-slide"]`, chromedp.ByQuery),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(hasOpen, &off),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if collapsedMaxH != "0px" {
-		t.Errorf("panel should start collapsed (max-height 0), got %q", collapsedMaxH)
+	if before {
+		t.Error("panel carries is-open before the signal is set")
 	}
-	if expandedMaxH == "0px" || expandedMaxH == collapsedMaxH {
-		t.Errorf("panel did not expand on toggle: max-height stayed %q", expandedMaxH)
+	if !on {
+		t.Error("toggling the signal did not add is-open to the panel")
+	}
+	if off {
+		t.Error("toggling the signal off did not remove is-open")
 	}
 }
 

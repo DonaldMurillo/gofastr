@@ -91,7 +91,7 @@ func runThemeEdit(args []string) {
 	a := app.NewApp("theme-editor").WithTheme(base)
 	a.Register("/preview", &galleryPreviewScreen{}, nil)
 
-	host := uihost.New(a, uihost.WithCustomCSS(gallery.BaseCSS(base)+previewChromeCSS+contrastProbeCSS()))
+	host := uihost.New(a, uihost.WithCustomCSS(previewChromeCSS+contrastProbeCSS()))
 
 	srv := &themeEditServer{
 		host:    host,
@@ -627,7 +627,7 @@ func (f *frameFriendlyWriter) serveHost(host http.Handler, r *http.Request) {
 
 // galleryPreviewScreen is the component the UIHost renders at /preview. It
 // renders the same gallery demos used by /components/<slug>, plus the contrast
-// probes. The page composes gallery.BaseCSS, previewChromeCSS, and framework/ui
+// probes. The page composes previewChromeCSS and framework/ui
 // primitives.
 type galleryPreviewScreen struct{}
 
@@ -755,8 +755,8 @@ func contrastProbeCSS() string {
 // previewChromeCSS only parks the contrast probes off-screen. Everything
 // visible on the page is design-system output.
 //
-// The gallery owns its .demo-row / .demo-stack layout contract, so this page
-// composes gallery.BaseCSS() with the block below.
+// The gallery demos lay out through framework/ui primitives and ship no
+// CSS of their own, so this block is the page's only addition.
 var previewChromeCSS = `
 .tp-probes { position: absolute; left: -9999px; top: -9999px; visibility: hidden; pointer-events: none; }
 `

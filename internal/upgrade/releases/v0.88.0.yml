@@ -1,0 +1,11 @@
+version: v0.88.0
+title: The component gallery ships no CSS
+notes:
+  - change: "gallery.ContributeCSS and gallery.BaseCSS are removed: the framework/gallery demos lay out through ui.Cluster, ui.Stack, ui.Box and ui.Container and ship no stylesheet, and the .demo-row / .demo-stack / .demo-stack-lg / .demo-viewport / .demo-measure-* classes are gone"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/gallery.ContributeCSS
+        - gofastr/framework/gallery.BaseCSS
+    guidance: "Delete the call and whatever it was concatenated into (uihost.WithCustomCSS(gallery.BaseCSS(t)+…) keeps the rest): the demos render laid out with no host CSS. Markup of your own that borrowed a .demo-* class composes ui.Cluster (a row), ui.Stack (a stack) or ui.Box{Bounded: true} (a capped, scrolling window) instead."

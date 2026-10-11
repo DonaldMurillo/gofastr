@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
+  (20rem) and scrolls what overflows: a window for a long list in a panel,
+  or for previewing a viewport-height component such as `ui.Workbench`.
 - `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
   (danger tone, `--ui-terminal-block-err-color` knob), beside
   `TerminalOut` and `TerminalOK`.
@@ -20,6 +23,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   site header (`--size-header-height` plus the rail's gap).
 
 ### Changed
+- **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
+  The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
+  `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
+  catalog laid out with no CSS of its own. Delete the call (`gofastr upgrade`
+  points at it).
 - **`ui.HighlightLines` knows more languages.** Go now classes named
   types in type position (`type Pong`, `Pong{`, `*http.Request`,
   `[]schema.Field`); JS/TS, SQL, shell, YAML and JSON get their own
