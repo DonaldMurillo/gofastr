@@ -271,7 +271,8 @@ func TestKilnPanelPortIsConsistent(t *testing.T) {
 
 func TestComponentDemoLabels(t *testing.T) {
 	labelPattern := func(label string) *regexp.Regexp {
-		return regexp.MustCompile(`<h2[^>]*class="[^"]*\bdemo-stage__label\b[^"]*"[^>]*>` + label + `</h2>`)
+		// The demo sits in a ui.Section whose heading names it.
+		return regexp.MustCompile(`<h2[^>]*class="[^"]*\bfui-section__heading\b[^"]*"[^>]*>` + label + `</h2>`)
 	}
 	if !labelPattern("Note").MatchString(body(t, "/components/datatable")) {
 		t.Error("note-only component (datatable) should be labeled 'Note'")

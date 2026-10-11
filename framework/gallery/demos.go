@@ -68,8 +68,8 @@ func RenderKanbanBoard(cols []KanbanColumn, version int) render.HTML {
 		for i, card := range c.Cards {
 			items[i] = ui.SortableItem{Key: card.Key, Label: card.Title}
 		}
-		rendered = append(rendered, html.Div(html.DivConfig{Class: "kanban-col"},
-			html.Heading(html.HeadingConfig{Level: 3, Class: "kanban-col__title"},
+		rendered = append(rendered, ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+			html.Heading(html.HeadingConfig{Level: 3},
 				render.Text(c.Title)),
 			ui.SortableList(ui.SortableListConfig{
 				Label:       c.Title,
@@ -111,17 +111,14 @@ var InitialOptimisticNotes = []OptimisticNote{
 func RenderOptimisticCreateList(notes []OptimisticNote) render.HTML {
 	items := make([]render.HTML, 0, len(notes))
 	for _, n := range notes {
-		items = append(items, html.ListItem(html.ListItemConfig{
-			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
-		}, render.Text(n.Title)))
+		items = append(items, listRow(html.Attrs{"data-opt-id": n.ID}, render.Text(n.Title)))
 	}
 	if len(items) == 0 {
 		// Empty state: the list region reconciles to zero items (#82
 		// style), so the swap target is never a bare missing element.
-		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
-			render.Text("No notes yet: click Add."))
+		return html.Paragraph(html.TextConfig{}, ui.Muted(render.Text("No notes yet: click Add.")))
 	}
-	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
+	return rowList(items...)
 }
 
 // RenderOptimisticDeleteList renders the delete list as a <ul> with a
@@ -138,9 +135,7 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 			RPCPath:      "/__site/optimistic/delete?id=" + n.ID,
 			ConfirmLabel: "Delete it",
 		})
-		items = append(items, html.ListItem(html.ListItemConfig{
-			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
-		},
+		items = append(items, listRow(html.Attrs{"data-opt-id": n.ID},
 			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween},
 				render.Text(n.Title),
 				trigger,
@@ -148,10 +143,9 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 		))
 	}
 	if len(items) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
-			render.Text("No notes: the list reconciled to zero. Reload to reset the demo."))
+		return html.Paragraph(html.TextConfig{}, ui.Muted(render.Text("No notes: the list reconciled to zero. Reload to reset the demo.")))
 	}
-	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
+	return rowList(items...)
 }
 
 // OptimisticFailDeleteTrigger is the inline trigger for the
@@ -236,7 +230,7 @@ func RenderOptimisticCreateDemoFor(notes []OptimisticNote) render.HTML {
 			OnSuccess(interactive.SetSignal("opt-create-list")),
 	)
 	listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "opt-create-list")
-	return html.Div(html.DivConfig{Class: "demo-stack"},
+	return stack(
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
     ui.Button(ui.ButtonConfig{Label: "Add"}),
     interactive.Post("/__site/optimistic/create").
@@ -244,7 +238,7 @@ func RenderOptimisticCreateDemoFor(notes []OptimisticNote) render.HTML {
 )`}),
 		ui.Cluster(ui.ClusterConfig{}, addBtn),
 		listRegion,
-		html.Div(html.DivConfig{Class: "fact"},
+		note(
 			render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS: see the optimistic-ui doc, Recipe 3."),
 		),
 	)
@@ -260,7 +254,7 @@ func RenderOptimisticDeleteDemoFor(notes []OptimisticNote) render.HTML {
 	// per row; the host mounts the matching modals once at startup via
 	// OptimisticDeleteModals().
 	listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "opt-delete-list")
-	return html.Div(html.DivConfig{Class: "demo-stack"},
+	return stack(
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
     Name:    "opt-delete-" + item.ID,
     RPCPath: "/__site/optimistic/delete?id=" + item.ID,
@@ -268,7 +262,7 @@ func RenderOptimisticDeleteDemoFor(notes []OptimisticNote) render.HTML {
 widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
 		listRegion,
 		ui.Cluster(ui.ClusterConfig{}, OptimisticFailDeleteTrigger()),
-		html.Div(html.DivConfig{Class: "fact"},
+		note(
 			render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put; try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
 		),
 	)

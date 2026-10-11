@@ -7,6 +7,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
+  The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
+  `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
+  catalog laid out with no CSS of its own. Delete the call (`gofastr upgrade`
+  points at it).
+
+### Added
+- **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
+  (20rem) and scrolls what overflows: a window for a long list in a panel,
+  or for previewing a viewport-height component such as `ui.Workbench`.
+
 ## [0.87.0] - 2026-10-10
 
 **BREAKING.** v0.87.0 reskins the default theme, gives entities screen
