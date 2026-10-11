@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -56,33 +57,41 @@ func (s *SEOScreen) Render() render.HTML {
 	li := func(children ...render.HTML) render.HTML {
 		return html.ListItem(html.ListItemConfig{}, children...)
 	}
-	return html.Section(html.SectionConfig{Class: "doc-page", Label: "SEO"},
-		container(
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO")),
-			html.Paragraph(html.TextConfig{Class: "lede"}, render.Text(
-				"Per-page SEO is wired through four small interfaces. Implement the ones you need, skip the rest. The uihost auto-emits the right tags in <head>. View-source on this page to see them.")),
-
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Per-page interfaces")),
+	return seoPage(
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow:  "Demo · SEO",
+			Title:    "SEO",
+			Subtitle: "Per-page SEO is wired through four small interfaces. Implement the ones you need, skip the rest. The uihost auto-emits the right tags in <head>. View-source on this page to see them.",
+		}),
+		ui.Section(ui.SectionConfig{Heading: "Per-page interfaces", Compact: true},
 			html.UnorderedList(html.ListConfig{},
 				li(codeText("app.ScreenDescriber"), render.Text(" → "), codeText(`<meta name="description">`), render.Text(". The most-forgotten SEO tag.")),
 				li(codeText("uihost.ScreenCanonical"), render.Text(" → "), codeText(`<link rel="canonical">`), render.Text(". Stops query-string variants fragmenting ranking.")),
 				li(codeText("uihost.ScreenHreflangs"), render.Text(" → one "), codeText(`<link rel="alternate">`), render.Text(" per locale.")),
 				li(codeText("uihost.ScreenSchema"), render.Text(" → one "), codeText(`<script type="application/ld+json">`), render.Text(" per item. This page emits an Article + a BreadcrumbList.")),
 			),
-
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle alternative: ScreenSEO")),
+		),
+		ui.Section(ui.SectionConfig{Heading: "Bundle alternative: ScreenSEO", Compact: true},
 			html.Paragraph(html.TextConfig{},
 				render.Text("Prefer one method over four? "), codeText("ScreenSEO()"),
 				render.Text(" bundles description, canonical, hreflangs, robots, OG, Twitter Card, and JSON-LD into a single declaration. "),
-				html.Link(html.LinkConfig{Href: "/seo-bundle", Text: "→ See the ScreenSEO bundle demo"}),
-			),
-
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Sitewide endpoints")),
-			html.UnorderedList(html.ListConfig{},
-				li(html.Link(html.LinkConfig{Href: "/sitemap.xml", Text: "/sitemap.xml"}), render.Text(": uihost.WithSitemap. Lists every reachable route.")),
-				li(html.Link(html.LinkConfig{Href: "/robots.txt", Text: "/robots.txt"}), render.Text(": uihost.WithRobots. References the sitemap when both are configured.")),
+				ui.Link(ui.LinkConfig{Href: "/seo-bundle", Text: "See the ScreenSEO bundle demo →"}),
 			),
 		),
+		ui.Section(ui.SectionConfig{Heading: "Sitewide endpoints", Compact: true},
+			html.UnorderedList(html.ListConfig{},
+				li(ui.Link(ui.LinkConfig{Href: "/sitemap.xml", Text: "/sitemap.xml"}), render.Text(": uihost.WithSitemap. Lists every reachable route.")),
+				li(ui.Link(ui.LinkConfig{Href: "/robots.txt", Text: "/robots.txt"}), render.Text(": uihost.WithRobots. References the sitemap when both are configured.")),
+			),
+		),
+	)
+}
+
+// seoPage is the two SEO demos' page frame: the reading container with the
+// page's blocks stacked in it.
+func seoPage(blocks ...render.HTML) render.HTML {
+	return ui.Container(ui.ContainerConfig{Pad: ui.ContainerPadPage},
+		ui.Stack(ui.StackConfig{Gap: ui.GapXL}, blocks...),
 	)
 }
 
@@ -124,14 +133,17 @@ func (*SEOBundleScreen) ScreenSEO() uihost.SEO {
 
 func (s *SEOBundleScreen) Render() render.HTML {
 	li := func(t string) render.HTML { return html.ListItem(html.ListItemConfig{}, render.Text(t)) }
-	return html.Section(html.SectionConfig{Class: "doc-page", Label: "SEO bundle"},
-		container(
-			html.Link(html.LinkConfig{Href: "/seo", Text: "← SEO"}),
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text("SEO bundle: ScreenSEO")),
-			html.Paragraph(html.TextConfig{Class: "lede"}, render.Text(
-				"Same tags as the per-concern interfaces, packed into one method. View-source to see every tag the bundle emitted in <head>.")),
-
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Bundle vs per-concern")),
+	return seoPage(
+		ui.Breadcrumbs(ui.BreadcrumbsConfig{},
+			ui.Crumb{Text: "SEO", Href: "/seo"},
+			ui.Crumb{Text: "ScreenSEO bundle", Current: true},
+		),
+		ui.PageHeader(ui.PageHeaderConfig{
+			Eyebrow:  "Demo · SEO",
+			Title:    "SEO bundle: ScreenSEO",
+			Subtitle: "Same tags as the per-concern interfaces, packed into one method. View-source to see every tag the bundle emitted in <head>.",
+		}),
+		ui.Section(ui.SectionConfig{Heading: "Bundle vs per-concern", Compact: true},
 			html.UnorderedList(html.ListConfig{},
 				li("Empty bundle fields fall through to per-concern interfaces, so a screen can mix both."),
 				li("Bundle fields ALWAYS win when non-empty. Don't implement both for the same field expecting per-concern to take precedence."),

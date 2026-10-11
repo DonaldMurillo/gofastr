@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -228,15 +229,16 @@ func wizardDemoPage(current int, values url.Values, errs ui.FieldErrors) render.
 		FieldOrder:  []string{"wd-name", "wd-email"},
 	})
 
-	body := render.Tag("body", nil,
-		render.Tag("h1", nil, render.Text("Wizard demo")),
+	body := render.Tag("body", nil, wizardDemoFrame(
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Wizard demo")),
 		wiz,
-	)
+	))
 	return render.HTML("<!doctype html>") +
 		render.Tag("html", map[string]string{"lang": "en"},
 			render.Tag("head", nil,
 				render.VoidTag("meta", map[string]string{"charset": "utf-8"}),
 				render.Tag("title", nil, render.Text("Wizard demo")),
+				wizardDemoStylesheet(body),
 			),
 			body,
 		)
@@ -246,20 +248,21 @@ func wizardDemoConfirmation(values url.Values) render.HTML {
 	items := []render.HTML{}
 	for _, name := range wizardDemoFields {
 		items = append(items,
-			render.Tag("li", nil,
+			html.ListItem(html.ListItemConfig{},
 				html.Strong(html.TextConfig{}, render.Text(name+": ")),
 				render.Text(values.Get(name)),
 			))
 	}
-	body := render.Tag("body", map[string]string{"data-wizard-confirm": "true"},
-		render.Tag("h1", nil, render.Text("Wizard submitted")),
-		render.Tag("ul", nil, items...),
-	)
+	body := render.Tag("body", map[string]string{"data-wizard-confirm": "true"}, wizardDemoFrame(
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Wizard submitted")),
+		html.UnorderedList(html.ListConfig{}, items...),
+	))
 	return render.HTML("<!doctype html>") +
 		render.Tag("html", map[string]string{"lang": "en"},
 			render.Tag("head", nil,
 				render.VoidTag("meta", map[string]string{"charset": "utf-8"}),
 				render.Tag("title", nil, render.Text("Wizard submitted")),
+				wizardDemoStylesheet(body),
 			),
 			body,
 		)
@@ -361,4 +364,24 @@ func wizardDemoRadioGroup(name, legend string, options []ui.RadioGroupOption, cu
 		Legend:  legend,
 		Options: dup,
 	})
+}
+
+// wizardDemoStylesheet links the framework's styles into the
+// self-contained wizard page: app.css (theme tokens and base type, the
+// sheet battery/print documents inherit) plus one sheet per kit component
+// the body renders, found the way the host finds them (registry.Scan over
+// the data-cui-comp markers). The page bypasses the host's document
+// pipeline because each POST answers with the next full page.
+func wizardDemoStylesheet(body render.HTML) render.HTML {
+	links := []render.HTML{render.VoidTag("link", map[string]string{"rel": "stylesheet", "href": "/__gofastr/app.css"})}
+	for _, n := range registry.Scan(string(body)) {
+		links = append(links, render.VoidTag("link", map[string]string{"rel": "stylesheet", "href": "/__gofastr/comp/" + n + ".css"}))
+	}
+	return render.Join(links...)
+}
+
+// wizardDemoFrame is the page column of the chrome-free wizard documents.
+func wizardDemoFrame(blocks ...render.HTML) render.HTML {
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow, Pad: ui.ContainerPadPage},
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG}, blocks...))
 }
