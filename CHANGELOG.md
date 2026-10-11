@@ -7,20 +7,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Changed
+## [0.87.1] - 2026-10-11
 
-- `gofastr init` writes the generated agent detail files to a hidden
-  `.agents/` folder instead of a visible `agents/` folder beside the
-  app's packages; `AGENTS.md`, `CLAUDE.md` and the gofastr-host skill
-  link there. `gofastr agents sync` and `gofastr init --reinit` move an
-  existing project over: they delete the old generated files in
-  `agents/` (only files with the auto-generated header) and remove the
-  folder once nothing else is in it.
-- `ui.ContentRowConfig.BelowHeader` (with `Sticky`) pins the nav column
-  under a sticky page header, the rest of the viewport tall.
-  `interactive.SectionMenuConfig.FillColumn` makes the menu fill that
-  column. The site's `/components` menu now stays put while the page
-  scrolls.
+### Changed
+- **`gofastr init` writes the agent detail files to `.agents/`.** They
+  went to a visible `agents/` folder at the project root, beside
+  `entities/`, `migrations/` and the app's own packages. They now go to
+  a hidden `.agents/` folder, and `AGENTS.md`, `CLAUDE.md` and the
+  gofastr-host skill link there. Run `gofastr agents sync` (or
+  `gofastr init --reinit`) once in an existing project: it writes
+  `.agents/`, deletes the old generated files in `agents/` (only files
+  with the auto-generated header, so a hand-written file there stays)
+  and removes the folder once nothing else is in it.
+
+### Added
+- **A sidebar can stay pinned under a sticky page header.**
+  `ui.ContentRowConfig.BelowHeader`, with `Sticky`, sticks the nav
+  column and the toolbar below `--size-header-height` instead of behind
+  the header, and makes the column the rest of the viewport tall, so a
+  long menu scrolls on its own while the page scrolls beside it.
+  `interactive.SectionMenuConfig.FillColumn` makes a section menu fill
+  that column. The docs site's `/components` menu uses both.
 
 ## [0.87.0] - 2026-10-10
 
