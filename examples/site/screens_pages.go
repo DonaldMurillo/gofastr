@@ -5,9 +5,10 @@ package main
 // examples, Kiln, philosophy and the 404. Every page composes stock
 // framework/ui components and layout primitives on the stock theme; the
 // site ships no stylesheet and no class names of its own. The pages that
-// read as an article beside a rail (get started, the docs index,
-// philosophy) render through the site's owned docpage package, the same
-// shell the /docs/<slug> pages use.
+// read as an article beside a rail (get started, philosophy) render
+// through the site's owned docpage package; the docs index and the
+// /docs/<slug> pages render inside the docs layer, which draws the same
+// shell once (docsLayout, layout.go).
 //
 // The pages share helpers from screen_home.go (container) and from
 // code_block.go (codeBlock, kw, fn_, str_, pn, ty, com).
@@ -266,12 +267,19 @@ func (s *ConceptsIndexScreen) ScreenDescription() string {
 }
 func (s *ConceptsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-// Render is the docs index on the docs page shell: the intent rail in the
-// nav slot, the intent groups in the article column.
+// Render is the docs index's article: the hero and the intent groups. It
+// renders in the docs layer (docsLayout), which brings the docs nav; the
+// intent rail is this screen's fill of the layer's rail outlet
+// (DocsIndexRail).
 func (s *ConceptsIndexScreen) Render() render.HTML {
-	return docpage.Render(docpage.Config{Nav: railColumn(cxRail())},
-		pageBody(cxHero(), cxBody()))
+	return pageBody(cxHero(), cxBody())
 }
+
+// DocsIndexRail fills the docs layer's rail outlet on /docs/ with the
+// intent rail; the doc pages leave the outlet empty.
+type DocsIndexRail struct{}
+
+func (r *DocsIndexRail) Render() render.HTML { return cxRail() }
 
 func cxHero() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},

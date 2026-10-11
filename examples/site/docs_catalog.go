@@ -7,9 +7,11 @@
 // /docs/<slug>, a DocPageScreen that renders the embedded markdown through
 // framework/ui.Markdown. There are no dead cards and no 404 doc pages, the
 // catalog and the registered routes are generated from the same slice.
+// Both routes live in one screen group on the docs layer (registerDocsGroup,
+// docsLayout in layout.go).
 //
 // To add a doc: drop the .md under framework/docs/content/, add one line
-// here, and registerScreens picks it up automatically.
+// here, and registerDocsGroup picks it up automatically.
 // =============================================================================
 
 package main
@@ -278,34 +280,80 @@ func allDocsSection() render.HTML {
 }
 
 // =============================================================================
-// /docs/<slug>, a single doc page rendered from embedded markdown.
+// /docs/ and /docs/<slug>: one screen group on the docs layer.
 // =============================================================================
 
+// docRef is the catalog entry a /docs/<slug> URL names, with the intent
+// that owns it (the crumbs link back to the intent's section).
+type docRef struct {
+	Intent docIntent
+	Entry  docEntry
+}
+
+// resolvedDoc is the doc the /docs/{path...} route names: the article
+// screen declares the resolver, and the screen and its fills read it,
+// so one lookup serves the body, the crumbs and the pager.
+var resolvedDoc = app.NewKey[docRef]("doc")
+
+// resolveDoc looks the catch-all remainder up in the catalog. An unknown
+// slug is app.ErrNotFound: the screen's Load is the first reader, so the
+// request renders the site's not-found page with status 404, the UX the
+// per-slug loop had by simply not registering unknown paths.
+func resolveDoc(ctx context.Context) (docRef, error) {
+	m, _ := app.MatchFromContext(ctx)
+	slug := m.Param("path")
+	intent, entry, ok := findDocEntry(slug)
+	if !ok {
+		return docRef{}, fmt.Errorf("docs: no catalog entry for %q: %w", slug, app.ErrNotFound)
+	}
+	return docRef{Intent: intent, Entry: entry}, nil
+}
+
+// registerDocsGroup registers the docs section: the index and the one
+// catch-all route that serves every doc page, both on the docs layer
+// (layout.go), so a navigation between two docs swaps only the article
+// and the crumbs/pager fills while the docs nav stays put.
+func registerDocsGroup(site *app.App) {
+	frame, out := docsLayout()
+	group := app.NewScreenGroup("/docs", frame)
+	// The index has its own in-page rail (the reading intents); it
+	// fills the layer's right column with it and leaves the crumbs and
+	// the pager empty.
+	group.Screen(groupScreen("/docs/", &ConceptsIndexScreen{}).
+		Fill(out.Rail, &DocsIndexRail{}), nil)
+	// One catch-all route serves every doc page. The resolver turns the
+	// slug into its catalog entry (404 for an unknown slug), and
+	// StaticPaths enumerates every page so export, sitemap, llm.md, and
+	// the strict coverage gate stay in sync with the catalog.
+	group.Screen(groupScreen("/docs/{path...}", &DocPageScreen{}).
+		Resolve(resolvedDoc.From(resolveDoc)).
+		Fill(out.Crumbs, &DocCrumbs{}).
+		Fill(out.Pager, &DocPager{}), nil)
+	site.Router.ScreenGroup(group)
+}
+
+// DocPageScreen is one doc: the embedded markdown, nothing else. The
+// docs layer around it brings the nav, and the crumbs and pager are its
+// fills.
 type DocPageScreen struct{ Entry docEntry }
 
 func (s *DocPageScreen) ScreenTitle() string        { return s.Entry.Title }
 func (s *DocPageScreen) ScreenDescription() string  { return s.Entry.Desc }
 func (s *DocPageScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-// SetParams resolves the doc entry from the catch-all remainder
-// (/docs/{path...}). A known slug loads its catalog entry; an unknown
-// slug leaves a placeholder so Load can reject it.
-func (s *DocPageScreen) SetParams(p map[string]string) {
-	slug := p["path"]
-	if _, entry, ok := findDocEntry(slug); ok {
-		s.Entry = entry
-	} else {
-		s.Entry = docEntry{Slug: slug}
-	}
-}
+// SetParams is empty: the slug reaches the screen through the resolver
+// (resolvedDoc), but the router refuses a dynamic route whose screen has
+// no SetParams, so the screen declares it has read what it needs.
+func (s *DocPageScreen) SetParams(map[string]string) {}
 
-// Load rejects unknown doc slugs so handlePage serves the site's 404
-// (NotFoundScreen), the same UX the per-slug loop produced by simply
-// not registering unknown paths.
+// Load reads the resolved doc; an unknown slug fails here with
+// app.ErrNotFound, before anything renders.
 func (s *DocPageScreen) Load(ctx context.Context) error {
-	if _, _, ok := findDocEntry(s.Entry.Slug); !ok {
-		return fmt.Errorf("docs: no catalog entry for %q", s.Entry.Slug)
+	ref, err := resolvedDoc.Get(ctx)
+	if err != nil {
+		return err
 	}
+	s.Entry = ref.Entry
 	return nil
 }
 
@@ -321,47 +369,64 @@ func (s *DocPageScreen) StaticPaths(ctx context.Context) []map[string]string {
 }
 
 func (s *DocPageScreen) Render() render.HTML {
-	intent, _, _ := findDocEntry(s.Entry.Slug)
-
-	var content render.HTML
 	if body, err := docs.Get(s.Entry.Slug); err == nil {
-		content = ui.Markdown(ui.MarkdownConfig{Source: string(body)})
-	} else {
-		content = html.Paragraph(html.TextConfig{},
-			render.Text("This doc isn't available yet. Browse the embedded docs with "),
-			codeText("gofastr docs"), render.Text(" or open the "),
-			html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
+		return ui.Markdown(ui.MarkdownConfig{Source: string(body)})
 	}
-
-	return docpage.Render(docpage.Config{
-		Nav: docCatalogSidebar(s.Entry.Slug),
-		Crumbs: []ui.Crumb{
-			{Text: "Docs", Href: "/docs/"},
-			{Text: intent.Title, Href: "/docs/#" + intent.Slug},
-			{Text: s.Entry.Title, Current: true},
-		},
-		Pager: docPrevNext(s.Entry.Slug),
-	}, content)
+	return html.Paragraph(html.TextConfig{},
+		render.Text("This doc isn't available yet. Browse the embedded docs with "),
+		codeText("gofastr docs"), render.Text(" or open the "),
+		html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
 }
 
-// docCatalogSidebar renders the grouped doc rail for the current slug.
-func docCatalogSidebar(active string) render.HTML {
-	return interactive.SectionMenu(docsSectionMenuConfig(active))
+// DocCrumbs fills a doc page's crumbs outlet: Docs, the doc's intent,
+// then the doc.
+type DocCrumbs struct{ ref docRef }
+
+func (c *DocCrumbs) Load(ctx context.Context) error {
+	ref, err := resolvedDoc.Get(ctx)
+	if err != nil {
+		return err
+	}
+	c.ref = ref
+	return nil
 }
+
+func (c *DocCrumbs) Render() render.HTML {
+	return docpage.Crumbs(nil, "", []ui.Crumb{
+		{Text: "Docs", Href: "/docs/"},
+		{Text: c.ref.Intent.Title, Href: "/docs/#" + c.ref.Intent.Slug},
+		{Text: c.ref.Entry.Title, Current: true},
+	})
+}
+
+// DocPager fills a doc page's pager outlet with the previous and next
+// doc in catalog order (the index before the first doc; no next card
+// after the last).
+type DocPager struct{ cfg docpage.PagerConfig }
+
+func (p *DocPager) Load(ctx context.Context) error {
+	ref, err := resolvedDoc.Get(ctx)
+	if err != nil {
+		return err
+	}
+	p.cfg = docPrevNext(ref.Entry.Slug)
+	return nil
+}
+
+func (p *DocPager) Render() render.HTML { return docpage.Pager(p.cfg) }
 
 // docsSectionMenuConfig is the single source of truth for the docs nav,
-// shared by the per-page inline rail (with the active slug) and the mounted
-// mobile drawer (active="", the runtime stamps aria-current client-side).
-func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
+// shared by the docs layer's rail and the mounted mobile drawer. Nothing
+// is marked active here: the rail is static chrome the layer keeps
+// across navigations, so the runtime's active-link sweep owns the
+// current-page mark (a server mark on a kept rail would go stale on the
+// first doc-to-doc navigation).
+func docsSectionMenuConfig() interactive.SectionMenuConfig {
 	groups := make([]interactive.SectionGroup, 0, len(docIntents))
 	for _, it := range docIntents {
 		items := make([]interactive.SectionItem, 0, len(it.Docs))
 		for _, d := range it.Docs {
-			items = append(items, interactive.SectionItem{
-				Label:  d.Title,
-				Href:   "/docs/" + d.Slug,
-				Active: d.Slug == active,
-			})
+			items = append(items, interactive.SectionItem{Label: d.Title, Href: "/docs/" + d.Slug})
 		}
 		groups = append(groups, interactive.SectionGroup{Eyebrow: it.Num, Label: it.Title, Items: items})
 	}
@@ -369,13 +434,13 @@ func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
 		AriaLabel:    "Documentation sections",
 		TriggerLabel: "Sections",
 		DrawerName:   "docs-section-menu",
-		Lead:         &interactive.SectionItem{Label: "Docs index", Href: "/docs/", Active: active == ""},
+		Lead:         &interactive.SectionItem{Label: "Docs index", Href: "/docs/"},
 		Groups:       groups,
 	}
 }
 
 // docPrevNext computes the previous/next doc in catalog order for the pager.
-func docPrevNext(slug string) *docpage.PagerConfig {
+func docPrevNext(slug string) docpage.PagerConfig {
 	flat := flatDocs()
 	idx := -1
 	for i, d := range flat {
@@ -391,5 +456,5 @@ func docPrevNext(slug string) *docpage.PagerConfig {
 	if idx >= 0 && idx < len(flat)-1 {
 		p.NextHref, p.NextLabel = "/docs/"+flat[idx+1].Slug, flat[idx+1].Title
 	}
-	return &p
+	return p
 }
