@@ -1038,3 +1038,19 @@ func TestEmptyStateAppliesClassOnTheRoot(t *testing.T) {
 		t.Errorf("the caller's Class did not land after the base class:\n%s", h)
 	}
 }
+
+// Band gives a kicker-less section the page-band heading: the
+// modifier class on the root, and the display-size rule selecting it.
+func TestSectionBandStepsHeadingUp(t *testing.T) {
+	h := string(Section(SectionConfig{Heading: "Setup", Band: true}))
+	if !classTokenPresent(h, "fui-section--band") {
+		t.Errorf("Band must add the band modifier:\n%s", h)
+	}
+	if plain := string(Section(SectionConfig{Heading: "Setup"})); classTokenPresent(plain, "fui-section--band") {
+		t.Errorf("a plain section must not be a band:\n%s", plain)
+	}
+	css := sectionCSS(style.Theme{})
+	if !strings.Contains(css, `.fui-section--band .fui-section__heading,`) {
+		t.Errorf("the display-size heading rule must select the band modifier:\n%s", css)
+	}
+}

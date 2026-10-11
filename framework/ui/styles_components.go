@@ -446,12 +446,15 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, -0.01em);
   color: var(--color-text, #18181B);
 }
-/* An eyebrow marks a page band (marketing, landing), not an in-app
-   group, so its heading steps up to display size and the band opens
-   more air under its head. The knobs still win. */
+/* An eyebrow (or SectionConfig.Band) marks a page band (marketing,
+   landing), not an in-app group, so its heading steps up to display
+   size and the band opens more air under its head. The knobs still
+   win. */
+[data-cui-comp="ui-section"].fui-section--band,
 [data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) {
   gap: var(--spacing-xl, 24px);
 }
+[data-cui-comp="ui-section"].fui-section--band .fui-section__heading,
 [data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) .fui-section__heading {
   font-size: var(--ui-section-heading-size, var(--text-3xl, 1.875rem));
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
