@@ -985,12 +985,14 @@ func registerScreens(site *app.App) {
 		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 			siteHeader(ctx),
-			ui.ContentRow(ui.ContentRowConfig{
-				Sidebar:     nav,
-				Sticky:      true,
-				BelowHeader: true,
-				Footer:      siteFooter(),
-			}, l.Primary()),
+			// The main column is the site's own composition: the page,
+			// then the colophon under it, spaced apart so a short page
+			// still ends with the colophon at the bottom of the screen.
+			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true},
+				ui.Stack(ui.StackConfig{Gap: ui.GapNone, Justify: ui.JustifyBetween},
+					l.Primary(),
+					siteFooter(),
+				)),
 		)
 	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout).Standalone()

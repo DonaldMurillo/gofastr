@@ -771,22 +771,26 @@ Viewport are two scroll models; setting both panics.
 page header: the nav column and the toolbar stick below
 `--size-header-height` instead of behind the header, and the column is
 the rest of the viewport tall. Setting it without `Sticky` panics.
-`Footer` places the page's footer at the end of the main column, after
-main and beside the nav column, instead of under the whole row; a short
-page still holds it at the bottom. Together they make a docs frame: the
-menu stays pinned on the left under the header and keeps its own scroll
-position, while the page and its footer scroll past on the right. The
-layout owns the whole page there, so mark its group `Standalone()` and
-render the header in it too:
+The main column is whatever the layout passes: a bare `l.Primary()`,
+or the app's own composition around it. Any child that is not the nav
+or the aside takes the remaining width. That is how a docs frame keeps
+its footer beside the menu rather than under the whole row: the layout
+stacks the page and the footer itself, the menu stays pinned on the
+left under the header and keeps its own scroll position, and the page
+and its footer scroll past on the right. The layout owns the whole
+page there, so mark its group `Standalone()` and render the header in
+it too:
 
 ```go
 layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
 	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 		header, // a sticky bar --size-header-height tall
-		ui.ContentRow(ui.ContentRowConfig{
-			Sidebar: nav, Sticky: true, BelowHeader: true, Footer: footer,
-		}, l.Primary()))
+		ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true},
+			ui.Stack(ui.StackConfig{Gap: ui.GapNone, Justify: ui.JustifyBetween},
+				l.Primary(),
+				footer,
+			)))
 })
 site.Router.ScreenGroup(app.NewScreenGroup("/docs", layout).Standalone())
 ```

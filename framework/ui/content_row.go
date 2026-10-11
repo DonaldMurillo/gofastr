@@ -103,14 +103,6 @@ type ContentRowConfig struct {
 	// the --size-header-height token, the same one Viewport reads.
 	// Setting it without Sticky panics.
 	BelowHeader bool
-	// Footer is the page's footer, placed at the end of the main
-	// column, after main and beside the nav column, rather than under
-	// the whole row. Pair it with Sticky and BelowHeader for a docs
-	// frame: the nav stays pinned under the header while the content
-	// and its footer scroll past it. A short page still holds the
-	// footer at the bottom. The footer brings its own landmark
-	// (a <footer>); the row only places it.
-	Footer render.HTML
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
 	// lives outside the column (a NativeMobile sidebar whose drawer
@@ -187,19 +179,14 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 		// keeps the sidebar's title and footer inside a landmark too.
 		body = append(body, html.Nav(html.NavConfig{Label: label, Class: "fui-content-row__nav"}, cfg.Sidebar))
 	}
-	if cfg.Toolbar != "" || cfg.Footer != "" {
-		// The workspace column: the toolbar above main, the footer
-		// after it, so both sit beside the nav column.
-		var toolbar render.HTML
-		if cfg.Toolbar != "" {
-			label := cfg.ToolbarLabel
-			if label == "" {
-				label = "Toolbar"
-			}
-			toolbar = html.Section(html.SectionConfig{Label: label, Class: "fui-content-row__toolbar"}, cfg.Toolbar)
+	if cfg.Toolbar != "" {
+		label := cfg.ToolbarLabel
+		if label == "" {
+			label = "Toolbar"
 		}
 		body = append(body, html.Div(html.DivConfig{Class: "fui-content-row__workspace"},
-			toolbar, render.Join(main...), cfg.Footer))
+			html.Section(html.SectionConfig{Label: label, Class: "fui-content-row__toolbar"}, cfg.Toolbar),
+			render.Join(main...)))
 	} else {
 		body = append(body, main...)
 	}
@@ -238,7 +225,11 @@ func contentRowCSS(_ style.Theme) string {
 	// grows instead, so inside ui.Stack{Screen: true} it takes whatever
 	// the header and footer leave and the nav column reaches the footer.
 	return `.fui-content-row { display: flex; align-items: stretch; flex: 1 0 auto; }
-.fui-content-row > main, .fui-content-row > .layout-content { flex: 1 1 auto; min-width: 0; }
+/* The main column is whatever the caller passes: a bare main slot, or
+   the app's own composition around it (the slot and a footer in a
+   Stack). Every child that is not the nav or the aside takes the
+   remaining width. */
+.fui-content-row > :not(.fui-content-row__nav):not(.fui-content-row__aside) { flex: 1 1 auto; min-width: 0; }
 .fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-right: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
 .fui-content-row__workspace { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; }
 .fui-content-row__workspace > main, .fui-content-row__workspace > .layout-content { flex: 1 1 auto; min-inline-size: 0; }
